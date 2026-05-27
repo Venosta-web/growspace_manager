@@ -514,3 +514,263 @@ def test_bayesian_summary_optimal_active_says_optimal(
     summary = scheduler._generate_bayesian_summary()
 
     assert "conditions optimal" in summary
+
+
+def test_bayesian_summary_stress_active_detected(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """When stress sensor is on, summary mentions 'plant stress'."""
+    growspace = MagicMock()
+    growspace.id = "tent1"
+    growspace.name = "Tent 1"
+    mock_coordinator.growspaces = {"tent1": growspace}
+
+    _setup_bayesian_states(
+        mock_hass,
+        "tent1",
+        stress=(True, ["leaf curl", "tip burn"]),
+        optimal=(False, []),
+    )
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+    summary = scheduler._generate_bayesian_summary()
+
+    assert "plant stress" in summary
+    assert "leaf curl" in summary
+    assert "tip burn" in summary
+
+
+def test_bayesian_summary_mold_risk_active_detected(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """When mold_risk sensor is on, summary mentions 'mold risk'."""
+    growspace = MagicMock()
+    growspace.id = "tent1"
+    growspace.name = "Tent 1"
+    mock_coordinator.growspaces = {"tent1": growspace}
+
+    _setup_bayesian_states(
+        mock_hass,
+        "tent1",
+        mold_risk=(True, []),
+        optimal=(False, []),
+    )
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+    summary = scheduler._generate_bayesian_summary()
+
+    assert "mold risk" in summary
+
+
+# ---------------------------------------------------------------------------
+# Cycle 8 — _read_bayesian_states with real sensor state
+# ---------------------------------------------------------------------------
+
+def test_read_bayesian_states_returns_active_true_when_sensor_on(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """_read_bayesian_states returns active=True and reasons when sensor state is 'on'."""
+    from custom_components.growspace_manager.const import DOMAIN
+
+    state = MagicMock()
+    state.state = "on"
+    state.attributes = {"reasons": ["high humidity"]}
+
+    mock_hass.states = MagicMock()
+    mock_hass.states.get.side_effect = lambda eid: (
+        state if eid == f"binary_sensor.{DOMAIN}_tent1_mold_risk" else None
+    )
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+    result = scheduler._read_bayesian_states("tent1")
+
+    assert result["mold_risk"]["active"] is True
+    assert result["mold_risk"]["reasons"] == ["high humidity"]
+
+
+# ---------------------------------------------------------------------------
+# Cycle 9 — _collect_kpis with growspace VPD + water data
+# ---------------------------------------------------------------------------
+
+def test_collect_kpis_includes_avg_vpd_from_growspace_env_state(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """_collect_kpis reads VPD from environment_state and adds Avg VPD KPI."""
+    env_state = MagicMock()
+    env_state.vpd = 1.3
+
+    growspace = MagicMock()
+    growspace.environment_state = env_state
+    growspace.water_usage = None
+    mock_coordinator.growspaces = {"tent1": growspace}
+    mock_coordinator.alert_monitor.get_alerts.return_value = []
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+    kpis = scheduler._collect_kpis()
+
+    labels = {k["label"] for k in kpis}
+    assert "Avg VPD" in labels
+    vpd_kpi = next(k for k in kpis if k["label"] == "Avg VPD")
+    assert vpd_kpi["value"] == 1.3
+
+
+def test_collect_kpis_includes_water_use_when_nonzero(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """_collect_kpis reads total_water_l from water_usage and adds Water Use KPI."""
+    water_usage = MagicMock()
+    water_usage.total_water_l = 42.5
+
+    growspace = MagicMock()
+    growspace.environment_state = None
+    growspace.water_usage = water_usage
+    mock_coordinator.growspaces = {"tent1": growspace}
+    mock_coordinator.alert_monitor.get_alerts.return_value = []
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+    kpis = scheduler._collect_kpis()
+
+    labels = {k["label"] for k in kpis}
+    assert "Water Use" in labels
+    water_kpi = next(k for k in kpis if k["label"] == "Water Use")
+    assert water_kpi["value"] == 42.5
+
+
+# ---------------------------------------------------------------------------
+# Cycle 10 — _generate_briefing AI success path
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_generate_briefing_ai_success_returns_ai_available_true(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """When AI call succeeds, briefing has ai_available=True and returned content."""
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+    mock_coordinator.alert_monitor.get_alerts.return_value = []
+
+    with patch.object(
+        scheduler,
+        "_generate_ai_content",
+        new_callable=AsyncMock,
+        return_value=("Plants are thriving.", [{"text": "Water now", "impact": "high", "suggested_action": {}}]),
+    ):
+        briefing = await scheduler._generate_briefing()
+
+    assert briefing["ai_available"] is True
+    assert briefing["summary_text"] == "Plants are thriving."
+    assert len(briefing["recommendations"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Cycle 11 — _generate_ai_content response parsing
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_generate_ai_content_parses_summary_and_recommendations(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """_generate_ai_content parses SUMMARY: and RECOMMENDATIONS: from AI speech."""
+    import json
+
+    recs = [{"text": "Lower VPD", "impact": "high", "suggested_action": {}}]
+    speech_text = f"SUMMARY: All healthy. RECOMMENDATIONS: {json.dumps(recs)}"
+
+    mock_result = MagicMock()
+    mock_result.response.speech = {"plain": {"speech": speech_text}}
+
+    mock_coordinator.growspaces = {}
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+
+    with patch(
+        "homeassistant.components.conversation.async_converse",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ):
+        summary, recommendations = await scheduler._generate_ai_content(
+            "conversation.claude", []
+        )
+
+    assert "All healthy" in summary
+    assert len(recommendations) == 1
+    assert recommendations[0]["text"] == "Lower VPD"
+
+
+@pytest.mark.asyncio
+async def test_generate_ai_content_invalid_recommendations_json_returns_empty(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """_generate_ai_content returns empty recommendations list when JSON is malformed."""
+    speech_text = "SUMMARY: OK. RECOMMENDATIONS: not-valid-json"
+
+    mock_result = MagicMock()
+    mock_result.response.speech = {"plain": {"speech": speech_text}}
+
+    mock_coordinator.growspaces = {}
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+
+    with patch(
+        "homeassistant.components.conversation.async_converse",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ):
+        summary, recommendations = await scheduler._generate_ai_content(
+            "conversation.claude", []
+        )
+
+    assert recommendations == []
+    assert "OK" in summary
+
+
+@pytest.mark.asyncio
+async def test_generate_ai_content_empty_speech_returns_bayesian_fallback(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """_generate_ai_content falls back to Bayesian summary when speech is empty."""
+    mock_result = MagicMock()
+    mock_result.response.speech = {"plain": {"speech": ""}}
+
+    mock_coordinator.growspaces = {}
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+
+    with patch(
+        "homeassistant.components.conversation.async_converse",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ):
+        summary, recommendations = await scheduler._generate_ai_content(
+            "conversation.claude", []
+        )
+
+    assert recommendations == []
+    assert isinstance(summary, str)
+    assert len(summary) > 0
+
+
+@pytest.mark.asyncio
+async def test_generate_ai_content_summary_only_strips_prefix(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """_generate_ai_content strips SUMMARY: prefix when no RECOMMENDATIONS: section."""
+    speech_text = "SUMMARY: Plants look great today."
+
+    mock_result = MagicMock()
+    mock_result.response.speech = {"plain": {"speech": speech_text}}
+
+    mock_coordinator.growspaces = {}
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+
+    with patch(
+        "homeassistant.components.conversation.async_converse",
+        new_callable=AsyncMock,
+        return_value=mock_result,
+    ):
+        summary, recommendations = await scheduler._generate_ai_content(
+            "conversation.claude", []
+        )
+
+    assert summary == "Plants look great today."
+    assert recommendations == []

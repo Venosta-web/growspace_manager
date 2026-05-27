@@ -27,6 +27,7 @@ from custom_components.growspace_manager.sensor import (
     _check_subarea_calculated_vpd_sensors,
     _create_initial_entities,
 )
+from custom_components.growspace_manager.sensor.usage import PowerUsageSensor
 
 
 def _make_coordinator(**kwargs):
@@ -997,3 +998,72 @@ def test_subarea_calculated_vpd_sensor_unique_id_and_name() -> None:
     assert sensor._attr_name == "Zone A Calculated VPD"
     assert "subarea_zone_a" in sensor._attr_unique_id
     assert "tent1" in sensor._attr_unique_id
+
+
+# ---------------------------------------------------------------------------
+# PowerUsageSensor tests
+# ---------------------------------------------------------------------------
+
+
+def _make_power_sensor(power_sensors: list[str] | None = None):
+    """Build a PowerUsageSensor with a minimal mock coordinator."""
+    coordinator = _make_coordinator()
+    growspace = Mock()
+    growspace.environment_config = Mock(power_sensors=power_sensors or [])
+    coordinator.growspaces = {"gs1": growspace}
+
+    sensor = PowerUsageSensor(coordinator, "gs1", "Tent 1")
+    sensor.hass = MagicMock()
+    return sensor, coordinator, growspace
+
+
+def test_power_sensor_init() -> None:
+    """Lines 102-106: __init__ sets unique_id and device_info correctly."""
+    sensor, _, _ = _make_power_sensor()
+    assert "gs1_power_usage" in sensor._attr_unique_id
+    assert sensor._growspace_id == "gs1"
+    assert sensor._attr_device_info is not None
+
+
+def test_power_sensor_native_value_no_growspace() -> None:
+    """Line 118-119: native_value returns None when growspace is absent."""
+    sensor, coordinator, _ = _make_power_sensor()
+    coordinator.growspaces = {}
+    assert sensor.native_value is None
+
+
+def test_power_sensor_native_value_no_environment_config() -> None:
+    """Line 118-119: native_value returns None when environment_config is falsy."""
+    sensor, _, growspace = _make_power_sensor()
+    growspace.environment_config = None
+    assert sensor.native_value is None
+
+
+def test_power_sensor_native_value_sums_valid_sensors() -> None:
+    """Lines 120-130: native_value sums wattage from all valid power sensors."""
+    sensor, _, growspace = _make_power_sensor(["sensor.p1", "sensor.p2"])
+    growspace.environment_config.power_sensors = ["sensor.p1", "sensor.p2"]
+    sensor.hass.states.get.side_effect = lambda eid: {
+        "sensor.p1": Mock(state="500.0"),
+        "sensor.p2": Mock(state="250.5"),
+    }.get(eid)
+    assert sensor.native_value == 750.5
+
+
+def test_power_sensor_native_value_all_sensors_unavailable() -> None:
+    """Lines 122-124: native_value returns None when all states are unavailable."""
+    sensor, _, growspace = _make_power_sensor(["sensor.p1"])
+    growspace.environment_config.power_sensors = ["sensor.p1"]
+    sensor.hass.states.get.return_value = Mock(state="unavailable")
+    assert sensor.native_value is None
+
+
+def test_power_sensor_native_value_skips_non_numeric_state() -> None:
+    """Lines 125-129: native_value skips sensors with non-numeric state values."""
+    sensor, _, growspace = _make_power_sensor(["sensor.bad", "sensor.good"])
+    growspace.environment_config.power_sensors = ["sensor.bad", "sensor.good"]
+    sensor.hass.states.get.side_effect = lambda eid: {
+        "sensor.bad": Mock(state="not-a-number"),
+        "sensor.good": Mock(state="300.0"),
+    }.get(eid)
+    assert sensor.native_value == 300.0
