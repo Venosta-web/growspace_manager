@@ -275,6 +275,15 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             duration,
         )
 
+        existing_task = self._running_tasks.get("irrigation")
+        if existing_task and not existing_task.done():
+            _LOGGER.warning(
+                "Cancelling lingering irrigation task for %s before firing new %s shot",
+                self._growspace_id,
+                phase,
+            )
+            existing_task.cancel()
+
         # Delegate to base _run_pump_cycle — inherits all safety guards:
         # pause_on_low_tank, max_cycles_per_day, daily_volume_cap_liters,
         # skip_during_dark, and log_to_logbook.
