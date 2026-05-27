@@ -308,7 +308,7 @@ SCHEMA_WS_RESOLVE_AI_ALERT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_RESOLVE_AI_ALERT,
         vol.Required("alert_id"): str,
-        vol.Optional("notes"): str,
+        vol.Optional("resolution_note"): str,
     }
 )
 
@@ -322,7 +322,7 @@ async def websocket_resolve_ai_alert(
 
     WebSocket message fields:
     - ``alert_id`` *(required)*: UUID of the alert to resolve
-    - ``notes`` *(optional)*: resolution notes to attach
+    - ``resolution_note`` *(optional)*: resolution notes to attach
     """
     coordinator = _get_coordinator(hass, connection)
     if coordinator is None:
@@ -339,7 +339,7 @@ async def websocket_resolve_ai_alert(
         return
 
     alert_id: str = msg["alert_id"]
-    notes: str | None = msg.get("notes")
+    notes: str | None = msg.get("resolution_note")
     resolved = await alert_monitor.resolve_alert(alert_id, notes=notes)
 
     if not resolved:

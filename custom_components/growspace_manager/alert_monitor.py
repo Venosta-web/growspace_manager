@@ -30,8 +30,8 @@ are evicted when the cap is exceeded.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
+import logging
 from typing import Any
 import uuid
 
@@ -42,6 +42,29 @@ from homeassistant.util import dt as dt_util
 from .const import ATTR_PROBABILITY, ATTR_REASONS
 
 _LOGGER = logging.getLogger(__name__)
+
+_SEVERITY_MAP: dict[str, str] = {"stress": "danger", "mold": "warning"}
+
+
+def _serialize_alert(alert: dict[str, Any]) -> dict[str, Any]:
+    """Convert an internal storage alert dict to the public wire format.
+
+    Renames fields, converts the ISO-8601 timestamp to a Unix epoch int, and
+    injects a ``severity`` value derived from ``alert_type``.  The internal
+    storage dict is never mutated.
+    """
+    ts_iso: str = alert["timestamp"]
+    parsed_dt = dt_util.parse_datetime(ts_iso)
+    unix_ts = int(parsed_dt.timestamp()) if parsed_dt is not None else 0
+
+    return {
+        **{k: v for k, v in alert.items() if k not in {"alert_id", "alert_type", "timestamp", "resolution_notes"}},
+        "id": alert["alert_id"],
+        "type": alert["alert_type"],
+        "severity": _SEVERITY_MAP.get(alert["alert_type"], "info"),
+        "timestamp": unix_ts,
+        "resolution_note": alert.get("resolution_notes"),
+    }
 
 
 class AlertMonitor:
@@ -232,7 +255,7 @@ class AlertMonitor:
             results = [a for a in results if a["growspace_id"] == growspace_id]
         if alert_type is not None:
             results = [a for a in results if a["alert_type"] == alert_type]
-        return results
+        return [_serialize_alert(a) for a in results]
 
     async def resolve_alert(
         self,

@@ -66,17 +66,18 @@ async def test_record_alert_creates_alert_with_required_fields(
 
     alert = alerts[0]
     assert alert["growspace_id"] == GROWSPACE_ID
-    assert alert["alert_type"] == "stress"
+    assert alert["type"] == "stress"
     assert alert["bayesian_reasons"] == STRESS_REASONS
     assert alert["bayesian_probability"] == pytest.approx(0.91)
     assert alert["resolved"] is False
     assert alert["ai_reasoning"] is None
-    assert alert["resolution_notes"] is None
-    # UUID format
-    parsed = uuid.UUID(alert["alert_id"])
-    assert str(parsed) == alert["alert_id"]
-    # ISO timestamp present
-    assert "T" in alert["timestamp"]
+    assert alert["resolution_note"] is None
+    # UUID format (wire format key is "id")
+    parsed = uuid.UUID(alert["id"])
+    assert str(parsed) == alert["id"]
+    # Timestamp is a Unix epoch int in wire format
+    assert isinstance(alert["timestamp"], int)
+    assert alert["timestamp"] > 0
 
 
 async def test_record_alert_mold_type(monitor) -> None:
@@ -90,7 +91,7 @@ async def test_record_alert_mold_type(monitor) -> None:
 
     alerts = monitor.get_alerts()
     assert len(alerts) == 1
-    assert alerts[0]["alert_type"] == "mold"
+    assert alerts[0]["type"] == "mold"
     assert alerts[0]["bayesian_reasons"] == MOLD_REASONS
 
 
@@ -116,7 +117,7 @@ async def test_get_alerts_filter_by_alert_type(monitor) -> None:
 
     results = monitor.get_alerts(alert_type="mold")
     assert len(results) == 1
-    assert results[0]["alert_type"] == "mold"
+    assert results[0]["type"] == "mold"
 
 
 async def test_get_alerts_returns_all_when_no_filter(monitor) -> None:
@@ -135,25 +136,25 @@ async def test_get_alerts_returns_all_when_no_filter(monitor) -> None:
 async def test_resolve_alert_marks_resolved(monitor) -> None:
     """resolve_alert marks an alert as resolved."""
     await monitor.async_record_alert(GROWSPACE_ID, "stress", STRESS_REASONS, 0.9)
-    alert_id = monitor.get_alerts()[0]["alert_id"]
+    alert_id = monitor.get_alerts()[0]["id"]
 
     result = await monitor.resolve_alert(alert_id)
 
     assert result is True
     alert = monitor.get_alerts()[0]
     assert alert["resolved"] is True
-    assert alert["resolution_notes"] is None
+    assert alert["resolution_note"] is None
 
 
 async def test_resolve_alert_stores_notes(monitor) -> None:
     """resolve_alert persists resolution notes."""
     await monitor.async_record_alert(GROWSPACE_ID, "stress", STRESS_REASONS, 0.9)
-    alert_id = monitor.get_alerts()[0]["alert_id"]
+    alert_id = monitor.get_alerts()[0]["id"]
 
     await monitor.resolve_alert(alert_id, notes="Adjusted dehumidifier target")
 
     alert = monitor.get_alerts()[0]
-    assert alert["resolution_notes"] == "Adjusted dehumidifier target"
+    assert alert["resolution_note"] == "Adjusted dehumidifier target"
 
 
 async def test_resolve_alert_returns_false_for_unknown_id(monitor) -> None:
@@ -233,6 +234,65 @@ async def test_cap_evicts_oldest_at_500(mock_hass, store) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Wire format serialisation (get_alerts returns public wire format, not storage)
+# ---------------------------------------------------------------------------
+
+
+async def test_get_alerts_stress_uses_wire_format(monitor) -> None:
+    """get_alerts() returns wire-format fields: id, type, severity, Unix timestamp, resolution_note."""
+    await monitor.async_record_alert(
+        growspace_id=GROWSPACE_ID,
+        alert_type="stress",
+        reasons=STRESS_REASONS,
+        probability=0.91,
+    )
+
+    alert = monitor.get_alerts()[0]
+
+    # Renamed fields
+    assert "id" in alert
+    assert "alert_id" not in alert
+    assert "type" in alert
+    assert "alert_type" not in alert
+    assert alert["type"] == "stress"
+    assert "resolution_note" in alert
+    assert "resolution_notes" not in alert
+
+    # Severity injected
+    assert alert["severity"] == "danger"
+
+    # Timestamp is a Unix epoch int, not an ISO string
+    assert isinstance(alert["timestamp"], int)
+    assert alert["timestamp"] > 0
+
+
+async def test_get_alerts_mold_severity_is_warning(monitor) -> None:
+    """get_alerts() maps mold alert_type to severity='warning'."""
+    await monitor.async_record_alert(
+        growspace_id=GROWSPACE_ID,
+        alert_type="mold",
+        reasons=MOLD_REASONS,
+        probability=0.82,
+    )
+
+    alert = monitor.get_alerts()[0]
+    assert alert["severity"] == "warning"
+
+
+async def test_get_alerts_unknown_type_severity_defaults_to_info(monitor) -> None:
+    """get_alerts() defaults severity to 'info' for unknown alert types."""
+    await monitor.async_record_alert(
+        growspace_id=GROWSPACE_ID,
+        alert_type="unknown_future_type",
+        reasons=["some reason"],
+        probability=0.5,
+    )
+
+    alert = monitor.get_alerts()[0]
+    assert alert["severity"] == "info"
+
+
+# ---------------------------------------------------------------------------
 # State-change listener
 # ---------------------------------------------------------------------------
 
@@ -269,7 +329,7 @@ async def test_state_change_off_to_on_creates_alert(mock_hass, store) -> None:
     alerts = monitor.get_alerts()
     assert len(alerts) == 1
     assert alerts[0]["growspace_id"] == GROWSPACE_ID
-    assert alerts[0]["alert_type"] == "stress"
+    assert alerts[0]["type"] == "stress"
 
 
 async def test_state_change_on_to_on_no_alert(mock_hass, store) -> None:
@@ -413,5 +473,5 @@ async def test_async_setup_loads_persisted_alerts(mock_hass) -> None:
 
     alerts = monitor.get_alerts()
     assert len(alerts) == 1
-    assert alerts[0]["alert_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert alerts[0]["id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     assert alerts[0]["ai_reasoning"] == "Raise humidity"

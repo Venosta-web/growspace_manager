@@ -703,7 +703,7 @@ async def test_resolve_ai_alert_success(
             "id": 33,
             "type": "growspace_manager/resolve_ai_alert",
             "alert_id": "alert-xyz",
-            "notes": "All fixed",
+            "resolution_note": "All fixed",
         }
         await websocket_resolve_ai_alert(MagicMock(), mock_connection, msg)
 

@@ -14,19 +14,20 @@ GROWSPACE_ID = "tent1"
 
 @pytest.fixture
 def mock_alert_monitor():
-    """Mock AlertMonitor."""
+    """Mock AlertMonitor returning wire-format dicts (as the real get_alerts() now does)."""
     monitor = MagicMock()
     monitor.get_alerts = MagicMock(return_value=[
         {
-            "alert_id": "aaaaaaaa-0000-0000-0000-000000000001",
+            "id": "aaaaaaaa-0000-0000-0000-000000000001",
             "growspace_id": GROWSPACE_ID,
-            "alert_type": "stress",
+            "type": "stress",
+            "severity": "danger",
             "bayesian_reasons": ["High VPD"],
             "bayesian_probability": 0.91,
             "ai_reasoning": "Adjust humidity",
-            "timestamp": "2026-01-12T12:00:00+00:00",
+            "timestamp": 1736683200,
             "resolved": False,
-            "resolution_notes": None,
+            "resolution_note": None,
         }
     ])
     monitor.resolve_alert = AsyncMock(return_value=True)
@@ -82,7 +83,8 @@ async def test_get_ai_alerts_returns_all_alerts(
     mock_connection.send_result.assert_called_once()
     result = mock_connection.send_result.call_args[0][1]
     assert len(result) == 1
-    assert result[0]["alert_type"] == "stress"
+    assert result[0]["type"] == "stress"
+    assert result[0]["severity"] == "danger"
 
 
 async def test_get_ai_alerts_passes_filters(
@@ -174,12 +176,12 @@ async def test_resolve_ai_alert_success(
     assert result["success"] is True
 
 
-async def test_resolve_ai_alert_with_notes(
+async def test_resolve_ai_alert_with_resolution_note(
     mock_coordinator: MagicMock,
     mock_connection: MagicMock,
     mock_alert_monitor: MagicMock,
 ) -> None:
-    """websocket_resolve_ai_alert forwards optional notes."""
+    """websocket_resolve_ai_alert accepts the resolution_note field and forwards it."""
     from custom_components.growspace_manager.websocket.ai_assistant import (
         websocket_resolve_ai_alert,
     )
@@ -189,7 +191,7 @@ async def test_resolve_ai_alert_with_notes(
         "id": 5,
         "type": f"{DOMAIN}/resolve_ai_alert",
         "alert_id": alert_id,
-        "notes": "Fixed the dehumidifier",
+        "resolution_note": "Fixed the dehumidifier",
     }
     hass = MagicMock()
 
