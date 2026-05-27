@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any
 
 import voluptuous as vol
@@ -42,6 +43,7 @@ WS_TYPE_START_CONVERSATION = f"{DOMAIN}/start_conversation"
 SCHEMA_WS_START_CONVERSATION = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_START_CONVERSATION,
+        vol.Required("growspace_id"): str,
         vol.Required("message"): str,
         vol.Optional("agent_id"): str,
         vol.Optional("image_entities"): [str],
@@ -53,6 +55,7 @@ SCHEMA_WS_SEND_MESSAGE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_SEND_MESSAGE,
         vol.Required("conversation_id"): str,
+        vol.Required("growspace_id"): str,
         vol.Required("message"): str,
         vol.Optional("image_entities"): [str],
     }
@@ -142,6 +145,7 @@ async def websocket_start_conversation(
     Begins a brand-new AI conversation (conversation_id=None) and returns
     the server-assigned conversation_id together with the response text.
     """
+    growspace_id: str = msg["growspace_id"]
     message: str = msg["message"]
     agent_id: str | None = msg.get("agent_id")
     image_entities: list[str] = msg.get("image_entities") or []
@@ -168,14 +172,19 @@ async def websocket_start_conversation(
         return
 
     display_text, action = _extract_action(speech)
-    payload: dict[str, Any] = {
-        "conversation_id": result.conversation_id,
-        "response": display_text,
+    ai_message: dict[str, Any] = {
+        "role": "ai",
+        "text": display_text,
+        "timestamp": int(time.time() * 1000),
     }
     if action is not None:
-        payload["action"] = action
+        ai_message["suggestedAction"] = action
 
-    connection.send_result(msg["id"], payload)
+    connection.send_result(msg["id"], {
+        "thread_id": result.conversation_id,
+        "growspace_id": growspace_id,
+        "messages": [ai_message],
+    })
 
 
 async def websocket_send_message(
@@ -188,6 +197,7 @@ async def websocket_send_message(
     Continues an existing AI conversation identified by *conversation_id*.
     """
     conversation_id: str = msg["conversation_id"]
+    growspace_id: str = msg["growspace_id"]
     message: str = msg["message"]
     image_entities: list[str] = msg.get("image_entities") or []
 
@@ -215,14 +225,19 @@ async def websocket_send_message(
         return
 
     display_text, action = _extract_action(speech)
-    payload: dict[str, Any] = {
-        "conversation_id": conversation_id,
-        "response": display_text,
+    ai_message: dict[str, Any] = {
+        "role": "ai",
+        "text": display_text,
+        "timestamp": int(time.time() * 1000),
     }
     if action is not None:
-        payload["action"] = action
+        ai_message["suggestedAction"] = action
 
-    connection.send_result(msg["id"], payload)
+    connection.send_result(msg["id"], {
+        "thread_id": conversation_id,
+        "growspace_id": growspace_id,
+        "messages": [ai_message],
+    })
 
 
 def _get_coordinator(

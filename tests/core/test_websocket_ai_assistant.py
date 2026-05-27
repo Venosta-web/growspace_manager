@@ -50,6 +50,7 @@ async def test_start_conversation_returns_conversation_id(
         msg = {
             "id": 1,
             "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
             "message": "How are my plants?",
             "agent_id": "test_agent",
         }
@@ -61,8 +62,11 @@ async def test_start_conversation_returns_conversation_id(
 
     mock_connection.send_result.assert_called_once()
     result = mock_connection.send_result.call_args[0][1]
-    assert result["conversation_id"] == "conv-123"
-    assert result["response"] == "Here is my advice."
+    assert result["thread_id"] == "conv-123"
+    assert result["growspace_id"] == "tent1"
+    assert len(result["messages"]) == 1
+    assert result["messages"][0]["role"] == "ai"
+    assert result["messages"][0]["text"] == "Here is my advice."
 
 
 @pytest.mark.asyncio
@@ -84,15 +88,16 @@ async def test_start_conversation_extracts_action_block(
         msg = {
             "id": 2,
             "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
             "message": "What should I do?",
             "agent_id": "agent1",
         }
         await websocket_start_conversation(MagicMock(), mock_connection, msg)
 
     result = mock_connection.send_result.call_args[0][1]
-    assert result["action"] == {"type": "water", "confidence": 0.9}
-    # Display text should not include the action block
-    assert "[ACTION]" not in result["response"]
+    ai_msg = result["messages"][0]
+    assert ai_msg["suggestedAction"] == {"type": "water", "confidence": 0.9}
+    assert "[ACTION]" not in ai_msg["text"]
 
 
 @pytest.mark.asyncio
@@ -114,14 +119,16 @@ async def test_start_conversation_malformed_action_block_is_plain_text(
         msg = {
             "id": 3,
             "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
             "message": "Any issues?",
             "agent_id": "agent1",
         }
         await websocket_start_conversation(MagicMock(), mock_connection, msg)
 
     result = mock_connection.send_result.call_args[0][1]
-    assert "action" not in result
-    assert result["response"] is not None  # some text returned
+    ai_msg = result["messages"][0]
+    assert "suggestedAction" not in ai_msg
+    assert ai_msg["text"] is not None
 
 
 @pytest.mark.asyncio
@@ -136,6 +143,7 @@ async def test_start_conversation_invalid_image_entity_domain(
     msg = {
         "id": 4,
         "type": "growspace_manager/start_conversation",
+        "growspace_id": "tent1",
         "message": "Check this image",
         "agent_id": "agent1",
         "image_entities": ["sensor.temperature"],  # wrong domain
@@ -171,6 +179,7 @@ async def test_start_conversation_valid_camera_entity_accepted(
         msg = {
             "id": 5,
             "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
             "message": "How does this look?",
             "agent_id": "agent1",
             "image_entities": ["camera.tent_cam"],
@@ -204,6 +213,7 @@ async def test_start_conversation_valid_image_entity_accepted(
         msg = {
             "id": 6,
             "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
             "message": "Check growth",
             "agent_id": "agent1",
             "image_entities": ["image.plant_snapshot"],
@@ -238,6 +248,7 @@ async def test_send_message_passes_conversation_id(
             "id": 7,
             "type": "growspace_manager/send_message",
             "conversation_id": "conv-existing",
+            "growspace_id": "tent1",
             "message": "Tell me more",
         }
         await websocket_send_message(MagicMock(), mock_connection, msg)
@@ -246,8 +257,11 @@ async def test_send_message_passes_conversation_id(
     assert call_kwargs["conversation_id"] == "conv-existing"
 
     result = mock_connection.send_result.call_args[0][1]
-    assert result["conversation_id"] == "conv-existing"
-    assert result["response"] == "Follow-up answer."
+    assert result["thread_id"] == "conv-existing"
+    assert result["growspace_id"] == "tent1"
+    assert len(result["messages"]) == 1
+    assert result["messages"][0]["role"] == "ai"
+    assert result["messages"][0]["text"] == "Follow-up answer."
 
 
 @pytest.mark.asyncio
@@ -270,13 +284,15 @@ async def test_send_message_extracts_action_block(
             "id": 8,
             "type": "growspace_manager/send_message",
             "conversation_id": "conv-42",
+            "growspace_id": "tent1",
             "message": "What should I adjust?",
         }
         await websocket_send_message(MagicMock(), mock_connection, msg)
 
     result = mock_connection.send_result.call_args[0][1]
-    assert result["action"] == {"type": "adjust_ph", "value": 6.2}
-    assert "[ACTION]" not in result["response"]
+    ai_msg = result["messages"][0]
+    assert ai_msg["suggestedAction"] == {"type": "adjust_ph", "value": 6.2}
+    assert "[ACTION]" not in ai_msg["text"]
 
 
 @pytest.mark.asyncio
@@ -292,6 +308,7 @@ async def test_send_message_invalid_image_entity_domain(
         "id": 9,
         "type": "growspace_manager/send_message",
         "conversation_id": "conv-42",
+        "growspace_id": "tent1",
         "message": "Check this",
         "image_entities": ["binary_sensor.door"],  # wrong domain
     }
@@ -319,6 +336,7 @@ async def test_send_message_empty_response_returns_error(
             "id": 10,
             "type": "growspace_manager/send_message",
             "conversation_id": "conv-x",
+            "growspace_id": "tent1",
             "message": "Hello",
         }
         await websocket_send_message(MagicMock(), mock_connection, msg)
@@ -349,6 +367,7 @@ async def test_start_conversation_service_validation_error_returns_error(
         msg = {
             "id": 11,
             "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
             "message": "Hello",
         }
         await websocket_start_conversation(MagicMock(), mock_connection, msg)
@@ -373,6 +392,7 @@ async def test_start_conversation_generic_exception_returns_error(
         msg = {
             "id": 12,
             "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
             "message": "Hello",
         }
         await websocket_start_conversation(MagicMock(), mock_connection, msg)
@@ -397,6 +417,7 @@ async def test_start_conversation_empty_response_returns_error(
         msg = {
             "id": 13,
             "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
             "message": "Hello",
         }
         await websocket_start_conversation(MagicMock(), mock_connection, msg)
@@ -427,6 +448,7 @@ async def test_send_message_service_validation_error_returns_error(
             "id": 14,
             "type": "growspace_manager/send_message",
             "conversation_id": "conv-err",
+            "growspace_id": "tent1",
             "message": "Continue",
         }
         await websocket_send_message(MagicMock(), mock_connection, msg)
@@ -452,6 +474,7 @@ async def test_send_message_generic_exception_returns_error(
             "id": 15,
             "type": "growspace_manager/send_message",
             "conversation_id": "conv-err",
+            "growspace_id": "tent1",
             "message": "Continue",
         }
         await websocket_send_message(MagicMock(), mock_connection, msg)

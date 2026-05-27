@@ -319,7 +319,9 @@ class BriefingScheduler:
                 if optimal.get("active"):
                     lines.append(f"{name}: conditions optimal.")
                 else:
-                    lines.append(f"{name}: conditions normal.")
+                    reasons = optimal.get("reasons", [])
+                    detail = f": {'; '.join(reasons)}" if reasons else ""
+                    lines.append(f"{name}: not optimal{detail}.")
 
         if not lines:
             return "No active growspaces. System is idle."

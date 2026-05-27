@@ -445,3 +445,72 @@ def test_async_stop_is_idempotent(
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
     scheduler.async_stop()
     scheduler.async_stop()  # Should not raise
+
+
+# ---------------------------------------------------------------------------
+# Cycle 7 — Bayesian summary content
+# ---------------------------------------------------------------------------
+
+def _make_sensor_state(active: bool, reasons: list[str]) -> MagicMock:
+    state = MagicMock()
+    state.state = "on" if active else "off"
+    state.attributes = {"reasons": reasons}
+    return state
+
+
+def _setup_bayesian_states(
+    mock_hass: MagicMock,
+    growspace_id: str,
+    *,
+    stress: tuple[bool, list[str]] = (False, []),
+    mold_risk: tuple[bool, list[str]] = (False, []),
+    optimal: tuple[bool, list[str]] = (True, []),
+) -> None:
+    from custom_components.growspace_manager.const import DOMAIN
+
+    states = {
+        f"binary_sensor.{DOMAIN}_{growspace_id}_stress": _make_sensor_state(*stress),
+        f"binary_sensor.{DOMAIN}_{growspace_id}_mold_risk": _make_sensor_state(*mold_risk),
+        f"binary_sensor.{DOMAIN}_{growspace_id}_optimal": _make_sensor_state(*optimal),
+    }
+    mock_hass.states = MagicMock()
+    mock_hass.states.get.side_effect = lambda eid: states.get(eid)
+
+
+def test_bayesian_summary_not_optimal_includes_reasons(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """When optimal sensor is off with reasons, summary text includes those reasons."""
+    growspace = MagicMock()
+    growspace.id = "tent1"
+    growspace.name = "Tent 1"
+    mock_coordinator.growspaces = {"tent1": growspace}
+
+    _setup_bayesian_states(
+        mock_hass,
+        "tent1",
+        optimal=(False, ["VPD out of range (1.2)"]),
+    )
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+    summary = scheduler._generate_bayesian_summary()
+
+    assert "VPD out of range (1.2)" in summary
+    assert "conditions normal" not in summary
+
+
+def test_bayesian_summary_optimal_active_says_optimal(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """When optimal sensor is on, summary text says 'conditions optimal'."""
+    growspace = MagicMock()
+    growspace.id = "tent1"
+    growspace.name = "Tent 1"
+    mock_coordinator.growspaces = {"tent1": growspace}
+
+    _setup_bayesian_states(mock_hass, "tent1", optimal=(True, []))
+
+    scheduler = BriefingScheduler(mock_hass, mock_coordinator)
+    summary = scheduler._generate_bayesian_summary()
+
+    assert "conditions optimal" in summary
