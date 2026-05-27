@@ -118,6 +118,7 @@ class _DictEnvConfig(dict):
 
     light_sensors: list = []
     energy_sensors: list = []
+    power_sensors: list = []
 
 
 @pytest.mark.asyncio

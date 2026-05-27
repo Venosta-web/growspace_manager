@@ -82,6 +82,54 @@ class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity): 
         }
 
 
+class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+    """Sensor tracking current power draw per growspace."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "power_usage"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = "W"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:flash"
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace_name: str,
+    ) -> None:
+        """Initialize the power usage sensor."""
+        super().__init__(coordinator)
+        self._growspace_id = growspace_id
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_power_usage"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace_name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    @override  # type: ignore[misc]
+    def native_value(self) -> float | None:
+        """Return total current wattage across all configured power sensors."""
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        if not growspace or not growspace.environment_config:
+            return None
+        total = 0.0
+        any_valid = False
+        for sensor_id in growspace.environment_config.power_sensors:
+            state = self.hass.states.get(sensor_id)
+            if state and state.state not in ("unknown", "unavailable"):
+                try:
+                    total += float(state.state)
+                    any_valid = True
+                except (ValueError, TypeError):
+                    continue
+        return round(total, 1) if any_valid else None
+
+
 class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
     """Sensor tracking water consumption per growspace."""
 
