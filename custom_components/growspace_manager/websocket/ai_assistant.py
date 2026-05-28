@@ -41,6 +41,9 @@ _ACTION_RE = re.compile(r"\[ACTION\](.*?)\[/ACTION\]", re.DOTALL)
 
 _VALID_IMAGE_DOMAINS = {"camera", "image"}
 
+_RATE_LIMIT_MARKERS = ("429", "Too Many Requests", "RESOURCE_EXHAUSTED", "resource_exhausted")
+_RATE_LIMIT_MESSAGE = "rate_limited"
+
 WS_TYPE_START_CONVERSATION = f"{DOMAIN}/start_conversation"
 SCHEMA_WS_START_CONVERSATION = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -106,6 +109,27 @@ def _extract_action(text: str) -> tuple[str, dict[str, Any] | None]:
     # Strip the block (and any surrounding whitespace) from the display text
     display = _ACTION_RE.sub("", text).strip()
     return display, action
+
+
+def _is_rate_limited_result(result: Any) -> bool:
+    """Return True if the conversation result carries a 429/rate-limit error."""
+    if not (result and result.response):
+        return False
+    speech = (
+        result.response.speech.get("plain", {}).get("speech", "")
+        if result.response.speech
+        else ""
+    )
+    err_code = getattr(result.response, "error_code", "") or ""
+    return any(m in speech for m in _RATE_LIMIT_MARKERS) or any(
+        m.lower() in err_code.lower() for m in _RATE_LIMIT_MARKERS
+    )
+
+
+def _is_rate_limited_error(err: BaseException) -> bool:
+    """Return True if an exception message indicates a 429/rate-limit error."""
+    msg = str(err)
+    return any(m in msg for m in _RATE_LIMIT_MARKERS)
 
 
 def _extract_speech(result: Any) -> str | None:
@@ -242,11 +266,22 @@ async def websocket_start_conversation(
         result = await _run_conversation(hass, message, agent_id, conversation_id=None)
     except ServiceValidationError as err:
         _LOGGER.error("Error in start_conversation: %s", err)
-        connection.send_error(msg["id"], "ai_error", str(err))
+        if _is_rate_limited_error(err):
+            connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
+        else:
+            connection.send_error(msg["id"], "ai_error", str(err))
         return
     except Exception as err:  # noqa: BLE001
         _LOGGER.error("Unexpected error in start_conversation: %s", err)
-        connection.send_error(msg["id"], "ai_error", str(err))
+        if _is_rate_limited_error(err):
+            connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
+        else:
+            connection.send_error(msg["id"], "ai_error", str(err))
+        return
+
+    if _is_rate_limited_result(result):
+        _LOGGER.warning("AI rate limit reached in start_conversation")
+        connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
         return
 
     speech = _extract_speech(result)
@@ -301,11 +336,22 @@ async def websocket_send_message(
         )
     except ServiceValidationError as err:
         _LOGGER.error("Error in send_message: %s", err)
-        connection.send_error(msg["id"], "ai_error", str(err))
+        if _is_rate_limited_error(err):
+            connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
+        else:
+            connection.send_error(msg["id"], "ai_error", str(err))
         return
     except Exception as err:  # noqa: BLE001
         _LOGGER.error("Unexpected error in send_message: %s", err)
-        connection.send_error(msg["id"], "ai_error", str(err))
+        if _is_rate_limited_error(err):
+            connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
+        else:
+            connection.send_error(msg["id"], "ai_error", str(err))
+        return
+
+    if _is_rate_limited_result(result):
+        _LOGGER.warning("AI rate limit reached in send_message")
+        connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
         return
 
     speech = _extract_speech(result)
