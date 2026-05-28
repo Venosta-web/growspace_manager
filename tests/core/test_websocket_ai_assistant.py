@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
 
@@ -36,7 +35,8 @@ async def test_start_conversation_returns_conversation_id(
     mock_connection: MagicMock,
 ) -> None:
     """start_conversation calls async_converse with conversation_id=None and
-    returns the conversation_id from the result."""
+    returns the conversation_id from the result.
+    """
     from custom_components.growspace_manager.websocket.ai_assistant import (
         websocket_start_conversation,
     )
@@ -543,8 +543,6 @@ async def test_get_ai_alerts_coordinator_not_loaded(
     assert mock_connection.send_error.call_args[0][1] == "not_found"
 
 
-
-
 @pytest.mark.asyncio
 async def test_get_ai_alerts_returns_filtered_alerts(
     mock_connection: MagicMock,
@@ -605,8 +603,6 @@ async def test_resolve_ai_alert_coordinator_not_loaded(
 
     mock_connection.send_error.assert_called_once()
     assert mock_connection.send_error.call_args[0][1] == "not_found"
-
-
 
 
 @pytest.mark.asyncio
@@ -691,7 +687,9 @@ async def test_send_message_uses_configured_agent_id(
     fake_result = _make_converse_result("VPD is 1.1 kPa.", conv_id="conv-existing")
 
     coordinator = MagicMock()
-    coordinator.options = {"ai_settings": {"assistant_id": "conversation.google_ai_conversation"}}
+    coordinator.options = {
+        "ai_settings": {"assistant_id": "conversation.google_ai_conversation"}
+    }
 
     with (
         patch(
@@ -733,7 +731,9 @@ async def test_start_conversation_uses_configured_agent_when_no_agent_id_in_mess
     fake_result = _make_converse_result("Looking healthy!", conv_id="conv-new")
 
     coordinator = MagicMock()
-    coordinator.options = {"ai_settings": {"assistant_id": "conversation.google_ai_conversation"}}
+    coordinator.options = {
+        "ai_settings": {"assistant_id": "conversation.google_ai_conversation"}
+    }
 
     with (
         patch(
@@ -770,7 +770,9 @@ async def test_start_conversation_explicit_agent_id_takes_precedence(
     fake_result = _make_converse_result("Good to go.", conv_id="conv-explicit")
 
     coordinator = MagicMock()
-    coordinator.options = {"ai_settings": {"assistant_id": "conversation.google_ai_conversation"}}
+    coordinator.options = {
+        "ai_settings": {"assistant_id": "conversation.google_ai_conversation"}
+    }
 
     with (
         patch(
@@ -813,7 +815,11 @@ async def test_get_briefing_coordinator_not_loaded(
         "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
         return_value=None,
     ):
-        msg = {"id": 40, "type": "growspace_manager/get_briefing", "force_refresh": False}
+        msg = {
+            "id": 40,
+            "type": "growspace_manager/get_briefing",
+            "force_refresh": False,
+        }
         await websocket_get_briefing(MagicMock(), mock_connection, msg)
 
     mock_connection.send_error.assert_called_once()
@@ -835,7 +841,11 @@ async def test_get_briefing_no_scheduler_sends_error(
         "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
         return_value=coordinator,
     ):
-        msg = {"id": 41, "type": "growspace_manager/get_briefing", "force_refresh": False}
+        msg = {
+            "id": 41,
+            "type": "growspace_manager/get_briefing",
+            "force_refresh": False,
+        }
         await websocket_get_briefing(MagicMock(), mock_connection, msg)
 
     mock_connection.send_error.assert_called_once()
@@ -851,7 +861,10 @@ async def test_get_briefing_returns_briefing_data(
         websocket_get_briefing,
     )
 
-    briefing_data = {"summary": "Everything looks healthy", "generated_at": "2026-05-27"}
+    briefing_data = {
+        "summary": "Everything looks healthy",
+        "generated_at": "2026-05-27",
+    }
     scheduler = MagicMock()
     scheduler.async_get_briefing = AsyncMock(return_value=briefing_data)
     coordinator = MagicMock()
@@ -861,7 +874,11 @@ async def test_get_briefing_returns_briefing_data(
         "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
         return_value=coordinator,
     ):
-        msg = {"id": 42, "type": "growspace_manager/get_briefing", "force_refresh": True}
+        msg = {
+            "id": 42,
+            "type": "growspace_manager/get_briefing",
+            "force_refresh": True,
+        }
         await websocket_get_briefing(MagicMock(), mock_connection, msg)
 
     scheduler.async_get_briefing.assert_awaited_once_with(force_refresh=True)
@@ -927,7 +944,11 @@ async def test_save_ai_settings_returns_error_when_no_coordinator(
         "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
         return_value=None,
     ):
-        msg = {"id": 8, "type": "growspace_manager/save_ai_settings", "ai_enabled": False}
+        msg = {
+            "id": 8,
+            "type": "growspace_manager/save_ai_settings",
+            "ai_enabled": False,
+        }
         await websocket_save_ai_settings(MagicMock(), mock_connection, msg)
 
     mock_connection.send_error.assert_called_once()
@@ -992,10 +1013,12 @@ def test_build_context_message_includes_growspace_name_and_sensors() -> None:
         vpd_sensor="sensor.vpd",
         temperature_sensor="sensor.temp",
     )
-    hass = _make_hass_with_states({
-        "sensor.vpd": ("1.20", "kPa"),
-        "sensor.temp": ("24.5", "°C"),
-    })
+    hass = _make_hass_with_states(
+        {
+            "sensor.vpd": ("1.20", "kPa"),
+            "sensor.temp": ("24.5", "°C"),
+        }
+    )
 
     result = _build_context_message(hass, coordinator, "tent1", "What is the VPD?")
 
@@ -1014,10 +1037,12 @@ def test_build_context_message_skips_unavailable_sensors() -> None:
         vpd_sensor="sensor.vpd",
         temperature_sensor="sensor.temp",
     )
-    hass = _make_hass_with_states({
-        "sensor.vpd": ("unavailable", "kPa"),
-        "sensor.temp": ("24.5", "°C"),
-    })
+    hass = _make_hass_with_states(
+        {
+            "sensor.vpd": ("unavailable", "kPa"),
+            "sensor.temp": ("24.5", "°C"),
+        }
+    )
 
     result = _build_context_message(hass, coordinator, "tent1", "Hello")
 
