@@ -670,6 +670,132 @@ async def test_resolve_ai_alert_success(
 
 
 # ---------------------------------------------------------------------------
+# agent_id resolution — configured assistant used by default
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_send_message_uses_configured_agent_id(
+    mock_connection: MagicMock,
+) -> None:
+    """send_message must route to the assistant configured in ai_settings, not None.
+
+    This is the root cause of the bug: send_message was hardcoding agent_id=None,
+    which always routed to the default HA local agent instead of the user-configured
+    Google / Anthropic agent.
+    """
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_send_message,
+    )
+
+    fake_result = _make_converse_result("VPD is 1.1 kPa.", conv_id="conv-existing")
+
+    coordinator = MagicMock()
+    coordinator.options = {"ai_settings": {"assistant_id": "conversation.google_ai_conversation"}}
+
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            new=AsyncMock(return_value=fake_result),
+        ) as mock_converse,
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+            return_value=coordinator,
+        ),
+    ):
+        msg = {
+            "id": 50,
+            "type": "growspace_manager/send_message",
+            "conversation_id": "conv-existing",
+            "growspace_id": "tent1",
+            "message": "What is the current VPD?",
+        }
+        await websocket_send_message(MagicMock(), mock_connection, msg)
+
+    call_kwargs = mock_converse.call_args[1]
+    assert call_kwargs["agent_id"] == "conversation.google_ai_conversation"
+
+
+@pytest.mark.asyncio
+async def test_start_conversation_uses_configured_agent_when_no_agent_id_in_message(
+    mock_connection: MagicMock,
+) -> None:
+    """start_conversation must fall back to ai_settings.assistant_id when no
+    agent_id is supplied in the WebSocket message.
+
+    The frontend does not pass agent_id in start_conversation; the backend must
+    read it from the coordinator's ai_settings so the right LLM is used.
+    """
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_start_conversation,
+    )
+
+    fake_result = _make_converse_result("Looking healthy!", conv_id="conv-new")
+
+    coordinator = MagicMock()
+    coordinator.options = {"ai_settings": {"assistant_id": "conversation.google_ai_conversation"}}
+
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            new=AsyncMock(return_value=fake_result),
+        ) as mock_converse,
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+            return_value=coordinator,
+        ),
+    ):
+        msg = {
+            "id": 51,
+            "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
+            "message": "What is the current VPD?",
+            # No agent_id in message — frontend never sends it
+        }
+        await websocket_start_conversation(MagicMock(), mock_connection, msg)
+
+    call_kwargs = mock_converse.call_args[1]
+    assert call_kwargs["agent_id"] == "conversation.google_ai_conversation"
+
+
+@pytest.mark.asyncio
+async def test_start_conversation_explicit_agent_id_takes_precedence(
+    mock_connection: MagicMock,
+) -> None:
+    """An explicit agent_id in the WS message overrides the configured assistant_id."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_start_conversation,
+    )
+
+    fake_result = _make_converse_result("Good to go.", conv_id="conv-explicit")
+
+    coordinator = MagicMock()
+    coordinator.options = {"ai_settings": {"assistant_id": "conversation.google_ai_conversation"}}
+
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            new=AsyncMock(return_value=fake_result),
+        ) as mock_converse,
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+            return_value=coordinator,
+        ),
+    ):
+        msg = {
+            "id": 52,
+            "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
+            "message": "Hello",
+            "agent_id": "conversation.override_agent",
+        }
+        await websocket_start_conversation(MagicMock(), mock_connection, msg)
+
+    call_kwargs = mock_converse.call_args[1]
+    assert call_kwargs["agent_id"] == "conversation.override_agent"
+
+
+# ---------------------------------------------------------------------------
 # websocket_get_briefing
 # ---------------------------------------------------------------------------
 
@@ -806,3 +932,221 @@ async def test_save_ai_settings_returns_error_when_no_coordinator(
 
     mock_connection.send_error.assert_called_once()
     assert mock_connection.send_error.call_args[0][1] == "not_found"
+
+
+# ---------------------------------------------------------------------------
+# _build_context_message
+# ---------------------------------------------------------------------------
+
+
+def _make_coordinator_with_growspace(
+    growspace_name: str = "Tent 1",
+    growspace_type: str = "flower",
+    vpd_sensor: str | None = "sensor.vpd",
+    temperature_sensor: str | None = "sensor.temp",
+    plants: list | None = None,
+) -> MagicMock:
+    from custom_components.growspace_manager.models import (
+        EnvironmentConfig,
+        GrowspaceType,
+    )
+
+    env = EnvironmentConfig(
+        vpd_sensor=vpd_sensor,
+        temperature_sensor=temperature_sensor,
+    )
+    growspace = MagicMock()
+    growspace.name = growspace_name
+    growspace.growspace_type = GrowspaceType(growspace_type)
+    growspace.environment_config = env
+
+    coordinator = MagicMock()
+    coordinator.growspaces = {"tent1": growspace}
+    coordinator.data_repository.get_growspace_plants.return_value = plants or []
+    return coordinator
+
+
+def _make_hass_with_states(states: dict[str, tuple[str, str]]) -> MagicMock:
+    """Return a hass mock where states[entity_id] = (state_value, unit)."""
+    hass = MagicMock()
+
+    def get_state(entity_id: str):
+        if entity_id not in states:
+            return None
+        value, unit = states[entity_id]
+        state = MagicMock()
+        state.state = value
+        state.attributes = {"unit_of_measurement": unit}
+        return state
+
+    hass.states.get.side_effect = get_state
+    return hass
+
+
+def test_build_context_message_includes_growspace_name_and_sensors() -> None:
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _build_context_message,
+    )
+
+    coordinator = _make_coordinator_with_growspace(
+        vpd_sensor="sensor.vpd",
+        temperature_sensor="sensor.temp",
+    )
+    hass = _make_hass_with_states({
+        "sensor.vpd": ("1.20", "kPa"),
+        "sensor.temp": ("24.5", "°C"),
+    })
+
+    result = _build_context_message(hass, coordinator, "tent1", "What is the VPD?")
+
+    assert "[Growspace: Tent 1 | Type: flower]" in result
+    assert "VPD=1.20kPa" in result
+    assert "Temperature=24.5°C" in result
+    assert "What is the VPD?" in result
+
+
+def test_build_context_message_skips_unavailable_sensors() -> None:
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _build_context_message,
+    )
+
+    coordinator = _make_coordinator_with_growspace(
+        vpd_sensor="sensor.vpd",
+        temperature_sensor="sensor.temp",
+    )
+    hass = _make_hass_with_states({
+        "sensor.vpd": ("unavailable", "kPa"),
+        "sensor.temp": ("24.5", "°C"),
+    })
+
+    result = _build_context_message(hass, coordinator, "tent1", "Hello")
+
+    assert "VPD" not in result
+    assert "Temperature=24.5°C" in result
+
+
+def test_build_context_message_includes_flower_stage_from_plants() -> None:
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _build_context_message,
+    )
+
+    plant = MagicMock()
+    plant.flower_start = "2026-04-28"
+    plant.veg_start = None
+    plant.seedling_start = None
+    plant.clone_start = None
+
+    coordinator = _make_coordinator_with_growspace(plants=[plant])
+    hass = _make_hass_with_states({})
+
+    result = _build_context_message(hass, coordinator, "tent1", "Optimize me")
+
+    assert "Stage: flower" in result
+    assert "Day " in result
+    assert "Week " in result
+
+
+def test_build_context_message_returns_plain_message_when_growspace_missing() -> None:
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _build_context_message,
+    )
+
+    coordinator = MagicMock()
+    coordinator.growspaces = {}
+    hass = MagicMock()
+
+    result = _build_context_message(hass, coordinator, "unknown", "Hello")
+
+    assert result == "Hello"
+
+
+def test_build_context_message_dry_growspace_shows_stage_type() -> None:
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _build_context_message,
+    )
+
+    coordinator = _make_coordinator_with_growspace(
+        growspace_type="dry",
+        vpd_sensor=None,
+        temperature_sensor=None,
+    )
+    hass = _make_hass_with_states({})
+
+    result = _build_context_message(hass, coordinator, "tent1", "How is the dry?")
+
+    assert "Stage: dry" in result
+    assert "How is the dry?" in result
+
+
+@pytest.mark.asyncio
+async def test_start_conversation_injects_context_when_coordinator_available(
+    mock_connection: MagicMock,
+) -> None:
+    """start_conversation enriches the message with growspace context before sending to the AI."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_start_conversation,
+    )
+
+    fake_result = _make_converse_result("Here is my advice.", conv_id="conv-ctx")
+    coordinator = _make_coordinator_with_growspace()
+    hass = _make_hass_with_states({"sensor.vpd": ("1.10", "kPa")})
+
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            new=AsyncMock(return_value=fake_result),
+        ) as mock_converse,
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+            return_value=coordinator,
+        ),
+    ):
+        msg = {
+            "id": 1,
+            "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
+            "message": "What is the VPD?",
+            "agent_id": "test_agent",
+        }
+        await websocket_start_conversation(hass, mock_connection, msg)
+
+    call_kwargs = mock_converse.call_args[1]
+    assert "[Growspace: Tent 1" in call_kwargs["text"]
+    assert "What is the VPD?" in call_kwargs["text"]
+
+
+@pytest.mark.asyncio
+async def test_send_message_injects_context_when_coordinator_available(
+    mock_connection: MagicMock,
+) -> None:
+    """send_message enriches the message with growspace context before forwarding."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_send_message,
+    )
+
+    fake_result = _make_converse_result("Updated advice.", conv_id="conv-456")
+    coordinator = _make_coordinator_with_growspace()
+    hass = _make_hass_with_states({"sensor.temp": ("22.0", "°C")})
+
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            new=AsyncMock(return_value=fake_result),
+        ) as mock_converse,
+        patch(
+            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+            return_value=coordinator,
+        ),
+    ):
+        msg = {
+            "id": 2,
+            "type": "growspace_manager/send_message",
+            "conversation_id": "conv-456",
+            "growspace_id": "tent1",
+            "message": "How can I optimize?",
+        }
+        await websocket_send_message(hass, mock_connection, msg)
+
+    call_kwargs = mock_converse.call_args[1]
+    assert "[Growspace: Tent 1" in call_kwargs["text"]
+    assert "How can I optimize?" in call_kwargs["text"]

@@ -31,6 +31,8 @@ from homeassistant.exceptions import ServiceValidationError
 
 from ..const import DOMAIN
 from ..coordinator import GrowspaceCoordinator
+from ..models import GrowspaceType
+from ..utils import calculate_days_since, days_to_week
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -119,6 +121,83 @@ def _extract_speech(result: Any) -> str | None:
     return None
 
 
+def _build_context_message(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    growspace_id: str,
+    message: str,
+) -> str:
+    """Prepend growspace sensor readings and stage info to the user message."""
+    growspace = coordinator.growspaces.get(growspace_id)
+    if not growspace:
+        return message
+
+    env = growspace.environment_config
+
+    # Collect sensor readings — first valid entity per type wins
+    sensor_specs: list[tuple[str, list[str | None]]] = [
+        ("Temperature", env.temperature_sensors or ([env.temperature_sensor] if env.temperature_sensor else [])),
+        ("Humidity", env.humidity_sensors or ([env.humidity_sensor] if env.humidity_sensor else [])),
+        ("VPD", env.vpd_sensors or ([env.vpd_sensor] if env.vpd_sensor else [])),
+        ("CO2", [env.co2_sensor] if env.co2_sensor else []),
+        ("Substrate temp", env.substrate_temperature_sensors),
+        ("pH", env.ph_sensors),
+        ("Feed EC", env.feed_ec_sensors),
+        ("Runoff EC", env.runoff_ec_sensors),
+    ]
+    sensor_parts: list[str] = []
+    for label, entity_ids in sensor_specs:
+        for entity_id in entity_ids:
+            if not entity_id:
+                continue
+            state = hass.states.get(entity_id)
+            if state and state.state not in ("unavailable", "unknown"):
+                unit = state.attributes.get("unit_of_measurement", "")
+                sensor_parts.append(f"{label}={state.state}{unit}")
+                break
+
+    # Determine current growth stage from plants
+    stage_line = ""
+    if growspace.growspace_type in (GrowspaceType.DRY, GrowspaceType.CURE):
+        stage_line = f"Stage: {growspace.growspace_type.value}"
+    else:
+        plants = coordinator.data_repository.get_growspace_plants(growspace_id)
+        if plants:
+            max_flower = max(
+                (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
+                default=-1,
+            )
+            max_veg = max(
+                (calculate_days_since(p.veg_start) for p in plants if p.veg_start),
+                default=-1,
+            )
+            max_seedling = max(
+                (calculate_days_since(p.seedling_start) for p in plants if p.seedling_start),
+                default=-1,
+            )
+            max_clone = max(
+                (calculate_days_since(p.clone_start) for p in plants if p.clone_start),
+                default=-1,
+            )
+            if max_flower >= 0:
+                stage_line = f"Stage: flower | Day {max_flower} | Week {days_to_week(max_flower)}"
+            elif max_veg >= 0:
+                stage_line = f"Stage: veg | Day {max_veg} | Week {days_to_week(max_veg)}"
+            elif max_seedling >= 0:
+                stage_line = f"Stage: seedling | Day {max_seedling} | Week {days_to_week(max_seedling)}"
+            elif max_clone >= 0:
+                stage_line = f"Stage: clone | Day {max_clone} | Week {days_to_week(max_clone)}"
+
+    lines: list[str] = [f"[Growspace: {growspace.name} | Type: {growspace.growspace_type.value}]"]
+    if stage_line:
+        lines.append(stage_line)
+    if sensor_parts:
+        lines.append("Sensors: " + " | ".join(sensor_parts))
+    lines.append("---")
+    lines.append(message)
+    return "\n".join(lines)
+
+
 async def _run_conversation(
     hass: HomeAssistant,
     message: str,
@@ -148,10 +227,16 @@ async def websocket_start_conversation(
     growspace_id: str = msg["growspace_id"]
     message: str = msg["message"]
     agent_id: str | None = msg.get("agent_id")
+    coordinator = _get_coordinator(hass, connection)
+    if agent_id is None and coordinator is not None:
+        agent_id = coordinator.options.get("ai_settings", {}).get("assistant_id")
     image_entities: list[str] = msg.get("image_entities") or []
 
     if not _validate_image_entities(image_entities, connection, msg["id"]):
         return
+
+    if coordinator is not None:
+        message = _build_context_message(hass, coordinator, growspace_id, message)
 
     try:
         result = await _run_conversation(hass, message, agent_id, conversation_id=None)
@@ -204,9 +289,15 @@ async def websocket_send_message(
     if not _validate_image_entities(image_entities, connection, msg["id"]):
         return
 
+    coordinator = _get_coordinator(hass, connection)
+    agent_id: str | None = None
+    if coordinator is not None:
+        agent_id = coordinator.options.get("ai_settings", {}).get("assistant_id")
+        message = _build_context_message(hass, coordinator, growspace_id, message)
+
     try:
         result = await _run_conversation(
-            hass, message, agent_id=None, conversation_id=conversation_id
+            hass, message, agent_id=agent_id, conversation_id=conversation_id
         )
     except ServiceValidationError as err:
         _LOGGER.error("Error in send_message: %s", err)
