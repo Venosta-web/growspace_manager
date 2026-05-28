@@ -296,4 +296,8 @@ __all__ = [
     "websocket_save_ai_agent",
     "WS_TYPE_SAVE_AI_AGENT",
     "SCHEMA_WS_SAVE_AI_AGENT",
+    # AI settings panel
+    "websocket_save_ai_settings",
+    "WS_TYPE_SAVE_AI_SETTINGS",
+    "SCHEMA_WS_SAVE_AI_SETTINGS",
 ]

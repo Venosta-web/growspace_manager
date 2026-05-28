@@ -741,3 +741,68 @@ async def test_get_briefing_returns_briefing_data(
     scheduler.async_get_briefing.assert_awaited_once_with(force_refresh=True)
     result = mock_connection.send_result.call_args[0][1]
     assert result == briefing_data
+
+
+# ---------------------------------------------------------------------------
+# save_ai_settings
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_ai_settings_persists_full_dict(
+    mock_connection: MagicMock,
+) -> None:
+    """save_ai_settings writes the full ai_settings dict to the config entry."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_save_ai_settings,
+    )
+
+    coordinator = MagicMock()
+    coordinator.config_entry.options = {"other": "kept"}
+    coordinator.async_commit = AsyncMock()
+
+    payload = {
+        "ai_enabled": True,
+        "assistant_id": "conversation.claude",
+        "notification_personality": "Scientific",
+        "ai_auto_alerts": False,
+        "max_response_length": 300,
+        "vision_checkup_enabled": True,
+        "ai_task_entity_id": "ai_task.my_task",
+        "briefing_interval_minutes": 60,
+        "briefing_trigger_entities": ["sensor.vpd"],
+    }
+
+    mock_hass = MagicMock()
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {"id": 7, "type": "growspace_manager/save_ai_settings", **payload}
+        await websocket_save_ai_settings(mock_hass, mock_connection, msg)
+
+    mock_hass.config_entries.async_update_entry.assert_called_once()
+    saved_options = mock_hass.config_entries.async_update_entry.call_args[1]["options"]
+    assert saved_options["other"] == "kept"
+    assert saved_options["ai_settings"] == payload
+    mock_connection.send_result.assert_called_once_with(7, {"success": True})
+
+
+@pytest.mark.asyncio
+async def test_save_ai_settings_returns_error_when_no_coordinator(
+    mock_connection: MagicMock,
+) -> None:
+    """save_ai_settings sends not_found error when coordinator is absent."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_save_ai_settings,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=None,
+    ):
+        msg = {"id": 8, "type": "growspace_manager/save_ai_settings", "ai_enabled": False}
+        await websocket_save_ai_settings(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "not_found"

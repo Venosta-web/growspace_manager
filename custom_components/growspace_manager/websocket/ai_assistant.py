@@ -347,6 +347,7 @@ WS_TYPE_GET_BRIEFING = f"{DOMAIN}/get_briefing"
 SCHEMA_WS_GET_BRIEFING = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_GET_BRIEFING,
+        vol.Optional("growspace_id"): str,
         vol.Optional("force_refresh", default=False): bool,
     }
 )
@@ -360,6 +361,7 @@ async def websocket_get_briefing(
     """Return the latest AI briefing, optionally regenerating it.
 
     WebSocket message fields:
+    - ``growspace_id`` *(optional)*: growspace to fetch the briefing for
     - ``force_refresh`` *(optional, default False)*: when ``True`` bypass the
       cache and generate a fresh briefing immediately.
     """
@@ -380,6 +382,36 @@ async def websocket_get_briefing(
     force_refresh: bool = msg.get("force_refresh", False)
     briefing = await briefing_scheduler.async_get_briefing(force_refresh=force_refresh)
     connection.send_result(msg["id"], briefing)
+
+
+# ---------------------------------------------------------------------------
+# get_ai_status
+# ---------------------------------------------------------------------------
+
+WS_TYPE_GET_AI_STATUS = f"{DOMAIN}/get_ai_status"
+SCHEMA_WS_GET_AI_STATUS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {vol.Required("type"): WS_TYPE_GET_AI_STATUS}
+)
+
+
+async def websocket_get_ai_status(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the component-level AI enabled flag.
+
+    Response: ``{ "ai_enabled": bool }``
+    """
+    coordinator = _get_coordinator(hass, connection)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"], "not_found", "Growspace Manager integration not loaded"
+        )
+        return
+
+    ai_enabled: bool = coordinator.options.get("ai_settings", {}).get("ai_enabled", False)
+    connection.send_result(msg["id"], {"ai_enabled": bool(ai_enabled)})
 
 
 # ---------------------------------------------------------------------------
@@ -431,11 +463,76 @@ async def websocket_save_ai_agent(
     connection.send_result(msg["id"], {"success": True, "agent_id": agent_id})
 
 
+# ---------------------------------------------------------------------------
+# save_ai_settings
+# ---------------------------------------------------------------------------
+
+_AI_SETTINGS_KEYS = (
+    "ai_enabled",
+    "assistant_id",
+    "notification_personality",
+    "ai_auto_alerts",
+    "max_response_length",
+    "vision_checkup_enabled",
+    "ai_task_entity_id",
+    "briefing_interval_minutes",
+    "briefing_trigger_entities",
+)
+
+WS_TYPE_SAVE_AI_SETTINGS = f"{DOMAIN}/save_ai_settings"
+SCHEMA_WS_SAVE_AI_SETTINGS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SAVE_AI_SETTINGS,
+        vol.Optional("ai_enabled"): bool,
+        vol.Optional("assistant_id"): vol.Any(str, None),
+        vol.Optional("notification_personality"): str,
+        vol.Optional("ai_auto_alerts"): bool,
+        vol.Optional("max_response_length"): int,
+        vol.Optional("vision_checkup_enabled"): bool,
+        vol.Optional("ai_task_entity_id"): vol.Any(str, None),
+        vol.Optional("briefing_interval_minutes"): int,
+        vol.Optional("briefing_trigger_entities"): list,
+    }
+)
+
+
+async def websocket_save_ai_settings(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Persist all user-facing AI settings from the Growmaster Settings Panel.
+
+    Accepts the nine user-facing ``ai_settings`` fields (all except
+    ``vision_debug_enabled``) and writes them atomically to the config entry.
+    """
+    coordinator = _get_coordinator(hass, connection)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"], "not_found", "Growspace Manager integration not loaded"
+        )
+        return
+
+    new_options = coordinator.config_entry.options.copy()
+    ai_settings: dict[str, Any] = {k: msg[k] for k in _AI_SETTINGS_KEYS if k in msg}
+    new_options["ai_settings"] = ai_settings
+
+    if hasattr(coordinator, "options"):
+        coordinator.options = new_options
+
+    hass.config_entries.async_update_entry(coordinator.config_entry, options=new_options)
+    await coordinator.async_commit()
+
+    connection.send_result(msg["id"], {"success": True})
+
+
 COMMANDS: list[tuple[str, Any, Any, bool]] = [
     (WS_TYPE_START_CONVERSATION, websocket_start_conversation, SCHEMA_WS_START_CONVERSATION, False),
     (WS_TYPE_SEND_MESSAGE, websocket_send_message, SCHEMA_WS_SEND_MESSAGE, False),
     (WS_TYPE_GET_AI_ALERTS, websocket_get_ai_alerts, SCHEMA_WS_GET_AI_ALERTS, False),
     (WS_TYPE_RESOLVE_AI_ALERT, websocket_resolve_ai_alert, SCHEMA_WS_RESOLVE_AI_ALERT, False),
     (WS_TYPE_GET_BRIEFING, websocket_get_briefing, SCHEMA_WS_GET_BRIEFING, False),
+    (WS_TYPE_GET_AI_STATUS, websocket_get_ai_status, SCHEMA_WS_GET_AI_STATUS, False),
     (WS_TYPE_SAVE_AI_AGENT, websocket_save_ai_agent, SCHEMA_WS_SAVE_AI_AGENT, False),
+    (WS_TYPE_SAVE_AI_SETTINGS, websocket_save_ai_settings, SCHEMA_WS_SAVE_AI_SETTINGS, False),
 ]
