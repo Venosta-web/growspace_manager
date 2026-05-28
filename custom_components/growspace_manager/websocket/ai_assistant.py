@@ -415,6 +415,36 @@ async def websocket_get_ai_status(
 
 
 # ---------------------------------------------------------------------------
+# get_ai_settings
+# ---------------------------------------------------------------------------
+
+WS_TYPE_GET_AI_SETTINGS = f"{DOMAIN}/get_ai_settings"
+SCHEMA_WS_GET_AI_SETTINGS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {vol.Required("type"): WS_TYPE_GET_AI_SETTINGS}
+)
+
+
+async def websocket_get_ai_settings(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the full ai_settings dict from the config entry options.
+
+    Response: the ``ai_settings`` dict, or ``{}`` when not yet configured.
+    """
+    coordinator = _get_coordinator(hass, connection)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"], "not_found", "Growspace Manager integration not loaded"
+        )
+        return
+
+    ai_settings: dict[str, Any] = coordinator.options.get("ai_settings", {})
+    connection.send_result(msg["id"], dict(ai_settings))
+
+
+# ---------------------------------------------------------------------------
 # save_ai_agent
 # ---------------------------------------------------------------------------
 
@@ -533,6 +563,7 @@ COMMANDS: list[tuple[str, Any, Any, bool]] = [
     (WS_TYPE_RESOLVE_AI_ALERT, websocket_resolve_ai_alert, SCHEMA_WS_RESOLVE_AI_ALERT, False),
     (WS_TYPE_GET_BRIEFING, websocket_get_briefing, SCHEMA_WS_GET_BRIEFING, False),
     (WS_TYPE_GET_AI_STATUS, websocket_get_ai_status, SCHEMA_WS_GET_AI_STATUS, False),
+    (WS_TYPE_GET_AI_SETTINGS, websocket_get_ai_settings, SCHEMA_WS_GET_AI_SETTINGS, False),
     (WS_TYPE_SAVE_AI_AGENT, websocket_save_ai_agent, SCHEMA_WS_SAVE_AI_AGENT, False),
     (WS_TYPE_SAVE_AI_SETTINGS, websocket_save_ai_settings, SCHEMA_WS_SAVE_AI_SETTINGS, False),
 ]
