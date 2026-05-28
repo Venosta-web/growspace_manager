@@ -12,6 +12,7 @@ from homeassistant.helpers.storage import Store
 
 from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
+from .conversation_store import ConversationStore
 from .cache import CacheManager
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
@@ -93,6 +94,9 @@ class CoordinatorBuilder:
         # Phase 1 – pure collaborators (no coordinator reference needed)
         # ------------------------------------------------------------------
         alert_store = Store(self.hass, 1, "growspace_manager.ai_alerts")
+        conversation_store = ConversationStore(
+            Store(self.hass, 1, "growspace_manager.ai_conversations")
+        )
         repository = GrowspaceRepository()
         notification_state = NotificationState()
         lock = asyncio.Lock()
@@ -235,6 +239,7 @@ class CoordinatorBuilder:
             briefing_scheduler=briefing_scheduler,
             photoperiod_checker=photoperiod_checker,
             alert_monitor=alert_monitor,
+            conversation_store=conversation_store,
         )
 
         _LOGGER.debug("GrowspaceCoordinator built successfully")

@@ -54,6 +54,7 @@ from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
 from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
+from .conversation_store import ConversationStore
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
 from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
@@ -363,6 +364,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         briefing_scheduler: BriefingScheduler,
         photoperiod_checker: PhotoperiodFlipChecker,
         alert_monitor: AlertMonitor,
+        conversation_store: ConversationStore,
     ) -> None:
         """Wire coordinator-self-dependent services. Called by CoordinatorBuilder after __init__."""
         self.view_model_builder = view_model_builder
@@ -384,6 +386,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.briefing_scheduler = briefing_scheduler
         self.photoperiod_checker = photoperiod_checker
         self.alert_monitor = alert_monitor
+        self.conversation_store = conversation_store
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
@@ -638,6 +641,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.briefing_scheduler.start()
         self.photoperiod_checker.schedule_all_growspaces()
         await self.alert_monitor.async_start()
+        await self.conversation_store.async_load()
 
         # Initialize environment reporter after data load
         if hasattr(self, "environment_reporter"):

@@ -13,6 +13,7 @@ STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
 STORAGE_KEY_PLANTS: Final = f"{DOMAIN}.plants"
 STORAGE_KEY_GENETICS: Final = f"{DOMAIN}.genetics"
 STORAGE_KEY_AI_BRIEFING: Final = f"{DOMAIN}.ai_briefing"
+STORAGE_KEY_AI_CONVERSATIONS: Final = f"{DOMAIN}.ai_conversations"
 PLATFORMS: Final[list[str]] = [
     "binary_sensor",
     "calendar",

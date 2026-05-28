@@ -693,6 +693,85 @@ async def websocket_save_ai_settings(
     connection.send_result(msg["id"], {"success": True})
 
 
+# ---------------------------------------------------------------------------
+# get_conversation_threads
+# ---------------------------------------------------------------------------
+
+WS_TYPE_GET_CONVERSATION_THREADS = f"{DOMAIN}/get_conversation_threads"
+SCHEMA_WS_GET_CONVERSATION_THREADS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_CONVERSATION_THREADS,
+        vol.Required("growspace_id"): str,
+    }
+)
+
+
+async def websocket_get_conversation_threads(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return persisted conversation threads for a growspace.
+
+    WebSocket message fields:
+    - ``growspace_id`` *(required)*: the growspace to fetch threads for.
+
+    Response: list of thread objects (may be empty).
+    """
+    coordinator = _get_coordinator(hass, connection)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"], "not_found", "Growspace Manager integration not loaded"
+        )
+        return
+
+    threads = coordinator.conversation_store.get_threads(msg["growspace_id"])
+    connection.send_result(msg["id"], threads)
+
+
+# ---------------------------------------------------------------------------
+# save_conversation_threads
+# ---------------------------------------------------------------------------
+
+WS_TYPE_SAVE_CONVERSATION_THREADS = f"{DOMAIN}/save_conversation_threads"
+SCHEMA_WS_SAVE_CONVERSATION_THREADS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SAVE_CONVERSATION_THREADS,
+        vol.Required("growspace_id"): str,
+        vol.Required("threads"): list,
+    }
+)
+
+
+async def websocket_save_conversation_threads(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Persist the frontend-managed conversation thread list for a growspace.
+
+    The frontend enforces MAX_PINNED_THREADS / MAX_RECENT_THREADS eviction
+    before calling this command. The backend stores whatever it receives.
+
+    WebSocket message fields:
+    - ``growspace_id`` *(required)*: growspace these threads belong to.
+    - ``threads`` *(required)*: full replacement list of thread objects.
+
+    Response: ``{ "success": True }``
+    """
+    coordinator = _get_coordinator(hass, connection)
+    if coordinator is None:
+        connection.send_error(
+            msg["id"], "not_found", "Growspace Manager integration not loaded"
+        )
+        return
+
+    await coordinator.conversation_store.save_threads(
+        msg["growspace_id"], msg["threads"]
+    )
+    connection.send_result(msg["id"], {"success": True})
+
+
 COMMANDS: list[tuple[str, Any, Any, bool]] = [
     (WS_TYPE_START_CONVERSATION, websocket_start_conversation, SCHEMA_WS_START_CONVERSATION, False),
     (WS_TYPE_SEND_MESSAGE, websocket_send_message, SCHEMA_WS_SEND_MESSAGE, False),
@@ -703,4 +782,6 @@ COMMANDS: list[tuple[str, Any, Any, bool]] = [
     (WS_TYPE_GET_AI_SETTINGS, websocket_get_ai_settings, SCHEMA_WS_GET_AI_SETTINGS, False),
     (WS_TYPE_SAVE_AI_AGENT, websocket_save_ai_agent, SCHEMA_WS_SAVE_AI_AGENT, False),
     (WS_TYPE_SAVE_AI_SETTINGS, websocket_save_ai_settings, SCHEMA_WS_SAVE_AI_SETTINGS, False),
+    (WS_TYPE_GET_CONVERSATION_THREADS, websocket_get_conversation_threads, SCHEMA_WS_GET_CONVERSATION_THREADS, False),
+    (WS_TYPE_SAVE_CONVERSATION_THREADS, websocket_save_conversation_threads, SCHEMA_WS_SAVE_CONVERSATION_THREADS, False),
 ]
