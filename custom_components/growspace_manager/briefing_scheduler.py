@@ -214,10 +214,14 @@ class BriefingScheduler:
         prompt = (
             "You are an expert cannabis cultivation assistant. "
             "Provide a brief status briefing (2–3 sentences) for the grower "
-            "based on the current data, then list up to 3 actionable recommendations "
-            "as JSON with fields 'text', 'impact' (high/medium/low), "
-            "and 'suggested_action' (dict). "
-            "Return format: SUMMARY: <text> RECOMMENDATIONS: <json array>\n\n"
+            "based on the current data, then list 3–5 actionable recommendations as a JSON array. "
+            "Each recommendation must have:\n"
+            "  'title': a single concise action line (e.g. 'Raise VPD by 0.2 kPa')\n"
+            "  'description': 1–2 sentences explaining why\n"
+            "  'impact': 'high' for the most urgent risk, 'low' for the strongest positive signal, "
+            "'medium' for everything else\n"
+            "  'suggested_action': optional dict with service, target_entity_id, service_data, description\n"
+            "Return format: SUMMARY: <text>\nRECOMMENDATIONS: <json array>\n\n"
             f"Current data:\n{context_summary}"
         )
 

@@ -657,7 +657,7 @@ async def test_generate_briefing_ai_success_returns_ai_available_true(
         scheduler,
         "_generate_ai_content",
         new_callable=AsyncMock,
-        return_value=("Plants are thriving.", [{"text": "Water now", "impact": "high", "suggested_action": {}}]),
+        return_value=("Plants are thriving.", [{"title": "Water now", "description": "Plants need water.", "impact": "high", "suggested_action": {}}]),
     ):
         briefing = await scheduler._generate_briefing()
 
@@ -677,7 +677,7 @@ async def test_generate_ai_content_parses_summary_and_recommendations(
     """_generate_ai_content parses SUMMARY: and RECOMMENDATIONS: from AI speech."""
     import json
 
-    recs = [{"text": "Lower VPD", "impact": "high", "suggested_action": {}}]
+    recs = [{"title": "Lower VPD", "description": "VPD is above target range.", "impact": "high", "suggested_action": {}}]
     speech_text = f"SUMMARY: All healthy. RECOMMENDATIONS: {json.dumps(recs)}"
 
     mock_result = MagicMock()
@@ -698,7 +698,7 @@ async def test_generate_ai_content_parses_summary_and_recommendations(
 
     assert "All healthy" in summary
     assert len(recommendations) == 1
-    assert recommendations[0]["text"] == "Lower VPD"
+    assert recommendations[0]["title"] == "Lower VPD"
 
 
 @pytest.mark.asyncio
