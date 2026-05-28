@@ -595,18 +595,19 @@ def test_read_bayesian_states_returns_active_true_when_sensor_on(
 def test_collect_kpis_includes_avg_vpd_from_growspace_env_state(
     mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:
-    """_collect_kpis reads VPD from environment_state and adds Avg VPD KPI."""
-    env_state = MagicMock()
-    env_state.vpd = 1.3
-
+    """_collect_kpis reads VPD via read_environment_vpd and adds Avg VPD KPI."""
     growspace = MagicMock()
-    growspace.environment_state = env_state
     growspace.water_usage = None
     mock_coordinator.growspaces = {"tent1": growspace}
     mock_coordinator.alert_monitor.get_alerts.return_value = []
 
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
-    kpis = scheduler._collect_kpis()
+
+    with patch(
+        "custom_components.growspace_manager.briefing_scheduler.read_environment_vpd",
+        return_value=1.3,
+    ):
+        kpis = scheduler._collect_kpis()
 
     labels = {k["label"] for k in kpis}
     assert "Avg VPD" in labels
@@ -617,18 +618,22 @@ def test_collect_kpis_includes_avg_vpd_from_growspace_env_state(
 def test_collect_kpis_includes_water_use_when_nonzero(
     mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:
-    """_collect_kpis reads total_water_l from water_usage and adds Water Use KPI."""
+    """_collect_kpis reads total_water_l from water_usage and always adds Water Use KPI."""
     water_usage = MagicMock()
     water_usage.total_water_l = 42.5
 
     growspace = MagicMock()
-    growspace.environment_state = None
     growspace.water_usage = water_usage
     mock_coordinator.growspaces = {"tent1": growspace}
     mock_coordinator.alert_monitor.get_alerts.return_value = []
 
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
-    kpis = scheduler._collect_kpis()
+
+    with patch(
+        "custom_components.growspace_manager.briefing_scheduler.read_environment_vpd",
+        return_value=None,
+    ):
+        kpis = scheduler._collect_kpis()
 
     labels = {k["label"] for k in kpis}
     assert "Water Use" in labels

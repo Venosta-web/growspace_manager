@@ -6,6 +6,8 @@ from datetime import datetime
 import math
 from typing import TYPE_CHECKING
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import now
 
 from .bayesian_constants import ACCLIMATION_END_DAYS, ACCLIMATION_START_DAYS
@@ -26,7 +28,7 @@ from .domain.stage import (
 from .integration_types import DateInput
 
 if TYPE_CHECKING:
-    from .models import Growspace, Plant
+    from .models import EnvironmentConfig, Growspace, GrowspaceType, Plant
 
 
 # =========================================================================
@@ -325,6 +327,89 @@ def interpolate_value(val_a: float, val_b: float, factor: float) -> float:
     if factor >= 1:
         return val_b
     return round(float(val_a) + (float(val_b) - float(val_a)) * float(factor), 3)
+
+
+# =========================================================================
+# HA STATE MACHINE SENSOR READERS
+# =========================================================================
+
+
+def read_sensor_value(hass: HomeAssistant, sensor_id: str | None) -> float | None:
+    """Safely read a numeric value from an HA sensor entity."""
+    if not sensor_id:
+        return None
+    state = hass.states.get(sensor_id)
+    if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return None
+    try:
+        return float(state.state)
+    except (ValueError, TypeError):
+        return None
+
+
+def read_aggregated_sensor_value(
+    hass: HomeAssistant, sensor_ids: list[str]
+) -> float | None:
+    """Read the average value from a list of HA sensor entity IDs."""
+    values = [read_sensor_value(hass, sid) for sid in sensor_ids]
+    valid = [v for v in values if v is not None]
+    return sum(valid) / len(valid) if valid else None
+
+
+def read_environment_vpd(
+    hass: HomeAssistant,
+    env_config: EnvironmentConfig,
+    growspace_type: GrowspaceType | None = None,
+) -> float | None:
+    """Return the current VPD for a growspace from HA sensor states.
+
+    Prefers a directly configured VPD sensor; falls back to calculation from
+    temperature + humidity when none is configured.  DRY/CURE spaces use
+    lst_offset=0 because leaf-surface temperature correction is irrelevant
+    for post-harvest environments.
+    """
+    from .models import GrowspaceType as _GrowspaceType  # noqa: PLC0415
+
+    sensor_ids = list(
+        dict.fromkeys(
+            s
+            for s in [env_config.vpd_sensor, *env_config.vpd_sensors]
+            if s is not None
+        )
+    )
+    vpd = read_aggregated_sensor_value(hass, sensor_ids)
+    if vpd is not None:
+        return vpd
+
+    temp = read_aggregated_sensor_value(
+        hass,
+        list(
+            dict.fromkeys(
+                s
+                for s in [env_config.temperature_sensor, *env_config.temperature_sensors]
+                if s is not None
+            )
+        ),
+    )
+    humidity = read_aggregated_sensor_value(
+        hass,
+        list(
+            dict.fromkeys(
+                s
+                for s in [env_config.humidity_sensor, *env_config.humidity_sensors]
+                if s is not None
+            )
+        ),
+    )
+    if temp is None or humidity is None:
+        return None
+
+    lst_offset = (
+        0.0
+        if growspace_type in (_GrowspaceType.DRY, _GrowspaceType.CURE)
+        else env_config.lst_offset
+    )
+    return VPDCalculator.calculate_vpd_with_lst_offset(temp, humidity, lst_offset)
 
 
 # =========================================================================

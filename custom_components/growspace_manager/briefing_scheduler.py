@@ -38,6 +38,7 @@ from .const import (
     STORAGE_KEY_AI_BRIEFING,
     STORAGE_VERSION,
 )
+from .utils import read_environment_vpd
 
 if TYPE_CHECKING:
     import asyncio
@@ -265,9 +266,11 @@ class BriefingScheduler:
         open_issues: int = 0
 
         for growspace in self.coordinator.growspaces.values():
-            env_state = getattr(growspace, "environment_state", None)
-            if env_state is not None:
-                vpd = getattr(env_state, "vpd", None)
+            env_config = getattr(growspace, "environment_config", None)
+            if env_config is not None:
+                vpd = read_environment_vpd(
+                    self.hass, env_config, getattr(growspace, "growspace_type", None)
+                )
                 if vpd is not None:
                     vpd_readings.append(float(vpd))
 
@@ -287,8 +290,7 @@ class BriefingScheduler:
         ]
         if avg_vpd is not None:
             kpis.append({"label": "Avg VPD", "value": avg_vpd, "unit": "kPa"})
-        if water_use_l:
-            kpis.append({"label": "Water Use", "value": round(water_use_l, 1), "unit": "L"})
+        kpis.append({"label": "Water Use", "value": round(water_use_l, 1), "unit": "L"})
 
         return kpis
 
