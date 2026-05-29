@@ -442,7 +442,7 @@ async def test_storage_backup_corrupt_data_exception(
 ) -> None:
     """Test exception handling in _backup_corrupt_data."""
     with (
-        patch("builtins.open", side_effect=PermissionError("No way")),
+        patch("pathlib.Path.open", side_effect=PermissionError("No way")),
         patch(
             "custom_components.growspace_manager.storage_manager._LOGGER.exception"
         ) as mock_logger,

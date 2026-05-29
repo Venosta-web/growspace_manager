@@ -190,3 +190,102 @@ def create_test_sensor(
         strain_library=coordinator.strain_library,
         options=coordinator.options,
     )
+
+
+def _stop_scheduler(obj: Any, attr: str) -> None:
+    """Helper to safely call async_stop on an attribute."""
+    import contextlib
+    if hasattr(obj, attr) and (scheduler := getattr(obj, attr)):
+        with contextlib.suppress(Exception):
+            scheduler.async_stop()
+
+
+def _cancel_debouncer(obj: Any) -> None:
+    """Helper to safely cancel a debouncer."""
+    import contextlib
+    if hasattr(obj, "_debounced_refresh") and (debouncer := getattr(obj, "_debounced_refresh")):
+        with contextlib.suppress(Exception):
+            debouncer.async_cancel()
+
+
+def _close_unawaited_coro(mock_func: Any) -> None:
+    """Helper to safely close unawaited mocked coroutines."""
+    import contextlib
+    from unittest.mock import MagicMock
+    if isinstance(mock_func, MagicMock):
+        for call in mock_func.call_args_list:
+            target = call[0][1] if len(call[0]) > 1 else call[1].get("target")
+            if target and hasattr(target, "close"):
+                with contextlib.suppress(Exception):
+                    target.close()
+
+
+@pytest.fixture(autouse=True)
+def cleanup_coordinators(request):
+    """Track and automatically clean up all GrowspaceCoordinator instances and their unawaited mock coroutines."""
+    import asyncio
+    import contextlib
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+
+    coordinators = []
+    original_init = GrowspaceCoordinator.__init__
+
+    def patched_init(self, *args, **kwargs):
+        coordinators.append(self)
+        original_init(self, *args, **kwargs)
+
+    GrowspaceCoordinator.__init__ = patched_init
+
+    yield
+
+    GrowspaceCoordinator.__init__ = original_init
+
+    # Teardown: Stop all schedulers, close unawaited coroutines, and run async_shutdown
+    async def shutdown_all():
+        for coord in coordinators:
+            # 1. Stop all internal schedulers/monitors to release timers immediately
+            for attr in ("briefing_scheduler", "vision_scheduler", "photoperiod_checker", "alert_monitor"):
+                _stop_scheduler(coord, attr)
+
+            # Cancel debouncer on the main coordinator
+            _cancel_debouncer(coord)
+
+            # Cancel debouncers and shut down irrigation coordinators
+            if hasattr(coord, "irrigation_coordinators") and coord.irrigation_coordinators:
+                for irr_coord in coord.irrigation_coordinators.values():
+                    _cancel_debouncer(irr_coord)
+                    with contextlib.suppress(Exception):
+                        await irr_coord.async_shutdown()
+
+            # Cancel debouncers and shut down dehumidifier coordinators
+            if hasattr(coord, "subsystem_manager") and coord.subsystem_manager:
+                sub_mgr = coord.subsystem_manager
+                if hasattr(sub_mgr, "dehumidifier_coordinators") and sub_mgr.dehumidifier_coordinators:
+                    for deh_coord in sub_mgr.dehumidifier_coordinators.values():
+                        _cancel_debouncer(deh_coord)
+                        with contextlib.suppress(Exception):
+                            await deh_coord.async_shutdown()
+
+            # 2. Close any unawaited coroutines passed to mocked async_create_background_task on the coordinator's entry
+            if hasattr(coord, "config_entry") and coord.config_entry:
+                if hasattr(coord.config_entry, "async_create_background_task"):
+                    _close_unawaited_coro(coord.config_entry.async_create_background_task)
+
+            # 3. Call full async_shutdown
+            with contextlib.suppress(Exception):
+                await coord.async_shutdown()
+
+        # 4. Clean up any mocked async_create_background_task on the hass fixture
+        if "hass" in request.fixturenames:
+            with contextlib.suppress(Exception):
+                hass_obj = request.getfixturevalue("hass")
+                if hasattr(hass_obj, "async_create_background_task"):
+                    _close_unawaited_coro(hass_obj.async_create_background_task)
+
+    loop = asyncio.get_event_loop()
+    if loop.is_running():
+        loop.create_task(shutdown_all())
+    else:
+        with contextlib.suppress(Exception):
+            loop.run_until_complete(shutdown_all())
+

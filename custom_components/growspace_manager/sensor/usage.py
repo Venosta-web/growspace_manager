@@ -56,7 +56,7 @@ class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity): 
             if state and state.state not in ("unknown", "unavailable"):
                 try:
                     total += float(state.state)
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     continue
         return total
 
@@ -129,7 +129,7 @@ class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
                 try:
                     total += float(state.state)
                     any_valid = True
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     continue
         return round(total, 1) if any_valid else None
 
@@ -192,7 +192,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             try:
                 start = date_cls.fromisoformat(usage.cycle_start_date)
                 days = max(1, (date_cls.today() - start).days)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 pass
 
         liters_per_plant = (
