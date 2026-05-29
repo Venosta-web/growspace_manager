@@ -11,7 +11,7 @@ homeassistant:
   time_zone: America/Chicago
   allowlist_external_dirs:
     - /config/www
-  
+
 # Enable the frontend
 frontend:
   themes: !include_dir_merge_named themes
@@ -59,7 +59,7 @@ template:
         state_class: measurement
         state: >
           {{ 22 + (range(0, 6) | random) }}
-        
+
       # Humidity sensor
       - name: "Test Humidity"
         unique_id: test_humidity_sensor
@@ -68,7 +68,7 @@ template:
         state_class: measurement
         state: >
           {{ 55 + (range(0, 15) | random) }}
-        
+
       # VPD sensor
       - name: "Test VPD"
         unique_id: test_vpd_sensor
@@ -76,7 +76,7 @@ template:
         state_class: measurement
         state: >
           {{ (1.0 + (range(0, 5) | random) / 10) | round(2) }}
-        
+
       # CO2 sensor
       - name: "Test CO2"
         unique_id: test_co2_sensor
@@ -95,7 +95,7 @@ template:
           {{ 40 + (range(0, 30) | random) }}
 
       # --- New Sensors for EC and Drain Logic ---
-      
+
       # Feed EC sensor
       - name: "Test Feed EC"
         unique_id: test_feed_ec_sensor
@@ -139,7 +139,6 @@ template:
         state: >
           {{ (range(100, 500) | random) }}
 
-
       # Tank Level sensor
       - name: "Test Tank Level"
         unique_id: test_tank_level_sensor
@@ -174,6 +173,3 @@ template:
         state_class: measurement
         state: >
           {{ (range(10, 50) | random) }}
-
-
-

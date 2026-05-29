@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
     ATTR_ITEMS,
     ATTR_MIN_DAYS_IN_STAGE,
@@ -17,18 +17,18 @@ from ..const import (
     ATTR_TYPE,
     GrowspaceService,
 )
-from ..schemas import (
+from custom_components.growspace_manager.schemas import (
     APPLY_IPM_SCHEMA,
     REMOVE_IPM_PRESET_SCHEMA,
     SAVE_IPM_PRESET_SCHEMA,
 )
-from .utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
 
 from ._definition import ServiceDefinition
+from .utils import handle_service_errors
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

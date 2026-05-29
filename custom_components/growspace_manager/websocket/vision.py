@@ -8,13 +8,12 @@ from typing import Any
 
 import voluptuous as vol
 
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import homeassistant.util.dt as dt_util
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

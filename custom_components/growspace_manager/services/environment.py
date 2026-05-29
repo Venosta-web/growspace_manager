@@ -6,7 +6,7 @@ from dataclasses import fields
 import logging
 from typing import cast
 
-from ..const import (
+from custom_components.growspace_manager.const import (
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -42,13 +42,13 @@ from ..const import (
     CONF_VPD_SENSOR,
     GrowspaceService,
 )
-from ..coordinator import GrowspaceCoordinator
-from ..models import (
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     IrrigationTank,
     SensorGroup,
 )
-from ..schemas import (
+from custom_components.growspace_manager.schemas import (
     CONFIGURE_ENVIRONMENT_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,

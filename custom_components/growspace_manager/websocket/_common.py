@@ -5,9 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from custom_components.growspace_manager.const import MERGE_ALERT_GAP_SECONDS
 import homeassistant.util.dt as dt_util
-
-from ..const import MERGE_ALERT_GAP_SECONDS
 
 # Sentinel for invalid timestamps
 _EPOCH_SENTINEL: datetime = datetime.min.replace(tzinfo=dt_util.UTC)

@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ..const import GrowspaceService
-from ..schemas import (
+from custom_components.growspace_manager.const import GrowspaceService
+from custom_components.growspace_manager.schemas import (
     SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
 )
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
@@ -15,7 +15,7 @@ from homeassistant.exceptions import ServiceValidationError
 from ._definition import ServiceDefinition
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

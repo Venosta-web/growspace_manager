@@ -5,9 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.core import HomeAssistant, ServiceCall
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_DATE,
     ATTR_MOISTURE_PERCENT,
     ATTR_PLANT_ID,
@@ -15,16 +13,18 @@ from ..const import (
     ATTR_WEIGHT_GRAMS,
     GrowspaceService,
 )
-from ..schemas import (
+from custom_components.growspace_manager.schemas import (
     LOG_DRYING_WEIGHT_SCHEMA,
     LOG_MOISTURE_READING_SCHEMA,
     SET_VISUAL_TAG_SCHEMA,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+
 from ._definition import ServiceDefinition
 from .utils import handle_service_errors
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

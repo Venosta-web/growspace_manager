@@ -4,12 +4,7 @@ from __future__ import annotations
 
 from typing import Any, override
 
-from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_COL,
     ATTR_GROWSPACE_ID,
     ATTR_PHENOTYPE,
@@ -20,10 +15,18 @@ from ..const import (
     DOMAIN,
     PLANT_STAGES,
 )
-from ..coordinator import GrowspaceCoordinator
-from ..drying_calculator import compute_days_to_target, compute_weight_lost_pct, is_cure_ready
-from ..models import Plant
-from ..utils import calculate_plant_stage
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.drying_calculator import (
+    compute_days_to_target,
+    compute_weight_lost_pct,
+    is_cure_ready,
+)
+from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.utils import calculate_plant_stage
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 
 class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]

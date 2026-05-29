@@ -6,8 +6,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
-    from ..notification_manager import NotificationManager
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.notification_manager import (
+        NotificationManager,
+    )
 
 _LOGGER = logging.getLogger(__name__)
 

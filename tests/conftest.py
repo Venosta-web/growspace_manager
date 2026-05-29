@@ -195,7 +195,12 @@ def create_test_sensor(
 def _stop_scheduler(obj: Any, attr: str) -> None:
     """Helper to safely call async_stop on an attribute."""
     import contextlib
+    from unittest.mock import Mock
     if hasattr(obj, attr) and (scheduler := getattr(obj, attr)):
+        if isinstance(scheduler, Mock):
+            return
+        if isinstance(getattr(scheduler, "async_stop", None), Mock):
+            return
         with contextlib.suppress(Exception):
             scheduler.async_stop()
 
@@ -203,7 +208,12 @@ def _stop_scheduler(obj: Any, attr: str) -> None:
 def _cancel_debouncer(obj: Any) -> None:
     """Helper to safely cancel a debouncer."""
     import contextlib
+    from unittest.mock import Mock
     if hasattr(obj, "_debounced_refresh") and (debouncer := getattr(obj, "_debounced_refresh")):
+        if isinstance(debouncer, Mock):
+            return
+        if isinstance(getattr(debouncer, "async_cancel", None), Mock):
+            return
         with contextlib.suppress(Exception):
             debouncer.async_cancel()
 
@@ -211,13 +221,17 @@ def _cancel_debouncer(obj: Any) -> None:
 def _close_unawaited_coro(mock_func: Any) -> None:
     """Helper to safely close unawaited mocked coroutines."""
     import contextlib
-    from unittest.mock import MagicMock
-    if isinstance(mock_func, MagicMock):
+    from unittest.mock import Mock
+    if isinstance(mock_func, Mock):
         for call in mock_func.call_args_list:
-            target = call[0][1] if len(call[0]) > 1 else call[1].get("target")
-            if target and hasattr(target, "close"):
-                with contextlib.suppress(Exception):
-                    target.close()
+            for arg in call[0]:
+                if hasattr(arg, "close"):
+                    with contextlib.suppress(Exception):
+                        arg.close()
+            for arg in call[1].values():
+                if hasattr(arg, "close"):
+                    with contextlib.suppress(Exception):
+                        arg.close()
 
 
 @pytest.fixture(autouse=True)
@@ -275,12 +289,21 @@ def cleanup_coordinators(request):
             with contextlib.suppress(Exception):
                 await coord.async_shutdown()
 
-        # 4. Clean up any mocked async_create_background_task on the hass fixture
+        # 4. Clean up any mocked task/job creators on the hass fixture
         if "hass" in request.fixturenames:
             with contextlib.suppress(Exception):
                 hass_obj = request.getfixturevalue("hass")
-                if hasattr(hass_obj, "async_create_background_task"):
-                    _close_unawaited_coro(hass_obj.async_create_background_task)
+                for attr_name in ("async_create_background_task", "async_create_task", "async_add_job", "async_add_executor_job"):
+                    if hasattr(hass_obj, attr_name):
+                        _close_unawaited_coro(getattr(hass_obj, attr_name))
+
+        # 5. Clean up any unawaited coroutines created by AsyncMock or any other Mock in gc
+        import gc
+        for obj in list(gc.get_objects()):
+            if type(obj).__name__ == "coroutine":
+                if "AsyncMockMixin._execute_mock_call" in str(obj) or "mock" in str(obj).lower():
+                    with contextlib.suppress(Exception):
+                        obj.close()
 
     loop = asyncio.get_event_loop()
     if loop.is_running():

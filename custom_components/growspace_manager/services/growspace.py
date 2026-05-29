@@ -6,12 +6,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-import homeassistant.helpers.device_registry as dr
-from homeassistant.util import dt as dt_util
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
     ATTR_NAME,
@@ -23,18 +18,23 @@ from ..const import (
     EVENT_GROWSPACE_LOG_ENTRY,
     GrowspaceService,
 )
-from ..exceptions import GrowspaceError
-from ..schemas import (
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.schemas import (
     ADD_GROWSPACE_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     UPDATE_GROWSPACE_SCHEMA,
 )
-from ..strain_library import StrainLibrary
+from custom_components.growspace_manager.strain_library import StrainLibrary
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+import homeassistant.helpers.device_registry as dr
+from homeassistant.util import dt as dt_util
+
 from ._definition import ServiceDefinition
 from .utils import handle_service_errors
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

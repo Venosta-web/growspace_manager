@@ -1,6 +1,7 @@
 ---
 description: Verify Home Assistant Integration Quality Scale Compliance
 ---
+
 1. Check `manifest.json` for `"quality_scale"` key.
 2. Run `ruff check custom_components/growspace_manager` to ensure no linting errors.
 3. Run `pytest tests/` to ensure all tests pass.

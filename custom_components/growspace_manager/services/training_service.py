@@ -9,15 +9,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ..event_builder import EventBuilder
-from ..models import Plant
+from custom_components.growspace_manager.event_builder import EventBuilder
+from custom_components.growspace_manager.models import Plant
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .context import BaseService, ServiceContext
 
 if TYPE_CHECKING:
-    from ..data_access.growspace_repository import (
+    from custom_components.growspace_manager.data_access.growspace_repository import (
         GrowspaceRepository,
     )
 

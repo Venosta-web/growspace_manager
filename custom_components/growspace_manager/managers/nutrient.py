@@ -8,7 +8,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 import uuid
 
-from ..models import (
+from custom_components.growspace_manager.models import (
     ECRampCurve,
     ECRampPoint,
     IPMPreset,
@@ -17,13 +17,13 @@ from ..models import (
     NutrientPreset,
     NutrientPresetItem,
 )
-from ..services.nutrient_inventory import (
+from custom_components.growspace_manager.services.nutrient_inventory import (
     NutrientInventoryService,
 )
 import homeassistant.util.dt as dt_util
 
 if TYPE_CHECKING:
-    from ..data_access.growspace_repository import (
+    from custom_components.growspace_manager.data_access.growspace_repository import (
         GrowspaceRepository,
     )
 

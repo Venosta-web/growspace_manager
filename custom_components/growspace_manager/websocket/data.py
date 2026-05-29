@@ -7,18 +7,19 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components import websocket_api
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
-from ..exceptions import GrowspaceError
-from ..services.report import async_websocket_get_grow_report
-from ..services.utils import (
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.services.report import (
+    async_websocket_get_grow_report,
+)
+from custom_components.growspace_manager.services.utils import (
     WS_ERR_COORDINATOR_NOT_READY,
     WS_ERR_INTERNAL_ERROR,
 )
+from homeassistant.components import websocket_api
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 _LOGGER = logging.getLogger(__name__)
 

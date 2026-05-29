@@ -2459,11 +2459,16 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
         ) as mock_hum,
     ):
         # Setup standard
-        mock_irr_instance = AsyncMock()
+        mock_irr_instance = MagicMock()
+        mock_irr_instance.async_setup = AsyncMock()
         mock_irr.return_value = mock_irr_instance
-        mock_dehum_instance = AsyncMock()
+        mock_dehum_instance = MagicMock()
+        mock_dehum_instance.async_setup = AsyncMock()
+        mock_dehum_instance.unload = MagicMock()
         mock_dehum.return_value = mock_dehum_instance
-        mock_hum_instance = AsyncMock()
+        mock_hum_instance = MagicMock()
+        mock_hum_instance.async_setup = AsyncMock()
+        mock_hum_instance.unload = MagicMock()
         mock_hum.return_value = mock_hum_instance
 
         await coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
@@ -2498,11 +2503,16 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
             "custom_components.growspace_manager.managers.subsystem.HumidifierCoordinator"
         ) as mock_hum,
     ):
-        mock_vwc_instance = AsyncMock()
+        mock_vwc_instance = MagicMock()
+        mock_vwc_instance.async_setup = AsyncMock()
         mock_vwc.return_value = mock_vwc_instance
-        mock_dehum_instance = AsyncMock()
+        mock_dehum_instance = MagicMock()
+        mock_dehum_instance.async_setup = AsyncMock()
+        mock_dehum_instance.unload = MagicMock()
         mock_dehum.return_value = mock_dehum_instance
-        mock_hum_instance = AsyncMock()
+        mock_hum_instance = MagicMock()
+        mock_hum_instance.async_setup = AsyncMock()
+        mock_hum_instance.unload = MagicMock()
         mock_hum.return_value = mock_hum_instance
 
         await coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(

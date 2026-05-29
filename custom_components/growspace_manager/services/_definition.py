@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.core import SupportsResponse
 
-from ..const import GrowspaceService
+from custom_components.growspace_manager.const import GrowspaceService
+from homeassistant.core import SupportsResponse
 
 
 @dataclass

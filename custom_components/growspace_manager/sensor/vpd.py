@@ -4,19 +4,18 @@ from __future__ import annotations
 
 from typing import Any, override
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
-from homeassistant.core import Event
-from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.event import async_track_state_change_event
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
-from ..models import GrowspaceType
-from ..utils import (
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import GrowspaceType
+from custom_components.growspace_manager.utils import (
     VPDCalculator,
     generate_subarea_vpd_sensor_unique_id,
     generate_vpd_sensor_unique_id,
 )
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.core import Event
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.event import async_track_state_change_event
 
 
 class BaseVpdSensor(SensorEntity):  # type: ignore[misc]

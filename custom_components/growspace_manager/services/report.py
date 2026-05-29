@@ -12,10 +12,10 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ..const import DOMAIN, GrowspaceService
-from ..exceptions import GrowspaceError
-from ..models import Plant
-from ..schemas import EXPORT_GROW_REPORT_SCHEMA
+from custom_components.growspace_manager.const import DOMAIN, GrowspaceService
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.schemas import EXPORT_GROW_REPORT_SCHEMA
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
@@ -29,7 +29,7 @@ from ._definition import ServiceDefinition
 # Imports moved to function scope to avoid circular dependency with websocket.py
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -176,7 +176,7 @@ async def _get_plant_timeline_events(
 ) -> list[dict[str, Any]]:
     """Fetch and filter timeline events for a plant."""
     try:
-        from ..websocket import (  # noqa: PLC0415
+        from custom_components.growspace_manager.websocket import (
             _query_logbook_events_impl,
         )
 
@@ -236,9 +236,7 @@ async def _get_plant_environmental_stats(
         return averages
 
     try:
-        from ..websocket import (  # noqa: PLC0415
-            _get_statistics_data,
-        )
+        from custom_components.growspace_manager.websocket import _get_statistics_data
 
         stats = await _get_statistics_data(
             hass, entities_to_track, start_time, end_time, 60
@@ -366,7 +364,7 @@ async def _aggregate_growspace_data(
                 start_time = max(start_time, first_plant_date)
 
             try:
-                from ..websocket import (  # noqa: PLC0415
+                from custom_components.growspace_manager.websocket import (
                     _get_statistics_data,
                 )
 
@@ -409,9 +407,7 @@ async def async_websocket_get_grow_report(
 ) -> None:
     """Handle WebSocket grow report request."""
 
-    from ..coordinator import (  # noqa: PLC0415
-        GrowspaceCoordinator,
-    )
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)

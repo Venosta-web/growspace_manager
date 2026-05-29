@@ -4,17 +4,18 @@ from __future__ import annotations
 
 from typing import Any, override
 
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.utils import (
+    generate_growspace_overview_unique_id,
+)
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import Event
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
-from ..models import Growspace
-from ..utils import generate_growspace_overview_unique_id
 
 
 class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]

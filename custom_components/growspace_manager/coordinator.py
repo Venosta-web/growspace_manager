@@ -12,8 +12,11 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
+from .alert_monitor import AlertMonitor
+from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
 from .const import COORDINATOR_UPDATE_INTERVAL_MINUTES, DOMAIN, VERSION
+from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
@@ -52,9 +55,6 @@ from .services.training_service import TrainingService
 from .services.watering_service import WateringService
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
-from .alert_monitor import AlertMonitor
-from .briefing_scheduler import BriefingScheduler
-from .conversation_store import ConversationStore
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
 from .vwc_irrigation_coordinator import VWCIrrigationCoordinator

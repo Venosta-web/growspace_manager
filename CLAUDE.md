@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Growspace Manager** is a Home Assistant custom integration for managing cannabis cultivation environments. It's a Gold-tier quality integration that provides plant tracking, environmental monitoring, irrigation control, and AI-powered assistance for cultivation.
 
 **Key Integration Details:**
+
 - Domain: `growspace_manager`
 - Integration Type: Hub
 - IoT Class: Local Push
@@ -77,17 +78,20 @@ grep -v "100%" COVERAGE_LATEST.txt | grep -v "---" | grep -v "TOTAL" | sort -k4 
 The integration follows Home Assistant's standard architecture with several specialized subsystems:
 
 **1. Main Integration (`__init__.py`)**
+
 - Entry point for setup and teardown
 - Initializes coordinator and subsystems
 - Registers services and platforms
 
 **2. Data Coordinator (`coordinator.py`)**
+
 - Central data management using `DataUpdateCoordinator`
 - Manages growspaces, plants, and environment configurations
 - Handles state updates and persistence
 - **Critical:** Pass `config_entry` parameter to coordinator - it's accepted and recommended
 
 **3. Storage System**
+
 - **Storage Manager (`storage_manager.py`)**: Handles JSON-based persistence
 - **Data Access Layer (`data_access/`)**: Provides abstraction for data operations
 - Multiple storage keys for different data domains:
@@ -96,6 +100,7 @@ The integration follows Home Assistant's standard architecture with several spec
   - `strain_library.db`: SQLite database for strain analytics
 
 **4. Config Flow (`config_flow.py` + `config_handlers/`)**
+
 - Multi-step configuration flow
 - Config handlers organized by domain:
   - `growspace_config_handler.py`: Growspace management
@@ -107,32 +112,38 @@ The integration follows Home Assistant's standard architecture with several spec
   - `strain_config_handler.py`: Strain library management
 
 **5. Environmental Monitoring**
+
 - **Bayesian Evaluator (`bayesian_evaluator.py`)**: Probability-based condition assessment
 - **Binary Sensors (`binary_sensor.py`)**: Plant stress, mold risk, optimal conditions
 - **Environment Analyzer (`environment_analyzer.py`)**: Contextual environment analysis
 
 **6. Irrigation System**
+
 - **Irrigation Coordinator (`irrigation_coordinator.py`)**: Schedule and execute watering
 - **VWC Irrigation Coordinator (`vwc_irrigation_coordinator.py`)**: Volumetric water content based control
 - **Dehumidifier Coordinator (`dehumidifier_coordinator.py`)**: VPD-based humidity control
 
 **7. Entity Platforms**
+
 - **Sensors (`sensor.py`)**: Growspace overview, plant sensors, strain library
 - **Binary Sensors (`binary_sensor.py`)**: Environmental condition indicators
 - **Switches (`switch.py`)**: Notification toggles
 - **Calendar (`calendar.py`)**: Task scheduling
 
 **8. Services (`services/` + `service_registration.py`)**
+
 - Extensive service API for automation
 - Organized by domain: growspace, plant, environment, irrigation, AI, strain library
 - See `services.yaml` for complete service definitions
 
 **9. WebSocket API (`websocket.py`)**
+
 - Real-time updates for frontend
 - Handles growspace and plant state synchronization
 - Nutrient inventory management
 
 **10. AI Integration**
+
 - AI assistant for grow advice
 - Strain recommendations
 - Uses Home Assistant conversation agents (Anthropic, OpenAI, etc.)
@@ -140,6 +151,7 @@ The integration follows Home Assistant's standard architecture with several spec
 ### Data Models (`models.py`)
 
 Key dataclasses:
+
 - `GrowspaceConfig`: Growspace configuration and metadata
 - `PlantData`: Individual plant tracking
 - `EnvironmentConfig`: Sensor configuration
@@ -151,6 +163,7 @@ All models use `mashumaro` for serialization.
 ### Special Growspaces
 
 The integration manages several canonical growspaces with fixed IDs:
+
 - `dry`: For drying harvested plants
 - `cure`: For curing dried plants
 - `mother`: For mother plants
@@ -162,6 +175,7 @@ These are auto-created and should not be deleted. See `SPECIAL_GROWSPACES` in `c
 ### Event System
 
 Uses custom event bus (`event_bus_pkg/`) for:
+
 - Plant lifecycle events
 - Environment changes
 - Timeline entries for logbook integration
@@ -169,23 +183,27 @@ Uses custom event bus (`event_bus_pkg/`) for:
 ## Important Patterns
 
 ### Async Programming
+
 - All I/O operations must be async
 - Use `asyncio.gather` for concurrent operations, not loops with await
 - Use `hass.async_add_executor_job` for blocking operations
 - Background tasks should use `entry.async_on_unload` for cleanup
 
 ### Error Handling
+
 - Use specific exceptions (`ServiceValidationError`, `HomeAssistantError`, `ConfigEntryNotReady`)
 - Keep try blocks minimal - process data outside try/catch
 - Bare exceptions only allowed in config flows and background tasks
 - Always use `from` when raising exceptions
 
 ### Entity Naming
+
 - Set `_attr_has_entity_name = True` on all entities
 - Device info should include identifiers and connections
 - Use translation keys for internationalization
 
 ### Coordinator Pattern
+
 ```python
 class MyCoordinator(DataUpdateCoordinator[MyData]):
     def __init__(self, hass: HomeAssistant, client: MyClient, config_entry: ConfigEntry) -> None:
@@ -199,11 +217,13 @@ class MyCoordinator(DataUpdateCoordinator[MyData]):
 ```
 
 ### Service Registration
+
 - Register all services in `async_setup`, not `async_setup_entry`
 - Validate config entry exists and is loaded before executing service
 - Use schema validation from `schemas.py`
 
 ### Logging
+
 - Use lazy logging: `_LOGGER.debug("Message with %s", variable)`
 - No periods at end of messages
 - No sensitive data in logs
@@ -212,18 +232,21 @@ class MyCoordinator(DataUpdateCoordinator[MyData]):
 ## Testing Guidelines
 
 ### Test Structure
+
 - Tests in `tests/` mirror component structure
 - Use pytest fixtures from `conftest.py`
 - Mock external dependencies
 - Test async code with `asyncio_mode = auto`
 
 ### Common Fixtures
+
 - `hass`: Home Assistant instance
 - `mock_config_entry`: ConfigEntry with test data
 - `coordinator`: Initialized coordinator
 - `init_integration`: Fully set up integration
 
 ### Snapshot Testing
+
 - Use snapshots for complex data structures
 - Run with `--snapshot-update` to regenerate
 - Always verify snapshots after updating
@@ -231,23 +254,28 @@ class MyCoordinator(DataUpdateCoordinator[MyData]):
 ## Configuration Notes
 
 ### Environment Sensors
+
 Required for Bayesian monitoring:
+
 - Temperature sensor
 - Humidity sensor
 - VPD sensor
 
 Optional:
+
 - Light sensor (enables day/night logic)
 - CO2 sensor
 - Circulation fan
 - Dehumidifier (for automated control)
 
 ### Irrigation
+
 - Supports scheduled watering times
 - Crop steering strategies (vegetative, generative, balanced)
 - Automatic drainage after irrigation
 
 ### Dehumidifier Control
+
 - VPD or humidity target selection
 - Stage-specific targets (veg, early/mid/late flower, dry, cure)
 - Day/night target variations
@@ -288,6 +316,7 @@ This section helps quickly identify anti-patterns and refactoring opportunities 
 ### Anti-Pattern Checklist
 
 **God Object** - Class doing too many things:
+
 - ❌ >1000 lines in a single file
 - ❌ >50 methods in one class
 - ❌ >10 distinct responsibilities
@@ -295,24 +324,28 @@ This section helps quickly identify anti-patterns and refactoring opportunities 
 - 📍 Current: `coordinator.py` (1,384 lines, 86 methods)
 
 **Tight Coupling** - Classes too dependent on each other:
+
 - ❌ Direct coordinator attribute access (e.g., `self.coordinator.growspaces`)
 - ❌ Circular dependencies between modules
 - ❌ Classes needing entire objects for small pieces of data
 - 📍 Current: `binary_sensor.py` accessing coordinator internals
 
 **Bare Exception Blocks** - Catching all errors:
+
 - ❌ `except Exception:` without specific types
 - ❌ Swallowing errors without proper logging
 - ❌ Losing error context in service calls
 - 📍 Current: 96+ occurrences across service files
 
 **Long Methods** - Functions doing too much:
+
 - ❌ >50 lines in a single method
 - ❌ >5 parameters
 - ❌ Nested conditionals >3 levels deep
 - 📍 Current: `environment_config_handler.py` (112-line methods)
 
 **Duplicate Code** - Same logic in multiple places:
+
 - ❌ Copy-paste patterns
 - ❌ Similar logic in 3+ places
 - ❌ Repeated validation boilerplate
@@ -322,28 +355,28 @@ This section helps quickly identify anti-patterns and refactoring opportunities 
 
 Quick "if you see X, consider Y" guide:
 
-| If You See... | Consider... | Location |
-|---------------|-------------|----------|
-| Service with 20+ passthrough methods | Facade/Adapter pattern | coordinator.py:300+ |
+| If You See...                              | Consider...                    | Location              |
+| ------------------------------------------ | ------------------------------ | --------------------- |
+| Service with 20+ passthrough methods       | Facade/Adapter pattern         | coordinator.py:300+   |
 | Multiple classes accessing `coordinator.X` | Extract to injected dependency | binary_sensor.py:400+ |
-| Same validation in 5+ places | Shared validator class | services/ |
-| `try/except Exception` in services | Specific exception types | services/*.py |
-| 100+ line method | Extract Method refactoring | config_handlers/ |
-| Repeated ID resolution logic | Shared utility module | services/ |
-| Deep nesting (>3 levels) | Guard clauses or extraction | config_handlers/ |
-| Classes with >10 dependencies | Dependency grouping/facade | coordinator.py:init |
+| Same validation in 5+ places               | Shared validator class         | services/             |
+| `try/except Exception` in services         | Specific exception types       | services/\*.py        |
+| 100+ line method                           | Extract Method refactoring     | config_handlers/      |
+| Repeated ID resolution logic               | Shared utility module          | services/             |
+| Deep nesting (>3 levels)                   | Guard clauses or extraction    | config_handlers/      |
+| Classes with >10 dependencies              | Dependency grouping/facade     | coordinator.py:init   |
 
 ### Code Smell Indicators
 
-| Smell | Indicator | Severity | Quick Fix | Example Location |
-|-------|-----------|----------|-----------|------------------|
-| **God Object** | >1000 lines, 50+ methods | 🔴 High | Extract services/managers | coordinator.py |
-| **Feature Envy** | Accesses other object's data 5+ times | 🟡 Medium | Move method to owner | binary_sensor.py:413-416 |
-| **Shotgun Surgery** | Change requires touching 5+ files | 🔴 High | Consolidate logic | service handlers |
-| **Primitive Obsession** | Using dicts/lists instead of dataclasses | 🟢 Low | Introduce dataclass | Already addressed |
-| **Long Parameter List** | >5 parameters in constructor/method | 🟡 Medium | Introduce parameter object | Some services |
-| **Duplicate Code** | Identical blocks in 3+ places | 🟡 Medium | Extract to utility | services/ |
-| **Inappropriate Intimacy** | Classes too familiar with internals | 🟡 Medium | Reduce coupling | binary_sensor ↔ coordinator |
+| Smell                      | Indicator                                | Severity  | Quick Fix                  | Example Location             |
+| -------------------------- | ---------------------------------------- | --------- | -------------------------- | ---------------------------- |
+| **God Object**             | >1000 lines, 50+ methods                 | 🔴 High   | Extract services/managers  | coordinator.py               |
+| **Feature Envy**           | Accesses other object's data 5+ times    | 🟡 Medium | Move method to owner       | binary_sensor.py:413-416     |
+| **Shotgun Surgery**        | Change requires touching 5+ files        | 🔴 High   | Consolidate logic          | service handlers             |
+| **Primitive Obsession**    | Using dicts/lists instead of dataclasses | 🟢 Low    | Introduce dataclass        | Already addressed            |
+| **Long Parameter List**    | >5 parameters in constructor/method      | 🟡 Medium | Introduce parameter object | Some services                |
+| **Duplicate Code**         | Identical blocks in 3+ places            | 🟡 Medium | Extract to utility         | services/                    |
+| **Inappropriate Intimacy** | Classes too familiar with internals      | 🟡 Medium | Reduce coupling            | binary_sensor ↔ coordinator |
 
 ## Refactoring Playbook
 
@@ -354,18 +387,21 @@ Detailed guides for refactoring the top anti-patterns found in this codebase.
 **Problem**: `coordinator.py` (1,384 lines, 86 methods)
 
 **Identification**:
+
 - File exceeds 1000 lines
 - Class has 50+ methods
 - Mixes multiple responsibilities: data persistence, business logic, sub-coordinator management, service delegation
 - Many passthrough methods that just delegate to specialized services
 
 **Why Problematic**:
+
 - **Testing Complexity**: Hard to test in isolation, requires extensive mocking
 - **Violation of SRP**: Single Responsibility Principle - class has too many reasons to change
 - **Cognitive Overload**: Developers must understand entire system to modify any part
 - **Merge Conflicts**: High-traffic file causes frequent git conflicts
 
 **Current Examples** (coordinator.py):
+
 ```python
 # 20+ passthrough methods like these:
 async def async_add_plant(self, ...) -> str:
@@ -396,6 +432,7 @@ async def async_apply_ipm(self, ...) -> None:
    - Let manager handle lifecycle completely
 
 **Before** (coordinator.py, simplified):
+
 ```python
 class GrowspaceCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, storage_manager, config_entry):
@@ -413,6 +450,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 ```
 
 **After** (with ServiceFacade):
+
 ```python
 class GrowspaceCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, storage_manager, config_entry):
@@ -427,11 +465,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 ```
 
 **Testing Strategy**:
+
 - Test services independently without full coordinator
 - Mock only what each service actually needs
 - Test coordinator with service facade mocked
 
 **Migration Path**:
+
 1. Create `ServiceFacade` class in new file
 2. Move passthrough methods to facade (one at a time)
 3. Update callers to use `coordinator.services.add_plant()` instead
@@ -445,6 +485,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator):
 **Problem**: 96+ occurrences of `except Exception` across service files
 
 **Identification**:
+
 ```python
 # ❌ Too broad
 except Exception as err:
@@ -453,6 +494,7 @@ except Exception as err:
 ```
 
 **Why Problematic**:
+
 - **Masks Bugs**: Catches programming errors (AttributeError, KeyError) that should fail fast
 - **Loses Context**: Generic error messages don't tell users what went wrong
 - **Makes Debugging Hard**: Root cause hidden behind generic wrapper
@@ -461,6 +503,7 @@ except Exception as err:
 **Current Examples**:
 
 ❌ **Bad** (services/ipm.py:51):
+
 ```python
 try:
     preset = coordinator.nutrient_manager.get_ipm_preset(preset_id)
@@ -478,6 +521,7 @@ except Exception as err:
    - `asyncio.TimeoutError` → Device timeout
 
 2. **Catch Specific First, Generic Last**:
+
    ```python
    except KeyError:
        # Handle missing key
@@ -493,6 +537,7 @@ except Exception as err:
    - Let programming errors bubble up
 
 ✅ **Good** (refactored):
+
 ```python
 try:
     preset = coordinator.nutrient_manager.get_ipm_preset(preset_id)
@@ -509,6 +554,7 @@ except ValidationChangeError as err:
 ```
 
 **Exception Decision Tree**:
+
 ```
 User provided invalid input?
   → ServiceValidationError (with translation_key if possible)
@@ -527,6 +573,7 @@ Truly unexpected and need graceful degradation?
 ```
 
 **Testing Strategy**:
+
 - Test each specific exception path independently
 - Verify error messages are helpful
 - Ensure programming errors still fail tests (don't catch them)
@@ -538,6 +585,7 @@ Truly unexpected and need graceful degradation?
 **Problem**: `BayesianEnvironmentSensor` directly accesses coordinator internals
 
 **Identification**:
+
 ```python
 # ❌ Tight coupling
 self.coordinator.growspaces
@@ -547,12 +595,14 @@ self.coordinator.strain_library
 ```
 
 **Why Problematic**:
+
 - **Hard to Test**: Must mock entire coordinator to test sensor logic
 - **Prevents Reuse**: Can't use sensor logic in different contexts
 - **Fragile**: Changes to coordinator break sensors
 - **Hidden Dependencies**: Not clear what data sensor actually needs
 
 **Current Example** (binary_sensor.py:411-416):
+
 ```python
 for sensor in light_sensors:
     is_on, valid = self._check_light_sensor(sensor)
@@ -571,6 +621,7 @@ The sensor directly accesses `self.coordinator` throughout its logic, tightly co
 3. **Use Repository Pattern** → Abstract data access
 
 ✅ **Good** (with dependency injection):
+
 ```python
 class BayesianStressEvaluator:
     """Evaluates stress conditions - no coordinator dependency."""
@@ -611,6 +662,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity):
 ```
 
 **Testing Strategy**:
+
 - Test `BayesianStressEvaluator` with simple lambda functions (no coordinator needed)
 - Mock only the three data access functions
 - Sensor tests just verify evaluator is called correctly
@@ -622,12 +674,14 @@ class BayesianEnvironmentSensor(CoordinatorEntity):
 **Problem**: 112-line methods in `environment_config_handler.py`
 
 **Identification**:
+
 - Methods >50 lines
 - Nested conditionals >3 levels deep
 - Multiple responsibilities in one method
 - Hard to understand control flow
 
 **Why Problematic**:
+
 - **Hard to Understand**: Cognitive load too high
 - **Hard to Test**: Can't test individual pieces
 - **Hard to Modify**: Fear of breaking unrelated logic
@@ -640,6 +694,7 @@ class BayesianEnvironmentSensor(CoordinatorEntity):
 3. **Use Composition**: Separate data transformation
 
 **Before** (environment_config_handler.py:84-196, simplified):
+
 ```python
 async def async_step_configure_environment(self, user_input):
     # Validation (10 lines)
@@ -664,6 +719,7 @@ async def async_step_configure_environment(self, user_input):
 ```
 
 **After** (with extraction):
+
 ```python
 async def async_step_configure_environment(self, user_input):
     coordinator = self._validate_and_get_coordinator()
@@ -699,6 +755,7 @@ def _show_environment_form(self, growspace):
 ```
 
 **Testing Strategy**:
+
 - Test each extracted method independently
 - Test main method as orchestration (mocking extracted methods)
 - Easier to verify edge cases in small methods
@@ -710,12 +767,14 @@ def _show_environment_form(self, growspace):
 **Problem**: Repeated patterns across service files
 
 **Identification**:
+
 - Similar code blocks in 3+ files
 - ID resolution logic duplicated
 - Validation boilerplate repeated
 - Error handling patterns copied
 
 **Why Problematic**:
+
 - **Inconsistency**: Each copy may handle things slightly differently
 - **Maintenance Burden**: Bug fixes must be applied in multiple places
 - **Bug Multiplication**: Bug in pattern gets copied everywhere
@@ -723,6 +782,7 @@ def _show_environment_form(self, growspace):
 **Current Examples**:
 
 Repeated in services/plant.py, services/growspace.py, services/irrigation.py:
+
 ```python
 # ❌ Duplicated ID resolution
 try:
@@ -744,6 +804,7 @@ except Exception as e:
 ✅ **Good** (with extraction):
 
 **services/utils.py** (new file):
+
 ```python
 """Shared utilities for service handlers."""
 
@@ -803,6 +864,7 @@ class BaseService:
 ```
 
 **Using the utilities**:
+
 ```python
 from .utils import resolve_entity_to_id, BaseService
 
@@ -813,6 +875,7 @@ class PlantService(BaseService):
 ```
 
 **Testing Strategy**:
+
 - Test shared utilities thoroughly once
 - Service tests just verify utilities are called correctly
 - Reduces test duplication
@@ -824,17 +887,20 @@ Catalog of design patterns currently implemented and opportunities for new patte
 ### Patterns Already Implemented
 
 #### Coordinator Pattern
+
 **What it is**: DataUpdateCoordinator manages centralized data and notifies entities of changes
 
 **Why we use it**: Home Assistant standard for efficient entity updates, prevents polling
 
 **Where to find it**:
+
 - `coordinator.py:67` - GrowspaceCoordinator class
 - `irrigation_coordinator.py` - IrrigationCoordinator
 - `vwc_irrigation_coordinator.py` - VWCIrrigationCoordinator
 - `dehumidifier_coordinator.py` - DehumidifierCoordinator
 
 **How to use it**:
+
 ```python
 class MyCoordinator(DataUpdateCoordinator[MyData]):
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
@@ -856,14 +922,17 @@ class MyCoordinator(DataUpdateCoordinator[MyData]):
 ---
 
 #### Service Locator Pattern
+
 **What it is**: Centralized registry to locate the correct coordinator instance
 
 **Why we use it**: Support multiple config entries (multi-instance support)
 
 **Where to find it**:
+
 - `service_coordinator_locator.py:15` - ServiceCoordinatorLocator class
 
 **How to use it**:
+
 ```python
 locator = ServiceCoordinatorLocator(hass)
 coordinator = locator.get_coordinator_for_growspace(growspace_id)
@@ -876,14 +945,17 @@ coordinator = locator.get_coordinator_for_plant(plant_id)
 ---
 
 #### Repository Pattern
+
 **What it is**: Abstraction layer for data access, separating business logic from data storage
 
 **Why we use it**: Encapsulates data access, makes testing easier, reduces coordinator responsibility
 
 **Where to find it**:
+
 - `data_access/growspace_repository.py:15` - GrowspaceRepository class
 
 **How to use it**:
+
 ```python
 class GrowspaceRepository:
     def get_growspace(self, growspace_id: str) -> Growspace | None:
@@ -902,11 +974,13 @@ growspace = repository.get_growspace("tent1")
 ---
 
 #### Service Layer Pattern
+
 **What it is**: Domain logic separated into dedicated service classes
 
 **Why we use it**: Reduces coordinator complexity, improves testability, clear responsibility boundaries
 
 **Where to find it**:
+
 - `services/growspace_service.py:45` - GrowspaceService
 - `services/plant_service.py:45` - PlantService
 - `services/watering_service.py` - WateringService
@@ -914,6 +988,7 @@ growspace = repository.get_growspace("tent1")
 - `services/ipm_service.py` - IPMService
 
 **How to use it**:
+
 ```python
 class PlantService:
     def __init__(
@@ -945,15 +1020,18 @@ class PlantService:
 ---
 
 #### Event Bus Pattern
+
 **What it is**: Pub/sub system for domain events, decouples event producers from consumers
 
 **Why we use it**: Integrates with HA logbook, allows loose coupling of components
 
 **Where to find it**:
+
 - `event_bus_pkg/event_bus.py:10` - GrowspaceEventBus
 - `events.py` - Event type constants and helper functions
 
 **How to use it**:
+
 ```python
 # Publishing events
 await async_fire_plant_event(
@@ -972,11 +1050,13 @@ await async_fire_plant_event(
 ---
 
 #### Strategy Pattern
+
 **What it is**: Encapsulates algorithms, making them interchangeable
 
 **Why we use it**: Different irrigation strategies (time-based vs VWC-based), different evaluation strategies
 
 **Where to find it**:
+
 - `irrigation_coordinator.py` - Time-based strategy
 - `vwc_irrigation_coordinator.py` - VWC-based strategy
 - `strategies/stress.py` - Stress evaluation strategy
@@ -984,6 +1064,7 @@ await async_fire_plant_event(
 - `strategies/optimal.py` - Optimal conditions strategy
 
 **How to use it**:
+
 ```python
 # Base strategy
 class EvaluatorStrategy(ABC):
@@ -1007,15 +1088,18 @@ probability = strategy.evaluate(environment, plants)
 ---
 
 #### Manager Pattern
+
 **What it is**: Dedicated classes to manage specific concerns or subsystems
 
 **Why we use it**: Delegate complex subsystem management, reduce coordinator size
 
 **Where to find it**:
+
 - `managers/nutrient.py:20` - NutrientManager (manages presets and inventory)
 - `managers/subsystem.py:20` - SubsystemManager (manages sub-coordinators)
 
 **How to use it**:
+
 ```python
 class NutrientManager:
     def __init__(self):
@@ -1040,11 +1124,13 @@ preset = self.nutrient_manager.get_nutrient_preset("bloom_boost")
 Patterns that could improve the codebase if applied:
 
 #### Facade Pattern
+
 **Current Problem**: Coordinator has 20+ passthrough methods that just delegate to services
 
 **Pattern Solution**: Create a ServiceFacade that groups related service methods
 
 **Implementation Sketch**:
+
 ```python
 class ServiceFacade:
     """Unified interface to all domain services."""
@@ -1062,6 +1148,7 @@ coordinator.services.watering.water(...)
 ```
 
 **Migration Path**:
+
 1. Create `ServiceFacade` class
 2. Move passthrough methods to facade
 3. Update callers: `coordinator.async_add_plant()` → `coordinator.services.plants.add()`
@@ -1072,11 +1159,13 @@ coordinator.services.watering.water(...)
 ---
 
 #### Builder Pattern
+
 **Current Problem**: Coordinator `__init__` has 100+ lines of initialization logic
 
 **Pattern Solution**: Use builder to construct coordinator with all dependencies
 
 **Implementation Sketch**:
+
 ```python
 class CoordinatorBuilder:
     """Builds GrowspaceCoordinator with all dependencies."""
@@ -1111,6 +1200,7 @@ coordinator = await builder.build(config_entry)
 ```
 
 **Migration Path**:
+
 1. Create `CoordinatorBuilder` class
 2. Move initialization logic to builder methods
 3. Update `async_setup_entry` to use builder
@@ -1121,11 +1211,13 @@ coordinator = await builder.build(config_entry)
 ---
 
 #### Template Method Pattern
+
 **Current Problem**: Service handlers have repeated boilerplate (validation, locking, error handling)
 
 **Pattern Solution**: Base class with template method, subclasses override specific steps
 
 **Implementation Sketch**:
+
 ```python
 class BaseServiceHandler(ABC):
     """Template for service execution."""
@@ -1156,6 +1248,7 @@ class AddPlantHandler(BaseServiceHandler):
 ```
 
 **Migration Path**:
+
 1. Create `BaseServiceHandler` with template method
 2. Convert one service to use template (e.g., PlantService)
 3. Test thoroughly
@@ -1166,11 +1259,13 @@ class AddPlantHandler(BaseServiceHandler):
 ---
 
 #### Chain of Responsibility Pattern
+
 **Current Problem**: Validation logic scattered across services and validator class
 
 **Pattern Solution**: Chain of validators, each responsible for one validation rule
 
 **Implementation Sketch**:
+
 ```python
 class ValidationHandler(ABC):
     def __init__(self, next_handler=None):
@@ -1207,6 +1302,7 @@ validator.validate(ValidationContext(...))
 ```
 
 **Migration Path**:
+
 1. Create `ValidationHandler` base class
 2. Extract validation rules to individual handlers
 3. Build validation chains in services
@@ -1217,11 +1313,13 @@ validator.validate(ValidationContext(...))
 ---
 
 #### Observer Pattern (Enhanced)
+
 **Current Problem**: Entity updates only through coordinator's `async_set_updated_data`
 
 **Pattern Solution**: Direct observer registration for fine-grained updates
 
 **Implementation Sketch**:
+
 ```python
 class EntityObserver(ABC):
     @abstractmethod
@@ -1244,6 +1342,7 @@ await publisher.notify("plant.tomato_1", plant_data)
 ```
 
 **Migration Path**:
+
 1. Create `EntityPublisher` in coordinator
 2. Add observer interface for entities
 3. Migrate high-frequency updates to use publisher
@@ -1275,11 +1374,13 @@ Does this logic belong to a specific domain?
 **Examples**:
 
 ✅ **Extract to Service**:
+
 - Plant lifecycle management (multiple components use it)
 - Watering operations (complex domain logic)
 - IPM application (distinct domain concern)
 
 ❌ **Don't Extract**:
+
 - Simple data transformation used once
 - Coordinator-specific state management
 - UI-specific formatting
@@ -1291,6 +1392,7 @@ Does this logic belong to a specific domain?
 ### Dependency Injection Strategy
 
 **What to Inject** ✅:
+
 - **Data Access**: Repository, database connections
 - **Validators**: Domain validators, schema validators
 - **Managers**: Subsystem managers, external service clients
@@ -1298,6 +1400,7 @@ Does this logic belong to a specific domain?
 - **Locks**: For thread safety
 
 **What NOT to Inject** ❌:
+
 - **Entire coordinator**: Inject only what you need from it
 - **HomeAssistant object**: Unless service actually needs hass capabilities
 - **Storage manager**: Use callbacks instead of direct storage access
@@ -1306,6 +1409,7 @@ Does this logic belong to a specific domain?
 **Constructor Patterns**:
 
 ✅ **Good** (explicit dependencies):
+
 ```python
 class PlantService:
     def __init__(
@@ -1324,6 +1428,7 @@ class PlantService:
 ```
 
 ❌ **Bad** (too many dependencies):
+
 ```python
 class PlantService:
     def __init__(self, coordinator: GrowspaceCoordinator):
@@ -1334,11 +1439,13 @@ class PlantService:
 **Callbacks vs Direct Dependencies**:
 
 Use **callbacks** when:
+
 - Operation triggers side effect in another component
 - You don't want reverse dependency
 - Example: `save_callback()` to trigger persistence
 
 Use **direct dependencies** when:
+
 - You need to query/command the dependency
 - Clear ownership relationship
 - Example: `repository.get_plant(id)` for data access
@@ -1349,19 +1456,20 @@ Use **direct dependencies** when:
 
 **Decision Matrix**:
 
-| Scenario | Exception Type | Translation Key? | Example |
-|----------|---------------|------------------|---------|
-| User provided invalid input | `ServiceValidationError` | Yes (Gold tier) | Invalid plant position |
-| Required data not found | `ServiceValidationError` | Yes | Plant ID not found |
-| Device/network communication failed | `HomeAssistantError` | Optional | Failed to connect to sensor |
-| Configuration is invalid | `ConfigEntryError` | No | Malformed config data |
-| Temporary setup failure | `ConfigEntryNotReady` | No | Device offline during setup |
-| Programming error | **Let it bubble** | No | AttributeError, KeyError |
-| Truly unexpected | `Exception` (config flows/background tasks only) | No | Unknown error |
+| Scenario                            | Exception Type                                   | Translation Key? | Example                     |
+| ----------------------------------- | ------------------------------------------------ | ---------------- | --------------------------- |
+| User provided invalid input         | `ServiceValidationError`                         | Yes (Gold tier)  | Invalid plant position      |
+| Required data not found             | `ServiceValidationError`                         | Yes              | Plant ID not found          |
+| Device/network communication failed | `HomeAssistantError`                             | Optional         | Failed to connect to sensor |
+| Configuration is invalid            | `ConfigEntryError`                               | No               | Malformed config data       |
+| Temporary setup failure             | `ConfigEntryNotReady`                            | No               | Device offline during setup |
+| Programming error                   | **Let it bubble**                                | No               | AttributeError, KeyError    |
+| Truly unexpected                    | `Exception` (config flows/background tasks only) | No               | Unknown error               |
 
 **Error Message Guidelines**:
 
 ✅ **Good Error Messages**:
+
 ```python
 # Specific, actionable
 raise ServiceValidationError(
@@ -1381,6 +1489,7 @@ raise ServiceValidationError(
 ```
 
 ❌ **Bad Error Messages**:
+
 ```python
 # Vague, not actionable
 raise ServiceValidationError("Invalid position")
@@ -1394,6 +1503,7 @@ raise ServiceValidationError(
 **Exception Chaining**:
 
 Always use `from` to preserve traceback:
+
 ```python
 try:
     data = await api.fetch()
@@ -1405,11 +1515,13 @@ except ApiError as err:
 **When to Catch vs Let Bubble**:
 
 ✅ **Catch** when:
+
 - You can handle it meaningfully
 - You need to transform it for user
 - You can provide context
 
 ❌ **Let bubble** when:
+
 - Programming error (fix the bug)
 - No meaningful handling possible
 - Already specific enough
@@ -1421,6 +1533,7 @@ except ApiError as err:
 **Test Through Public Interfaces**:
 
 ✅ **Good**:
+
 ```python
 async def test_add_plant(coordinator):
     """Test through public API."""
@@ -1433,6 +1546,7 @@ async def test_add_plant(coordinator):
 ```
 
 ❌ **Bad**:
+
 ```python
 async def test_add_plant(coordinator):
     """Testing internals."""
@@ -1444,6 +1558,7 @@ async def test_add_plant(coordinator):
 **Mock at Service Boundaries**:
 
 ✅ **Good**:
+
 ```python
 @pytest.fixture
 def mock_repository():
@@ -1458,6 +1573,7 @@ async def test_service(mock_repository):
 ```
 
 ❌ **Bad**:
+
 ```python
 async def test_service(coordinator):
     """Mock internal implementation details."""
@@ -1468,6 +1584,7 @@ async def test_service(coordinator):
 **Fixture Organization**:
 
 Use pytest fixtures for common setups:
+
 ```python
 @pytest.fixture
 async def coordinator(hass, mock_config_entry):
@@ -1495,6 +1612,7 @@ def mock_growspace():
 - **Unit tests**: Test edge cases in isolated components
 
 **Test Naming Convention**:
+
 ```python
 async def test_<action>_<condition>_<expected_result>():
     """Test that <action> under <condition> results in <expected_result>."""
@@ -1507,6 +1625,7 @@ async def test_<action>_<condition>_<expected_result>():
 **Snapshot Testing**:
 
 Use snapshots for complex data structures:
+
 ```python
 async def test_growspace_data_structure(coordinator, snapshot):
     """Verify growspace data structure."""
@@ -1521,6 +1640,7 @@ After updating snapshots with `--snapshot-update`, **always run tests again with
 ### Code Organization Guidelines
 
 **Module Size Limits**:
+
 - **Files**: Target <500 lines (warning at 800, refactor at 1000+)
 - **Classes**: Target <300 lines (warning at 500, refactor at 800+)
 - **Methods**: Target <50 lines (warning at 80, refactor at 100+)
@@ -1528,17 +1648,20 @@ After updating snapshots with `--snapshot-update`, **always run tests again with
 **When to Split a Module**:
 
 **Split when**:
+
 - File exceeds 800 lines
 - Multiple distinct responsibilities
 - Some code rarely used together
 - Clear organizational boundary exists
 
 **Example**: `services/plant.py` could split into:
+
 - `services/plant/crud.py` - Create, read, update, delete
 - `services/plant/lifecycle.py` - Stage transitions, harvesting
 - `services/plant/cloning.py` - Clone operations
 
 **Don't split when**:
+
 - Code is cohesive and < 500 lines
 - Would create one-method files
 - Split creates more complexity than it removes
@@ -1546,6 +1669,7 @@ After updating snapshots with `--snapshot-update`, **always run tests again with
 **Import Organization**:
 
 Follow ruff/isort conventions:
+
 ```python
 """Module docstring."""
 
@@ -1568,6 +1692,7 @@ from .repository import GrowspaceRepository
 ```
 
 **File Naming**:
+
 - `snake_case` for all Python files
 - Match class name when file contains single primary class
 - Use descriptive names: `irrigation_coordinator.py` not `ic.py`
@@ -1575,6 +1700,7 @@ from .repository import GrowspaceRepository
 ## Home Assistant Integration Standards
 
 This integration follows Home Assistant's development standards. Key requirements for Gold tier:
+
 - Device registry with proper device info
 - Diagnostic data collection
 - Entity translations

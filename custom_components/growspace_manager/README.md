@@ -9,15 +9,16 @@
 ---
 
 ## Table of Contents
+
 1. [Core Features](#core-features)
 2. [Advanced Capabilities](#advanced-capabilities)
-    - [Smart Irrigation & Crop Steering](#smart-irrigation--crop-steering)
-    - [Environmental VPD Control & Mold Risk Logic](#environmental-vpd-control--mold-risk-logic)
-    - [AI Diagnostics & Vision Checkup Engine](#ai-diagnostics--vision-checkup-engine)
-    - [Genetics, Breeding & Phenotype Scoring](#genetics-breeding--phenotype-scoring)
-    - [Post-Harvest Drying & Curing Metrics](#post-harvest-drying--curing-metrics)
-    - [Integrated Pest Management (IPM) & Nutrients](#integrated-pest-management-ipm--nutrients)
-    - [QR Label Printing](#qr-label-printing)
+   - [Smart Irrigation & Crop Steering](#smart-irrigation--crop-steering)
+   - [Environmental VPD Control & Mold Risk Logic](#environmental-vpd-control--mold-risk-logic)
+   - [AI Diagnostics & Vision Checkup Engine](#ai-diagnostics--vision-checkup-engine)
+   - [Genetics, Breeding & Phenotype Scoring](#genetics-breeding--phenotype-scoring)
+   - [Post-Harvest Drying & Curing Metrics](#post-harvest-drying--curing-metrics)
+   - [Integrated Pest Management (IPM) & Nutrients](#integrated-pest-management-ipm--nutrients)
+   - [QR Label Printing](#qr-label-printing)
 3. [Installation Walkthrough](#installation-walkthrough)
 4. [Step-by-Step Configuration Guide](#step-by-step-configuration-guide)
 5. [Exhaustive Service API Reference](#exhaustive-service-api-reference)
@@ -45,50 +46,64 @@
 ## Advanced Capabilities
 
 ### Smart Irrigation & Crop Steering
+
 Growspace Manager implements professional **Crop Steering** principles by adjusting watering frequency and volume to influence plant behavior:
-*   **Vegetative Steering**: Encourages structural biomass, root growth, and node density. It employs a higher frequency of smaller irrigation events (shots) during the day, maintaining higher Volumetric Water Content (VWC) in the substrate and keeping drybacks small (e.g., 10-15%).
-*   **Generative Steering**: Signals the plant to focus energy on reproductive flower and resin production. It utilizes fewer, larger watering events with a significant overnight dryback (e.g., 25-30% dryback), prompting slight osmotic stress that increases flower formation.
-*   **Balanced Steering**: A middle-ground maintenance profile designed for transition stages or stable mother environments.
-*   **Runoff & Drainage Control**: Link runoff sensors and a drain pump. The integration monitors feed EC versus drain EC to calculate salt buildup, triggers the drain pump automatically post-irrigation, and alerts you if runoff volume drifts from target percentages.
+
+- **Vegetative Steering**: Encourages structural biomass, root growth, and node density. It employs a higher frequency of smaller irrigation events (shots) during the day, maintaining higher Volumetric Water Content (VWC) in the substrate and keeping drybacks small (e.g., 10-15%).
+- **Generative Steering**: Signals the plant to focus energy on reproductive flower and resin production. It utilizes fewer, larger watering events with a significant overnight dryback (e.g., 25-30% dryback), prompting slight osmotic stress that increases flower formation.
+- **Balanced Steering**: A middle-ground maintenance profile designed for transition stages or stable mother environments.
+- **Runoff & Drainage Control**: Link runoff sensors and a drain pump. The integration monitors feed EC versus drain EC to calculate salt buildup, triggers the drain pump automatically post-irrigation, and alerts you if runoff volume drifts from target percentages.
 
 ### Environmental VPD Control & Mold Risk Logic
+
 Unlike simple threshold sensors, Growspace Manager orchestrates active climate control:
-*   **VPD Target Ramps**: Automatically computes VPD targets based on the current lifecycle stage (e.g., Veg: 0.8–1.1 kPa, Flower: 1.2–1.6 kPa) and adapts targets dynamically when lights transition between day and night cycles.
-*   **Day/Night Hysteresis**: Prevents HVAC short-cycling by applying smart buffer margins and recognizing light status.
-*   **Active Mold Risk Fan Control**: Incorporates relative humidity, canopy temperature, dew point, and circulation fan telemetry. If air circulation is stagnant and humidity spikes during the dark period, the Bayesian engine flags a high mold risk and triggers circulation fans or exhaust dampers to protect flowers.
+
+- **VPD Target Ramps**: Automatically computes VPD targets based on the current lifecycle stage (e.g., Veg: 0.8–1.1 kPa, Flower: 1.2–1.6 kPa) and adapts targets dynamically when lights transition between day and night cycles.
+- **Day/Night Hysteresis**: Prevents HVAC short-cycling by applying smart buffer margins and recognizing light status.
+- **Active Mold Risk Fan Control**: Incorporates relative humidity, canopy temperature, dew point, and circulation fan telemetry. If air circulation is stagnant and humidity spikes during the dark period, the Bayesian engine flags a high mold risk and triggers circulation fans or exhaust dampers to protect flowers.
 
 ### AI Diagnostics & Vision Checkup Engine
+
 Combine computer vision with LLM smarts to secure your facility:
-*   **Vision Checkups**: Trigger a high-resolution camera snapshot when lights are on, sending the image to an AI vision agent to inspect the canopy for drooping leaves (under/over-watering), pest damage, or chlorosis (nutrient deficiency).
-*   **Context-Aware Advice**: The Virtual Grow Master integrates real-time ambient parameters (canopy VPD, substrate temp, CO2 ppm) and plant stage history to deliver hyper-specific advice compared to generic LLM chatbots.
+
+- **Vision Checkups**: Trigger a high-resolution camera snapshot when lights are on, sending the image to an AI vision agent to inspect the canopy for drooping leaves (under/over-watering), pest damage, or chlorosis (nutrient deficiency).
+- **Context-Aware Advice**: The Virtual Grow Master integrates real-time ambient parameters (canopy VPD, substrate temp, CO2 ppm) and plant stage history to deliver hyper-specific advice compared to generic LLM chatbots.
 
 ### Genetics, Breeding & Phenotype Scoring
+
 Never lose track of your breeding projects or elite selections:
-*   **Breeding Registry**: Track seed batches, acquisition dates, generations (F1, F2, S1, IBL), and cross-parentage.
-*   **Pollination Logs**: Document donor (pollen source) and receiver (seed-bearing) plant IDs, along with fertilization dates, which automatically schedules seed harvest tasks.
-*   **Phenotype Scoring**: Evaluate selections using a standardized 1–10 scoring metric across:
-    *   *Vigor*: Growth rate and branching robustness.
-    *   *Internodal Spacing*: Density of budding sites.
-    *   *Terpene Intensity*: Olfactory intensity and complexity.
-    *   *Resin Production*: Trichome density and quality.
-    *   *Mold Resistance*: Natural resilience to environmental stress.
-*   **Keeper Flag**: Flag top-scoring phenotypes to easily trace and organize mother and clone groups.
+
+- **Breeding Registry**: Track seed batches, acquisition dates, generations (F1, F2, S1, IBL), and cross-parentage.
+- **Pollination Logs**: Document donor (pollen source) and receiver (seed-bearing) plant IDs, along with fertilization dates, which automatically schedules seed harvest tasks.
+- **Phenotype Scoring**: Evaluate selections using a standardized 1–10 scoring metric across:
+  - _Vigor_: Growth rate and branching robustness.
+  - _Internodal Spacing_: Density of budding sites.
+  - _Terpene Intensity_: Olfactory intensity and complexity.
+  - _Resin Production_: Trichome density and quality.
+  - _Mold Resistance_: Natural resilience to environmental stress.
+- **Keeper Flag**: Flag top-scoring phenotypes to easily trace and organize mother and clone groups.
 
 ### Post-Harvest Drying & Curing Metrics
+
 Harvesting is only half the battle. Manage drying and curing with scientific precision:
-*   **Weight Decay Curves**: Log daily weights during the drying stage to chart moisture loss over time. The integration computes the weight reduction percent (e.g., targeting a 60-65% drop from wet weight).
-*   **Stem Moisture Meter Logs**: Input readings from wood/material moisture meters.
-*   **Cure-Ready Threshold**: The system combines weight decay velocity and moisture readings. When the decay curve plateaus in the safe zone (typically 10-12% moisture), it triggers a notification that the harvest is ready for curing, protecting your terpenes from over-drying.
+
+- **Weight Decay Curves**: Log daily weights during the drying stage to chart moisture loss over time. The integration computes the weight reduction percent (e.g., targeting a 60-65% drop from wet weight).
+- **Stem Moisture Meter Logs**: Input readings from wood/material moisture meters.
+- **Cure-Ready Threshold**: The system combines weight decay velocity and moisture readings. When the decay curve plateaus in the safe zone (typically 10-12% moisture), it triggers a notification that the harvest is ready for curing, protecting your terpenes from over-drying.
 
 ### Integrated Pest Management (IPM) & Nutrients
+
 Establish strict facility protocols with scheduled presets:
-*   **Nutrient Presets**: Save complex chemical and organic feeding recipes. Schedule feed cycles by days in veg/flower to automatically send alerts or update automated doser parameters.
-*   **IPM Presets**: Save recipes for foliar sprays (e.g., Neem oil, Bacillus amyloliquefaciens) or predatory insect releases. Set maximum stage restrictions (e.g., never apply foliar sprays after Week 3 of Flower) to prevent bud contamination.
+
+- **Nutrient Presets**: Save complex chemical and organic feeding recipes. Schedule feed cycles by days in veg/flower to automatically send alerts or update automated doser parameters.
+- **IPM Presets**: Save recipes for foliar sprays (e.g., Neem oil, Bacillus amyloliquefaciens) or predatory insect releases. Set maximum stage restrictions (e.g., never apply foliar sprays after Week 3 of Flower) to prevent bud contamination.
 
 ### QR Label Printing
+
 Keep your physical garden perfectly synced with your digital records:
-*   **Niimbot Integration**: Connects via Bluetooth to thermal label printers (e.g., Niimbot D11/D110/B21).
-*   **Smart Labels**: Prints barcodes or QR codes linking directly to the plant sensor entity in Home Assistant. Includes the strain name, phenotype, breeder logo, parental lineage, and key dates.
+
+- **Niimbot Integration**: Connects via Bluetooth to thermal label printers (e.g., Niimbot D11/D110/B21).
+- **Smart Labels**: Prints barcodes or QR codes linking directly to the plant sensor entity in Home Assistant. Includes the strain name, phenotype, breeder logo, parental lineage, and key dates.
 
 ---
 
@@ -97,6 +112,7 @@ Keep your physical garden perfectly synced with your digital records:
 The Growspace Manager system requires the main integration and the companion custom Lovelace card.
 
 ### Step 1: Install the Lovelace Card via HACS
+
 1.  Navigate to **HACS** > **Frontend** in Home Assistant.
 2.  Click the three vertical dots in the top-right corner and select **Custom repositories**.
 3.  Enter the URL: `https://github.com/Venosta-web/lovelace-growspace-manager-card`
@@ -104,6 +120,7 @@ The Growspace Manager system requires the main integration and the companion cus
 5.  Search for `Growspace Manager Card` in HACS and click **Download / Install**.
 
 ### Step 2: Install the Integration via HACS
+
 1.  Navigate to **HACS** > **Integrations** in Home Assistant.
 2.  Click the three vertical dots in the top-right corner and select **Custom repositories**.
 3.  Enter the URL: `https://github.com/Venosta-web/growspace_manager`
@@ -116,39 +133,44 @@ The Growspace Manager system requires the main integration and the companion cus
 ## Step-by-Step Configuration Guide
 
 ### Step 1: Initialize the Integration
+
 1.  Navigate to **Settings** > **Devices & Services** in Home Assistant.
 2.  Click **+ Add Integration** in the bottom right.
 3.  Search for **Growspace Manager** and click to install.
 4.  Once initialized, you will see a Growspace Manager integration card.
 
 ### Step 2: Define Your Growspaces
+
 1.  Click **Configure** on the Growspace Manager card.
 2.  Select **Manage Growspaces** from the menu and click **Submit**.
 3.  Choose **Add Growspace**.
 4.  Configure the details:
-    *   **Name**: A descriptive name (e.g., "Veg Tent", "Flower Room").
-    *   **Rows & Plants Per Row**: Sets up your layout grid dimensions (e.g., 2 rows, 4 plants per row).
-    *   **Notification Target**: Specify your notification service (e.g., `notify.mobile_app_my_phone`).
+    - **Name**: A descriptive name (e.g., "Veg Tent", "Flower Room").
+    - **Rows & Plants Per Row**: Sets up your layout grid dimensions (e.g., 2 rows, 4 plants per row).
+    - **Notification Target**: Specify your notification service (e.g., `notify.mobile_app_my_phone`).
 5.  Click **Submit** to create. Logical special spaces (`mothers`, `clones`, `drying`, `curing`) are automatically managed or can be configured.
 
 ### Step 3: Set Up Environmental Sensors and Climate Control
+
 1.  In the integration **Configure** menu, select **Configure Growspace Environment** and click **Submit**.
 2.  Select your target growspace.
 3.  Configure sensor associations:
-    *   **Temperature / Humidity / VPD Sensors**: Bind your physical DHT22, RuuviTag, or Ecowitt sensor entities.
-    *   **Light Sensor**: Link a light switch or photodiode sensor. This enables Day/Night environmental analysis.
-    *   **Circulation Fan / Exhaust Fan / Humidifier**: Bind active switches or fan controllers.
-    *   **Dehumidifier Entity**: Bind your dehumidifier switch.
-    *   **Control Dehumidifier**: Toggle `true` to let the integration automatically switch the dehumidifier on/off based on live VPD targets.
+    - **Temperature / Humidity / VPD Sensors**: Bind your physical DHT22, RuuviTag, or Ecowitt sensor entities.
+    - **Light Sensor**: Link a light switch or photodiode sensor. This enables Day/Night environmental analysis.
+    - **Circulation Fan / Exhaust Fan / Humidifier**: Bind active switches or fan controllers.
+    - **Dehumidifier Entity**: Bind your dehumidifier switch.
+    - **Control Dehumidifier**: Toggle `true` to let the integration automatically switch the dehumidifier on/off based on live VPD targets.
 4.  Input Stage-Specific targets (RH or VPD values for Veg, Early Flower, Mid Flower, Late Flower) and click **Submit**.
 
 ### Step 4: Bind Irrigation & Drainage Hardware
+
 1.  Select **Configure Irrigation** from the configuration menu.
 2.  Select your growspace.
 3.  Link your **Irrigation Pump** (switch) and **Drain Pump** (switch) entities.
 4.  Define default watering and drain run durations (in seconds). Click **Submit**.
 
 ### Step 5: Configure AI Settings
+
 1.  Select **Configure AI Settings** from the configuration menu.
 2.  Check **Enable AI Features**.
 3.  Choose your configured Home Assistant **Conversation Agent** (e.g., OpenAI, Google Gemini).
@@ -163,10 +185,12 @@ All services can be invoked from automations, Lovelace buttons, or custom script
 ### Database & Library Management
 
 #### `growspace_manager.export_strain_library`
+
 Exports the entire strain catalog including descriptions, breeder logos, and gallery images to a single, easily portable ZIP archive.
-*No parameters required.*
+_No parameters required._
 
 #### `growspace_manager.import_strain_library`
+
 Imports a strain library from a previously exported ZIP file.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -174,7 +198,8 @@ Imports a strain library from a previously exported ZIP file.
 | `zip_base64` | `string` | No | - | Base64-encoded ZIP file payload (used for direct frontend uploads). |
 | `replace` | `boolean` | No | `false` | If `true`, completely replaces existing catalog; otherwise merges. |
 
-*Example:*
+_Example:_
+
 ```yaml
 service: growspace_manager.import_strain_library
 data:
@@ -183,14 +208,17 @@ data:
 ```
 
 #### `growspace_manager.clear_strain_library`
+
 Completely resets the local strain catalog database, removing all strain, phenotype, and breeder records.
-*No parameters required.*
+_No parameters required._
 
 #### `growspace_manager.get_strain_library`
+
 Fetches and returns the full strain library database (primarily utilized by frontend dashboards).
-*No parameters required.*
+_No parameters required._
 
 #### `growspace_manager.add_strain`
+
 Directly inserts a new strain variety with detailed genetic metadata into the library.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -211,7 +239,8 @@ Directly inserts a new strain variety with detailed genetic metadata into the li
 | `image_crop_meta` | `object` | No | - | Crop coordinates and metadata for the main image. |
 | `images` | `list` | No | - | Gallery image configurations, list of objects: `{path, crop_meta, is_thumbnail}`. |
 
-*Example:*
+_Example:_
+
 ```yaml
 service: growspace_manager.add_strain
 data:
@@ -224,6 +253,7 @@ data:
 ```
 
 #### `growspace_manager.update_strain_meta`
+
 Updates genetic metadata, logs, or photos for an existing strain catalog entry.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -245,6 +275,7 @@ Updates genetic metadata, logs, or photos for an existing strain catalog entry.
 | `breeder_logo` | `string` | No | - | URL or local path to breeder's logo image. |
 
 #### `growspace_manager.remove_strain`
+
 Deletes a strain record and all associated images from the catalog.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -256,6 +287,7 @@ Deletes a strain record and all associated images from the catalog.
 ### Facility & Growspace Management
 
 #### `growspace_manager.add_growspace`
+
 Registers a new physical growspace zone.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -265,6 +297,7 @@ Registers a new physical growspace zone.
 | `notification_target` | `string` | No | - | Mobile notification service name. |
 
 #### `growspace_manager.update_growspace`
+
 Updates configuration of an existing growspace.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -274,7 +307,8 @@ Updates configuration of an existing growspace.
 | `plants_per_row` | `integer` | No | - | New columns per row count. |
 | `notification_target` | `string` | No | - | Updated notification target. |
 
-*Example:*
+_Example:_
+
 ```yaml
 service: growspace_manager.update_growspace
 data:
@@ -283,12 +317,14 @@ data:
 ```
 
 #### `growspace_manager.remove_growspace`
+
 Deletes a growspace zone and permanently un-registers all plants housed inside it.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `growspace_id` | `string` | Yes | - | Growspace ID to delete. |
 
 #### `growspace_manager.analyze_all_growspaces`
+
 Triggers an automated evaluation of all facility zones, producing a detailed markdown summary of environment statuses, plant health indicators, and recommendations.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -299,6 +335,7 @@ Triggers an automated evaluation of all facility zones, producing a detailed mar
 ### Plant & Lifecycle Stage Tracking
 
 #### `growspace_manager.add_plant`
+
 Places a single plant into a specific coordinate on the growspace grid.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -317,6 +354,7 @@ Places a single plant into a specific coordinate on the growspace grid.
 | `notes` | `string` | No | - | Rich notes about plant history. |
 
 #### `growspace_manager.add_plants`
+
 Batch-inserts multiple plants of the same variety into consecutive empty spots in a growspace.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -333,6 +371,7 @@ Batch-inserts multiple plants of the same variety into consecutive empty spots i
 | `cure_start` | `date` | No | - | Curing stage start date (YYYY-MM-DD). |
 
 #### `growspace_manager.update_plant`
+
 Edits attributes, stages, or coordinate locations of a plant.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -354,12 +393,14 @@ Edits attributes, stages, or coordinate locations of a plant.
 | `notes` | `string` | No | - | Update notes. |
 
 #### `growspace_manager.remove_plant`
+
 Deletes a plant and removes its sensor entity.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `plant_id` | `string` | Yes | - | Plant ID to remove. |
 
 #### `growspace_manager.move_plant`
+
 Relocates a plant to new coordinates. If another plant occupies the target spot, their positions switch.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -368,6 +409,7 @@ Relocates a plant to new coordinates. If another plant occupies the target spot,
 | `new_col` | `integer` | Yes | - | Target grid column coordinate. |
 
 #### `growspace_manager.switch_plants`
+
 Explicitly swaps the grid positions of two plants.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -375,20 +417,22 @@ Explicitly swaps the grid positions of two plants.
 | `plant2_id` | `string` | Yes | - | Second plant ID. |
 
 #### `growspace_manager.transition_plant_stage`
+
 Transitions a plant to a new growth phase (e.g. flipping from Vegetative to Flowering).
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `plant_id` | `string` | Yes | - | Plant ID. |
 | `new_stage` | `string` | Yes | - | Stage: `seedling`, `mother`, `clone`, `veg`, `flower`, `dry`, `cure`. |
-| `transition_date`| `date` | No | *Today* | Optional date transition occurred. |
+| `transition_date`| `date` | No | _Today_ | Optional date transition occurred. |
 
 #### `growspace_manager.harvest_plant`
+
 Harvests a plant, records its metrics, and auto-routes it to the **Drying** growspace.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `plant_id` | `string` | Yes | - | Plant ID. |
-| `target_growspace_id`| `string`| No | *drying* | Destination growspace zone. |
-| `transition_date`| `date` | No | *Today* | Date of harvest. |
+| `target_growspace_id`| `string`| No | _drying_ | Destination growspace zone. |
+| `transition_date`| `date` | No | _Today_ | Date of harvest. |
 | `wet_weight` | `float` | No | - | Wet weight at harvest in grams. |
 | `dry_weight` | `float` | No | - | Final cured dry weight in grams. |
 | `trim_weight` | `float` | No | - | Sugar leaf and trim weight in grams. |
@@ -397,23 +441,26 @@ Harvests a plant, records its metrics, and auto-routes it to the **Drying** grow
 | `terpene_profile`| `string`| No | - | Rich description of terpenes (e.g., "Limonene dominant"). |
 
 #### `growspace_manager.take_clone`
+
 Creates multiple new clone seedlings from a mother plant and places them into the clones growspace.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `mother_plant_id`| `string` | Yes | - | Mother donor plant ID. |
-| `target_growspace_id`|`string`| No | *clones* | Destination clones zone. |
-| `transition_date`| `date` | No | *Today* | Date clones were cut. |
+| `target_growspace_id`|`string`| No | _clones_ | Destination clones zone. |
+| `transition_date`| `date` | No | _Today_ | Date clones were cut. |
 | `num_clones` | `integer` | No | `1` | Quantity of clone cuttings taken. |
 
 #### `growspace_manager.move_clone`
+
 Relocates a rooted clone to a vegetative or mother growspace grid coordinate.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `plant_id` | `string` | Yes | - | Clone plant ID. |
 | `target_growspace_id`|`string`| Yes | - | Target veg/mother growspace. |
-| `transition_date`| `date` | No | *Today* | Date of transplanting. |
+| `transition_date`| `date` | No | _Today_ | Date of transplanting. |
 
 #### `growspace_manager.set_visual_tag`
+
 Attaches or clears a visual identification label (e.g. colored ties, nursery tags) to track physical plants easily.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -421,12 +468,14 @@ Attaches or clears a visual identification label (e.g. colored ties, nursery tag
 | `visual_tag` | `string` | No | - | Tag label (e.g., "Orange Clip"). Omit to clear. |
 
 #### `growspace_manager.reset_plant_last_watered`
-*Warning: E2E and Test Fixture Use Only.* Manually clears a plant's `last_watered` timestamp.
+
+_Warning: E2E and Test Fixture Use Only._ Manually clears a plant's `last_watered` timestamp.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `plant_id` | `string` | Yes | - | Plant ID to modify. |
 
 #### `growspace_manager.batch_action`
+
 Executes a synchronized action across a list of plants.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -434,7 +483,8 @@ Executes a synchronized action across a list of plants.
 | `action` | `string` | Yes | - | Action: `transition`, `harvest`, `remove`, `take_clone`. |
 | `data` | `object` | No | - | Dictionary parameters corresponding to the action chosen. |
 
-*Example:*
+_Example:_
+
 ```yaml
 service: growspace_manager.batch_action
 data:
@@ -451,6 +501,7 @@ data:
 ### Environmental & HVAC Controls
 
 #### `growspace_manager.configure_environment`
+
 Binds physical environmental monitors, light schedules, and active climate controls to a growspace zone.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -473,12 +524,14 @@ Binds physical environmental monitors, light schedules, and active climate contr
 | `irrigation_tanks`| `object` | No | - | Irrigation nutrient tank volume & EC configurations. |
 
 #### `growspace_manager.remove_environment`
+
 Permanently disconnects all climate monitors and automated climate steering controllers from a growspace.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `growspace_id` | `string` | Yes | - | Target growspace zone ID. |
 
 #### `growspace_manager.set_dehumidifier_control`
+
 Toggles active dynamic climate steering on/off.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -490,6 +543,7 @@ Toggles active dynamic climate steering on/off.
 ### Smart Irrigation & Steering
 
 #### `growspace_manager.set_irrigation_settings`
+
 Sets the basic plumbing hardware profiles and default cycle times for simple timer waterings.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -500,6 +554,7 @@ Sets the basic plumbing hardware profiles and default cycle times for simple tim
 | `drain_duration` | `integer`| No | - | Standard duration to run drain pump (seconds). |
 
 #### `growspace_manager.set_irrigation_strategy`
+
 Configures high-level Volumetric Water Content (VWC) crop-steering automation schedules.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -514,6 +569,7 @@ Configures high-level Volumetric Water Content (VWC) crop-steering automation sc
 | `shot_interval_minutes`|`integer`|No | `15` | Minimum rest interval between steering shots. |
 
 #### `growspace_manager.add_irrigation_time`
+
 Manually schedules a daily fixed-time watering event.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -522,6 +578,7 @@ Manually schedules a daily fixed-time watering event.
 | `duration` | `integer`| No | - | Run duration override (seconds). |
 
 #### `growspace_manager.remove_irrigation_time`
+
 Removes a specific scheduled fixed watering time.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -529,6 +586,7 @@ Removes a specific scheduled fixed watering time.
 | `time` | `string` | Yes | - | Time to delete (HH:MM:SS). |
 
 #### `growspace_manager.reset_water_tracking`
+
 Resets the cumulative water consumption counter (liters/gallons) to zero.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -539,6 +597,7 @@ Resets the cumulative water consumption counter (liters/gallons) to zero.
 ### Drainage & Runoff Monitoring
 
 #### `growspace_manager.add_drain_time`
+
 Schedules a fixed time to trigger the drainage pump manually (useful for flushing).
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -547,6 +606,7 @@ Schedules a fixed time to trigger the drainage pump manually (useful for flushin
 | `duration` | `integer`| No | - | Pump run duration override (seconds). |
 
 #### `growspace_manager.remove_drain_time`
+
 Removes a scheduled drain time.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -554,6 +614,7 @@ Removes a scheduled drain time.
 | `time` | `string` | Yes | - | Time to delete (HH:MM:SS). |
 
 #### `growspace_manager.log_drain_reading`
+
 Manually documents runoff chemistry and volumes to track root-zone dynamics.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -563,7 +624,8 @@ Manually documents runoff chemistry and volumes to track root-zone dynamics.
 | `drain_volume_ml`| `integer`| No | - | Total volume of runoff collected (mL). |
 | `feed_volume_ml` | `integer`| No | - | Total volume of feed solution applied (mL). |
 
-*Example:*
+_Example:_
+
 ```yaml
 service: growspace_manager.log_drain_reading
 data:
@@ -575,19 +637,21 @@ data:
 ```
 
 #### `growspace_manager.configure_drain_monitoring`
+
 Sets alarms and tracking guidelines for runoff performance.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `growspace_id` | `string` | Yes | - | Growspace zone ID. |
 | `enabled` | `boolean`| No | `true` | Toggle active runoff monitoring alerts. |
 | `max_ec_delta` | `float` | No | `1.0` | Maximum delta (Drain EC - Feed EC) allowed before salt buildup alert (mS/cm). |
-| `target_runoff_percent`|`integer`| No | `20` | Target runoff percentage (drainage volume / feed volume * 100). |
+| `target_runoff_percent`|`integer`| No | `20` | Target runoff percentage (drainage volume / feed volume \* 100). |
 
 ---
 
 ### Nutrition & Integrated Pest Management
 
 #### `growspace_manager.save_nutrient_preset`
+
 Schedules a nutrient feeding recipe and binds it to a plant stage.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -598,12 +662,14 @@ Schedules a nutrient feeding recipe and binds it to a plant stage.
 | `min_days_in_stage`|`integer`| No | `0` | Minimum growth phase days required before recommending this recipe. |
 
 #### `growspace_manager.remove_nutrient_preset`
+
 Deletes a feeding recipe.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `preset_id` | `string` | Yes | - | Nutrient preset ID to delete. |
 
 #### `growspace_manager.save_ec_ramp_curve`
+
 Saves an Electrical Conductivity ramp schedule to guide automate dosers as plants mature in a stage.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -613,12 +679,14 @@ Saves an Electrical Conductivity ramp schedule to guide automate dosers as plant
 | `curve_id` | `string` | No | - | Curve ID to update. |
 
 #### `growspace_manager.remove_ec_ramp_curve`
+
 Deletes an EC ramp curve.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `curve_id` | `string` | Yes | - | EC ramp curve ID to remove. |
 
 #### `growspace_manager.save_ipm_preset`
+
 Creates an Integrated Pest Management protocol preset.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -629,7 +697,8 @@ Creates an Integrated Pest Management protocol preset.
 | `stage` | `string` | No | - | Safety restriction stage (e.g., `veg` - spray will block in bloom). |
 | `min_days_in_stage`|`integer`| No | `0` | Days elapsed restriction. |
 
-*Example:*
+_Example:_
+
 ```yaml
 service: growspace_manager.save_ipm_preset
 data:
@@ -642,12 +711,14 @@ data:
 ```
 
 #### `growspace_manager.remove_ipm_preset`
+
 Deletes an IPM protocol preset.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `preset_id` | `string` | Yes | - | IPM preset ID. |
 
 #### `growspace_manager.apply_ipm`
+
 Logs a physical IPM application at a growspace or specific plant coordinates.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -661,6 +732,7 @@ Logs a physical IPM application at a growspace or specific plant coordinates.
 ### AI Assistant & Diagnostics
 
 #### `growspace_manager.ask_grow_advice`
+
 Interrogates the Virtual Grow Master regarding environmental state or general cultivation strategies.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -670,6 +742,7 @@ Interrogates the Virtual Grow Master regarding environmental state or general cu
 | `max_length` | `integer` | No | `1000` | Character ceiling for returned advice text. |
 
 #### `growspace_manager.strain_recommendation`
+
 Generates a context-aware strain recommendation based on your garden history and goals.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -679,6 +752,7 @@ Generates a context-aware strain recommendation based on your garden history and
 | `max_length` | `integer` | No | `1000` | Character ceiling for response. |
 
 #### `growspace_manager.trigger_vision_checkup`
+
 Instructs your camera system to snap a photo and run deep visual diagnosis on the canopy.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -689,6 +763,7 @@ Instructs your camera system to snap a photo and run deep visual diagnosis on th
 ### Genetics & Breeding Registry
 
 #### `growspace_manager.add_seed_batch`
+
 Registers a new seed collection batch in the inventory.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -701,6 +776,7 @@ Registers a new seed collection batch in the inventory.
 | `notes` | `string` | No | - | Custom notes. |
 
 #### `growspace_manager.update_seed_batch`
+
 Modifies inventory quantities or genetic parameters of an existing seed batch.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -714,6 +790,7 @@ Modifies inventory quantities or genetic parameters of an existing seed batch.
 | `notes` | `string` | No | - | Custom notes. |
 
 #### `growspace_manager.log_pollination`
+
 Registers a pollination event between two active plants to establish pedigree tracking.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -723,6 +800,7 @@ Registers a pollination event between two active plants to establish pedigree tr
 | `notes` | `string` | No | - | Cross details. |
 
 #### `growspace_manager.score_phenotype`
+
 Evaluates a plant selections characteristics on a 1-10 scale.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -737,6 +815,7 @@ Evaluates a plant selections characteristics on a 1-10 scale.
 | `notes` | `string` | No | - | Descriptive traits. |
 
 #### `growspace_manager.harvest_seeds`
+
 Converts a documented pollination event into a finalized seed batch inventory record.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -749,14 +828,16 @@ Converts a documented pollination event into a finalized seed batch inventory re
 ### Post-Harvest Drying & Curing
 
 #### `growspace_manager.log_drying_weight`
+
 Inputs daily weight checkpoints of a drying plant to calculate moisture decay curves.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `plant_id` | `string` | Yes | - | Drying plant ID. |
 | `weight_grams` | `float` | Yes | - | Current weight in grams. |
-| `date` | `string` | No | *Today* | Reading date (ISO format YYYY-MM-DD). |
+| `date` | `string` | No | _Today_ | Reading date (ISO format YYYY-MM-DD). |
 
-*Example:*
+_Example:_
+
 ```yaml
 service: growspace_manager.log_drying_weight
 data:
@@ -765,18 +846,20 @@ data:
 ```
 
 #### `growspace_manager.log_moisture_reading`
+
 Records stem-moisture percentage values using material meters to pinpoint cure windows.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `plant_id` | `string` | Yes | - | Plant ID. |
 | `moisture_percent`|`float` | Yes | - | Substrate or stem moisture (0 to 100%). |
-| `date` | `string` | No | *Today* | Reading date. |
+| `date` | `string` | No | _Today_ | Reading date. |
 
 ---
 
 ### Alerts & Utility
 
 #### `growspace_manager.test_notification`
+
 Simulates a scheduled milestone notification event to verify correct push routing.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -785,6 +868,7 @@ Simulates a scheduled milestone notification event to verify correct push routin
 | `days` | `integer` | Yes | - | Simulated day index (matches specific triggers). |
 
 #### `growspace_manager.print_label`
+
 Dispatches label files directly to a paired Niimbot bluetooth printer.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -799,6 +883,7 @@ Dispatches label files directly to a paired Niimbot bluetooth printer.
 | `base_url` | `string` | No | - | Custom base URL for the QR code. |
 
 #### `growspace_manager.log_training_event`
+
 Logs physical canopy modifications (e.g. topping, lollipopping, defoliating) to build a plant timeline.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -812,6 +897,7 @@ Logs physical canopy modifications (e.g. topping, lollipopping, defoliating) to 
 ### Debugging & Maintenance Utilities
 
 #### `growspace_manager.debug_cleanup_legacy`
+
 Utility to remove orphans and legacy data rows from state databases.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -819,10 +905,12 @@ Utility to remove orphans and legacy data rows from state databases.
 | `cure_only` | `boolean`| No | `false` | Only purges cure logs. |
 
 #### `growspace_manager.debug_list_growspaces`
+
 Dumps facility configurations and active registry maps directly into the Home Assistant system log for debugging.
-*No parameters required.*
+_No parameters required._
 
 #### `growspace_manager.debug_reset_special_growspaces`
+
 Resets system-managed physical zones (`drying`, `curing`, `clones`, `mothers`) back to standard state definitions.
 | Parameter | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -837,27 +925,32 @@ Resets system-managed physical zones (`drying`, `curing`, `clones`, `mothers`) b
 Each growspace and registered plant dynamically populates a suite of entities in Home Assistant.
 
 ### Facility & Zone Sensors
-*   **Growspace Overview Sensor** (`sensor.<growspace_name>`): The heart of each zone. The state represents the active plant count, while the attributes maintain the layout grid dimensions, specific coordinates occupied, and detailed plant records. Used directly by the Lovelace Card.
-*   **Growspaces List Sensor** (`sensor.growspaces_list`): Exposes an array of all registered facility zones.
-*   **Notification Switch** (`switch.<growspace_name>_notifications`): Simple toggle to mute or unmute scheduled push alerts.
-*   **Task Calendar** (`calendar.<growspace_name>_tasks`): Dedicated calendar mapping out feeding days, IPM sprays, tissue tests, and anticipated harvest targets.
-*   **Strain Library Sensor** (`sensor.growspace_strain_library`): Displays cataloged strain counts. The attributes expose the average vegetative and flowering periods computed from historical harvest logs.
+
+- **Growspace Overview Sensor** (`sensor.<growspace_name>`): The heart of each zone. The state represents the active plant count, while the attributes maintain the layout grid dimensions, specific coordinates occupied, and detailed plant records. Used directly by the Lovelace Card.
+- **Growspaces List Sensor** (`sensor.growspaces_list`): Exposes an array of all registered facility zones.
+- **Notification Switch** (`switch.<growspace_name>_notifications`): Simple toggle to mute or unmute scheduled push alerts.
+- **Task Calendar** (`calendar.<growspace_name>_tasks`): Dedicated calendar mapping out feeding days, IPM sprays, tissue tests, and anticipated harvest targets.
+- **Strain Library Sensor** (`sensor.growspace_strain_library`): Displays cataloged strain counts. The attributes expose the average vegetative and flowering periods computed from historical harvest logs.
 
 ### Plant Registry Sensors
-*   **Plant Sensor** (`sensor.<plant_strain>_<row>_<col>`): Tracks lifecycle stage (`seedling`, `veg`, `flower`, etc.). Attributes preserve genetic details, acquisition dates, training events, watering counters, and unique plant ID strings.
+
+- **Plant Sensor** (`sensor.<plant_strain>_<row>_<col>`): Tracks lifecycle stage (`seedling`, `veg`, `flower`, etc.). Attributes preserve genetic details, acquisition dates, training events, watering counters, and unique plant ID strings.
 
 ### Bayesian Environmental Monitors
+
 When environment sensors are bound to a zone, these high-intelligence binary sensors are spawned:
-*   **Plants Under Stress** (`binary_sensor.<growspace_name>_plants_under_stress`): Evaluates temperature, humidity, VPD, and substrate moisture. Turns **ON** if conditions signal high osmotic or thermal stress.
-*   **High Mold Risk** (`binary_sensor.<growspace_name>_high_mold_risk`): Monitored during dark cycles in mid-to-late flower. Combines dew point, RH, and air circulation fan statuses. Turns **ON** to warn of powdery mildew or bud rot risk.
-*   **Optimal Conditions** (`binary_sensor.<growspace_name>_optimal_conditions`): Turns **ON** when environment parameters reside perfectly in the ideal VPD envelope for the current stage.
-*   **Light Schedule Correct** (`binary_sensor.<growspace_name>_light_schedule_correct`): Matches the daily photoperiod run hours against stage constraints (e.g. 18/6 for veg, 12/12 for flower). Turns **OFF** to signal timer failures or accidental light leaks.
+
+- **Plants Under Stress** (`binary_sensor.<growspace_name>_plants_under_stress`): Evaluates temperature, humidity, VPD, and substrate moisture. Turns **ON** if conditions signal high osmotic or thermal stress.
+- **High Mold Risk** (`binary_sensor.<growspace_name>_high_mold_risk`): Monitored during dark cycles in mid-to-late flower. Combines dew point, RH, and air circulation fan statuses. Turns **ON** to warn of powdery mildew or bud rot risk.
+- **Optimal Conditions** (`binary_sensor.<growspace_name>_optimal_conditions`): Turns **ON** when environment parameters reside perfectly in the ideal VPD envelope for the current stage.
+- **Light Schedule Correct** (`binary_sensor.<growspace_name>_light_schedule_correct`): Matches the daily photoperiod run hours against stage constraints (e.g. 18/6 for veg, 12/12 for flower). Turns **OFF** to signal timer failures or accidental light leaks.
 
 ---
 
 ## Real-World Automation Examples
 
 ### 1. Stage-Adaptive Humidifier & Dehumidifier Target Automation
+
 Automatically dynamically steers climate settings as plants mature through growth stages.
 
 ```yaml
@@ -895,6 +988,7 @@ action:
 ```
 
 ### 2. High Mold Risk Emergency Mitigation Automation
+
 Activates exhaust fans and increases internal air movement when Bayesian analysis flags mold threats.
 
 ```yaml
@@ -919,6 +1013,7 @@ action:
 ```
 
 ### 3. VWC-Guided Steering Automation
+
 Triggers micro-watering shots based on live substrate moisture and crop steering guidelines.
 
 ```yaml
@@ -952,16 +1047,19 @@ action:
 ## Troubleshooting & Diagnostics
 
 ### Q: Why are my Bayesian environment sensors showing "Unavailable"?
-*   **Check Sensor Binding**: Verify that the temperature, humidity, and VPD entities are correctly spelled and functioning.
-*   **Initial Baseline**: The Bayesian engine needs a short warm-up period to gather baseline data. Ensure that the associated sensors have updated at least once since restarting Home Assistant.
+
+- **Check Sensor Binding**: Verify that the temperature, humidity, and VPD entities are correctly spelled and functioning.
+- **Initial Baseline**: The Bayesian engine needs a short warm-up period to gather baseline data. Ensure that the associated sensors have updated at least once since restarting Home Assistant.
 
 ### Q: My Niimbot printer is paired but fails to print.
-*   **Bluetooth Range**: Thermal printers require a strong BLE connection. Move the printer closer to your Home Assistant server or use a BLE proxy.
-*   **Correct MAC Address**: Make sure to enter the printer's Bluetooth MAC address in the `device_id` field if auto-discovery fails.
+
+- **Bluetooth Range**: Thermal printers require a strong BLE connection. Move the printer closer to your Home Assistant server or use a BLE proxy.
+- **Correct MAC Address**: Make sure to enter the printer's Bluetooth MAC address in the `device_id` field if auto-discovery fails.
 
 ### Q: Database issues after upgrading the integration version.
-*   **Run Diagnostics**: Use `growspace_manager.debug_cleanup_legacy` to clean orphaned records.
-*   **Re-initialize Special Zones**: Run `growspace_manager.debug_reset_special_growspaces` to repair drying/curing registers.
+
+- **Run Diagnostics**: Use `growspace_manager.debug_cleanup_legacy` to clean orphaned records.
+- **Re-initialize Special Zones**: Run `growspace_manager.debug_reset_special_growspaces` to repair drying/curing registers.
 
 ---
 

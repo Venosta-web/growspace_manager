@@ -7,14 +7,7 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components import websocket_api
-from homeassistant.components.recorder import get_instance
-from homeassistant.components.recorder.db_schema import Events
-from homeassistant.components.recorder.util import session_scope
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_AMOUNT_ML,
     ATTR_EC,
     ATTR_GROWSPACE_ID,
@@ -27,8 +20,16 @@ from ..const import (
     ATTR_TRANSITION_DATE,
     DOMAIN,
 )
-from ..coordinator import GrowspaceCoordinator
-from ..services.growspace import async_add_growspace_note
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.services.growspace import (
+    async_add_growspace_note,
+)
+from homeassistant.components import websocket_api
+from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.db_schema import Events
+from homeassistant.components.recorder.util import session_scope
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,7 +74,6 @@ async def websocket_add_timeline_note(
     """Handle add timeline note command via WebSocket."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        strain_library = coordinator.services.config.strain_library
 
         await coordinator.services.add_timeline_note(
             plant_id=msg[ATTR_PLANT_ID],

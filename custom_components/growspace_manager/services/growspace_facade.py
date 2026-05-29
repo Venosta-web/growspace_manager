@@ -5,20 +5,18 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import device_registry as dr, entity_registry as er
-from homeassistant.util import dt as dt_util, slugify
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_DRAIN_TIMES,
     ATTR_IRRIGATION_TIMES,
     DOMAIN,
     SPECIAL_GROWSPACES,
     VERSION,
 )
-from ..domain.stage_calculator import determine_coordinator_stage
-from ..exceptions import GrowspaceNotFoundError
-from ..models import (
+from custom_components.growspace_manager.domain.stage_calculator import (
+    determine_coordinator_stage,
+)
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.models import (
     DrainReading,
     ECTargetRange,
     Growspace,
@@ -26,11 +24,16 @@ from ..models import (
     Subarea,
     WaterUsageData,
 )
-from ..tank_water_tracker import TankWaterTracker
-from ..utils import generate_growspace_overview_unique_id
+from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
+from custom_components.growspace_manager.utils import (
+    generate_growspace_overview_unique_id,
+)
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.util import dt as dt_util, slugify
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

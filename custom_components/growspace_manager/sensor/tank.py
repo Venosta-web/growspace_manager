@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any, override
+from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import Growspace
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.const import UnitOfTime, UnitOfVolume
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
-from ..models import Growspace
 
 
 class TankDepletionSensor(CoordinatorEntity, SensorEntity):

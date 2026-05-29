@@ -1344,9 +1344,7 @@ class StrainLibrary:
             return result
 
         # Fallback: prefer "default", then alphabetical siblings
-        fallback_order = ["default"] + sorted(
-            k for k in phenotypes if k != "default" and k != normalized
-        )
+        fallback_order = ["default", *sorted(k for k in phenotypes if k not in ("default", normalized))]
         for sibling_name in fallback_order:
             sibling = phenotypes.get(sibling_name, {})
             result = _thumbnail_from(sibling)

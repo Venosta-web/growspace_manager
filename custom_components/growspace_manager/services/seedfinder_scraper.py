@@ -1,6 +1,5 @@
 """Seedfinder scraper for Growspace Manager."""
 
-import json
 import logging
 import re
 from typing import Any

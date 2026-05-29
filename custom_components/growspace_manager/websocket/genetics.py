@@ -7,13 +7,12 @@ from typing import Any
 
 import voluptuous as vol
 
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
-from ..strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 

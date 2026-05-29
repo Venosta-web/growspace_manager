@@ -5,24 +5,24 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_CURVE_ID,
     ATTR_NAME,
     ATTR_POINTS,
     ATTR_STAGE,
     GrowspaceService,
 )
-from ..schemas import (
+from custom_components.growspace_manager.schemas import (
     REMOVE_EC_RAMP_CURVE_SCHEMA,
     SAVE_EC_RAMP_CURVE_SCHEMA,
 )
-from .utils import handle_service_errors
 from homeassistant.core import HomeAssistant, ServiceCall
 
 from ._definition import ServiceDefinition
+from .utils import handle_service_errors
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -1,6 +1,7 @@
 """Additional tests for irrigation_coordinator coverage."""
 
 import asyncio
+import contextlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -77,6 +78,12 @@ def mock_config_entry() -> MagicMock:
     entry.entry_id = ENTRY_ID
     entry.runtime_data = MagicMock()
     entry.options = {}
+
+    def _create_bg_task(_hass, coro, _name, *args, **kwargs):
+        """Wrap the coroutine into a real task so it is not leaked."""
+        return asyncio.create_task(coro)
+
+    entry.async_create_background_task = MagicMock(side_effect=_create_bg_task)
     return entry
 
 
@@ -488,8 +495,14 @@ async def test_async_manual_run_cancels_running_irrigation(
     mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config.irrigation_pump_entity = "switch.pump"
     mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config.irrigation_duration = 30
 
-    await coordinator.async_manual_run(15)
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        await coordinator.async_manual_run(15)
 
-    # Verify that the old running task was replaced
-    assert coordinator._running_tasks["irrigation"] is not mock_running_task
+        # Verify that the old running task was replaced
+        new_task = coordinator._running_tasks["irrigation"]
+        assert new_task is not mock_running_task
+
+        # Allow the background task to complete so the coroutine is not leaked
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await new_task
 

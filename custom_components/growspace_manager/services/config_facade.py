@@ -8,11 +8,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ..models import ECRampCurve, IPMPreset, NutrientPreset
+from custom_components.growspace_manager.models import (
+    ECRampCurve,
+    IPMPreset,
+    NutrientPreset,
+)
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
-    from ..strain_library import StrainLibrary
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 

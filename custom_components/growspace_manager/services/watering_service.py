@@ -9,22 +9,22 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ..event_builder import EventBuilder
-from ..exceptions import GrowspaceError
-from ..models import Plant
+from custom_components.growspace_manager.event_builder import EventBuilder
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.models import Plant
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .context import BaseService, ServiceContext
 
 if TYPE_CHECKING:
-    from ..data_access.growspace_repository import (
+    from custom_components.growspace_manager.data_access.growspace_repository import (
         GrowspaceRepository,
     )
-    from ..growspace_validator import (
+    from custom_components.growspace_manager.growspace_validator import (
         GrowspaceValidator,
     )
-    from ..managers.nutrient import NutrientManager
+    from custom_components.growspace_manager.managers.nutrient import NutrientManager
 
 _LOGGER = logging.getLogger(__name__)
 

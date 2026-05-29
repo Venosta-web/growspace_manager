@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..models import GrowspaceEvent
+    from custom_components.growspace_manager.models import GrowspaceEvent
 
 
 @dataclass

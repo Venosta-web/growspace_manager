@@ -9,30 +9,29 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components import conversation
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     GrowspaceService,
     PlantStage,
 )
-from ..domain import calculate_days_in_stage
-from ..exceptions import GrowspaceError
-from ..schemas import (
+from custom_components.growspace_manager.domain import calculate_days_in_stage
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.schemas import (
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
 )
+from homeassistant.components import conversation
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import ServiceValidationError
 
 from ._definition import ServiceDefinition
 from .strain_library import StrainLibrary
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

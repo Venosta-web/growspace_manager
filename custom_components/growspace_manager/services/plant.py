@@ -5,15 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import entity_registry as er
-from homeassistant.util import dt as dt_util
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_AMOUNT,
     ATTR_AMOUNT_ML,
     ATTR_CBD_PERCENTAGE,
@@ -54,14 +46,21 @@ from ..const import (
     DATE_FIELDS,
     GrowspaceService,
 )
-from ..exceptions import GrowspaceError
-from ..strain_library import StrainLibrary
-from ..utils import parse_date_field
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.strain_library import StrainLibrary
+from custom_components.growspace_manager.utils import parse_date_field
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
-from ..schemas import (
+from custom_components.growspace_manager.schemas import (
     ADD_PLANT_SCHEMA,
     ADD_PLANTS_SCHEMA,
     ADD_TIMELINE_NOTE_SCHEMA,
@@ -76,6 +75,7 @@ from ..schemas import (
     UPDATE_HARVEST_METRICS_SCHEMA,
     UPDATE_PLANT_SCHEMA,
 )
+
 from ._definition import ServiceDefinition
 
 # from ..models import Plant # Potentially needed for type hinting if desired

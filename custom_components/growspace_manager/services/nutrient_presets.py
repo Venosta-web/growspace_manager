@@ -5,24 +5,24 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_MIN_DAYS_IN_STAGE,
     ATTR_NAME,
     ATTR_PRESET_ID,
     ATTR_STAGE,
     GrowspaceService,
 )
-from ..schemas import (
+from custom_components.growspace_manager.schemas import (
     REMOVE_NUTRIENT_PRESET_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+
 from ._definition import ServiceDefinition
 from .utils import handle_service_errors
 
-from homeassistant.core import HomeAssistant, ServiceCall
-
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

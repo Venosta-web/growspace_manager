@@ -5,14 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, override
 
+from custom_components.growspace_manager.const import DEFAULT_DLI_TARGET_FLOWER, DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
-
-from ..const import DEFAULT_DLI_TARGET_FLOWER, DOMAIN
-from ..coordinator import GrowspaceCoordinator
-from ..utils import calculate_plant_stage
 
 
 class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]

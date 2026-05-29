@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from typing import Any, override
 
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.drying_calculator import (
+    compute_days_to_target,
+    compute_weight_lost_pct,
+)
+from custom_components.growspace_manager.models import Plant
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from ..coordinator import GrowspaceCoordinator
-from ..drying_calculator import compute_days_to_target, compute_weight_lost_pct
-from ..models import Plant
 
 
 class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
@@ -24,7 +26,7 @@ class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
 
     def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
         """Initialize the drying weight sensor."""
-        from ..const import DOMAIN  # noqa: PLC0415
+        from custom_components.growspace_manager.const import DOMAIN  # noqa: PLC0415
 
         super().__init__(coordinator)
         self._plant_id = plant.plant_id
@@ -76,7 +78,7 @@ class DryingMoistureSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity
 
     def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
         """Initialize the drying moisture sensor."""
-        from ..const import DOMAIN  # noqa: PLC0415
+        from custom_components.growspace_manager.const import DOMAIN  # noqa: PLC0415
 
         super().__init__(coordinator)
         self._plant_id = plant.plant_id

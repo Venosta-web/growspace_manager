@@ -5,14 +5,13 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any, override
 
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import EntityCategory
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
 
 
 class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]

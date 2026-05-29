@@ -7,6 +7,7 @@
 Drying & Curing Tracking requires storing a time-series of weight readings and moisture readings on a Plant during the `dry` stage. The existing `HarvestMetrics` dataclass already lives on `Plant` and holds `wet_weight` and `dry_weight`.
 
 Two options were considered:
+
 1. Add `weight_log` and `moisture_log` directly to `HarvestMetrics`.
 2. Create a new `DryingData` dataclass on `Plant`.
 

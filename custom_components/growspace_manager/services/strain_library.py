@@ -12,12 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers.network import get_url
-from homeassistant.util import dt as dt_util
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_BREEDER,
     ATTR_BREEDER_LOGO,
     ATTR_LINEAGE,
@@ -26,11 +21,8 @@ from ..const import (
     DOMAIN,
     GrowspaceService,
 )
-from ..exceptions import GrowspaceError
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
-from ..schemas import (
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.schemas import (
     ADD_STRAIN_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
@@ -39,12 +31,19 @@ from ..schemas import (
     REMOVE_STRAIN_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
 )
-from ..strain_library import StrainLibrary
+from custom_components.growspace_manager.strain_library import StrainLibrary
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers.network import get_url
+from homeassistant.util import dt as dt_util
 
 from ._definition import ServiceDefinition
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

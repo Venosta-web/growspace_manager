@@ -6,28 +6,36 @@ import asyncio
 import logging
 from typing import Any
 
+from custom_components.growspace_manager.const import (
+    METRIC_HUMIDITY,
+    METRIC_TEMPERATURE,
+    METRIC_VPD,
+)
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.helpers import (
+    async_setup_statistics_sensor,
+    async_setup_trend_sensor,
+)
+from custom_components.growspace_manager.models import Growspace, IrrigationTank
+from custom_components.growspace_manager.tank_depletion_predictor import (
+    TankDepletionPredictor,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from ..const import (
-    DOMAIN,
-    METRIC_HUMIDITY,
-    METRIC_TEMPERATURE,
-    METRIC_VPD,
-)
-from ..coordinator import GrowspaceCoordinator
-from ..helpers import async_setup_statistics_sensor, async_setup_trend_sensor
-from ..models import Growspace, IrrigationTank
-from ..tank_depletion_predictor import TankDepletionPredictor
 from .crop_steering import CropSteeringSensor
 from .environment import AirExchangeSensor, DLISensor, ECTargetSensor
 from .overview import GrowspaceListSensor, GrowspaceOverviewSensor
 from .plant import PlantEntity
 from .strain import SeedInventorySensor, StrainLibrarySensor
-from .tank import TankDepletionSensor, TankDerivedWaterSensor, _should_create_derived_water_sensor
+from .tank import (
+    TankDepletionSensor,
+    TankDerivedWaterSensor,
+    _should_create_derived_water_sensor,
+)
 from .usage import EnergyUsageSensor, PowerUsageSensor, WaterUsageSensor
 from .vision import VisionCheckupSensor
 from .vpd import CalculatedVpdSensor, SubareaCalculatedVpdSensor, VpdSensor

@@ -5,10 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_DRAIN_TIMES,
     ATTR_DURATION,
     ATTR_FEED_EC_MAX,
@@ -19,7 +16,7 @@ from ..const import (
     ATTR_TIME,
     GrowspaceService,
 )
-from ..schemas import (
+from custom_components.growspace_manager.schemas import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
     REMOVE_DRAIN_TIME_SCHEMA,
@@ -29,12 +26,17 @@ from ..schemas import (
     SET_IRRIGATION_SETTINGS_SCHEMA,
     SET_IRRIGATION_STRATEGY_SCHEMA,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+
 from ._definition import ServiceDefinition
 from .utils import handle_service_errors
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
-    from ..irrigation_coordinator import IrrigationCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.irrigation_coordinator import (
+        IrrigationCoordinator,
+    )
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,7 +80,7 @@ async def handle_set_irrigation_settings(
 ) -> None:
     """Handle the service call to set irrigation settings for a growspace."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
-    irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
+    await _get_irrigation_coordinator(coordinator, growspace_id)
 
     settings = {
         key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
@@ -134,7 +136,7 @@ async def handle_remove_irrigation_time(
 ) -> None:
     """Handle the service call to remove an irrigation time from a schedule."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
-    irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
+    await _get_irrigation_coordinator(coordinator, growspace_id)
     await coordinator.services.growspaces.remove_irrigation_schedule_item(
         growspace_id, ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME]
     )
@@ -167,7 +169,7 @@ async def handle_remove_drain_time(
 ) -> None:
     """Handle the service call to remove a drain time from a schedule."""
     growspace_id = call.data[ATTR_GROWSPACE_ID]
-    irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
+    await _get_irrigation_coordinator(coordinator, growspace_id)
     await coordinator.services.growspaces.remove_irrigation_schedule_item(
         growspace_id, ATTR_DRAIN_TIMES, call.data[ATTR_TIME]
     )

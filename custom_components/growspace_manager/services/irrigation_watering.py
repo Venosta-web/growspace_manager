@@ -5,16 +5,19 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from custom_components.growspace_manager.const import GrowspaceService
+from custom_components.growspace_manager.schemas import (
+    RESET_PLANT_LAST_WATERED_SCHEMA,
+    WATER_GROWSPACE_SCHEMA,
+    WATER_PLANT_SCHEMA,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
-
-from ..const import GrowspaceService
-from ..schemas import RESET_PLANT_LAST_WATERED_SCHEMA, WATER_GROWSPACE_SCHEMA, WATER_PLANT_SCHEMA
 
 from ._definition import ServiceDefinition
 from .utils import handle_service_errors
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

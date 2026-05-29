@@ -177,8 +177,12 @@ async def test_async_setup_entry(hass: HomeAssistant) -> None:
     hass.http.async_register_static_paths = AsyncMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
-    coordinator_mock = AsyncMock()
+    coordinator_mock = MagicMock()
+    coordinator_mock.hass = hass
     coordinator_mock.growspaces = {}
+    coordinator_mock.async_load = AsyncMock()
+    coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
+    coordinator_mock.async_config_entry_first_refresh = AsyncMock()
 
     with (
         patch("homeassistant.helpers.storage.Store") as mock_store_cls,
@@ -397,11 +401,14 @@ async def test_async_setup_entry_with_growspaces(hass: HomeAssistant) -> None:
     hass.http.async_register_static_paths = AsyncMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
-    coordinator_mock = AsyncMock()
+    coordinator_mock = MagicMock()
+    coordinator_mock.hass = hass
     mock_gs1 = MagicMock()
     mock_gs1.irrigation_strategy.enabled = False
     coordinator_mock.growspaces = {"gs1": mock_gs1}
+    coordinator_mock.async_load = AsyncMock()
     coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
+    coordinator_mock.async_config_entry_first_refresh = AsyncMock()
 
     with (
         patch("homeassistant.helpers.storage.Store") as mock_store_cls,

@@ -49,14 +49,13 @@ jobs:
           name: Pre-release-${{ github.ref_name }}-${{ github.sha }}
           generate_release_notes: true
           files: growspace_manager.zip
-          
 
       # 4. Delete Older Pre-releases
       - name: Delete Older Pre-releases
         uses: dev-drprasad/delete-older-releases@v0.3.2
         with:
-          keep_latest: 5                # Number of most recent pre-releases to keep
+          keep_latest: 5 # Number of most recent pre-releases to keep
           delete_tag_pattern: "^prerelease-" # Regex pattern to match your tags
-          delete_tags: true             # Also delete the tags associated with the releases
+          delete_tags: true # Also delete the tags associated with the releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

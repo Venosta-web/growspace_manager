@@ -208,8 +208,15 @@ async def test_async_wait_for_switch_state_timeout(
     mock_hass.bus = MagicMock()
     mock_hass.bus.async_listen.return_value = Mock()
 
-    # We need to simulate the timeout without actually waiting a long time
-    with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
+    # We need to simulate the timeout without actually waiting a long time.
+    # We use a custom async function to mock asyncio.wait_for and ensure the
+    # coroutine argument is properly closed/awaited to prevent unawaited coroutine warnings.
+    async def mock_wait_for(fut, timeout=None):
+        if hasattr(fut, "close"):
+            fut.close()
+        raise asyncio.TimeoutError()
+
+    with patch("asyncio.wait_for", new=mock_wait_for):
         result = await coordinator._async_wait_for_switch_state(
             "switch.test_pump", "on", timeout=0.1
         )

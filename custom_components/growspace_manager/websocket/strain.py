@@ -8,14 +8,13 @@ from typing import Any
 
 import voluptuous as vol
 
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import slugify
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
-from ..strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -119,7 +118,7 @@ async def websocket_download_strain_image(
     """Download a remote image URL and save it as a local strain image."""
     import base64 as _base64  # noqa: PLC0415
 
-    from homeassistant.helpers.aiohttp_client import async_get_clientsession  # noqa: PLC0415
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
     url = msg["url"]
     try:
@@ -158,7 +157,7 @@ async def websocket_query_external_strain(
     msg: dict[str, Any],
 ) -> None:
     """Query external strain database."""
-    from ..const import CONF_BLACKLIST_BREEDERS  # noqa: PLC0415
+    from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS
 
     query = msg["query"]
     coordinator = GrowspaceCoordinator.get_any(hass)

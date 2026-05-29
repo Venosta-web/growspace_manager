@@ -8,7 +8,16 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.logbook import LOGBOOK_ENTRY_MESSAGE, LOGBOOK_ENTRY_NAME
 from homeassistant.core import HomeAssistant, callback
 
-from .const import CATEGORY_ALERT, CATEGORY_DEHUMIDIFIER, CATEGORY_HUMIDIFIER, CATEGORY_IRRIGATION_ERROR, CATEGORY_MILESTONE, CATEGORY_NOTE, DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
+from .const import (
+    CATEGORY_ALERT,
+    CATEGORY_DEHUMIDIFIER,
+    CATEGORY_HUMIDIFIER,
+    CATEGORY_IRRIGATION_ERROR,
+    CATEGORY_MILESTONE,
+    CATEGORY_NOTE,
+    DOMAIN,
+    EVENT_GROWSPACE_LOG_ENTRY,
+)
 
 if TYPE_CHECKING:
     from homeassistant.components.logbook import LazyEventPartialState

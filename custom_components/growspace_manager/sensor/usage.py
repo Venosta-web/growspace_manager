@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, override
 
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -12,9 +14,6 @@ from homeassistant.components.sensor import (
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
 
 
 class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]

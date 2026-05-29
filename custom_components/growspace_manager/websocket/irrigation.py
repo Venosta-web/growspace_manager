@@ -7,11 +7,10 @@ from typing import Any
 
 import voluptuous as vol
 
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

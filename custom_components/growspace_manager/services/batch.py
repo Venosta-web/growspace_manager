@@ -5,21 +5,21 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-
-from ..const import (
+from custom_components.growspace_manager.const import (
     ATTR_STAGE,
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TRANSITION_DATE,
     GrowspaceService,
 )
-from ..exceptions import GrowspaceError
-from ..schemas import BATCH_ACTION_SCHEMA
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.schemas import BATCH_ACTION_SCHEMA
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+
 from ._definition import ServiceDefinition
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

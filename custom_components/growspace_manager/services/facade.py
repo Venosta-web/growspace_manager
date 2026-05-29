@@ -11,17 +11,20 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from custom_components.growspace_manager.const import (
+    CATEGORY_NOTE,
+    EVENT_GROWSPACE_LOG_ENTRY,
+)
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
-from ..const import CATEGORY_NOTE, EVENT_GROWSPACE_LOG_ENTRY
 from .config_facade import ConfigFacade
 from .growspace_facade import GrowspaceFacade
 from .notifications_facade import NotificationsFacade
 from .plant_facade import PlantFacade
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

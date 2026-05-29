@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..schemas import (
+from custom_components.growspace_manager.schemas import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,

@@ -5,22 +5,26 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from custom_components.growspace_manager.const import (
+    CANONICAL_ID_CURE,
+    CANONICAL_ID_DRY,
+    GrowspaceService,
+)
+from custom_components.growspace_manager.schemas import (
+    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
+    DEBUG_LIST_GROWSPACES_SCHEMA,
+    DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+)
+from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 
-from ..const import CANONICAL_ID_CURE, CANONICAL_ID_DRY, GrowspaceService
-from ..schemas import (
-    DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
-    DEBUG_LIST_GROWSPACES_SCHEMA,
-    DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
-)
-from ..strain_library import StrainLibrary
 from ._definition import ServiceDefinition
 
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

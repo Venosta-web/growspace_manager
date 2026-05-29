@@ -25,14 +25,17 @@ from typing import Any
 
 import voluptuous as vol
 
+from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import GrowspaceType
+from custom_components.growspace_manager.utils import (
+    calculate_days_since,
+    days_to_week,
+    strip_markdown_fence,
+)
 from homeassistant.components import conversation, websocket_api
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-
-from ..const import DOMAIN
-from ..coordinator import GrowspaceCoordinator
-from ..models import GrowspaceType
-from ..utils import calculate_days_since, days_to_week, strip_markdown_fence
 
 _LOGGER = logging.getLogger(__name__)
 

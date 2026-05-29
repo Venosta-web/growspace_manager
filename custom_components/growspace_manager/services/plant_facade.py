@@ -6,15 +6,24 @@ from datetime import date
 import logging
 from typing import TYPE_CHECKING, Any
 
+from custom_components.growspace_manager.const import (
+    DOMAIN,
+    VERSION,
+    NotificationTier,
+    PlantStage,
+)
+from custom_components.growspace_manager.models import (
+    MoistureEntry,
+    NutrientPreset,
+    Plant,
+    WeightEntry,
+)
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from ..const import DOMAIN, VERSION, NotificationTier, PlantStage
-from ..models import MoistureEntry, NutrientPreset, Plant, WeightEntry
-
 if TYPE_CHECKING:
-    from ..coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
