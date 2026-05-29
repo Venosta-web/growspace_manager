@@ -112,6 +112,8 @@ class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
 
     @property
     @override  # type: ignore[misc]
+    @property
+    @override  # type: ignore[misc]
     def native_value(self) -> float | None:
         """Return total current wattage across all configured power sensors."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
@@ -119,7 +121,7 @@ class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             return None
         total = 0.0
         any_valid = False
-        for sensor_id in growspace.environment_config.power_sensors:
+        for sensor_id in (growspace.environment_config.power_sensors or []):
             state = self.hass.states.get(sensor_id)
             if state and state.state not in ("unknown", "unavailable"):
                 try:
@@ -128,8 +130,6 @@ class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
                 except (ValueError, TypeError):
                     continue
         return round(total, 1) if any_valid else None
-
-
 class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
     """Sensor tracking water consumption per growspace."""
 
