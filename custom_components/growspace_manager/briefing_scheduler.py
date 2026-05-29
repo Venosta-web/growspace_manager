@@ -38,7 +38,7 @@ from .const import (
     STORAGE_KEY_AI_BRIEFING,
     STORAGE_VERSION,
 )
-from .utils import read_environment_vpd
+from .utils import read_environment_vpd, strip_markdown_fence
 
 if TYPE_CHECKING:
     import asyncio
@@ -254,9 +254,13 @@ class BriefingScheduler:
         if "RECOMMENDATIONS:" in speech:
             parts = speech.split("RECOMMENDATIONS:", 1)
             summary_text = parts[0].replace("SUMMARY:", "").strip()
+            raw_json = strip_markdown_fence(parts[1].strip())
             try:
-                recommendations = json.loads(parts[1].strip())
+                recommendations = json.loads(raw_json)
             except (json.JSONDecodeError, ValueError):
+                _LOGGER.warning(
+                    "Failed to parse briefing recommendations JSON: %s", raw_json[:200]
+                )
                 recommendations = []
         elif "SUMMARY:" in speech:
             summary_text = speech.replace("SUMMARY:", "").strip()

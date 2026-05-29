@@ -94,6 +94,32 @@ def test_growspace_dict_rows_uses_default() -> None:
     assert gs.plants_per_row == 3
 
 
+def test_environment_config_null_list_fields_coerced_to_empty() -> None:
+    """Null list fields in stored JSON are coerced to [] by __post_init__."""
+    data = {
+        "ph_sensors": None,
+        "feed_ec_sensors": None,
+        "runoff_ec_sensors": None,
+        "temperature_sensors": None,
+        "irrigation_tanks": None,
+    }
+    config = EnvironmentConfig.from_dict(data)
+    assert config.ph_sensors == []
+    assert config.feed_ec_sensors == []
+    assert config.runoff_ec_sensors == []
+    assert config.temperature_sensors == []
+    assert config.irrigation_tanks == []
+
+
+def test_growspace_null_environment_config_uses_default() -> None:
+    """Test that null environment_config in stored JSON is coerced to empty EnvironmentConfig."""
+    data = {"id": "gs1", "name": "Tent 1", "environment_config": None}
+    gs = Growspace.from_dict(data)
+    assert isinstance(gs.environment_config, EnvironmentConfig)
+    assert gs.environment_config.ph_sensors == []
+    assert gs.environment_config.temperature_sensors == []
+
+
 def test_plant_dict_row_col_uses_default() -> None:
     """Test Plant.from_dict with non-numeric row/col (dict) hits except fallback (models.py:818-819).
 

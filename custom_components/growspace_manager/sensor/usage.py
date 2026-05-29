@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any, override
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
@@ -52,7 +56,7 @@ class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity): 
             if state and state.state not in ("unknown", "unavailable"):
                 try:
                     total += float(state.state)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     continue
         return total
 
@@ -112,8 +116,6 @@ class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
 
     @property
     @override  # type: ignore[misc]
-    @property
-    @override  # type: ignore[misc]
     def native_value(self) -> float | None:
         """Return total current wattage across all configured power sensors."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
@@ -121,15 +123,17 @@ class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             return None
         total = 0.0
         any_valid = False
-        for sensor_id in (growspace.environment_config.power_sensors or []):
+        for sensor_id in growspace.environment_config.power_sensors or []:
             state = self.hass.states.get(sensor_id)
             if state and state.state not in ("unknown", "unavailable"):
                 try:
                     total += float(state.state)
                     any_valid = True
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     continue
         return round(total, 1) if any_valid else None
+
+
 class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
     """Sensor tracking water consumption per growspace."""
 
@@ -176,7 +180,11 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             return {}
 
         usage = growspace.water_usage
-        plant_count = len(self.coordinator.services.growspaces.get_growspace_plants(self._growspace_id))
+        plant_count = len(
+            self.coordinator.services.growspaces.get_growspace_plants(
+                self._growspace_id
+            )
+        )
         days = 1
         if usage.cycle_start_date:
             from datetime import date as date_cls  # noqa: PLC0415
@@ -184,7 +192,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             try:
                 start = date_cls.fromisoformat(usage.cycle_start_date)
                 days = max(1, (date_cls.today() - start).days)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 pass
 
         liters_per_plant = (

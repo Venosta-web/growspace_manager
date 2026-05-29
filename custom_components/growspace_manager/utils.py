@@ -434,3 +434,20 @@ def generate_subarea_vpd_sensor_unique_id(
 def generate_growspace_overview_unique_id(growspace_id: str) -> str:
     """Generate a consistent unique ID for a growspace overview sensor."""
     return f"{DOMAIN}_{growspace_id}"
+
+
+def strip_markdown_fence(text: str) -> str:
+    """Strip a leading ```[lang] / trailing ``` markdown code fence from *text*.
+
+    LLMs commonly wrap JSON output in fences; this normalises the string so
+    callers can pass the result directly to ``json.loads``.
+    """
+    triple_backtick = "`" * 3
+    stripped = text.strip()
+    if stripped.startswith(triple_backtick):
+        first_newline = stripped.find("\n")
+        if first_newline != -1:
+            stripped = stripped[first_newline:].strip()
+        if stripped.endswith(triple_backtick):
+            stripped = stripped[:-3].strip()
+    return stripped

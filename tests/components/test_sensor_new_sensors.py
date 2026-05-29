@@ -1039,6 +1039,13 @@ def test_power_sensor_native_value_no_environment_config() -> None:
     assert sensor.native_value is None
 
 
+def test_power_sensor_native_value_none_power_sensors() -> None:
+    """Line 124: native_value returns None safely when power_sensors is None."""
+    sensor, _, growspace = _make_power_sensor()
+    growspace.environment_config.power_sensors = None
+    assert sensor.native_value is None
+
+
 def test_power_sensor_native_value_sums_valid_sensors() -> None:
     """Lines 120-130: native_value sums wattage from all valid power sensors."""
     sensor, _, growspace = _make_power_sensor(["sensor.p1", "sensor.p2"])

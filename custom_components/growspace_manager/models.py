@@ -150,7 +150,7 @@ def _sanitize_numeric_fields(cls: type, data: dict[str, Any]) -> dict[str, Any]:
             elif f.type == "int" and isinstance(val, (float, str)):
                 try:
                     data[f.name] = int(float(val))
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     # On conversion error, fall back to the field's default or 0.
                     if f.default is not MISSING:
                         data[f.name] = f.default
@@ -181,15 +181,15 @@ class BasePreset(BaseModel):
     created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
 
     @classmethod
-    def __pre_deserialize__(cls, d: dict[str, Any]) -> dict[str, Any]:
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Handle missing 'id' in legacy data by generating one if necessary."""
-        if "id" not in d:
+        if "id" not in data:
             # If id is missing, use a deterministic one based on name if possible,
             # or a random one. Using a name-based ID helps maintain consistency
             # if the same legacy data is loaded multiple times.
-            name = d.get("name", "Legacy Preset")
-            d["id"] = f"legacy_{name.lower().replace(' ', '_')}"
-        return d
+            name = data.get("name", "Legacy Preset")
+            data["id"] = f"legacy_{name.lower().replace(' ', '_')}"
+        return data
 
 
 @dataclass(slots=True)
@@ -389,6 +389,34 @@ class EnvironmentConfig(BaseModel):
         """Mashumaro hook: transform data before deserialization."""
         data = _sanitize_numeric_fields(cls, data)
 
+        # Coerce null list fields to [] so mashumaro doesn't reject them.
+        _LIST_FIELDS = (
+            "temperature_sensors",
+            "humidity_sensors",
+            "vpd_sensors",
+            "light_sensors",
+            "exhaust_fan_entities",
+            "circulation_fan_entities",
+            "humidifier_entities",
+            "dehumidifier_entities",
+            "sensor_groups",
+            "substrate_temperature_sensors",
+            "camera_entities",
+            "lung_room_temp_sensors",
+            "ph_sensors",
+            "feed_ec_sensors",
+            "substrate_ec_sensors",
+            "runoff_ec_sensors",
+            "drain_volume_sensors",
+            "irrigation_flow_sensors",
+            "power_sensors",
+            "energy_sensors",
+            "irrigation_tanks",
+        )
+        for _f in _LIST_FIELDS:
+            if _f in data and data[_f] is None:
+                data[_f] = []
+
         # Migration: singular -> plural list
         migrations = {
             CONF_LIGHT_SENSOR: CONF_LIGHT_SENSORS,
@@ -499,8 +527,7 @@ class IrrigationConfig(BaseModel):
     auto_advance_p1_to_p2: bool = False
     auto_advance_p2_to_p3: bool = False
     halt_on_runoff_ec_threshold: float | None = None
-    active_steering_phase: str = 'p2'
-
+    active_steering_phase: str = "p2"
 
 
 @dataclass(slots=True)
@@ -677,8 +704,12 @@ class Growspace(BaseModel):
             if field_name in data:
                 try:
                     data[field_name] = int(float(data[field_name]))
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     data[field_name] = 3  # Safe default
+
+        # Coerce null environment_config to empty dict so mashumaro uses field defaults.
+        if data.get("environment_config") is None:
+            data["environment_config"] = {}
 
         # Migration: Fix legacy irrigation schedule format
         if "irrigation_config" in data and isinstance(data["irrigation_config"], dict):
@@ -690,7 +721,7 @@ class Growspace(BaseModel):
                     irr_config["veg_day_hours"] = int(
                         float(irr_config["veg_day_hours"])
                     )
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     irr_config["veg_day_hours"] = 12
 
             # Migrate irrigation_times and drain_times
@@ -714,7 +745,7 @@ class Growspace(BaseModel):
                                     item["duration"] = int(
                                         float(item.pop("duration_seconds"))
                                     )
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     item["duration"] = 60
                             # Remove stale duration_seconds if both keys exist
                             elif "duration_seconds" in item and "duration" in item:
@@ -724,7 +755,7 @@ class Growspace(BaseModel):
                             if "duration" in item:
                                 try:
                                     item["duration"] = int(float(item["duration"]))
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     item["duration"] = 60
 
                         new_list.append(item)
@@ -747,7 +778,7 @@ class Growspace(BaseModel):
                 if f in strat:
                     try:
                         strat[f] = int(float(strat[f]))
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         # Remove invalid value to let dataclass default take over
                         if f in strat:
                             del strat[f]
@@ -900,7 +931,7 @@ class Plant(BaseModel):
             if field_name in data:
                 try:
                     data[field_name] = int(float(data[field_name]))
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     data[field_name] = 1  # Safe default
 
         # Migration: old 'scores' dict → new 'phenotype_score' with renamed fields.

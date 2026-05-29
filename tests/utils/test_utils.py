@@ -27,6 +27,7 @@ from custom_components.growspace_manager.utils import (
     interpolate_value,
     parse_date_field,
     parse_date_field_v2,
+    strip_markdown_fence,
 )
 from homeassistant.util.dt import as_local
 
@@ -363,3 +364,18 @@ def test_calculate_stage_transition() -> None:
     assert s1 == BayesianStage.VEG
     assert s2 == BayesianStage.VEG
     assert f == 0.0
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ('[{"a": 1}]', '[{"a": 1}]'),
+        ("```\n[1, 2]\n```", "[1, 2]"),
+        ("```json\n[1, 2]\n```", "[1, 2]"),
+        ("  ```json\n[1, 2]\n```  ", "[1, 2]"),
+        ("```json\n[1, 2]", "[1, 2]"),
+        ("no fence at all", "no fence at all"),
+    ],
+)
+def test_strip_markdown_fence(raw: str, expected: str) -> None:
+    assert strip_markdown_fence(raw) == expected

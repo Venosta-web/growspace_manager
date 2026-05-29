@@ -32,7 +32,7 @@ from homeassistant.exceptions import ServiceValidationError
 from ..const import DOMAIN
 from ..coordinator import GrowspaceCoordinator
 from ..models import GrowspaceType
-from ..utils import calculate_days_since, days_to_week
+from ..utils import calculate_days_since, days_to_week, strip_markdown_fence
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,14 +98,7 @@ def _extract_action(text: str) -> tuple[str, dict[str, Any] | None]:
     match = _ACTION_RE.search(text)
     if not match:
         return text, None
-    raw_json = match.group(1).strip()
-    triple_backtick = chr(96) * 3
-    if raw_json.startswith(triple_backtick):
-        first_newline = raw_json.find("\n")
-        if first_newline != -1:
-            raw_json = raw_json[first_newline:].strip()
-        if raw_json.endswith(triple_backtick):
-            raw_json = raw_json[:-3].strip()
+    raw_json = strip_markdown_fence(match.group(1).strip())
     try:
         action = json.loads(raw_json)
     except (json.JSONDecodeError, ValueError):
