@@ -939,3 +939,82 @@ async def test_vwc_falls_back_to_lights_on_time_when_detected_is_none(
         await vwc_coordinator._update_loop(now)
 
     assert vwc_coordinator._current_phase == "P0 - Activation"
+
+
+async def test_handle_watering_cancels_lingering_task(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """Test that _handle_watering cancels an existing lingering irrigation task."""
+    strategy = mock_growspace.irrigation_strategy
+
+    # Place a mock lingering task in the coordinator's running tasks
+    mock_task = MagicMock()
+    mock_task.done.return_value = False
+    vwc_coordinator._running_tasks["irrigation"] = mock_task
+
+    # We trigger watering (ensure _last_shot_time allows it)
+    vwc_coordinator._last_shot_time = None
+
+    now_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        vwc_coordinator._handle_watering(strategy, "P1")
+
+    # The existing lingering task should have been cancelled
+    mock_task.cancel.assert_called_once()
+
+
+async def test_halt_on_runoff_ec_threshold_no_readings(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """Test that when halt_on_runoff_ec_threshold is set but readings list is empty, irrigation does not halt."""
+    mock_growspace.irrigation_config.halt_on_runoff_ec_threshold = 3.0
+    mock_growspace.drain_config.readings = []
+
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    # Watering should NOT be halted, so switch.pump should turn on
+    mock_hass.services.async_call.assert_any_call(
+        "switch", "turn_on", {"entity_id": "switch.pump"}, blocking=True
+    )
+
+
+async def test_halt_on_runoff_ec_threshold_not_exceeded(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """Test that when halt_on_runoff_ec_threshold is set and readings exist, but latest EC is not exceeded, irrigation does not halt."""
+    from custom_components.growspace_manager.models import DrainReading
+
+    mock_growspace.irrigation_config.halt_on_runoff_ec_threshold = 3.0
+    mock_growspace.drain_config.readings = [
+        DrainReading(timestamp="2023-01-01T09:00:00", feed_ec=2.0, drain_ec=2.5)
+    ]
+
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    # Watering should NOT be halted, so switch.pump should turn on
+    mock_hass.services.async_call.assert_any_call(
+        "switch", "turn_on", {"entity_id": "switch.pump"}, blocking=True
+    )

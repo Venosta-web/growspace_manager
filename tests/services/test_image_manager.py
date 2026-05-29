@@ -585,3 +585,28 @@ async def test_async_migrate_with_db(
 
     processed = await image_manager.async_migrate_to_webp(mock_db)
     assert processed is True
+
+
+@pytest.mark.asyncio
+async def test_save_strain_image_duplicate_collision(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
+    """Test duplicate image save collision suffix numbering."""
+    strain_id = "strain_collision"
+    image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+    path1 = await image_manager.save_strain_image(strain_id, None, image_base64)
+    expected_path1 = tmp_path / f"{strain_id}.webp"
+    assert path1 == str(expected_path1.absolute())
+    assert expected_path1.exists()
+
+    path2 = await image_manager.save_strain_image(strain_id, None, image_base64)
+    expected_path2 = tmp_path / f"{strain_id}_2.webp"
+    expected_small_path2 = tmp_path / f"{strain_id}_2_small.webp"
+
+    assert path2 == str(expected_path2.absolute())
+    assert expected_path2.exists()
+    assert expected_small_path2.exists()
+
+    assert "strain_collision_2.webp" in image_manager._image_cache
+    assert "strain_collision_2_small.webp" in image_manager._image_cache
