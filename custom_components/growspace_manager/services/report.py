@@ -12,8 +12,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fpdf import FPDF
-
 from ..const import DOMAIN, GrowspaceService
 from ..exceptions import GrowspaceError
 from ..models import Plant
@@ -453,6 +451,12 @@ def _export_as_json(data: dict[str, Any], file_path: str) -> None:
 
 def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
     """Generate a PDF report using fpdf2."""
+    try:
+        from fpdf import FPDF  # noqa: PLC0415
+    except ImportError as err:
+        raise HomeAssistantError(
+            "PDF export requires the 'fpdf2' package. Install it with: pip install fpdf2>=2.7.9"
+        ) from err
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)

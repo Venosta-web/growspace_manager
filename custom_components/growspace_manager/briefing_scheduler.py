@@ -256,7 +256,7 @@ class BriefingScheduler:
             summary_text = parts[0].replace("SUMMARY:", "").strip()
             try:
                 recommendations = json.loads(parts[1].strip())
-            except json.JSONDecodeError, ValueError:
+            except (json.JSONDecodeError, ValueError):
                 recommendations = []
         elif "SUMMARY:" in speech:
             summary_text = speech.replace("SUMMARY:", "").strip()

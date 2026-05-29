@@ -41,9 +41,7 @@ def real_fpdf():
         if fpdf_mock is not None:
             sys.modules["fpdf"] = fpdf_mock
 
-    import custom_components.growspace_manager.services.report as report_mod  # noqa: PLC0415
-
-    with patch.object(report_mod, "FPDF", real_fpdf_class):
+    with patch("fpdf.FPDF", real_fpdf_class):
         yield
 
 

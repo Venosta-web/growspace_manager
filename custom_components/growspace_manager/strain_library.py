@@ -215,6 +215,24 @@ class StrainLibrary:
                 # Column already exists
                 pass
 
+        # Ensure weight/percentage columns exist in harvests table (backwards compatibility)
+        for col, col_type in [
+            ("wet_weight", "REAL"),
+            ("dry_weight", "REAL"),
+            ("trim_weight", "REAL"),
+            ("thc_percentage", "REAL"),
+            ("cbd_percentage", "REAL"),
+            ("terpene_profile", "TEXT"),
+        ]:
+            try:
+                await self._db.execute(
+                    f"ALTER TABLE harvests ADD COLUMN {col} {col_type}"
+                )
+                await self._db.commit()
+                _LOGGER.info("Added column '%s' to harvests table", col)
+            except aiosqlite.OperationalError:
+                pass
+
         # Ensure new Seedfinder columns exist
         _strain_new_cols: list[tuple[str, str]] = [
             ("yield_potential", "TEXT"),

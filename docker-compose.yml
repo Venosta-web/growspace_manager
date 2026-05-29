@@ -45,8 +45,8 @@ services:
       - TZ=America/Chicago
     volumes:
       - ha-config-test:/config
-      # Shares the same custom_components as the dev instance
-      - ./custom_components:/config/custom_components 
+      # Mount only the integration folder so other custom components in the user's backup are preserved
+      - ./custom_components/growspace_manager:/config/custom_components/growspace_manager 
       # Mount Lovelace card for auto-updates
       - ../lovelace-growspace-manager-card/growspace-manager-card.js:/config/www/growspace-manager-card.js 
     ports:
