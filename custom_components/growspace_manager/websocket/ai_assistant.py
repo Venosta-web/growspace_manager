@@ -98,12 +98,19 @@ def _extract_action(text: str) -> tuple[str, dict[str, Any] | None]:
     match = _ACTION_RE.search(text)
     if not match:
         return text, None
-
     raw_json = match.group(1).strip()
+    triple_backtick = chr(96) * 3
+    if raw_json.startswith(triple_backtick):
+        first_newline = raw_json.find("\n")
+        if first_newline != -1:
+            raw_json = raw_json[first_newline:].strip()
+        if raw_json.endswith(triple_backtick):
+            raw_json = raw_json[:-3].strip()
     try:
         action = json.loads(raw_json)
     except (json.JSONDecodeError, ValueError):
         # Malformed block — return the full text without modification
+        return text, None
         return text, None
 
     # Strip the block (and any surrounding whitespace) from the display text
