@@ -1138,3 +1138,142 @@ async def test_aggregate_data_with_invalid_dates(
     # Should not crash when calculating first_plant_date
     data = await _aggregate_growspace_data(hass, mock_coordinator, "test_growspace")
     assert data["plant_info"]["id"] == "test_growspace"
+
+
+@pytest.mark.asyncio
+async def test_aggregate_plant_data_no_sensors(
+    hass: HomeAssistant, mock_plant: Plant, mock_growspace: Growspace
+) -> None:
+    """Test plant data aggregation when growspace has no environmental sensors configured."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+
+    mock_growspace.environment_config.temperature_sensor = None
+    mock_growspace.environment_config.humidity_sensor = None
+    mock_growspace.environment_config.vpd_sensor = None
+
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
+
+    with patch(
+        "custom_components.growspace_manager.services.report.get_instance",
+        return_value=mock_recorder,
+    ):
+        data = await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
+        assert data["environmental_averages"] == {}
+
+
+@pytest.mark.asyncio
+async def test_get_plant_environmental_stats_stage_date_edges(
+    hass: HomeAssistant, mock_plant: Plant, mock_growspace: Growspace
+) -> None:
+    """Test stage history parsing including invalid starts, valid ends, and invalid ends."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+
+    mock_plant.stage_history = [
+        {"stage": "invalid_start", "start": "garbage"},
+        {
+            "stage": "valid_end",
+            "start": "2024-01-10T00:00:00+00:00",
+            "end": "2024-01-15T00:00:00+00:00",
+        },
+        {
+            "stage": "invalid_end",
+            "start": "2024-01-16T00:00:00+00:00",
+            "end": "garbage",
+        },
+    ]
+
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(return_value=[])
+
+    with (
+        patch(
+            "custom_components.growspace_manager.services.report.get_instance",
+            return_value=mock_recorder,
+        ),
+        patch(
+            "custom_components.growspace_manager.websocket._get_statistics_data",
+            new_callable=AsyncMock,
+        ) as mock_get_stats,
+    ):
+        mock_get_stats.return_value = {
+            "sensor.test_temp": [
+                {"lu": "2024-01-12T12:00:00+00:00", "s": 22.0},
+                {"lu": "2024-01-18T12:00:00+00:00", "s": 24.0},
+            ],
+            "sensor.test_humidity": [
+                {"lu": "2024-01-12T12:00:00+00:00", "s": 50.0},
+                {"lu": "2024-01-18T12:00:00+00:00", "s": 60.0},
+            ],
+            "sensor.test_vpd": [
+                {"lu": "2024-01-12T12:00:00+00:00", "s": 0.8},
+                {"lu": "2024-01-18T12:00:00+00:00", "s": 1.2},
+            ],
+        }
+
+        data = await _aggregate_plant_data(hass, mock_coordinator, mock_plant)
+
+        assert "invalid_start" not in data["environmental_averages"]
+
+        assert "valid_end" in data["environmental_averages"]
+        valid_stats = data["environmental_averages"]["valid_end"]
+        assert valid_stats["temperature"] == 22.0
+        assert valid_stats["humidity"] == 50.0
+        assert valid_stats["vpd"] == 0.8
+
+        assert "invalid_end" in data["environmental_averages"]
+        invalid_stats = data["environmental_averages"]["invalid_end"]
+        assert invalid_stats["temperature"] == 24.0
+
+
+@pytest.mark.asyncio
+async def test_export_as_pdf_import_error(
+    hass: HomeAssistant, mock_plant: Plant, mock_growspace: Growspace, tmp_path: Path
+) -> None:
+    """Test generating a PDF report raises HomeAssistantError if fpdf2 is not installed."""
+    mock_coordinator = MagicMock()
+    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+
+    hass.config.path = MagicMock(
+        side_effect=lambda *args: str(tmp_path.joinpath(*args))
+    )
+
+    with (
+        patch(
+            "custom_components.growspace_manager.services.report._aggregate_plant_data",
+            new_callable=AsyncMock,
+        ) as mock_aggregate,
+        patch(
+            "custom_components.growspace_manager.services.report.dt_util.now"
+        ) as mock_now,
+        patch.dict("sys.modules", {"fpdf": None}),
+    ):
+        mock_now.return_value.strftime.return_value = "20240101_120000"
+        mock_aggregate.return_value = {
+            "plant_info": {
+                "id": "test_plant",
+                "strain": "Test Strain",
+                "phenotype": "#1",
+                "growspace": "Test Growspace",
+                "stage": "veg",
+                "created_at": "2024-01-01T00:00:00+00:00",
+            },
+            "environmental_averages": {},
+            "timeline_events": [],
+            "stage_history": [],
+        }
+
+        call = MagicMock()
+        call.data = {"plant_id": "test_plant", "format": "pdf"}
+
+        with pytest.raises(
+            HomeAssistantError,
+            match="PDF export requires the 'fpdf2' package",
+        ):
+            await handle_export_grow_report(hass, mock_coordinator, call)
+
