@@ -221,3 +221,56 @@ async def test_handle_set_dehumidifier_control_gs_not_found(
         ServiceValidationError, match="Growspace 'non_existent' not found"
     ):
         await handle_set_dehumidifier_control(mock_hass, mock_coordinator, mock_call)
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_preserves_tank_runtime_data(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """Test that configuring an environment preserves runtime data of existing irrigation tanks."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+
+    # Setup existing tank with runtime data
+    existing_tank = IrrigationTank(
+        sensor_entity="sensor.tank",
+        name="Old Tank Name",
+        water_history=[10.0, 20.0],
+        last_recorded_level=20.0,
+        peak_level=30.0,
+    )
+    mock_gs.environment_config = EnvironmentConfig(
+        irrigation_tanks=[existing_tank]
+    )
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    # Call with new tank configuration having same sensor_entity
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "irrigation_tanks": [
+            {
+                "sensor_entity": "sensor.tank",
+                "name": "New Tank Name",
+                "warning_level": 15.0,
+            }
+        ],
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    # Verify updated config preserves the runtime data
+    updated_tanks = mock_gs.environment_config.irrigation_tanks
+    assert len(updated_tanks) == 1
+    new_tank = updated_tanks[0]
+    assert new_tank.sensor_entity == "sensor.tank"
+    assert new_tank.name == "New Tank Name"
+    assert new_tank.warning_level == 15.0
+    # Preserved fields
+    assert new_tank.water_history == [10.0, 20.0]
+    assert new_tank.last_recorded_level == 20.0
+    assert new_tank.peak_level == 30.0
+
+    mock_coordinator.async_commit.assert_awaited_once()
+    mock_coordinator.async_request_refresh.assert_awaited_once()
+
