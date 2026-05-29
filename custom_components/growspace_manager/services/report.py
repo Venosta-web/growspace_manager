@@ -454,6 +454,7 @@ def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
     try:
         from fpdf import FPDF  # noqa: PLC0415
     except ImportError as err:
+        from homeassistant.exceptions import HomeAssistantError  # noqa: PLC0415
         raise HomeAssistantError(
             "PDF export requires the 'fpdf2' package. Install it with: pip install fpdf2>=2.7.9"
         ) from err
