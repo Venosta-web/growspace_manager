@@ -1487,6 +1487,24 @@ async def test_save_ec_ramp_curve_points_name_in_kwargs(mock_coordinator) -> Non
 
 
 @pytest.mark.asyncio
+async def test_ec_ramp_curves_property(mock_coordinator: MagicMock) -> None:
+    """Test the ec_ramp_curves property of ConfigFacade."""
+    facade = ServiceFacade(mock_coordinator)
+    expected_curves = {"curve_1": {"name": "Veg Ramp"}}
+    mock_coordinator.nutrient_manager.ec_ramp_curves = expected_curves
+    assert facade.config.ec_ramp_curves == expected_curves
+
+
+@pytest.mark.asyncio
+async def test_remove_ipm_preset(mock_coordinator: MagicMock) -> None:
+    """Test the remove_ipm_preset method of ConfigFacade."""
+    facade = ServiceFacade(mock_coordinator)
+    mock_coordinator.remove_ipm_preset = AsyncMock()
+    await facade.config.remove_ipm_preset("preset_123")
+    mock_coordinator.remove_ipm_preset.assert_awaited_once_with("preset_123")
+
+
+@pytest.mark.asyncio
 async def test_add_timeline_note_state_parse_error(mock_coordinator) -> None:
     """_get_state handles a ValueError from float() gracefully."""
     facade = ServiceFacade(mock_coordinator)

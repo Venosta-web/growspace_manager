@@ -7,11 +7,14 @@ parsing, formatting, calculations, and grid generation logic.
 
 from datetime import date, datetime
 
-from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    GrowspaceType,
+)
 from custom_components.growspace_manager.utils import (
     BayesianStage,
     VPDCalculator,
@@ -23,13 +26,21 @@ from custom_components.growspace_manager.utils import (
     format_date,
     generate_growspace_grid,
     generate_growspace_overview_unique_id,
+    generate_subarea_vpd_sensor_unique_id,
     generate_vpd_sensor_unique_id,
     interpolate_value,
     parse_date_field,
     parse_date_field_v2,
+    read_aggregated_sensor_value,
+    read_environment_vpd,
+    read_sensor_value,
     strip_markdown_fence,
 )
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import as_local
+
+from .common import create_plant
 
 
 # ----------------------------
@@ -378,4 +389,135 @@ def test_calculate_stage_transition() -> None:
     ],
 )
 def test_strip_markdown_fence(raw: str, expected: str) -> None:
+    """Test strip_markdown_fence function."""
     assert strip_markdown_fence(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_stage_1", "expected_stage_2", "expected_factor"),
+    [
+        ({"cure_days": 5}, BayesianStage.CURE, BayesianStage.CURE, 0.0),
+        ({"dry_days": 3}, BayesianStage.DRY, BayesianStage.DRY, 0.0),
+        ({"mother_days": 10}, BayesianStage.MOTHER, BayesianStage.MOTHER, 0.0),
+    ],
+)
+def test_calculate_stage_transition_post_harvest_and_mother(
+    kwargs: dict[str, int],
+    expected_stage_1: BayesianStage,
+    expected_stage_2: BayesianStage,
+    expected_factor: float,
+) -> None:
+    """Test post-harvest and mother stages for calculate_stage_transition."""
+    s1, s2, f = calculate_stage_transition(**kwargs)
+    assert s1 == expected_stage_1
+    assert s2 == expected_stage_2
+    assert f == expected_factor
+
+
+def test_read_sensor_value(hass: HomeAssistant) -> None:
+    """Test read_sensor_value with different sensor states."""
+    # 1. Missing sensor_id
+    assert read_sensor_value(hass, None) is None
+
+    # 2. Non-existent sensor entity
+    assert read_sensor_value(hass, "sensor.non_existent") is None
+
+    # 3. Unavailable / Unknown states
+    hass.states.async_set("sensor.unavailable_test", STATE_UNAVAILABLE)
+    assert read_sensor_value(hass, "sensor.unavailable_test") is None
+
+    hass.states.async_set("sensor.unknown_test", STATE_UNKNOWN)
+    assert read_sensor_value(hass, "sensor.unknown_test") is None
+
+    # 4. Valid float state
+    hass.states.async_set("sensor.valid_test", "22.5")
+    assert read_sensor_value(hass, "sensor.valid_test") == 22.5
+
+    # 5. Invalid float states
+    hass.states.async_set("sensor.invalid_test", "not-a-float")
+    assert read_sensor_value(hass, "sensor.invalid_test") is None
+
+
+def test_read_aggregated_sensor_value(hass: HomeAssistant) -> None:
+    """Test read_aggregated_sensor_value helper function."""
+    # 1. Empty list of sensors
+    assert read_aggregated_sensor_value(hass, []) is None
+
+    # 2. Mix of valid and invalid sensor states
+    hass.states.async_set("sensor.temp_1", "24.0")
+    hass.states.async_set("sensor.temp_2", "26.0")
+    hass.states.async_set("sensor.temp_3", STATE_UNAVAILABLE)
+    assert (
+        read_aggregated_sensor_value(
+            hass, ["sensor.temp_1", "sensor.temp_2", "sensor.temp_3"]
+        )
+        == 25.0
+    )
+
+    # 3. Only invalid/unavailable values
+    assert (
+        read_aggregated_sensor_value(hass, ["sensor.temp_3", "sensor.non_existent"])
+        is None
+    )
+
+
+def test_read_environment_vpd(hass: HomeAssistant) -> None:
+    """Test read_environment_vpd helper function."""
+    # 1. Direct VPD sensor configured and present
+    env_config = EnvironmentConfig(vpd_sensor="sensor.direct_vpd")
+    hass.states.async_set("sensor.direct_vpd", "1.2")
+    assert read_environment_vpd(hass, env_config) == 1.2
+
+    # 2. Direct VPD sensor unavailable, falls back to temp and humidity calculation
+    hass.states.async_set("sensor.direct_vpd", STATE_UNAVAILABLE)
+
+    # Configure temp and humidity sensors
+    env_config = EnvironmentConfig(
+        vpd_sensor="sensor.direct_vpd",
+        temperature_sensor="sensor.temp",
+        humidity_sensor="sensor.humidity",
+        lst_offset=-2.0,
+    )
+    hass.states.async_set("sensor.temp", "25.0")
+    hass.states.async_set("sensor.humidity", "60.0")
+
+    # Calculation:
+    # temp = 25, humidity = 60, lst_offset = -2.0 -> leaf_temp = 23
+    calculated_vpd = read_environment_vpd(hass, env_config, GrowspaceType.VEG)
+    assert calculated_vpd is not None
+    assert calculated_vpd > 0.0
+
+    # Test DRY/CURE spaces where lst_offset is ignored (enforced to 0.0)
+    calculated_dry_vpd = read_environment_vpd(hass, env_config, GrowspaceType.DRY)
+    assert calculated_dry_vpd is not None
+    assert calculated_dry_vpd != calculated_vpd
+
+    # Missing temp or humidity should return None
+    hass.states.async_set("sensor.temp", STATE_UNAVAILABLE)
+    assert read_environment_vpd(hass, env_config) is None
+
+
+def test_unique_id_generators() -> None:
+    """Test unique ID generator utility functions."""
+    # generate_vpd_sensor_unique_id
+    assert (
+        generate_vpd_sensor_unique_id("space1")
+        == "growspace_manager_space1_calculated_vpd"
+    )
+    assert (
+        generate_vpd_sensor_unique_id("space1", 2)
+        == "growspace_manager_space1_calculated_vpd_2"
+    )
+
+    # generate_subarea_vpd_sensor_unique_id
+    assert (
+        generate_subarea_vpd_sensor_unique_id("space1", "area1")
+        == "growspace_manager_space1_subarea_area1_calculated_vpd"
+    )
+    assert (
+        generate_subarea_vpd_sensor_unique_id("space1", "area1", 3)
+        == "growspace_manager_space1_subarea_area1_calculated_vpd_3"
+    )
+
+    # generate_growspace_overview_unique_id
+    assert generate_growspace_overview_unique_id("space1") == "growspace_manager_space1"

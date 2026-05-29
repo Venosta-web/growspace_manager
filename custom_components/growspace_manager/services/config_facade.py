@@ -75,10 +75,6 @@ class ConfigFacade:
                 "Legacy call to save_ec_ramp_curve missing growspace_id. Using default: %s",
                 growspace_id,
             )
-        if points is None and "points" in kwargs:
-            points = kwargs["points"]
-        if name is None and "name" in kwargs:
-            name = kwargs["name"]
         if name is None or points is None:
             raise TypeError("save_ec_ramp_curve() missing required arguments")
         return await self._coordinator.nutrient_manager.async_save_ec_ramp_curve(
@@ -141,8 +137,6 @@ class ConfigFacade:
             raise TypeError(
                 "save_ipm_preset() missing 1 required positional argument: 'preset_type'"
             )
-        if items is None and "items" in kwargs:
-            items = kwargs["items"]
         if items is None:
             raise TypeError(
                 "save_ipm_preset() missing 1 required positional argument: 'items'"

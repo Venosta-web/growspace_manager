@@ -1175,3 +1175,396 @@ async def test_send_message_injects_context_when_coordinator_available(
     call_kwargs = mock_converse.call_args[1]
     assert "[Growspace: Tent 1" in call_kwargs["text"]
     assert "How can I optimize?" in call_kwargs["text"]
+
+
+def test_build_context_message_skips_empty_entity_ids() -> None:
+    """_build_context_message ignores None or empty string entity IDs in specs."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _build_context_message,
+    )
+    from custom_components.growspace_manager.models import EnvironmentConfig
+
+    coordinator = _make_coordinator_with_growspace(
+        vpd_sensor=None,
+        temperature_sensor=None,
+    )
+    # Inject None/empty values into EnvironmentConfig lists to trigger continue
+    env = EnvironmentConfig(
+        temperature_sensors=[None, ""],
+        humidity_sensors=["", None],
+    )
+    coordinator.growspaces["tent1"].environment_config = env
+    hass = _make_hass_with_states({})
+
+    result = _build_context_message(hass, coordinator, "tent1", "Hello")
+    assert "Sensors" not in result
+
+
+def test_build_context_message_veg_stage_from_plants() -> None:
+    """_build_context_message formats the stage correctly when plants are in veg stage."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _build_context_message,
+    )
+
+    plant = MagicMock()
+    plant.flower_start = None
+    plant.veg_start = "2026-05-01"
+    plant.seedling_start = None
+    plant.clone_start = None
+
+    coordinator = _make_coordinator_with_growspace(plants=[plant])
+    hass = _make_hass_with_states({})
+
+    result = _build_context_message(hass, coordinator, "tent1", "Optimize")
+    assert "Stage: veg" in result
+
+
+def test_build_context_message_seedling_stage_from_plants() -> None:
+    """_build_context_message formats the stage correctly when plants are in seedling stage."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _build_context_message,
+    )
+
+    plant = MagicMock()
+    plant.flower_start = None
+    plant.veg_start = None
+    plant.seedling_start = "2026-05-15"
+    plant.clone_start = None
+
+    coordinator = _make_coordinator_with_growspace(plants=[plant])
+    hass = _make_hass_with_states({})
+
+    result = _build_context_message(hass, coordinator, "tent1", "Optimize")
+    assert "Stage: seedling" in result
+
+
+def test_build_context_message_clone_stage_from_plants() -> None:
+    """_build_context_message formats the stage correctly when plants are in clone stage."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        _build_context_message,
+    )
+
+    plant = MagicMock()
+    plant.flower_start = None
+    plant.veg_start = None
+    plant.seedling_start = None
+    plant.clone_start = "2026-05-20"
+
+    coordinator = _make_coordinator_with_growspace(plants=[plant])
+    hass = _make_hass_with_states({})
+
+    result = _build_context_message(hass, coordinator, "tent1", "Optimize")
+    assert "Stage: clone" in result
+
+
+@pytest.mark.asyncio
+async def test_start_conversation_rate_limited_service_validation_error(
+    mock_connection: MagicMock,
+) -> None:
+    """ServiceValidationError with a rate limit message is caught and mapped to rate_limited error."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_start_conversation,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(side_effect=ServiceValidationError("Rate limit exceeded: 429")),
+    ):
+        msg = {
+            "id": 20,
+            "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
+            "message": "Hello",
+        }
+        await websocket_start_conversation(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "rate_limited"
+
+
+@pytest.mark.asyncio
+async def test_start_conversation_rate_limited_generic_exception(
+    mock_connection: MagicMock,
+) -> None:
+    """A generic Exception containing rate limit indications is mapped to rate_limited error."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_start_conversation,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(side_effect=RuntimeError("Error 429 - Too Many Requests")),
+    ):
+        msg = {
+            "id": 21,
+            "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
+            "message": "Hello",
+        }
+        await websocket_start_conversation(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "rate_limited"
+
+
+@pytest.mark.asyncio
+async def test_start_conversation_rate_limited_result(
+    mock_connection: MagicMock,
+) -> None:
+    """When async_converse result contains a rate limited indicator, it is sent as rate_limited."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_start_conversation,
+    )
+
+    fake_result = MagicMock()
+    fake_result.conversation_id = "conv-123"
+    fake_result.response = MagicMock()
+    fake_result.response.speech = {"plain": {"speech": "Error: Too Many Requests (429)"}}
+    fake_result.response.error_code = "RESOURCE_EXHAUSTED"
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(return_value=fake_result),
+    ):
+        msg = {
+            "id": 22,
+            "type": "growspace_manager/start_conversation",
+            "growspace_id": "tent1",
+            "message": "Hello",
+        }
+        await websocket_start_conversation(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "rate_limited"
+
+
+@pytest.mark.asyncio
+async def test_send_message_rate_limited_service_validation_error(
+    mock_connection: MagicMock,
+) -> None:
+    """ServiceValidationError with rate limit info in send_message is caught and mapped to rate_limited error."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_send_message,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(side_effect=ServiceValidationError("API call rejected (429)")),
+    ):
+        msg = {
+            "id": 23,
+            "type": "growspace_manager/send_message",
+            "conversation_id": "conv-123",
+            "growspace_id": "tent1",
+            "message": "Hello",
+        }
+        await websocket_send_message(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "rate_limited"
+
+
+@pytest.mark.asyncio
+async def test_send_message_rate_limited_generic_exception(
+    mock_connection: MagicMock,
+) -> None:
+    """Generic exception with rate limit info in send_message is mapped to rate_limited error."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_send_message,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(side_effect=ValueError("429 Too Many Requests")),
+    ):
+        msg = {
+            "id": 24,
+            "type": "growspace_manager/send_message",
+            "conversation_id": "conv-123",
+            "growspace_id": "tent1",
+            "message": "Hello",
+        }
+        await websocket_send_message(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "rate_limited"
+
+
+@pytest.mark.asyncio
+async def test_send_message_rate_limited_result(
+    mock_connection: MagicMock,
+) -> None:
+    """When send_message result contains a rate limited indicator, it is sent as rate_limited."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_send_message,
+    )
+
+    fake_result = MagicMock()
+    fake_result.conversation_id = "conv-123"
+    fake_result.response = MagicMock()
+    fake_result.response.speech = {"plain": {"speech": "Something went wrong."}}
+    fake_result.response.error_code = "RESOURCE_EXHAUSTED"
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        new=AsyncMock(return_value=fake_result),
+    ):
+        msg = {
+            "id": 25,
+            "type": "growspace_manager/send_message",
+            "conversation_id": "conv-123",
+            "growspace_id": "tent1",
+            "message": "Hello",
+        }
+        await websocket_send_message(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once()
+    assert mock_connection.send_error.call_args[0][1] == "rate_limited"
+
+
+@pytest.mark.asyncio
+async def test_save_ai_agent_coordinator_not_loaded(
+    mock_connection: MagicMock,
+) -> None:
+    """save_ai_agent returns a not_found error if the coordinator is missing."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_save_ai_agent,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=None,
+    ):
+        msg = {
+            "id": 30,
+            "type": "growspace_manager/save_ai_agent",
+            "agent_id": "agent-xyz",
+        }
+        await websocket_save_ai_agent(MagicMock(), mock_connection, msg)
+
+    mock_connection.send_error.assert_called_once_with(
+        30, "not_found", "Growspace Manager integration not loaded"
+    )
+
+
+@pytest.mark.asyncio
+async def test_save_ai_agent_success(
+    mock_connection: MagicMock,
+) -> None:
+    """save_ai_agent updates the config entry options and enables AI assistant settings."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_save_ai_agent,
+    )
+
+    # Mock config entry and options
+    config_entry = MagicMock()
+    config_entry.options = {"ai_settings": {"assistant_id": "old-agent", "ai_enabled": False}}
+
+    coordinator = MagicMock()
+    coordinator.config_entry = config_entry
+    coordinator.options = config_entry.options
+    coordinator.async_commit = AsyncMock()
+
+    hass = MagicMock()
+    hass.config_entries.async_update_entry = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 31,
+            "type": "growspace_manager/save_ai_agent",
+            "agent_id": "new-agent-abc",
+        }
+        await websocket_save_ai_agent(hass, mock_connection, msg)
+
+    # Verify options update
+    expected_options = {
+        "ai_settings": {
+            "assistant_id": "new-agent-abc",
+            "ai_enabled": True,
+        }
+    }
+    assert coordinator.options == expected_options
+    hass.config_entries.async_update_entry.assert_called_once_with(
+        config_entry, options=expected_options
+    )
+    coordinator.async_commit.assert_called_once()
+    mock_connection.send_result.assert_called_once_with(
+        31, {"success": True, "agent_id": "new-agent-abc"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_save_ai_agent_without_options_attribute(
+    mock_connection: MagicMock,
+) -> None:
+    """save_ai_agent handles a coordinator that has no options attribute."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_save_ai_agent,
+    )
+
+    config_entry = MagicMock()
+    config_entry.options = {"ai_settings": {"assistant_id": "old-agent", "ai_enabled": False}}
+
+    coordinator = MagicMock()
+    coordinator.config_entry = config_entry
+    del coordinator.options
+    coordinator.async_commit = AsyncMock()
+
+    hass = MagicMock()
+    hass.config_entries.async_update_entry = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 32,
+            "type": "growspace_manager/save_ai_agent",
+            "agent_id": "new-agent-abc",
+        }
+        await websocket_save_ai_agent(hass, mock_connection, msg)
+
+    assert not hasattr(coordinator, "options")
+    hass.config_entries.async_update_entry.assert_called_once()
+    mock_connection.send_result.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_save_ai_settings_without_options_attribute(
+    mock_connection: MagicMock,
+) -> None:
+    """save_ai_settings handles a coordinator that has no options attribute."""
+    from custom_components.growspace_manager.websocket.ai_assistant import (
+        websocket_save_ai_settings,
+    )
+
+    config_entry = MagicMock()
+    config_entry.options = {"other": "kept"}
+
+    coordinator = MagicMock()
+    coordinator.config_entry = config_entry
+    del coordinator.options
+    coordinator.async_commit = AsyncMock()
+
+    mock_hass = MagicMock()
+    with patch(
+        "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 33,
+            "type": "growspace_manager/save_ai_settings",
+            "ai_enabled": True,
+        }
+        await websocket_save_ai_settings(mock_hass, mock_connection, msg)
+
+    assert not hasattr(coordinator, "options")
+    mock_hass.config_entries.async_update_entry.assert_called_once()
+    mock_connection.send_result.assert_called_once_with(33, {"success": True})
+
+
+
+
