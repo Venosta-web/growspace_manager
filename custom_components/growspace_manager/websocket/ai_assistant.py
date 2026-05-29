@@ -688,7 +688,11 @@ async def websocket_save_ai_settings(
         return
 
     new_options = coordinator.config_entry.options.copy()
-    ai_settings: dict[str, Any] = {k: msg[k] for k in _AI_SETTINGS_KEYS if k in msg}
+    existing_settings = dict(new_options.get("ai_settings", {}))
+    ai_settings: dict[str, Any] = {
+        **existing_settings,
+        **{k: msg[k] for k in _AI_SETTINGS_KEYS if k in msg}
+    }
     new_options["ai_settings"] = ai_settings
 
     if hasattr(coordinator, "options"):
