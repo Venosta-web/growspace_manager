@@ -502,6 +502,11 @@ class GrowAssistant:
             Exception,
         ) as err:
             _LOGGER.error("Error getting AI advice: %s", err)
+            if any(
+                m in str(err)
+                for m in ("429", "Too Many Requests", "RESOURCE_EXHAUSTED", "resource_exhausted")
+            ):
+                raise ServiceValidationError("rate_limited") from err
             # Fallback to context if AI fails
             return f"AI Assistant Error: {err}\n\nRaw Data:\n\n{context}"
 
@@ -539,21 +544,26 @@ class GrowAssistant:
             agent_id=agent_id,
         )
 
-        if (
-            result
-            and result.response
-            and result.response.speech
-            and result.response.speech.get("plain")
-            and result.response.speech["plain"].get("speech")
-        ):
-            response = result.response.speech["plain"]["speech"]
+        if result and result.response:
+            speech_text = (
+                result.response.speech.get("plain", {}).get("speech", "")
+                if result.response.speech
+                else ""
+            )
+            err_code = getattr(result.response, "error_code", "") or ""
+            if any(
+                m in speech_text or m.lower() in err_code.lower()
+                for m in ("429", "Too Many Requests", "RESOURCE_EXHAUSTED", "resource_exhausted")
+            ):
+                raise ServiceValidationError("rate_limited")
 
-            # Enforce max length truncation if specified
-            if max_length and len(response) > max_length:
-                response = response[:max_length].rsplit(" ", 1)[0] + "..."
+            if speech_text:
+                response = speech_text
+                if max_length and len(response) > max_length:
+                    response = response[:max_length].rsplit(" ", 1)[0] + "..."
+                _LOGGER.info("AI assistant provided advice for growspace %s", growspace_id)
+                return response
 
-            _LOGGER.info("AI assistant provided advice for growspace %s", growspace_id)
-            return str(response)
         raise ServiceValidationError("AI assistant returned an empty response")
 
 

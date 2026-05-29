@@ -64,6 +64,7 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_NUTRIENT_PRESET_SCHEMA,
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
+    RESET_PLANT_LAST_WATERED_SCHEMA,
     RESET_WATER_TRACKING_SCHEMA,
     RUN_IRRIGATION_CYCLE_SCHEMA,
     SAVE_EC_RAMP_CURVE_SCHEMA,
@@ -287,6 +288,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "update_harvest_metrics": UPDATE_HARVEST_METRICS_SCHEMA,
         "log_drain_reading": LOG_DRAIN_READING_SCHEMA,
         "configure_drain_monitoring": CONFIGURE_DRAIN_MONITORING_SCHEMA,
+        "reset_plant_last_watered": RESET_PLANT_LAST_WATERED_SCHEMA,
         "reset_water_tracking": RESET_WATER_TRACKING_SCHEMA,
         "save_ec_ramp_curve": SAVE_EC_RAMP_CURVE_SCHEMA,
         "remove_ec_ramp_curve": REMOVE_EC_RAMP_CURVE_SCHEMA,
@@ -926,7 +928,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 36
+        assert mock_reg.call_count == 47
 
 
 @pytest.mark.asyncio

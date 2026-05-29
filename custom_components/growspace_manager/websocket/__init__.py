@@ -21,6 +21,7 @@ from ..const import (
 )
 from ..coordinator import GrowspaceCoordinator
 from . import (
+    ai_assistant,
     data,
     environment,
     genetics,
@@ -34,6 +35,14 @@ from . import (
     vision,
 )
 from ._common import _EPOCH_SENTINEL, _extract_ts, _merge_logbook_event
+from .ai_assistant import (
+    SCHEMA_WS_SEND_MESSAGE,
+    SCHEMA_WS_START_CONVERSATION,
+    WS_TYPE_SEND_MESSAGE,
+    WS_TYPE_START_CONVERSATION,
+    websocket_send_message,
+    websocket_start_conversation,
+)
 
 # Re-export all handler functions so existing imports from `.websocket` still resolve
 from .data import (
@@ -64,6 +73,11 @@ from .genetics import (
     websocket_delete_breeder,
     websocket_get_genetics_data,
     websocket_update_breeder,
+)
+from .irrigation import (
+    SCHEMA_WS_GET_IRRIGATION_ANALYTICS,
+    WS_TYPE_GET_IRRIGATION_ANALYTICS,
+    websocket_get_irrigation_analytics,
 )
 from .lineage import (
     SCHEMA_WS_GET_LINEAGE_TREE,
@@ -125,11 +139,6 @@ from .strain import (
     websocket_query_external_strain,
     websocket_upload_strain_image,
 )
-from .irrigation import (
-    SCHEMA_WS_GET_IRRIGATION_ANALYTICS,
-    WS_TYPE_GET_IRRIGATION_ANALYTICS,
-    websocket_get_irrigation_analytics,
-)
 from .subareas import (
     SCHEMA_WS_ADD_SUBAREA,
     SCHEMA_WS_GET_SUBAREAS,
@@ -184,6 +193,7 @@ _MODULES = [
     subareas,
     vision,
     irrigation,
+    ai_assistant,
 ]
 
 
@@ -271,4 +281,23 @@ __all__ = [
     "websocket_get_irrigation_analytics",
     "WS_TYPE_GET_IRRIGATION_ANALYTICS",
     "SCHEMA_WS_GET_IRRIGATION_ANALYTICS",
+    # AI assistant conversation
+    "websocket_start_conversation",
+    "websocket_send_message",
+    "WS_TYPE_START_CONVERSATION",
+    "WS_TYPE_SEND_MESSAGE",
+    "SCHEMA_WS_START_CONVERSATION",
+    "SCHEMA_WS_SEND_MESSAGE",
+    # AI briefing
+    "websocket_get_briefing",
+    "WS_TYPE_GET_BRIEFING",
+    "SCHEMA_WS_GET_BRIEFING",
+    # AI agent configuration
+    "websocket_save_ai_agent",
+    "WS_TYPE_SAVE_AI_AGENT",
+    "SCHEMA_WS_SAVE_AI_AGENT",
+    # AI settings panel
+    "websocket_save_ai_settings",
+    "WS_TYPE_SAVE_AI_SETTINGS",
+    "SCHEMA_WS_SAVE_AI_SETTINGS",
 ]

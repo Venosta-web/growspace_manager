@@ -12,6 +12,8 @@ STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
 STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
 STORAGE_KEY_PLANTS: Final = f"{DOMAIN}.plants"
 STORAGE_KEY_GENETICS: Final = f"{DOMAIN}.genetics"
+STORAGE_KEY_AI_BRIEFING: Final = f"{DOMAIN}.ai_briefing"
+STORAGE_KEY_AI_CONVERSATIONS: Final = f"{DOMAIN}.ai_conversations"
 PLATFORMS: Final[list[str]] = [
     "binary_sensor",
     "calendar",
@@ -451,6 +453,9 @@ CONF_AI_ENABLED = "ai_enabled"
 CONF_ASSISTANT_ID = "assistant_id"
 CONF_NOTIFICATION_PERSONALITY = "notification_personality"
 CONF_AI_AUTO_ALERTS = "ai_auto_alerts"
+CONF_BRIEFING_INTERVAL_MINUTES = "briefing_interval_minutes"
+CONF_BRIEFING_TRIGGER_ENTITIES = "briefing_trigger_entities"
+DEFAULT_BRIEFING_INTERVAL_MINUTES = 30
 
 # Vision Checkup Constants
 CONF_VISION_CHECKUP_ENABLED = "vision_checkup_enabled"
@@ -612,6 +617,7 @@ class GrowspaceService(StrEnum):
     CONFIGURE_DRAIN_MONITORING = "configure_drain_monitoring"
     # Water Tracking Services
     RESET_WATER_TRACKING = "reset_water_tracking"
+    RESET_PLANT_LAST_WATERED = "reset_plant_last_watered"
     # EC Ramp Curve Services
     SAVE_EC_RAMP_CURVE = "save_ec_ramp_curve"
     REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"

@@ -24,6 +24,18 @@ _LOGGER = logging.getLogger(__name__)
 
 _HARVESTED_STAGES = {"harvested", "dry", "cure"}
 MAX_LINEAGE_DEPTH = 20
+_LIBRARY_KEY_SEPARATOR = "||"
+_DEFAULT_PHENOTYPE_SENTINEL = "default"
+
+
+def _parse_strain_library_key(key: str) -> str:
+    """Return the strain name from a 'strain||phenotype' library key, or the key itself."""
+    if _LIBRARY_KEY_SEPARATOR not in key:
+        return key
+    strain, phenotype = key.split(_LIBRARY_KEY_SEPARATOR, 1)
+    if phenotype and phenotype != _DEFAULT_PHENOTYPE_SENTINEL:
+        return f"{strain} ({phenotype})"
+    return strain
 
 
 class GeneticsManager:
@@ -295,9 +307,15 @@ class GeneticsManager:
         donor = self.repository.get_plant(event.donor_plant_id)
 
         receiver_name = (
-            receiver.genetics.strain_name if receiver else event.receiver_plant_id
+            receiver.genetics.strain_name
+            if receiver
+            else _parse_strain_library_key(event.receiver_plant_id)
         )
-        donor_name = donor.genetics.strain_name if donor else event.donor_plant_id
+        donor_name = (
+            donor.genetics.strain_name
+            if donor
+            else _parse_strain_library_key(event.donor_plant_id)
+        )
 
         lineage = f"{receiver_name} x {donor_name}"
         strain_name = f"{receiver_name} x {donor_name}"
@@ -508,6 +526,8 @@ class GeneticsManager:
         Raises:
             ServiceValidationError: If plant is absent or in a post-harvest stage.
         """
+        if role == "donor" and "||" in plant_id:
+            return
         plant = self.repository.get_plant(plant_id)
         if plant is None:
             raise ServiceValidationError(

@@ -392,6 +392,17 @@ class TestLogPollination:
                 receiver_plant_id="plant-receiver",
             )
 
+    async def test_library_keyed_donor_is_accepted(
+        self, manager_with_plants: GeneticsManager
+    ) -> None:
+        """log_pollination accepts a strain||phenotype library key as donor without a plant lookup."""
+        event = await manager_with_plants.async_log_pollination(
+            date="2026-03-10",
+            donor_plant_id="Afghani #1||default",
+            receiver_plant_id="plant-receiver",
+        )
+        assert event.donor_plant_id == "Afghani #1||default"
+
 
 # ---------------------------------------------------------------------------
 # harvest_seeds
@@ -493,6 +504,38 @@ class TestHarvestSeeds:
         """harvest_seeds triggers persistence."""
         await manager_with_event.async_harvest_seeds(event_id="event-001", quantity=5)
         save_callback.assert_called()
+
+    async def test_stub_donor_library_key_stripped_in_lineage(
+        self, manager_with_plants: GeneticsManager
+    ) -> None:
+        """harvest_seeds strips the '||phenotype' suffix from a stub donor key."""
+        manager_with_plants.pollination_events["event-stub"] = PollinationEvent(
+            event_id="event-stub",
+            date="2026-05-01",
+            donor_plant_id="Afghani #1||default",
+            receiver_plant_id="plant-receiver",
+        )
+        batch = await manager_with_plants.async_harvest_seeds(
+            event_id="event-stub", quantity=10
+        )
+        assert "Afghani #1" in batch.lineage
+        assert "||" not in batch.lineage
+
+    async def test_stub_donor_empty_phenotype_stripped(
+        self, manager_with_plants: GeneticsManager
+    ) -> None:
+        """harvest_seeds strips a trailing '||' when phenotype is empty."""
+        manager_with_plants.pollination_events["event-stub2"] = PollinationEvent(
+            event_id="event-stub2",
+            date="2026-05-01",
+            donor_plant_id="OG Kush||",
+            receiver_plant_id="plant-receiver",
+        )
+        batch = await manager_with_plants.async_harvest_seeds(
+            event_id="event-stub2", quantity=10
+        )
+        assert "OG Kush" in batch.lineage
+        assert "||" not in batch.lineage
 
 
 # ---------------------------------------------------------------------------
@@ -720,6 +763,15 @@ class TestUpdatePollination:
             event_id="evt-1", receiver_plant_id="plant-receiver"
         )
         assert manager_with_event.pollination_events["evt-1"].receiver_plant_id == "plant-receiver"
+
+    async def test_library_keyed_donor_accepted_on_update(
+        self, manager_with_event: GeneticsManager
+    ) -> None:
+        """update_pollination accepts a strain||phenotype library key as the new donor."""
+        await manager_with_event.async_update_pollination(
+            event_id="evt-1", donor_plant_id="OG Kush||pheno-A"
+        )
+        assert manager_with_event.pollination_events["evt-1"].donor_plant_id == "OG Kush||pheno-A"
 
 
 # ---------------------------------------------------------------------------

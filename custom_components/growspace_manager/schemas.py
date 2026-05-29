@@ -667,6 +667,12 @@ WATER_PLANT_SCHEMA = vol.Schema(
     }
 )
 
+RESET_PLANT_LAST_WATERED_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): str,
+    }
+)
+
 WATER_GROWSPACE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),

@@ -28,7 +28,7 @@ from .overview import GrowspaceListSensor, GrowspaceOverviewSensor
 from .plant import PlantEntity
 from .strain import SeedInventorySensor, StrainLibrarySensor
 from .tank import TankDepletionSensor, TankDerivedWaterSensor, _should_create_derived_water_sensor
-from .usage import EnergyUsageSensor, WaterUsageSensor
+from .usage import EnergyUsageSensor, PowerUsageSensor, WaterUsageSensor
 from .vision import VisionCheckupSensor
 from .vpd import CalculatedVpdSensor, SubareaCalculatedVpdSensor, VpdSensor
 
@@ -297,6 +297,11 @@ async def _create_initial_entities(
         if growspace.environment_config and growspace.environment_config.energy_sensors:
             initial_entities.append(
                 EnergyUsageSensor(coordinator, growspace_id, growspace.name)
+            )
+
+        if growspace.environment_config and growspace.environment_config.power_sensors:
+            initial_entities.append(
+                PowerUsageSensor(coordinator, growspace_id, growspace.name)
             )
 
         initial_entities.append(
