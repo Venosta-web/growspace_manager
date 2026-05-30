@@ -24,7 +24,7 @@ def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coord = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
     coord.async_save = AsyncMock()  # type: ignore[method-assign]
     # Mock the save callback in the IPM service since it now handles saves
-    coord._ipm_service._ctx.save_callback = coord.async_save
+    coord.ipm_service._ctx.save_callback = coord.async_save
     # Ensure properties are initialized
     coord.ipm_presets = {}
     # coord.plants and coord.growspaces are linked to DataRepository in __init__
@@ -83,7 +83,7 @@ async def test_ipm_preset_visible_after_storage_load_sync(
     mock_coordinator.nutrient_manager.ipm_presets = fresh_presets
 
     # Apply the fix: re-point ipm_service at the same dict.
-    mock_coordinator._ipm_service.ipm_presets = mock_coordinator.nutrient_manager.ipm_presets
+    mock_coordinator.ipm_service.ipm_presets = mock_coordinator.nutrient_manager.ipm_presets
 
     items = [{"name": "Neem Oil", "dose_amount": 5.0, "dose_unit": "ml/L", "phi_days": 0}]
     preset = await mock_coordinator.services.config.save_ipm_preset(

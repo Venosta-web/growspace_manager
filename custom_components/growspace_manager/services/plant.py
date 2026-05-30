@@ -418,10 +418,10 @@ async def handle_take_clone(
     num_clones = call.data.get(ATTR_NUM_CLONES, 1)
     try:
         num_clones = int(num_clones)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as err:
         raise ServiceValidationError(
             f"num_clones must be an integer, got: {num_clones!r}"
-        )
+        ) from err
     if num_clones <= 0:
         raise ServiceValidationError(f"num_clones must be positive, got: {num_clones}")
 

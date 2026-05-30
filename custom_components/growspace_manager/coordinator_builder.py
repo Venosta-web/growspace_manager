@@ -62,6 +62,7 @@ class CoordinatorBuilder:
         hass: HomeAssistant,
         entry: ConfigEntry,
     ) -> None:
+        """Initialise the builder with the HA instance and config entry."""
         self.hass = hass
         self.entry = entry
 

@@ -35,6 +35,7 @@ class IPMService(BaseService):
         hass: HomeAssistant,
         repository: GrowspaceRepository,
     ) -> None:
+        """Initialise the IPM service with context, hass, and repository."""
         super().__init__(ctx)
         self.hass = hass
         self.repository = repository

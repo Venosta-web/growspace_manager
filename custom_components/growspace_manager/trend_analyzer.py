@@ -19,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def get_recorder_instance(hass: HomeAssistant):
     """Get the recorder instance (deferred import)."""
-    from homeassistant.helpers.recorder import get_instance
+    from homeassistant.helpers.recorder import get_instance  # noqa: PLC0415
     return get_instance(hass)
 
 
@@ -42,7 +42,7 @@ class TrendAnalyzer:
         results = {}
 
         try:
-            from homeassistant.components.recorder import history
+            from homeassistant.components.recorder import history  # noqa: PLC0415
 
             # OPTIMIZATION: Fetch ALL sensors in ONE executor job (Single DB Query)
             history_dict = await get_recorder_instance(

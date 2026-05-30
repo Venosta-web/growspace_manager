@@ -43,7 +43,7 @@ async def websocket_get_irrigation_analytics(
             msg["id"],
             {"growspace_id": growspace_id, "stage_aggregates": combined},
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 

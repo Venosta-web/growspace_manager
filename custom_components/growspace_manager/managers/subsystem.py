@@ -120,24 +120,24 @@ class SubsystemManager:
         for irr_coordinator in self.irrigation_coordinators.values():
             try:
                 irr_coordinator.async_cancel_listeners()
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Error cancelling irrigation listeners: %s", err)
 
         for dehum_coordinator in self.dehumidifier_coordinators.values():
             try:
                 dehum_coordinator.unload()
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Error unloading dehumidifier coordinator: %s", err)
 
         for hum_coordinator in self.humidifier_coordinators.values():
             try:
                 hum_coordinator.unload()
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Error unloading humidifier coordinator: %s", err)
 
         for tracker in self.light_cycle_trackers.values():
             try:
                 tracker.unload()
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Error unloading light cycle tracker: %s", err)
 

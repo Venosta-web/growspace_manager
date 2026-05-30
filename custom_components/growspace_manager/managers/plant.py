@@ -29,7 +29,6 @@ from custom_components.growspace_manager.events import (
     async_fire_plant_event,
 )
 from custom_components.growspace_manager.exceptions import (
-    GrowspaceError,
     GrowspaceNotFoundError,
     PlantNotFoundError,
     ValidationChangeError,
@@ -45,7 +44,6 @@ from custom_components.growspace_manager.services.context import (
 )
 from custom_components.growspace_manager.utils import calculate_plant_stage, format_date
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
@@ -845,14 +843,7 @@ class PlantManager(BaseService):
                     cbd_percentage=metrics.cbd_percentage if metrics else None,
                     terpene_profile=metrics.terpene_profile if metrics else None,
                 )
-            except (
-                AttributeError,
-                KeyError,
-                ValueError,
-                ServiceValidationError,
-                GrowspaceError,
-                Exception,
-            ) as e:
+            except Exception as e :  # noqa: BLE001
                 _LOGGER.warning(
                     "Failed to record harvest analytics for %s: %s",
                     plant.plant_id,

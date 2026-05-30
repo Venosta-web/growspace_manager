@@ -42,6 +42,7 @@ class GrowspaceFacade:
     """Facade for all growspace-level operations."""
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialise the facade with the coordinator."""
         self._coordinator = coordinator
         self._tank_water_trackers: dict[str, dict[str, TankWaterTracker]] = {}
 
@@ -319,7 +320,7 @@ class GrowspaceFacade:
         amount: float | None = None,
     ) -> int:
         """Record a watering event for all plants in a growspace."""
-        return await self._coordinator._watering_service.async_water_growspace(
+        return await self._coordinator.watering_service.async_water_growspace(
             growspace_id, amount_per_plant, nutrients, preset_id, amount
         )
 

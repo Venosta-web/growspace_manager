@@ -30,6 +30,7 @@ class BaseService:
     """Base class for all services and managers that mutate growspace data."""
 
     def __init__(self, ctx: ServiceContext) -> None:
+        """Initialise the service with orchestration context."""
         self._ctx = ctx
 
     async def _save(self) -> None:

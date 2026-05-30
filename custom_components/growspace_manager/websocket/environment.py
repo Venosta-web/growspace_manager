@@ -125,7 +125,7 @@ async def _get_statistics_data(
         ValueError,
         ServiceValidationError,
         GrowspaceError,
-        Exception,
+        Exception,  # noqa: BLE001
     ):
         _LOGGER.debug("Statistics API failed, falling back to raw history")
         return None

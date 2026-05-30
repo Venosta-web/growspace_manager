@@ -40,6 +40,7 @@ class WateringService(BaseService):
         validator: GrowspaceValidator,
         nutrient_manager: NutrientManager,
     ) -> None:
+        """Initialise the watering service with its dependencies."""
         super().__init__(ctx)
         self.hass = hass
         self.repository = repository

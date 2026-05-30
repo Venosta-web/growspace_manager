@@ -25,10 +25,12 @@ from custom_components.growspace_manager.events import (
 )
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import (
+    DrainReading,
     EnvironmentConfig,
     Growspace,
     GrowspaceType,
     Subarea,
+    WaterUsageData,
 )
 from custom_components.growspace_manager.services.context import (
     BaseService,
@@ -38,7 +40,7 @@ from custom_components.growspace_manager.view_model_builder import ViewModelBuil
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
-from homeassistant.util import slugify
+from homeassistant.util import dt as dt_util, slugify
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.data_access.growspace_repository import (
@@ -613,9 +615,6 @@ class GrowspaceManager(BaseService):
         feed_volume_ml: float | None = None,
     ) -> None:
         """Log a drain EC reading for a growspace."""
-        from custom_components.growspace_manager.models import DrainReading
-        from homeassistant.util import dt as dt_util
-
         growspace = self.repository.get_growspace(growspace_id)
         if not growspace:
             raise GrowspaceNotFoundError(growspace_id)
@@ -689,9 +688,6 @@ class GrowspaceManager(BaseService):
 
     async def async_reset_water_tracking(self, growspace_id: str) -> None:
         """Reset water usage counters for a growspace."""
-        from custom_components.growspace_manager.models import WaterUsageData
-        from homeassistant.util import dt as dt_util
-
         growspace = self.repository.get_growspace(growspace_id)
         if not growspace:
             raise GrowspaceNotFoundError(growspace_id)

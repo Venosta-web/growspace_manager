@@ -377,7 +377,7 @@ def test_crop_steering_sensor_native_value() -> None:
     sensor, _ = _make_crop_sensor()
     state = CropSteeringState(score=0.75)
     with patch(
-        "custom_components.growspace_manager.crop_steering.get_crop_steering_state",
+        "custom_components.growspace_manager.sensor.crop_steering.get_crop_steering_state",
         return_value=state,
     ):
         assert sensor.native_value == 0.75
@@ -387,7 +387,7 @@ def test_crop_steering_sensor_native_value_none() -> None:
     """native_value returns None when get_crop_steering_state returns None."""
     sensor, _ = _make_crop_sensor()
     with patch(
-        "custom_components.growspace_manager.crop_steering.get_crop_steering_state",
+        "custom_components.growspace_manager.sensor.crop_steering.get_crop_steering_state",
         return_value=None,
     ):
         assert sensor.native_value is None
@@ -412,7 +412,7 @@ def test_crop_steering_sensor_extra_attrs_mode(score, expected_mode) -> None:
         ec_trend="stable",
     )
     with patch(
-        "custom_components.growspace_manager.crop_steering.get_crop_steering_state",
+        "custom_components.growspace_manager.sensor.crop_steering.get_crop_steering_state",
         return_value=state,
     ):
         attrs = sensor.extra_state_attributes
@@ -423,7 +423,7 @@ def test_crop_steering_sensor_extra_attrs_no_state() -> None:
     """extra_state_attributes returns {} when crop steering state is None."""
     sensor, _ = _make_crop_sensor()
     with patch(
-        "custom_components.growspace_manager.crop_steering.get_crop_steering_state",
+        "custom_components.growspace_manager.sensor.crop_steering.get_crop_steering_state",
         return_value=None,
     ):
         assert sensor.extra_state_attributes == {}

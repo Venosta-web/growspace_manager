@@ -147,16 +147,7 @@ class ImageManager:
                         "Migrated %s to WebP format (full + thumbnail)", jpg_path.name
                     )
 
-                except (
-                    AttributeError,
-                    KeyError,
-                    ValueError,
-                    ServiceValidationError,
-                    GrowspaceError,
-                    OSError,
-                    UnidentifiedImageError,
-                    Exception,
-                ) as e:
+                except Exception as e :  # noqa: BLE001
                     _LOGGER.warning(
                         "Failed to migrate %s to WebP: %s", jpg_path.name, e
                     )
@@ -166,15 +157,7 @@ class ImageManager:
                     "Auto-migration complete: converted %d image(s) to WebP", migrated
                 )
 
-        except (
-            AttributeError,
-            KeyError,
-            ValueError,
-            ServiceValidationError,
-            GrowspaceError,
-            OSError,
-            Exception,
-        ) as e:
+        except Exception as e :  # noqa: BLE001
             _LOGGER.error("Error during auto-migration to WebP: %s", e)
 
     async def _update_db_paths(self, db_connection: Any) -> int:
@@ -219,15 +202,7 @@ class ImageManager:
             if updated > 0:
                 _LOGGER.info("Updated %d database path(s) from .jpg to .webp", updated)
 
-        except (
-            AttributeError,
-            KeyError,
-            ValueError,
-            ServiceValidationError,
-            GrowspaceError,
-            OSError,
-            Exception,
-        ) as e:
+        except Exception as e :  # noqa: BLE001
             _LOGGER.error("Error updating database paths: %s", e)
             return 0
         else:

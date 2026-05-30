@@ -780,14 +780,7 @@ class BayesianEnvironmentSensor(
                         [r[1] for r in self._reasons],
                     )
                     final_message = f"{ai_message}\n\n(Original: {message})"
-                except (
-                    AttributeError,
-                    KeyError,
-                    ValueError,
-                    ServiceValidationError,
-                    GrowspaceError,
-                    Exception,
-                ):
+                except Exception:  # noqa: BLE001
                     _LOGGER.warning(
                         "Failed to generate AI alert, falling back to standard message"
                     )
@@ -796,15 +789,7 @@ class BayesianEnvironmentSensor(
                 await self.notification_manager.async_send_notification(
                     self.growspace_id, title, final_message, self._sensor_states
                 )
-        except (
-            AttributeError,
-            KeyError,
-            ValueError,
-            TypeError,
-            ServiceValidationError,
-            GrowspaceError,
-            Exception,
-        ):
+        except Exception:
             _LOGGER.exception("Failed to send notification to %s", self.growspace_id)
 
     def get_notification_title_message(

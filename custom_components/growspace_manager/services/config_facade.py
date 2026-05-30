@@ -25,6 +25,7 @@ class ConfigFacade:
     """Facade for nutrient/IPM/EC preset and strain library operations."""
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialise the facade with the coordinator."""
         self._coordinator = coordinator
 
     # -------------------------------------------------------------------------

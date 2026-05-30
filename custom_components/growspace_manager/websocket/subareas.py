@@ -10,7 +10,6 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.exceptions import GrowspaceError
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -61,14 +60,7 @@ async def websocket_get_subareas(
         connection.send_result(msg["id"], [asdict(s) for s in subareas])
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -82,14 +74,7 @@ async def websocket_add_subarea(
         connection.send_result(msg["id"], asdict(subarea))
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -105,14 +90,7 @@ async def websocket_update_subarea(
         connection.send_result(msg["id"], asdict(subarea))
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -126,14 +104,7 @@ async def websocket_remove_subarea(
         connection.send_result(msg["id"], {"success": True})
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 

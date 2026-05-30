@@ -376,12 +376,12 @@ async def test_water_plant(mock_coordinator: MagicMock) -> None:
     """Test water_plant calls watering service."""
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant1", growspace_id="gs1")
-    mock_coordinator._watering_service.async_water_plant = AsyncMock(return_value=plant)
+    mock_coordinator.watering_service.async_water_plant = AsyncMock(return_value=plant)
 
     result = await facade.water_plant("plant1", 500.0, preset_id="p1")
 
     assert result == plant
-    mock_coordinator._watering_service.async_water_plant.assert_called_once_with(
+    mock_coordinator.watering_service.async_water_plant.assert_called_once_with(
         "plant1", 500.0, None, "p1"
     )
 
@@ -390,12 +390,12 @@ async def test_water_plant(mock_coordinator: MagicMock) -> None:
 async def test_apply_ipm(mock_coordinator: MagicMock) -> None:
     """Test apply_ipm calls ipm service."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator._ipm_service.async_apply_ipm = AsyncMock(return_value=["plant1"])
+    mock_coordinator.ipm_service.async_apply_ipm = AsyncMock(return_value=["plant1"])
 
     result = await facade.apply_ipm(preset_id="p1", growspace_id="gs1")
 
     assert result == ["plant1"]
-    mock_coordinator._ipm_service.async_apply_ipm.assert_called_once_with(
+    mock_coordinator.ipm_service.async_apply_ipm.assert_called_once_with(
         "p1", "gs1", None, None
     )
 
@@ -404,11 +404,11 @@ async def test_apply_ipm(mock_coordinator: MagicMock) -> None:
 async def test_log_training_event(mock_coordinator: MagicMock) -> None:
     """Test log_training_event calls training service."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator._training_service.async_log_training_event = AsyncMock()
+    mock_coordinator.training_service.async_log_training_event = AsyncMock()
 
     await facade.log_training_event("gs1", "LST", notes="bent main stem")
 
-    mock_coordinator._training_service.async_log_training_event.assert_called_once_with(
+    mock_coordinator.training_service.async_log_training_event.assert_called_once_with(
         "gs1", "LST", "bent main stem", None
     )
 

@@ -16,7 +16,6 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
@@ -27,7 +26,6 @@ from .const import (
     PlantStage,
 )
 from .domain.stage_calculator import determine_coordinator_stage
-from .exceptions import GrowspaceError
 from .models import GrowspaceEvent
 
 if TYPE_CHECKING:
@@ -264,14 +262,7 @@ class HumidifierCoordinator:
                     {ATTR_ENTITY_ID: entity_id},
                     blocking=False,
                 )
-            except (
-                AttributeError,
-                KeyError,
-                ValueError,
-                ServiceValidationError,
-                GrowspaceError,
-                Exception,
-            ):
+            except Exception :  # noqa: BLE001
                 _LOGGER.warning("Failed to control device %s", entity_id, exc_info=True)
 
         if turn_on:

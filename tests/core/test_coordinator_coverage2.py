@@ -101,12 +101,12 @@ async def test_ipm_presets_property_and_setter(hass: HomeAssistant) -> None:
 
     # getter
     result = coordinator.ipm_presets
-    assert result is coordinator._ipm_service.ipm_presets
+    assert result is coordinator.ipm_service.ipm_presets
 
     # setter - must sync both _ipm_service and nutrient_manager
     new_presets: dict = {}
     coordinator.ipm_presets = new_presets
-    assert coordinator._ipm_service.ipm_presets is new_presets
+    assert coordinator.ipm_service.ipm_presets is new_presets
     assert coordinator.nutrient_manager.ipm_presets is new_presets
 
 
@@ -223,7 +223,7 @@ async def test_on_nutrient_inventory_loaded(hass: HomeAssistant) -> None:
     assert coordinator.nutrient_manager.inventory is inv
     # IPM presets should be synced
     assert (
-        coordinator._ipm_service.ipm_presets is coordinator.nutrient_manager.ipm_presets
+        coordinator.ipm_service.ipm_presets is coordinator.nutrient_manager.ipm_presets
     )
 
 
@@ -536,13 +536,13 @@ async def test_async_water_plant(hass: HomeAssistant) -> None:
     """Test async_water_plant delegates to WateringService (line 1102)."""
     coordinator = create_test_coordinator(hass)
     mock_result = MagicMock()
-    coordinator._watering_service.async_water_plant = AsyncMock(
+    coordinator.watering_service.async_water_plant = AsyncMock(
         return_value=mock_result
     )
 
     result = await coordinator.services.plants.water_plant("plant_1", 500.0)
 
-    coordinator._watering_service.async_water_plant.assert_called_once_with(
+    coordinator.watering_service.async_water_plant.assert_called_once_with(
         "plant_1", 500.0, None, None
     )
     assert result is mock_result
@@ -552,13 +552,13 @@ async def test_async_water_plant(hass: HomeAssistant) -> None:
 async def test_async_water_growspace(hass: HomeAssistant) -> None:
     """Test async_water_growspace delegates to WateringService (line 1115)."""
     coordinator = create_test_coordinator(hass)
-    coordinator._watering_service.async_water_growspace = AsyncMock(return_value=3)
+    coordinator.watering_service.async_water_growspace = AsyncMock(return_value=3)
 
     result = await coordinator.services.growspaces.water_growspace(
         "gs1", amount_per_plant=200.0
     )
 
-    coordinator._watering_service.async_water_growspace.assert_called_once_with(
+    coordinator.watering_service.async_water_growspace.assert_called_once_with(
         "gs1", 200.0, None, None, None
     )
     assert result == 3
@@ -644,11 +644,11 @@ async def test_resolve_preset_nutrients_not_found(hass: HomeAssistant) -> None:
 async def test_async_log_training_event(hass: HomeAssistant) -> None:
     """Test async_log_training_event delegates to TrainingService (line 1164)."""
     coordinator = create_test_coordinator(hass)
-    coordinator._training_service.async_log_training_event = AsyncMock()
+    coordinator.training_service.async_log_training_event = AsyncMock()
 
     await coordinator.services.plants.log_training_event("gs1", "LST", notes="Test")
 
-    coordinator._training_service.async_log_training_event.assert_called_once_with(
+    coordinator.training_service.async_log_training_event.assert_called_once_with(
         "gs1", "LST", "Test", None
     )
 
@@ -658,13 +658,13 @@ async def test_async_save_ipm_preset(hass: HomeAssistant) -> None:
     """Test async_save_ipm_preset delegates to IPMService (line 1178)."""
     coordinator = create_test_coordinator(hass)
     mock_preset = MagicMock()
-    coordinator._ipm_service.async_save_ipm_preset = AsyncMock(return_value=mock_preset)
+    coordinator.ipm_service.async_save_ipm_preset = AsyncMock(return_value=mock_preset)
 
     result = await coordinator.services.config.save_ipm_preset(
         name="Spider Mites", type="pesticide", items=[]
     )
 
-    coordinator._ipm_service.async_save_ipm_preset.assert_called_once()
+    coordinator.ipm_service.async_save_ipm_preset.assert_called_once()
     assert result is mock_preset
 
 
@@ -672,22 +672,22 @@ async def test_async_save_ipm_preset(hass: HomeAssistant) -> None:
 async def test_async_remove_ipm_preset(hass: HomeAssistant) -> None:
     """Test async_remove_ipm_preset delegates to IPMService (line 1184)."""
     coordinator = create_test_coordinator(hass)
-    coordinator._ipm_service.async_remove_ipm_preset = AsyncMock()
+    coordinator.ipm_service.async_remove_ipm_preset = AsyncMock()
 
     await coordinator.services.config.remove_ipm_preset("ipm_1")
 
-    coordinator._ipm_service.async_remove_ipm_preset.assert_called_once_with("ipm_1")
+    coordinator.ipm_service.async_remove_ipm_preset.assert_called_once_with("ipm_1")
 
 
 @pytest.mark.asyncio
 async def test_async_apply_ipm(hass: HomeAssistant) -> None:
     """Test async_apply_ipm delegates to IPMService (line 1194)."""
     coordinator = create_test_coordinator(hass)
-    coordinator._ipm_service.async_apply_ipm = AsyncMock(return_value=["p1"])
+    coordinator.ipm_service.async_apply_ipm = AsyncMock(return_value=["p1"])
 
     result = await coordinator.services.plants.apply_ipm("ipm_1", growspace_id="gs1")
 
-    coordinator._ipm_service.async_apply_ipm.assert_called_once_with(
+    coordinator.ipm_service.async_apply_ipm.assert_called_once_with(
         "ipm_1", "gs1", None, None
     )
     assert result == ["p1"]

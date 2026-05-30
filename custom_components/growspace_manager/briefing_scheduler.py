@@ -175,6 +175,11 @@ class BriefingScheduler:
                 summary_text, recommendations = await self._generate_ai_content(
                     agent_id, kpis
                 )
+            except Exception:  # noqa: BLE001
+                _LOGGER.warning(
+                    "AI briefing generation failed, falling back to Bayesian report"
+                )
+            else:
                 return {
                     "generated_at": generated_at,
                     "summary_text": summary_text,
@@ -182,10 +187,6 @@ class BriefingScheduler:
                     "recommendations": recommendations,
                     "ai_available": True,
                 }
-            except Exception:
-                _LOGGER.warning(
-                    "AI briefing generation failed, falling back to Bayesian report"
-                )
 
         summary_text = self._generate_bayesian_summary()
         return {

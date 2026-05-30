@@ -55,7 +55,10 @@ def mock_coordinator():
     coord = MagicMock()
     # Correctly mock services.get_growspace_data to return serializable data
     coord.services = MagicMock()
-    coord.services.growspaces.get_growspace_data.return_value = {"id": "gs1", "name": "Growspace 1"}
+    coord.services.growspaces.get_growspace_data.return_value = {
+        "id": "gs1",
+        "name": "Growspace 1",
+    }
 
     # WebSocket handlers await these service calls
     coord.services.add_timeline_note = AsyncMock()
@@ -1031,7 +1034,9 @@ async def test_websocket_get_event_log_filtering(
         # 3. Valid Row
         evt3 = MagicMock(time_fired_ts=800, event_id=3)
         data3 = MagicMock(
-            shared_data=json.dumps({"growspace_id": "gs1", "category": "normal", "sensor_type": "moisture"})
+            shared_data=json.dumps(
+                {"growspace_id": "gs1", "category": "normal", "sensor_type": "moisture"}
+            )
         )
 
         # Mock query chain - account for SQL filtering
@@ -1123,7 +1128,11 @@ async def test_websocket_get_event_log_limits(
                     MagicMock(time_fired_ts=3000 + i, event_id=i),
                     MagicMock(
                         shared_data=json.dumps(
-                            {"growspace_id": "gs1", "category": "normal", "sensor_type": "moisture"}
+                            {
+                                "growspace_id": "gs1",
+                                "category": "normal",
+                                "sensor_type": "moisture",
+                            }
                         )
                     ),
                 )
@@ -1270,7 +1279,9 @@ async def test_websocket_exceptions(
             assert resp["error"]["code"] == "unknown_error"
 
         # get_data uses typed error codes
-        await client.send_json({"id": 7, "type": WS_TYPE_GET_DATA, "growspace_id": "g1"})
+        await client.send_json(
+            {"id": 7, "type": WS_TYPE_GET_DATA, "growspace_id": "g1"}
+        )
         resp = await client.receive_json()
         assert not resp["success"]
         assert resp["error"]["code"] == "internal_error"

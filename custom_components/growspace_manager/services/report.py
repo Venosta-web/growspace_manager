@@ -176,7 +176,7 @@ async def _get_plant_timeline_events(
 ) -> list[dict[str, Any]]:
     """Fetch and filter timeline events for a plant."""
     try:
-        from custom_components.growspace_manager.websocket import (
+        from custom_components.growspace_manager.websocket import (  # noqa: PLC0415
             _query_logbook_events_impl,
         )
 
@@ -236,7 +236,9 @@ async def _get_plant_environmental_stats(
         return averages
 
     try:
-        from custom_components.growspace_manager.websocket import _get_statistics_data
+        from custom_components.growspace_manager.websocket import (  # noqa: PLC0415
+            _get_statistics_data,
+        )
 
         stats = await _get_statistics_data(
             hass, entities_to_track, start_time, end_time, 60
@@ -364,7 +366,7 @@ async def _aggregate_growspace_data(
                 start_time = max(start_time, first_plant_date)
 
             try:
-                from custom_components.growspace_manager.websocket import (
+                from custom_components.growspace_manager.websocket import (  # noqa: PLC0415
                     _get_statistics_data,
                 )
 
@@ -407,7 +409,9 @@ async def async_websocket_get_grow_report(
 ) -> None:
     """Handle WebSocket grow report request."""
 
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import (  # noqa: PLC0415
+        GrowspaceCoordinator,
+    )
 
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)

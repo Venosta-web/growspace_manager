@@ -111,7 +111,6 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
             new_encoded = base64.b64encode(output.getvalue()).decode("utf-8")
             result = f"data:image/png;base64,{new_encoded}"
 
-        return result
     except (
         AttributeError,
         KeyError,
@@ -121,6 +120,8 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
     ) as err:
         _LOGGER.warning("Failed to downscale breeder logo: %s", err)
         return logo_data
+    else:
+        return result
 
 
 async def handle_export_strain_library(

@@ -67,14 +67,7 @@ async def websocket_get_lineage_tree(
     except ServiceValidationError as err:
         connection.send_error(msg["id"], "invalid_args", str(err))
         return
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
         return
 
@@ -100,7 +93,7 @@ async def websocket_get_lineage_tree(
         ValueError,
         ServiceValidationError,
         GrowspaceError,
-        Exception,
+        Exception,  # noqa: BLE001
     ) as e:
         connection.send_error(msg["id"], "unknown_error", str(e))
 
@@ -117,14 +110,7 @@ async def websocket_get_strain_lineage_tree(
         connection.send_result(msg["id"], tree)
     except ServiceValidationError:
         connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -143,14 +129,7 @@ async def websocket_update_strain_lineage_tree(
         connection.send_result(msg["id"], {"lineage": flat_lineage})
     except ServiceValidationError:
         connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -169,14 +148,7 @@ async def websocket_import_strain_lineage_tree(
         connection.send_result(msg["id"], {"ok": True})
     except ServiceValidationError:
         connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 

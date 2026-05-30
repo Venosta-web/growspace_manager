@@ -60,7 +60,7 @@ async def websocket_get_growspace_data(
         KeyError,
         ValueError,
         GrowspaceError,
-        Exception,
+        Exception,  # noqa: BLE001
     ) as e:
         connection.send_error(msg["id"], WS_ERR_INTERNAL_ERROR, str(e))
 

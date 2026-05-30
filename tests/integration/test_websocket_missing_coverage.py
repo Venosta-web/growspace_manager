@@ -643,7 +643,7 @@ async def test_websocket_download_strain_image_uses_content_type_header(
             return_value=mock_coordinator,
         ),
         patch(
-            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            "custom_components.growspace_manager.websocket.strain.async_get_clientsession",
             return_value=mock_session,
         ),
     ):

@@ -206,7 +206,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Returns:
             Dictionary mapping preset IDs to IPMPreset objects.
         """
-        return self._ipm_service.ipm_presets
+        return self.ipm_service.ipm_presets
 
     async def save_ipm_preset(
         self,
@@ -218,13 +218,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         preset_id: str | None = None,
     ) -> IPMPreset:
         """Create or update an IPM preset."""
-        return await self._ipm_service.async_save_ipm_preset(
+        return await self.ipm_service.async_save_ipm_preset(
             name, preset_type, items, stage, min_days_in_stage, preset_id
         )
 
     async def remove_ipm_preset(self, preset_id: str) -> None:
         """Remove an IPM preset by ID."""
-        await self._ipm_service.async_remove_ipm_preset(preset_id)
+        await self.ipm_service.async_remove_ipm_preset(preset_id)
 
     @ipm_presets.setter
     def ipm_presets(self, value: dict[str, IPMPreset]) -> None:
@@ -233,7 +233,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Args:
             value: New IPM presets dictionary.
         """
-        self._ipm_service.ipm_presets = value
+        self.ipm_service.ipm_presets = value
         self.nutrient_manager.ipm_presets = (
             value  # Keep in sync for backward compatibility
         )
@@ -373,9 +373,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.storage_manager = storage_manager
         self._growspace_manager = growspace_manager
         self._plant_manager = plant_manager
-        self._watering_service = watering_service
-        self._training_service = training_service
-        self._ipm_service = ipm_service
+        self.watering_service = watering_service
+        self.training_service = training_service
+        self.ipm_service = ipm_service
         self.environment_analyzer = environment_analyzer
         self.environment_reporter = environment_reporter
         self.notification_manager = notification_manager
@@ -404,7 +404,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             inventory,
         )
         # Sync IPM presets with IPM service
-        self._ipm_service.ipm_presets = self.nutrient_manager.ipm_presets
+        self.ipm_service.ipm_presets = self.nutrient_manager.ipm_presets
 
     # =============================================================================
     # CACHING AND OPTIMIZATION HELPER
@@ -627,7 +627,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.
-        self._ipm_service.ipm_presets = self.nutrient_manager.ipm_presets
+        self.ipm_service.ipm_presets = self.nutrient_manager.ipm_presets
 
         # Ensure calculated sensors are configured
         self.growspace_manager.ensure_calculated_sensors()

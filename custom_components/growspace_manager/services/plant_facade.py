@@ -32,6 +32,7 @@ class PlantFacade:
     """Facade for all plant lifecycle and mutation operations."""
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialise the facade with the coordinator."""
         self._coordinator = coordinator
 
     # -------------------------------------------------------------------------
@@ -276,7 +277,7 @@ class PlantFacade:
         preset_id: str | None = None,
     ) -> Plant:
         """Record a watering event for a plant."""
-        return await self._coordinator._watering_service.async_water_plant(
+        return await self._coordinator.watering_service.async_water_plant(
             plant_id, amount, nutrients, preset_id
         )
 
@@ -299,7 +300,7 @@ class PlantFacade:
         notes: str | None = None,
     ) -> list[str]:
         """Log an IPM application event."""
-        return await self._coordinator._ipm_service.async_apply_ipm(
+        return await self._coordinator.ipm_service.async_apply_ipm(
             preset_id, growspace_id, plant_ids, notes
         )
 
@@ -311,7 +312,7 @@ class PlantFacade:
         plant_ids: list[str] | None = None,
     ) -> None:
         """Log a training event."""
-        await self._coordinator._training_service.async_log_training_event(
+        await self._coordinator.training_service.async_log_training_event(
             growspace_id, technique, notes, plant_ids
         )
 

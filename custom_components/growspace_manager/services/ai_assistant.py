@@ -16,7 +16,6 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.domain import calculate_days_in_stage
-from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.schemas import (
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
@@ -492,14 +491,7 @@ class GrowAssistant:
 
         except ServiceValidationError:
             raise
-        except (
-            AttributeError,
-            KeyError,
-            ValueError,
-            ServiceValidationError,
-            GrowspaceError,
-            Exception,
-        ) as err:
+        except Exception as err:
             _LOGGER.error("Error getting AI advice: %s", err)
             if any(
                 m in str(err)
@@ -619,14 +611,7 @@ async def handle_analyze_all_growspaces(
             data = assistant.gather_growspace_data(growspace_id)
             all_data.append(data)
             issues_found.extend(_analyze_growspace_issues(data))
-        except (
-            AttributeError,
-            KeyError,
-            ValueError,
-            ServiceValidationError,
-            GrowspaceError,
-            Exception,
-        ) as err:
+        except Exception as err :  # noqa: BLE001
             _LOGGER.warning("Error analyzing growspace %s: %s", growspace_id, err)
 
     # Build comprehensive summary
@@ -684,14 +669,7 @@ async def handle_analyze_all_growspaces(
                 "growspaces_analyzed": len(all_data),
             }
 
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as err:
+    except Exception as err :  # noqa: BLE001
         _LOGGER.error("Error analyzing all growspaces: %s", err)
         # Fallback to summary
         return {
@@ -791,14 +769,7 @@ async def handle_strain_recommendation(
         try:
             gs_data = assistant.gather_growspace_data(growspace_id)
             growspace_context = f"\nTARGET GROWSPACE: {gs_data['growspace']['name']} ({gs_data['growspace']['size']})"
-        except (
-            AttributeError,
-            KeyError,
-            ValueError,
-            ServiceValidationError,
-            GrowspaceError,
-            Exception,
-        ) as e:
+        except Exception as e :  # noqa: BLE001
             _LOGGER.warning(
                 "Failed to gather growspace data for strain recommendation for growspace %s: %s",
                 growspace_id,
@@ -844,14 +815,7 @@ async def handle_strain_recommendation(
                 "strains_analyzed": len(all_strains),
             }
 
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        ServiceValidationError,
-        GrowspaceError,
-        Exception,
-    ) as err:
+    except Exception as err :  # noqa: BLE001
         _LOGGER.error("Error getting strain recommendation: %s", err)
         return {
             "response": f"Error getting strain recommendation: {err}\n\nStrain Data:\n\n{context}",

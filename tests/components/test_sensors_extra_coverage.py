@@ -141,7 +141,7 @@ async def test_crop_steering_sensor(mock_coordinator, setup_sensor_for_test):
     """Test CropSteeringSensor attributes and native value."""
     # Patch where it is defined to handle local imports
     with patch(
-        "custom_components.growspace_manager.crop_steering.get_crop_steering_state"
+        "custom_components.growspace_manager.sensor.crop_steering.get_crop_steering_state"
     ) as mock_get_state:
         mock_state = MagicMock()
         mock_state.score = 0.5

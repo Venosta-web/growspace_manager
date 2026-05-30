@@ -96,7 +96,7 @@ async def test_ipm_management(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     mock_coordinator.save_ipm_preset = AsyncMock()
     mock_coordinator.remove_ipm_preset = AsyncMock()
-    mock_coordinator._ipm_service.async_apply_ipm = AsyncMock()
+    mock_coordinator.ipm_service.async_apply_ipm = AsyncMock()
 
     await facade.config.save_ipm_preset("Test", "Foliar", [])
     mock_coordinator.save_ipm_preset.assert_called_once()
@@ -107,7 +107,7 @@ async def test_ipm_management(mock_coordinator) -> None:
     )
 
     await facade.plants.apply_ipm("preset_1", growspace_id="gs1")
-    mock_coordinator._ipm_service.async_apply_ipm.assert_called_once()
+    mock_coordinator.ipm_service.async_apply_ipm.assert_called_once()
 
 
 @pytest.mark.asyncio

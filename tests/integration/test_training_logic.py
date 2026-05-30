@@ -56,10 +56,10 @@ def mock_coordinator(hass: HomeAssistant, mock_plants):
     # Set up plants
     coordinator.data_repository.load_plants(mock_plants)
     coordinator.services.save = AsyncMock()  # type: ignore[method-assign]
-    coordinator._training_service._ctx.save_callback = coordinator.services.save
+    coordinator.training_service._ctx.save_callback = coordinator.services.save
     mock_add_event = MagicMock()
     coordinator.add_event = mock_add_event
-    coordinator._training_service._ctx.add_event = mock_add_event
+    coordinator.training_service._ctx.add_event = mock_add_event
 
     return coordinator
 

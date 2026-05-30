@@ -296,7 +296,7 @@ async def test_websocket_download_strain_image_http_error(mock_connection: Mock)
             return_value=coordinator,
         ),
         patch(
-            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            "custom_components.growspace_manager.websocket.strain.async_get_clientsession",
             return_value=mock_session,
         ),
     ):
@@ -347,7 +347,7 @@ async def test_websocket_download_strain_image_generic_error(mock_connection: Mo
             return_value=coordinator,
         ),
         patch(
-            "homeassistant.helpers.aiohttp_client.async_get_clientsession",
+            "custom_components.growspace_manager.websocket.strain.async_get_clientsession",
             side_effect=RuntimeError("session error"),
         ),
     ):

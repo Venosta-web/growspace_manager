@@ -6,6 +6,7 @@ from typing import Any, override
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.crop_steering import get_crop_steering_state
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -41,10 +42,6 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     @override  # type: ignore[misc]
     def native_value(self) -> float | None:
         """Return the crop steering score (-1.0 to 1.0)."""
-        from custom_components.growspace_manager.crop_steering import (
-            get_crop_steering_state,
-        )
-
         state = get_crop_steering_state(self.coordinator, self._growspace_id)
         return round(state.score, 2) if state else None
 
@@ -52,10 +49,6 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return crop steering details."""
-        from custom_components.growspace_manager.crop_steering import (
-            get_crop_steering_state,
-        )
-
         state = get_crop_steering_state(self.coordinator, self._growspace_id)
         if not state:
             return {}

@@ -177,7 +177,7 @@ async def test_async_log_training_event_empty_plants_with_gs(
 
     mock_add_event = MagicMock()
     coordinator.add_event = mock_add_event
-    coordinator._training_service._ctx.add_event = mock_add_event
+    coordinator.training_service._ctx.add_event = mock_add_event
 
     await coordinator.services.plants.log_training_event(gs_id, "topping")
 

@@ -163,7 +163,7 @@ async def async_setup_statistics_sensor(
             config,
             {DOMAIN: config},
         )
-    except Exception as ex:  # pylint: disable=broad-except
+    except Exception as ex:  # noqa: BLE001
         _LOGGER.error("Failed to setup statistics sensor: %s", ex)
         return None
     _LOGGER.info("Setting up statistics sensor: %s", name)

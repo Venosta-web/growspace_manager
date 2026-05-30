@@ -13,12 +13,15 @@ class CuringEvaluatorStrategy(PostHarvestEvaluatorStrategy):
 
     @property
     def growspace_type(self) -> GrowspaceType:
+        """Return the growspace type for this strategy."""
         return GrowspaceType.CURE
 
     @property
     def thresholds(self) -> dict:
+        """Return the condition thresholds for curing."""
         return CURING_THRESHOLDS
 
     @property
     def label(self) -> str:
+        """Return the human-readable strategy label."""
         return "Curing"

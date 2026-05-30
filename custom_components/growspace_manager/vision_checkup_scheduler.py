@@ -229,7 +229,7 @@ class VisionCheckupScheduler:
         for i, cam_entity in enumerate(camera_entities):
             try:
                 image = await async_get_image(self.hass, cam_entity)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 _LOGGER.warning(
                     "Failed to fetch snapshot from camera %s, skipping", cam_entity
                 )
@@ -239,7 +239,7 @@ class VisionCheckupScheduler:
                 processed_bytes, coverage = await self.hass.async_add_executor_job(
                     processor.process_snapshot, image.content
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001
                 _LOGGER.warning(
                     "Image processing failed for camera %s, skipping", cam_entity
                 )

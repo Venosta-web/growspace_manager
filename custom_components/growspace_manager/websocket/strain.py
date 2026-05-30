@@ -8,12 +8,13 @@ from typing import Any
 
 import voluptuous as vol
 
-from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS, DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import slugify
 
 _LOGGER = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ async def websocket_upload_strain_image(
         connection.send_result(msg["id"], {"path": local_path})
     except ServiceValidationError:
         connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -117,8 +118,6 @@ async def websocket_download_strain_image(
 ) -> None:
     """Download a remote image URL and save it as a local strain image."""
     import base64 as _base64  # noqa: PLC0415
-
-    from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
     url = msg["url"]
     try:
@@ -147,7 +146,7 @@ async def websocket_download_strain_image(
         connection.send_result(msg["id"], {"path": local_path})
     except ServiceValidationError:
         connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
@@ -157,8 +156,6 @@ async def websocket_query_external_strain(
     msg: dict[str, Any],
 ) -> None:
     """Query external strain database."""
-    from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS
-
     query = msg["query"]
     coordinator = GrowspaceCoordinator.get_any(hass)
     scraper = coordinator.seedfinder_scraper

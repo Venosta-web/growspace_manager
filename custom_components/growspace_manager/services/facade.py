@@ -43,6 +43,7 @@ class ServiceFacade:
     """
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialise the facade and compose sub-facades."""
         self._coordinator = coordinator
         self.growspaces = GrowspaceFacade(coordinator)
         self.plants = PlantFacade(coordinator)

@@ -18,6 +18,7 @@ class NotificationsFacade:
     """Facade for all notification-related operations."""
 
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
+        """Initialise the facade with the coordinator."""
         self._coordinator = coordinator
 
     @property

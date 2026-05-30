@@ -13,12 +13,15 @@ class DryingEvaluatorStrategy(PostHarvestEvaluatorStrategy):
 
     @property
     def growspace_type(self) -> GrowspaceType:
+        """Return the growspace type for this strategy."""
         return GrowspaceType.DRY
 
     @property
     def thresholds(self) -> dict:
+        """Return the condition thresholds for drying."""
         return DRYING_THRESHOLDS
 
     @property
     def label(self) -> str:
+        """Return the human-readable strategy label."""
         return "Drying"
