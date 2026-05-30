@@ -820,7 +820,7 @@ async def handle_harvest_plant(
             )
 
     try:
-        await coordinator.services.plants.harvest_plant(
+        await coordinator.services.plants.transition_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
             target_growspace_name=None,

@@ -48,7 +48,7 @@ async def handle_batch_action(
                     transition_date=data.get(ATTR_TRANSITION_DATE),
                 )
             elif action == "harvest":
-                await coordinator.services.plants.harvest_plant(
+                await coordinator.services.plants.transition_plant(
                     plant_id=entity_id,
                     target_growspace_id=data.get(ATTR_TARGET_GROWSPACE_ID),
                     target_growspace_name=None,

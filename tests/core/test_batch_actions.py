@@ -24,7 +24,7 @@ def mock_coordinator() -> AsyncMock:
     coord.services = AsyncMock()
     coord.services.plants = AsyncMock()
     coord.services.plants.transition_plant_stage = AsyncMock()
-    coord.services.plants.harvest_plant = AsyncMock()
+    coord.services.plants.transition_plant = AsyncMock()
     coord.services.plants.remove_plant = AsyncMock()
     return coord
 
@@ -66,7 +66,7 @@ async def test_batch_harvest(mock_hass: MagicMock, mock_coordinator: MagicMock) 
 
     await handle_batch_action(mock_hass, mock_coordinator, call)
 
-    mock_coordinator.services.plants.harvest_plant.assert_called_once_with(
+    mock_coordinator.services.plants.transition_plant.assert_called_once_with(
         plant_id="plant1",
         target_growspace_id="drying_room",
         target_growspace_name=None,
@@ -122,5 +122,5 @@ async def test_unknown_action(
 
     # Should result in no coordinator calls
     mock_coordinator.services.plant_manager.transition_plant_stage.assert_not_called()
-    mock_coordinator.services.plants.harvest_plant.assert_not_called()
+    mock_coordinator.services.plants.transition_plant.assert_not_called()
     mock_coordinator.services.plants.remove_plant.assert_not_called()

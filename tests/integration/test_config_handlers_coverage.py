@@ -363,7 +363,7 @@ async def test_plant_handler_async_operations(mock_hass, mock_config_entry) -> N
     """Test async crud operations."""
     handler = PlantConfigHandler(mock_hass, mock_config_entry)
     coordinator = MagicMock()
-    coordinator.services.plants.harvest_plant = AsyncMock()
+    coordinator.services.plants.transition_plant = AsyncMock()
     coordinator.services.plants.remove_plant = AsyncMock()
     coordinator.services.plants.add_plant = AsyncMock()
     coordinator.services.plants.update_plant = AsyncMock()
@@ -371,7 +371,7 @@ async def test_plant_handler_async_operations(mock_hass, mock_config_entry) -> N
 
     # Harvest
     await handler.async_harvest_plant("p1", 50.0)
-    coordinator.services.plants.harvest_plant.assert_awaited_with("p1", wet_weight=50.0)
+    coordinator.services.plants.transition_plant.assert_awaited_with("p1", wet_weight=50.0)
 
     # Destroy
     await handler.async_destroy_plant("p1")

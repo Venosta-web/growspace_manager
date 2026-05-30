@@ -1152,7 +1152,7 @@ async def test_async_harvest_no_plant(coordinator: GrowspaceCoordinator) -> None
 
 
 @pytest.mark.asyncio
-async def test_async_harvest_plant_explicit_target(
+async def test_async_transition_plant_explicit_target(
     coordinator: GrowspaceCoordinator,
 ) -> None:
     """Test harvesting a plant to an explicit target growspace.
@@ -1163,7 +1163,7 @@ async def test_async_harvest_plant_explicit_target(
     gs1 = await coordinator.growspace_manager.add_growspace("Source GS")
     gs2 = await coordinator.growspace_manager.add_growspace("Target GS")
     plant = await coordinator.plant_manager.add_plant(gs1.id, "Strain A")
-    await coordinator.services.plants.harvest_plant(
+    await coordinator.services.plants.transition_plant(
         plant.plant_id, gs2.id, gs2.name, date.today().isoformat()
     )
     updated_plant = coordinator.plants.get(plant.plant_id)
@@ -1172,7 +1172,7 @@ async def test_async_harvest_plant_explicit_target(
 
 
 @pytest.mark.asyncio
-async def test_async_harvest_plant_auto_flow_to_dry(
+async def test_async_transition_plant_auto_flow_to_dry(
     coordinator: GrowspaceCoordinator,
 ) -> None:
     """Test harvesting a plant with auto-flow to the dry growspace."""
@@ -1186,7 +1186,7 @@ async def test_async_harvest_plant_auto_flow_to_dry(
     # Ensure "dry" growspace exists
     coordinator.growspace_manager.ensure_special_growspace("dry", "Dry Room")
 
-    await coordinator.services.plants.harvest_plant(plant.plant_id)
+    await coordinator.services.plants.transition_plant(plant.plant_id)
 
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
@@ -1195,7 +1195,7 @@ async def test_async_harvest_plant_auto_flow_to_dry(
 
 
 @pytest.mark.asyncio
-async def test_async_harvest_plant_auto_flow_to_cure(
+async def test_async_transition_plant_auto_flow_to_cure(
     coordinator: GrowspaceCoordinator,
 ) -> None:
     """Test harvesting a plant with auto-flow to the cure growspace.
@@ -1210,7 +1210,7 @@ async def test_async_harvest_plant_auto_flow_to_cure(
     plant = await coordinator.plant_manager.add_plant(
         "dry", "Strain A", stage=PlantStage.DRY, dry_start=date(2025, 1, 1)
     )
-    await coordinator.services.plants.harvest_plant(plant.plant_id, None, None, None)
+    await coordinator.services.plants.transition_plant(plant.plant_id, None, None, None)
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
     assert updated_plant.growspace_id == "cure"
@@ -1668,8 +1668,8 @@ async def test_async_transition_plant_stage_invalid_stage(hass: HomeAssistant) -
 
 
 @pytest.mark.asyncio
-async def test_handle_harvest_logic_explicit_target(hass: HomeAssistant) -> None:
-    """Test _handle_harvest_logic with an explicit target."""
+async def test_handle_transition_logic_explicit_target(hass: HomeAssistant) -> None:
+    """Test handle_transition_logic with an explicit target."""
 
     coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
@@ -1687,7 +1687,7 @@ async def test_handle_harvest_logic_explicit_target(hass: HomeAssistant) -> None
         new_callable=AsyncMock,
     ) as mock_harvest:
         mock_harvest.return_value = True
-        await coordinator.plant_manager.harvest_plant(
+        await coordinator.plant_manager.transition_plant(
             "p1",
             target_growspace_id="target_gs",
             target_growspace_name="Target GS",
@@ -1700,8 +1700,8 @@ async def test_handle_harvest_logic_explicit_target(hass: HomeAssistant) -> None
 
 
 @pytest.mark.asyncio
-async def test_handle_harvest_logic_auto_flow(hass: HomeAssistant) -> None:
-    """Test _handle_harvest_logic with auto-flow."""
+async def test_handle_transition_logic_auto_flow(hass: HomeAssistant) -> None:
+    """Test handle_transition_logic with auto-flow."""
 
     coordinator = create_test_coordinator(hass, data={})
     plant = MagicMock()
@@ -1713,7 +1713,7 @@ async def test_handle_harvest_logic_auto_flow(hass: HomeAssistant) -> None:
         coordinator.plant_manager, "_harvest_auto_flow", new_callable=AsyncMock
     ) as mock_auto:
         mock_auto.return_value = True
-        await coordinator.plant_manager.harvest_plant(
+        await coordinator.plant_manager.transition_plant(
             "p1", transition_date="2025-01-01"
         )
 
@@ -2339,7 +2339,7 @@ async def test_async_update_growspace_full(
 
 
 @pytest.mark.asyncio
-async def test_async_harvest_plant_full_flow(
+async def test_async_transition_plant_full_flow(
     coordinator: GrowspaceCoordinator,
 ) -> None:
     """Test async_harvest_plant including moving to target growspace."""
@@ -2356,7 +2356,7 @@ async def test_async_harvest_plant_full_flow(
     gs_dry = coordinator.growspace_manager.ensure_special_growspace("dry", "Dry Room")
 
     # Check manual movement
-    await coordinator.services.plants.harvest_plant(
+    await coordinator.services.plants.transition_plant(
         plant.plant_id,
         target_growspace_id=gs_dry,
         transition_date=None,

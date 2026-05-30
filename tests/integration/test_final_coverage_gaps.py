@@ -114,7 +114,7 @@ def test_service_coordinator_locator_get_any_no_coordinators() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PlantManager.harvest_plant – PHI safety check (lines 494-507)
+# PlantManager.transition_plant – PHI safety check (lines 494-507)
 # ---------------------------------------------------------------------------
 
 
@@ -163,14 +163,14 @@ async def test_harvest_blocked_by_phi_clearance_date(
     plant_manager.repository.plants["p1"] = plant
 
     with pytest.raises(ServiceValidationError):
-        await plant_manager.harvest_plant(plant_id="p1", plant=plant)
+        await plant_manager.transition_plant(plant_id="p1", plant=plant)
 
 
 @pytest.mark.asyncio
 async def test_harvest_plant_with_all_metrics(
     plant_manager: PlantManager,
 ) -> None:
-    """Test harvest_plant stores all optional metric fields when provided."""
+    """Test transition_plant stores all optional metric fields when provided."""
     plant = Plant(
         plant_id="p2",
         growspace_id=GROWSPACE_ID,
@@ -187,7 +187,7 @@ async def test_harvest_plant_with_all_metrics(
         "custom_components.growspace_manager.managers.plant.calculate_plant_stage",
         return_value="flower",
     ):
-        await plant_manager.harvest_plant(
+        await plant_manager.transition_plant(
             plant_id="p2",
             plant=plant,
             wet_weight=100.0,

@@ -53,8 +53,8 @@ def mock_coordinator() -> MagicMock:
     pl_facade.add_plant = AsyncMock()
     pl_facade.update_plant = AsyncMock()
     pl_facade.remove_plant = AsyncMock()
-    pl_facade.harvest_plant = AsyncMock()
-    pl_facade.async_harvest_plant = pl_facade.harvest_plant
+    pl_facade.transition_plant = AsyncMock()
+    pl_facade.async_transition_plant = pl_facade.transition_plant
 
     cfg_facade = MagicMock()
     cfg_facade.get_strain_options = MagicMock(return_value=["Strain A", "Strain B"])
@@ -68,7 +68,7 @@ def mock_coordinator() -> MagicMock:
     # Legacy support
     coordinator.get_sorted_growspace_options = gs_facade.get_sorted_growspace_options
     coordinator.get_strain_options = cfg_facade.get_strain_options
-    coordinator.async_harvest_plant = pl_facade.harvest_plant
+    coordinator.async_transition_plant = pl_facade.transition_plant
     coordinator.async_remove_plant = pl_facade.remove_plant
     coordinator.async_add_plant = pl_facade.add_plant
     coordinator.async_update_plant = pl_facade.update_plant
@@ -143,7 +143,7 @@ async def test_async_harvest_plant(
 ) -> None:
     """Test harvesting a plant."""
     await handler.async_harvest_plant("plant_1", 100.5)
-    mock_coordinator.services.plants.harvest_plant.assert_awaited_once_with(
+    mock_coordinator.services.plants.transition_plant.assert_awaited_once_with(
         "plant_1", wet_weight=100.5
     )
 

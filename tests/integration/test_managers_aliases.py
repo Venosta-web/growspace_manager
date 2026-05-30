@@ -71,7 +71,7 @@ def plant_manager(mock_hass, mock_repository, growspace_manager):
     mgr.update_plant = AsyncMock()
     mgr.remove_plant = AsyncMock()
     mgr.switch_plants = AsyncMock()
-    mgr.harvest_plant = AsyncMock()  # Fixed: Added missing mock
+    mgr.transition_plant = AsyncMock()  # Fixed: Added missing mock
     mgr.promote_clone = AsyncMock()  # Fixed: Added missing mock
     return mgr
 
@@ -134,9 +134,9 @@ async def test_plant_manager_aliases(plant_manager, growspace_manager):
     plant_manager.transition_plant_stage.assert_called_once_with("p1", "flowering")
 
     # async_harvest_plant
-    plant_manager.harvest_plant.reset_mock()
-    await plant_manager.async_harvest_plant("p1")
-    plant_manager.harvest_plant.assert_called_once_with("p1")
+    plant_manager.transition_plant.reset_mock()
+    await plant_manager.async_transition_plant("p1")
+    plant_manager.transition_plant.assert_called_once_with("p1")
 
     # async_switch_plants
     plant_manager.switch_plants.reset_mock()

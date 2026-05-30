@@ -183,7 +183,7 @@ class PlantFacade:
         """Mark a plant as harvested."""
         return await self._coordinator.plant_manager.harvest(plant_id)
 
-    async def harvest_plant(
+    async def transition_plant(
         self,
         plant_id: str,
         target_growspace_id: str | None = None,
@@ -196,8 +196,8 @@ class PlantFacade:
         cbd_percentage: float | None = None,
         terpene_profile: str | None = None,
     ) -> None:
-        """Harvest a plant with full orchestration."""
-        await self._coordinator.plant_manager.harvest_plant(
+        """Transition a plant out of its current growspace (harvest or move)."""
+        await self._coordinator.plant_manager.transition_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
             target_growspace_name=target_growspace_name,
@@ -210,7 +210,7 @@ class PlantFacade:
             terpene_profile=terpene_profile,
         )
 
-    async def async_harvest_plant(
+    async def async_transition_plant(
         self,
         plant_id: str,
         target_growspace_id: str | None = None,
@@ -223,8 +223,8 @@ class PlantFacade:
         cbd_percentage: float | None = None,
         terpene_profile: str | None = None,
     ) -> None:
-        """Alias for harvest_plant."""
-        await self.harvest_plant(
+        """Alias for transition_plant."""
+        await self.transition_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
             target_growspace_name=target_growspace_name,

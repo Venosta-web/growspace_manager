@@ -495,7 +495,7 @@ class PlantManager(BaseService):
             )
             self._emit(plant.growspace_id, event)
 
-    async def harvest_plant(
+    async def transition_plant(
         self,
         plant_id: str,
         plant: Plant | None = None,
@@ -510,7 +510,7 @@ class PlantManager(BaseService):
         terpene_profile: str | None = None,
         **kwargs: Any,
     ) -> None:
-        """Harvest a plant."""
+        """Transition a plant out of its current growspace (harvest or move)."""
         self.validator.validate_plant_exists(plant_id)
         if plant is None:
             plant = self.repository.require_plant(plant_id)
@@ -571,7 +571,7 @@ class PlantManager(BaseService):
             stage_before,
         )
 
-        # Copied logic from LifecycleManager.handle_harvest_logic
+        # Copied logic from LifecycleManager.handle_transition_logic
         moved = False
         if target_growspace_id:
             if not self.repository.has_growspace(target_growspace_id):
@@ -875,9 +875,9 @@ class PlantManager(BaseService):
         """Alias for transition_plant_stage."""
         return await self.transition_plant_stage(*args, **kwargs)
 
-    async def async_harvest_plant(self, *args: Any, **kwargs: Any) -> None:
-        """Alias for harvest_plant."""
-        await self.harvest_plant(*args, **kwargs)
+    async def async_transition_plant(self, *args: Any, **kwargs: Any) -> None:
+        """Alias for transition_plant."""
+        await self.transition_plant(*args, **kwargs)
 
     async def async_promote_clone(self, *args: Any, **kwargs: Any) -> Plant:
         """Alias for promote_clone."""
@@ -895,13 +895,13 @@ class PlantManager(BaseService):
         return plant.plant_id
 
     # Alias for tests that use positional arguments
-    async def handle_harvest_logic(self, *args: Any, **kwargs: Any) -> None:
-        """Alias for harvest_plant with positional flexibility."""
+    async def handle_transition_logic(self, *args: Any, **kwargs: Any) -> None:
+        """Alias for transition_plant with positional flexibility."""
         if len(args) >= 2 and (
             hasattr(args[1], "plant_id") or type(args[1]).__name__ == "MagicMock"
         ):
             # Shifted call: (plant_id, plant, target_growspace_id, target_growspace_name, transition_date)
-            await self.harvest_plant(
+            await self.transition_plant(
                 plant_id=args[0],
                 plant=args[1],
                 target_growspace_id=args[2] if len(args) > 2 else None,
@@ -910,7 +910,7 @@ class PlantManager(BaseService):
                 **kwargs,
             )
         else:
-            await self.harvest_plant(*args, **kwargs)
+            await self.transition_plant(*args, **kwargs)
 
     async def handle_move_plant(self, *args: Any, **kwargs: Any) -> Plant:
         """Alias for move_plant."""

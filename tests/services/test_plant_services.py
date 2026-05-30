@@ -1425,7 +1425,7 @@ async def test_harvest_plant_success(
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator.services.plants.harvest_plant.assert_called_once_with(
+    mock_coordinator.services.plants.transition_plant.assert_called_once_with(
         plant_id="plant_1",
         target_growspace_id="dry",
         target_growspace_name=None,
@@ -1488,7 +1488,7 @@ async def test_harvest_plant_entity_id_resolution(
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator.services.plants.harvest_plant.assert_called_once_with(
+    mock_coordinator.services.plants.transition_plant.assert_called_once_with(
         plant_id="plant_1",
         target_growspace_id="dry",
         target_growspace_name=None,
@@ -1558,7 +1558,7 @@ async def test_harvest_plant_not_found_reload_attempt(
 
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
-    mock_coordinator.services.plants.harvest_plant.assert_called_once()
+    mock_coordinator.services.plants.transition_plant.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1582,7 +1582,7 @@ async def test_harvest_plant_not_found_after_reload(
         ServiceValidationError, match="not found and could not be reloaded"
     ):
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
-    mock_coordinator.services.plants.harvest_plant.assert_not_called()
+    mock_coordinator.services.plants.transition_plant.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1629,7 +1629,7 @@ async def test_harvest_plant_invalid_date(
 
     with pytest.raises(ServiceValidationError, match="Invalid transition_date format"):
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
-    mock_coordinator.services.plants.harvest_plant.assert_not_called()
+    mock_coordinator.services.plants.transition_plant.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1652,7 +1652,7 @@ async def test_harvest_plant_with_timezone(
 
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
-    call_kwargs = mock_coordinator.services.plants.harvest_plant.call_args.kwargs
+    call_kwargs = mock_coordinator.services.plants.transition_plant.call_args.kwargs
     # handle_harvest_plant converts datetime to date then to isoformat string
     assert call_kwargs["transition_date"] == "2024-01-15"
 
@@ -1676,7 +1676,7 @@ async def test_harvest_plant_without_date(
 
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
-    call_kwargs = mock_coordinator.services.plants.harvest_plant.call_args[1]
+    call_kwargs = mock_coordinator.services.plants.transition_plant.call_args[1]
     assert call_kwargs["transition_date"] is None
 
 
@@ -1686,7 +1686,7 @@ async def test_harvest_plant_exception(
 ) -> None:
     """Test exception handling in harvest_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.services.plants.harvest_plant.side_effect = GrowspaceError("Test error")
+    mock_coordinator.services.plants.transition_plant.side_effect = GrowspaceError("Test error")
 
     call = ServiceCall(
         hass,
@@ -2023,9 +2023,9 @@ async def test_resolve_plant_id_entity(
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
     # Verify it resolved to plant_123
-    mock_coordinator.services.plants.harvest_plant.assert_called_once()
+    mock_coordinator.services.plants.transition_plant.assert_called_once()
     assert (
-        mock_coordinator.services.plants.harvest_plant.call_args.kwargs["plant_id"]
+        mock_coordinator.services.plants.transition_plant.call_args.kwargs["plant_id"]
         == "plant_123"
     )
 
@@ -2096,7 +2096,7 @@ async def test_harvest_plant_growspace_error(
 ) -> None:
     """Test error handling in harvest plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.services.plants.harvest_plant.side_effect = GrowspaceError(
+    mock_coordinator.services.plants.transition_plant.side_effect = GrowspaceError(
         "Harvest failed"
     )
 

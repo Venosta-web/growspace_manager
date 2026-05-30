@@ -57,7 +57,7 @@ def mock_coordinator():
     coordinator.plant_manager.async_move_plant = AsyncMock()
     coordinator.plant_manager.async_switch_plants = AsyncMock()
     coordinator.plant_manager.async_transition_plant_stage = AsyncMock()
-    coordinator.plant_manager.async_harvest_plant = AsyncMock()
+    coordinator.plant_manager.async_transition_plant = AsyncMock()
     coordinator.plant_manager.async_remove_plant = AsyncMock()
 
     # Growspace manager methods

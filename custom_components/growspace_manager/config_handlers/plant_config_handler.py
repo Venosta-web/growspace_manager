@@ -365,7 +365,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
-        await coordinator.services.plants.harvest_plant(plant_id, wet_weight=harvest_weight)
+        await coordinator.services.plants.transition_plant(plant_id, wet_weight=harvest_weight)
 
     async def async_destroy_plant(self, plant_id: str) -> None:
         """Destroy a plant."""

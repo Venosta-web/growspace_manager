@@ -215,7 +215,7 @@ async def test_move_to_dry_growspace_device_id_ghosting(
 
 
 @pytest.mark.asyncio
-async def test_handle_harvest_logic_fallthrough(manager, repository_mock) -> None:
+async def test_handle_transition_logic_fallthrough(manager, repository_mock) -> None:
     """Test that invalid target_growspace_id raises ValueError and does not fall through."""
     plant = MagicMock(spec=Plant)
     plant.plant_id = "p1"
@@ -226,7 +226,7 @@ async def test_handle_harvest_logic_fallthrough(manager, repository_mock) -> Non
     with pytest.raises(
         GrowspaceNotFoundError, match="Target growspace invalid_gs not found"
     ):
-        await manager.handle_harvest_logic(
+        await manager.handle_transition_logic(
             "p1", plant, "invalid_gs", "Invalid Name", "2023-01-01"
         )
 
@@ -263,8 +263,8 @@ async def test_remove_plant_race_condition(manager, repository_mock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_harvest_plant_defensive_check(manager, repository_mock) -> None:
-    """Test harvest_plant handles invalid plant objects gracefully."""
+async def test_transition_plant_defensive_check(manager, repository_mock) -> None:
+    """Test transition_plant handles invalid plant objects gracefully."""
     plant = MagicMock()
     plant.phi_clearance_date = None
     # Explicitly remove growspace_id to trigger the defensive check
@@ -285,7 +285,7 @@ async def test_harvest_plant_defensive_check(manager, repository_mock) -> None:
     ):
         mock_harvest_flow.return_value = True
 
-        await manager.harvest_plant("p1", plant=plant)
+        await manager.transition_plant("p1", plant=plant)
 
         # Should still proceed to call the flow
         mock_harvest_flow.assert_awaited()
@@ -314,10 +314,10 @@ async def test_promote_clone_target_full(manager, repository_mock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_harvest_logic_kwargs(manager) -> None:
-    """Test handle_harvest_logic passes through kwargs correctly."""
-    with patch.object(manager, "harvest_plant", new_callable=AsyncMock) as mock_harvest:
+async def test_handle_transition_logic_kwargs(manager) -> None:
+    """Test handle_transition_logic passes through kwargs correctly."""
+    with patch.object(manager, "transition_plant", new_callable=AsyncMock) as mock_harvest:
         # Call with keyword args only
-        await manager.handle_harvest_logic(plant_id="p1", custom_arg=True)
+        await manager.handle_transition_logic(plant_id="p1", custom_arg=True)
 
         mock_harvest.assert_awaited_with(plant_id="p1", custom_arg=True)

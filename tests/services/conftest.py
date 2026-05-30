@@ -53,7 +53,7 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator.plant_manager.promote_clone = AsyncMock()
     coordinator.plant_manager.switch_plants = AsyncMock()
     coordinator.plant_manager.move_plant = AsyncMock()
-    coordinator.plant_manager.harvest_plant = AsyncMock()
+    coordinator.plant_manager.transition_plant = AsyncMock()
     coordinator.plant_manager.archive_plant = AsyncMock()
     coordinator.plant_manager.kill_plant = AsyncMock()
     coordinator.plant_manager.transition_plant_stage = AsyncMock()

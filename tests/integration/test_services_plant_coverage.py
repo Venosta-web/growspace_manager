@@ -44,7 +44,7 @@ def lifecycle_manager_mock():
     mock.async_switch_plants = AsyncMock()
     mock.transition_plant_stage = AsyncMock()
     mock.async_remove_plant = AsyncMock()
-    mock.handle_harvest_logic = AsyncMock()
+    mock.handle_transition_logic = AsyncMock()
     return mock
 
 
@@ -340,7 +340,7 @@ async def test_convenience_methods(service, repository_mock) -> None:
 
 @pytest.mark.asyncio
 async def test_harvest_orchestration(service, repository_mock) -> None:
-    """Test harvest_plant orchestration."""
+    """Test transition_plant orchestration."""
     plant = Plant(
         plant_id="p1",
         growspace_id="gs1",
@@ -361,7 +361,7 @@ async def test_harvest_orchestration(service, repository_mock) -> None:
         "custom_components.growspace_manager.managers.plant.calculate_plant_stage",
         return_value="Flower",
     ):
-        await service.harvest_plant("p1", target_growspace_id="dry_room")
+        await service.transition_plant("p1", target_growspace_id="dry_room")
 
     assert plant.growspace_id == "dry_room"
     service._fire_event.assert_called()

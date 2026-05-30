@@ -686,11 +686,11 @@ async def test_harvest(mock_coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_harvest_plant(mock_coordinator) -> None:
+async def test_transition_plant(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.plant_manager.harvest_plant = AsyncMock()
-    await facade.plants.harvest_plant("p1", wet_weight=100.0)
-    mock_coordinator.plant_manager.harvest_plant.assert_awaited_once()
+    mock_coordinator.plant_manager.transition_plant = AsyncMock()
+    await facade.plants.transition_plant("p1", wet_weight=100.0)
+    mock_coordinator.plant_manager.transition_plant.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

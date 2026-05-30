@@ -315,15 +315,15 @@ async def test_harvest(mock_coordinator: MagicMock) -> None:
 async def test_async_harvest_plant(mock_coordinator: MagicMock) -> None:
     """Test async_harvest_plant alias."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.plant_manager.harvest_plant = AsyncMock()
+    mock_coordinator.plant_manager.transition_plant = AsyncMock()
 
-    await facade.async_harvest_plant(
+    await facade.async_transition_plant(
         plant_id="plant_123",
         target_growspace_id="gs_dry",
         wet_weight=100.0,
     )
 
-    mock_coordinator.plant_manager.harvest_plant.assert_called_once_with(
+    mock_coordinator.plant_manager.transition_plant.assert_called_once_with(
         plant_id="plant_123",
         target_growspace_id="gs_dry",
         target_growspace_name=None,

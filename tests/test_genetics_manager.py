@@ -9,7 +9,10 @@ import pytest
 from custom_components.growspace_manager.data_access.growspace_repository import (
     GrowspaceRepository,
 )
-from custom_components.growspace_manager.managers.genetics import GeneticsManager
+from custom_components.growspace_manager.managers.genetics import (
+    GeneticsManager,
+    _parse_strain_library_key,
+)
 from custom_components.growspace_manager.models import (
     Plant,
     PlantGenetics,
@@ -1060,3 +1063,229 @@ async def test_update_seed_batch_reclassifies_on_parent_change(
     # add_seed_batch skips auto-classify because generation="F1" is explicit;
     # only the update call triggers reclassification.
     assert strain_library_mock.async_update_strain_generation.await_count == 1
+
+
+# ---------------------------------------------------------------------------
+# _parse_strain_library_key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("plain-plant-id", "plain-plant-id"),          # no separator → return as-is
+        ("Gorilla Glue||default", "Gorilla Glue"),     # default phenotype → strain only
+        ("Gorilla Glue||", "Gorilla Glue"),            # empty phenotype → strain only
+        ("Gorilla Glue||#4", "Gorilla Glue (#4)"),     # named phenotype → strain (phenotype)
+    ],
+)
+def test_parse_strain_library_key(key: str, expected: str) -> None:
+    assert _parse_strain_library_key(key) == expected
+
+
+# ---------------------------------------------------------------------------
+# async_sow_seed
+# ---------------------------------------------------------------------------
+
+
+class TestSowSeed:
+    """Tests for async_sow_seed."""
+
+    @pytest.fixture
+    def manager_with_batch_and_plant(self, save_callback: AsyncMock) -> GeneticsManager:
+        repo = GrowspaceRepository()
+        repo.add_plant(Plant(
+            plant_id="plant-1",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="OG Kush"),
+            stage="seedling",
+        ))
+        mgr = GeneticsManager(repository=repo, save_callback=save_callback)
+        mgr.seed_batches["batch-1"] = SeedBatch(
+            batch_id="batch-1",
+            strain_name="OG Kush",
+            breeder="DNA",
+            quantity=3,
+            acquisition_date="2026-01-01",
+            generation="F1",
+            lineage="A x B",
+        )
+        return mgr
+
+    async def test_decrements_quantity_and_links_plant(
+        self,
+        manager_with_batch_and_plant: GeneticsManager,
+        save_callback: AsyncMock,
+    ) -> None:
+        mgr = manager_with_batch_and_plant
+        await mgr.async_sow_seed(batch_id="batch-1", plant_id="plant-1")
+
+        assert mgr.seed_batches["batch-1"].quantity == 2
+        plant = mgr.repository.get_plant("plant-1")
+        assert plant is not None
+        assert plant.seed_batch_id == "batch-1"
+        assert plant.genetics.generation == "F1"
+        save_callback.assert_called_once()
+
+    async def test_raises_if_batch_not_found(
+        self, manager_with_batch_and_plant: GeneticsManager
+    ) -> None:
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await manager_with_batch_and_plant.async_sow_seed(
+                batch_id="no-such-batch", plant_id="plant-1"
+            )
+
+    async def test_raises_if_batch_quantity_zero(
+        self, manager_with_batch_and_plant: GeneticsManager
+    ) -> None:
+        manager_with_batch_and_plant.seed_batches["batch-1"].quantity = 0
+        with pytest.raises(ServiceValidationError, match="no remaining seeds"):
+            await manager_with_batch_and_plant.async_sow_seed(
+                batch_id="batch-1", plant_id="plant-1"
+            )
+
+    async def test_raises_if_plant_not_found(
+        self, manager_with_batch_and_plant: GeneticsManager
+    ) -> None:
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await manager_with_batch_and_plant.async_sow_seed(
+                batch_id="batch-1", plant_id="ghost-plant"
+            )
+
+
+# ---------------------------------------------------------------------------
+# async_set_plant_sex
+# ---------------------------------------------------------------------------
+
+
+class TestSetPlantSex:
+    """Tests for async_set_plant_sex."""
+
+    @pytest.fixture
+    def manager_with_plant(self, save_callback: AsyncMock) -> GeneticsManager:
+        repo = GrowspaceRepository()
+        repo.add_plant(Plant(
+            plant_id="plant-1",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Blue Dream"),
+            stage="veg",
+        ))
+        return GeneticsManager(repository=repo, save_callback=save_callback)
+
+    async def test_sets_sex_and_saves(
+        self, manager_with_plant: GeneticsManager, save_callback: AsyncMock
+    ) -> None:
+        await manager_with_plant.async_set_plant_sex(plant_id="plant-1", sex="female")
+
+        plant = manager_with_plant.repository.get_plant("plant-1")
+        assert plant is not None
+        assert plant.sex == "female"
+        save_callback.assert_called_once()
+
+    async def test_raises_if_plant_not_found(
+        self, manager_with_plant: GeneticsManager
+    ) -> None:
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await manager_with_plant.async_set_plant_sex(
+                plant_id="ghost-plant", sex="male"
+            )
+
+
+# ---------------------------------------------------------------------------
+# async_unlink_seed_batch
+# ---------------------------------------------------------------------------
+
+
+class TestUnlinkSeedBatch:
+    """Tests for async_unlink_seed_batch."""
+
+    @pytest.fixture
+    def manager_with_linked_plant(self, save_callback: AsyncMock) -> GeneticsManager:
+        repo = GrowspaceRepository()
+        plant = Plant(
+            plant_id="plant-1",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Runtz"),
+            stage="veg",
+        )
+        plant.seed_batch_id = "batch-99"
+        repo.add_plant(plant)
+        return GeneticsManager(repository=repo, save_callback=save_callback)
+
+    async def test_clears_seed_batch_id_and_saves(
+        self, manager_with_linked_plant: GeneticsManager, save_callback: AsyncMock
+    ) -> None:
+        await manager_with_linked_plant.async_unlink_seed_batch(plant_id="plant-1")
+
+        plant = manager_with_linked_plant.repository.get_plant("plant-1")
+        assert plant is not None
+        assert plant.seed_batch_id is None
+        save_callback.assert_called_once()
+
+    async def test_raises_if_plant_not_found(
+        self, manager_with_linked_plant: GeneticsManager
+    ) -> None:
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await manager_with_linked_plant.async_unlink_seed_batch(
+                plant_id="ghost-plant"
+            )
+
+
+# ---------------------------------------------------------------------------
+# get_lineage_tree
+# ---------------------------------------------------------------------------
+
+
+class TestGetLineageTree:
+    """Tests for get_lineage_tree."""
+
+    @pytest.fixture
+    def manager_with_cross(self, save_callback: AsyncMock) -> GeneticsManager:
+        """Manager with a donor, a receiver, and one pollination event linking them."""
+        repo = GrowspaceRepository()
+        repo.add_plant(Plant(
+            plant_id="donor-1",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Pollen Donor"),
+            stage="flower",
+        ))
+        repo.add_plant(Plant(
+            plant_id="receiver-1",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Female Receiver"),
+            stage="flower",
+        ))
+        mgr = GeneticsManager(repository=repo, save_callback=save_callback)
+        mgr.pollination_events["evt-1"] = PollinationEvent(
+            event_id="evt-1",
+            date="2026-05-01",
+            donor_plant_id="donor-1",
+            receiver_plant_id="receiver-1",
+        )
+        return mgr
+
+    def test_builds_parents_when_event_found(
+        self, manager_with_cross: GeneticsManager
+    ) -> None:
+        tree = manager_with_cross.get_lineage_tree("receiver-1")
+
+        assert tree["name"] == "Female Receiver"
+        assert len(tree["parents"]) == 2
+        # First parent is a terminal leaf of the receiver itself
+        assert tree["parents"][0] == {"name": "Female Receiver", "parents": []}
+        # Second parent is the donor subtree
+        assert tree["parents"][1]["name"] == "Pollen Donor"
+
+    def test_max_depth_guard_returns_node_without_parents(
+        self, manager_with_cross: GeneticsManager
+    ) -> None:
+        import custom_components.growspace_manager.managers.genetics as genetics_module
+
+        original = genetics_module.MAX_LINEAGE_DEPTH
+        try:
+            genetics_module.MAX_LINEAGE_DEPTH = 0
+            tree = manager_with_cross.get_lineage_tree("receiver-1")
+        finally:
+            genetics_module.MAX_LINEAGE_DEPTH = original
+
+        assert tree["parents"] == []

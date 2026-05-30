@@ -91,7 +91,7 @@ async def test_handle_harvest_plant_not_loaded() -> None:
     hass = MagicMock()
     coordinator = MagicMock()
     coordinator.services = MagicMock()
-    coordinator.services.plants.harvest_plant = AsyncMock()
+    coordinator.services.plants.transition_plant = AsyncMock()
     coordinator.async_load = AsyncMock()
     strain_library = MagicMock()
 

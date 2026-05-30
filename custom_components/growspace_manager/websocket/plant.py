@@ -483,7 +483,7 @@ async def websocket_harvest_plant(
             else:
                 raise ServiceValidationError(f"Invalid transition_date: {transition_date_str}")
 
-        await coordinator.services.plants.harvest_plant(
+        await coordinator.services.plants.transition_plant(
             plant_id=plant_id,
             target_growspace_id=msg.get(ATTR_TARGET_GROWSPACE_ID),
             target_growspace_name=None,
@@ -524,7 +524,7 @@ async def websocket_move_plant(
             if parsed:
                 transition_date = parsed.date().isoformat()
 
-        await coordinator.services.plants.harvest_plant(
+        await coordinator.services.plants.transition_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
             target_growspace_name=None,
