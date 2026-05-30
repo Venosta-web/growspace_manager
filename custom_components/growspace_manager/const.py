@@ -640,6 +640,9 @@ class GrowspaceService(StrEnum):
     HARVEST_SEEDS = "harvest_seeds"
     UPDATE_POLLINATION = "update_pollination"
     DELETE_POLLINATION = "delete_pollination"
+    SOW_SEED = "sow_seed"
+    SET_PLANT_SEX = "set_plant_sex"
+    UNLINK_SEED_BATCH = "unlink_seed_batch"
 
 
 class TrainingTechnique(StrEnum):
@@ -678,6 +681,7 @@ ATTR_DONOR_PLANT_ID = "donor_plant_id"
 ATTR_RECEIVER_PLANT_ID = "receiver_plant_id"
 ATTR_EVENT_ID = "event_id"
 ATTR_DATE = "date"
+ATTR_SEX = "sex"
 # PhenotypeScore rubric fields (1-10 scale)
 ATTR_INTERNODAL_SPACING = "internodal_spacing"
 ATTR_TERPENE_INTENSITY = "terpene_intensity"

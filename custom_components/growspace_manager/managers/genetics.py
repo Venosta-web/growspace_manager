@@ -416,6 +416,68 @@ class GeneticsManager:
             ps.keeper,
         )
 
+    async def async_sow_seed(self, batch_id: str, plant_id: str) -> None:
+        """Link a plant to its origin seed batch.
+
+        Decrements batch quantity by one, copies the batch generation into the
+        plant's genetics, and records the batch association on the plant.
+
+        Raises:
+            ServiceValidationError: If the batch or plant is not found, or the
+                batch has no remaining seeds.
+        """
+        batch = self.seed_batches.get(batch_id)
+        if batch is None:
+            raise ServiceValidationError(f"Seed batch '{batch_id}' not found")
+        if batch.quantity <= 0:
+            raise ServiceValidationError(
+                f"Seed batch '{batch_id}' has no remaining seeds (quantity=0)"
+            )
+        plant = self.repository.get_plant(plant_id)
+        if plant is None:
+            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+
+        batch.quantity -= 1
+        plant.seed_batch_id = batch_id
+        plant.genetics.generation = batch.generation
+
+        await self.save_callback()
+        _LOGGER.info(
+            "Sowed seed: plant %s linked to batch %s (generation=%s, remaining=%d)",
+            plant_id,
+            batch_id,
+            batch.generation,
+            batch.quantity,
+        )
+
+    async def async_set_plant_sex(self, plant_id: str, sex: str) -> None:
+        """Set the biological sex of a plant.
+
+        Raises:
+            ServiceValidationError: If the plant is not found.
+        """
+        plant = self.repository.get_plant(plant_id)
+        if plant is None:
+            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+
+        plant.sex = sex
+        await self.save_callback()
+        _LOGGER.info("Set plant %s sex to '%s'", plant_id, sex)
+
+    async def async_unlink_seed_batch(self, plant_id: str) -> None:
+        """Clear a plant's seed batch association.
+
+        Raises:
+            ServiceValidationError: If the plant is not found.
+        """
+        plant = self.repository.get_plant(plant_id)
+        if plant is None:
+            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+
+        plant.seed_batch_id = None
+        await self.save_callback()
+        _LOGGER.info("Unlinked plant %s from its seed batch", plant_id)
+
     # ------------------------------------------------------------------
     # Lineage tree
     # ------------------------------------------------------------------

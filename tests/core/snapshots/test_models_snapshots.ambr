@@ -337,6 +337,7 @@
     'row': 1,
     'seed_batch_id': None,
     'seedling_start': None,
+    'sex': None,
     'source_mother': None,
     'stage': 'veg',
     'stage_history': list([

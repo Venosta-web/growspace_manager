@@ -78,7 +78,10 @@ from custom_components.growspace_manager.schemas import (
     SET_EC_TARGET_RANGE_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     SET_IRRIGATION_STRATEGY_SCHEMA,
+    SET_PLANT_SEX_SCHEMA,
     SET_VISUAL_TAG_SCHEMA,
+    SOW_SEED_SCHEMA,
+    UNLINK_SEED_BATCH_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
@@ -311,6 +314,9 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "log_drying_weight": LOG_DRYING_WEIGHT_SCHEMA,
         "log_moisture_reading": LOG_MOISTURE_READING_SCHEMA,
         "set_visual_tag": SET_VISUAL_TAG_SCHEMA,
+        "sow_seed": SOW_SEED_SCHEMA,
+        "set_plant_sex": SET_PLANT_SEX_SCHEMA,
+        "unlink_seed_batch": UNLINK_SEED_BATCH_SCHEMA,
     }
 
     # Verify call count

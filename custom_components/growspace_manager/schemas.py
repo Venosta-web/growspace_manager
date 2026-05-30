@@ -67,6 +67,7 @@ from .const import (
     ATTR_TRANSITION_DATE,
     ATTR_TRIM_WEIGHT,
     ATTR_TYPE,
+    ATTR_SEX,
     ATTR_VIGOR,
     ATTR_VISUAL_TAG,
     ATTR_VOLUME_LITERS,
@@ -951,6 +952,26 @@ UPDATE_POLLINATION_SCHEMA = vol.Schema(
 DELETE_POLLINATION_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_EVENT_ID): cv.string,
+    }
+)
+
+SOW_SEED_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_BATCH_ID): cv.string,
+        vol.Required(ATTR_PLANT_ID): cv.string,
+    }
+)
+
+SET_PLANT_SEX_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): cv.string,
+        vol.Required(ATTR_SEX): vol.In(["male", "female", "hermaphrodite"]),
+    }
+)
+
+UNLINK_SEED_BATCH_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PLANT_ID): cv.string,
     }
 )
 

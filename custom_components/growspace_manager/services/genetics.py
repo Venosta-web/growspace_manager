@@ -26,6 +26,7 @@ from custom_components.growspace_manager.const import (
     ATTR_QUANTITY,
     ATTR_RECEIVER_PLANT_ID,
     ATTR_RESIN,
+    ATTR_SEX,
     ATTR_STRAIN_NAME,
     ATTR_TERPENE_INTENSITY,
     ATTR_VIGOR,
@@ -38,6 +39,9 @@ from custom_components.growspace_manager.schemas import (
     HARVEST_SEEDS_SCHEMA,
     LOG_POLLINATION_SCHEMA,
     SCORE_PHENOTYPE_SCHEMA,
+    SET_PLANT_SEX_SCHEMA,
+    SOW_SEED_SCHEMA,
+    UNLINK_SEED_BATCH_SCHEMA,
     UPDATE_POLLINATION_SCHEMA,
     UPDATE_SEED_BATCH_SCHEMA,
 )
@@ -179,6 +183,44 @@ async def handle_delete_pollination(
     )
 
 
+@handle_service_errors
+async def handle_sow_seed(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the sow_seed service call."""
+    await coordinator.genetics_manager.async_sow_seed(
+        batch_id=call.data[ATTR_BATCH_ID],
+        plant_id=call.data[ATTR_PLANT_ID],
+    )
+
+
+@handle_service_errors
+async def handle_set_plant_sex(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the set_plant_sex service call."""
+    await coordinator.genetics_manager.async_set_plant_sex(
+        plant_id=call.data[ATTR_PLANT_ID],
+        sex=call.data[ATTR_SEX],
+    )
+
+
+@handle_service_errors
+async def handle_unlink_seed_batch(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the unlink_seed_batch service call."""
+    await coordinator.genetics_manager.async_unlink_seed_batch(
+        plant_id=call.data[ATTR_PLANT_ID],
+    )
+
+
 SERVICES = [
     ServiceDefinition(
         GrowspaceService.ADD_SEED_BATCH,
@@ -214,5 +256,20 @@ SERVICES = [
         GrowspaceService.DELETE_POLLINATION,
         handle_delete_pollination,
         DELETE_POLLINATION_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SOW_SEED,
+        handle_sow_seed,
+        SOW_SEED_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SET_PLANT_SEX,
+        handle_set_plant_sex,
+        SET_PLANT_SEX_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UNLINK_SEED_BATCH,
+        handle_unlink_seed_batch,
+        UNLINK_SEED_BATCH_SCHEMA,
     ),
 ]
