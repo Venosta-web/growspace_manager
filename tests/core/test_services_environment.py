@@ -18,6 +18,7 @@ from custom_components.growspace_manager.services.environment import (
     handle_configure_environment,
     handle_remove_environment,
     handle_set_dehumidifier_control,
+    handle_set_humidifier_control,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
@@ -221,6 +222,40 @@ async def test_handle_set_dehumidifier_control_gs_not_found(
         ServiceValidationError, match="Growspace 'non_existent' not found"
     ):
         await handle_set_dehumidifier_control(mock_hass, mock_coordinator, mock_call)
+
+
+@pytest.mark.asyncio
+async def test_handle_set_humidifier_control_success(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """Test successful humidifier control update."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {"growspace_id": growspace_id, "enabled": True}
+
+    await handle_set_humidifier_control(mock_hass, mock_coordinator, mock_call)
+
+    assert mock_gs.environment_config.control_humidifier is True
+    mock_coordinator.async_commit.assert_awaited_once()
+    mock_coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_set_humidifier_control_gs_not_found(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """Test humidifier control update with invalid growspace ID."""
+    mock_coordinator.growspaces = {}
+    mock_call.data = {"growspace_id": "non_existent", "enabled": True}
+
+    with pytest.raises(
+        ServiceValidationError, match="Growspace 'non_existent' not found"
+    ):
+        await handle_set_humidifier_control(mock_hass, mock_coordinator, mock_call)
 
 
 @pytest.mark.asyncio

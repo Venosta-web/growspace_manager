@@ -585,6 +585,7 @@ class GrowspaceService(StrEnum):
     CONFIGURE_ENVIRONMENT = "configure_environment"
     REMOVE_ENVIRONMENT = "remove_environment"
     SET_DEHUMIDIFIER_CONTROL = "set_dehumidifier_control"
+    SET_HUMIDIFIER_CONTROL = "set_humidifier_control"
     SET_IRRIGATION_SETTINGS = "set_irrigation_settings"
     SET_IRRIGATION_STRATEGY = "set_irrigation_strategy"
     ADD_IRRIGATION_TIME = "add_irrigation_time"

@@ -52,6 +52,7 @@ from custom_components.growspace_manager.schemas import (
     CONFIGURE_ENVIRONMENT_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+    SET_HUMIDIFIER_CONTROL_SCHEMA,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
@@ -146,7 +147,6 @@ async def handle_configure_environment(
         soil_moisture_sensor=call.data.get(CONF_SOIL_MOISTURE_SENSOR),
         control_dehumidifier=call.data.get(CONF_CONTROL_DEHUMIDIFIER, False),
         dehumidifier_thresholds=call.data.get(CONF_DEHUMIDIFIER_THRESHOLDS, {}),
-        control_humidifier=call.data.get(CONF_CONTROL_HUMIDIFIER, False),
         humidifier_thresholds=call.data.get(CONF_HUMIDIFIER_THRESHOLDS, {}),
         stress_threshold=call.data.get(CONF_STRESS_THRESHOLD, 0.70),
         mold_threshold=call.data.get(CONF_MOLD_THRESHOLD, 0.75),
@@ -242,6 +242,30 @@ async def handle_set_dehumidifier_control(
     _LOGGER.info("Dehumidifier control %s for '%s'", status, growspace.name)
 
 
+async def handle_set_humidifier_control(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the set_humidifier_control service call."""
+    growspace_id = call.data.get("growspace_id")
+    enabled = call.data.get("enabled")
+
+    if growspace_id not in coordinator.growspaces:
+        error_msg = f"Growspace '{growspace_id}' not found"
+        _LOGGER.error(error_msg)
+        raise ServiceValidationError(error_msg)
+
+    growspace = coordinator.growspaces[growspace_id]
+    growspace.environment_config.control_humidifier = bool(enabled)
+
+    await coordinator.services.save()
+    await coordinator.services.request_refresh()
+
+    status = "enabled" if enabled else "disabled"
+    _LOGGER.info("Humidifier control %s for '%s'", status, growspace.name)
+
+
 SERVICES = [
     ServiceDefinition(
         GrowspaceService.CONFIGURE_ENVIRONMENT,
@@ -257,5 +281,10 @@ SERVICES = [
         GrowspaceService.SET_DEHUMIDIFIER_CONTROL,
         handle_set_dehumidifier_control,
         SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SET_HUMIDIFIER_CONTROL,
+        handle_set_humidifier_control,
+        SET_HUMIDIFIER_CONTROL_SCHEMA,
     ),
 ]

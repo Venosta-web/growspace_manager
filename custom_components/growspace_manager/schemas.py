@@ -656,6 +656,13 @@ SET_DEHUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
     }
 )
 
+SET_HUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Required("enabled"): bool,
+    }
+)
+
 # --- Manual Watering Service Schemas ---
 
 WATER_PLANT_SCHEMA = vol.Schema(
