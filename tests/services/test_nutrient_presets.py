@@ -560,6 +560,114 @@ class TestSensorRegistrationCoverage:
         # and maybe check count of other sensors if needed.
 
 
+class TestNutrientPresetNewFields:
+    """Tests for week, ec_target, ph_target on NutrientPreset (issue #409)."""
+
+    def test_deserialise_old_record_applies_defaults(self) -> None:
+        """Old records without new fields should deserialise with defaults."""
+        data = {
+            "id": "old-preset",
+            "name": "Legacy Mix",
+            "items": [{"name": "A", "dose_ml_l": 1.0}],
+            "created_at": datetime.now().isoformat(),
+        }
+        preset = NutrientPreset.from_dict(data)
+        assert preset.week == 1
+        assert preset.ec_target is None
+        assert preset.ph_target is None
+
+    def test_deserialise_new_record_with_all_fields(self) -> None:
+        """New records with all three fields should round-trip correctly."""
+        data = {
+            "id": "new-preset",
+            "name": "Week 3 Bloom",
+            "items": [{"name": "B", "dose_ml_l": 2.0}],
+            "week": 3,
+            "ec_target": 1.8,
+            "ph_target": 6.0,
+            "created_at": datetime.now().isoformat(),
+        }
+        preset = NutrientPreset.from_dict(data)
+        assert preset.week == 3
+        assert preset.ec_target == 1.8
+        assert preset.ph_target == 6.0
+
+        serialised = preset.to_dict()
+        assert serialised["week"] == 3
+        assert serialised["ec_target"] == 1.8
+        assert serialised["ph_target"] == 6.0
+
+    @pytest.mark.asyncio
+    async def test_save_nutrient_preset_persists_new_fields(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """async_save_nutrient_preset should accept and persist the three new fields."""
+        preset = await preset_coordinator.services.config.save_nutrient_preset(
+            name="Timed Bloom",
+            nutrients=[{"name": "Bloom", "dose_ml_l": 3.0}],
+            week=4,
+            ec_target=2.1,
+            ph_target=5.9,
+        )
+        assert preset.week == 4
+        assert preset.ec_target == 2.1
+        assert preset.ph_target == 5.9
+
+        stored = preset_coordinator.nutrient_manager.nutrient_presets[preset.id]
+        assert stored.week == 4
+        assert stored.ec_target == 2.1
+        assert stored.ph_target == 5.9
+
+    @pytest.mark.asyncio
+    async def test_update_preset_preserves_new_fields(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Updating an existing preset should persist updated field values."""
+        preset = await preset_coordinator.services.config.save_nutrient_preset(
+            name="Original",
+            nutrients=[{"name": "A", "dose_ml_l": 1.0}],
+            week=1,
+            ec_target=1.2,
+            ph_target=6.2,
+        )
+        updated = await preset_coordinator.services.config.save_nutrient_preset(
+            name="Original",
+            nutrients=[{"name": "A", "dose_ml_l": 1.0}],
+            preset_id=preset.id,
+            week=2,
+            ec_target=1.5,
+            ph_target=5.8,
+        )
+        assert updated.week == 2
+        assert updated.ec_target == 1.5
+        assert updated.ph_target == 5.8
+
+    @pytest.mark.asyncio
+    async def test_service_handler_forwards_new_fields(
+        self, hass: HomeAssistant, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Service handler should forward week, ec_target, ph_target to the manager."""
+        call = MagicMock()
+        call.data = {
+            ATTR_NAME: "Handler Week Test",
+            "nutrients": [{"name": "X", "dose_ml_l": 1.0}],
+            "week": 5,
+            "ec_target": 1.9,
+            "ph_target": 6.1,
+        }
+        await handle_save_nutrient_preset(hass, preset_coordinator, call)
+
+        presets = [
+            p
+            for p in preset_coordinator.nutrient_manager.nutrient_presets.values()
+            if p.name == "Handler Week Test"
+        ]
+        assert len(presets) == 1
+        assert presets[0].week == 5
+        assert presets[0].ec_target == 1.9
+        assert presets[0].ph_target == 6.1
+
+
 class TestNutrientPresetStorageLoading:
     """Tests for storage loading edge cases."""
 

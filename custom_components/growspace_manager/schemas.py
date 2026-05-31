@@ -54,6 +54,7 @@ from .const import (
     ATTR_RESIN,
     ATTR_ROW,
     ATTR_SEED_BATCH_ID,
+    ATTR_SEX,
     ATTR_STAGE,
     ATTR_STRAIN,
     ATTR_STRAIN_NAME,
@@ -67,7 +68,6 @@ from .const import (
     ATTR_TRANSITION_DATE,
     ATTR_TRIM_WEIGHT,
     ATTR_TYPE,
-    ATTR_SEX,
     ATTR_VIGOR,
     ATTR_VISUAL_TAG,
     ATTR_VOLUME_LITERS,
@@ -713,6 +713,9 @@ SAVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
         vol.Optional(ATTR_PRESET_ID): str,
         vol.Optional(ATTR_STAGE): vol.Any(vol.In(PLANT_STAGES), None),
         vol.Optional(ATTR_MIN_DAYS_IN_STAGE): vol.All(int, vol.Range(min=0)),
+        vol.Optional("week", default=1): vol.All(int, vol.Range(min=1)),
+        vol.Optional("ec_target"): vol.Any(vol.All(vol.Coerce(float), vol.Range(min=0.0)), None),
+        vol.Optional("ph_target"): vol.Any(vol.All(vol.Coerce(float), vol.Range(min=0.0, max=14.0)), None),
     }
 )
 

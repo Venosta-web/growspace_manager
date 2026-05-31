@@ -103,10 +103,13 @@ class ConfigFacade:
         stage: str | None = None,
         min_days_in_stage: int | None = None,
         preset_id: str | None = None,
+        week: int = 1,
+        ec_target: float | None = None,
+        ph_target: float | None = None,
     ) -> NutrientPreset:
         """Create or update a nutrient preset."""
         return await self._coordinator.nutrient_manager.async_save_nutrient_preset(
-            name, nutrients, stage, min_days_in_stage, preset_id
+            name, nutrients, stage, min_days_in_stage, preset_id, week, ec_target, ph_target
         )
 
     async def remove_nutrient_preset(self, preset_id: str) -> None:

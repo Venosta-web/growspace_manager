@@ -37,6 +37,9 @@ async def handle_save_nutrient_preset(
     preset_id = call.data.get(ATTR_PRESET_ID)
     stage = call.data.get(ATTR_STAGE)
     min_days_in_stage = call.data.get(ATTR_MIN_DAYS_IN_STAGE)
+    week = call.data.get("week", 1)
+    ec_target = call.data.get("ec_target")
+    ph_target = call.data.get("ph_target")
 
     await coordinator.services.config.save_nutrient_preset(
         name=name,
@@ -44,6 +47,9 @@ async def handle_save_nutrient_preset(
         stage=stage,
         min_days_in_stage=min_days_in_stage,
         preset_id=preset_id,
+        week=week,
+        ec_target=ec_target,
+        ph_target=ph_target,
     )
 
 

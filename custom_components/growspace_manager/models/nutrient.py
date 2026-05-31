@@ -27,6 +27,9 @@ class NutrientPreset(BasePreset):
     """
 
     items: list[NutrientPresetItem]
+    week: int = 1
+    ec_target: float | None = None
+    ph_target: float | None = None
 
     @property
     def nutrients(self) -> list[NutrientPresetItem]:
