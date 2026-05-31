@@ -132,7 +132,7 @@ async def test_handle_print_label(mock_hass, mock_coordinator, strain_library) -
     # Check for core fields in payload
     values = [item["value"] for item in payload if "value" in item]
     assert "BLUE DREAM" in values
-    assert "Berry\nHumboldt\n-" in values
+    assert "Berry\nHumboldt" in values
 
     # Check for breeder logo
     logo_item = next((item for item in payload if item["type"] == "dlimg"), None)
@@ -144,7 +144,7 @@ async def test_handle_print_label(mock_hass, mock_coordinator, strain_library) -
     # Check for QR code
     qr_item = next((item for item in payload if item["type"] == "qrcode"), None)
     assert qr_item is not None
-    assert qr_item["boxsize"] == 4
+    assert qr_item["boxsize"] == 3
 
 
 @pytest.mark.asyncio

@@ -559,7 +559,9 @@ async def handle_print_label(
     )
 
     # 3. Multiline Info (Pheno, Breeder, Lineage)
-    multiline_value = f"{phenotype_name}\n{breeder}\n{lineage}"
+    multiline_value = "\n".join(
+        s for s in [phenotype_name, breeder, lineage] if s and s not in ("-", "–")
+    )
     payload.append(
         {
             "type": "new_multiline",
@@ -607,7 +609,7 @@ async def handle_print_label(
                 "data": qr_data,
                 "x": 290,
                 "y": 130,
-                "boxsize": 4,
+                "boxsize": 3,
             }
         )
 
@@ -618,7 +620,7 @@ async def handle_print_label(
             "type": "text",
             "value": now,
             "x": 290,
-            "y": 232,
+            "y": 224,
             "size": 6,
             "font": "rbm.ttf",
         }
