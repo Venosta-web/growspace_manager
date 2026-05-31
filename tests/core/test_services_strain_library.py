@@ -621,11 +621,13 @@ async def test_handle_print_label_default_phenotype(
     ):
         await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
 
-    # Verify that payload values were processed (phenotype became "-")
+    # Verify strain name is in the payload; dash-only info rows are filtered out
+    # so the multiline info block value is empty string, not "-\n-\n-".
     args, _ = mock_hass.services.async_call.call_args
     payload = args[2]["payload"]
     values = [item.get("value") for item in payload]
-    assert "-\n-\n-" in values
+    assert "STRAIN A" in values
+    assert "" in values  # multiline info block is empty when all values are "-"
 
 
 def test_downscale_logo_if_needed_small() -> None:

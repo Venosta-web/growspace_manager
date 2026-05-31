@@ -508,6 +508,9 @@ async def handle_print_label(
         breeder_logo = call.data.get(ATTR_BREEDER_LOGO)
 
     base_url = call.data.get("base_url")
+    fields: dict[str, bool] = call.data.get("fields") or {}
+    density_key: str = call.data.get("density", "normal")
+    qr_target: str = call.data.get("qr_target", "web")
 
     if not strain_name:
         raise HomeAssistantError(
@@ -558,10 +561,15 @@ async def handle_print_label(
         }
     )
 
-    # 3. Multiline Info (Pheno, Breeder, Lineage)
-    multiline_value = "\n".join(
-        s for s in [phenotype_name, breeder, lineage] if s and s not in ("-", "–")
-    )
+    # 3. Multiline Info (Pheno, Breeder, Lineage) — each line respects its field flag
+    info_lines = []
+    if fields.get("phenotype", True) and phenotype_name and phenotype_name not in ("-", "–"):
+        info_lines.append(phenotype_name)
+    if fields.get("breeder", True) and breeder and breeder not in ("-", "–"):
+        info_lines.append(breeder)
+    if fields.get("lineage", True) and lineage and lineage not in ("-", "–"):
+        info_lines.append(lineage)
+    multiline_value = "\n".join(info_lines)
     payload.append(
         {
             "type": "new_multiline",
@@ -578,7 +586,7 @@ async def handle_print_label(
     )
 
     # 4. Breeder Logo (Framed)
-    if breeder_logo:
+    if breeder_logo and fields.get("logo", True):
         # Downscale if it's a base64 string to avoid event bus and printer issues.
         # Run in executor to avoid blocking the event loop on PIL's lazy native lib init.
         breeder_logo = await hass.async_add_executor_job(
@@ -596,13 +604,14 @@ async def handle_print_label(
             }
         )
 
-    # 5. QR Code (Dynamic linking to HA or Strain Info) - Only if plant_id is present
-    if plant_id:
-        qr_data = (
-            f"{base_url}?plantId={plant_id}"
-            if base_url
-            else f"{get_url(hass)}/plant/{plant_id}"
-        )
+    # 5. QR Code — only if plant_id is present and field is enabled
+    if plant_id and fields.get("qr", True):
+        if qr_target == "deeplink":
+            qr_data = f"homeassistant://navigate/growspace/plant/{plant_id}"
+        elif base_url:
+            qr_data = f"{base_url}?plantId={plant_id}"
+        else:
+            qr_data = f"{get_url(hass)}/plant/{plant_id}"
         payload.append(
             {
                 "type": "qrcode",
@@ -625,12 +634,15 @@ async def handle_print_label(
             "font": "rbm.ttf",
         }
     )
+    _density_map = {"low": 3, "normal": 5, "high": 8}
+    niimbot_density = _density_map.get(density_key, 5)
+
     # Call Niimbot service
     service_data = {
         "width": 400,
         "height": 240,
         "rotate": 0,
-        "density": 5,
+        "density": niimbot_density,
         "payload": payload,
         "preview": preview,
     }

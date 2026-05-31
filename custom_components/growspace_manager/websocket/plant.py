@@ -256,6 +256,9 @@ SCHEMA_WS_PRINT_LABEL = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Optional("device_id"): str,
         vol.Optional("preview"): bool,
         vol.Optional("base_url"): str,
+        vol.Optional("fields"): dict,
+        vol.Optional("density"): vol.In(["low", "normal", "high"]),
+        vol.Optional("qr_target"): vol.In(["web", "deeplink"]),
     }
 )
 
