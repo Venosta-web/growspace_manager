@@ -454,6 +454,9 @@ PRINT_LABEL_SCHEMA = vol.Schema(
         vol.Optional("device_id"): str,
         vol.Optional("preview", default=False): bool,
         vol.Optional("base_url"): str,
+        vol.Optional("fields"): dict,
+        vol.Optional("density"): vol.In(["low", "normal", "high"]),
+        vol.Optional("qr_target"): vol.In(["web", "deeplink"]),
         vol.Optional("label_size"): str,
     }
 )
