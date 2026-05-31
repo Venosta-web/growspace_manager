@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from custom_components.growspace_manager.integration_types import NutrientMap
 import homeassistant.util.dt as dt_util
@@ -40,9 +41,17 @@ class NutrientPreset(BasePreset):
     def nutrients(self, value: list[NutrientPresetItem]) -> None:
         self.items = value
 
+    @classmethod
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Rename 'nutrients' key to 'items' (storage uses 'nutrients') and delegate to base."""
+        data = super().__pre_deserialize__(data)
+        if "nutrients" in data and "items" not in data:
+            data["items"] = data.pop("nutrients")
+        return data
+
     def get_nutrient_map(self) -> NutrientMap:
-        """Convert nutrients list to a dict[str, float] for watering services."""
-        return {n["name"]: n["dose_ml_l"] for n in self.items}
+        """Convert nutrients list to a dict[nutrient_id: dose_ml_l] for watering services."""
+        return {n["nutrient_id"]: n["dose_ml_l"] for n in self.items}
 
 
 @dataclass(slots=True)

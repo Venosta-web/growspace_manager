@@ -75,7 +75,7 @@ async def test_load_data_with_ec_ramp_curves(manager) -> None:
 async def test_save_nutrient_preset_new(manager, save_callback_mock) -> None:
     preset = await manager.async_save_nutrient_preset(
         name="New Preset",
-        nutrients=[{"name": "N1", "dose_ml_l": 2.0}],
+        nutrients=[{"nutrient_id": "id-n1", "dose_ml_l": 2.0}],
         stage="veg",
         min_days_in_stage=5,
     )
@@ -97,7 +97,7 @@ async def test_save_nutrient_preset_update(manager, save_callback_mock) -> None:
     await manager.async_save_nutrient_preset(
         preset_id="p1",
         name="New Name",
-        nutrients=[{"name": "N1", "dose_ml_l": 3.0}],
+        nutrients=[{"nutrient_id": "id-n1", "dose_ml_l": 3.0}],
         stage="flower",
     )
 
@@ -233,29 +233,28 @@ def test_get_applicable_presets_plant_not_found(manager) -> None:
 
 
 def test_resolve_nutrient_mix(manager) -> None:
-    # Setup preset
     p1 = NutrientPreset(
         id="p1",
         name="Base",
-        items=[{"name": "A", "dose_ml_l": 2.0}],
+        items=[{"nutrient_id": "id-a", "dose_ml_l": 2.0}],
         created_at="2024-01-01",
     )
     manager.nutrient_presets = {"p1": p1}
 
     # 1. Preset only
     mix, name = manager.resolve_nutrient_mix(None, "p1")
-    assert mix == {"A": 2.0}
+    assert mix == {"id-a": 2.0}
     assert name == "Base"
 
     # 2. Preset + Override
-    mix, name = manager.resolve_nutrient_mix({"B": 1.0, "A": 3.0}, "p1")
-    assert mix["A"] == 3.0  # Override
-    assert mix["B"] == 1.0
+    mix, name = manager.resolve_nutrient_mix({"id-b": 1.0, "id-a": 3.0}, "p1")
+    assert mix["id-a"] == 3.0
+    assert mix["id-b"] == 1.0
     assert name == "Base"
 
     # 3. No preset
-    mix, name = manager.resolve_nutrient_mix({"C": 5.0}, None)
-    assert mix == {"C": 5.0}
+    mix, name = manager.resolve_nutrient_mix({"id-c": 5.0}, None)
+    assert mix == {"id-c": 5.0}
     assert name is None
 
 

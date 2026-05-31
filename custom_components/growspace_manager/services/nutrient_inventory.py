@@ -52,32 +52,23 @@ class NutrientInventoryService:
             initial_ml,
         )
 
-    def deduct_usage(self, nutrient_name: str, amount_ml: float) -> None:
-        """Deduct nutrient usage from stock.
-
-        Matches by name since watering events use preset names.
-        """
-        # Find ID by name
-        target_id = None
-        for stock in self._inventory.stocks.values():
-            if stock.name.lower() == nutrient_name.lower():
-                target_id = stock.nutrient_id
-                break
-
-        if target_id:
-            stock = self._inventory.stocks[target_id]
+    def deduct_usage(self, nutrient_id: str, amount_ml: float) -> None:
+        """Deduct nutrient usage from stock by nutrient_id."""
+        stock = self._inventory.stocks.get(nutrient_id)
+        if stock is not None:
             stock.current_ml = max(0.0, stock.current_ml - amount_ml)
             stock.last_updated = dt_util.utcnow().isoformat()
             _LOGGER.debug(
-                "Deducted %s ml from %s. Remaining: %s ml",
+                "Deducted %s ml from %s (%s). Remaining: %s ml",
                 amount_ml,
-                nutrient_name,
+                stock.name,
+                nutrient_id,
                 stock.current_ml,
             )
         else:
             _LOGGER.warning(
-                "Could not find stock for nutrient %s to deduct %s ml",
-                nutrient_name,
+                "Could not find stock for nutrient_id %s to deduct %s ml",
+                nutrient_id,
                 amount_ml,
             )
 

@@ -80,7 +80,7 @@ class NutrientEntry(TypedDict):
 class NutrientPresetItem(TypedDict):
     """A single nutrient in a preset recipe (immutable)."""
 
-    name: str
+    nutrient_id: str
     dose_ml_l: float  # ml per liter of solution
 
 

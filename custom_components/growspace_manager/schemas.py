@@ -701,7 +701,7 @@ WATER_GROWSPACE_SCHEMA = vol.Schema(
 
 NUTRIENT_ITEM_SCHEMA = vol.Schema(
     {
-        vol.Required("name"): str,
+        vol.Required("nutrient_id"): str,
         vol.Required("dose_ml_l"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
     }
 )

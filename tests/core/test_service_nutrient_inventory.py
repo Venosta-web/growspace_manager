@@ -69,8 +69,8 @@ def test_update_stock(mock_inventory) -> None:
     assert mock_inventory.stocks["n1"].current_ml == 600.0
 
 
-def test_deduct_usage_success(mock_inventory) -> None:
-    """Test successfully deducting usage."""
+def test_deduct_usage_by_id_success(mock_inventory) -> None:
+    """Deduction by nutrient_id directly reduces the matched stock."""
     service = NutrientInventoryService(mock_inventory)
 
     with patch(
@@ -78,41 +78,27 @@ def test_deduct_usage_success(mock_inventory) -> None:
     ) as mock_dt:
         mock_dt.utcnow.return_value = datetime(2024, 2, 1, 12, 0, 0)
 
-        # Deduct 50ml from Grow A (starts at 500)
-        service.deduct_usage("Grow A", 50.0)
+        service.deduct_usage("n1", 50.0)
 
         assert mock_inventory.stocks["n1"].current_ml == 450.0
         assert mock_inventory.stocks["n1"].last_updated == "2024-02-01T12:00:00"
 
 
-
-def test_deduct_usage_case_insensitive(mock_inventory) -> None:
-    """Test deduction is case insensitive."""
+def test_deduct_usage_id_not_found_logs_warning(mock_inventory) -> None:
+    """Deduction with unknown nutrient_id logs warning and leaves stocks unchanged."""
     service = NutrientInventoryService(mock_inventory)
 
-    # Deduct from "bloom b" (starts at 100)
-    service.deduct_usage("bloom b", 10.0)
+    service.deduct_usage("unknown-id", 50.0)
 
-    assert mock_inventory.stocks["n2"].current_ml == 90.0
-
-
-def test_deduct_usage_not_found(mock_inventory) -> None:
-    """Test deduction when nutrient is not found."""
-    service = NutrientInventoryService(mock_inventory)
-
-    # Logic just logs a warning, so we verify state doesn't change
-    service.deduct_usage("Unknown Nutrient", 50.0)
-
-    assert list(mock_inventory.stocks.keys()) == ["n1", "n2"]
     assert mock_inventory.stocks["n1"].current_ml == 500.0
+    assert mock_inventory.stocks["n2"].current_ml == 100.0
 
 
 def test_deduct_usage_min_zero(mock_inventory) -> None:
-    """Test deduction doesn't go below zero."""
+    """Deduction never pushes stock below zero."""
     service = NutrientInventoryService(mock_inventory)
 
-    # Deduct 600ml from Grow A (starts at 500)
-    service.deduct_usage("Grow A", 600.0)
+    service.deduct_usage("n1", 600.0)
 
     assert mock_inventory.stocks["n1"].current_ml == 0.0
 

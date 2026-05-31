@@ -40,6 +40,36 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _migrate_preset_items(
+    presets: dict[str, NutrientPreset],
+    inventory: NutrientInventory,
+) -> dict[str, NutrientPreset]:
+    """Migrate preset items from name-based to nutrient_id-based references.
+
+    Items that already carry a `nutrient_id` key are left untouched.
+    Legacy items with a `name` key are resolved against the inventory via a
+    case-insensitive exact-name match.  Unmatched items use the original name
+    string as the nutrient_id value (orphan — frontend surfaces a warning).
+    """
+    name_to_id: dict[str, str] = {
+        stock.name.lower(): stock.nutrient_id
+        for stock in inventory.stocks.values()
+    }
+
+    for preset in presets.values():
+        migrated: list[Any] = []
+        for item in preset.items:
+            if "nutrient_id" in item:
+                migrated.append(item)
+            else:
+                name: str = item.get("name", "")
+                nutrient_id = name_to_id.get(name.lower(), name)
+                migrated.append({"nutrient_id": nutrient_id, "dose_ml_l": item["dose_ml_l"]})
+        preset.items = migrated
+
+    return presets
+
+
 class StorageManager:
     """Manages data persistence for the Growspace Manager."""
 
@@ -162,6 +192,8 @@ class StorageManager:
         ipm_presets = self._load_ipm_presets(data)
         inventory = self._load_nutrient_inventory(data)
         ec_ramp_curves = self._load_ec_ramp_curves(data)
+
+        nutrient_presets = _migrate_preset_items(nutrient_presets, inventory)
 
         self.nutrient_manager.load_data(
             nutrient_presets, ipm_presets, inventory, ec_ramp_curves
