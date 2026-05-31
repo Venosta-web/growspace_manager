@@ -1283,20 +1283,17 @@ async def test_async_check_timed_notifications(
 
 
 @pytest.mark.asyncio
-async def test_async_update_data_checks_tank_levels(
+async def test_async_update_data_does_not_poll_tank_levels(
     coordinator: GrowspaceCoordinator,
 ) -> None:
-    """Test that _async_update_data calls async_check_tank_levels.
+    """Tank level checks are event-driven via TankLevelMonitor, not polled."""
+    # _async_update_data must not call check_tank_levels; TankLevelMonitor handles this.
+    coordinator.tank_monitor = MagicMock()
+    coordinator.tank_monitor.async_start = AsyncMock()
 
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-    coordinator.notification_manager.async_check_tank_levels = AsyncMock()
-
-    # Trigger the update
     await coordinator._async_update_data()
 
-    coordinator.notification_manager.async_check_tank_levels.assert_awaited_once()
+    coordinator.tank_monitor.async_start.assert_not_awaited()
 
 
 async def test_async_update_air_exchange_recommendations(hass: HomeAssistant) -> None:

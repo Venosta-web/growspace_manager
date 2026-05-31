@@ -35,7 +35,6 @@ from .const import (
 from .domain import calculate_days_in_stage
 from .exceptions import GrowspaceError
 from .notification_rewriter import AINotificationRewriter
-from .presentation import EntityQueries
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -442,34 +441,6 @@ class NotificationManager:
 
         for notification in notifications:
             await self._process_notification(notification, plants_by_growspace)
-
-    async def async_check_tank_levels(self) -> None:
-        """Check all irrigation tank levels and notify if below warning threshold."""
-
-        entity_queries = EntityQueries(self.hass)
-
-        for growspace in self.coordinator.growspaces.values():
-            if (
-                not growspace.environment_config
-                or not growspace.environment_config.irrigation_tanks
-            ):
-                continue
-
-            for tank in growspace.environment_config.irrigation_tanks:
-                state_obj = self.hass.states.get(tank.sensor_entity)
-                level = (
-                    entity_queries.parse_tank_level(state_obj.state)
-                    if state_obj
-                    else None
-                )
-
-                if level is not None and level <= tank.warning_level:
-                    await self.async_send_notification(
-                        growspace.id,
-                        title="⚠️ Low Irrigation Tank Level",
-                        message=f"{tank.name} in {growspace.name} is at {level:.0f}% (warning at {tank.warning_level:.0f}%)",
-                        tier=NotificationTier.CRITICAL,
-                    )
 
     async def async_check_pending_alerts(self) -> None:
         """Check all pending alerts for persistence thresholds and escalation.

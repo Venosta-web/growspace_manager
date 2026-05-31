@@ -43,6 +43,7 @@ from .models import (
 )
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
+from .tank_monitor import TankLevelMonitor
 from .photoperiod_flip_checker import PhotoperiodFlipChecker
 from .presentation import PlantViewModelBuilder
 from .service_coordinator_locator import ServiceCoordinatorLocator
@@ -365,6 +366,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         photoperiod_checker: PhotoperiodFlipChecker,
         alert_monitor: AlertMonitor,
         conversation_store: ConversationStore,
+        tank_monitor: TankLevelMonitor,
     ) -> None:
         """Wire coordinator-self-dependent services. Called by CoordinatorBuilder after __init__."""
         self.view_model_builder = view_model_builder
@@ -387,6 +389,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.photoperiod_checker = photoperiod_checker
         self.alert_monitor = alert_monitor
         self.conversation_store = conversation_store
+        self.tank_monitor = tank_monitor
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
@@ -488,7 +491,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.data = self.view_model_builder.build_data_property()
         await self.notification_manager.async_check_timed_notifications()
-        await self.notification_manager.async_check_tank_levels()
         await self.notification_manager.async_check_pending_alerts()
         await self.environment_analyzer.async_update_air_exchange_recommendations()
 
@@ -605,6 +607,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if hasattr(self, "environment_reporter"):
             self.environment_reporter.unload()
         self.notification_manager.shutdown()
+        self.tank_monitor.async_stop()
         self.vision_scheduler.async_stop()
         self.briefing_scheduler.async_stop()
         self.photoperiod_checker.async_stop()
@@ -640,6 +643,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.vision_scheduler.schedule_all_growspaces()
         self.briefing_scheduler.start()
         self.photoperiod_checker.schedule_all_growspaces()
+        await self.tank_monitor.async_start()
         await self.alert_monitor.async_start()
         await self.conversation_store.async_load()
 

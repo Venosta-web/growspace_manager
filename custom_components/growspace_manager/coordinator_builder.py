@@ -28,6 +28,7 @@ from .managers.plant import PlantManager
 from .managers.subsystem import SubsystemManager
 from .notification_manager import NotificationManager
 from .notification_rewriter import AINotificationRewriter
+from .tank_monitor import TankLevelMonitor
 from .notifications import NotificationSettingsManager
 from .photoperiod_flip_checker import PhotoperiodFlipChecker
 from .presentation import PlantViewModelBuilder
@@ -200,6 +201,9 @@ class CoordinatorBuilder:
         environment_reporter = EnvironmentReporter(self.hass, coordinator)
         ai_rewriter = AINotificationRewriter(self.hass)
         notification_manager = NotificationManager(self.hass, coordinator, ai_rewriter)
+        tank_monitor = TankLevelMonitor(
+            self.hass, coordinator, notification_manager.async_send_notification
+        )
         notification_settings = NotificationSettingsManager(coordinator)
         subsystem_manager = SubsystemManager(self.hass, coordinator, self.entry)
         services = ServiceFacade(coordinator)
@@ -243,6 +247,7 @@ class CoordinatorBuilder:
             photoperiod_checker=photoperiod_checker,
             alert_monitor=alert_monitor,
             conversation_store=conversation_store,
+            tank_monitor=tank_monitor,
         )
 
         _LOGGER.debug("GrowspaceCoordinator built successfully")
