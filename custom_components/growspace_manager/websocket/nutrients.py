@@ -131,8 +131,8 @@ def websocket_get_nutrient_inventory(
     """Handle get nutrient inventory command."""
     try:
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
-        if coordinator.nutrient_inventory_service:
-            inventory = coordinator.nutrient_inventory_service.get_inventory()
+        if coordinator.nutrient_manager.inventory_service:
+            inventory = coordinator.nutrient_manager.inventory_service.get_inventory()
             connection.send_result(msg["id"], asdict(inventory))
         else:
             connection.send_result(msg["id"], {"stocks": {}})
@@ -152,7 +152,7 @@ def websocket_update_nutrient_stock(
     """Handle update nutrient stock command."""
     try:
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
-        if coordinator.nutrient_inventory_service:
+        if coordinator.nutrient_manager.inventory_service:
             current_ml = float(msg["current_ml"])
             initial_ml = float(msg["initial_ml"])
             if current_ml > initial_ml:
@@ -162,7 +162,7 @@ def websocket_update_nutrient_stock(
                     "current_ml cannot exceed initial_ml",
                 )
                 return
-            coordinator.nutrient_inventory_service.update_stock(
+            coordinator.nutrient_manager.inventory_service.update_stock(
                 nutrient_id=msg["nutrient_id"],
                 name=msg["name"],
                 current_ml=current_ml,
@@ -190,8 +190,8 @@ def websocket_remove_nutrient_stock(
     """Handle remove nutrient stock command."""
     try:
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
-        if coordinator.nutrient_inventory_service:
-            coordinator.nutrient_inventory_service.remove_stock(msg["nutrient_id"])
+        if coordinator.nutrient_manager.inventory_service:
+            coordinator.nutrient_manager.inventory_service.remove_stock(msg["nutrient_id"])
             coordinator.config_entry.async_create_background_task(
                 hass, coordinator.async_commit(), "save_coordinator_data"
             )

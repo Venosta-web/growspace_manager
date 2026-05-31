@@ -25,7 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 def mock_coordinator(hass: HomeAssistant):
     """Mock the GrowspaceCoordinator."""
     coordinator = MagicMock()
-    coordinator.nutrient_inventory_service = MagicMock()
+    coordinator.nutrient_manager.inventory_service = MagicMock()
 
     # Setup inventory service mock
     inventory = NutrientInventory()
@@ -37,9 +37,9 @@ def mock_coordinator(hass: HomeAssistant):
         last_updated="2023-01-01T00:00:00",
     )
 
-    coordinator.nutrient_inventory_service.get_inventory.return_value = inventory
-    coordinator.nutrient_inventory_service.update_stock.return_value = None
-    coordinator.nutrient_inventory_service.remove_stock.return_value = None
+    coordinator.nutrient_manager.inventory_service.get_inventory.return_value = inventory
+    coordinator.nutrient_manager.inventory_service.update_stock.return_value = None
+    coordinator.nutrient_manager.inventory_service.remove_stock.return_value = None
 
     with patch(
         "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
@@ -88,7 +88,7 @@ async def test_websocket_update_nutrient_stock(
     msg = await client.receive_json()
     assert msg["success"]
 
-    mock_coordinator.nutrient_inventory_service.update_stock.assert_called_with(
+    mock_coordinator.nutrient_manager.inventory_service.update_stock.assert_called_with(
         nutrient_id="new_nutrient",
         name="New Nutrient",
         current_ml=100.0,
@@ -114,7 +114,7 @@ async def test_websocket_remove_nutrient_stock(
     msg = await client.receive_json()
     assert msg["success"]
 
-    mock_coordinator.nutrient_inventory_service.remove_stock.assert_called_with(
+    mock_coordinator.nutrient_manager.inventory_service.remove_stock.assert_called_with(
         "test_nutrient"
     )
     mock_coordinator.async_commit.assert_called()

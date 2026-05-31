@@ -246,7 +246,7 @@ async def test_async_check_timed_notifications(
     )
     mock_coordinator.plants = {"plant_1": plant}
     mock_coordinator.get_growspace_plants.return_value = [plant]
-    mock_coordinator.notifications_sent = {"plant_1": {}}
+    mock_coordinator.notification_state.sent = {"plant_1": {}}
 
     with patch(
         "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
@@ -255,7 +255,7 @@ async def test_async_check_timed_notifications(
         await manager.async_check_timed_notifications()
 
     mock_hass.services.async_call.assert_awaited()
-    assert mock_coordinator.notifications_sent["plant_1"]["timed_notify_1"]
+    assert mock_coordinator.notification_state.sent["plant_1"]["timed_notify_1"]
     mock_coordinator.async_commit.assert_awaited()
 
 
@@ -1199,7 +1199,7 @@ async def test_check_and_trigger_plant_notification_init(
     growspace.name = GROWSPACE_NAME
 
     # Ensure plant not in notifications_sent
-    mock_coordinator.notifications_sent = {}
+    mock_coordinator.notification_state.sent = {}
 
     with (
         patch(
@@ -1212,14 +1212,14 @@ async def test_check_and_trigger_plant_notification_init(
             plant, growspace, "notify_1", "veg", 10, "Message"
         )
 
-    assert "new_plant" in mock_coordinator.notifications_sent
-    assert mock_coordinator.notifications_sent["new_plant"]["timed_notify_1"] is True
+    assert "new_plant" in mock_coordinator.notification_state.sent
+    assert mock_coordinator.notification_state.sent["new_plant"]["timed_notify_1"] is True
 
     # Test fallback to growspace.growspace_id if id not present
     del growspace.id
     growspace.growspace_id = GROWSPACE_ID + "_alt"
 
-    mock_coordinator.notifications_sent = {}  # Reset
+    mock_coordinator.notification_state.sent = {}  # Reset
 
     with (
         patch(

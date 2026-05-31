@@ -32,18 +32,7 @@ async def coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
 @pytest.mark.asyncio
 async def test_coordinator_getters_setters(coordinator: GrowspaceCoordinator) -> None:
     """Test various property getters and setters in GrowspaceCoordinator."""
-    # Line 167: dehumidifier_coordinators
-    coordinator.subsystem_manager.dehumidifier_coordinators = {"test": MagicMock()}
-    assert coordinator.dehumidifier_coordinators == {
-        "test": coordinator.subsystem_manager.dehumidifier_coordinators["test"]
-    }
 
-    # notifications_sent/enabled are now read-only properties from notification_state
-    coordinator.notification_state.sent = {"gs1": {"stage": {"1": True}}}
-    assert coordinator.notifications_sent == {"gs1": {"stage": {"1": True}}}
-
-    coordinator.notification_state.enabled = {"gs1": True}
-    assert coordinator.notifications_enabled == {"gs1": True}
 
 
 @pytest.mark.asyncio

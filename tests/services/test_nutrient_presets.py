@@ -9,12 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from .common import create_plant
 import pytest
-from tests.common import (
-    MockConfigEntry,
-    async_capture_events,
-)
 
 from custom_components.growspace_manager.const import (
     ATTR_MIN_DAYS_IN_STAGE,
@@ -39,6 +34,9 @@ from custom_components.growspace_manager.services.nutrient_presets import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry, async_capture_events
+
+from .common import create_plant
 
 
 def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
@@ -108,7 +106,7 @@ class TestNutrientPresetCoordinator:
         assert len(preset.nutrients) == 2
         assert preset.stage == PlantStage.VEG
         assert preset.min_days_in_stage == 5
-        assert preset.id in preset_coordinator.nutrient_presets
+        assert preset.id in preset_coordinator.nutrient_manager.nutrient_presets
         preset_coordinator.storage_manager.async_force_save.assert_called_once()
 
     @pytest.mark.asyncio
@@ -125,7 +123,7 @@ class TestNutrientPresetCoordinator:
         # Remove it
         await preset_coordinator.services.config.remove_nutrient_preset(preset_id)
 
-        assert preset_id not in preset_coordinator.nutrient_presets
+        assert preset_id not in preset_coordinator.nutrient_manager.nutrient_presets
         assert preset_coordinator.storage_manager.async_force_save.call_count == 2
 
     @pytest.mark.asyncio
@@ -359,7 +357,7 @@ class TestServiceHandlersPresets:
         # Verify preset was saved
         presets = [
             p
-            for p in preset_coordinator.nutrient_presets.values()
+            for p in preset_coordinator.nutrient_manager.nutrient_presets.values()
             if p.name == "Service Preset"
         ]
         assert len(presets) == 1
@@ -390,7 +388,7 @@ class TestServiceHandlersPresets:
         await handle_save_nutrient_preset(hass, preset_coordinator, call)
 
         # 3. Verify update
-        updated = preset_coordinator.nutrient_presets[initial_id]
+        updated = preset_coordinator.nutrient_manager.nutrient_presets[initial_id]
         assert updated.name == "Updated Name"
         assert updated.nutrients[0]["dose_ml_l"] == 2.0
         assert updated.id == initial_id
@@ -411,7 +409,7 @@ class TestServiceHandlersPresets:
 
         await handle_remove_nutrient_preset(hass, preset_coordinator, call)
 
-        assert preset.id not in preset_coordinator.nutrient_presets
+        assert preset.id not in preset_coordinator.nutrient_manager.nutrient_presets
 
 
 class TestNutrientPresetSerialization:

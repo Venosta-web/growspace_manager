@@ -106,8 +106,8 @@ async def test_websocket_get_nutrient_inventory_snapshot(
             "n2": {"name": "Nutri-Plus B", "current_ml": 450, "initial_ml": 1000},
         }
     }
-    # coordinator.nutrient_inventory_service.get_inventory() returns it
-    coordinator.nutrient_inventory_service.get_inventory.return_value = inventory
+    # coordinator.nutrient_manager.inventory_service.get_inventory() returns it
+    coordinator.nutrient_manager.inventory_service.get_inventory.return_value = inventory
 
     with (
         patch(

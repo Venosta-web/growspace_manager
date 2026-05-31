@@ -571,7 +571,7 @@ async def test_add_irrigation_schedule_item_with_duration(mock_coordinator) -> N
     facade = ServiceFacade(mock_coordinator)
     irr_coord = MagicMock()
     irr_coord.async_add_schedule_item = AsyncMock()
-    mock_coordinator.irrigation_coordinators = {"gs1": irr_coord}
+    mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
 
     await facade.growspaces.add_irrigation_schedule_item("gs1", "irrigation_times", "08:00", 15)
     irr_coord.async_add_schedule_item.assert_awaited_once_with(
@@ -586,7 +586,7 @@ async def test_add_irrigation_schedule_item_default_duration(mock_coordinator) -
     irr_coord = MagicMock()
     irr_coord.get_default_duration = MagicMock(return_value=20)
     irr_coord.async_add_schedule_item = AsyncMock()
-    mock_coordinator.irrigation_coordinators = {"gs1": irr_coord}
+    mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
 
     await facade.growspaces.add_irrigation_schedule_item("gs1", "irrigation_times", "09:00")
     irr_coord.get_default_duration.assert_called_once_with("irrigation")
@@ -600,7 +600,7 @@ async def test_remove_irrigation_schedule_item(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     irr_coord = MagicMock()
     irr_coord.async_remove_schedule_item = AsyncMock()
-    mock_coordinator.irrigation_coordinators = {"gs1": irr_coord}
+    mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
 
     await facade.growspaces.remove_irrigation_schedule_item("gs1", "irrigation_times", "08:00")
     irr_coord.async_remove_schedule_item.assert_awaited_once_with(
@@ -623,9 +623,9 @@ async def test_get_irrigation_coordinator_lazy_init(mock_coordinator) -> None:
 
     # After lazy init, the coordinator exists
     def _setup_side_effect(gs_id, gs_obj):
-        mock_coordinator.irrigation_coordinators[gs_id] = irr_coord
+        mock_coordinator.subsystem_manager.irrigation_coordinators[gs_id] = irr_coord
 
-    mock_coordinator.irrigation_coordinators = {}
+    mock_coordinator.subsystem_manager.irrigation_coordinators = {}
     mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators.side_effect = (
         _setup_side_effect
     )
@@ -638,7 +638,7 @@ async def test_get_irrigation_coordinator_lazy_init(mock_coordinator) -> None:
 async def test_get_irrigation_coordinator_missing_raises(mock_coordinator) -> None:
     """_get_irrigation_coordinator raises if growspace not found."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.irrigation_coordinators = {}
+    mock_coordinator.subsystem_manager.irrigation_coordinators = {}
     mock_coordinator.growspaces = {}
 
     with pytest.raises(ServiceValidationError):
@@ -768,7 +768,7 @@ async def test_save_ipm_preset_legacy_type_kwarg(mock_coordinator) -> None:
     """save_ipm_preset accepts 'type' as a kwarg for backward compat."""
     facade = ServiceFacade(mock_coordinator)
     preset = MagicMock()
-    mock_coordinator.save_ipm_preset = AsyncMock(return_value=preset)
+    mock_coordinator.ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
     result = await facade.config.save_ipm_preset("Neem", items=[], type="Foliar")
     assert result is preset
 
@@ -1464,7 +1464,7 @@ async def test_save_ipm_preset_items_in_kwargs(mock_coordinator) -> None:
     """save_ipm_preset should pick items from **kwargs if items param is None."""
     facade = ServiceFacade(mock_coordinator)
     preset = MagicMock()
-    mock_coordinator.save_ipm_preset = AsyncMock(return_value=preset)
+    mock_coordinator.ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
     # Pass items via kwargs, not as the named parameter
     result = await facade.config.save_ipm_preset("Test", preset_type="Foliar", items=[{"name": "Neem"}])
     assert result is preset
@@ -1499,9 +1499,9 @@ async def test_ec_ramp_curves_property(mock_coordinator: MagicMock) -> None:
 async def test_remove_ipm_preset(mock_coordinator: MagicMock) -> None:
     """Test the remove_ipm_preset method of ConfigFacade."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.remove_ipm_preset = AsyncMock()
+    mock_coordinator.ipm_service.async_remove_ipm_preset = AsyncMock()
     await facade.config.remove_ipm_preset("preset_123")
-    mock_coordinator.remove_ipm_preset.assert_awaited_once_with("preset_123")
+    mock_coordinator.ipm_service.async_remove_ipm_preset.assert_awaited_once_with("preset_123")
 
 
 @pytest.mark.asyncio

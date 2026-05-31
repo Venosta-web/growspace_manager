@@ -56,12 +56,12 @@ class ViewModelBuilder:
     @property
     def notifications_sent(self) -> dict[str, dict[str, dict[str, bool]]]:
         """Get notifications sent from coordinator."""
-        return self.coordinator.notifications_sent
+        return self.coordinator.notification_state.sent
 
     @property
     def notifications_enabled(self) -> dict[str, bool]:
         """Get notifications enabled from coordinator."""
-        return self.coordinator.notifications_enabled
+        return self.coordinator.notification_state.enabled
 
     def build_serialized_growspace(
         self, growspace_id: str, preloaded_plants: list[Plant] | None = None

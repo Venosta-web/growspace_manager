@@ -1191,7 +1191,7 @@ async def test_websocket_nutrient_inventory_service_not_ready(
     """Test nutrient inventory when service is not initialized."""
     # Remove service from coordinator to simulate not initialized
     # Use explicit deletion if the property is set, or set to None
-    mock_coordinator.nutrient_inventory_service = None
+    mock_coordinator.nutrient_manager.inventory_service = None
 
     hass.data[DOMAIN] = {"coordinator": mock_coordinator}
     async_register_websocket_api(hass)

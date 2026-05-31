@@ -146,10 +146,10 @@ class ConfigFacade:
             raise TypeError(
                 "save_ipm_preset() missing 1 required positional argument: 'items'"
             )
-        return await self._coordinator.save_ipm_preset(
+        return await self._coordinator.ipm_service.async_save_ipm_preset(
             name, preset_type, items, stage, min_days_in_stage, preset_id
         )
 
     async def remove_ipm_preset(self, preset_id: str) -> None:
         """Remove an IPM preset."""
-        await self._coordinator.remove_ipm_preset(preset_id)
+        await self._coordinator.ipm_service.async_remove_ipm_preset(preset_id)

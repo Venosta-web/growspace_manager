@@ -46,7 +46,7 @@ async def _get_irrigation_coordinator(
 ) -> IrrigationCoordinator:
     """Get the irrigation coordinator for a specific growspace, raising on failure."""
     try:
-        irrigation_coordinators = coordinator.irrigation_coordinators
+        irrigation_coordinators = coordinator.subsystem_manager.irrigation_coordinators
 
         if growspace_id not in irrigation_coordinators:
             # Fallback: Check if growspace exists and try to lazy init
@@ -59,7 +59,7 @@ async def _get_irrigation_coordinator(
                     growspace_id, growspace
                 )
                 # Re-fetch
-                irrigation_coordinators = coordinator.irrigation_coordinators
+                irrigation_coordinators = coordinator.subsystem_manager.irrigation_coordinators
 
             if growspace_id not in irrigation_coordinators:
                 raise ServiceValidationError(

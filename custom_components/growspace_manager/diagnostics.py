@@ -32,7 +32,7 @@ async def async_get_config_entry_diagnostics(
             "is_running": getattr(coord, "is_running", None),
             "mode": getattr(coord, "mode", None),
         }
-        for gs_id, coord in coordinator.irrigation_coordinators.items()
+        for gs_id, coord in coordinator.subsystem_manager.irrigation_coordinators.items()
     }
 
     dehumidifier_states = {
@@ -40,7 +40,7 @@ async def async_get_config_entry_diagnostics(
             "control_enabled": getattr(coord, "control_dehumidifier", None),
             "target_vpd": getattr(coord, "_target_vpd", None),
         }
-        for gs_id, coord in coordinator.dehumidifier_coordinators.items()
+        for gs_id, coord in coordinator.subsystem_manager.dehumidifier_coordinators.items()
     }
 
     return {

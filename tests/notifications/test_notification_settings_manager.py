@@ -22,7 +22,7 @@ def test_notifications_enabled_property() -> None:
     """Test notifications_enabled property retrieves from coordinator."""
     mock_coordinator = MagicMock()
     mock_enabled = {"gs1": True}
-    mock_coordinator.notifications_enabled = mock_enabled
+    mock_coordinator.notification_state.enabled = mock_enabled
 
     manager = NotificationSettingsManager(mock_coordinator)
     assert manager.notifications_enabled == mock_enabled
@@ -51,7 +51,7 @@ def test_is_notifications_enabled(
 ) -> None:
     """Test is_notifications_enabled returns correct status."""
     mock_coordinator = MagicMock()
-    mock_coordinator.notifications_enabled = notifications_dict
+    mock_coordinator.notification_state.enabled = notifications_dict
 
     manager = NotificationSettingsManager(mock_coordinator)
     assert manager.is_notifications_enabled(growspace_id) is expected
@@ -61,7 +61,7 @@ def test_set_notifications_state_nonexistent_growspace() -> None:
     """Test set_notifications_state logs warning for nonexistent growspace."""
     mock_coordinator = MagicMock()
     mock_coordinator.growspaces = {}
-    mock_coordinator.notifications_enabled = {"gs1": True}
+    mock_coordinator.notification_state.enabled = {"gs1": True}
 
     manager = NotificationSettingsManager(mock_coordinator)
     result = manager.set_notifications_state("nonexistent", False)
@@ -76,13 +76,13 @@ def test_set_notifications_state_existent_growspace() -> None:
     mock_growspace = MagicMock()
     mock_growspace.name = "My Growspace"
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.notifications_enabled = {"gs1": True}
+    mock_coordinator.notification_state.enabled = {"gs1": True}
 
     manager = NotificationSettingsManager(mock_coordinator)
     result = manager.set_notifications_state("gs1", False)
 
     assert result == {"gs1": False}
-    assert mock_coordinator.notifications_enabled["gs1"] is False
+    assert mock_coordinator.notification_state.enabled["gs1"] is False
 
 
 def test_get_timed_notifications_default() -> None:
@@ -199,7 +199,7 @@ def test_remove_timed_notification_from_list() -> None:
 def test_repr() -> None:
     """Test string representation of NotificationSettingsManager."""
     mock_coordinator = MagicMock()
-    mock_coordinator.notifications_enabled = {"gs1": True, "gs2": False, "gs3": True}
+    mock_coordinator.notification_state.enabled = {"gs1": True, "gs2": False, "gs3": True}
     mock_coordinator.config_entry.options = {
         "timed_notifications": [
             {"id": "1"},

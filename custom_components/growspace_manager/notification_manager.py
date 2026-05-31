@@ -561,7 +561,7 @@ class NotificationManager:
 
         if days_in_stage >= day_to_trigger:
             notification_key = f"timed_{notification_id}"
-            if not self.coordinator.notifications_sent.get(plant.plant_id, {}).get(
+            if not self.coordinator.notification_state.sent.get(plant.plant_id, {}).get(
                 notification_key, False
             ):
                 _LOGGER.info(
@@ -579,9 +579,9 @@ class NotificationManager:
                     message,
                 )
 
-                if plant.plant_id not in self.coordinator.notifications_sent:
-                    self.coordinator.notifications_sent[plant.plant_id] = {}
-                self.coordinator.notifications_sent[plant.plant_id][
+                if plant.plant_id not in self.coordinator.notification_state.sent:
+                    self.coordinator.notification_state.sent[plant.plant_id] = {}
+                self.coordinator.notification_state.sent[plant.plant_id][
                     notification_key
                 ] = True
                 await self.coordinator.async_commit()

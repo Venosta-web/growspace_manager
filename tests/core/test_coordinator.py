@@ -668,8 +668,8 @@ async def test_async_load(coordinator: GrowspaceCoordinator) -> None:
     # Assertions
     assert "p1" in coordinator.plants
     assert "gs1" in coordinator.growspaces
-    assert coordinator.notifications_sent == {"gs1": {}}
-    assert coordinator.notifications_enabled == {"gs1": True}
+    assert coordinator.notification_state.sent == {"gs1": {}}
+    assert coordinator.notification_state.enabled == {"gs1": True}
 
 
 @pytest.mark.asyncio
@@ -692,9 +692,9 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
     plant2 = await coordinator.plant_manager.add_plant(gs.id, "StrainB", row=2, col=2)
 
     # Add dummy notification states
-    coordinator.notifications_sent[plant1.plant_id] = ["alert1"]  # type: ignore[assignment]
-    coordinator.notifications_sent[plant2.plant_id] = ["alert2"]  # type: ignore[assignment]
-    coordinator.notifications_enabled[gs.id] = True
+    coordinator.notification_state.sent[plant1.plant_id] = ["alert1"]  # type: ignore[assignment]
+    coordinator.notification_state.sent[plant2.plant_id] = ["alert2"]  # type: ignore[assignment]
+    coordinator.notification_state.enabled[gs.id] = True
 
     # Mock async_commit and async_set_updated_data
     with (
@@ -715,9 +715,9 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
     assert plant1.plant_id not in coordinator.plants
     assert plant2.plant_id not in coordinator.plants
     # Notifications cleared
-    assert plant1.plant_id not in coordinator.notifications_sent
-    assert plant2.plant_id not in coordinator.notifications_sent
-    assert gs.id not in coordinator.notifications_enabled
+    assert plant1.plant_id not in coordinator.notification_state.sent
+    assert plant2.plant_id not in coordinator.notification_state.sent
+    assert gs.id not in coordinator.notification_state.enabled
 
     # Verify device removed
     assert dev_reg.async_get_device(identifiers={(DOMAIN, gs.id)}) is None
@@ -849,7 +849,7 @@ async def test_is_notifications_enabled(coordinator: GrowspaceCoordinator) -> No
     assert coordinator.services.notifications.is_notifications_enabled(gs.id) is True
 
     # Disable notifications manually
-    coordinator.notifications_enabled[gs.id] = False
+    coordinator.notification_state.enabled[gs.id] = False
     assert coordinator.services.notifications.is_notifications_enabled(gs.id) is False
 
     # If growspace ID is unknown, it should default to True
@@ -1593,8 +1593,8 @@ async def test_async_load_ensures_notifications_enabled(hass: HomeAssistant) -> 
 
     await coordinator.async_load()
 
-    assert "gs1" in coordinator.notifications_enabled
-    assert coordinator.notifications_enabled["gs1"] is True
+    assert "gs1" in coordinator.notification_state.enabled
+    assert coordinator.notification_state.enabled["gs1"] is True
 
 
 @pytest.mark.asyncio
@@ -2392,12 +2392,12 @@ async def test_notifications_logic_full(coordinator: GrowspaceCoordinator) -> No
     # Disable
     await coordinator.services.notifications.set_notifications_enabled(gs.id, False)
     assert coordinator.services.notifications.is_notifications_enabled(gs.id) is False
-    assert coordinator.notifications_enabled[gs.id] is False
+    assert coordinator.notification_state.enabled[gs.id] is False
 
     # Enable
     await coordinator.services.notifications.set_notifications_enabled(gs.id, True)
     assert coordinator.services.notifications.is_notifications_enabled(gs.id) is True
-    assert coordinator.notifications_enabled[gs.id] is True
+    assert coordinator.notification_state.enabled[gs.id] is True
 
     # Non-existent GS
     with patch(

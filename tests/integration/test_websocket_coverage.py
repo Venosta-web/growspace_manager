@@ -149,7 +149,7 @@ async def test_websocket_nutrient_inventory_service_missing(
     # Mock coordinator get via service call
     mock_coord = MagicMock()
     # Ensure it does NOT have nutrient_inventory_service
-    mock_coord.nutrient_inventory_service = None
+    mock_coord.nutrient_manager.inventory_service = None
 
     with patch(
         "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
@@ -190,7 +190,7 @@ async def test_websocket_nutrient_inventory_success(
     )
     mock_coord.config_entry = mock_config_entry
     mock_service = MagicMock()
-    mock_coord.nutrient_inventory_service = mock_service
+    mock_coord.nutrient_manager.inventory_service = mock_service
     mock_coord.async_commit = AsyncMock()
 
     with patch(
@@ -427,7 +427,7 @@ async def test_websocket_get_nutrient_inventory_success_get(
 
     mock_coord = MagicMock()
     mock_service = MagicMock()
-    mock_coord.nutrient_inventory_service = mock_service
+    mock_coord.nutrient_manager.inventory_service = mock_service
     mock_service.get_inventory.return_value = MockInventory(stocks={})
 
     with patch(
