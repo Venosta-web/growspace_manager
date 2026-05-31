@@ -314,7 +314,7 @@ def test_plant_days_and_weeks_in_stage() -> None:
 
     # Mock utils.calculate_days_since to control time
     with patch(
-        "custom_components.growspace_manager.models.calculate_days_since"
+        "custom_components.growspace_manager.models.plant.calculate_days_since"
     ) as mock_calc:
         plant = create_plant(
             plant_id="p1",
@@ -340,7 +340,7 @@ def test_plant_days_and_weeks_in_stage() -> None:
 
         # Test get_week_in_stage
         with patch(
-            "custom_components.growspace_manager.models.days_to_week"
+            "custom_components.growspace_manager.models.plant.days_to_week"
         ) as mock_week:
             mock_week.return_value = 3
             assert plant.get_week_in_stage("veg") == 3

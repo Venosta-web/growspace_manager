@@ -1,0 +1,125 @@
+"""Data models for the Growspace Manager integration.
+
+This package splits models into domain-specific sub-modules for maintainability.
+All public types are re-exported here for backward-compatible imports.
+"""
+
+from custom_components.growspace_manager.const import PlantStage
+
+from .base import BaseModel, BasePreset, _sanitize_numeric_fields
+from .contract import GrowspaceCoordinatorData
+from .genetics import PollinationEvent, SeedBatch
+from .growspace import (
+    DLIState,
+    EnergyTracking,
+    EnvironmentConfig,
+    EnvironmentState,
+    Growspace,
+    GrowspaceEvent,
+    GrowspaceType,
+    SensorGroup,
+    Subarea,
+    VisionCheckupConfig,
+    VisionCheckupResult,
+    WaterUsageData,
+)
+from .ipm import IPMPreset, IPMPresetItem, IPMType
+from .irrigation import (
+    CropSteeringState,
+    DrainConfig,
+    DrainReading,
+    ECRampCurve,
+    ECRampPoint,
+    ECTargetRange,
+    IrrigationConfig,
+    IrrigationStrategy,
+    IrrigationTank,
+    TankWaterEvent,
+    TankWaterHistory,
+)
+from .nutrient import NutrientInventory, NutrientPreset, NutrientStock
+from .plant import (
+    DryingData,
+    HarvestMetrics,
+    MoistureEntry,
+    PhenotypeScore,
+    Plant,
+    PlantGenetics,
+    WeightEntry,
+)
+from .types import (
+    DehumidifierRange,
+    IPMPresetDict,
+    IrrigationScheduleItem,
+    NutrientEntry,
+    NutrientPresetDict,
+    NutrientPresetItem,
+    PlantTimelineEvent,
+    StageHistoryItem,
+    TimelineEventMetadata,
+)
+
+# Explicit __all__ list for documentation and IDE support
+__all__ = [
+    # base
+    "BaseModel",
+    "BasePreset",
+    "CropSteeringState",
+    "DLIState",
+    "DehumidifierRange",
+    "DrainConfig",
+    "DrainReading",
+    "DryingData",
+    "ECRampCurve",
+    "ECRampPoint",
+    "ECTargetRange",
+    "EnergyTracking",
+    "EnvironmentConfig",
+    "EnvironmentState",
+    "Growspace",
+    # contract
+    "GrowspaceCoordinatorData",
+    "GrowspaceEvent",
+    # growspace
+    "GrowspaceType",
+    "HarvestMetrics",
+    "IPMPreset",
+    "IPMPresetDict",
+    "IPMPresetItem",
+    # ipm
+    "IPMType",
+    "IrrigationConfig",
+    # types
+    "IrrigationScheduleItem",
+    # irrigation
+    "IrrigationStrategy",
+    "IrrigationTank",
+    "MoistureEntry",
+    "NutrientEntry",
+    "NutrientInventory",
+    # nutrient
+    "NutrientPreset",
+    "NutrientPresetDict",
+    "NutrientPresetItem",
+    "NutrientStock",
+    "PhenotypeScore",
+    "Plant",
+    # plant
+    "PlantGenetics",
+    "PlantStage",
+    "PlantTimelineEvent",
+    "PollinationEvent",
+    # genetics
+    "SeedBatch",
+    "SensorGroup",
+    "StageHistoryItem",
+    "Subarea",
+    "TankWaterEvent",
+    "TankWaterHistory",
+    "TimelineEventMetadata",
+    "VisionCheckupConfig",
+    "VisionCheckupResult",
+    "WaterUsageData",
+    "WeightEntry",
+    "_sanitize_numeric_fields",
+]

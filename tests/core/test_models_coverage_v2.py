@@ -32,7 +32,7 @@ def test_plant_get_days_since_watering_with_value() -> None:
     # But calculate_days_since depends on current time.
 
     with patch(
-        "custom_components.growspace_manager.models.calculate_days_since",
+        "custom_components.growspace_manager.models.plant.calculate_days_since",
         return_value=5,
     ) as mock_calc:
         val = plant.get_days_since_watering()
@@ -52,7 +52,7 @@ def test_plant_get_days_in_stage_fallback() -> None:
     plant.stage_history = []
 
     with patch(
-        "custom_components.growspace_manager.models.calculate_days_since",
+        "custom_components.growspace_manager.models.plant.calculate_days_since",
         return_value=10,
     ) as mock_calc:
         val = plant.get_days_in_stage("veg")
