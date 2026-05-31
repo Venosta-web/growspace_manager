@@ -486,6 +486,7 @@ async def handle_print_label(
     plant_id = call.data.get("plant_id")
     device_id = call.data.get("device_id")
     preview = call.data.get("preview", False)
+    label_size = call.data.get("label_size", "50x30")
 
     strain_name = None
     phenotype_name = None
@@ -637,10 +638,32 @@ async def handle_print_label(
     _density_map = {"low": 3, "normal": 5, "high": 8}
     niimbot_density = _density_map.get(density_key, 5)
 
+    _label_sizes: dict[str, tuple[int, int]] = {
+        "50x30": (400, 240),
+        "40x30": (320, 240),
+        "50x50": (400, 400),
+        "50x80": (400, 640),
+        "50x15": (400, 120),
+    }
+    canvas_w, canvas_h = _label_sizes.get(label_size, (400, 240))
+
+    if canvas_w != 400 or canvas_h != 240:
+        scale_x = canvas_w / 400
+        scale_y = canvas_h / 240
+        _x_fields = {"x", "x_end", "x_start", "width", "xsize"}
+        _y_fields = {"y", "y_end", "y_start", "height", "ysize"}
+        for element in payload:
+            for field in _x_fields:
+                if field in element:
+                    element[field] = round(element[field] * scale_x)
+            for field in _y_fields:
+                if field in element:
+                    element[field] = round(element[field] * scale_y)
+
     # Call Niimbot service
     service_data = {
-        "width": 400,
-        "height": 240,
+        "width": canvas_w,
+        "height": canvas_h,
         "rotate": 0,
         "density": niimbot_density,
         "payload": payload,

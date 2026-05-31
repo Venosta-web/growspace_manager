@@ -454,6 +454,7 @@ PRINT_LABEL_SCHEMA = vol.Schema(
         vol.Optional("device_id"): str,
         vol.Optional("preview", default=False): bool,
         vol.Optional("base_url"): str,
+        vol.Optional("label_size"): str,
     }
 )
 

@@ -259,6 +259,7 @@ SCHEMA_WS_PRINT_LABEL = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Optional("fields"): dict,
         vol.Optional("density"): vol.In(["low", "normal", "high"]),
         vol.Optional("qr_target"): vol.In(["web", "deeplink"]),
+        vol.Optional("label_size"): str,
     }
 )
 
