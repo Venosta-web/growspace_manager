@@ -51,6 +51,11 @@ class NutrientStock(BaseModel):
     current_ml: float
     initial_ml: float
     last_updated: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
+    brand: str = ""
+    type: str = "base"
+    npk: str = ""
+    dose_ml_l: float = 0.0
+    notes: str = ""
 
 
 @dataclass(slots=True)

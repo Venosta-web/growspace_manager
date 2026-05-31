@@ -20,7 +20,16 @@ class NutrientInventoryService:
         return self._inventory
 
     def update_stock(
-        self, nutrient_id: str, name: str, current_ml: float, initial_ml: float
+        self,
+        nutrient_id: str,
+        name: str,
+        current_ml: float,
+        initial_ml: float,
+        brand: str = "",
+        type: str = "base",
+        npk: str = "",
+        dose_ml_l: float = 0.0,
+        notes: str = "",
     ) -> None:
         """Update or create a nutrient stock."""
         self._inventory.stocks[nutrient_id] = NutrientStock(
@@ -29,6 +38,11 @@ class NutrientInventoryService:
             current_ml=current_ml,
             initial_ml=initial_ml,
             last_updated=dt_util.utcnow().isoformat(),
+            brand=brand,
+            type=type,
+            npk=npk,
+            dose_ml_l=dose_ml_l,
+            notes=notes,
         )
         _LOGGER.debug(
             "Updated stock for %s (%s): %s/%s ml",

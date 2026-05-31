@@ -204,12 +204,25 @@ async def test_websocket_nutrient_inventory_success(
             "name": "N1",
             "current_ml": 500,
             "initial_ml": 1000,
+            "brand": "",
+            "stock_type": "base",
+            "npk": "",
+            "dose_ml_l": 0.0,
+            "notes": "",
         }
         websocket_update_nutrient_stock(hass, mock_connection, msg_update)
         await asyncio.sleep(0)  # Yield to background tasks
 
         mock_service.update_stock.assert_called_with(
-            nutrient_id="n1", name="N1", current_ml=500.0, initial_ml=1000.0
+            nutrient_id="n1",
+            name="N1",
+            current_ml=500.0,
+            initial_ml=1000.0,
+            brand="",
+            type="base",
+            npk="",
+            dose_ml_l=0.0,
+            notes="",
         )
         mock_connection.send_result.assert_called_with(1)
         mock_coord.async_commit.assert_awaited()

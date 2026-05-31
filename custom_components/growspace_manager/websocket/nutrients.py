@@ -52,6 +52,15 @@ SCHEMA_WS_UPDATE_NUTRIENT_STOCK = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exte
         vol.Required("name"): str,
         vol.Required("current_ml"): vol.All(vol.Any(float, int), vol.Range(min=0)),
         vol.Required("initial_ml"): vol.All(vol.Any(float, int), vol.Range(min=1)),
+        vol.Optional("brand", default=""): str,
+        vol.Optional("stock_type", default="base"): vol.In(
+            ["base", "bloom", "calmag", "root", "additive", "microbe"]
+        ),
+        vol.Optional("npk", default=""): str,
+        vol.Optional("dose_ml_l", default=0.0): vol.All(
+            vol.Any(float, int), vol.Range(min=0)
+        ),
+        vol.Optional("notes", default=""): str,
     }
 )
 
@@ -167,6 +176,11 @@ def websocket_update_nutrient_stock(
                 name=msg["name"],
                 current_ml=current_ml,
                 initial_ml=initial_ml,
+                brand=msg["brand"],
+                type=msg["stock_type"],
+                npk=msg["npk"],
+                dose_ml_l=float(msg["dose_ml_l"]),
+                notes=msg["notes"],
             )
             coordinator.config_entry.async_create_background_task(
                 hass, coordinator.async_commit(), "save_coordinator_data"
