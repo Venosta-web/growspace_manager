@@ -98,3 +98,15 @@ HA `input_number` + `template sensor` entities used as stand-ins for real hardwa
 
 - **Demo simulation** (`growspace_demo.yaml`): dynamic sinusoidal variation for realistic Bayesian logic testing.
 - **E2E simulation** (`growspace_e2e.yaml`): fully static pass-through sensors, prefixed `e2e_`, controllable from Playwright via `input_number.set_value` WebSocket calls.
+
+## Strain Library
+
+The user's personal collection of cannabis strains, stored in a SQLite database (`strain_library.db`). Each strain has metadata (breeder, generation), zero or more phenotypes, and a harvest history. The library is the source of truth for strain names used when assigning plants.
+
+## Strain Lineage Tree
+
+A recursive tree structure describing the parent strains of a given strain. Built entirely from in-memory `strains` data — no DB I/O during tree construction. Nodes carry `name`, `source` (`library` | `manual` | `seedfinder`), optional `phenotype`, and a `parents` list (capped at 2 parents, depth-limited to 15). Cycle detection prevents infinite loops via a `_seen` frozenset passed through recursion.
+
+## Strain Analytics
+
+An in-memory aggregation of harvest performance data across the Strain Library. Computes per-phenotype and per-strain averages (veg days, flower days, dry/wet yield) from the `harvests` list on each phenotype. Result is cached until the library changes. Contains no SQLite queries — all computation is over the in-memory `strains` dict.
