@@ -10,6 +10,7 @@ from .base import BaseModel, BasePreset, _sanitize_numeric_fields
 from .contract import GrowspaceCoordinatorData
 from .genetics import PollinationEvent, SeedBatch
 from .growspace import (
+    CirculationFanConfig,
     DLIState,
     EnergyTracking,
     EnvironmentConfig,
@@ -64,6 +65,7 @@ __all__ = [
     # base
     "BaseModel",
     "BasePreset",
+    "CirculationFanConfig",
     "CropSteeringState",
     "DLIState",
     "DehumidifierRange",

@@ -5,7 +5,9 @@ from unittest.mock import patch
 from .common import create_plant
 import pytest
 
+from custom_components.growspace_manager.const import FanRegulationMode
 from custom_components.growspace_manager.models import (
+    CirculationFanConfig,
     EnvironmentConfig,
     EnvironmentState,
     Growspace,
@@ -658,3 +660,88 @@ def test_growspace_irrigation_strategy_legacy_nested_load() -> None:
     gs = Growspace.from_dict(data)
     assert gs.irrigation_strategy.auto_light_tracking is False
     assert gs.irrigation_strategy.detected_lights_on_time is None
+
+
+# --------------------
+# CirculationFanConfig Tests
+# --------------------
+
+
+def test_circulation_fan_config_defaults() -> None:
+    """CirculationFanConfig() with no args produces expected defaults."""
+    cfg = CirculationFanConfig()
+    assert cfg.enabled is False
+    assert cfg.regulation_mode is FanRegulationMode.VPD
+    assert cfg.min_speed == 0
+    assert cfg.max_speed == 100
+    assert cfg.critical_temp_low is None
+    assert cfg.critical_temp_high is None
+    assert cfg.wind_enabled is False
+
+
+def test_circulation_fan_config_roundtrip() -> None:
+    """CirculationFanConfig serialises and deserialises without data loss."""
+    cfg = CirculationFanConfig(
+        enabled=True,
+        regulation_mode=FanRegulationMode.HUMIDITY,
+        min_speed=20,
+        max_speed=80,
+        humidity_target=55.0,
+        humidity_tolerance=3.0,
+        temperature_target=24.0,
+        temperature_tolerance=1.5,
+        vpd_target=0.9,
+        vpd_tolerance=0.15,
+        critical_temp_low=18.0,
+        critical_temp_high=32.0,
+        critical_temp_hysteresis=2.0,
+        wind_enabled=True,
+        wind_period_seconds=120,
+        wind_amplitude_pct=15,
+    )
+    restored = CirculationFanConfig.from_dict(cfg.to_dict())
+    assert restored.enabled is True
+    assert restored.regulation_mode is FanRegulationMode.HUMIDITY
+    assert restored.min_speed == 20
+    assert restored.max_speed == 80
+    assert restored.humidity_target == 55.0
+    assert restored.humidity_tolerance == 3.0
+    assert restored.temperature_target == 24.0
+    assert restored.temperature_tolerance == 1.5
+    assert restored.vpd_target == 0.9
+    assert restored.vpd_tolerance == 0.15
+    assert restored.critical_temp_low == 18.0
+    assert restored.critical_temp_high == 32.0
+    assert restored.critical_temp_hysteresis == 2.0
+    assert restored.wind_enabled is True
+    assert restored.wind_period_seconds == 120
+    assert restored.wind_amplitude_pct == 15
+
+
+def test_environment_config_missing_circulation_fan_config_deserialises_to_default() -> None:
+    """EnvironmentConfig stored without circulation_fan_config key deserialises to default."""
+    data: dict = {}
+    env = EnvironmentConfig.from_dict(data)
+    assert env.circulation_fan_config.enabled is False
+    assert env.circulation_fan_config.regulation_mode is FanRegulationMode.VPD
+
+
+def test_environment_config_null_circulation_fan_config_deserialises_to_default() -> None:
+    """EnvironmentConfig with null circulation_fan_config in storage deserialises to default."""
+    data = {"circulation_fan_config": None}
+    env = EnvironmentConfig.from_dict(data)
+    assert env.circulation_fan_config.enabled is False
+    assert env.circulation_fan_config.regulation_mode is FanRegulationMode.VPD
+
+
+def test_growspace_circulation_fan_config_roundtrip() -> None:
+    """Growspace with circulation_fan_config set round-trips through storage correctly."""
+    gs = Growspace(id="tent1", name="Test Tent")
+    gs.environment_config.circulation_fan_config = CirculationFanConfig(
+        enabled=True, regulation_mode=FanRegulationMode.TEMPERATURE, min_speed=10
+    )
+    restored = Growspace.from_dict(gs.to_dict())
+    fan_cfg = restored.environment_config.circulation_fan_config
+    assert fan_cfg.enabled is True
+    assert fan_cfg.regulation_mode is FanRegulationMode.TEMPERATURE
+    assert fan_cfg.min_speed == 10

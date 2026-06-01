@@ -645,6 +645,14 @@ class GrowspaceService(StrEnum):
     UNLINK_SEED_BATCH = "unlink_seed_batch"
 
 
+class FanRegulationMode(StrEnum):
+    """Regulation variable for the circulation fan controller."""
+
+    HUMIDITY = "humidity"
+    TEMPERATURE = "temperature"
+    VPD = "vpd"
+
+
 class TrainingTechnique(StrEnum):
     """Horticultural training techniques."""
 

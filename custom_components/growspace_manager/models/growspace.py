@@ -22,6 +22,7 @@ from custom_components.growspace_manager.const import (
     CONF_TREND_TEMP_THRESHOLD,
     CONF_TREND_VPD_DURATION,
     CONF_TREND_VPD_SENSITIVITY,
+    FanRegulationMode,
     PlantStage,
 )
 from custom_components.growspace_manager.integration_types import (
@@ -39,6 +40,7 @@ from .irrigation import (
 )
 
 __all__ = [
+    "CirculationFanConfig",
     "DLIState",
     "EnergyTracking",
     "EnvironmentConfig",
@@ -105,6 +107,28 @@ class VisionCheckupConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class CirculationFanConfig(BaseModel):
+    """Configuration for the circulation fan controller."""
+
+    enabled: bool = False
+    regulation_mode: FanRegulationMode = FanRegulationMode.VPD
+    min_speed: int = 0
+    max_speed: int = 100
+    humidity_target: float = 60.0
+    humidity_tolerance: float = 5.0
+    temperature_target: float = 25.0
+    temperature_tolerance: float = 2.0
+    vpd_target: float = 1.0
+    vpd_tolerance: float = 0.2
+    critical_temp_low: float | None = None
+    critical_temp_high: float | None = None
+    critical_temp_hysteresis: float = 1.0
+    wind_enabled: bool = False
+    wind_period_seconds: int = 60
+    wind_amplitude_pct: int = 10
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -158,6 +182,9 @@ class EnvironmentConfig(BaseModel):
     irrigation_tanks: list[IrrigationTank] = field(default_factory=list)
     vision_checkup_config: VisionCheckupConfig = field(
         default_factory=VisionCheckupConfig
+    )
+    circulation_fan_config: CirculationFanConfig = field(
+        default_factory=CirculationFanConfig
     )
 
     def __post_init__(self) -> None:
@@ -237,6 +264,9 @@ class EnvironmentConfig(BaseModel):
         for _f in _LIST_FIELDS:
             if _f in data and data[_f] is None:
                 data[_f] = []
+
+        if data.get("circulation_fan_config") is None:
+            data["circulation_fan_config"] = {}
 
         # Migration: singular -> plural list
         migrations = {
