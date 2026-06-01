@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import time as time_module
 
 from custom_components.growspace_manager.circulation_fan_coordinator import (
     CirculationFanCoordinator,
@@ -60,6 +61,9 @@ def _make_env_config(
     critical_temp_hysteresis: float = 1.0,
     min_speed: int = 10,
     max_speed: int = 90,
+    wind_enabled: bool = False,
+    wind_period_seconds: int = 60,
+    wind_amplitude_pct: int = 10,
 ) -> EnvironmentConfig:
     fan_cfg = CirculationFanConfig(
         enabled=enabled,
@@ -75,6 +79,9 @@ def _make_env_config(
         critical_temp_hysteresis=critical_temp_hysteresis,
         min_speed=min_speed,
         max_speed=max_speed,
+        wind_enabled=wind_enabled,
+        wind_period_seconds=wind_period_seconds,
+        wind_amplitude_pct=wind_amplitude_pct,
     )
     return EnvironmentConfig(
         humidity_sensors=humidity_sensors if humidity_sensors is not None else ["sensor.humidity"],
@@ -703,3 +710,177 @@ async def test_vpd_mode_override_deactivates_after_hysteresis(
         blocking=False,
     )
     assert coord._temp_override_active is False
+
+
+# ---------------------------------------------------------------------------
+# Dynamic Wind Layer
+# ---------------------------------------------------------------------------
+
+
+async def test_wind_enabled_applies_offset_at_quarter_period(
+    mock_hass: MagicMock,
+) -> None:
+    """wind_enabled=True at quarter period → sin=1.0 → regulation_speed + amplitude."""
+    # Humidity at midpoint of [0, 100] band → regulation_speed = 50
+    # At quarter period (15s of 60s period): wind_offset = 10 × sin(π/2) = 10
+    # Final speed = clamp(50 + 10, 0, 100) = 60
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        humidity_target=60.0,
+        humidity_tolerance=5.0,
+        min_speed=0,
+        max_speed=100,
+        wind_enabled=True,
+        wind_period_seconds=60,
+        wind_amplitude_pct=10,
+    )
+    mock_hass.states.get.return_value = MagicMock(state="60.0")
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+    coord._start_time = 0.0
+
+    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+        mock_time.monotonic.return_value = 15.0  # quarter period
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 60},
+        blocking=False,
+    )
+
+
+async def test_wind_output_clamped_to_max_speed(
+    mock_hass: MagicMock,
+) -> None:
+    """Wind offset pushing past max_speed is clamped to max_speed."""
+    # regulation_speed = 90 (humidity above band), amplitude=20 × sin(1.0) → 110 → clamped to 90
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        humidity_target=60.0,
+        humidity_tolerance=5.0,
+        min_speed=10,
+        max_speed=90,
+        wind_enabled=True,
+        wind_period_seconds=60,
+        wind_amplitude_pct=20,
+    )
+    mock_hass.states.get.return_value = MagicMock(state="70.0")  # above band → max_speed=90
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+    coord._start_time = 0.0
+
+    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+        mock_time.monotonic.return_value = 15.0  # quarter period → sin=1.0
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
+        blocking=False,
+    )
+
+
+async def test_wind_output_clamped_to_min_speed(
+    mock_hass: MagicMock,
+) -> None:
+    """Wind offset pushing below min_speed is clamped to min_speed."""
+    # regulation_speed = 10 (humidity below band), amplitude=20 at 3/4 period → 10 - 20 = -10 → clamped to 10
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        humidity_target=60.0,
+        humidity_tolerance=5.0,
+        min_speed=10,
+        max_speed=90,
+        wind_enabled=True,
+        wind_period_seconds=60,
+        wind_amplitude_pct=20,
+    )
+    mock_hass.states.get.return_value = MagicMock(state="50.0")  # below band → min_speed=10
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+    coord._start_time = 0.0
+
+    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+        mock_time.monotonic.return_value = 45.0  # 3/4 period → sin=-1.0
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 10},
+        blocking=False,
+    )
+
+
+async def test_wind_disabled_produces_stable_speed(
+    mock_hass: MagicMock,
+) -> None:
+    """wind_enabled=False → speed is unaffected by elapsed time (no oscillation)."""
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        humidity_target=60.0,
+        humidity_tolerance=5.0,
+        min_speed=0,
+        max_speed=100,
+        wind_enabled=False,
+    )
+    mock_hass.states.get.return_value = MagicMock(state="60.0")  # midpoint → speed=50
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+    coord._start_time = 0.0
+
+    # At quarter period — if wind were enabled speed would be 60, not 50
+    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+        mock_time.monotonic.return_value = 15.0
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},
+        blocking=False,
+    )
+
+
+async def test_wind_applies_on_top_of_temp_override_speed(
+    mock_hass: MagicMock,
+) -> None:
+    """Wind offset applies to the temp override speed, not the VPD regulation speed."""
+    # VPD override active (high temp) → speed = max_speed = 90
+    # Wind at quarter period with amplitude=5 → 90 + 5 = 95 → clamped to 90
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=1.0,
+        vpd_tolerance=0.2,
+        min_speed=10,
+        max_speed=90,
+        critical_temp_high=30.0,
+        wind_enabled=True,
+        wind_period_seconds=60,
+        wind_amplitude_pct=5,
+    )
+
+    def _get_state(entity_id: str) -> MagicMock:
+        if "temperature" in entity_id:
+            return MagicMock(state="32.0")  # above threshold → override to max_speed=90
+        return MagicMock(state="0.5")  # VPD below band → would be min_speed without override
+
+    mock_hass.states.get.side_effect = _get_state
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+    coord._start_time = 0.0
+
+    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+        mock_time.monotonic.return_value = 15.0  # quarter period → wind_offset = +5
+        await coord._async_regulate()
+
+    # Override speed (90) + wind (+5) = 95, clamped to 90
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
+        blocking=False,
+    )

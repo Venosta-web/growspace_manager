@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import timedelta
 import logging
+import math
+import time
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
@@ -60,6 +62,15 @@ def evaluate_temp_override(
     return min_speed, True, "low"
 
 
+def compute_wind_offset(
+    amplitude_pct: int,
+    elapsed_seconds: float,
+    period_seconds: int,
+) -> float:
+    """Compute wind offset as amplitude × sin(2π × elapsed / period)."""
+    return amplitude_pct * math.sin(2 * math.pi * elapsed_seconds / period_seconds)
+
+
 def compute_fan_speed(
     value: float,
     target: float,
@@ -101,6 +112,7 @@ class CirculationFanCoordinator:
         self._remove_tick: Callable[[], None] | None = None
         self._temp_override_active: bool = False
         self._temp_override_direction: str | None = None
+        self._start_time: float = 0.0
 
         growspace = self.main_coordinator.growspaces.get(growspace_id)
         if not growspace:
@@ -130,6 +142,7 @@ class CirculationFanCoordinator:
             )
             return
 
+        self._start_time = time.monotonic()
         self._remove_tick = async_track_time_interval(
             self.hass, self._on_tick, _TICK_INTERVAL
         )
@@ -197,6 +210,13 @@ class CirculationFanCoordinator:
                     )
         else:
             return
+
+        if cfg.wind_enabled:
+            elapsed = time.monotonic() - self._start_time
+            wind_offset = compute_wind_offset(
+                cfg.wind_amplitude_pct, elapsed, cfg.wind_period_seconds
+            )
+            speed = max(cfg.min_speed, min(cfg.max_speed, round(speed + wind_offset)))
 
         for entity_id in self._env_config.circulation_fan_entities:
             try:
