@@ -10,6 +10,9 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from custom_components.growspace_manager.circulation_fan_coordinator import (
+    CirculationFanCoordinator,
+)
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
@@ -53,6 +56,7 @@ class SubsystemManager:
         self.dehumidifier_coordinators: dict[str, DehumidifierCoordinator] = {}
         self.humidifier_coordinators: dict[str, HumidifierCoordinator] = {}
         self.light_cycle_trackers: dict[str, LightCycleTracker] = {}
+        self.circulation_fan_coordinators: dict[str, CirculationFanCoordinator] = {}
 
     async def async_initialize_sub_coordinators(
         self, growspaces: dict[str, Growspace]
@@ -115,6 +119,13 @@ class SubsystemManager:
         await light_cycle_tracker.async_setup()
         self.light_cycle_trackers[growspace_id] = light_cycle_tracker
 
+        # Circulation fan coordinator setup
+        circulation_fan_coordinator = CirculationFanCoordinator(
+            self.hass, self.entry, growspace_id, self.coordinator
+        )
+        await circulation_fan_coordinator.async_setup()
+        self.circulation_fan_coordinators[growspace_id] = circulation_fan_coordinator
+
     def async_cancel_all(self) -> None:
         """Cancel all sub-coordinator listeners."""
         for irr_coordinator in self.irrigation_coordinators.values():
@@ -140,4 +151,10 @@ class SubsystemManager:
                 tracker.unload()
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Error unloading light cycle tracker: %s", err)
+
+        for fan_coordinator in self.circulation_fan_coordinators.values():
+            try:
+                fan_coordinator.unload()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error("Error unloading circulation fan coordinator: %s", err)
 
