@@ -23,6 +23,43 @@ _LOGGER = logging.getLogger(__name__)
 _TICK_INTERVAL = timedelta(seconds=10)
 
 
+def evaluate_temp_override(
+    current_temp: float,
+    critical_temp_low: float | None,
+    critical_temp_high: float | None,
+    hysteresis: float,
+    override_active: bool,
+    override_direction: str | None,
+    vpd_speed: int,
+    min_speed: int,
+    max_speed: int,
+) -> tuple[int, bool, str | None]:
+    """Apply temperature safety override logic for VPD mode.
+
+    Returns (final_speed, new_override_active, new_override_direction).
+    Override direction is "high" or "low" when active, None otherwise.
+    """
+    if critical_temp_low is None and critical_temp_high is None:
+        return vpd_speed, False, None
+
+    if not override_active:
+        if critical_temp_high is not None and current_temp > critical_temp_high:
+            return max_speed, True, "high"
+        if critical_temp_low is not None and current_temp < critical_temp_low:
+            return min_speed, True, "low"
+        return vpd_speed, False, None
+
+    if override_direction == "high":
+        if critical_temp_high is not None and current_temp <= critical_temp_high - hysteresis:
+            return vpd_speed, False, None
+        return max_speed, True, "high"
+
+    # override_direction == "low"
+    if critical_temp_low is not None and current_temp >= critical_temp_low + hysteresis:
+        return vpd_speed, False, None
+    return min_speed, True, "low"
+
+
 def compute_fan_speed(
     value: float,
     target: float,
@@ -62,6 +99,8 @@ class CirculationFanCoordinator:
         self.growspace_id = growspace_id
         self.main_coordinator = main_coordinator
         self._remove_tick: Callable[[], None] | None = None
+        self._temp_override_active: bool = False
+        self._temp_override_direction: str | None = None
 
         growspace = self.main_coordinator.growspaces.get(growspace_id)
         if not growspace:
@@ -132,6 +171,30 @@ class CirculationFanCoordinator:
                 cfg.min_speed,
                 cfg.max_speed,
             )
+        elif cfg.regulation_mode == FanRegulationMode.VPD:
+            speed = compute_fan_speed(
+                sensor_value,
+                cfg.vpd_target,
+                cfg.vpd_tolerance,
+                cfg.min_speed,
+                cfg.max_speed,
+            )
+            if cfg.critical_temp_low is not None or cfg.critical_temp_high is not None:
+                temp_value = self._read_sensor(FanRegulationMode.TEMPERATURE)
+                if temp_value is not None:
+                    speed, self._temp_override_active, self._temp_override_direction = (
+                        evaluate_temp_override(
+                            temp_value,
+                            cfg.critical_temp_low,
+                            cfg.critical_temp_high,
+                            cfg.critical_temp_hysteresis,
+                            self._temp_override_active,
+                            self._temp_override_direction,
+                            speed,
+                            cfg.min_speed,
+                            cfg.max_speed,
+                        )
+                    )
         else:
             return
 
@@ -154,6 +217,8 @@ class CirculationFanCoordinator:
             sensors = self._env_config.humidity_sensors
         elif mode == FanRegulationMode.TEMPERATURE:
             sensors = self._env_config.temperature_sensors
+        elif mode == FanRegulationMode.VPD:
+            sensors = self._env_config.vpd_sensors
         else:
             return None
 
