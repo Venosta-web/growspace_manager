@@ -76,7 +76,7 @@ async def websocket_get_lineage_tree(
         return
 
     try:
-        tree = coordinator.genetics_manager.get_lineage_tree(plant_id)
+        tree = coordinator.services.genetics.get_lineage_tree(plant_id)
 
         if not tree.get("parents") and (strain_library := coordinator.services.config.strain_library):
             plant = coordinator.plants.get(plant_id)

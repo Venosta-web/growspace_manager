@@ -101,7 +101,11 @@ class BaseConfigHandler(ABC, Generic[T]):
 
 # Import handlers AFTER BaseConfigHandler is defined to avoid circular import
 from .ai_config_handler import AIConfigHandler  # noqa: E402
+from .bayesian_advanced_handler import BayesianAdvancedHandler  # noqa: E402
+from .dehumidifier_handler import DehumidifierHandler  # noqa: E402
 from .environment_config_handler import EnvironmentConfigHandler  # noqa: E402
+from .environment_sensors_handler import EnvironmentSensorsHandler  # noqa: E402
+from .fan_controller_handler import FanControllerHandler  # noqa: E402
 from .growspace_config_handler import GrowspaceConfigHandler  # noqa: E402
 from .irrigation_config_handler import IrrigationConfigHandler  # noqa: E402
 from .notification_config_handler import NotificationConfigHandler  # noqa: E402
@@ -111,7 +115,11 @@ from .strain_config_handler import StrainConfigHandler  # noqa: E402
 __all__ = [
     "AIConfigHandler",
     "BaseConfigHandler",
+    "BayesianAdvancedHandler",
+    "DehumidifierHandler",
     "EnvironmentConfigHandler",
+    "EnvironmentSensorsHandler",
+    "FanControllerHandler",
     "GrowspaceConfigHandler",
     "IrrigationConfigHandler",
     "NotificationConfigHandler",

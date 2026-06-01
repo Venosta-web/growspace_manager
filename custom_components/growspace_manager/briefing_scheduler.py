@@ -291,7 +291,7 @@ class BriefingScheduler:
             round(sum(vpd_readings) / len(vpd_readings), 2) if vpd_readings else None
         )
 
-        alerts = self.coordinator.alert_monitor.get_alerts()
+        alerts = self.coordinator.services.notifications.get_alerts()
         open_issues = len([a for a in alerts if not a.get("resolved")])
 
         kpis: list[dict[str, Any]] = [

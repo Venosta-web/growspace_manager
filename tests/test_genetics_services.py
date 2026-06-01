@@ -107,9 +107,10 @@ def genetics_manager() -> AsyncMock:
 
 @pytest.fixture
 def mock_coordinator(genetics_manager: AsyncMock) -> MagicMock:
-    """Mock GrowspaceCoordinator exposing genetics_manager and plants."""
+    """Mock GrowspaceCoordinator exposing services.genetics facade and plants."""
     coord = MagicMock()
     coord.genetics_manager = genetics_manager
+    coord.services.genetics = genetics_manager
     coord.plants = {
         "plant-donor": Plant(
             plant_id="plant-donor",

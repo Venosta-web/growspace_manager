@@ -55,7 +55,7 @@ def websocket_get_genetics_data(
         )
         connection.send_result(
             msg["id"],
-            coordinator.genetics_manager.get_serialization_data(),
+            coordinator.services.genetics.get_serialization_data(),
         )
     except Exception as err:
         _LOGGER.exception("Error handling websocket_get_genetics_data")

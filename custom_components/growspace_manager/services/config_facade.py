@@ -156,3 +156,28 @@ class ConfigFacade:
     async def remove_ipm_preset(self, preset_id: str) -> None:
         """Remove an IPM preset."""
         await self._coordinator.ipm_service.async_remove_ipm_preset(preset_id)
+
+    # -------------------------------------------------------------------------
+    # Nutrient inventory
+    # -------------------------------------------------------------------------
+
+    def get_inventory(self) -> Any | None:
+        """Return the current nutrient inventory, or None if not configured."""
+        svc = self._coordinator.nutrient_manager.inventory_service
+        if svc is None:
+            return None
+        return svc.get_inventory()
+
+    def update_stock(self, **kwargs: Any) -> None:
+        """Update or create a nutrient stock entry."""
+        svc = self._coordinator.nutrient_manager.inventory_service
+        if svc is None:
+            return
+        svc.update_stock(**kwargs)
+
+    def remove_stock(self, nutrient_id: str) -> None:
+        """Remove a nutrient stock entry."""
+        svc = self._coordinator.nutrient_manager.inventory_service
+        if svc is None:
+            return
+        svc.remove_stock(nutrient_id)

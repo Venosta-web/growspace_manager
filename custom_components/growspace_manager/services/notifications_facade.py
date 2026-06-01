@@ -136,3 +136,30 @@ class NotificationsFacade:
         """Mark a notification as sent to prevent duplicates."""
         self._coordinator.notification_state.mark_sent(plant_id, stage, days)
         await self._coordinator.async_commit()
+
+    # -------------------------------------------------------------------------
+    # Alert monitor operations
+    # -------------------------------------------------------------------------
+
+    def get_alerts(
+        self,
+        growspace_id: str | None = None,
+        alert_type: str | None = None,
+    ) -> list[dict]:
+        """Return alerts from the alert monitor, optionally filtered."""
+        kwargs: dict = {}
+        if growspace_id is not None:
+            kwargs["growspace_id"] = growspace_id
+        if alert_type is not None:
+            kwargs["alert_type"] = alert_type
+        return self._coordinator.alert_monitor.get_alerts(**kwargs)
+
+    async def resolve_alert(self, alert_id: str, notes: str | None = None) -> bool:
+        """Mark an alert as resolved."""
+        return await self._coordinator.alert_monitor.resolve_alert(
+            alert_id, notes=notes
+        )
+
+    def register_alert_sensor(self, *args: Any, **kwargs: Any) -> None:
+        """Register a binary sensor with the alert monitor."""
+        self._coordinator.alert_monitor.register_sensor(*args, **kwargs)

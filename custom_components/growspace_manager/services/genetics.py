@@ -64,7 +64,7 @@ async def handle_add_seed_batch(
 ) -> None:
     """Handle the add_seed_batch service call."""
     data = call.data
-    await coordinator.genetics_manager.async_add_seed_batch(
+    await coordinator.services.genetics.async_add_seed_batch(
         strain_name=data[ATTR_STRAIN_NAME],
         breeder=data[ATTR_BREEDER],
         quantity=data[ATTR_QUANTITY],
@@ -88,7 +88,7 @@ async def handle_update_seed_batch(
     """Handle the update_seed_batch service call."""
     data = call.data
     acq_date = data.get(ATTR_ACQUISITION_DATE)
-    await coordinator.genetics_manager.async_update_seed_batch(
+    await coordinator.services.genetics.async_update_seed_batch(
         batch_id=data[ATTR_BATCH_ID],
         strain_name=data.get(ATTR_STRAIN_NAME),
         breeder=data.get(ATTR_BREEDER),
@@ -111,7 +111,7 @@ async def handle_log_pollination(
     call: ServiceCall,
 ) -> None:
     """Handle the log_pollination service call."""
-    await coordinator.genetics_manager.async_log_pollination(
+    await coordinator.services.genetics.async_log_pollination(
         date=call.data[ATTR_DATE],
         donor_plant_id=call.data[ATTR_DONOR_PLANT_ID],
         receiver_plant_id=call.data[ATTR_RECEIVER_PLANT_ID],
@@ -126,7 +126,7 @@ async def handle_score_phenotype(
     call: ServiceCall,
 ) -> None:
     """Handle the score_phenotype service call."""
-    await coordinator.genetics_manager.async_score_phenotype(
+    await coordinator.services.genetics.async_score_phenotype(
         plant_id=call.data[ATTR_PLANT_ID],
         vigor=call.data.get(ATTR_VIGOR),
         internodal_spacing=call.data.get(ATTR_INTERNODAL_SPACING),
@@ -146,7 +146,7 @@ async def handle_harvest_seeds(
     call: ServiceCall,
 ) -> None:
     """Handle the harvest_seeds service call."""
-    await coordinator.genetics_manager.async_harvest_seeds(
+    await coordinator.services.genetics.async_harvest_seeds(
         event_id=call.data[ATTR_EVENT_ID],
         quantity=call.data[ATTR_QUANTITY],
         notes=call.data.get(ATTR_NOTES, ""),
@@ -162,7 +162,7 @@ async def handle_update_pollination(
     """Handle the update_pollination service call."""
     data = call.data
     date_val = data.get(ATTR_DATE)
-    await coordinator.genetics_manager.async_update_pollination(
+    await coordinator.services.genetics.async_update_pollination(
         event_id=data[ATTR_EVENT_ID],
         date=date_val.isoformat() if date_val is not None else None,
         donor_plant_id=data.get(ATTR_DONOR_PLANT_ID),
@@ -178,7 +178,7 @@ async def handle_delete_pollination(
     call: ServiceCall,
 ) -> None:
     """Handle the delete_pollination service call."""
-    await coordinator.genetics_manager.async_delete_pollination(
+    await coordinator.services.genetics.async_delete_pollination(
         event_id=call.data[ATTR_EVENT_ID],
     )
 
@@ -190,7 +190,7 @@ async def handle_sow_seed(
     call: ServiceCall,
 ) -> None:
     """Handle the sow_seed service call."""
-    await coordinator.genetics_manager.async_sow_seed(
+    await coordinator.services.genetics.async_sow_seed(
         batch_id=call.data[ATTR_BATCH_ID],
         plant_id=call.data[ATTR_PLANT_ID],
     )
@@ -203,7 +203,7 @@ async def handle_set_plant_sex(
     call: ServiceCall,
 ) -> None:
     """Handle the set_plant_sex service call."""
-    await coordinator.genetics_manager.async_set_plant_sex(
+    await coordinator.services.genetics.async_set_plant_sex(
         plant_id=call.data[ATTR_PLANT_ID],
         sex=call.data[ATTR_SEX],
     )
@@ -216,7 +216,7 @@ async def handle_unlink_seed_batch(
     call: ServiceCall,
 ) -> None:
     """Handle the unlink_seed_batch service call."""
-    await coordinator.genetics_manager.async_unlink_seed_batch(
+    await coordinator.services.genetics.async_unlink_seed_batch(
         plant_id=call.data[ATTR_PLANT_ID],
     )
 

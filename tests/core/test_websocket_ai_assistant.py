@@ -552,10 +552,8 @@ async def test_get_ai_alerts_returns_filtered_alerts(
         websocket_get_ai_alerts,
     )
 
-    alert_monitor = MagicMock()
-    alert_monitor.get_alerts.return_value = [{"id": "a1", "type": "stress"}]
     coordinator = MagicMock()
-    coordinator.alert_monitor = alert_monitor
+    coordinator.services.notifications.get_alerts.return_value = [{"id": "a1", "type": "stress"}]
 
     with patch(
         "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
@@ -569,7 +567,7 @@ async def test_get_ai_alerts_returns_filtered_alerts(
         }
         await websocket_get_ai_alerts(MagicMock(), mock_connection, msg)
 
-    alert_monitor.get_alerts.assert_called_once_with(
+    coordinator.services.notifications.get_alerts.assert_called_once_with(
         growspace_id="tent1", alert_type="stress"
     )
     result = mock_connection.send_result.call_args[0][1]
@@ -614,10 +612,8 @@ async def test_resolve_ai_alert_alert_not_found_sends_error(
         websocket_resolve_ai_alert,
     )
 
-    alert_monitor = MagicMock()
-    alert_monitor.resolve_alert = AsyncMock(return_value=False)
     coordinator = MagicMock()
-    coordinator.alert_monitor = alert_monitor
+    coordinator.services.notifications.resolve_alert = AsyncMock(return_value=False)
 
     with patch(
         "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
@@ -643,10 +639,8 @@ async def test_resolve_ai_alert_success(
         websocket_resolve_ai_alert,
     )
 
-    alert_monitor = MagicMock()
-    alert_monitor.resolve_alert = AsyncMock(return_value=True)
     coordinator = MagicMock()
-    coordinator.alert_monitor = alert_monitor
+    coordinator.services.notifications.resolve_alert = AsyncMock(return_value=True)
 
     with patch(
         "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
@@ -660,7 +654,7 @@ async def test_resolve_ai_alert_success(
         }
         await websocket_resolve_ai_alert(MagicMock(), mock_connection, msg)
 
-    alert_monitor.resolve_alert.assert_awaited_once_with("alert-xyz", notes="All fixed")
+    coordinator.services.notifications.resolve_alert.assert_awaited_once_with("alert-xyz", notes="All fixed")
     result = mock_connection.send_result.call_args[0][1]
     assert result == {"success": True, "alert_id": "alert-xyz"}
 

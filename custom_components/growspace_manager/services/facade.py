@@ -19,6 +19,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
 from .config_facade import ConfigFacade
+from .genetics_facade import GeneticsFacade
 from .growspace_facade import GrowspaceFacade
 from .notifications_facade import NotificationsFacade
 from .plant_facade import PlantFacade
@@ -49,6 +50,7 @@ class ServiceFacade:
         self.plants = PlantFacade(coordinator)
         self.config = ConfigFacade(coordinator)
         self.notifications = NotificationsFacade(coordinator)
+        self.genetics = GeneticsFacade(coordinator)
 
     # -------------------------------------------------------------------------
     # Infrastructure

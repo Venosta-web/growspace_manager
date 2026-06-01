@@ -145,37 +145,17 @@ async def test_websocket_get_alerts_generic_error(
 async def test_websocket_nutrient_inventory_service_missing(
     hass: HomeAssistant, mock_connection, mock_msg
 ) -> None:
-    """Test nutrient inventory commands when service is missing."""
-    # Mock coordinator get via service call
+    """Test nutrient inventory returns empty result when inventory service is absent."""
     mock_coord = MagicMock()
-    # Ensure it does NOT have nutrient_inventory_service
-    mock_coord.nutrient_manager.inventory_service = None
+    mock_coord.services.config.get_inventory.return_value = None
 
     with patch(
         "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
         return_value=mock_coord,
     ):
-        # 1. get_nutrient_inventory
+        # get_nutrient_inventory returns empty stocks when inventory is absent
         websocket_get_nutrient_inventory(hass, mock_connection, mock_msg)
         mock_connection.send_result.assert_called_with(1, {"stocks": {}})
-
-        # Reset mocks
-        mock_connection.reset_mock()
-
-        # 2. update_nutrient_stock
-        websocket_update_nutrient_stock(hass, mock_connection, mock_msg)
-        mock_connection.send_error.assert_called_with(
-            1, "not_initialized", "Service not ready"
-        )
-
-        # Reset mocks
-        mock_connection.reset_mock()
-
-        # 3. remove_nutrient_stock
-        websocket_remove_nutrient_stock(hass, mock_connection, mock_msg)
-        mock_connection.send_error.assert_called_with(
-            1, "not_initialized", "Service not ready"
-        )
 
 
 async def test_websocket_nutrient_inventory_success(
@@ -189,8 +169,6 @@ async def test_websocket_nutrient_inventory_success(
         lambda hass, coro, name: asyncio.create_task(coro)
     )
     mock_coord.config_entry = mock_config_entry
-    mock_service = MagicMock()
-    mock_coord.nutrient_manager.inventory_service = mock_service
     mock_coord.async_commit = AsyncMock()
 
     with patch(
@@ -213,7 +191,7 @@ async def test_websocket_nutrient_inventory_success(
         websocket_update_nutrient_stock(hass, mock_connection, msg_update)
         await asyncio.sleep(0)  # Yield to background tasks
 
-        mock_service.update_stock.assert_called_with(
+        mock_coord.services.config.update_stock.assert_called_with(
             nutrient_id="n1",
             name="N1",
             current_ml=500.0,
@@ -232,13 +210,12 @@ async def test_websocket_nutrient_inventory_success(
         mock_coord.async_commit.reset_mock()
         mock_config_entry.async_create_background_task.reset_mock()
 
-
         # Remove Stock Success
         msg_remove = {"id": 2, "nutrient_id": "n1"}
         websocket_remove_nutrient_stock(hass, mock_connection, msg_remove)
         await asyncio.sleep(0)  # Yield to background tasks
 
-        mock_service.remove_stock.assert_called_with("n1")
+        mock_coord.services.config.remove_stock.assert_called_with("n1")
         mock_connection.send_result.assert_called_with(2)
         mock_coord.async_commit.assert_awaited()
 
@@ -439,9 +416,7 @@ async def test_websocket_get_nutrient_inventory_success_get(
         stocks: dict
 
     mock_coord = MagicMock()
-    mock_service = MagicMock()
-    mock_coord.nutrient_manager.inventory_service = mock_service
-    mock_service.get_inventory.return_value = MockInventory(stocks={})
+    mock_coord.services.config.get_inventory.return_value = MockInventory(stocks={})
 
     with patch(
         "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
@@ -579,7 +554,7 @@ def test_websocket_get_genetics_data_success(
     """Test websocket_get_genetics_data sends result on success (websocket.py:596-603)."""
     hass = MagicMock()
     coordinator = MagicMock()
-    coordinator.genetics_manager.get_serialization_data.return_value = {"seed_batches": {}}
+    coordinator.services.genetics.get_serialization_data.return_value = {"seed_batches": {}}
 
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",

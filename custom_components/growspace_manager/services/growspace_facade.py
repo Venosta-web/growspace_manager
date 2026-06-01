@@ -562,6 +562,30 @@ class GrowspaceFacade:
             f"validate_plants_{growspace_id}",
         )
 
+    # -------------------------------------------------------------------------
+    # Subsystem coordinator access
+    # -------------------------------------------------------------------------
+
+    def get_irrigation_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the irrigation coordinator for a growspace, or None."""
+        return self._coordinator.subsystem_manager.irrigation_coordinators.get(
+            growspace_id
+        )
+
+    def get_dehumidifier_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the dehumidifier coordinator for a growspace, or None."""
+        return self._coordinator.subsystem_manager.dehumidifier_coordinators.get(
+            growspace_id
+        )
+
+    def calculate_biological_metrics(
+        self, growspace_id: str, *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Calculate biological metrics for a growspace via the environment analyzer."""
+        return self._coordinator.environment_analyzer.calculate_biological_metrics(
+            *args, **kwargs
+        )
+
     async def update_options(self, options: dict[str, Any]) -> None:
         """Update integration options and save."""
         if hasattr(self._coordinator, "options"):
