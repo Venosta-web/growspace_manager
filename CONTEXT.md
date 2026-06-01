@@ -103,3 +103,23 @@ Public contract emitted by `_serialize_alert()` and consumed by the card's `Tria
 Computed field added at serialization time. Maps `alert_type` to `severity`:
 - `"stress"` → `"danger"` — plant stress is happening now, requires immediate action
 - `"mold"` → `"warning"` — mold conditions are favorable (probabilistic), warrants watching
+
+## Circulation Fan Controller
+
+**CirculationFanController**
+An optional per-growspace subsystem that drives all `circulation_fan_entities` to a computed speed percentage on a fixed tick (default 10 s). Speed is always clamped to the user-defined `[min_speed, max_speed]` range. The controller has two independent layers that are always composed: a **Regulation Layer** and a **Dynamic Wind Layer**.
+
+**Regulation Layer**
+Exactly one regulation mode is active at a time: `humidity`, `temperature`, or `vpd`. Each mode uses linear mapping: below `(target − tolerance)` → `min_speed`; above `(target + tolerance)` → `max_speed`; inside the band → linearly interpolated. The grower configures `target` and `tolerance` per mode.
+
+**VPD Mode Temperature Safety Override**
+When regulation mode is `vpd`, two additional thresholds apply: `critical_temp_low` and `critical_temp_high`. If the temperature sensor reading breaches either threshold, the override activates: high-temp breach drives fans to `max_speed`; low-temp breach drives fans to `min_speed`. The override remains active until the temperature returns within bounds plus `critical_temp_hysteresis`. While active, the override replaces the VPD regulation output entirely.
+
+**Dynamic Wind Layer**
+Runs in parallel with the Regulation Layer regardless of mode. Adds a sinusoidal ±offset to the regulation speed: `offset = wind_amplitude_pct × sin(2π × elapsed_seconds / wind_period_seconds)`. The final speed after adding the offset is clamped to `[min_speed, max_speed]`. The grower configures `wind_period_seconds` (default 60) and `wind_amplitude_pct` (default 10).
+
+**CirculationFanConfig**
+The dataclass stored on `EnvironmentConfig` that holds all fan controller settings: `enabled`, `regulation_mode`, `min_speed`, `max_speed`, per-mode `target` and `tolerance`, `critical_temp_low`, `critical_temp_high`, `critical_temp_hysteresis`, `wind_enabled`, `wind_period_seconds`, `wind_amplitude_pct`. Absent or `enabled=False` means no fan control.
+
+**Fan Speed Composition**
+`final_speed = clamp(regulation_speed + wind_offset, min_speed, max_speed)` where `regulation_speed` is the output of the active regulation mode (or the safety override when active), and `wind_offset` is the sine term (zero when `wind_enabled=False`).
