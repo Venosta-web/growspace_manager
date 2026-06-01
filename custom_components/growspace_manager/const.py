@@ -152,6 +152,7 @@ CONF_MIN_SOURCE_AIR_TEMP = "minimum_source_air_temperature"
 CONF_CONFIGURE_DEHUMIDIFIER = "configure_dehumidifier"
 CONF_CONFIGURE_HUMIDIFIER = "configure_humidifier"
 CONF_CONFIGURE_ADVANCED = "configure_advanced"
+CONF_CONFIGURE_FAN_CONTROLLER = "configure_fan_controller"
 CONF_LST_OFFSET = "lst_offset"
 
 # Mappings for Bayesian Evaluator

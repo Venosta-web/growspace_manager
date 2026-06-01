@@ -190,6 +190,7 @@ class OptionsFlowHandler(OptionsFlow):
         self.selected_notification_id: str | None = None
         self.selected_growspace_id: str | None = None
         self.env_config_step1: dict[str, Any] | None = None
+        self.fan_config_step1: dict[str, Any] = {}
         self.selected_plant_id: str | None = None
         self.selected_strain_id: str | None = None
         self._env_handler: EnvironmentConfigHandler | None = None
@@ -391,6 +392,36 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Delegate dehumidifier configuration to the handler."""
         return await self.env_handler.async_step_configure_dehumidifier(user_input)
+
+    async def async_step_configure_fan_controller(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan controller configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_controller(user_input)
+
+    async def async_step_configure_fan_vpd(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan VPD configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_vpd(user_input)
+
+    async def async_step_configure_fan_humidity(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan humidity configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_humidity(user_input)
+
+    async def async_step_configure_fan_temperature(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan temperature configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_temperature(user_input)
+
+    async def async_step_configure_fan_wind(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan wind configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_wind(user_input)
 
     async def async_step_configure_advanced_bayesian(
         self, user_input: dict[str, Any] | None = None
