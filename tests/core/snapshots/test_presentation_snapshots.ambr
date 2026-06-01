@@ -9,6 +9,24 @@
       }),
       'camera_entities': list([
       ]),
+      'circulation_fan_config': dict({
+        'critical_temp_high': None,
+        'critical_temp_hysteresis': 1.0,
+        'critical_temp_low': None,
+        'enabled': False,
+        'humidity_target': 60.0,
+        'humidity_tolerance': 5.0,
+        'max_speed': 100,
+        'min_speed': 0,
+        'regulation_mode': <FanRegulationMode.VPD: 'vpd'>,
+        'temperature_target': 25.0,
+        'temperature_tolerance': 2.0,
+        'vpd_target': 1.0,
+        'vpd_tolerance': 0.2,
+        'wind_amplitude_pct': 10,
+        'wind_enabled': False,
+        'wind_period_seconds': 60,
+      }),
       'circulation_fan_entities': list([
       ]),
       'dehumidifier_entities': list([

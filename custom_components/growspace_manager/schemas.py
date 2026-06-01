@@ -108,6 +108,7 @@ from .const import (
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DATE_FIELDS,
+    FanRegulationMode,
     PLANT_STAGES,
 )
 from .validation import valid_date_or_none, valid_growspace_id
@@ -665,6 +666,28 @@ SET_HUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
         vol.Required("enabled"): bool,
+    }
+)
+
+CONFIGURE_CIRCULATION_FAN_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Required("enabled"): bool,
+        vol.Required("regulation_mode"): vol.In([m.value for m in FanRegulationMode]),
+        vol.Required("min_speed"): vol.All(vol.Coerce(int), vol.Range(min=0, max=99)),
+        vol.Required("max_speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+        vol.Required("vpd_target"): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=3.0)),
+        vol.Required("vpd_tolerance"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
+        vol.Required("humidity_target"): vol.All(vol.Coerce(float), vol.Range(min=20, max=90)),
+        vol.Required("humidity_tolerance"): vol.All(vol.Coerce(float), vol.Range(min=1, max=20)),
+        vol.Required("temperature_target"): vol.All(vol.Coerce(float), vol.Range(min=15, max=35)),
+        vol.Required("temperature_tolerance"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10)),
+        vol.Optional("critical_temp_low"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=10, max=40))),
+        vol.Optional("critical_temp_high"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=10, max=50))),
+        vol.Required("critical_temp_hysteresis"): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=5.0)),
+        vol.Required("wind_enabled"): bool,
+        vol.Required("wind_period_seconds"): vol.All(vol.Coerce(int), vol.Range(min=10, max=600)),
+        vol.Required("wind_amplitude_pct"): vol.All(vol.Coerce(int), vol.Range(min=5, max=50)),
     }
 )
 

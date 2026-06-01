@@ -584,6 +584,7 @@ class GrowspaceService(StrEnum):
     ANALYZE_ALL_GROWSPACES = "analyze_all_growspaces"
     PRINT_LABEL = "print_label"
     CONFIGURE_ENVIRONMENT = "configure_environment"
+    CONFIGURE_CIRCULATION_FAN = "configure_circulation_fan"
     REMOVE_ENVIRONMENT = "remove_environment"
     SET_DEHUMIDIFIER_CONTROL = "set_dehumidifier_control"
     SET_HUMIDIFIER_CONTROL = "set_humidifier_control"

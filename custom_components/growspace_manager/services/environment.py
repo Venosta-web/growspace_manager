@@ -40,15 +40,18 @@ from custom_components.growspace_manager.const import (
     CONF_SUBSTRATE_TEMP_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
+    FanRegulationMode,
     GrowspaceService,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
+    CirculationFanConfig,
     EnvironmentConfig,
     IrrigationTank,
     SensorGroup,
 )
 from custom_components.growspace_manager.schemas import (
+    CONFIGURE_CIRCULATION_FAN_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
@@ -266,6 +269,51 @@ async def handle_set_humidifier_control(
     _LOGGER.info("Humidifier control %s for '%s'", status, growspace.name)
 
 
+async def handle_configure_circulation_fan(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the configure_circulation_fan service call."""
+    growspace_id = call.data.get("growspace_id")
+
+    if growspace_id not in coordinator.growspaces:
+        error_msg = f"Growspace '{growspace_id}' not found"
+        _LOGGER.error(error_msg)
+        raise ServiceValidationError(error_msg)
+
+    growspace = coordinator.growspaces[growspace_id]
+
+    fan_cfg = CirculationFanConfig(
+        enabled=bool(call.data.get("enabled", False)),
+        regulation_mode=FanRegulationMode(call.data.get("regulation_mode", FanRegulationMode.VPD)),
+        min_speed=int(call.data.get("min_speed", 0)),
+        max_speed=int(call.data.get("max_speed", 100)),
+        vpd_target=float(call.data.get("vpd_target", 1.0)),
+        vpd_tolerance=float(call.data.get("vpd_tolerance", 0.2)),
+        humidity_target=float(call.data.get("humidity_target", 60.0)),
+        humidity_tolerance=float(call.data.get("humidity_tolerance", 5.0)),
+        temperature_target=float(call.data.get("temperature_target", 25.0)),
+        temperature_tolerance=float(call.data.get("temperature_tolerance", 2.0)),
+        critical_temp_low=call.data.get("critical_temp_low"),
+        critical_temp_high=call.data.get("critical_temp_high"),
+        critical_temp_hysteresis=float(call.data.get("critical_temp_hysteresis", 1.0)),
+        wind_enabled=bool(call.data.get("wind_enabled", False)),
+        wind_period_seconds=int(call.data.get("wind_period_seconds", 60)),
+        wind_amplitude_pct=int(call.data.get("wind_amplitude_pct", 10)),
+    )
+
+    if growspace.environment_config is None:
+        growspace.environment_config = EnvironmentConfig()
+
+    growspace.environment_config.circulation_fan_config = fan_cfg
+
+    await coordinator.services.save()
+    await coordinator.services.request_refresh()
+
+    _LOGGER.info("Circulation fan controller configured for '%s'", growspace.name)
+
+
 SERVICES = [
     ServiceDefinition(
         GrowspaceService.CONFIGURE_ENVIRONMENT,
@@ -286,5 +334,10 @@ SERVICES = [
         GrowspaceService.SET_HUMIDIFIER_CONTROL,
         handle_set_humidifier_control,
         SET_HUMIDIFIER_CONTROL_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.CONFIGURE_CIRCULATION_FAN,
+        handle_configure_circulation_fan,
+        CONFIGURE_CIRCULATION_FAN_SCHEMA,
     ),
 ]

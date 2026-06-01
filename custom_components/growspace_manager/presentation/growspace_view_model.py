@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+from dataclasses import asdict
 from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
@@ -610,5 +611,9 @@ class GrowspaceViewModelBuilder:
             ]
         else:
             attributes["sensor_groups"] = []
+
+        # Circulation fan controller config — must be included so the frontend
+        # dialog re-opens with the persisted enabled state (not the default False).
+        attributes["circulation_fan_config"] = asdict(env_config.circulation_fan_config)
 
         return attributes
