@@ -13,14 +13,13 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 import voluptuous as vol
 
-from homeassistant.config_entries import HANDLERS
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import selector
-
 from custom_components.growspace_manager.config_flow import (
     ConfigFlow,
     OptionsFlowHandler,
+)
+from custom_components.growspace_manager.config_handlers import AbortFlow
+from custom_components.growspace_manager.config_handlers.fan_controller_handler import (
+    FanControllerHandler,
 )
 from custom_components.growspace_manager.config_handlers.growspace_config_handler import (
     GrowspaceConfigHandler,
@@ -38,14 +37,16 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     IrrigationConfig,
 )
-from tests.common import MockConfigEntry
+from homeassistant.config_entries import HANDLERS
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import selector
+from tests.common import MockConfigEntry  # noqa: TID251
 
 
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
-    from unittest.mock import MagicMock, AsyncMock, PropertyMock
-    from custom_components.growspace_manager.services.facade import ServiceFacade
-
+    """Mock coordinator for testing config flows."""
     coordinator = MagicMock()
     coordinator.hass = hass
     coordinator.growspaces = {}
@@ -559,7 +560,7 @@ async def test_options_flow_manage_growspaces_back(
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
 
-    flow._get_main_menu_schema = lambda: vol.Schema({vol.Required("action"): str})
+    flow._get_main_menu_schema = lambda: vol.Schema({vol.Required("action"): str})  # noqa: SLF001
     # Provide a **real schema**, not a Mock
 
     # Now call the step
@@ -2982,7 +2983,7 @@ async def test_options_flow_irrigation_save_clears_pumps(
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.selected_growspace_id = "gs1"
-    flow._current_options = {}
+    flow._current_options = {}  # noqa: SLF001
 
     # User input with NO pump entities (simulating clearing them)
     user_input = {
@@ -3047,7 +3048,7 @@ async def test_options_flow_manage_plants_back(
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._get_main_menu_schema = Mock(return_value=vol.Schema({}))
+    flow._get_main_menu_schema = Mock(return_value=vol.Schema({}))  # noqa: SLF001
 
     result = await flow.async_step_manage_plants(user_input={"action": "back"})
     assert result["type"] == FlowResultType.FORM
@@ -3374,7 +3375,7 @@ async def test_options_flow_manage_strain_library_back(
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._get_main_menu_schema = Mock(return_value=vol.Schema({}))
+    flow._get_main_menu_schema = Mock(return_value=vol.Schema({}))  # noqa: SLF001
 
     result = await flow.async_step_manage_strain_library(user_input={"action": "back"})
     assert result["type"] == FlowResultType.FORM
@@ -3473,7 +3474,7 @@ async def test_options_flow_strain_library_delete_success(
     mock_coordinator.services.config.strain_library.remove_strain = AsyncMock(
         return_value=None
     )
-    flow._get_strain_library_menu_schema = Mock(return_value=vol.Schema({}))
+    flow._get_strain_library_menu_schema = Mock(return_value=vol.Schema({}))  # noqa: SLF001
 
     result = await flow.async_step_manage_strain_library(
         user_input={"action": "delete_strain", "strain_id": "s1"}
@@ -3522,3 +3523,165 @@ async def test_options_flow_configure_general_submit(
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     assert flow.current_options["show_sidebar"] is False
+
+
+# ============================================================================
+# Additional Tests for 100% Coverage of config_flow.py
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_fan_controller_handler_property(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test that the fan_controller_handler property returns a FanControllerHandler."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    assert flow.fan_controller_handler is not None
+    assert isinstance(flow.fan_controller_handler, FanControllerHandler)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method_name", "delegated_method_name"),
+    [
+        ("async_step_configure_fan_controller", "async_step_configure_fan_controller"),
+        ("async_step_configure_fan_vpd", "async_step_configure_fan_vpd"),
+        ("async_step_configure_fan_humidity", "async_step_configure_fan_humidity"),
+        ("async_step_configure_fan_temperature", "async_step_configure_fan_temperature"),
+        ("async_step_configure_fan_wind", "async_step_configure_fan_wind"),
+    ],
+)
+async def test_delegated_fan_steps(
+    hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    method_name: str,
+    delegated_method_name: str,
+) -> None:
+    """Test delegating fan controller steps to EnvironmentConfigHandler."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    # Mock the environment config handler and its delegated method
+    mock_env_handler = MagicMock()
+    mock_delegated = AsyncMock(return_value={"type": FlowResultType.FORM})
+    setattr(mock_env_handler, delegated_method_name, mock_delegated)
+    flow._env_handler = mock_env_handler  # noqa: SLF001
+
+    user_input = {"some_key": "some_value"}
+    method = getattr(flow, method_name)
+    result = await method(user_input)
+
+    assert result == {"type": FlowResultType.FORM}
+    mock_delegated.assert_called_once_with(user_input)
+
+
+@pytest.mark.asyncio
+async def test_async_step_manage_breeder_blacklist(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test delegating manage_breeder_blacklist to the StrainConfigHandler."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    mock_strain_handler = MagicMock()
+    mock_delegated = AsyncMock(return_value={"type": FlowResultType.FORM})
+    mock_strain_handler.async_step_manage_breeder_blacklist = mock_delegated
+    flow._strain_handler = mock_strain_handler  # noqa: SLF001
+
+    user_input = {"blacklist": ["Breeder A"]}
+    result = await flow.async_step_manage_breeder_blacklist(user_input)
+
+    assert result == {"type": FlowResultType.FORM}
+    mock_delegated.assert_called_once_with(user_input)
+
+
+@pytest.mark.asyncio
+async def test_async_step_save_and_finish_abort_flow(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test that async_step_save_and_finish handles AbortFlow exception."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    mock_sensors_handler = MagicMock()
+    mock_sensors_handler.get_coordinator = MagicMock(
+        side_effect=AbortFlow(reason="test_abort_reason")
+    )
+    flow._env_sensors_handler = mock_sensors_handler  # noqa: SLF001
+
+    result = await flow.async_step_save_and_finish()
+
+    assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "test_abort_reason"
+
+
+@pytest.mark.asyncio
+async def test_async_step_save_and_finish_growspace_not_found(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test that async_step_save_and_finish aborts when the selected growspace is not found."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow.selected_growspace_id = "nonexistent_growspace"
+
+    # Make get_growspace return None (not found)
+    mock_coordinator.services.growspaces.get_growspace.return_value = None
+
+    result = await flow.async_step_save_and_finish()
+
+    assert result.get("type") == FlowResultType.ABORT
+    assert result.get("reason") == "growspace_not_found"
+
+
+@pytest.mark.asyncio
+async def test_async_step_save_and_finish_success(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """Test successful save and finish path in options flow."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow.selected_growspace_id = "test_growspace_id"
+    flow.env_config_step1 = {"temp_sensor": "sensor.temp"}
+
+    growspace = MagicMock()
+    mock_coordinator.growspaces["test_growspace_id"] = growspace
+
+    mock_sensors_handler = MagicMock()
+    mock_sensors_handler.get_coordinator = MagicMock(return_value=mock_coordinator)
+    mock_save_and_finish = AsyncMock(return_value={"type": FlowResultType.CREATE_ENTRY})
+    mock_sensors_handler._async_save_and_finish = mock_save_and_finish  # noqa: SLF001
+    flow._env_sensors_handler = mock_sensors_handler  # noqa: SLF001
+
+    result = await flow.async_step_save_and_finish()
+
+    assert result == {"type": FlowResultType.CREATE_ENTRY}
+    mock_save_and_finish.assert_called_once_with(
+        growspace, {"temp_sensor": "sensor.temp"}
+    )
+
