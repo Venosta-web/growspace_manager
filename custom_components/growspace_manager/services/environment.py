@@ -65,6 +65,35 @@ from ._definition import ServiceDefinition
 _LOGGER = logging.getLogger(__name__)
 
 
+def _parse_fan_config(
+    raw: dict | None,
+    existing_env: object | None,
+) -> CirculationFanConfig:
+    """Return a CirculationFanConfig from a raw dict payload, falling back to the existing config."""
+    if raw:
+        return CirculationFanConfig(
+            enabled=bool(raw.get("enabled", False)),
+            regulation_mode=FanRegulationMode(raw.get("regulation_mode", FanRegulationMode.VPD)),
+            min_speed=int(raw.get("min_speed", 0)),
+            max_speed=int(raw.get("max_speed", 100)),
+            vpd_target=float(raw.get("vpd_target", 1.0)),
+            vpd_tolerance=float(raw.get("vpd_tolerance", 0.2)),
+            humidity_target=float(raw.get("humidity_target", 60.0)),
+            humidity_tolerance=float(raw.get("humidity_tolerance", 5.0)),
+            temperature_target=float(raw.get("temperature_target", 25.0)),
+            temperature_tolerance=float(raw.get("temperature_tolerance", 2.0)),
+            critical_temp_low=raw.get("critical_temp_low"),
+            critical_temp_high=raw.get("critical_temp_high"),
+            critical_temp_hysteresis=float(raw.get("critical_temp_hysteresis", 1.0)),
+            wind_enabled=bool(raw.get("wind_enabled", False)),
+            wind_period_seconds=int(raw.get("wind_period_seconds", 60)),
+            wind_amplitude_pct=int(raw.get("wind_amplitude_pct", 10)),
+        )
+    if existing_env is not None:
+        return existing_env.circulation_fan_config
+    return CirculationFanConfig()
+
+
 async def handle_configure_environment(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -173,6 +202,10 @@ async def handle_configure_environment(
         power_sensors=call.data.get(CONF_POWER_SENSORS, []),
         energy_sensors=call.data.get(CONF_ENERGY_SENSORS, []),
         electricity_cost_per_kwh=call.data.get(CONF_ELECTRICITY_COST),
+        circulation_fan_config=_parse_fan_config(
+            call.data.get("circulation_fan_config"),
+            growspace.environment_config,
+        ),
     )
 
     # Store in growspace
