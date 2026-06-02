@@ -299,17 +299,17 @@ class GrowspaceFacade:
         await irrigation_coord.async_remove_schedule_item(schedule_key, time_str)
 
     async def _get_irrigation_coordinator(self, growspace_id: str) -> Any:
-        if growspace_id not in self._coordinator.irrigation_coordinators:
+        if growspace_id not in self._coordinator.subsystem_manager.irrigation_coordinators:
             growspace = self._coordinator.growspaces.get(growspace_id)
             if growspace:
                 await self._coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
                     growspace_id, growspace
                 )
-            if growspace_id not in self._coordinator.irrigation_coordinators:
+            if growspace_id not in self._coordinator.subsystem_manager.irrigation_coordinators:
                 raise ServiceValidationError(
                     f"Growspace '{growspace_id}' not found or has no irrigation setup."
                 )
-        return self._coordinator.irrigation_coordinators[growspace_id]
+        return self._coordinator.subsystem_manager.irrigation_coordinators[growspace_id]
 
     async def water_growspace(
         self,
@@ -560,6 +560,30 @@ class GrowspaceFacade:
                 growspace_id, new_rows, new_plants_per_row
             ),
             f"validate_plants_{growspace_id}",
+        )
+
+    # -------------------------------------------------------------------------
+    # Subsystem coordinator access
+    # -------------------------------------------------------------------------
+
+    def get_irrigation_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the irrigation coordinator for a growspace, or None."""
+        return self._coordinator.subsystem_manager.irrigation_coordinators.get(
+            growspace_id
+        )
+
+    def get_dehumidifier_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the dehumidifier coordinator for a growspace, or None."""
+        return self._coordinator.subsystem_manager.dehumidifier_coordinators.get(
+            growspace_id
+        )
+
+    def calculate_biological_metrics(
+        self, growspace_id: str, *args: Any, **kwargs: Any
+    ) -> dict[str, Any]:
+        """Calculate biological metrics for a growspace via the environment analyzer."""
+        return self._coordinator.environment_analyzer.calculate_biological_metrics(
+            *args, **kwargs
         )
 
     async def update_options(self, options: dict[str, Any]) -> None:

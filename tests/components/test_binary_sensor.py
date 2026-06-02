@@ -19,6 +19,7 @@ from custom_components.growspace_manager.binary_sensor import (
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.models import EnvironmentConfig, GrowspaceType
 from custom_components.growspace_manager.notification_manager import NotificationManager
+from custom_components.growspace_manager.notification_rewriter import AINotificationRewriter
 from custom_components.growspace_manager.strategies.curing import (
     CuringEvaluatorStrategy,
 )
@@ -334,7 +335,7 @@ async def test_notification_sending(
     set_sensor_state(hass, "light.grow_light", "on")
     await hass.async_block_till_done()
     # Use real NotificationManager to allow awaiting its internal methods
-    sensor.notification_manager = NotificationManager(hass, mock_coordinator)
+    sensor.notification_manager = NotificationManager(hass, mock_coordinator, AINotificationRewriter(hass))
     # Mock update_pending_alert to verify it was called by the sensor
     sensor.notification_manager.update_pending_alert = MagicMock()
 
@@ -519,7 +520,7 @@ def testgenerate_notification_message_truncation(
         mock_coordinator.growspaces["gs1"].environment_config,
     )
     # Use real NotificationManager to test truncation logic
-    sensor.notification_manager = NotificationManager(hass, mock_coordinator)
+    sensor.notification_manager = NotificationManager(hass, mock_coordinator, AINotificationRewriter(hass))
 
     sensor._reasons = [
         (0.9, "VPD out of range"),
@@ -662,7 +663,7 @@ async def test_bayesian_stress_sensor_granular(
     type(sensor).name = PropertyMock(return_value="Stress Sensor")
 
     # Use real NotificationManager to allow awaiting its internal methods
-    sensor.notification_manager = NotificationManager(hass, mock_coordinator)
+    sensor.notification_manager = NotificationManager(hass, mock_coordinator, AINotificationRewriter(hass))
     # But mock the update_pending_alert call to verify it was called by the sensor
     sensor.notification_manager.update_pending_alert = MagicMock()
 
@@ -2071,7 +2072,9 @@ class TestBayesianEnvironmentSensor:
         """Test that no notification is sent if disabled in the coordinator."""
         # Use a real NotificationManager for this test to verify logic
         base_sensor.notification_manager = NotificationManager(
-            base_sensor.hass, base_sensor.coordinator
+            base_sensor.hass,
+            base_sensor.coordinator,
+            AINotificationRewriter(base_sensor.hass),
         )
 
         base_sensor.coordinator.growspaces["gs1"].notification_target = "notify.test"

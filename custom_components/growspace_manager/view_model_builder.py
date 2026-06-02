@@ -56,12 +56,12 @@ class ViewModelBuilder:
     @property
     def notifications_sent(self) -> dict[str, dict[str, dict[str, bool]]]:
         """Get notifications sent from coordinator."""
-        return self.coordinator.notifications_sent
+        return self.coordinator.notification_state.sent
 
     @property
     def notifications_enabled(self) -> dict[str, bool]:
         """Get notifications enabled from coordinator."""
-        return self.coordinator.notifications_enabled
+        return self.coordinator.notification_state.enabled
 
     def build_serialized_growspace(
         self, growspace_id: str, preloaded_plants: list[Plant] | None = None
@@ -124,7 +124,8 @@ class ViewModelBuilder:
 
         # Calculate biological metrics via EnvironmentAnalyzer (View Model assembly)
         biological_metrics = (
-            self.coordinator.environment_analyzer.calculate_biological_metrics(
+            self.coordinator.services.growspaces.calculate_biological_metrics(
+                growspace_id,
                 growspace,
                 max_days["max_veg_days"],
                 max_days["max_flower_days"],
@@ -142,14 +143,10 @@ class ViewModelBuilder:
         next_scheduled_cycle: str | None = None
         cycles_today: int = 0
         volume_dispensed_today: float = 0.0
-        if (
-            self.coordinator.subsystem_manager
-            and growspace_id
-            in self.coordinator.subsystem_manager.irrigation_coordinators
-        ):
-            irr_coord = self.coordinator.subsystem_manager.irrigation_coordinators[
-                growspace_id
-            ]
+        irr_coord = self.coordinator.services.growspaces.get_irrigation_coordinator(
+            growspace_id
+        )
+        if irr_coord is not None:
             active_events = irr_coord.active_events
             last_cycle_timestamp = irr_coord.last_cycle_timestamp
             next_scheduled_cycle = irr_coord.next_scheduled_cycle

@@ -79,104 +79,10 @@ async def test_plants_property(hass: HomeAssistant) -> None:
     assert coordinator.plants["p1"] is plant
 
 
-@pytest.mark.asyncio
-async def test_nutrient_presets_property_and_setter(hass: HomeAssistant) -> None:
-    """Test the nutrient_presets property getter (line 170) and setter (line 179)."""
-    coordinator = create_test_coordinator(hass)
-
-    # getter
-    result = coordinator.nutrient_presets
-    assert result is coordinator.nutrient_manager.nutrient_presets
-
-    # setter
-    new_presets: dict[str, NutrientPreset] = {}
-    coordinator.nutrient_presets = new_presets
-    assert coordinator.nutrient_manager.nutrient_presets is new_presets
-
-
-@pytest.mark.asyncio
-async def test_ipm_presets_property_and_setter(hass: HomeAssistant) -> None:
-    """Test the ipm_presets property getter (line 188) and setter (lines 197-198)."""
-    coordinator = create_test_coordinator(hass)
-
-    # getter
-    result = coordinator.ipm_presets
-    assert result is coordinator.ipm_service.ipm_presets
-
-    # setter - must sync both _ipm_service and nutrient_manager
-    new_presets: dict = {}
-    coordinator.ipm_presets = new_presets
-    assert coordinator.ipm_service.ipm_presets is new_presets
-    assert coordinator.nutrient_manager.ipm_presets is new_presets
-
-
-@pytest.mark.asyncio
-async def test_nutrient_inventory_service_property_and_setter(
-    hass: HomeAssistant,
-) -> None:
-    """Test the nutrient_inventory_service getter (line 209) and setter (line 220)."""
-    coordinator = create_test_coordinator(hass)
-
-    # getter
-    result = coordinator.nutrient_inventory_service
-    assert result is coordinator.nutrient_manager.inventory_service
-
-    # setter
-    mock_service = MagicMock()
-    coordinator.nutrient_inventory_service = mock_service
-    assert coordinator.nutrient_manager.inventory_service is mock_service
-
-
-@pytest.mark.asyncio
-async def test_nutrient_inventory_property_and_setter(hass: HomeAssistant) -> None:
-    """Test the nutrient_inventory getter (line 229) and setter (line 238)."""
-    coordinator = create_test_coordinator(hass)
-
-    # getter
-    result = coordinator.nutrient_inventory
-    assert result is coordinator.nutrient_manager.inventory
-
-    # setter
-    inv = NutrientInventory()
-    coordinator.nutrient_inventory = inv
-    assert coordinator.nutrient_manager.inventory is inv
-
-
-@pytest.mark.asyncio
-async def test_notifications_sent_property(hass: HomeAssistant) -> None:
-    """Test the notifications_sent property reads from notification_state."""
-    coordinator = create_test_coordinator(hass)
-    coordinator.notification_state.sent = {"p1": {"veg": {"1": True}}}
-    assert coordinator.notifications_sent is coordinator.notification_state.sent
-
-
-@pytest.mark.asyncio
-async def test_notifications_enabled_property(hass: HomeAssistant) -> None:
-    """Test the notifications_enabled property reads from notification_state."""
-    coordinator = create_test_coordinator(hass)
-    coordinator.notification_state.enabled = {"gs1": True}
-    assert coordinator.notifications_enabled is coordinator.notification_state.enabled
-
-
 # =============================================================================
 # PROPERTIES (lines 132, 152, 161, 188, 209, 229, 291)
 # =============================================================================
 
-
-@pytest.mark.asyncio
-async def test_dehumidifier_coordinators_property(hass: HomeAssistant) -> None:
-    """Test the dehumidifier_coordinators property (line 152)."""
-    coordinator = create_test_coordinator(hass)
-    result = coordinator.dehumidifier_coordinators
-    assert result is coordinator.subsystem_manager.dehumidifier_coordinators
-
-
-@pytest.mark.asyncio
-async def test_ec_ramp_curves_property(hass: HomeAssistant) -> None:
-    """Test the ec_ramp_curves property (line 161)."""
-    coordinator = create_test_coordinator(hass)
-    result = coordinator.ec_ramp_curves
-    assert result is coordinator.nutrient_manager.ec_ramp_curves
 
 
 @pytest.mark.asyncio

@@ -22,6 +22,8 @@ from .const import DB_FILE_STRAIN_LIBRARY
 from .exceptions import GrowspaceError
 from .image_manager import ImageManager
 from .import_export_manager import ImportExportManager
+from .managers.lineage import StrainLineageManager
+from .managers.strain_analytics import StrainAnalyticsManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -125,14 +127,45 @@ class StrainLibrary:
         """
         self.hass = hass
         self._db_path = hass.config.path(DB_FILE_STRAIN_LIBRARY)
-        self._db: aiosqlite.Connection | None = None
-        self.strains: dict[str, dict[str, Any]] = {}
-        self._analytics_cache: dict[str, Any] | None = None
-        self._lineage_cache: dict[str, dict[str, Any]] = {}
+        self._strains: dict[str, dict[str, Any]] = {}
+        self._analytics = StrainAnalyticsManager(self._strains)
+        self._lineage_manager = StrainLineageManager(
+            self._strains, db=None, load_callback=lambda: self.load()
+        )
+        self.__db: aiosqlite.Connection | None = None
         self.image_manager = ImageManager(
             hass, hass.config.path("www", "growspace_manager", "strains")
         )
         self.import_export_manager = ImportExportManager(hass)
+
+    @property
+    def strains(self) -> dict[str, dict[str, Any]]:
+        return self._strains
+
+    @strains.setter
+    def strains(self, value: dict[str, dict[str, Any]]) -> None:
+        self._strains = value
+        self._analytics._strains = value
+        self._analytics.invalidate()
+        self._lineage_manager._strains = value
+        self._lineage_manager.invalidate_cache()
+
+    @property
+    def _db(self) -> aiosqlite.Connection | None:
+        return self.__db
+
+    @_db.setter
+    def _db(self, value: aiosqlite.Connection | None) -> None:
+        self.__db = value
+        self._lineage_manager._db = value
+
+    @property
+    def _lineage_cache(self) -> dict[str, dict[str, Any]]:
+        return self._lineage_manager._lineage_cache
+
+    @_lineage_cache.setter
+    def _lineage_cache(self, value: dict[str, dict[str, Any]]) -> None:
+        self._lineage_manager._lineage_cache = value
 
     async def async_setup(self) -> bool:
         """Set up the database connection and schema.
@@ -462,8 +495,6 @@ class StrainLibrary:
                     )
 
         self.strains = new_strains
-        self._analytics_cache = None  # Invalidate analytics cache
-        self._lineage_cache = {}  # Invalidate lineage cache
         _LOGGER.info("Loaded strain library metadata for %d strains", len(self.strains))
 
     async def save(self) -> None:
@@ -525,7 +556,7 @@ class StrainLibrary:
         )
         await self._db.commit()
         # Invalidate analytics cache
-        self._analytics_cache = None
+        self._analytics.invalidate()
         # Update in-memory cache for immediate sensor use
         if strain in self.strains and phenotype in self.strains[strain]["phenotypes"]:
             self.strains[strain]["phenotypes"][phenotype]["harvests"].append(
@@ -863,7 +894,7 @@ class StrainLibrary:
         elif image_path:
             pheno_data["image_path"] = image_path
         # Invalidate analytics cache because data changed
-        self._analytics_cache = None
+        self._analytics.invalidate()
         # Insert/replace phenotype data
         # Insert/replace phenotype data
         pheno_data = {k: v for k, v in pheno_data.items() if v is not None}
@@ -934,7 +965,7 @@ class StrainLibrary:
     ) -> None:
         """Update metadata for a strain/phenotype."""
         # Invalidate analytics cache
-        self._analytics_cache = None
+        self._analytics.invalidate()
         await self.add_strain(
             strain=strain,
             phenotype=phenotype,
@@ -966,67 +997,12 @@ class StrainLibrary:
         )
 
     async def _rebuild_strain_ancestry(self, strain_name: str) -> None:
-        """Rebuild strain_ancestry rows for strain_name from the in-memory lineage cache.
-
-        Resolves the full LineageNode tree via get_strain_lineage_tree() (which reads
-        StoredParents from the in-memory cache), then rewrites all ancestry rows.
-        Must be called after load() so the cache reflects the latest DB state.
-        """
-        if self._db is None:
-            return
-        cur = await self._db.execute(
-            "SELECT strain_id FROM strains WHERE strain_name = ?", (strain_name,)
-        )
-        row = await cur.fetchone()
-        if row is None:
-            return
-        strain_id = row[0]
-        full_tree = self.get_strain_lineage_tree(strain_name)
-        ancestors = _collect_ancestors(full_tree)
-        await self._db.execute(
-            "DELETE FROM strain_ancestry WHERE descendant_strain_id = ?", (strain_id,)
-        )
-        if ancestors:
-            await self._db.executemany(
-                "INSERT OR REPLACE INTO strain_ancestry"
-                " (ancestor_name, descendant_strain_id, depth, ancestor_url)"
-                " VALUES (?, ?, ?, ?)",
-                [(name, strain_id, depth, url) for name, url, depth in ancestors],
-            )
-        await self._db.commit()
+        await self._lineage_manager._rebuild_strain_ancestry(strain_name)
 
     async def update_strain_lineage_tree(
-        self,
-        strain_name: str,
-        parents: StoredParents,
+        self, strain_name: str, parents: StoredParents
     ) -> str:
-        """Store immediate parents for a strain and re-derive the flat lineage string.
-
-        Args:
-            strain_name: The strain to update.
-            parents: StoredParents flat list with keys 'name' and 'source'.
-                     Maximum 2 entries; extras are silently truncated.
-
-        Returns:
-            The derived flat lineage string (e.g. "OG Kush × Durban Poison").
-        """
-        if self._db is None:
-            _LOGGER.warning("Database not connected, cannot update lineage tree")
-            return ""
-
-        parents = parents[:2]  # max 2 parents
-        flat_lineage = " × ".join(p["name"] for p in parents)
-        tree_json = json.dumps(parents)
-
-        await self._db.execute(
-            "UPDATE strains SET lineage_tree = ?, lineage = ? WHERE strain_name = ?",
-            (tree_json, flat_lineage, strain_name),
-        )
-        await self._db.commit()
-        await self.load()
-        await self._rebuild_strain_ancestry(strain_name)
-        _LOGGER.info("Updated lineage tree for strain '%s'", strain_name)
-        return flat_lineage
+        return await self._lineage_manager.update_strain_lineage_tree(strain_name, parents)
 
     async def async_import_seedfinder_lineage_tree(
         self,
@@ -1034,153 +1010,14 @@ class StrainLibrary:
         tree: dict[str, Any],
         scraper: Any | None = None,
     ) -> None:
-        """Import a full multi-level seedfinder lineage tree.
-
-        Walks every node in the tree, creates stub library entries for ancestors
-        not already in the library, and stores each node's immediate parents so
-        that ``get_strain_lineage_tree`` can resolve the full depth recursively.
-
-        When ``scraper`` is provided, any parent node that has a SeedFinder URL
-        but no children (i.e. the root page didn't expand that branch) is
-        automatically fetched so its own lineage is included.
-
-        The root strain itself must already exist in the library before calling
-        this method (the caller is responsible for that).
-
-        Args:
-            root_strain_name: The root strain whose lineage is being imported.
-            tree: Full lineage tree dict from the Seedfinder scraper
-                  (``{name, parents: [{name, parents: ...}, ...]}``)
-            scraper: Optional SeedfinderScraper used to follow URLs for leaf
-                     parent nodes that have no children in the scraped tree.
-        """
-        if self._db is None:
-            return
-
-        lineage_by_node: dict[str, list[str]] = {}
-        # Collect (name, url) for parent nodes that appear as leaves (no children)
-        # but have a SeedFinder URL we can follow to get their lineage.
-        leaf_parent_urls: dict[str, str] = {}
-
-        def _collect(node: dict[str, Any]) -> None:
-            name = (node.get("name") or "").strip()
-            if not name:
-                return
-            parents = node.get("parents") or []
-            parent_names = [
-                (p.get("name") or "").strip()
-                for p in parents
-                if (p.get("name") or "").strip()
-            ]
-            if parent_names:
-                lineage_by_node[name] = parent_names[:2]
-            for parent in parents:
-                pname = (parent.get("name") or "").strip()
-                purl = (parent.get("url") or "").strip()
-                if pname and purl and not (parent.get("parents") or []):
-                    leaf_parent_urls[pname] = purl
-                _collect(parent)
-
-        _collect(tree)
-
-        # For leaf parents with a known URL, fetch their own lineage page so we
-        # capture branches that SeedFinder didn't expand on the root strain page.
-        if scraper and leaf_parent_urls:
-            for pname, purl in leaf_parent_urls.items():
-                if pname in lineage_by_node:
-                    continue  # already resolved from the initial tree
-                try:
-                    parent_details = await scraper.async_get_strain_details(purl)
-                    if parent_details and parent_details.get("lineage_tree"):
-                        parent_tree = parent_details["lineage_tree"]
-                        parent_tree.setdefault("name", pname)
-                        _collect(parent_tree)
-                        _LOGGER.debug(
-                            "Fetched lineage for leaf parent '%s' from %s", pname, purl
-                        )
-                except (
-                    AttributeError,
-                    KeyError,
-                    ValueError,
-                    ServiceValidationError,
-                    GrowspaceError,
-                ):
-                    _LOGGER.debug("Could not fetch lineage for '%s' at %s", pname, purl)
-
-        if not lineage_by_node:
-            return
-
-        all_names: set[str] = set()
-        for name, parent_names in lineage_by_node.items():
-            all_names.add(name)
-            all_names.update(parent_names)
-
-        for ancestor_name in all_names:
-            if ancestor_name == root_strain_name:
-                continue
-            await self._db.execute(
-                "INSERT OR IGNORE INTO strains (strain_name) VALUES (?)",
-                (ancestor_name,),
-            )
-            await self._db.execute(
-                """
-                INSERT OR IGNORE INTO phenotypes (strain_id, phenotype_name)
-                SELECT strain_id, 'default' FROM strains WHERE strain_name = ?
-                """,
-                (ancestor_name,),
-            )
-
-        for name, parent_names in lineage_by_node.items():
-            library_parents = [{"name": n, "source": "library"} for n in parent_names]
-            flat_lineage = " × ".join(parent_names)
-            await self._db.execute(
-                "UPDATE strains SET lineage_tree = ?, lineage = ? WHERE strain_name = ?",
-                (json.dumps(library_parents), flat_lineage, name),
-            )
-
-        # Mark all ancestor nodes (not the root strain itself) as stubs
-        for ancestor_name in all_names:
-            if ancestor_name == root_strain_name:
-                continue
-            await self._db.execute(
-                "UPDATE strains SET is_stub = 1 WHERE strain_name = ? AND breeder IS NULL",
-                (ancestor_name,),
-            )
-
-        await self._db.commit()
-        await self.load()
-        self._lineage_cache.clear()
-        for name in lineage_by_node:
-            await self._rebuild_strain_ancestry(name)
-        _LOGGER.info(
-            "Imported seedfinder lineage tree for '%s' (%d nodes)",
-            root_strain_name,
-            len(lineage_by_node),
+        await self._lineage_manager.async_import_seedfinder_lineage_tree(
+            root_strain_name, tree, scraper
         )
 
     async def async_update_strain_generation(
         self, strain_name: str, generation: str
     ) -> None:
-        """Write the generation classification tag for a strain.
-
-        Args:
-            strain_name: The strain to update.
-            generation: Classification tag — e.g. "F1", "F2", "F3", "S1", "S2", "BX1", "BX2".
-        """
-        if self._db is None:
-            _LOGGER.warning(
-                "Database not connected, cannot update generation for '%s'", strain_name
-            )
-            return
-        await self._db.execute(
-            "UPDATE strains SET generation = ? WHERE strain_name = ?",
-            (generation, strain_name),
-        )
-        await self._db.commit()
-        if strain_name in self.strains:
-            self.strains[strain_name].setdefault("meta", {})["generation"] = generation
-        self._lineage_cache.clear()
-        _LOGGER.debug("Set generation '%s' for strain '%s'", generation, strain_name)
+        await self._lineage_manager.async_update_strain_generation(strain_name, generation)
 
     def get_strain_lineage_tree(
         self,
@@ -1188,107 +1025,17 @@ class StrainLibrary:
         _seen: frozenset[str] | None = None,
         _depth: int = 0,
     ) -> LineageNode:
-        """Recursively resolve the full lineage tree for a strain from the in-memory cache.
-
-        Reads StoredParents from self.strains (no DB I/O) and builds a nested LineageNode.
-        Stops recursing when a strain is already in the current path (_seen) to prevent
-        infinite loops, or when _depth >= 15.
-
-        Args:
-            strain_name: Strain to resolve.
-            _seen: Strain names already in the current resolution path (cycle detection).
-            _depth: Current recursion depth (hard cap at 15).
-
-        Returns:
-            LineageNode: {name, source, parents: [...LineageNode]}
-        """
-        if _seen is None:
-            if strain_name in self._lineage_cache:
-                return self._lineage_cache[strain_name]
-            _seen = frozenset()
-
-        strain_meta = self.strains.get(strain_name, {}).get("meta", {})
-        node: dict[str, Any] = {
-            "name": strain_name,
-            "source": "library",
-            "parents": [],
-            "generation": strain_meta.get("generation", ""),
-        }
-
-        if _depth >= 15 or strain_name in _seen:
-            return node
-
-        strain_data = self.strains.get(strain_name)
-        if strain_data is None:
-            return node
-
-        parents = strain_data.get("meta", {}).get("lineage_tree") or []
-        next_seen = _seen | {strain_name}
-
-        for parent in parents[:2]:
-            parent_name = parent.get("name", "")
-            parent_phenotype = parent.get("phenotype") or None
-            source = parent.get("source", "manual")
-            if source == "library" and parent_name in self.strains:
-                resolved = self.get_strain_lineage_tree(
-                    parent_name, _seen=next_seen, _depth=_depth + 1
-                )
-                if parent_phenotype:
-                    resolved["phenotype"] = parent_phenotype
-            else:
-                resolved = {"name": parent_name, "source": source, "parents": []}
-                if parent_phenotype:
-                    resolved["phenotype"] = parent_phenotype
-            node["parents"].append(resolved)
-
-        if _depth == 0:
-            self._lineage_cache[strain_name] = node
-
-        return node
+        return self._lineage_manager.get_strain_lineage_tree(strain_name, _seen, _depth)
 
     async def async_get_strains_by_ancestor(
         self, ancestor_name: str
     ) -> list[dict[str, Any]]:
-        """Return all library strains that have ancestor_name anywhere in their lineage.
-
-        Results are ordered by depth (closest first) then strain name.
-        """
-        if self._db is None:
-            return []
-        async with self._db.execute(
-            """
-            SELECT s.strain_id, s.strain_name, s.breeder, sa.depth
-            FROM strain_ancestry sa
-            JOIN strains s ON sa.descendant_strain_id = s.strain_id
-            WHERE sa.ancestor_name = ?
-            ORDER BY sa.depth, s.strain_name
-            """,
-            (ancestor_name,),
-        ) as cursor:
-            return [dict(row) for row in await cursor.fetchall()]
+        return await self._lineage_manager.async_get_strains_by_ancestor(ancestor_name)
 
     async def async_get_shared_ancestors(
         self, strain_ids: list[int]
     ) -> list[dict[str, Any]]:
-        """Return ancestors common to ALL given strains, with the shallowest depth.
-
-        Results are ordered by closest_depth then ancestor_name.
-        """
-        if self._db is None or not strain_ids:
-            return []
-        placeholders = ",".join("?" * len(strain_ids))
-        async with self._db.execute(
-            f"""
-            SELECT ancestor_name, ancestor_url, MIN(depth) as closest_depth
-            FROM strain_ancestry
-            WHERE descendant_strain_id IN ({placeholders})
-            GROUP BY ancestor_name
-            HAVING COUNT(DISTINCT descendant_strain_id) = ?
-            ORDER BY closest_depth, ancestor_name
-            """,  # noqa: S608
-            (*strain_ids, len(strain_ids)),
-        ) as cursor:
-            return [dict(row) for row in await cursor.fetchall()]
+        return await self._lineage_manager.async_get_shared_ancestors(strain_ids)
 
     def get_strain_names(self) -> list[str]:
         """Return all strain names sorted alphabetically (lightweight, no image data)."""
@@ -1402,7 +1149,7 @@ class StrainLibrary:
                 )
                 await self._db.commit()
         # Invalidate cache and reload
-        self._analytics_cache = None
+        self._analytics.invalidate()
         await self.load()
         _LOGGER.info("Removed phenotype %s from strain %s", phenotype, strain)
 
@@ -1434,7 +1181,7 @@ class StrainLibrary:
         await self._db.execute("DELETE FROM strains WHERE strain_id = ?", (strain_id,))
         await self._db.commit()
         # Invalidate cache and reload
-        self._analytics_cache = None
+        self._analytics.invalidate()
         await self.load()
         _LOGGER.info("Removed strain %s from library", strain)
 
@@ -1443,94 +1190,8 @@ class StrainLibrary:
         return self.strains
 
     def get_analytics(self) -> dict[str, Any]:
-        """Calculate and return aggregated analytics for the library.
-
-        The result mirrors what the StrainLibrarySensor previously calculated.
-        """
-        if self._analytics_cache is not None:
-            return self._analytics_cache
-        analytics_data: dict[str, Any] = {}
-
-        for strain_name, strain_data in self.strains.items():
-            phenotypes = strain_data.get("phenotypes", {})
-            strain_harvests: list[dict[str, Any]] = []
-            pheno_analytics: dict[str, Any] = {}
-            for pheno_name, pheno_data in phenotypes.items():
-                harvests = pheno_data.get("harvests", [])
-                strain_harvests.extend(harvests)
-                num = len(harvests)
-                if num:
-                    total_veg = sum(h.get("veg_days", 0) for h in harvests)
-                    total_flower = sum(h.get("flower_days", 0) for h in harvests)
-                    dry_weights = [
-                        h["dry_weight"]
-                        for h in harvests
-                        if h.get("dry_weight") is not None
-                    ]
-                    wet_weights = [
-                        h["wet_weight"]
-                        for h in harvests
-                        if h.get("wet_weight") is not None
-                    ]
-                    stats: dict[str, Any] = {
-                        "avg_veg_days": round(total_veg / num),
-                        "avg_flower_days": round(total_flower / num),
-                        "total_harvests": num,
-                    }
-                    if dry_weights:
-                        stats["avg_dry_weight"] = round(
-                            sum(dry_weights) / len(dry_weights), 1
-                        )
-                        stats["total_dry_yield"] = round(sum(dry_weights), 1)
-                    if wet_weights:
-                        stats["avg_wet_weight"] = round(
-                            sum(wet_weights) / len(wet_weights), 1
-                        )
-                else:
-                    stats = {
-                        "avg_veg_days": 0,
-                        "avg_flower_days": 0,
-                        "total_harvests": 0,
-                    }
-                # Exclude heavy fields
-                pheno_meta = {
-                    k: v
-                    for k, v in pheno_data.items()
-                    if k
-                    not in ["harvests", "description", "image_path", "image_crop_meta"]
-                }
-                pheno_analytics[pheno_name] = {**stats, **pheno_meta}
-            num_strain_harvests = len(strain_harvests)
-            if num_strain_harvests:
-                strain_avg_veg = round(
-                    sum(h.get("veg_days", 0) for h in strain_harvests)
-                    / num_strain_harvests
-                )
-                strain_avg_flower = round(
-                    sum(h.get("flower_days", 0) for h in strain_harvests)
-                    / num_strain_harvests
-                )
-            else:
-                strain_avg_veg = 0
-                strain_avg_flower = 0
-
-
-            analytics_data[strain_name] = {
-                "meta": strain_data.get("meta", {}),
-                "analytics": {
-                    "avg_veg_days": strain_avg_veg,
-                    "avg_flower_days": strain_avg_flower,
-                    "total_harvests": num_strain_harvests,
-                },
-                "phenotypes": pheno_analytics,
-            }
-
-        result = {
-            "strains": analytics_data,
-            "strain_list": list(self.strains.keys()),
-        }
-        self._analytics_cache = result
-        return result
+        """Calculate and return aggregated analytics for the library."""
+        return self._analytics.compute()
 
     async def import_library(
         self, library_data: dict[str, Any], replace: bool = False
@@ -1593,7 +1254,7 @@ class StrainLibrary:
                     )
                 await self._db.commit()
         # Invalidate analytics cache and reload
-        self._analytics_cache = None
+        self._analytics.invalidate()
         await self.load()
         return len(self.strains)
 
@@ -1622,14 +1283,13 @@ class StrainLibrary:
         )
         await self._db.commit()
         self.strains.clear()
-        self._analytics_cache = None
+        self._analytics.invalidate()
         return count
 
     async def export_library_to_zip(self, output_dir: str) -> str:
         """Export the library and images to a ZIP file."""
         # Ensure analytics are up‑to‑date (cached or calculated)
-        if self._analytics_cache is None:
-            self.get_analytics()
+        self.get_analytics()
 
         # Get all data
         library_data = self.get_all()

@@ -5,12 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from homeassistant.components import conversation
-from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import intent
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util.dt import utcnow
 
@@ -18,7 +16,6 @@ from .const import (
     ATTR_TRIGGER_TYPE,
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
-    CONF_NOTIFICATION_PERSONALITY,
     CRITICAL_COOLDOWN_MINUTES,
     CRITICAL_PROBABILITY_THRESHOLD,
     DEFAULT_COOLDOWN_MINUTES,
@@ -37,7 +34,7 @@ from .const import (
 )
 from .domain import calculate_days_in_stage
 from .exceptions import GrowspaceError
-from .presentation import EntityQueries
+from .notification_rewriter import AINotificationRewriter
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -63,10 +60,16 @@ class PendingAlert:
 class NotificationManager:
     """Manages notifications for Growspace Manager."""
 
-    def __init__(self, hass: HomeAssistant, coordinator: GrowspaceCoordinator) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        coordinator: GrowspaceCoordinator,
+        ai_rewriter: AINotificationRewriter,
+    ) -> None:
         """Initialize the notification manager."""
         self.hass = hass
         self.coordinator = coordinator
+        self._ai_rewriter = ai_rewriter
         # Legacy cooldown for timed notifications (non-tiered)
         self._last_notification_sent: dict[str, datetime] = {}
         self._notification_cooldown = timedelta(minutes=DEFAULT_COOLDOWN_MINUTES)
@@ -74,7 +77,6 @@ class NotificationManager:
         self._batch_timers: dict[str, CALLBACK_TYPE] = {}
         self._pending_alerts: dict[str, PendingAlert] = {}
         self._cooldowns: dict[str, dict[str, datetime]] = {}
-        self._ai_cooldown_until: datetime | None = None
 
     @callback
     def shutdown(self) -> None:
@@ -389,7 +391,7 @@ class NotificationManager:
         ai_settings = self.coordinator.options.get("ai_settings", {})
 
         if ai_settings.get(CONF_AI_ENABLED) and ai_settings.get(CONF_ASSISTANT_ID):
-            final_message = await self._rewrite_with_ai(
+            final_message = await self._ai_rewriter.async_rewrite(
                 message, growspace.name, sensor_states, ai_settings
             )
 
@@ -429,160 +431,6 @@ class NotificationManager:
         ):
             _LOGGER.error("Failed to send notification to %s", notification_service)
 
-    async def _rewrite_with_ai(
-        self,
-        original_message: str,
-        growspace_name: str,
-        sensor_states: dict[str, Any] | None,
-        ai_settings: dict[str, Any],
-    ) -> str:
-        """Rewrite the notification message using Home Assistant Assist."""
-        if self._ai_cooldown_until and utcnow() < self._ai_cooldown_until:
-            _LOGGER.debug("AI notification generation is on rate-limit cooldown")
-            return original_message
-
-        try:
-            personality = ai_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
-            agent_id = ai_settings.get(CONF_ASSISTANT_ID)
-            max_length = ai_settings.get("max_response_length", 250)
-
-            prompt = self._build_rewrite_prompt(
-                original_message,
-                growspace_name,
-                sensor_states,
-                personality,
-                max_length,
-            )
-
-            _LOGGER.debug("Sending notification rewrite prompt to AI assistant")
-
-            result = await conversation.async_converse(
-                self.hass,
-                text=prompt,
-                conversation_id=None,
-                context=Context(),
-                agent_id=agent_id,
-            )
-
-            if result and result.response:
-                if (
-                    getattr(result.response, "error_code", None) is not None
-                    or getattr(result.response, "response_type", None)
-                    == intent.IntentResponseType.ERROR
-                ):
-                    err_msg = ""
-                    if result.response.speech and result.response.speech.get("plain"):
-                        err_msg = result.response.speech["plain"]["speech"]
-
-                    err_code = getattr(result.response, "error_code", "") or ""
-                    if (
-                        any(
-                            s in err_msg
-                            for s in ("429", "Too Many Requests", "RESOURCE_EXHAUSTED")
-                        )
-                        or "resource_exhausted" in err_code.lower()
-                    ):
-                        _LOGGER.warning(
-                            "AI notification rate limit reached (429), pausing AI features temporarily"
-                        )
-                        self._ai_cooldown_until = utcnow() + timedelta(minutes=15)
-                    else:
-                        _LOGGER.warning(
-                            "AI notification generation failed: %s", err_msg
-                        )
-                    return original_message
-
-                if result.response.speech and result.response.speech.get("plain"):
-                    rewritten = result.response.speech["plain"]["speech"]
-                    # Validate the response isn't too long
-                    if len(rewritten) <= max_length:
-                        _LOGGER.info("AI rewrote notification in %s style", personality)
-                        return cast(str, rewritten)
-                    # Try to truncate intelligently if it's close
-                    if len(rewritten) < max_length + 50:
-                        _LOGGER.info("AI response truncated to fit length limit")
-                        return cast(
-                            str, rewritten[:max_length].rsplit(" ", 1)[0] + "..."
-                        )
-                    _LOGGER.warning(
-                        "AI response too long (%d chars > %d), using default",
-                        len(rewritten),
-                        max_length,
-                    )
-                else:
-                    _LOGGER.warning("AI returned empty speech, using default message")
-            else:
-                _LOGGER.warning("AI returned empty response, using default message")
-
-        except (
-            AttributeError,
-            KeyError,
-            ValueError,
-            ServiceValidationError,
-            GrowspaceError,
-        ):
-            _LOGGER.error("Failed to process AI notification")
-
-        return original_message
-
-    def _build_rewrite_prompt(
-        self,
-        original_message: str,
-        growspace_name: str,
-        sensor_states: dict[str, Any] | None,
-        personality: str,
-        max_length: int,
-    ) -> str:
-        """Build the prompt for the AI to rewrite the notification."""
-        # Format sensor readings for context
-        readings = []
-        if sensor_states:
-            for k, v in sensor_states.items():
-                if v is not None and not isinstance(v, bool):
-                    readings.append(f"{k}: {v}")
-        readings_str = ", ".join(readings)
-
-        # Build a more sophisticated prompt for the AI
-        system_context = (
-            f"You are a {personality} cannabis cultivation assistant. "
-            "Your job is to rewrite alerts in your unique style while keeping them informative.\n\n"
-        )
-
-        if personality.lower() == "scientific":
-            system_context += (
-                "Use precise technical terminology. Be analytical and data-driven. "
-                "Reference specific thresholds and values."
-            )
-        elif personality.lower() == "chill stoner":
-            system_context += (
-                "Be laid-back and friendly, but still helpful. Use casual language. "
-                "Keep the vibe relaxed but don't skip important details."
-            )
-        elif personality.lower() == "strict coach":
-            system_context += (
-                "Be direct and authoritative. Emphasize urgency where appropriate. "
-                "Make it clear what needs to be done immediately."
-            )
-        elif personality.lower() == "pirate":
-            system_context += (
-                "Write like a pirate (arr, matey, etc.) but maintain clarity. "
-                "Make it fun while conveying the essential information."
-            )
-        else:  # Standard
-            system_context += (
-                "Be clear, professional, and helpful. "
-                "Keep the message concise but informative."
-            )
-
-        return (
-            f"{system_context}\n\n"
-            f"Original Alert: {original_message}\n"
-            f"Current Sensor Data: {readings_str}\n"
-            f"Growspace: {growspace_name}\n\n"
-            f"Rewrite this alert in 1-2 sentences. Keep it under {max_length} characters. "
-            "Include specific sensor values if they're relevant to the alert."
-        )
-
     async def async_check_timed_notifications(self) -> None:
         """Check all configured timed notifications and send them if the conditions are met."""
         notifications = self.coordinator.options.get("timed_notifications", [])
@@ -593,34 +441,6 @@ class NotificationManager:
 
         for notification in notifications:
             await self._process_notification(notification, plants_by_growspace)
-
-    async def async_check_tank_levels(self) -> None:
-        """Check all irrigation tank levels and notify if below warning threshold."""
-
-        entity_queries = EntityQueries(self.hass)
-
-        for growspace in self.coordinator.growspaces.values():
-            if (
-                not growspace.environment_config
-                or not growspace.environment_config.irrigation_tanks
-            ):
-                continue
-
-            for tank in growspace.environment_config.irrigation_tanks:
-                state_obj = self.hass.states.get(tank.sensor_entity)
-                level = (
-                    entity_queries.parse_tank_level(state_obj.state)
-                    if state_obj
-                    else None
-                )
-
-                if level is not None and level <= tank.warning_level:
-                    await self.async_send_notification(
-                        growspace.id,
-                        title="⚠️ Low Irrigation Tank Level",
-                        message=f"{tank.name} in {growspace.name} is at {level:.0f}% (warning at {tank.warning_level:.0f}%)",
-                        tier=NotificationTier.CRITICAL,
-                    )
 
     async def async_check_pending_alerts(self) -> None:
         """Check all pending alerts for persistence thresholds and escalation.
@@ -741,7 +561,7 @@ class NotificationManager:
 
         if days_in_stage >= day_to_trigger:
             notification_key = f"timed_{notification_id}"
-            if not self.coordinator.notifications_sent.get(plant.plant_id, {}).get(
+            if not self.coordinator.notification_state.sent.get(plant.plant_id, {}).get(
                 notification_key, False
             ):
                 _LOGGER.info(
@@ -759,9 +579,9 @@ class NotificationManager:
                     message,
                 )
 
-                if plant.plant_id not in self.coordinator.notifications_sent:
-                    self.coordinator.notifications_sent[plant.plant_id] = {}
-                self.coordinator.notifications_sent[plant.plant_id][
+                if plant.plant_id not in self.coordinator.notification_state.sent:
+                    self.coordinator.notification_state.sent[plant.plant_id] = {}
+                self.coordinator.notification_state.sent[plant.plant_id][
                     notification_key
                 ] = True
                 await self.coordinator.async_commit()

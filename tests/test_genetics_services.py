@@ -1,5 +1,8 @@
-"""Tests for genetics service handlers (add_seed_batch, log_pollination,
-score_phenotype, harvest_seeds)."""
+"""Tests for genetics service handlers.
+
+This includes tests for add_seed_batch, log_pollination, score_phenotype,
+harvest_seeds, sow_seed, set_plant_sex, and unlink_seed_batch.
+"""
 
 from __future__ import annotations
 
@@ -10,13 +13,16 @@ import pytest
 
 from custom_components.growspace_manager.const import (
     ATTR_ACQUISITION_DATE,
+    ATTR_BATCH_ID,
     ATTR_BREEDER,
     ATTR_GENERATION,
     ATTR_PARENT_1_PHENOTYPE,
     ATTR_PARENT_1_STRAIN,
     ATTR_PARENT_2_PHENOTYPE,
     ATTR_PARENT_2_STRAIN,
+    ATTR_PLANT_ID,
     ATTR_QUANTITY,
+    ATTR_SEX,
     ATTR_STRAIN_NAME,
 )
 from custom_components.growspace_manager.models import (
@@ -31,6 +37,9 @@ from custom_components.growspace_manager.services.genetics import (
     handle_harvest_seeds,
     handle_log_pollination,
     handle_score_phenotype,
+    handle_set_plant_sex,
+    handle_sow_seed,
+    handle_unlink_seed_batch,
     handle_update_pollination,
     handle_update_seed_batch,
 )
@@ -98,9 +107,10 @@ def genetics_manager() -> AsyncMock:
 
 @pytest.fixture
 def mock_coordinator(genetics_manager: AsyncMock) -> MagicMock:
-    """Mock GrowspaceCoordinator exposing genetics_manager and plants."""
+    """Mock GrowspaceCoordinator exposing services.genetics facade and plants."""
     coord = MagicMock()
     coord.genetics_manager = genetics_manager
+    coord.services.genetics = genetics_manager
     coord.plants = {
         "plant-donor": Plant(
             plant_id="plant-donor",
@@ -612,3 +622,157 @@ class TestHandleDeletePollination:
         call = _make_call(event_id="x")
         with pytest.raises(ServiceValidationError, match="not found"):
             await handle_delete_pollination(mock_hass, mock_coordinator, call)
+
+
+# ---------------------------------------------------------------------------
+# handle_sow_seed
+# ---------------------------------------------------------------------------
+
+
+class TestHandleSowSeed:
+    """Tests for the sow_seed service handler."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_mock(self, genetics_manager: AsyncMock) -> None:
+        genetics_manager.async_sow_seed = AsyncMock()
+
+    async def test_delegates_to_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler calls genetics_manager.async_sow_seed with correct arguments."""
+        call = _make_call(
+            **{
+                ATTR_BATCH_ID: "batch-123",
+                ATTR_PLANT_ID: "plant-456",
+            }
+        )
+        await handle_sow_seed(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_sow_seed.assert_called_once_with(
+            batch_id="batch-123",
+            plant_id="plant-456",
+        )
+
+    async def test_propagates_service_validation_error(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """ServiceValidationError from manager propagates to caller."""
+        genetics_manager.async_sow_seed.side_effect = ServiceValidationError(
+            "Batch 'batch-123' not found"
+        )
+        call = _make_call(
+            **{
+                ATTR_BATCH_ID: "batch-123",
+                ATTR_PLANT_ID: "plant-456",
+            }
+        )
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await handle_sow_seed(mock_hass, mock_coordinator, call)
+
+
+# ---------------------------------------------------------------------------
+# handle_set_plant_sex
+# ---------------------------------------------------------------------------
+
+
+class TestHandleSetPlantSex:
+    """Tests for the set_plant_sex service handler."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_mock(self, genetics_manager: AsyncMock) -> None:
+        genetics_manager.async_set_plant_sex = AsyncMock()
+
+    async def test_delegates_to_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler calls genetics_manager.async_set_plant_sex with correct arguments."""
+        call = _make_call(
+            **{
+                ATTR_PLANT_ID: "plant-456",
+                ATTR_SEX: "female",
+            }
+        )
+        await handle_set_plant_sex(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_set_plant_sex.assert_called_once_with(
+            plant_id="plant-456",
+            sex="female",
+        )
+
+    async def test_propagates_service_validation_error(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """ServiceValidationError from manager propagates to caller."""
+        genetics_manager.async_set_plant_sex.side_effect = ServiceValidationError(
+            "Plant 'plant-456' not found"
+        )
+        call = _make_call(
+            **{
+                ATTR_PLANT_ID: "plant-456",
+                ATTR_SEX: "female",
+            }
+        )
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await handle_set_plant_sex(mock_hass, mock_coordinator, call)
+
+
+# ---------------------------------------------------------------------------
+# handle_unlink_seed_batch
+# ---------------------------------------------------------------------------
+
+
+class TestHandleUnlinkSeedBatch:
+    """Tests for the unlink_seed_batch service handler."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_mock(self, genetics_manager: AsyncMock) -> None:
+        genetics_manager.async_unlink_seed_batch = AsyncMock()
+
+    async def test_delegates_to_manager(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """Handler calls genetics_manager.async_unlink_seed_batch with correct arguments."""
+        call = _make_call(
+            **{
+                ATTR_PLANT_ID: "plant-456",
+            }
+        )
+        await handle_unlink_seed_batch(mock_hass, mock_coordinator, call)
+
+        genetics_manager.async_unlink_seed_batch.assert_called_once_with(
+            plant_id="plant-456",
+        )
+
+    async def test_propagates_service_validation_error(
+        self,
+        mock_hass: AsyncMock,
+        mock_coordinator: MagicMock,
+        genetics_manager: AsyncMock,
+    ) -> None:
+        """ServiceValidationError from manager propagates to caller."""
+        genetics_manager.async_unlink_seed_batch.side_effect = ServiceValidationError(
+            "Plant 'plant-456' not found"
+        )
+        call = _make_call(
+            **{
+                ATTR_PLANT_ID: "plant-456",
+            }
+        )
+        with pytest.raises(ServiceValidationError, match="not found"):
+            await handle_unlink_seed_batch(mock_hass, mock_coordinator, call)
+

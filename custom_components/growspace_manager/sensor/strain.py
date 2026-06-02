@@ -79,7 +79,7 @@ class SeedInventorySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @override  # type: ignore[misc]
     def native_value(self) -> int:
         """Return total number of seeds across all batches."""
-        return self.coordinator.genetics_manager.get_total_seed_count()
+        return self.coordinator.services.genetics.get_total_seed_count()
 
     @property
     @override  # type: ignore[misc]
@@ -88,6 +88,6 @@ class SeedInventorySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         return {
             "seed_batches": [
                 asdict(batch)
-                for batch in self.coordinator.genetics_manager.seed_batches.values()
+                for batch in self.coordinator.services.genetics.seed_batches.values()
             ],
         }

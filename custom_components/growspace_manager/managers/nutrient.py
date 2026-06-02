@@ -71,17 +71,23 @@ class NutrientManager:
         stage: str | None = None,
         min_days_in_stage: int | None = None,
         preset_id: str | None = None,
+        week: int = 1,
+        ec_target: float | None = None,
+        ph_target: float | None = None,
     ) -> NutrientPreset:
         """Create or update a nutrient preset."""
         if preset_id and preset_id in self.nutrient_presets:
             preset = self.nutrient_presets[preset_id]
             preset.name = name
             preset.items = [
-                NutrientPresetItem(name=n["name"], dose_ml_l=n["dose_ml_l"])
+                NutrientPresetItem(nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"])
                 for n in nutrients
             ]
             preset.stage = stage
             preset.min_days_in_stage = min_days_in_stage
+            preset.week = week
+            preset.ec_target = ec_target
+            preset.ph_target = ph_target
         else:
             # Create new
             pid = preset_id or str(uuid.uuid4())
@@ -89,11 +95,14 @@ class NutrientManager:
                 id=pid,
                 name=name,
                 items=[
-                    NutrientPresetItem(name=n["name"], dose_ml_l=n["dose_ml_l"])
+                    NutrientPresetItem(nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"])
                     for n in nutrients
                 ],
                 stage=stage,
                 min_days_in_stage=min_days_in_stage,
+                week=week,
+                ec_target=ec_target,
+                ph_target=ph_target,
                 created_at=dt_util.now().isoformat(),
             )
             self.nutrient_presets[pid] = preset

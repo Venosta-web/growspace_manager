@@ -176,6 +176,15 @@ def _downsample_entity_binary_search(
     return downsampled
 
 
+def _extract_fan_attrs(s: Any) -> dict[str, Any]:
+    """Extract percentage attribute from a fan entity state for compact history."""
+    if isinstance(s, dict):
+        pct = (s.get("attributes") or {}).get("percentage")
+    else:
+        pct = (getattr(s, "attributes", None) or {}).get("percentage")
+    return {"percentage": pct} if pct is not None else {}
+
+
 async def _get_history_with_binary_search_downsample(
     hass: HomeAssistant,
     entity_ids: list[str],
@@ -185,16 +194,36 @@ async def _get_history_with_binary_search_downsample(
 ) -> dict[str, list[dict[str, Any]]]:
     """Fetch raw history and downsample using optimized binary search."""
 
+    fan_ids = {eid for eid in entity_ids if eid.startswith("fan.")}
+    other_ids = [eid for eid in entity_ids if eid not in fan_ids]
+
     def _get_history() -> dict[str, list[Any]]:
-        return history.get_significant_states(
-            hass,
-            start_time,
-            end_time,
-            entity_ids,
-            significant_changes_only=True,
-            minimal_response=True,
-            no_attributes=True,
-        )
+        result: dict[str, list[Any]] = {}
+        if other_ids:
+            result.update(
+                history.get_significant_states(
+                    hass,
+                    start_time,
+                    end_time,
+                    other_ids,
+                    significant_changes_only=True,
+                    minimal_response=True,
+                    no_attributes=True,
+                )
+            )
+        if fan_ids:
+            result.update(
+                history.get_significant_states(
+                    hass,
+                    start_time,
+                    end_time,
+                    list(fan_ids),
+                    significant_changes_only=True,
+                    minimal_response=False,
+                    no_attributes=False,
+                )
+            )
+        return result
 
     history_data = await get_instance(hass).async_add_executor_job(_get_history)
 
@@ -203,6 +232,7 @@ async def _get_history_with_binary_search_downsample(
         interval_delta = timedelta(minutes=interval)
 
         for entity_id, states in history_data.items():
+            is_fan = entity_id in fan_ids
             if not states:
                 result[entity_id] = []
                 continue
@@ -215,7 +245,12 @@ async def _get_history_with_binary_search_downsample(
                         continue
                     state_val = s.get("state") if isinstance(s, dict) else s.state
                     if state_val and state_val not in ("unknown", "unavailable"):
-                        passthrough.append({"s": state_val, "lu": ts.isoformat()})
+                        point: dict[str, Any] = {"s": state_val, "lu": ts.isoformat()}
+                        if is_fan:
+                            attrs = _extract_fan_attrs(s)
+                            if attrs:
+                                point["a"] = attrs
+                        passthrough.append(point)
                 result[entity_id] = passthrough
             else:
                 result[entity_id] = _downsample_entity_binary_search(

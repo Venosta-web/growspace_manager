@@ -152,6 +152,7 @@ CONF_MIN_SOURCE_AIR_TEMP = "minimum_source_air_temperature"
 CONF_CONFIGURE_DEHUMIDIFIER = "configure_dehumidifier"
 CONF_CONFIGURE_HUMIDIFIER = "configure_humidifier"
 CONF_CONFIGURE_ADVANCED = "configure_advanced"
+CONF_CONFIGURE_FAN_CONTROLLER = "configure_fan_controller"
 CONF_LST_OFFSET = "lst_offset"
 
 # Mappings for Bayesian Evaluator
@@ -583,6 +584,7 @@ class GrowspaceService(StrEnum):
     ANALYZE_ALL_GROWSPACES = "analyze_all_growspaces"
     PRINT_LABEL = "print_label"
     CONFIGURE_ENVIRONMENT = "configure_environment"
+    CONFIGURE_CIRCULATION_FAN = "configure_circulation_fan"
     REMOVE_ENVIRONMENT = "remove_environment"
     SET_DEHUMIDIFIER_CONTROL = "set_dehumidifier_control"
     SET_HUMIDIFIER_CONTROL = "set_humidifier_control"
@@ -643,6 +645,14 @@ class GrowspaceService(StrEnum):
     SOW_SEED = "sow_seed"
     SET_PLANT_SEX = "set_plant_sex"
     UNLINK_SEED_BATCH = "unlink_seed_batch"
+
+
+class FanRegulationMode(StrEnum):
+    """Regulation variable for the circulation fan controller."""
+
+    HUMIDITY = "humidity"
+    TEMPERATURE = "temperature"
+    VPD = "vpd"
 
 
 class TrainingTechnique(StrEnum):

@@ -1188,49 +1188,23 @@ async def test_websocket_get_event_log_limits(
 async def test_websocket_nutrient_inventory_service_not_ready(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator, mock_coordinator
 ) -> None:
-    """Test nutrient inventory when service is not initialized."""
-    # Remove service from coordinator to simulate not initialized
-    # Use explicit deletion if the property is set, or set to None
-    mock_coordinator.nutrient_inventory_service = None
+    """Test nutrient inventory returns empty stocks when inventory facade returns None."""
+    # Route all inventory calls through the facade, with no inventory configured
+    mock_coordinator.services.config.get_inventory.return_value = None
 
     hass.data[DOMAIN] = {"coordinator": mock_coordinator}
     async_register_websocket_api(hass)
     client = await hass_ws_client(hass)
 
-    # We must patch get_any to return our modified mock_coordinator
-    # otherwise it tries to run real logic and fails validation
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
     ):
-        # 1. Get Inventory - returns empty
+        # Get Inventory returns empty stocks when facade returns None
         await client.send_json({"id": 1, "type": WS_TYPE_GET_NUTRIENT_INVENTORY})
         response = await client.receive_json()
         assert response["success"]
         assert response["result"]["stocks"] == {}
-
-        # 2. Update Stock - returns error
-        await client.send_json(
-            {
-                "id": 2,
-                "type": WS_TYPE_UPDATE_NUTRIENT_STOCK,
-                "nutrient_id": "n1",
-                "name": "N1",
-                "current_ml": 10,
-                "initial_ml": 20,
-            }
-        )
-        response = await client.receive_json()
-        assert not response["success"]
-        assert response["error"]["code"] == "not_initialized"
-
-        # 3. Remove Stock - returns error
-        await client.send_json(
-            {"id": 3, "type": WS_TYPE_REMOVE_NUTRIENT_STOCK, "nutrient_id": "n1"}
-        )
-        response = await client.receive_json()
-        assert not response["success"]
-        assert response["error"]["code"] == "not_initialized"
 
 
 async def test_websocket_exceptions(

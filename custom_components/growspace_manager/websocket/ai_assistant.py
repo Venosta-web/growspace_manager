@@ -427,7 +427,7 @@ async def websocket_get_ai_alerts(
         )
         return
 
-    alerts = coordinator.alert_monitor.get_alerts(
+    alerts = coordinator.services.notifications.get_alerts(
         growspace_id=msg.get("growspace_id"),
         alert_type=msg.get("alert_type"),
     )
@@ -468,7 +468,7 @@ async def websocket_resolve_ai_alert(
 
     alert_id: str = msg["alert_id"]
     notes: str | None = msg.get("resolution_note")
-    resolved = await coordinator.alert_monitor.resolve_alert(alert_id, notes=notes)
+    resolved = await coordinator.services.notifications.resolve_alert(alert_id, notes=notes)
 
     if not resolved:
         connection.send_error(

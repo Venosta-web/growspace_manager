@@ -103,10 +103,13 @@ class ConfigFacade:
         stage: str | None = None,
         min_days_in_stage: int | None = None,
         preset_id: str | None = None,
+        week: int = 1,
+        ec_target: float | None = None,
+        ph_target: float | None = None,
     ) -> NutrientPreset:
         """Create or update a nutrient preset."""
         return await self._coordinator.nutrient_manager.async_save_nutrient_preset(
-            name, nutrients, stage, min_days_in_stage, preset_id
+            name, nutrients, stage, min_days_in_stage, preset_id, week, ec_target, ph_target
         )
 
     async def remove_nutrient_preset(self, preset_id: str) -> None:
@@ -146,10 +149,35 @@ class ConfigFacade:
             raise TypeError(
                 "save_ipm_preset() missing 1 required positional argument: 'items'"
             )
-        return await self._coordinator.save_ipm_preset(
+        return await self._coordinator.ipm_service.async_save_ipm_preset(
             name, preset_type, items, stage, min_days_in_stage, preset_id
         )
 
     async def remove_ipm_preset(self, preset_id: str) -> None:
         """Remove an IPM preset."""
-        await self._coordinator.remove_ipm_preset(preset_id)
+        await self._coordinator.ipm_service.async_remove_ipm_preset(preset_id)
+
+    # -------------------------------------------------------------------------
+    # Nutrient inventory
+    # -------------------------------------------------------------------------
+
+    def get_inventory(self) -> Any | None:
+        """Return the current nutrient inventory, or None if not configured."""
+        svc = self._coordinator.nutrient_manager.inventory_service
+        if svc is None:
+            return None
+        return svc.get_inventory()
+
+    def update_stock(self, **kwargs: Any) -> None:
+        """Update or create a nutrient stock entry."""
+        svc = self._coordinator.nutrient_manager.inventory_service
+        if svc is None:
+            return
+        svc.update_stock(**kwargs)
+
+    def remove_stock(self, nutrient_id: str) -> None:
+        """Remove a nutrient stock entry."""
+        svc = self._coordinator.nutrient_manager.inventory_service
+        if svc is None:
+            return
+        svc.remove_stock(nutrient_id)

@@ -52,6 +52,15 @@ SCHEMA_WS_UPDATE_NUTRIENT_STOCK = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exte
         vol.Required("name"): str,
         vol.Required("current_ml"): vol.All(vol.Any(float, int), vol.Range(min=0)),
         vol.Required("initial_ml"): vol.All(vol.Any(float, int), vol.Range(min=1)),
+        vol.Optional("brand", default=""): str,
+        vol.Optional("stock_type", default="base"): vol.In(
+            ["base", "bloom", "calmag", "root", "additive", "microbe"]
+        ),
+        vol.Optional("npk", default=""): str,
+        vol.Optional("dose_ml_l", default=0.0): vol.All(
+            vol.Any(float, int), vol.Range(min=0)
+        ),
+        vol.Optional("notes", default=""): str,
     }
 )
 
@@ -131,8 +140,8 @@ def websocket_get_nutrient_inventory(
     """Handle get nutrient inventory command."""
     try:
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
-        if coordinator.nutrient_inventory_service:
-            inventory = coordinator.nutrient_inventory_service.get_inventory()
+        inventory = coordinator.services.config.get_inventory()
+        if inventory is not None:
             connection.send_result(msg["id"], asdict(inventory))
         else:
             connection.send_result(msg["id"], {"stocks": {}})
@@ -152,28 +161,30 @@ def websocket_update_nutrient_stock(
     """Handle update nutrient stock command."""
     try:
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
-        if coordinator.nutrient_inventory_service:
-            current_ml = float(msg["current_ml"])
-            initial_ml = float(msg["initial_ml"])
-            if current_ml > initial_ml:
-                connection.send_error(
-                    msg["id"],
-                    "invalid_input",
-                    "current_ml cannot exceed initial_ml",
-                )
-                return
-            coordinator.nutrient_inventory_service.update_stock(
-                nutrient_id=msg["nutrient_id"],
-                name=msg["name"],
-                current_ml=current_ml,
-                initial_ml=initial_ml,
+        current_ml = float(msg["current_ml"])
+        initial_ml = float(msg["initial_ml"])
+        if current_ml > initial_ml:
+            connection.send_error(
+                msg["id"],
+                "invalid_input",
+                "current_ml cannot exceed initial_ml",
             )
-            coordinator.config_entry.async_create_background_task(
-                hass, coordinator.async_commit(), "save_coordinator_data"
-            )
-            connection.send_result(msg["id"])
-        else:
-            connection.send_error(msg["id"], "not_initialized", "Service not ready")
+            return
+        coordinator.services.config.update_stock(
+            nutrient_id=msg["nutrient_id"],
+            name=msg["name"],
+            current_ml=current_ml,
+            initial_ml=initial_ml,
+            brand=msg["brand"],
+            type=msg["stock_type"],
+            npk=msg["npk"],
+            dose_ml_l=float(msg["dose_ml_l"]),
+            notes=msg["notes"],
+        )
+        coordinator.config_entry.async_create_background_task(
+            hass, coordinator.async_commit(), "save_coordinator_data"
+        )
+        connection.send_result(msg["id"])
     except ServiceValidationError:
         connection.send_error(
             msg["id"], "not_loaded", "Growspace Manager integration not loaded"
@@ -190,14 +201,11 @@ def websocket_remove_nutrient_stock(
     """Handle remove nutrient stock command."""
     try:
         coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
-        if coordinator.nutrient_inventory_service:
-            coordinator.nutrient_inventory_service.remove_stock(msg["nutrient_id"])
-            coordinator.config_entry.async_create_background_task(
-                hass, coordinator.async_commit(), "save_coordinator_data"
-            )
-            connection.send_result(msg["id"])
-        else:
-            connection.send_error(msg["id"], "not_initialized", "Service not ready")
+        coordinator.services.config.remove_stock(msg["nutrient_id"])
+        coordinator.config_entry.async_create_background_task(
+            hass, coordinator.async_commit(), "save_coordinator_data"
+        )
+        connection.send_result(msg["id"])
     except ServiceValidationError:
         connection.send_error(
             msg["id"], "not_loaded", "Growspace Manager integration not loaded"

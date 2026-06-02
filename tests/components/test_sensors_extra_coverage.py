@@ -227,7 +227,7 @@ async def test_seed_inventory_sensor(mock_coordinator, setup_sensor_for_test):
     mock_genetics = MagicMock()
     mock_genetics.get_total_seed_count.return_value = 5
     mock_genetics.seed_batches = {"batch1": batch}
-    mock_coordinator.genetics_manager = mock_genetics
+    mock_coordinator.services.genetics = mock_genetics
 
     sensor = SeedInventorySensor(mock_coordinator)
     setup_sensor_for_test(sensor, mock_coordinator)
@@ -326,7 +326,7 @@ async def test_seed_inventory_sensor_attributes_full(setup_sensor_for_test):
         lineage="None",
         notes="Some notes",
     )
-    coordinator.genetics_manager.seed_batches = {"batch1": batch}
+    coordinator.services.genetics.seed_batches = {"batch1": batch}
     coordinator.get_growspace_plants.return_value = []
 
     sensor = SeedInventorySensor(coordinator)

@@ -43,6 +43,7 @@ from .models import (
 )
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
+from .tank_monitor import TankLevelMonitor
 from .photoperiod_flip_checker import PhotoperiodFlipChecker
 from .presentation import PlantViewModelBuilder
 from .service_coordinator_locator import ServiceCoordinatorLocator
@@ -143,148 +144,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         return ServiceCoordinatorLocator.get_any(hass)
 
-    @property
-    def irrigation_coordinators(
-        self,
-    ) -> dict[str, IrrigationCoordinator | VWCIrrigationCoordinator]:
-        """Return irrigation coordinators for all growspaces.
-
-        Returns:
-            Dictionary mapping growspace IDs to their irrigation coordinators.
-        """
-        return self.subsystem_manager.irrigation_coordinators
-
-    @property
-    def dehumidifier_coordinators(self) -> dict[str, DehumidifierCoordinator]:
-        """Return dehumidifier coordinators for all growspaces.
-
-        Returns:
-            Dictionary mapping growspace IDs to their dehumidifier coordinators.
-        """
-        return self.subsystem_manager.dehumidifier_coordinators
-
-    @property
-    def humidifier_coordinators(self) -> dict[str, HumidifierCoordinator]:
-        """Return humidifier coordinators for all growspaces.
-
-        Returns:
-            Dictionary mapping growspace IDs to their humidifier coordinators.
-        """
-        return self.subsystem_manager.humidifier_coordinators
-
-    @property
-    def ec_ramp_curves(self) -> dict[str, Any]:
-        """Return all EC ramp curves.
-
-        Returns:
-            Dictionary mapping curve IDs to ECRampCurve objects.
-        """
-        return self.nutrient_manager.ec_ramp_curves
-
-    @property
-    def nutrient_presets(self) -> dict[str, NutrientPreset]:
-        """Return all configured nutrient presets.
-
-        Returns:
-            Dictionary mapping preset IDs to NutrientPreset objects.
-        """
-        return self.nutrient_manager.nutrient_presets
-
-    @nutrient_presets.setter
-    def nutrient_presets(self, value: dict[str, NutrientPreset]) -> None:
-        """Set nutrient presets.
-
-        Args:
-            value: New nutrient presets dictionary.
-        """
-        self.nutrient_manager.nutrient_presets = value
-
-    @property
-    def ipm_presets(self) -> dict[str, IPMPreset]:
-        """Return all configured IPM (Integrated Pest Management) presets.
-
-        Returns:
-            Dictionary mapping preset IDs to IPMPreset objects.
-        """
-        return self.ipm_service.ipm_presets
-
-    async def save_ipm_preset(
-        self,
-        name: str,
-        preset_type: str,
-        items: list[dict[str, Any]],
-        stage: str | None = None,
-        min_days_in_stage: int | None = None,
-        preset_id: str | None = None,
-    ) -> IPMPreset:
-        """Create or update an IPM preset."""
-        return await self.ipm_service.async_save_ipm_preset(
-            name, preset_type, items, stage, min_days_in_stage, preset_id
-        )
-
-    async def remove_ipm_preset(self, preset_id: str) -> None:
-        """Remove an IPM preset by ID."""
-        await self.ipm_service.async_remove_ipm_preset(preset_id)
-
-    @ipm_presets.setter
-    def ipm_presets(self, value: dict[str, IPMPreset]) -> None:
-        """Set IPM presets and synchronize with nutrient manager.
-
-        Args:
-            value: New IPM presets dictionary.
-        """
-        self.ipm_service.ipm_presets = value
-        self.nutrient_manager.ipm_presets = (
-            value  # Keep in sync for backward compatibility
-        )
-
-    @property
-    def nutrient_inventory_service(self) -> NutrientInventoryService | None:
-        """Return the nutrient inventory service if configured.
-
-        Returns:
-            NutrientInventoryService instance or None if not configured.
-        """
-        return self.nutrient_manager.inventory_service
-
-    @nutrient_inventory_service.setter
-    def nutrient_inventory_service(
-        self, value: NutrientInventoryService | None
-    ) -> None:
-        """Set the nutrient inventory service.
-
-        Args:
-            value: NutrientInventoryService instance or None to clear.
-        """
-        self.nutrient_manager.inventory_service = value
-
-    @property
-    def nutrient_inventory(self) -> NutrientInventory | None:
-        """Return the current nutrient inventory.
-
-        Returns:
-            NutrientInventory instance or None if not configured.
-        """
-        return self.nutrient_manager.inventory
-
-    @nutrient_inventory.setter
-    def nutrient_inventory(self, value: NutrientInventory | None) -> None:
-        """Set the nutrient inventory.
-
-        Args:
-            value: NutrientInventory instance or None to clear.
-        """
-        self.nutrient_manager.inventory = value
-
-    @property
-    def notifications_sent(self) -> dict[str, dict[str, dict[str, bool]]]:
-        """Return notification tracking data."""
-        return self.notification_state.sent
-
-    @property
-    def notifications_enabled(self) -> dict[str, bool]:
-        """Return notification enabled state for each growspace."""
-        return self.notification_state.enabled
 
     @property
     def growspace_manager(self) -> GrowspaceManager:
@@ -365,6 +224,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         photoperiod_checker: PhotoperiodFlipChecker,
         alert_monitor: AlertMonitor,
         conversation_store: ConversationStore,
+        tank_monitor: TankLevelMonitor,
     ) -> None:
         """Wire coordinator-self-dependent services. Called by CoordinatorBuilder after __init__."""
         self.view_model_builder = view_model_builder
@@ -387,6 +247,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.photoperiod_checker = photoperiod_checker
         self.alert_monitor = alert_monitor
         self.conversation_store = conversation_store
+        self.tank_monitor = tank_monitor
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
 
     def on_nutrient_inventory_loaded(self, inventory: NutrientInventory) -> None:
@@ -488,7 +349,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.data = self.view_model_builder.build_data_property()
         await self.notification_manager.async_check_timed_notifications()
-        await self.notification_manager.async_check_tank_levels()
         await self.notification_manager.async_check_pending_alerts()
         await self.environment_analyzer.async_update_air_exchange_recommendations()
 
@@ -572,10 +432,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._event_bus.fire_growspace_updated()
 
         for gs_id in self.growspaces:
-            if gs_id in self.irrigation_coordinators:
+            if gs_id in self.subsystem_manager.irrigation_coordinators:
                 self.config_entry.async_create_background_task(
                     self.hass,
-                    self.irrigation_coordinators[gs_id].async_request_refresh(),
+                    self.subsystem_manager.irrigation_coordinators[gs_id].async_request_refresh(),
                     f"irrigation_refresh_{gs_id}",
                 )
 
@@ -605,6 +465,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if hasattr(self, "environment_reporter"):
             self.environment_reporter.unload()
         self.notification_manager.shutdown()
+        self.tank_monitor.async_stop()
         self.vision_scheduler.async_stop()
         self.briefing_scheduler.async_stop()
         self.photoperiod_checker.async_stop()
@@ -640,6 +501,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.vision_scheduler.schedule_all_growspaces()
         self.briefing_scheduler.start()
         self.photoperiod_checker.schedule_all_growspaces()
+        await self.tank_monitor.async_start()
         await self.alert_monitor.async_start()
         await self.conversation_store.async_load()
 

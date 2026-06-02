@@ -41,7 +41,7 @@ class NotificationSettingsManager:
     @property
     def notifications_enabled(self) -> dict[str, bool]:
         """Get notification enabled state from coordinator."""
-        return self.coordinator.notifications_enabled
+        return self.coordinator.notification_state.enabled
 
     @property
     def config_entry(self) -> Any:

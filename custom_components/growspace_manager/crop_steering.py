@@ -77,7 +77,7 @@ def get_crop_steering_state(
         return None
 
     # Try to get VWC data from irrigation coordinator
-    vwc_coord = coordinator.subsystem_manager.irrigation_coordinators.get(growspace_id)
+    vwc_coord = coordinator.services.growspaces.get_irrigation_coordinator(growspace_id)
     if vwc_coord is None:
         return CropSteeringState()
 

@@ -60,7 +60,7 @@ async def test_water_growspace_total_amount_deduction(
     """Test that watering a growspace with total amount deducts correctly."""
     # 5L total for 3 plants
     total_amount = 5.0
-    nutrients = {"Nutrient A": 2.0}  # 2ml/L
+    nutrients = {"n1": 2.0}  # 2ml/L — keyed by nutrient_id
 
     # Expected total deduction: 5.0 * 2.0 = 10.0 ml
 
@@ -82,7 +82,7 @@ async def test_water_growspace_per_plant_compatibility(
     """Test that legacy amount_per_plant still works."""
     # 2L per plant for 3 plants = 6L total
     amount_per_plant = 2.0
-    nutrients = {"Nutrient A": 1.0}  # 1ml/L
+    nutrients = {"n1": 1.0}  # 1ml/L — keyed by nutrient_id
 
     # Expected total deduction: 3 plants * 2.0L * 1.0ml/L = 6.0 ml
 

@@ -11,10 +11,10 @@ from custom_components.growspace_manager.sensor import SeedInventorySensor
 
 @pytest.fixture
 def coordinator():
-    """Return a mock coordinator with a genetics_manager."""
+    """Return a mock coordinator with a services.genetics facade."""
     c = MagicMock()
-    c.genetics_manager.get_total_seed_count.return_value = 42
-    c.genetics_manager.seed_batches = {}
+    c.services.genetics.get_total_seed_count.return_value = 42
+    c.services.genetics.seed_batches = {}
     return c
 
 
@@ -33,7 +33,7 @@ class TestSeedInventorySensor:
 
     def test_native_value_zero_when_no_seeds(self, coordinator):
         """native_value is 0 when there are no seeds."""
-        coordinator.genetics_manager.get_total_seed_count.return_value = 0
+        coordinator.services.genetics.get_total_seed_count.return_value = 0
         sensor = SeedInventorySensor(coordinator)
         assert sensor.native_value == 0
 
@@ -50,7 +50,7 @@ class TestSeedInventorySensor:
             generation="F1",
             lineage="",
         )
-        coordinator.genetics_manager.seed_batches = {"b1": batch}
+        coordinator.services.genetics.seed_batches = {"b1": batch}
         sensor = SeedInventorySensor(coordinator)
         attrs = sensor.extra_state_attributes
         assert "seed_batches" in attrs

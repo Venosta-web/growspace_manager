@@ -248,7 +248,7 @@ async def handle_add_plant(
 
         seed_batch_id = call.data.get(ATTR_SEED_BATCH_ID)
         batch = (
-            coordinator.genetics_manager.seed_batches.get(seed_batch_id)
+            coordinator.services.genetics.seed_batch_by_id(seed_batch_id)
             if seed_batch_id
             else None
         )
@@ -322,7 +322,7 @@ async def handle_add_plants(
         base_phenotype = call.data.get(ATTR_PHENOTYPE)
         seed_batch_id = call.data.get(ATTR_SEED_BATCH_ID)
         batch = (
-            coordinator.genetics_manager.seed_batches.get(seed_batch_id)
+            coordinator.services.genetics.seed_batch_by_id(seed_batch_id)
             if seed_batch_id
             else None
         )

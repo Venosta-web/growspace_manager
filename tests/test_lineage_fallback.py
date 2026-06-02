@@ -129,7 +129,7 @@ def _make_coordinator(
     """Return a mock coordinator with controlled plants and get_lineage_tree."""
     coordinator = MagicMock()
     coordinator.plants = plants
-    coordinator.genetics_manager.get_lineage_tree.return_value = genetics_tree
+    coordinator.services.genetics.get_lineage_tree.return_value = genetics_tree
     coordinator.strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
     return coordinator

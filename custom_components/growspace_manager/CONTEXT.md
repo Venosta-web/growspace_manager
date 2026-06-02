@@ -98,3 +98,29 @@ HA `input_number` + `template sensor` entities used as stand-ins for real hardwa
 
 - **Demo simulation** (`growspace_demo.yaml`): dynamic sinusoidal variation for realistic Bayesian logic testing.
 - **E2E simulation** (`growspace_e2e.yaml`): fully static pass-through sensors, prefixed `e2e_`, controllable from Playwright via `input_number.set_value` WebSocket calls.
+
+## Strain Library
+
+The user's personal collection of cannabis strains, stored in a SQLite database (`strain_library.db`). Each strain has metadata (breeder, generation), zero or more phenotypes, and a harvest history. The library is the source of truth for strain names used when assigning plants.
+
+## Strain Lineage Tree
+
+A recursive tree structure describing the parent strains of a given strain. Built entirely from in-memory `strains` data — no DB I/O during tree construction. Nodes carry `name`, `source` (`library` | `manual` | `seedfinder`), optional `phenotype`, and a `parents` list (capped at 2 parents, depth-limited to 15). Cycle detection prevents infinite loops via a `_seen` frozenset passed through recursion.
+
+## Strain Analytics
+
+An in-memory aggregation of harvest performance data across the Strain Library. Computes per-phenotype and per-strain averages (veg days, flower days, dry/wet yield) from the `harvests` list on each phenotype. Result is cached until the library changes. Contains no SQLite queries — all computation is over the in-memory `strains` dict.
+
+## Service Facade Architecture
+
+All coordinator sub-systems are exposed through `coordinator.services`, a `ServiceFacade` instance (`services/facade.py`). Direct access to coordinator internals (e.g. `coordinator.genetics_manager.*`, `coordinator.subsystem_manager.irrigation_coordinators`) is a bypass and should never appear in new code.
+
+The five sub-facades are:
+
+| Attribute | Class | Domain |
+|---|---|---|
+| `coordinator.services.growspaces` | `GrowspaceFacade` | Growspace CRUD, irrigation coordinator access (`get_irrigation_coordinator`, `get_dehumidifier_coordinator`), crop steering metrics |
+| `coordinator.services.plants` | `PlantFacade` | Plant CRUD, watering, training, IPM, harvesting |
+| `coordinator.services.config` | `ConfigFacade` | Nutrient presets, IPM presets, nutrient inventory (`get_inventory`, `update_stock`, `remove_stock`) |
+| `coordinator.services.notifications` | `NotificationsFacade` | Alert creation/resolution, alert sensor registration (`get_alerts`, `resolve_alert`, `register_alert_sensor`) |
+| `coordinator.services.genetics` | `GeneticsFacade` | Seed batches, lineage trees, pollination logs, phenotype scoring, plant sex assignment (`seed_batches`, `get_total_seed_count`, `get_lineage_tree`, etc.) |

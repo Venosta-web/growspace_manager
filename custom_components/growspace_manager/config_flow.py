@@ -21,7 +21,11 @@ import homeassistant.helpers.config_validation as cv
 
 from .config_handlers import (
     AIConfigHandler,
+    BayesianAdvancedHandler,
+    DehumidifierHandler,
     EnvironmentConfigHandler,
+    EnvironmentSensorsHandler,
+    FanControllerHandler,
     GrowspaceConfigHandler,
     IrrigationConfigHandler,
     NotificationConfigHandler,
@@ -190,9 +194,14 @@ class OptionsFlowHandler(OptionsFlow):
         self.selected_notification_id: str | None = None
         self.selected_growspace_id: str | None = None
         self.env_config_step1: dict[str, Any] | None = None
+        self.fan_config_step1: dict[str, Any] = {}
         self.selected_plant_id: str | None = None
         self.selected_strain_id: str | None = None
         self._env_handler: EnvironmentConfigHandler | None = None
+        self._env_sensors_handler: EnvironmentSensorsHandler | None = None
+        self._dehumidifier_handler: DehumidifierHandler | None = None
+        self._fan_controller_handler: FanControllerHandler | None = None
+        self._bayesian_advanced_handler: BayesianAdvancedHandler | None = None
         self._irrigation_handler: IrrigationConfigHandler | None = None
         self._notify_handler: NotificationConfigHandler | None = None
         self._strain_handler: StrainConfigHandler | None = None
@@ -220,10 +229,38 @@ class OptionsFlowHandler(OptionsFlow):
 
     @property
     def env_handler(self) -> EnvironmentConfigHandler:
-        """Get the environment config handler."""
+        """Get the legacy environment config handler (kept for compatibility)."""
         if self._env_handler is None:
             self._env_handler = EnvironmentConfigHandler(self)
         return self._env_handler
+
+    @property
+    def env_sensors_handler(self) -> EnvironmentSensorsHandler:
+        """Get the environment sensors handler."""
+        if self._env_sensors_handler is None:
+            self._env_sensors_handler = EnvironmentSensorsHandler(self)
+        return self._env_sensors_handler
+
+    @property
+    def dehumidifier_handler(self) -> DehumidifierHandler:
+        """Get the dehumidifier handler."""
+        if self._dehumidifier_handler is None:
+            self._dehumidifier_handler = DehumidifierHandler(self)
+        return self._dehumidifier_handler
+
+    @property
+    def fan_controller_handler(self) -> FanControllerHandler:
+        """Get the fan controller handler."""
+        if self._fan_controller_handler is None:
+            self._fan_controller_handler = FanControllerHandler(self)
+        return self._fan_controller_handler
+
+    @property
+    def bayesian_advanced_handler(self) -> BayesianAdvancedHandler:
+        """Get the Bayesian advanced handler."""
+        if self._bayesian_advanced_handler is None:
+            self._bayesian_advanced_handler = BayesianAdvancedHandler(self)
+        return self._bayesian_advanced_handler
 
     @property
     def irrigation_handler(self) -> IrrigationConfigHandler:
@@ -390,7 +427,37 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate dehumidifier configuration to the handler."""
-        return await self.env_handler.async_step_configure_dehumidifier(user_input)
+        return await self.dehumidifier_handler.async_step_configure_dehumidifier(user_input)
+
+    async def async_step_configure_fan_controller(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan controller configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_controller(user_input)
+
+    async def async_step_configure_fan_vpd(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan VPD configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_vpd(user_input)
+
+    async def async_step_configure_fan_humidity(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan humidity configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_humidity(user_input)
+
+    async def async_step_configure_fan_temperature(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan temperature configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_temperature(user_input)
+
+    async def async_step_configure_fan_wind(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan wind configuration to the handler."""
+        return await self.env_handler.async_step_configure_fan_wind(user_input)
 
     async def async_step_configure_advanced_bayesian(
         self, user_input: dict[str, Any] | None = None
@@ -402,7 +469,24 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate sensor placement configuration to the handler."""
-        return await self.env_handler.async_step_configure_sensor_placement(user_input)
+        return await self.bayesian_advanced_handler.async_step_configure_sensor_placement(user_input)
+
+    async def async_step_save_and_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Retrieve growspace from flow state and persist env config."""
+        from .config_handlers import AbortFlow
+        try:
+            coordinator = self.env_sensors_handler.get_coordinator()
+        except AbortFlow as e:
+            return self.async_abort(reason=e.reason)
+        growspace = coordinator.services.growspaces.get_growspace(
+            self.selected_growspace_id
+        )
+        if not growspace:
+            return self.async_abort(reason="growspace_not_found")
+        env_config = dict(self.env_config_step1 or {})
+        return await self.env_sensors_handler._async_save_and_finish(growspace, env_config)
 
     async def async_step_manage_plants(
         self, user_input: dict[str, Any] | None = None

@@ -39,6 +39,7 @@ async def test_initialization(subsystem_manager: SubsystemManager) -> None:
     """Test initialization."""
     assert subsystem_manager.irrigation_coordinators == {}
     assert subsystem_manager.dehumidifier_coordinators == {}
+    assert subsystem_manager.circulation_fan_coordinators == {}
 
 
 @pytest.mark.asyncio
@@ -170,6 +171,57 @@ async def test_async_cancel_all(subsystem_manager: SubsystemManager) -> None:
     mock_dehum.unload.assert_called_once()
     mock_hum.unload.assert_called_once()
     mock_tracker.unload.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_circulation_fan_coordinators_setup_and_cancel(
+    subsystem_manager: SubsystemManager,
+) -> None:
+    """CirculationFanCoordinator is created per growspace and unloaded on cancel."""
+    gs1 = Growspace(id="gs1", name="Growspace 1")
+    growspaces = {"gs1": gs1}
+
+    with (
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator",
+            autospec=True,
+        ) as mock_irrigation,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.DehumidifierCoordinator",
+            autospec=True,
+        ) as mock_dehum,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.HumidifierCoordinator",
+            autospec=True,
+        ) as mock_hum,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.LightCycleTracker",
+            autospec=True,
+        ) as mock_tracker,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.CirculationFanCoordinator",
+            autospec=True,
+        ) as mock_fan,
+    ):
+        mock_irrigation.return_value.async_setup = AsyncMock()
+        mock_dehum.return_value.async_setup = AsyncMock()
+        mock_hum.return_value.async_setup = AsyncMock()
+        mock_tracker.return_value.async_setup = AsyncMock()
+        mock_fan.return_value.async_setup = AsyncMock()
+
+        await subsystem_manager.async_initialize_sub_coordinators(growspaces)
+
+        mock_fan.assert_called_once_with(
+            subsystem_manager.hass,
+            subsystem_manager.entry,
+            "gs1",
+            subsystem_manager.coordinator,
+        )
+        assert "gs1" in subsystem_manager.circulation_fan_coordinators
+
+        mock_fan_instance = mock_fan.return_value
+        subsystem_manager.async_cancel_all()
+        mock_fan_instance.unload.assert_called_once()
 
 
 @pytest.mark.asyncio

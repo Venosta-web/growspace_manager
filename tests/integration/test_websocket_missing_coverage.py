@@ -327,7 +327,7 @@ async def test_websocket_get_lineage_tree_inner_exception(
     msg = {"id": 16, "plant_id": "p1"}
     mock_coordinator = MagicMock()
     mock_coordinator.plants = {"p1": MagicMock()}
-    mock_coordinator.genetics_manager.get_lineage_tree.side_effect = RuntimeError("inner crash")
+    mock_coordinator.services.genetics.get_lineage_tree.side_effect = RuntimeError("inner crash")
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
         return_value=mock_coordinator,

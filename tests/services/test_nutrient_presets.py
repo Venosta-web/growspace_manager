@@ -9,12 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from .common import create_plant
 import pytest
-from tests.common import (
-    MockConfigEntry,
-    async_capture_events,
-)
 
 from custom_components.growspace_manager.const import (
     ATTR_MIN_DAYS_IN_STAGE,
@@ -39,6 +34,9 @@ from custom_components.growspace_manager.services.nutrient_presets import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry, async_capture_events
+
+from .common import create_plant
 
 
 def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
@@ -96,8 +94,8 @@ class TestNutrientPresetCoordinator:
         """Test creating a new nutrient preset."""
         name = "Veg Mix"
         nutrients = [
-            {"name": "Grow A", "dose_ml_l": 2.0},
-            {"name": "Grow B", "dose_ml_l": 1.5},
+            {"nutrient_id": "id-grow-a", "dose_ml_l": 2.0},
+            {"nutrient_id": "id-grow-b", "dose_ml_l": 1.5},
         ]
 
         preset = await preset_coordinator.services.config.save_nutrient_preset(
@@ -108,7 +106,7 @@ class TestNutrientPresetCoordinator:
         assert len(preset.nutrients) == 2
         assert preset.stage == PlantStage.VEG
         assert preset.min_days_in_stage == 5
-        assert preset.id in preset_coordinator.nutrient_presets
+        assert preset.id in preset_coordinator.nutrient_manager.nutrient_presets
         preset_coordinator.storage_manager.async_force_save.assert_called_once()
 
     @pytest.mark.asyncio
@@ -118,14 +116,14 @@ class TestNutrientPresetCoordinator:
         """Test removing a nutrient preset."""
         # First save a preset
         preset = await preset_coordinator.services.config.save_nutrient_preset(
-            name="To Remove", nutrients=[{"name": "Nutrient", "dose_ml_l": 1.0}]
+            name="To Remove", nutrients=[{"nutrient_id": "id-nutrient", "dose_ml_l": 1.0}]
         )
         preset_id = preset.id
 
         # Remove it
         await preset_coordinator.services.config.remove_nutrient_preset(preset_id)
 
-        assert preset_id not in preset_coordinator.nutrient_presets
+        assert preset_id not in preset_coordinator.nutrient_manager.nutrient_presets
         assert preset_coordinator.storage_manager.async_force_save.call_count == 2
 
     @pytest.mark.asyncio
@@ -146,7 +144,7 @@ class TestNutrientPresetCoordinator:
         # 1. Preset for VEG, min 5 days (Plant is VEG, 10 days) -> Should match
         await preset_coordinator.services.config.save_nutrient_preset(
             name="Veg Applicable",
-            nutrients=[{"name": "A", "dose_ml_l": 1.0}],
+            nutrients=[{"nutrient_id": "id-a", "dose_ml_l": 1.0}],
             stage=PlantStage.VEG,
             min_days_in_stage=5,
         )
@@ -154,21 +152,21 @@ class TestNutrientPresetCoordinator:
         # 2. Preset for FLOWER (Plant is VEG) -> Should NOT match
         await preset_coordinator.services.config.save_nutrient_preset(
             name="Bloom Not Applicable",
-            nutrients=[{"name": "B", "dose_ml_l": 1.0}],
+            nutrients=[{"nutrient_id": "id-b", "dose_ml_l": 1.0}],
             stage=PlantStage.FLOWER,
         )
 
         # 3. Preset for VEG, min 15 days (Plant is VEG, 10 days) -> Should NOT match
         await preset_coordinator.services.config.save_nutrient_preset(
             name="Veg Too Soon",
-            nutrients=[{"name": "C", "dose_ml_l": 1.0}],
+            nutrients=[{"nutrient_id": "id-c", "dose_ml_l": 1.0}],
             stage=PlantStage.VEG,
             min_days_in_stage=15,
         )
 
         # 4. Global preset (no stage) -> Should match
         await preset_coordinator.services.config.save_nutrient_preset(
-            name="Global", nutrients=[{"name": "D", "dose_ml_l": 1.0}]
+            name="Global", nutrients=[{"nutrient_id": "id-d", "dose_ml_l": 1.0}]
         )
 
         applicable = preset_coordinator.services.plants.get_applicable_presets(
@@ -190,8 +188,8 @@ class TestNutrientPresetCoordinator:
         preset = await preset_coordinator.services.config.save_nutrient_preset(
             name="Test Preset",
             nutrients=[
-                {"name": "NutriA", "dose_ml_l": 2.5},
-                {"name": "NutriB", "dose_ml_l": 0.5},
+                {"nutrient_id": "id-nutri-a", "dose_ml_l": 2.5},
+                {"nutrient_id": "id-nutri-b", "dose_ml_l": 0.5},
             ],
         )
 
@@ -199,7 +197,7 @@ class TestNutrientPresetCoordinator:
             preset.id
         ].get_nutrient_map()
 
-        assert nutrient_map == {"NutriA": 2.5, "NutriB": 0.5}
+        assert nutrient_map == {"id-nutri-a": 2.5, "id-nutri-b": 0.5}
 
     @pytest.mark.asyncio
     async def test_resolve_nonexistent_preset_raises(
@@ -217,13 +215,13 @@ class TestNutrientPresetCoordinator:
         # Plant is VEG, 10 days
         await preset_coordinator.services.config.save_nutrient_preset(
             name="Days Match",
-            nutrients=[{"name": "A", "dose_ml_l": 1.0}],
+            nutrients=[{"nutrient_id": "id-a", "dose_ml_l": 1.0}],
             min_days_in_stage=5,  # No stage
         )
 
         await preset_coordinator.services.config.save_nutrient_preset(
             name="Days No Match",
-            nutrients=[{"name": "A", "dose_ml_l": 1.0}],
+            nutrients=[{"nutrient_id": "id-a", "dose_ml_l": 1.0}],
             min_days_in_stage=15,  # Too many days
         )
 
@@ -244,7 +242,7 @@ class TestWateringWithPresets:
     ) -> None:
         """Test watering a plant using a nutrient preset."""
         preset = await preset_coordinator.services.config.save_nutrient_preset(
-            name="Test Preset", nutrients=[{"name": "CalMag", "dose_ml_l": 2.0}]
+            name="Test Preset", nutrients=[{"nutrient_id": "id-calmag", "dose_ml_l": 2.0}]
         )
 
         # Water with 2.0L using preset (should result in 4.0ml CalMag)
@@ -261,7 +259,7 @@ class TestWateringWithPresets:
         reasons = str(event_data.get("reasons", []))
 
         assert f"Preset: {preset.name}" in reasons
-        assert "CalMag: 2.0ml/L" in reasons
+        assert "id-calmag: 2.0ml/L" in reasons
         assert "Total: 4.0ml" in reasons
 
     @pytest.mark.asyncio
@@ -272,13 +270,13 @@ class TestWateringWithPresets:
         preset = await preset_coordinator.services.config.save_nutrient_preset(
             name="Test Preset",
             nutrients=[
-                {"name": "A", "dose_ml_l": 1.0},
-                {"name": "B", "dose_ml_l": 2.0},
+                {"nutrient_id": "id-a", "dose_ml_l": 1.0},
+                {"nutrient_id": "id-b", "dose_ml_l": 2.0},
             ],
         )
 
-        # Water with preset A=1, B=2, but manually override B=5 and add C=10
-        manual = {"B": 5.0, "C": 10.0}
+        # Water with preset id-a=1, id-b=2, but manually override id-b=5 and add id-c=10
+        manual = {"id-b": 5.0, "id-c": 10.0}
 
         events = async_capture_events(
             preset_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY
@@ -287,15 +285,14 @@ class TestWateringWithPresets:
             "test_plant", amount=1.0, nutrients=manual, preset_id=preset.id
         )
 
-        # Result should be A=1, B=5, C=10
+        # Result should be id-a=1, id-b=5, id-c=10
         assert len(events) == 1
         event_data = events[0].data
         reasons = str(event_data.get("reasons", []))
 
-        assert "A: 1.0ml/L" in reasons
-        assert "B: 5.0ml/L" in reasons
-        assert "C: 10.0ml/L" in reasons
-        # Verify preset name is still mentioned
+        assert "id-a: 1.0ml/L" in reasons
+        assert "id-b: 5.0ml/L" in reasons
+        assert "id-c: 10.0ml/L" in reasons
         assert f"Preset: {preset.name}" in reasons
 
     @pytest.mark.asyncio
@@ -304,11 +301,9 @@ class TestWateringWithPresets:
     ) -> None:
         """Test watering an entire growspace using a preset."""
         preset = await preset_coordinator.services.config.save_nutrient_preset(
-            name="Gs Preset", nutrients=[{"name": "Bloom", "dose_ml_l": 4.0}]
+            name="Gs Preset", nutrients=[{"nutrient_id": "id-bloom", "dose_ml_l": 4.0}]
         )
 
-        # Water growspace
-        # Water growspace
         events = async_capture_events(
             preset_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY
         )
@@ -316,13 +311,12 @@ class TestWateringWithPresets:
             "test_gs", amount_per_plant=1.0, preset_id=preset.id
         )
 
-        # Verify event for the plant
         # Growspace has 1 plant, so 1 event
         assert len(events) == 1
         event_data = events[0].data
         reasons = str(event_data.get("reasons", []))
 
-        assert "Bloom: 4.0ml/L" in reasons
+        assert "id-bloom: 4.0ml/L" in reasons
         assert "Total: 4.0ml" in reasons
         assert f"Preset: {preset.name}" in reasons
 
@@ -349,7 +343,7 @@ class TestServiceHandlersPresets:
         call = MagicMock()
         call.data = {
             ATTR_NAME: "Service Preset",
-            "nutrients": [{"name": "Grow", "dose_ml_l": 3.0}],
+            "nutrients": [{"nutrient_id": "id-grow", "dose_ml_l": 3.0}],
             ATTR_STAGE: PlantStage.FLOWER,
             ATTR_MIN_DAYS_IN_STAGE: 10,
         }
@@ -359,7 +353,7 @@ class TestServiceHandlersPresets:
         # Verify preset was saved
         presets = [
             p
-            for p in preset_coordinator.nutrient_presets.values()
+            for p in preset_coordinator.nutrient_manager.nutrient_presets.values()
             if p.name == "Service Preset"
         ]
         assert len(presets) == 1
@@ -375,7 +369,7 @@ class TestServiceHandlersPresets:
         # 1. Save initial preset
         preset = await preset_coordinator.services.config.save_nutrient_preset(
             name="Initial Name",
-            nutrients=[{"name": "Base", "dose_ml_l": 1.0}],
+            nutrients=[{"nutrient_id": "id-base", "dose_ml_l": 1.0}],
         )
         initial_id = preset.id
 
@@ -384,13 +378,13 @@ class TestServiceHandlersPresets:
         call.data = {
             ATTR_PRESET_ID: initial_id,
             ATTR_NAME: "Updated Name",
-            "nutrients": [{"name": "Base", "dose_ml_l": 2.0}],
+            "nutrients": [{"nutrient_id": "id-base", "dose_ml_l": 2.0}],
         }
 
         await handle_save_nutrient_preset(hass, preset_coordinator, call)
 
         # 3. Verify update
-        updated = preset_coordinator.nutrient_presets[initial_id]
+        updated = preset_coordinator.nutrient_manager.nutrient_presets[initial_id]
         assert updated.name == "Updated Name"
         assert updated.nutrients[0]["dose_ml_l"] == 2.0
         assert updated.id == initial_id
@@ -411,7 +405,7 @@ class TestServiceHandlersPresets:
 
         await handle_remove_nutrient_preset(hass, preset_coordinator, call)
 
-        assert preset.id not in preset_coordinator.nutrient_presets
+        assert preset.id not in preset_coordinator.nutrient_manager.nutrient_presets
 
 
 class TestNutrientPresetSerialization:
@@ -424,8 +418,8 @@ class TestNutrientPresetSerialization:
             "id": "preset-123",
             "name": "Full Recipe",
             "items": [
-                {"name": "Part A", "dose_ml_l": 2.0},
-                {"name": "Part B", "dose_ml_l": 2.0},
+                {"nutrient_id": "id-part-a", "dose_ml_l": 2.0},
+                {"nutrient_id": "id-part-b", "dose_ml_l": 2.0},
             ],
             "stage": "veg",
             "min_days_in_stage": 7,
@@ -562,6 +556,114 @@ class TestSensorRegistrationCoverage:
         # and maybe check count of other sensors if needed.
 
 
+class TestNutrientPresetNewFields:
+    """Tests for week, ec_target, ph_target on NutrientPreset (issue #409)."""
+
+    def test_deserialise_old_record_applies_defaults(self) -> None:
+        """Old records without new fields should deserialise with defaults."""
+        data = {
+            "id": "old-preset",
+            "name": "Legacy Mix",
+            "items": [{"nutrient_id": "id-a", "dose_ml_l": 1.0}],
+            "created_at": datetime.now().isoformat(),
+        }
+        preset = NutrientPreset.from_dict(data)
+        assert preset.week == 1
+        assert preset.ec_target is None
+        assert preset.ph_target is None
+
+    def test_deserialise_new_record_with_all_fields(self) -> None:
+        """New records with all three fields should round-trip correctly."""
+        data = {
+            "id": "new-preset",
+            "name": "Week 3 Bloom",
+            "items": [{"nutrient_id": "id-b", "dose_ml_l": 2.0}],
+            "week": 3,
+            "ec_target": 1.8,
+            "ph_target": 6.0,
+            "created_at": datetime.now().isoformat(),
+        }
+        preset = NutrientPreset.from_dict(data)
+        assert preset.week == 3
+        assert preset.ec_target == 1.8
+        assert preset.ph_target == 6.0
+
+        serialised = preset.to_dict()
+        assert serialised["week"] == 3
+        assert serialised["ec_target"] == 1.8
+        assert serialised["ph_target"] == 6.0
+
+    @pytest.mark.asyncio
+    async def test_save_nutrient_preset_persists_new_fields(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """async_save_nutrient_preset should accept and persist the three new fields."""
+        preset = await preset_coordinator.services.config.save_nutrient_preset(
+            name="Timed Bloom",
+            nutrients=[{"nutrient_id": "id-bloom", "dose_ml_l": 3.0}],
+            week=4,
+            ec_target=2.1,
+            ph_target=5.9,
+        )
+        assert preset.week == 4
+        assert preset.ec_target == 2.1
+        assert preset.ph_target == 5.9
+
+        stored = preset_coordinator.nutrient_manager.nutrient_presets[preset.id]
+        assert stored.week == 4
+        assert stored.ec_target == 2.1
+        assert stored.ph_target == 5.9
+
+    @pytest.mark.asyncio
+    async def test_update_preset_preserves_new_fields(
+        self, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Updating an existing preset should persist updated field values."""
+        preset = await preset_coordinator.services.config.save_nutrient_preset(
+            name="Original",
+            nutrients=[{"nutrient_id": "id-a", "dose_ml_l": 1.0}],
+            week=1,
+            ec_target=1.2,
+            ph_target=6.2,
+        )
+        updated = await preset_coordinator.services.config.save_nutrient_preset(
+            name="Original",
+            nutrients=[{"nutrient_id": "id-a", "dose_ml_l": 1.0}],
+            preset_id=preset.id,
+            week=2,
+            ec_target=1.5,
+            ph_target=5.8,
+        )
+        assert updated.week == 2
+        assert updated.ec_target == 1.5
+        assert updated.ph_target == 5.8
+
+    @pytest.mark.asyncio
+    async def test_service_handler_forwards_new_fields(
+        self, hass: HomeAssistant, preset_coordinator: GrowspaceCoordinator
+    ) -> None:
+        """Service handler should forward week, ec_target, ph_target to the manager."""
+        call = MagicMock()
+        call.data = {
+            ATTR_NAME: "Handler Week Test",
+            "nutrients": [{"nutrient_id": "id-x", "dose_ml_l": 1.0}],
+            "week": 5,
+            "ec_target": 1.9,
+            "ph_target": 6.1,
+        }
+        await handle_save_nutrient_preset(hass, preset_coordinator, call)
+
+        presets = [
+            p
+            for p in preset_coordinator.nutrient_manager.nutrient_presets.values()
+            if p.name == "Handler Week Test"
+        ]
+        assert len(presets) == 1
+        assert presets[0].week == 5
+        assert presets[0].ec_target == 1.9
+        assert presets[0].ph_target == 6.1
+
+
 class TestNutrientPresetStorageLoading:
     """Tests for storage loading edge cases."""
 
@@ -593,7 +695,7 @@ class TestNutrientPresetStorageLoading:
                 "p1": {
                     "id": "p1",
                     "name": "Stored Preset",
-                    "items": [{"name": "A", "dose_ml_l": 1.0}],
+                    "items": [{"nutrient_id": "id-a", "dose_ml_l": 1.0}],
                     "stage": "flower",
                 }
             }

@@ -153,7 +153,7 @@ async def test_add_plant_seed_batch_passes_generation(
     mock_coordinator.growspaces = {"tent1": MagicMock()}
     mock_batch = MagicMock()
     mock_batch.generation = "F2"
-    mock_coordinator.genetics_manager.seed_batches = {"batch1": mock_batch}
+    mock_coordinator.services.genetics.seed_batch_by_id.return_value = mock_batch
     msg = {
         "id": 5, "growspace_id": "tent1", "row": 0, "col": 0,
         "strain": "OG Kush", "seed_batch_id": "batch1",

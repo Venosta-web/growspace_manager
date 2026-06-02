@@ -54,6 +54,7 @@ from .const import (
     ATTR_RESIN,
     ATTR_ROW,
     ATTR_SEED_BATCH_ID,
+    ATTR_SEX,
     ATTR_STAGE,
     ATTR_STRAIN,
     ATTR_STRAIN_NAME,
@@ -67,7 +68,6 @@ from .const import (
     ATTR_TRANSITION_DATE,
     ATTR_TRIM_WEIGHT,
     ATTR_TYPE,
-    ATTR_SEX,
     ATTR_VIGOR,
     ATTR_VISUAL_TAG,
     ATTR_VOLUME_LITERS,
@@ -108,6 +108,7 @@ from .const import (
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DATE_FIELDS,
+    FanRegulationMode,
     PLANT_STAGES,
 )
 from .validation import valid_date_or_none, valid_growspace_id
@@ -454,6 +455,10 @@ PRINT_LABEL_SCHEMA = vol.Schema(
         vol.Optional("device_id"): str,
         vol.Optional("preview", default=False): bool,
         vol.Optional("base_url"): str,
+        vol.Optional("fields"): dict,
+        vol.Optional("density"): vol.In(["low", "normal", "high"]),
+        vol.Optional("qr_target"): vol.In(["web", "deeplink"]),
+        vol.Optional("label_size"): str,
     }
 )
 
@@ -526,6 +531,7 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_POWER_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ENERGY_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ELECTRICITY_COST): vol.Coerce(float),
+        vol.Optional("circulation_fan_config"): dict,
     }
 )
 
@@ -664,6 +670,28 @@ SET_HUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
     }
 )
 
+CONFIGURE_CIRCULATION_FAN_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Required("enabled"): bool,
+        vol.Required("regulation_mode"): vol.In([m.value for m in FanRegulationMode]),
+        vol.Required("min_speed"): vol.All(vol.Coerce(int), vol.Range(min=0, max=99)),
+        vol.Required("max_speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+        vol.Required("vpd_target"): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=3.0)),
+        vol.Required("vpd_tolerance"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
+        vol.Required("humidity_target"): vol.All(vol.Coerce(float), vol.Range(min=20, max=90)),
+        vol.Required("humidity_tolerance"): vol.All(vol.Coerce(float), vol.Range(min=1, max=20)),
+        vol.Required("temperature_target"): vol.All(vol.Coerce(float), vol.Range(min=15, max=35)),
+        vol.Required("temperature_tolerance"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10)),
+        vol.Optional("critical_temp_low"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=10, max=40))),
+        vol.Optional("critical_temp_high"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=10, max=50))),
+        vol.Required("critical_temp_hysteresis"): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=5.0)),
+        vol.Required("wind_enabled"): bool,
+        vol.Required("wind_period_seconds"): vol.All(vol.Coerce(int), vol.Range(min=10, max=600)),
+        vol.Required("wind_amplitude_pct"): vol.All(vol.Coerce(int), vol.Range(min=5, max=50)),
+    }
+)
+
 # --- Manual Watering Service Schemas ---
 
 WATER_PLANT_SCHEMA = vol.Schema(
@@ -697,7 +725,7 @@ WATER_GROWSPACE_SCHEMA = vol.Schema(
 
 NUTRIENT_ITEM_SCHEMA = vol.Schema(
     {
-        vol.Required("name"): str,
+        vol.Required("nutrient_id"): str,
         vol.Required("dose_ml_l"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
     }
 )
@@ -709,6 +737,9 @@ SAVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
         vol.Optional(ATTR_PRESET_ID): str,
         vol.Optional(ATTR_STAGE): vol.Any(vol.In(PLANT_STAGES), None),
         vol.Optional(ATTR_MIN_DAYS_IN_STAGE): vol.All(int, vol.Range(min=0)),
+        vol.Optional("week", default=1): vol.All(int, vol.Range(min=1)),
+        vol.Optional("ec_target"): vol.Any(vol.All(vol.Coerce(float), vol.Range(min=0.0)), None),
+        vol.Optional("ph_target"): vol.Any(vol.All(vol.Coerce(float), vol.Range(min=0.0, max=14.0)), None),
     }
 )
 

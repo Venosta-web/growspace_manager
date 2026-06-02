@@ -256,6 +256,10 @@ SCHEMA_WS_PRINT_LABEL = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Optional("device_id"): str,
         vol.Optional("preview"): bool,
         vol.Optional("base_url"): str,
+        vol.Optional("fields"): dict,
+        vol.Optional("density"): vol.In(["low", "normal", "high"]),
+        vol.Optional("qr_target"): vol.In(["web", "deeplink"]),
+        vol.Optional("label_size"): str,
     }
 )
 
@@ -307,7 +311,7 @@ async def websocket_add_plant(
 
         seed_batch_id = msg.get(ATTR_SEED_BATCH_ID)
         batch = (
-            coordinator.genetics_manager.seed_batches.get(seed_batch_id)
+            coordinator.services.genetics.seed_batch_by_id(seed_batch_id)
             if seed_batch_id
             else None
         )
@@ -361,7 +365,7 @@ async def websocket_add_plants(
         base_phenotype: str | None = msg.get(ATTR_PHENOTYPE)
         seed_batch_id: str | None = msg.get(ATTR_SEED_BATCH_ID)
         batch = (
-            coordinator.genetics_manager.seed_batches.get(seed_batch_id)
+            coordinator.services.genetics.seed_batch_by_id(seed_batch_id)
             if seed_batch_id
             else None
         )

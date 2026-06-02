@@ -46,10 +46,9 @@ async def _get_irrigation_coordinator(
 ) -> IrrigationCoordinator:
     """Get the irrigation coordinator for a specific growspace, raising on failure."""
     try:
-        irrigation_coordinators = coordinator.irrigation_coordinators
+        irr_coord = coordinator.services.growspaces.get_irrigation_coordinator(growspace_id)
 
-        if growspace_id not in irrigation_coordinators:
-            # Fallback: Check if growspace exists and try to lazy init
+        if irr_coord is None:
             growspace = coordinator.growspaces.get(growspace_id)
             if growspace:
                 _LOGGER.info(
@@ -58,14 +57,13 @@ async def _get_irrigation_coordinator(
                 await coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
                     growspace_id, growspace
                 )
-                # Re-fetch
-                irrigation_coordinators = coordinator.irrigation_coordinators
+                irr_coord = coordinator.services.growspaces.get_irrigation_coordinator(growspace_id)
 
-            if growspace_id not in irrigation_coordinators:
+            if irr_coord is None:
                 raise ServiceValidationError(
                     f"Growspace '{growspace_id}' not found or has no irrigation setup."
                 )
-        return cast("IrrigationCoordinator", irrigation_coordinators[growspace_id])
+        return cast("IrrigationCoordinator", irr_coord)
     except AttributeError:
         raise ServiceValidationError(
             "Irrigation coordinators not found. Setup may be incomplete."

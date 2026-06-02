@@ -26,7 +26,7 @@ def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     # Mock the save callback in the IPM service since it now handles saves
     coord.ipm_service._ctx.save_callback = coord.async_save
     # Ensure properties are initialized
-    coord.ipm_presets = {}
+    coord.ipm_service.ipm_presets = {}
     # coord.plants and coord.growspaces are linked to DataRepository in __init__
     # Do NOT overwrite them here or the link breaks.
     coord.growspaces.clear()
@@ -44,9 +44,9 @@ async def test_async_save_ipm_preset(mock_coordinator: GrowspaceCoordinator) -> 
         name="Bug Free", type="foliar", items=items, stage="veg", min_days_in_stage=0
     )
 
-    assert preset.id in mock_coordinator.ipm_presets
-    assert mock_coordinator.ipm_presets[preset.id].name == "Bug Free"
-    assert mock_coordinator.ipm_presets[preset.id].items == items
+    assert preset.id in mock_coordinator.ipm_service.ipm_presets
+    assert mock_coordinator.ipm_service.ipm_presets[preset.id].name == "Bug Free"
+    assert mock_coordinator.ipm_service.ipm_presets[preset.id].items == items
     mock_coordinator.async_save.assert_called()  # type: ignore[attr-defined]
 
     # Test Update
@@ -56,9 +56,9 @@ async def test_async_save_ipm_preset(mock_coordinator: GrowspaceCoordinator) -> 
     )
 
     assert updated_preset.id == preset.id
-    assert mock_coordinator.ipm_presets[preset.id].name == "Bug Free V2"
-    assert mock_coordinator.ipm_presets[preset.id].type == "drench"
-    assert mock_coordinator.ipm_presets[preset.id].items == updated_items
+    assert mock_coordinator.ipm_service.ipm_presets[preset.id].name == "Bug Free V2"
+    assert mock_coordinator.ipm_service.ipm_presets[preset.id].type == "drench"
+    assert mock_coordinator.ipm_service.ipm_presets[preset.id].items == updated_items
 
 
 @pytest.mark.asyncio
@@ -102,13 +102,13 @@ async def test_ipm_preset_visible_after_storage_load_sync(
 async def test_async_remove_ipm_preset(mock_coordinator: GrowspaceCoordinator) -> None:
     """Test removing an IPM preset."""
     # Setup
-    mock_coordinator.ipm_presets = {
+    mock_coordinator.ipm_service.ipm_presets = {
         "ipm1": IPMPreset(id="ipm1", name="Delete Me", type="foliar", items=[])
     }
 
     # Test Remove
     await mock_coordinator.services.config.remove_ipm_preset("ipm1")
-    assert "ipm1" not in mock_coordinator.ipm_presets
+    assert "ipm1" not in mock_coordinator.ipm_service.ipm_presets
     mock_coordinator.async_save.assert_called()  # type: ignore[attr-defined]
 
     # Test Missing
@@ -136,7 +136,7 @@ async def test_async_apply_ipm_to_growspace(
         type="foliar",
         items=[{"name": "Soap", "dose_amount": 1.0, "dose_unit": "tbsp"}],
     )
-    mock_coordinator.ipm_presets["ipm1"] = preset
+    mock_coordinator.ipm_service.ipm_presets["ipm1"] = preset
 
     # Verify Events
     events = async_capture_events(mock_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY)
@@ -180,7 +180,7 @@ async def test_async_apply_ipm_to_plants(
     mock_coordinator.data_repository.add_plant(p2)
 
     preset = IPMPreset(id="ipm1", name="Spot Treat", type="drench", items=[])
-    mock_coordinator.ipm_presets["ipm1"] = preset
+    mock_coordinator.ipm_service.ipm_presets["ipm1"] = preset
 
     # Execute - Only p1
     events = async_capture_events(mock_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY)
@@ -210,7 +210,7 @@ async def test_async_apply_ipm_to_plants(
 async def test_async_apply_ipm_errors(mock_coordinator: GrowspaceCoordinator) -> None:
     """Test error handling in apply_ipm."""
     preset = IPMPreset(id="ipm1", name="Test", type="foliar", items=[])
-    mock_coordinator.ipm_presets["ipm1"] = preset
+    mock_coordinator.ipm_service.ipm_presets["ipm1"] = preset
 
     # No target
     with pytest.raises(ValueError):

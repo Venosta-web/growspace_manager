@@ -9,7 +9,6 @@ import pytest
 from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
-    CONF_NOTIFICATION_PERSONALITY,
     MIN_STRESS_DURATION_SECONDS,
     NOTIFICATION_CHANNEL,
     NOTIFICATION_GROUP,
@@ -87,9 +86,19 @@ def mock_hass() -> MagicMock:
 
 
 @pytest.fixture
-def manager(mock_hass: MagicMock, mock_coordinator: MagicMock) -> NotificationManager:
+def mock_ai_rewriter() -> MagicMock:
+    """Mock AINotificationRewriter that returns messages unchanged by default."""
+    rewriter = MagicMock()
+    rewriter.async_rewrite = AsyncMock(side_effect=lambda msg, *_a, **_kw: msg)
+    return rewriter
+
+
+@pytest.fixture
+def manager(
+    mock_hass: MagicMock, mock_coordinator: MagicMock, mock_ai_rewriter: MagicMock
+) -> NotificationManager:
     """Fixture for NotificationManager."""
-    return NotificationManager(mock_hass, mock_coordinator)
+    return NotificationManager(mock_hass, mock_coordinator, mock_ai_rewriter)
 
 
 def test_initialization(
@@ -180,48 +189,38 @@ async def test_async_send_notification_disabled(
 
 
 async def test_async_send_notification_ai_rewrite(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+    manager: NotificationManager,
+    mock_coordinator: MagicMock,
+    mock_hass: MagicMock,
+    mock_ai_rewriter: MagicMock,
 ) -> None:
-    """Test sending notification with AI rewrite."""
+    """Test that NotificationManager uses the rewritten message from AINotificationRewriter."""
     mock_coordinator.options = {
         "ai_settings": {
             CONF_AI_ENABLED: True,
             CONF_ASSISTANT_ID: "test_agent",
-            CONF_NOTIFICATION_PERSONALITY: "Pirate",
         }
     }
+    mock_ai_rewriter.async_rewrite.side_effect = None
+    mock_ai_rewriter.async_rewrite.return_value = "Ahoy! Test Message Rewrite"
 
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        mock_result = MagicMock()
-        mock_result.response.error_code = None
-        mock_result.response.response_type = None
-        mock_result.response.speech = {
-            "plain": {"speech": "Ahoy! Test Message Rewrite"}
-        }
-        mock_converse.return_value = mock_result
+    await manager.async_send_notification(GROWSPACE_ID, "Test Title", "Test Message")
 
-        await manager.async_send_notification(
-            GROWSPACE_ID, "Test Title", "Test Message"
-        )
-
-        mock_hass.services.async_call.assert_awaited_once_with(
-            "notify",
-            "mobile_app_test",
-            {
-                "message": "Ahoy! Test Message Rewrite",
-                "title": "Test Title",
-                "data": {
-                    "group": NOTIFICATION_GROUP,
-                    "channel": NOTIFICATION_CHANNEL,
-                    "notification_icon": NOTIFICATION_ICON,
-                    "push": {"thread-id": NOTIFICATION_GROUP},
-                },
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "notify",
+        "mobile_app_test",
+        {
+            "message": "Ahoy! Test Message Rewrite",
+            "title": "Test Title",
+            "data": {
+                "group": NOTIFICATION_GROUP,
+                "channel": NOTIFICATION_CHANNEL,
+                "notification_icon": NOTIFICATION_ICON,
+                "push": {"thread-id": NOTIFICATION_GROUP},
             },
-            blocking=False,
-        )
+        },
+        blocking=False,
+    )
 
 
 async def test_async_check_timed_notifications(
@@ -247,7 +246,7 @@ async def test_async_check_timed_notifications(
     )
     mock_coordinator.plants = {"plant_1": plant}
     mock_coordinator.get_growspace_plants.return_value = [plant]
-    mock_coordinator.notifications_sent = {"plant_1": {}}
+    mock_coordinator.notification_state.sent = {"plant_1": {}}
 
     with patch(
         "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
@@ -256,7 +255,7 @@ async def test_async_check_timed_notifications(
         await manager.async_check_timed_notifications()
 
     mock_hass.services.async_call.assert_awaited()
-    assert mock_coordinator.notifications_sent["plant_1"]["timed_notify_1"]
+    assert mock_coordinator.notification_state.sent["plant_1"]["timed_notify_1"]
     mock_coordinator.async_commit.assert_awaited()
 
 
@@ -284,189 +283,6 @@ async def test_async_send_notification_exception(
     # Should not raise exception
     await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
 
-
-async def test_rewrite_with_ai_personalities(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test AI rewrite with different personalities."""
-    personalities = ["Scientific", "Chill Stoner", "Strict Coach", "Pirate", "Standard"]
-
-    for personality in personalities:
-        mock_coordinator.options = {
-            "ai_settings": {
-                CONF_AI_ENABLED: True,
-                CONF_ASSISTANT_ID: "test_agent",
-                CONF_NOTIFICATION_PERSONALITY: personality,
-            }
-        }
-
-        # Reset notification cooldown for each test
-        manager._last_notification_sent.clear()
-
-        with patch(
-            "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-            new_callable=AsyncMock,
-        ) as mock_converse:
-            mock_result = MagicMock()
-            mock_result.response.error_code = None
-            mock_result.response.response_type = None
-            mock_result.response.speech = {
-                "plain": {"speech": f"Rewritten as {personality}"}
-            }
-            mock_converse.return_value = mock_result
-
-            await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
-
-            # Verify prompt contains personality context
-            # We need to check the call args of the mock
-            assert mock_converse.call_count == 1
-            call_args = mock_converse.call_args
-            prompt = call_args[1]["text"]
-
-            if personality == "Scientific":
-                assert "precise technical terminology" in prompt
-            elif personality == "Chill Stoner":
-                assert "laid-back and friendly" in prompt
-            elif personality == "Strict Coach":
-                assert "direct and authoritative" in prompt
-            elif personality == "Pirate":
-                assert "Write like a pirate" in prompt
-            else:  # Standard
-                assert "clear, professional, and helpful" in prompt
-
-            # Reset for next iteration
-            mock_hass.services.async_call.reset_mock()
-
-
-async def test_rewrite_with_ai_sensor_formatting(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test AI rewrite with sensor data formatting."""
-    mock_coordinator.options = {
-        "ai_settings": {
-            CONF_AI_ENABLED: True,
-            CONF_ASSISTANT_ID: "test_agent",
-        }
-    }
-
-    sensor_states = {"temp": 25, "humidity": 60, "fan": True, "light": None}
-
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        mock_result = MagicMock()
-        mock_result.response.error_code = None
-        mock_result.response.response_type = None
-        mock_result.response.speech = {"plain": {"speech": "Rewritten"}}
-        mock_converse.return_value = mock_result
-
-        await manager.async_send_notification(
-            GROWSPACE_ID, "Title", "Message", sensor_states=sensor_states
-        )
-
-        # Verify prompt contains formatted sensor data
-        call_args = mock_converse.call_args
-        prompt = call_args[1]["text"]
-        assert "temp: 25" in prompt
-        assert "humidity: 60" in prompt
-        assert "fan: True" not in prompt  # bools are excluded
-        assert "light: None" not in prompt  # None is excluded
-
-
-async def test_rewrite_with_ai_truncation(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test AI response truncation."""
-    mock_coordinator.options = {
-        "ai_settings": {
-            CONF_AI_ENABLED: True,
-            CONF_ASSISTANT_ID: "test_agent",
-            "max_response_length": 10,
-        }
-    }
-
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        # Case 1: Truncate
-        result1 = MagicMock()
-        result1.response.error_code = None
-        result1.response.response_type = None
-        long_response = "This is a long response"  # 23 chars. 10 < 23 < 60.
-        result1.response.speech = {"plain": {"speech": long_response}}
-
-        # Case 2: Too long, use default
-        result2 = MagicMock()
-        result2.response.error_code = None
-        result2.response.response_type = None
-        very_long_response = "A" * 70  # 70 chars >= 10 + 50
-        result2.response.speech = {"plain": {"speech": very_long_response}}
-
-        mock_converse.side_effect = [result1, result2]
-
-        # Test Case 1
-        await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
-        args = mock_hass.services.async_call.call_args[0]
-        assert args[2]["message"].endswith("...")
-
-        # Reset cooldown for second test
-        manager._last_notification_sent.clear()
-
-        # Test Case 2
-        await manager.async_send_notification(GROWSPACE_ID, "Title", "Original Message")
-        args = mock_hass.services.async_call.call_args[0]
-        assert args[2]["message"] == "Original Message"
-
-
-async def test_rewrite_with_ai_empty_response(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test AI returning empty response."""
-    mock_coordinator.options = {
-        "ai_settings": {
-            CONF_AI_ENABLED: True,
-            CONF_ASSISTANT_ID: "test_agent",
-        }
-    }
-
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        mock_result = MagicMock()
-        mock_result.response.error_code = None
-        mock_result.response.response_type = None
-        mock_result.response.speech = {}  # Empty speech
-        mock_converse.return_value = mock_result
-
-        await manager.async_send_notification(GROWSPACE_ID, "Title", "Original Message")
-
-        args = mock_hass.services.async_call.call_args[0]
-        assert args[2]["message"] == "Original Message"
-
-
-async def test_rewrite_with_ai_exception(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test exception during AI rewrite."""
-    mock_coordinator.options = {
-        "ai_settings": {
-            CONF_AI_ENABLED: True,
-            CONF_ASSISTANT_ID: "test_agent",
-        }
-    }
-
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-        side_effect=ValueError("AI Error"),
-    ):
-        await manager.async_send_notification(GROWSPACE_ID, "Title", "Original Message")
-
-        args = mock_hass.services.async_call.call_args[0]
-        assert args[2]["message"] == "Original Message"
 
 
 async def test_async_check_timed_notifications_empty_config(
@@ -533,42 +349,6 @@ async def test_async_send_batched_notification_sensor_name_fallback(
         args = mock_send.call_args[0]
         assert "sensor.no_name" in args[1]
 
-
-async def test_async_check_tank_levels(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test checking tank levels."""
-
-    # CASE 1: Low level triggers notification
-    tank = IrrigationTank(
-        sensor_entity="sensor.tank1", name="Water Tank", warning_level=30.0
-    )
-    gs = mock_coordinator.growspaces[GROWSPACE_ID]
-    gs.environment_config = EnvironmentConfig(irrigation_tanks=[tank])
-
-    mock_state = MagicMock()
-    mock_state.state = "10.0 %"
-    mock_hass.states = MagicMock()
-    mock_hass.states.get.return_value = mock_state
-
-    with patch(
-        "custom_components.growspace_manager.presentation.entity_queries.EntityQueries"
-    ) as mock_queries:
-        mock_instance = mock_queries.return_value
-        mock_instance.parse_tank_level.return_value = 10.0
-        with patch.object(
-            manager, "async_send_notification", new_callable=AsyncMock
-        ) as mock_send:
-            await manager.async_check_tank_levels()
-            mock_send.assert_awaited_once()
-            # It uses keyword arguments
-            assert "Low Irrigation Tank Level" in mock_send.call_args[1]["title"]
-
-    # CASE 2: No environment config (skip)
-    gs.environment_config = None
-    mock_send.reset_mock()
-    await manager.async_check_tank_levels()
-    mock_send.assert_not_awaited()
 
 
 async def test_async_send_batched_notification_multiple_sensors(
@@ -1195,35 +975,6 @@ async def test_no_recovery_for_warning_resolve(
         mock_recovery.assert_not_called()
 
 
-async def test_tank_level_uses_critical_tier(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test that tank level alerts use critical tier."""
-    tank = IrrigationTank(
-        sensor_entity="sensor.tank1", name="Water Tank", warning_level=30.0
-    )
-    gs = mock_coordinator.growspaces[GROWSPACE_ID]
-    gs.environment_config = EnvironmentConfig(irrigation_tanks=[tank])
-
-    mock_state = MagicMock()
-    mock_state.state = "10.0 %"
-    mock_hass.states = MagicMock()
-    mock_hass.states.get.return_value = mock_state
-
-    with (
-        patch(
-            "custom_components.growspace_manager.presentation.entity_queries.EntityQueries"
-        ) as mock_queries,
-        patch.object(
-            manager, "async_send_notification", new_callable=AsyncMock
-        ) as mock_send,
-    ):
-        mock_instance = mock_queries.return_value
-        mock_instance.parse_tank_level.return_value = 10.0
-        await manager.async_check_tank_levels()
-        mock_send.assert_awaited_once()
-        call_kwargs = mock_send.call_args[1]
-        assert call_kwargs.get("tier") == "critical"
 
 
 async def test_send_recovery_notification(
@@ -1448,7 +1199,7 @@ async def test_check_and_trigger_plant_notification_init(
     growspace.name = GROWSPACE_NAME
 
     # Ensure plant not in notifications_sent
-    mock_coordinator.notifications_sent = {}
+    mock_coordinator.notification_state.sent = {}
 
     with (
         patch(
@@ -1461,14 +1212,14 @@ async def test_check_and_trigger_plant_notification_init(
             plant, growspace, "notify_1", "veg", 10, "Message"
         )
 
-    assert "new_plant" in mock_coordinator.notifications_sent
-    assert mock_coordinator.notifications_sent["new_plant"]["timed_notify_1"] is True
+    assert "new_plant" in mock_coordinator.notification_state.sent
+    assert mock_coordinator.notification_state.sent["new_plant"]["timed_notify_1"] is True
 
     # Test fallback to growspace.growspace_id if id not present
     del growspace.id
     growspace.growspace_id = GROWSPACE_ID + "_alt"
 
-    mock_coordinator.notifications_sent = {}  # Reset
+    mock_coordinator.notification_state.sent = {}  # Reset
 
     with (
         patch(
@@ -1637,91 +1388,3 @@ async def test_async_send_notification_no_plants_skips(
     mock_hass.services.async_call.assert_not_awaited()
 
 
-async def test_rewrite_with_ai_on_cooldown(
-    manager: NotificationManager, mock_coordinator: MagicMock
-) -> None:
-    """Test _rewrite_with_ai returns original message when on AI cooldown (lines 429-430)."""
-    future = dt_util.utcnow() + timedelta(minutes=10)
-    manager._ai_cooldown_until = future
-
-    result = await manager._rewrite_with_ai(
-        "Original",
-        "Tent",
-        None,
-        {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "agent"},
-    )
-
-    assert result == "Original"
-
-
-async def test_rewrite_with_ai_rate_limit_response(
-    manager: NotificationManager,
-) -> None:
-    """Test _rewrite_with_ai sets cooldown on 429 rate limit error (lines 461-476)."""
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        mock_result = MagicMock()
-        mock_result.response.error_code = "rate_limit"
-        mock_result.response.response_type = None
-        mock_result.response.speech = {"plain": {"speech": "Too Many Requests"}}
-        mock_converse.return_value = mock_result
-
-        result = await manager._rewrite_with_ai(
-            "Original",
-            "Tent",
-            None,
-            {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "agent"},
-        )
-
-    assert result == "Original"
-    assert manager._ai_cooldown_until is not None
-
-
-async def test_rewrite_with_ai_non_rate_limit_error_response(
-    manager: NotificationManager,
-) -> None:
-    """Test _rewrite_with_ai logs warning for non-rate-limit error responses (lines 477-481)."""
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        mock_result = MagicMock()
-        mock_result.response.error_code = "some_other_error"
-        mock_result.response.response_type = None
-        mock_result.response.speech = {"plain": {"speech": "Some error occurred"}}
-        mock_converse.return_value = mock_result
-
-        with patch(
-            "custom_components.growspace_manager.notification_manager._LOGGER.warning"
-        ) as mock_warn:
-            result = await manager._rewrite_with_ai(
-                "Original",
-                "Tent",
-                None,
-                {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "agent"},
-            )
-            mock_warn.assert_called()
-
-    assert result == "Original"
-    assert manager._ai_cooldown_until is None
-
-
-async def test_rewrite_with_ai_none_result(
-    manager: NotificationManager,
-) -> None:
-    """Test _rewrite_with_ai returns original when result is None (line 503)."""
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-        return_value=None,
-    ):
-        result = await manager._rewrite_with_ai(
-            "Original",
-            "Tent",
-            None,
-            {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "agent"},
-        )
-
-    assert result == "Original"

@@ -36,9 +36,11 @@ def mock_alert_monitor():
 
 @pytest.fixture
 def mock_coordinator(mock_alert_monitor):
-    """Mock coordinator with alert_monitor."""
+    """Mock coordinator with alert_monitor exposed via the notifications facade."""
     coord = MagicMock()
     coord.alert_monitor = mock_alert_monitor
+    coord.services.notifications.get_alerts = mock_alert_monitor.get_alerts
+    coord.services.notifications.resolve_alert = mock_alert_monitor.resolve_alert
     return coord
 
 
@@ -214,6 +216,7 @@ async def test_resolve_ai_alert_not_found_sends_error(
 ) -> None:
     """websocket_resolve_ai_alert sends an error when alert_id is not found."""
     mock_alert_monitor.resolve_alert = AsyncMock(return_value=False)
+    mock_coordinator.services.notifications.resolve_alert = mock_alert_monitor.resolve_alert
 
     from custom_components.growspace_manager.websocket.ai_assistant import (
         websocket_resolve_ai_alert,

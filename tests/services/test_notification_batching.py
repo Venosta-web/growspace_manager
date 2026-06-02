@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.notification_manager import NotificationManager
+from custom_components.growspace_manager.notification_rewriter import AINotificationRewriter
 from homeassistant.core import HomeAssistant
 
 GROWSPACE_ID = "test_gs_1"
@@ -27,7 +28,7 @@ def mock_coordinator():
 @pytest.fixture
 def manager(hass: HomeAssistant, mock_coordinator):
     """Notification manager fixture."""
-    mgr = NotificationManager(hass, mock_coordinator)
+    mgr = NotificationManager(hass, mock_coordinator, AINotificationRewriter(hass))
     yield mgr
     mgr.shutdown()
 
