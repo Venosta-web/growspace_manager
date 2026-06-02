@@ -23,7 +23,7 @@ def test_growspace_repository_init() -> None:
     assert repo.get_all_plants() == []
 
 
-def test_growspace_repository_load_growspaces(repository) -> None:
+def test_growspace_repository_load_growspaces(repository: GrowspaceRepository) -> None:
     """Test bulk-loading growspaces via load_growspaces."""
     gs = MagicMock(spec=Growspace)
     gs.id = "gs1"
@@ -31,7 +31,7 @@ def test_growspace_repository_load_growspaces(repository) -> None:
     assert repository.get_growspace("gs1") is gs
 
 
-def test_growspace_repository_load_plants(repository) -> None:
+def test_growspace_repository_load_plants(repository: GrowspaceRepository) -> None:
     """Test bulk-loading plants via load_plants."""
     plant = MagicMock(spec=Plant)
     plant.plant_id = "p1"
@@ -39,7 +39,7 @@ def test_growspace_repository_load_plants(repository) -> None:
     assert repository.get_plant("p1") is plant
 
 
-def test_plant_operations(repository) -> None:
+def test_plant_operations(repository: GrowspaceRepository) -> None:
     """Test plant-related operations."""
     plant = MagicMock(spec=Plant)
     plant.plant_id = "p1"
@@ -53,7 +53,7 @@ def test_plant_operations(repository) -> None:
     assert repository.get_plant("p1") is None
 
 
-def test_growspace_operations(repository) -> None:
+def test_growspace_operations(repository: GrowspaceRepository) -> None:
     """Test growspace-related operations."""
     gs = MagicMock(spec=Growspace)
     gs.id = "gs1"
@@ -67,7 +67,7 @@ def test_growspace_operations(repository) -> None:
     assert repository.get_growspace("gs1") is None
 
 
-def test_query_methods(repository) -> None:
+def test_query_methods(repository: GrowspaceRepository) -> None:
     """Test repository query methods."""
     gs = MagicMock(spec=Growspace)
     gs.id = "gs1"
@@ -101,7 +101,7 @@ def test_query_methods(repository) -> None:
     assert repository.get_sorted_growspace_options() == [("gs1", "Test GS")]
 
 
-def test_sorted_growspace_options(repository) -> None:
+def test_sorted_growspace_options(repository: GrowspaceRepository) -> None:
     """Test sorting of growspace options."""
     gs1 = MagicMock(spec=Growspace)
     gs1.id = "gs1"
@@ -116,3 +116,59 @@ def test_sorted_growspace_options(repository) -> None:
 
     sorted_opts = repository.get_sorted_growspace_options()
     assert sorted_opts == [("gs2", "A"), ("gs1", "B")]
+
+
+def test_require_plant(repository: GrowspaceRepository) -> None:
+    """Test require_plant returns the plant if found."""
+    plant = MagicMock(spec=Plant)
+    plant.plant_id = "p1"
+    repository.add_plant(plant)
+    assert repository.require_plant("p1") is plant
+
+
+def test_require_plant_not_found(repository: GrowspaceRepository) -> None:
+    """Test require_plant raises KeyError when plant is not found."""
+    with pytest.raises(KeyError, match="Plant 'nonexistent' not found"):
+        repository.require_plant("nonexistent")
+
+
+def test_require_growspace(repository: GrowspaceRepository) -> None:
+    """Test require_growspace returns the growspace if found."""
+    gs = MagicMock(spec=Growspace)
+    gs.id = "gs1"
+    repository.add_growspace(gs)
+    assert repository.require_growspace("gs1") is gs
+
+
+def test_require_growspace_not_found(repository: GrowspaceRepository) -> None:
+    """Test require_growspace raises KeyError when growspace is not found."""
+    with pytest.raises(KeyError, match="Growspace 'nonexistent' not found"):
+        repository.require_growspace("nonexistent")
+
+
+def test_has_plant(repository: GrowspaceRepository) -> None:
+    """Test has_plant checks existence correctly."""
+    assert not repository.has_plant("p1")
+    plant = MagicMock(spec=Plant)
+    plant.plant_id = "p1"
+    repository.add_plant(plant)
+    assert repository.has_plant("p1")
+
+
+def test_has_growspace(repository: GrowspaceRepository) -> None:
+    """Test has_growspace checks existence correctly."""
+    assert not repository.has_growspace("gs1")
+    gs = MagicMock(spec=Growspace)
+    gs.id = "gs1"
+    repository.add_growspace(gs)
+    assert repository.has_growspace("gs1")
+
+
+def test_remove_plant_not_found(repository: GrowspaceRepository) -> None:
+    """Test remove_plant returns None when plant is not found."""
+    assert repository.remove_plant("nonexistent") is None
+
+
+def test_remove_growspace_not_found(repository: GrowspaceRepository) -> None:
+    """Test remove_growspace returns None when growspace is not found."""
+    assert repository.remove_growspace("nonexistent") is None
