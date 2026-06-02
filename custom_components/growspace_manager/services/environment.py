@@ -67,7 +67,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def _parse_fan_config(
     raw: dict | None,
-    existing_env: object | None,
+    existing_env: EnvironmentConfig | None,
 ) -> CirculationFanConfig:
     """Return a CirculationFanConfig from a raw dict payload, falling back to the existing config."""
     if raw:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from custom_components.growspace_manager.integration_types import NutrientMap
 
@@ -80,7 +80,7 @@ class NutrientEntry(TypedDict):
 class NutrientPresetItem(TypedDict):
     """A single nutrient in a preset recipe (immutable)."""
 
-    nutrient_id: str
+    nutrient_id: NotRequired[str]
     dose_ml_l: float  # ml per liter of solution
 
 
