@@ -82,6 +82,7 @@ class NutrientPresetItem(TypedDict):
 
     nutrient_id: NotRequired[str]
     dose_ml_l: float  # ml per liter of solution
+    name: NotRequired[str]
 
 
 class NutrientPresetDict(TypedDict):
