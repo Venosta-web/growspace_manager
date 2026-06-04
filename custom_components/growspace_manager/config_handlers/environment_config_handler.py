@@ -825,7 +825,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
                 self.flow.env_config_step1 = env_config
 
-            except ValueError, SyntaxError, TypeError:
+            except (ValueError, SyntaxError, TypeError):
                 _LOGGER.warning("Invalid tuple format submitted", exc_info=True)
                 return self.flow.async_show_form(
                     step_id="configure_advanced_bayesian",
