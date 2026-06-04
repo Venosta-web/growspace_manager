@@ -42,6 +42,7 @@
         'max_speed': 100,
         'min_speed': 0,
         'regulation_mode': 'vpd',
+        'stage_vpd_enabled': False,
         'temperature_target': 25.0,
         'temperature_tolerance': 2.0,
         'vpd_target': 1.0,

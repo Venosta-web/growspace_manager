@@ -119,7 +119,13 @@ When regulation mode is `vpd`, two additional thresholds apply: `critical_temp_l
 Runs in parallel with the Regulation Layer regardless of mode. Adds a sinusoidal ±offset to the regulation speed: `offset = wind_amplitude_pct × sin(2π × elapsed_seconds / wind_period_seconds)`. The final speed after adding the offset is clamped to `[min_speed, max_speed]`. The grower configures `wind_period_seconds` (default 60) and `wind_amplitude_pct` (default 10).
 
 **CirculationFanConfig**
-The dataclass stored on `EnvironmentConfig` that holds all fan controller settings: `enabled`, `regulation_mode`, `min_speed`, `max_speed`, per-mode `target` and `tolerance`, `critical_temp_low`, `critical_temp_high`, `critical_temp_hysteresis`, `wind_enabled`, `wind_period_seconds`, `wind_amplitude_pct`. Absent or `enabled=False` means no fan control.
+The dataclass stored on `EnvironmentConfig` that holds all fan controller settings: `enabled`, `regulation_mode`, `min_speed`, `max_speed`, per-mode `target` and `tolerance`, `critical_temp_low`, `critical_temp_high`, `critical_temp_hysteresis`, `wind_enabled`, `wind_period_seconds`, `wind_amplitude_pct`, `stage_vpd_enabled`, `stage_vpd_overrides`. Absent or `enabled=False` means no fan control.
+
+**Stage-Aware VPD Mode**
+An optional sub-mode of VPD regulation (`stage_vpd_enabled = True`) that resolves the effective VPD target from the active plant stage and time of day (day/night) rather than the static `vpd_target`. Defaults for all nine stages (`seedling`, `clone`, `mother`, `veg`, `flower_early`, `flower_mid`, `flower_late`, `dry`, `cure`) are defined in `FAN_VPD_STAGE_DEFAULTS`. Falls back to `vpd_target` when the growspace has no plants or the current stage is not in the lookup table.
+
+**Stage VPD Overrides**
+A sparse dict stored on `CirculationFanConfig` as `stage_vpd_overrides`. Keyed by stage name; each entry is `{"day": float, "night": float}`. Only stages the user has explicitly edited are present — absent stages resolve to `FAN_VPD_STAGE_DEFAULTS`. Deleting all entries (or an individual entry) restores the default for that stage. Values are validated to the range 0.1–3.0 kPa.
 
 **Fan Speed Composition**
 `final_speed = clamp(regulation_speed + wind_offset, min_speed, max_speed)` where `regulation_speed` is the output of the active regulation mode (or the safety override when active), and `wind_offset` is the sine term (zero when `wind_enabled=False`).

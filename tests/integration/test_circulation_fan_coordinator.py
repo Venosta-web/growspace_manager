@@ -6,12 +6,13 @@ import pytest
 import time as time_module
 
 from custom_components.growspace_manager.circulation_fan_coordinator import (
+    FAN_VPD_STAGE_DEFAULTS,
     CirculationFanCoordinator,
 )
-from custom_components.growspace_manager.const import FanRegulationMode
+from custom_components.growspace_manager.const import FanRegulationMode, PlantStage
 from custom_components.growspace_manager.models import EnvironmentConfig
 from custom_components.growspace_manager.models.growspace import CirculationFanConfig
-from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import ATTR_ENTITY_ID, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 
 
@@ -49,6 +50,7 @@ def _make_env_config(
     humidity_sensors: list[str] | None = None,
     temperature_sensors: list[str] | None = None,
     vpd_sensors: list[str] | None = None,
+    light_sensors: list[str] | None = None,
     circulation_fan_entities: list[str] | None = None,
     humidity_target: float = 60.0,
     humidity_tolerance: float = 5.0,
@@ -64,6 +66,7 @@ def _make_env_config(
     wind_enabled: bool = False,
     wind_period_seconds: int = 60,
     wind_amplitude_pct: int = 10,
+    stage_vpd_enabled: bool = False,
 ) -> EnvironmentConfig:
     fan_cfg = CirculationFanConfig(
         enabled=enabled,
@@ -82,11 +85,13 @@ def _make_env_config(
         wind_enabled=wind_enabled,
         wind_period_seconds=wind_period_seconds,
         wind_amplitude_pct=wind_amplitude_pct,
+        stage_vpd_enabled=stage_vpd_enabled,
     )
     return EnvironmentConfig(
         humidity_sensors=humidity_sensors if humidity_sensors is not None else ["sensor.humidity"],
         temperature_sensors=temperature_sensors if temperature_sensors is not None else ["sensor.temperature"],
         vpd_sensors=vpd_sensors if vpd_sensors is not None else ["sensor.vpd"],
+        light_sensors=light_sensors if light_sensors is not None else [],
         circulation_fan_entities=circulation_fan_entities if circulation_fan_entities is not None else ["fan.circ"],
         circulation_fan_config=fan_cfg,
     )
@@ -99,10 +104,13 @@ def _make_growspace(env_config: EnvironmentConfig) -> MagicMock:
 
 
 def _make_coordinator(
-    growspace_id: str, env_config: EnvironmentConfig
+    growspace_id: str,
+    env_config: EnvironmentConfig,
+    plants: list | None = None,
 ) -> MagicMock:
     coord = MagicMock()
     coord.growspaces = {growspace_id: _make_growspace(env_config)}
+    coord.services.growspaces.get_growspace_plants.return_value = plants or []
     return coord
 
 
@@ -1022,3 +1030,217 @@ def test_read_sensor_unknown_mode_returns_none(
 
     assert result is None
     mock_hass.states.get.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Stage-based VPD — FAN_VPD_STAGE_DEFAULTS coverage
+# ---------------------------------------------------------------------------
+
+
+def test_fan_vpd_stage_defaults_covers_all_coordinator_stages() -> None:
+    """FAN_VPD_STAGE_DEFAULTS has entries for every stage determine_coordinator_stage can return."""
+    from custom_components.growspace_manager.circulation_fan_coordinator import FAN_VPD_STAGE_DEFAULTS
+    from custom_components.growspace_manager.const import PlantStage
+
+    coordinator_stages = {
+        PlantStage.SEEDLING,
+        PlantStage.CLONE,
+        PlantStage.MOTHER,
+        PlantStage.VEG,
+        PlantStage.FLOWER_EARLY,
+        PlantStage.FLOWER_MID,
+        PlantStage.FLOWER_LATE,
+        PlantStage.DRY,
+        PlantStage.CURE,
+    }
+    assert coordinator_stages == set(FAN_VPD_STAGE_DEFAULTS.keys())
+    for stage, entry in FAN_VPD_STAGE_DEFAULTS.items():
+        assert "day" in entry, f"Missing 'day' for {stage}"
+        assert "night" in entry, f"Missing 'night' for {stage}"
+
+
+# ---------------------------------------------------------------------------
+# Stage-based VPD — runtime behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("stage,is_day,expected_target", [
+    (PlantStage.VEG, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["day"]),
+    (PlantStage.VEG, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["night"]),
+    (PlantStage.FLOWER_EARLY, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_EARLY]["day"]),
+    (PlantStage.FLOWER_MID, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_MID]["night"]),
+    (PlantStage.FLOWER_LATE, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_LATE]["day"]),
+    (PlantStage.DRY, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.DRY]["night"]),
+    (PlantStage.CURE, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.CURE]["day"]),
+    (PlantStage.SEEDLING, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.SEEDLING]["night"]),
+    (PlantStage.CLONE, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.CLONE]["day"]),
+    (PlantStage.MOTHER, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.MOTHER]["day"]),
+])
+def test_get_stage_vpd_target_returns_correct_value(
+    mock_hass: MagicMock,
+    stage: PlantStage,
+    is_day: bool,
+    expected_target: float,
+) -> None:
+    """_get_stage_vpd_target returns the correct day/night target for each stage."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=99.9,  # should NOT be returned when plants are present
+        stage_vpd_enabled=True,
+    )
+    plant = MagicMock()
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        return_value=stage,
+    ):
+        main_coord = _make_coordinator("gs1", env, plants=[plant])
+        coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+        result = coord._get_stage_vpd_target(is_day)
+
+    assert result == expected_target
+
+
+async def test_stage_vpd_enabled_regulate_uses_stage_target(
+    mock_hass: MagicMock,
+) -> None:
+    """_async_regulate with stage_vpd_enabled=True passes the stage target to compute_fan_speed."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=99.9,  # must NOT be used
+        vpd_tolerance=0.2,
+        min_speed=0,
+        max_speed=100,
+        stage_vpd_enabled=True,
+        light_sensors=["sensor.light"],
+    )
+    flower_mid_day = FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_MID]["day"]  # 1.2
+
+    def _get_state(entity_id: str) -> MagicMock:
+        if "light" in entity_id:
+            return MagicMock(state="1.0")  # day
+        # VPD well above stage target → max_speed
+        return MagicMock(state=str(flower_mid_day + 1.0))
+
+    mock_hass.states.get.side_effect = _get_state
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        return_value=PlantStage.FLOWER_MID,
+    ):
+        main_coord = _make_coordinator("gs1", env, plants=[MagicMock()])
+        coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 100},
+        blocking=False,
+    )
+
+
+async def test_stage_vpd_disabled_uses_static_target(
+    mock_hass: MagicMock,
+) -> None:
+    """stage_vpd_enabled=False → static vpd_target is used unchanged."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=1.0,
+        vpd_tolerance=0.2,
+        min_speed=0,
+        max_speed=100,
+        stage_vpd_enabled=False,
+    )
+    mock_hass.states.get.return_value = MagicMock(state="1.0")
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},
+        blocking=False,
+    )
+
+
+async def test_stage_vpd_no_plants_falls_back_to_static_target(
+    mock_hass: MagicMock,
+) -> None:
+    """stage_vpd_enabled=True with no plants falls back to cfg.vpd_target."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=1.0,
+        vpd_tolerance=0.2,
+        min_speed=0,
+        max_speed=100,
+        stage_vpd_enabled=True,
+    )
+    mock_hass.states.get.return_value = MagicMock(state="1.0")
+    # plants=[] → fallback to static target
+    main_coord = _make_coordinator("gs1", env, plants=[])
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},
+        blocking=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# _determine_is_day
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("light_state,expected_day", [
+    ("1.0", True),
+    ("0.0", False),
+    (STATE_ON, True),
+    (STATE_UNAVAILABLE, True),   # no valid sensors → default True
+    (STATE_UNKNOWN, True),       # no valid sensors → default True
+])
+def test_determine_is_day(
+    mock_hass: MagicMock,
+    light_state: str,
+    expected_day: bool,
+) -> None:
+    """_determine_is_day reads light sensor state and returns correct bool."""
+    env = _make_env_config(light_sensors=["sensor.light"])
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+    mock_hass.states.get.return_value = MagicMock(state=light_state)
+
+    result = coord._determine_is_day()
+
+    assert result is expected_day
+
+
+def test_determine_is_day_no_light_sensors_returns_true(
+    mock_hass: MagicMock,
+) -> None:
+    """_determine_is_day returns True when no light sensors are configured."""
+    env = _make_env_config(light_sensors=[])
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    assert coord._determine_is_day() is True
+    mock_hass.states.get.assert_not_called()
+
+
+def test_determine_is_day_uses_last_known_when_unavailable(
+    mock_hass: MagicMock,
+) -> None:
+    """_determine_is_day uses cached state when all sensors are unavailable."""
+    env = _make_env_config(light_sensors=["sensor.light"])
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    # Prime cache with a valid reading
+    coord._last_known_is_day = False
+
+    mock_hass.states.get.return_value = MagicMock(state=STATE_UNAVAILABLE)
+    assert coord._determine_is_day() is False
