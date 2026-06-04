@@ -153,6 +153,17 @@ class ViewModelBuilder:
             cycles_today = irr_coord.cycles_today
             volume_dispensed_today = irr_coord.volume_dispensed_today
 
+        # Compute liters_today for Tank-Derived Water Mode
+        liters_today: float | None = None
+        env = growspace.environment_config
+        if env and not env.irrigation_flow_sensors and not env.drain_volume_sensors:
+            trackers = self.coordinator.services.growspaces.get_all_trackers_for_growspace(
+                growspace_id
+            )
+            liters_today = round(
+                sum(t.get_total_liters_today() for t in trackers.values()), 2
+            )
+
         # Use presentation layer to build rich growspace payload
         serialized = self._growspace_builder.build(
             growspace,
@@ -163,6 +174,7 @@ class ViewModelBuilder:
             max_dry_days=max_dry_days,
             max_cure_days=max_cure_days,
             active_events=active_events,
+            liters_today=liters_today,
         )
 
         # Inject irrigation cycle telemetry into the irrigation sub-object

@@ -17,6 +17,7 @@ from custom_components.growspace_manager.presentation.growspace_view_model impor
     GrowspaceViewModelBuilder,
     _compute_tank_water_summaries,
 )
+from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
 from homeassistant.core import HomeAssistant
 
 
@@ -436,6 +437,62 @@ def test_compute_tank_water_summaries_invalid_event_skipped() -> None:
     assert daily_by_date[today]["consumed"] == pytest.approx(5.0)
 
 
+def test_water_usage_liters_today_present_when_passed(
+    builder: GrowspaceViewModelBuilder,
+) -> None:
+    """liters_today appears in water_usage when passed to build()."""
+    usage = WaterUsageData(total_liters=100.0, cycle_start_date="2024-01-01")
+    gs = Growspace(id="gs1", name="GS1", water_usage=usage)
+
+    with (
+        patch.object(builder, "_build_rich_plant_grid", return_value={}),
+        patch.object(builder, "_get_sensor_types", return_value={}),
+        patch.object(builder, "_get_environment_attributes", return_value={}),
+    ):
+        data = builder.build(gs, plants=[], biological_metrics={}, liters_today=5.3)
+
+    water_usage = data["irrigation"]["water_usage"]
+    assert water_usage is not None
+    assert water_usage["liters_today"] == pytest.approx(5.3)
+
+
+def test_water_usage_liters_today_zero_not_absent(
+    builder: GrowspaceViewModelBuilder,
+) -> None:
+    """liters_today of 0.0 must be included, not treated as absent."""
+    usage = WaterUsageData(total_liters=50.0, cycle_start_date="2024-01-01")
+    gs = Growspace(id="gs1", name="GS1", water_usage=usage)
+
+    with (
+        patch.object(builder, "_build_rich_plant_grid", return_value={}),
+        patch.object(builder, "_get_sensor_types", return_value={}),
+        patch.object(builder, "_get_environment_attributes", return_value={}),
+    ):
+        data = builder.build(gs, plants=[], biological_metrics={}, liters_today=0.0)
+
+    water_usage = data["irrigation"]["water_usage"]
+    assert "liters_today" in water_usage
+    assert water_usage["liters_today"] == pytest.approx(0.0)
+
+
+def test_water_usage_liters_today_absent_when_not_passed(
+    builder: GrowspaceViewModelBuilder,
+) -> None:
+    """liters_today must be absent from water_usage when not in tank-derived mode."""
+    usage = WaterUsageData(total_liters=50.0, cycle_start_date="2024-01-01")
+    gs = Growspace(id="gs1", name="GS1", water_usage=usage)
+
+    with (
+        patch.object(builder, "_build_rich_plant_grid", return_value={}),
+        patch.object(builder, "_get_sensor_types", return_value={}),
+        patch.object(builder, "_get_environment_attributes", return_value={}),
+    ):
+        data = builder.build(gs, plants=[], biological_metrics={})
+
+    water_usage = data["irrigation"]["water_usage"]
+    assert "liters_today" not in water_usage
+
+
 def test_water_history_includes_summaries_in_view_model(
     hass: HomeAssistant, builder: GrowspaceViewModelBuilder
 ) -> None:
@@ -467,3 +524,89 @@ def test_water_history_includes_summaries_in_view_model(
     today_entry = wh["daily_7d"][0]
     assert today_entry["consumed"] == pytest.approx(2.0)
     assert today_entry["refilled"] == pytest.approx(30.0)
+
+
+def _make_mock_coordinator(
+    hass: HomeAssistant,
+    growspace: Growspace,
+    trackers: dict,
+) -> MagicMock:
+    """Build a minimal mock coordinator for ViewModelBuilder tests."""
+    mock_coord = MagicMock()
+    mock_coord.hass = hass
+    mock_coord.growspaces = {growspace.id: growspace}
+    mock_coord.plants = {}
+    mock_coord.cache.get.return_value = None
+    mock_coord.data = None
+    mock_coord.notification_state.sent = {}
+    mock_coord.notification_state.enabled = {}
+    mock_coord.services.growspaces.get_growspace_plants.return_value = []
+    mock_coord.services.growspaces.calculate_biological_metrics.return_value = {}
+    mock_coord.services.growspaces.get_irrigation_coordinator.return_value = None
+    mock_coord.services.growspaces.get_all_trackers_for_growspace.return_value = trackers
+    return mock_coord
+
+
+def test_view_model_builder_passes_liters_today_from_trackers(
+    hass: HomeAssistant,
+) -> None:
+    """ViewModelBuilder sums tracker liters_today and passes it to the builder."""
+    env = EnvironmentConfig(
+        irrigation_tanks=[
+            IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+        ],
+    )
+    gs = Growspace(
+        id="gs1", name="GS1", environment_config=env, water_usage=WaterUsageData()
+    )
+
+    mock_tracker = MagicMock()
+    mock_tracker.get_total_liters_today.return_value = 7.5
+    coordinator = _make_mock_coordinator(hass, gs, {"sensor.tank1": mock_tracker})
+
+    result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    water_usage = result["irrigation"]["water_usage"]
+    assert water_usage["liters_today"] == pytest.approx(7.5)
+
+
+def test_view_model_builder_liters_today_absent_with_flow_sensors(
+    hass: HomeAssistant,
+) -> None:
+    """ViewModelBuilder omits liters_today when irrigation flow sensors are configured."""
+    env = EnvironmentConfig(
+        irrigation_flow_sensors=["sensor.flow1"],
+        irrigation_tanks=[
+            IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+        ],
+    )
+    gs = Growspace(
+        id="gs1", name="GS1", environment_config=env, water_usage=WaterUsageData()
+    )
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    water_usage = result["irrigation"]["water_usage"]
+    assert "liters_today" not in water_usage
+
+
+def test_view_model_builder_liters_today_absent_with_drain_volume_sensors(
+    hass: HomeAssistant,
+) -> None:
+    """ViewModelBuilder omits liters_today when drain volume sensors are configured."""
+    env = EnvironmentConfig(
+        drain_volume_sensors=["sensor.drain1"],
+        irrigation_tanks=[
+            IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+        ],
+    )
+    gs = Growspace(
+        id="gs1", name="GS1", environment_config=env, water_usage=WaterUsageData()
+    )
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    water_usage = result["irrigation"]["water_usage"]
+    assert "liters_today" not in water_usage

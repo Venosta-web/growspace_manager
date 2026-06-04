@@ -55,6 +55,8 @@ The period over which cumulative water consumption is tracked for a growspace. B
 **Tank-Derived Water Mode**
 The implicit fallback mode for water consumption tracking. Active when a growspace has at least one tank with `volume_liters` configured and no `irrigation_flow_sensors` or `drain_volume_sensors` are set. In this mode, `WaterUsageSensor` derives cumulative consumption by summing events from all qualifying `TankWaterTracker` instances since `cycle_start_date`, rather than reading from `WaterUsageData`. The `reset_water_tracking` service advances `cycle_start_date` in both modes; `TankWaterHistory` is never cleared on reset.
 
+The growspace view model payload includes `water_usage.liters_today` (sum of `TankWaterTracker.get_total_liters_today()` across all qualifying tanks) so the frontend chip can display today's consumption without reading from the HA sensor entity. The `growspace_manager/get_tank_water_history` WebSocket command returns pre-bucketed consumption data (aggregated across all qualifying tanks) for the frontend [[Tank Water Chart]].
+
 ## Drying Thresholds (Constants)
 
 | Threshold | Value | Source |
