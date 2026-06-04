@@ -201,6 +201,47 @@ async def test_all_zero_buckets_when_no_consumption(
     assert all(b["liters"] == 0.0 for b in result["buckets"])
 
 
+async def test_returns_empty_buckets_when_growspace_not_found(
+    hass: HomeAssistant, mock_connection: MagicMock
+) -> None:
+    """Returns empty buckets list when growspace ID is not found in coordinator."""
+    coord = MagicMock()
+    coord.growspaces.get.return_value = None
+
+    msg = {"id": 1, "growspace_id": "unknown", "range": "24h"}
+
+    with patch(
+        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
+        return_value=coord,
+    ):
+        await websocket_get_tank_water_history(hass, mock_connection, msg)
+
+    result = mock_connection.send_result.call_args[0][1]
+    assert result["growspace_id"] == "unknown"
+    assert result["range"] == "24h"
+    assert result["buckets"] == []
+
+
+async def test_returns_empty_buckets_when_no_qualifying_trackers(
+    hass: HomeAssistant, mock_connection: MagicMock
+) -> None:
+    """Returns empty buckets list when growspace has no water trackers."""
+    coord = _make_coordinator(trackers={})
+
+    msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
+
+    with patch(
+        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
+        return_value=coord,
+    ):
+        await websocket_get_tank_water_history(hass, mock_connection, msg)
+
+    result = mock_connection.send_result.call_args[0][1]
+    assert result["growspace_id"] == "tent1"
+    assert result["range"] == "24h"
+    assert result["buckets"] == []
+
+
 async def test_error_sends_error_response(
     hass: HomeAssistant, mock_connection: MagicMock
 ) -> None:
