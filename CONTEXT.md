@@ -49,6 +49,12 @@ Projected number of days until the plant's current weight reaches the Target Dry
 **Active Growspace**
 A growspace with `total_plants > 0`, regardless of `PlantStage`. A growspace in `dry` or `cure` mode still counts as active if plants are present. An empty growspace (no plants at all) is inactive.
 
+**Water Usage Cycle**
+The period over which cumulative water consumption is tracked for a growspace. Begins on `cycle_start_date` (set when the grower calls `reset_water_tracking`) and accumulates until the next reset. `WaterUsageSensor` reports total liters since `cycle_start_date` as its primary value.
+
+**Tank-Derived Water Mode**
+The implicit fallback mode for water consumption tracking. Active when a growspace has at least one tank with `volume_liters` configured and no `irrigation_flow_sensors` or `drain_volume_sensors` are set. In this mode, `WaterUsageSensor` derives cumulative consumption by summing events from all qualifying `TankWaterTracker` instances since `cycle_start_date`, rather than reading from `WaterUsageData`. The `reset_water_tracking` service advances `cycle_start_date` in both modes; `TankWaterHistory` is never cleared on reset.
+
 ## Drying Thresholds (Constants)
 
 | Threshold | Value | Source |

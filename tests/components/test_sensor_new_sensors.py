@@ -563,6 +563,118 @@ def test_water_sensor_extra_state_attributes_no_growspace() -> None:
 
 
 # ---------------------------------------------------------------------------
+# WaterUsageSensor — tank-derived mode
+# ---------------------------------------------------------------------------
+
+
+def _make_water_sensor_tank_derived(
+    tracker_liters_since: float = 30.0,
+    tracker_liters_today: float = 8.0,
+    cycle_start_date: str = "2026-01-01",
+    num_trackers: int = 1,
+):
+    """Factory for WaterUsageSensor in tank-derived mode.
+
+    Returns (sensor, coordinator, growspace, trackers).
+    """
+    coordinator = _make_coordinator()
+    growspace = Mock()
+    growspace.water_usage = WaterUsageData(
+        total_liters=0.0,
+        cycle_start_date=cycle_start_date,
+        daily_readings=[],
+    )
+    env = Mock()
+    env.irrigation_flow_sensors = []
+    env.drain_volume_sensors = []
+    growspace.environment_config = env
+    coordinator.growspaces = {"gs1": growspace}
+    coordinator.services.growspaces.get_growspace_plants = MagicMock(
+        return_value=[Mock(), Mock()]
+    )
+
+    trackers = {}
+    for i in range(num_trackers):
+        tracker = MagicMock()
+        tracker.get_total_liters_since.return_value = tracker_liters_since
+        tracker.get_total_liters_today.return_value = tracker_liters_today
+        trackers[f"sensor.tank_{i}"] = tracker
+
+    coordinator.services.growspaces.get_all_trackers_for_growspace = MagicMock(
+        return_value=trackers
+    )
+
+    sensor = WaterUsageSensor(coordinator, "gs1", "Tent 1")
+    sensor.hass = MagicMock()
+    return sensor, coordinator, growspace, trackers
+
+
+def test_water_sensor_native_value_tank_derived() -> None:
+    """native_value reads from TankWaterTracker when tank-derived mode is active."""
+    sensor, _, _, _ = _make_water_sensor_tank_derived(tracker_liters_since=42.0)
+    assert sensor.native_value == 42.0
+
+
+def test_water_sensor_native_value_tank_derived_multiple_trackers() -> None:
+    """native_value sums across all qualifying trackers."""
+    sensor, _, _, _ = _make_water_sensor_tank_derived(
+        tracker_liters_since=15.0, num_trackers=3
+    )
+    assert sensor.native_value == 45.0  # 3 × 15.0
+
+
+def test_water_sensor_extra_state_attributes_tank_derived() -> None:
+    """extra_state_attributes uses tracker data for liters_today and total."""
+    sensor, _, _, _ = _make_water_sensor_tank_derived(
+        tracker_liters_since=30.0,
+        tracker_liters_today=8.0,
+        cycle_start_date="2026-01-01",
+    )
+    attrs = sensor.extra_state_attributes
+
+    # cycle_start_date passed through unchanged
+    assert attrs["cycle_start_date"] == "2026-01-01"
+    # liters_today comes from tracker, not daily_readings
+    assert attrs["liters_today"] == 8.0
+    # liters_per_plant_per_day uses tracker total (30 L / 2 plants / 11 days)
+    expected = round(30.0 / 2 / 11, 2)
+    assert attrs["liters_per_plant_per_day"] == expected
+
+
+def test_water_sensor_tank_derived_mode_disabled_when_flow_sensors_configured() -> None:
+    """native_value falls back to WaterUsageData when flow sensors are configured."""
+    sensor, coordinator, growspace, _ = _make_water_sensor_tank_derived(
+        tracker_liters_since=99.0
+    )
+    growspace.environment_config.irrigation_flow_sensors = ["sensor.flow_1"]
+    growspace.water_usage.total_liters = 25.0
+
+    assert sensor.native_value == 25.0
+
+
+def test_water_sensor_tank_derived_mode_disabled_when_drain_sensors_configured() -> None:
+    """native_value falls back to WaterUsageData when drain sensors are configured."""
+    sensor, coordinator, growspace, _ = _make_water_sensor_tank_derived(
+        tracker_liters_since=99.0
+    )
+    growspace.environment_config.drain_volume_sensors = ["sensor.drain_1"]
+    growspace.water_usage.total_liters = 18.0
+
+    assert sensor.native_value == 18.0
+
+
+def test_water_sensor_tank_derived_no_trackers_falls_back_to_usage_data() -> None:
+    """native_value falls back to WaterUsageData when no trackers are registered."""
+    sensor, coordinator, growspace, _ = _make_water_sensor_tank_derived()
+    coordinator.services.growspaces.get_all_trackers_for_growspace = MagicMock(
+        return_value={}
+    )
+    growspace.water_usage.total_liters = 7.5
+
+    assert sensor.native_value == 7.5
+
+
+# ---------------------------------------------------------------------------
 # ECTargetSensor tests
 # ---------------------------------------------------------------------------
 

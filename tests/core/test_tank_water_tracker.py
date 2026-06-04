@@ -175,6 +175,65 @@ def test_get_total_liters_today_no_reference_ts():
     assert isinstance(result, float)
 
 
+# ── get_total_liters_since ────────────────────────────────────────────────────
+
+
+def test_get_total_liters_since_no_date_sums_all() -> None:
+    """None cycle_start_date sums every consumption event in history."""
+    t = _tracker()
+    t.record_level(60.0, "2026-03-20T12:00:00+00:00")
+    t.record_level(55.0, "2026-03-20T14:00:00+00:00")  # 10 L
+    t.record_level(50.0, "2026-03-22T12:00:00+00:00")  # 10 L
+    assert abs(t.get_total_liters_since(None) - 20.0) < 0.01
+
+
+def test_get_total_liters_since_empty_string_sums_all() -> None:
+    """Empty string cycle_start_date is treated the same as None."""
+    t = _tracker()
+    t.record_level(60.0, "2026-03-20T12:00:00+00:00")
+    t.record_level(55.0, "2026-03-20T14:00:00+00:00")  # 10 L
+    assert abs(t.get_total_liters_since("") - 10.0) < 0.01
+
+
+def test_get_total_liters_since_filters_by_date() -> None:
+    """Only consumption events on or after cycle_start_date are included.
+
+    Uses noon-UTC timestamps so the result is timezone-independent.
+    """
+    t = _tracker()
+    t.record_level(60.0, "2026-03-20T12:00:00+00:00")
+    t.record_level(55.0, "2026-03-20T14:00:00+00:00")  # 10 L — before cycle start
+    t.record_level(70.0, "2026-03-20T15:00:00+00:00")  # refill — ignored
+    t.record_level(65.0, "2026-03-22T12:00:00+00:00")  # 10 L — on cycle start day
+    t.record_level(60.0, "2026-03-23T12:00:00+00:00")  # 10 L — after cycle start
+
+    total = t.get_total_liters_since("2026-03-22")
+    assert abs(total - 20.0) < 0.01
+
+
+def test_get_total_liters_since_excludes_refill_events() -> None:
+    """Refill events must never be counted in the total."""
+    t = _tracker()
+    t.record_level(40.0, "2026-03-22T10:00:00+00:00")
+    t.record_level(80.0, "2026-03-22T11:00:00+00:00")  # 80 L refill
+    assert t.get_total_liters_since("2026-03-22") == pytest.approx(0.0)
+
+
+def test_get_total_liters_since_invalid_date_sums_all() -> None:
+    """An unparseable date string falls back to summing all events."""
+    t = _tracker()
+    t.record_level(60.0, "2026-03-20T12:00:00+00:00")
+    t.record_level(55.0, "2026-03-20T14:00:00+00:00")  # 10 L
+    assert abs(t.get_total_liters_since("not-a-date") - 10.0) < 0.01
+
+
+def test_get_total_liters_since_empty_history() -> None:
+    """Returns 0.0 when there are no events."""
+    t = _tracker()
+    assert t.get_total_liters_since("2026-03-22") == pytest.approx(0.0)
+    assert t.get_total_liters_since(None) == pytest.approx(0.0)
+
+
 def test_get_total_liters_7d_no_reference_ts():
     """get_total_liters_7d without reference_ts uses datetime.now."""
     t = _tracker()
