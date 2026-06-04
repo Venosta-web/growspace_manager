@@ -27,6 +27,12 @@ def mock_coordinator():
     coordinator.services = MagicMock()
     coordinator.services.save = AsyncMock()
     coordinator.services.request_refresh = AsyncMock()
+    _fan_coord_mock = MagicMock()
+    _fan_coord_mock.async_restart = AsyncMock()
+    coordinator.subsystem_manager = MagicMock()
+    coordinator.subsystem_manager.circulation_fan_coordinators.get = MagicMock(
+        return_value=_fan_coord_mock
+    )
     return coordinator
 
 

@@ -249,6 +249,10 @@ async def handle_configure_environment(
     # Trigger coordinator update to create/update binary sensors
     await coordinator.services.request_refresh()
 
+    fan_coord = coordinator.subsystem_manager.circulation_fan_coordinators.get(growspace_id)
+    if fan_coord:
+        await fan_coord.async_restart()
+
     success_msg = f"Environment monitoring configured for '{growspace.name}'"
     _LOGGER.info("%s: %s", success_msg, env_config)
 
@@ -379,6 +383,10 @@ async def handle_configure_circulation_fan(
 
     await coordinator.services.save()
     await coordinator.services.request_refresh()
+
+    fan_coord = coordinator.subsystem_manager.circulation_fan_coordinators.get(growspace_id)
+    if fan_coord:
+        await fan_coord.async_restart()
 
     _LOGGER.info("Circulation fan controller configured for '%s'", growspace.name)
 

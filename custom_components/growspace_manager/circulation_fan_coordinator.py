@@ -130,15 +130,10 @@ class CirculationFanCoordinator:
         self._start_time: float = 0.0
         self._last_known_is_day: bool | None = None
 
-        growspace = self.main_coordinator.growspaces.get(growspace_id)
-        if not growspace:
-            _LOGGER.error(
-                "Growspace %s not found for CirculationFanCoordinator", growspace_id
-            )
-            self._env_config = None
-            return
-
-        self._env_config = growspace.environment_config
+    @property
+    def _env_config(self):
+        gs = self.main_coordinator.growspaces.get(self.growspace_id)
+        return gs.environment_config if gs else None
 
     async def async_setup(self) -> None:
         """Start the 10-second polling tick."""
@@ -322,6 +317,14 @@ class CirculationFanCoordinator:
             return float(state.state)
         except ValueError:
             return None
+
+    async def async_restart(self) -> None:
+        """Restart the polling tick after a config change."""
+        self.unload()
+        self._temp_override_active = False
+        self._temp_override_direction = None
+        self._start_time = 0.0
+        await self.async_setup()
 
     def unload(self) -> None:
         """Stop the polling tick."""

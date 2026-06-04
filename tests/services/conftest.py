@@ -44,6 +44,11 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator.notification_manager = MagicMock()
     coordinator.strain_library = MagicMock()
     coordinator.subsystem_manager = MagicMock()
+    _fan_coord_mock = MagicMock()
+    _fan_coord_mock.async_restart = AsyncMock()
+    coordinator.subsystem_manager.circulation_fan_coordinators.get = MagicMock(
+        return_value=_fan_coord_mock
+    )
 
     # Initialize plant_manager methods as AsyncMock
     coordinator.plant_manager.add_plant = AsyncMock()

@@ -55,6 +55,8 @@
       'min_speed': 0,
       'regulation_mode': 'vpd',
       'stage_vpd_enabled': False,
+      'stage_vpd_overrides': dict({
+      }),
       'temperature_target': 25.0,
       'temperature_tolerance': 2.0,
       'vpd_target': 1.0,
@@ -182,6 +184,8 @@
         'min_speed': 0,
         'regulation_mode': 'vpd',
         'stage_vpd_enabled': False,
+        'stage_vpd_overrides': dict({
+        }),
         'temperature_target': 25.0,
         'temperature_tolerance': 2.0,
         'vpd_target': 1.0,

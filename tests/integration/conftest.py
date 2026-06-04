@@ -109,6 +109,11 @@ def mock_coordinator():
     # 5. Mock other subsystem services
     coordinator.subsystem_manager = MagicMock()
     coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
+    _fan_coord_mock = MagicMock()
+    _fan_coord_mock.async_restart = AsyncMock()
+    coordinator.subsystem_manager.circulation_fan_coordinators.get = MagicMock(
+        return_value=_fan_coord_mock
+    )
 
     coordinator.watering_service = MagicMock()
     coordinator.watering_service.async_water_growspace = AsyncMock()

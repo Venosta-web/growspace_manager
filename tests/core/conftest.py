@@ -89,6 +89,14 @@ def mock_coordinator():
     coordinator.to_date = MagicMock(side_effect=DateTimeHelper.to_date)
     coordinator.get_growspace_plants = MagicMock(return_value=[])
 
+    # Subsystem manager with async-safe fan coordinator mock
+    _fan_coord_mock = MagicMock()
+    _fan_coord_mock.async_restart = AsyncMock()
+    coordinator.subsystem_manager = MagicMock()
+    coordinator.subsystem_manager.circulation_fan_coordinators.get = MagicMock(
+        return_value=_fan_coord_mock
+    )
+
     # Initialize ServiceFacade AFTER all async mocks are set so the facade's
     # internal _coordinator reference sees the correct AsyncMock attributes.
     coordinator.services = ServiceFacade(coordinator)
