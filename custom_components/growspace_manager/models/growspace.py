@@ -127,6 +127,7 @@ class CirculationFanConfig(BaseModel):
     wind_period_seconds: int = 60
     wind_amplitude_pct: int = 10
     stage_vpd_enabled: bool = False
+    stage_vpd_overrides: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

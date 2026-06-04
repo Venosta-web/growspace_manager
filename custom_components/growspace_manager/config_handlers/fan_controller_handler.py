@@ -230,6 +230,7 @@ class FanControllerHandler(BaseConfigHandler[dict[str, Any]]):
             wind_period_seconds=int(fan_data.get("wind_period_seconds", 60)),
             wind_amplitude_pct=int(fan_data.get("wind_amplitude_pct", 10)),
             stage_vpd_enabled=bool(fan_data.get("stage_vpd_enabled", False)),
+            stage_vpd_overrides=fan_data.get("stage_vpd_overrides", {}),
         )
 
         env_config = self.flow.env_config_step1.copy()

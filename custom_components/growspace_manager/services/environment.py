@@ -6,6 +6,9 @@ from dataclasses import fields
 import logging
 from typing import cast
 
+from custom_components.growspace_manager.circulation_fan_coordinator import (
+    FAN_VPD_STAGE_DEFAULTS,
+)
 from custom_components.growspace_manager.const import (
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
@@ -65,6 +68,33 @@ from ._definition import ServiceDefinition
 _LOGGER = logging.getLogger(__name__)
 
 
+_VALID_STAGE_KEYS = {stage.value for stage in FAN_VPD_STAGE_DEFAULTS}
+_VPD_OVERRIDE_MIN = 0.1
+_VPD_OVERRIDE_MAX = 3.0
+
+
+def _validate_stage_vpd_overrides(overrides: dict) -> dict[str, dict[str, float]]:
+    """Validate and return stage_vpd_overrides, raising ServiceValidationError on bad input."""
+    for stage_key, entry in overrides.items():
+        if stage_key not in _VALID_STAGE_KEYS:
+            raise ServiceValidationError(
+                f"Unknown stage key '{stage_key}' in stage_vpd_overrides. "
+                f"Valid keys: {sorted(_VALID_STAGE_KEYS)}"
+            )
+        if not isinstance(entry, dict) or "day" not in entry or "night" not in entry:
+            raise ServiceValidationError(
+                f"Stage '{stage_key}' entry must contain both 'day' and 'night' keys."
+            )
+        for period in ("day", "night"):
+            val = entry[period]
+            if not (_VPD_OVERRIDE_MIN <= val <= _VPD_OVERRIDE_MAX):
+                raise ServiceValidationError(
+                    f"Stage '{stage_key}' {period} VPD override {val} kPa is out of range "
+                    f"({_VPD_OVERRIDE_MIN}–{_VPD_OVERRIDE_MAX} kPa)."
+                )
+    return overrides
+
+
 def _parse_fan_config(
     raw: dict | None,
     existing_env: EnvironmentConfig | None,
@@ -88,6 +118,8 @@ def _parse_fan_config(
             wind_enabled=bool(raw.get("wind_enabled", False)),
             wind_period_seconds=int(raw.get("wind_period_seconds", 60)),
             wind_amplitude_pct=int(raw.get("wind_amplitude_pct", 10)),
+            stage_vpd_enabled=bool(raw.get("stage_vpd_enabled", False)),
+            stage_vpd_overrides=_validate_stage_vpd_overrides(raw.get("stage_vpd_overrides", {})),
         )
     if existing_env is not None:
         return existing_env.circulation_fan_config
@@ -334,6 +366,10 @@ async def handle_configure_circulation_fan(
         wind_enabled=bool(call.data.get("wind_enabled", False)),
         wind_period_seconds=int(call.data.get("wind_period_seconds", 60)),
         wind_amplitude_pct=int(call.data.get("wind_amplitude_pct", 10)),
+        stage_vpd_enabled=bool(call.data.get("stage_vpd_enabled", False)),
+        stage_vpd_overrides=_validate_stage_vpd_overrides(
+            call.data.get("stage_vpd_overrides", {})
+        ),
     )
 
     if growspace.environment_config is None:

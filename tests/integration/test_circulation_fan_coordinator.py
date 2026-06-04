@@ -67,6 +67,7 @@ def _make_env_config(
     wind_period_seconds: int = 60,
     wind_amplitude_pct: int = 10,
     stage_vpd_enabled: bool = False,
+    stage_vpd_overrides: dict[str, dict[str, float]] | None = None,
 ) -> EnvironmentConfig:
     fan_cfg = CirculationFanConfig(
         enabled=enabled,
@@ -86,6 +87,7 @@ def _make_env_config(
         wind_period_seconds=wind_period_seconds,
         wind_amplitude_pct=wind_amplitude_pct,
         stage_vpd_enabled=stage_vpd_enabled,
+        stage_vpd_overrides=stage_vpd_overrides or {},
     )
     return EnvironmentConfig(
         humidity_sensors=humidity_sensors if humidity_sensors is not None else ["sensor.humidity"],
@@ -1244,3 +1246,102 @@ def test_determine_is_day_uses_last_known_when_unavailable(
 
     mock_hass.states.get.return_value = MagicMock(state=STATE_UNAVAILABLE)
     assert coord._determine_is_day() is False
+
+
+# ---------------------------------------------------------------------------
+# Stage VPD Overrides — coordinator lookup
+# ---------------------------------------------------------------------------
+
+
+def test_get_stage_vpd_target_override_present_uses_override(
+    mock_hass: MagicMock,
+) -> None:
+    """When an override exists for the current stage, it takes precedence over FAN_VPD_STAGE_DEFAULTS."""
+    override_day = 0.95
+    override_night = 0.80
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=99.9,
+        stage_vpd_enabled=True,
+        stage_vpd_overrides={"veg": {"day": override_day, "night": override_night}},
+    )
+    plant = MagicMock()
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        return_value=PlantStage.VEG,
+    ):
+        main_coord = _make_coordinator("gs1", env, plants=[plant])
+        coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+        assert coord._get_stage_vpd_target(is_day=True) == override_day
+        assert coord._get_stage_vpd_target(is_day=False) == override_night
+
+
+def test_get_stage_vpd_target_override_absent_uses_default(
+    mock_hass: MagicMock,
+) -> None:
+    """When no override exists for the current stage, FAN_VPD_STAGE_DEFAULTS is used."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=99.9,
+        stage_vpd_enabled=True,
+        stage_vpd_overrides={"flower_early": {"day": 1.3, "night": 1.1}},
+    )
+    plant = MagicMock()
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        return_value=PlantStage.VEG,
+    ):
+        main_coord = _make_coordinator("gs1", env, plants=[plant])
+        coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+        assert coord._get_stage_vpd_target(is_day=True) == FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["day"]
+
+
+def test_get_stage_vpd_target_no_plants_falls_back_to_vpd_target(
+    mock_hass: MagicMock,
+) -> None:
+    """With no plants, _get_stage_vpd_target returns the static vpd_target regardless of overrides."""
+    static_target = 1.1
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=static_target,
+        stage_vpd_enabled=True,
+        stage_vpd_overrides={"veg": {"day": 0.9, "night": 0.75}},
+    )
+    main_coord = _make_coordinator("gs1", env, plants=[])
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+    assert coord._get_stage_vpd_target(is_day=True) == static_target
+
+
+# ---------------------------------------------------------------------------
+# Stage VPD Overrides — validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_overrides,match", [
+    (
+        {"veg": {"day": 0.0, "night": 0.7}},
+        "out of range",
+    ),
+    (
+        {"veg": {"day": 3.1, "night": 0.7}},
+        "out of range",
+    ),
+    (
+        {"not_a_stage": {"day": 0.8, "night": 0.7}},
+        "Unknown stage key",
+    ),
+    (
+        {"veg": {"day": 0.8}},
+        "both 'day' and 'night'",
+    ),
+])
+def test_stage_vpd_overrides_validation(
+    bad_overrides: dict,
+    match: str,
+) -> None:
+    """_validate_stage_vpd_overrides rejects out-of-range values, unknown keys, and incomplete entries."""
+    from custom_components.growspace_manager.services.environment import _validate_stage_vpd_overrides
+    from homeassistant.exceptions import ServiceValidationError
+
+    with pytest.raises(ServiceValidationError, match=match):
+        _validate_stage_vpd_overrides(bad_overrides)

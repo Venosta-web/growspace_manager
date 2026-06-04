@@ -293,6 +293,9 @@ class CirculationFanCoordinator:
 
         stage = determine_coordinator_stage(plants)
         day_key = "day" if is_day else "night"
+        override = cfg.stage_vpd_overrides.get(stage.value)
+        if override:
+            return override[day_key]
         stage_entry = FAN_VPD_STAGE_DEFAULTS.get(stage)
         if stage_entry:
             return stage_entry[day_key]
