@@ -153,7 +153,9 @@ class CirculationFanCoordinator:
     @callback
     def _on_tick(self, _now: object) -> None:
         """Handle polling tick — schedule async regulation."""
-        self.hass.async_create_task(self._async_regulate())
+        self.config_entry.async_create_background_task(
+            self.hass, self._async_regulate(), "circulation_fan_regulate"
+        )
 
     async def _async_regulate(self) -> None:
         """Read sensor, compute speed, and call fan.set_percentage on each entity."""

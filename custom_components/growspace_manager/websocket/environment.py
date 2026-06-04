@@ -271,20 +271,20 @@ async def websocket_get_history_stats(
     end_time_str = msg.get("end_time")
     interval = msg["interval_minutes"]
 
-    start_time = dt_util.parse_datetime(start_time_str)
-    end_time = (
-        dt_util.parse_datetime(end_time_str) if end_time_str else dt_util.utcnow()
-    )
-
-    if not start_time:
-        connection.send_error(msg["id"], "invalid_args", "Invalid start_time")
-        return
-
-    if not end_time:
-        connection.send_error(msg["id"], "invalid_args", "Invalid end_time")
-        return
-
     try:
+        start_time = dt_util.parse_datetime(start_time_str)
+        end_time = (
+            dt_util.parse_datetime(end_time_str) if end_time_str else dt_util.utcnow()
+        )
+
+        if not start_time:
+            connection.send_error(msg["id"], "invalid_args", "Invalid start_time")
+            return
+
+        if not end_time:
+            connection.send_error(msg["id"], "invalid_args", "Invalid end_time")
+            return
+
         if interval >= 60:
             stats_result = await _get_statistics_data(
                 hass, entity_ids, start_time, end_time, interval

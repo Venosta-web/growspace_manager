@@ -66,6 +66,7 @@ class BasePreset(BaseModel):
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Handle missing 'id' in legacy data by generating one if necessary."""
+        data = super().__pre_deserialize__(data)
         if "id" not in data:
             # If id is missing, use a deterministic one based on name if possible,
             # or a random one. Using a name-based ID helps maintain consistency

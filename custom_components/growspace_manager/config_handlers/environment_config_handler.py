@@ -124,7 +124,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 
-        growspace_options = coordinator.services.growspaces.get_sorted_growspace_options()
+        growspace_options = (
+            coordinator.services.growspaces.get_sorted_growspace_options()
+        )
 
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
@@ -227,7 +229,12 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         env_config = {
             k: v
             for k, v in merged.items()
-            if k not in ("configure_dehumidifier", "configure_advanced", CONF_CONFIGURE_FAN_CONTROLLER)
+            if k
+            not in (
+                "configure_dehumidifier",
+                "configure_advanced",
+                CONF_CONFIGURE_FAN_CONTROLLER,
+            )
         }
 
         # Preserve sensor_groups if present in input
@@ -565,7 +572,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             description_placeholders={"growspace_name": growspace.name},
         )
 
-    async def _async_save_fan_config_and_continue(self, growspace: Any) -> ConfigFlowResult:
+    async def _async_save_fan_config_and_continue(
+        self, growspace: Any
+    ) -> ConfigFlowResult:
         """Persist the assembled fan config onto the growspace and continue the flow."""
         fan_data = self.flow.fan_config_step1
         fan_cfg = CirculationFanConfig(
@@ -583,7 +592,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             vpd_tolerance=float(fan_data.get("vpd_tolerance", 0.2)),
             critical_temp_low=fan_data.get("critical_temp_low"),
             critical_temp_high=fan_data.get("critical_temp_high"),
-            critical_temp_hysteresis=float(fan_data.get("critical_temp_hysteresis", 1.0)),
+            critical_temp_hysteresis=float(
+                fan_data.get("critical_temp_hysteresis", 1.0)
+            ),
             wind_enabled=bool(fan_data.get("wind_enabled", False)),
             wind_period_seconds=int(fan_data.get("wind_period_seconds", 60)),
             wind_amplitude_pct=int(fan_data.get("wind_amplitude_pct", 10)),
@@ -595,34 +606,46 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         return await self.async_step_configure_sensor_placement()
 
-    def get_fan_controller_schema(self, current_cfg: CirculationFanConfig) -> vol.Schema:
+    def get_fan_controller_schema(
+        self, current_cfg: CirculationFanConfig
+    ) -> vol.Schema:
         """Schema for the base fan controller step."""
         return vol.Schema(
             {
-                vol.Required("enabled", default=current_cfg.enabled): selector.BooleanSelector(),
+                vol.Required(
+                    "enabled", default=current_cfg.enabled
+                ): selector.BooleanSelector(),
                 vol.Required(
                     "regulation_mode",
                     default=str(current_cfg.regulation_mode),
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[
-                            selector.SelectOptionDict(value=m.value, label=m.value.capitalize())
+                            selector.SelectOptionDict(
+                                value=m.value, label=m.value.capitalize()
+                            )
                             for m in FanRegulationMode
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
-                vol.Required("min_speed", default=current_cfg.min_speed): selector.NumberSelector(
+                vol.Required(
+                    "min_speed", default=current_cfg.min_speed
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0, max=100, step=1, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Required("max_speed", default=current_cfg.max_speed): selector.NumberSelector(
+                vol.Required(
+                    "max_speed", default=current_cfg.max_speed
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0, max=100, step=1, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Required("wind_enabled", default=current_cfg.wind_enabled): selector.BooleanSelector(),
+                vol.Required(
+                    "wind_enabled", default=current_cfg.wind_enabled
+                ): selector.BooleanSelector(),
             }
         )
 
@@ -630,15 +653,25 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         """Schema for the VPD mode step (target, tolerance, critical temps)."""
         return vol.Schema(
             {
-                vol.Required("vpd_target", default=current_cfg.vpd_target): selector.NumberSelector(
+                vol.Required(
+                    "vpd_target", default=current_cfg.vpd_target
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0.1, max=3.0, step=0.05, mode=selector.NumberSelectorMode.BOX,
+                        min=0.1,
+                        max=3.0,
+                        step=0.05,
+                        mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="kPa",
                     )
                 ),
-                vol.Required("vpd_tolerance", default=current_cfg.vpd_tolerance): selector.NumberSelector(
+                vol.Required(
+                    "vpd_tolerance", default=current_cfg.vpd_tolerance
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0.01, max=1.0, step=0.05, mode=selector.NumberSelectorMode.BOX,
+                        min=0.01,
+                        max=1.0,
+                        step=0.05,
+                        mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="kPa",
                     )
                 ),
@@ -651,10 +684,14 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     description={"suggested_value": current_cfg.critical_temp_high},
                 ): vol.Any(None, vol.Coerce(float)),
                 vol.Required(
-                    "critical_temp_hysteresis", default=current_cfg.critical_temp_hysteresis
+                    "critical_temp_hysteresis",
+                    default=current_cfg.critical_temp_hysteresis,
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0.1, max=5.0, step=0.1, mode=selector.NumberSelectorMode.BOX,
+                        min=0.1,
+                        max=5.0,
+                        step=0.1,
+                        mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="°C",
                     )
                 ),
@@ -665,34 +702,56 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         """Schema for the humidity mode step."""
         return vol.Schema(
             {
-                vol.Required("humidity_target", default=current_cfg.humidity_target): selector.NumberSelector(
+                vol.Required(
+                    "humidity_target", default=current_cfg.humidity_target
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=10.0, max=90.0, step=0.5, mode=selector.NumberSelectorMode.BOX,
+                        min=10.0,
+                        max=90.0,
+                        step=0.5,
+                        mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="%",
                     )
                 ),
-                vol.Required("humidity_tolerance", default=current_cfg.humidity_tolerance): selector.NumberSelector(
+                vol.Required(
+                    "humidity_tolerance", default=current_cfg.humidity_tolerance
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0.5, max=20.0, step=0.5, mode=selector.NumberSelectorMode.BOX,
+                        min=0.5,
+                        max=20.0,
+                        step=0.5,
+                        mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="%",
                     )
                 ),
             }
         )
 
-    def get_fan_temperature_schema(self, current_cfg: CirculationFanConfig) -> vol.Schema:
+    def get_fan_temperature_schema(
+        self, current_cfg: CirculationFanConfig
+    ) -> vol.Schema:
         """Schema for the temperature mode step."""
         return vol.Schema(
             {
-                vol.Required("temperature_target", default=current_cfg.temperature_target): selector.NumberSelector(
+                vol.Required(
+                    "temperature_target", default=current_cfg.temperature_target
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=10.0, max=40.0, step=0.5, mode=selector.NumberSelectorMode.BOX,
+                        min=10.0,
+                        max=40.0,
+                        step=0.5,
+                        mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="°C",
                     )
                 ),
-                vol.Required("temperature_tolerance", default=current_cfg.temperature_tolerance): selector.NumberSelector(
+                vol.Required(
+                    "temperature_tolerance", default=current_cfg.temperature_tolerance
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0.1, max=5.0, step=0.1, mode=selector.NumberSelectorMode.BOX,
+                        min=0.1,
+                        max=5.0,
+                        step=0.1,
+                        mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="°C",
                     )
                 ),
@@ -707,7 +766,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     "wind_period_seconds", default=current_cfg.wind_period_seconds
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=10, max=3600, step=10, mode=selector.NumberSelectorMode.BOX,
+                        min=10,
+                        max=3600,
+                        step=10,
+                        mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="s",
                     )
                 ),
@@ -715,7 +777,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     "wind_amplitude_pct", default=current_cfg.wind_amplitude_pct
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1, max=50, step=1, mode=selector.NumberSelectorMode.BOX,
+                        min=1,
+                        max=50,
+                        step=1,
+                        mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="%",
                     )
                 ),
@@ -1067,9 +1132,6 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 user_input[field] is None or user_input[field] == ""
             ):
                 cleaned[field] = None
-            elif field not in user_input and field not in list_fields:
-                # Only clear if it's not one of our new list fields (which handle themselves)
-                pass
 
         # Sync plural and singular keys in cleaned output to ensure models don't revert clears
         for plural_key, singular_key in [

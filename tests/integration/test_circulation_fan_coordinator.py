@@ -1,6 +1,6 @@
 """Integration tests for CirculationFanCoordinator."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 import time as time_module
@@ -884,3 +884,141 @@ async def test_wind_applies_on_top_of_temp_override_speed(
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
         blocking=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# _on_tick dispatches a background task (line 156)
+# ---------------------------------------------------------------------------
+
+
+async def test_on_tick_creates_background_task(
+    mock_hass: MagicMock,
+    mock_track_time_interval: MagicMock,
+) -> None:
+    """_on_tick schedules _async_regulate as a background task."""
+    env = _make_env_config()
+    main_coord = _make_coordinator("gs1", env)
+    config_entry = MagicMock()
+    config_entry.async_create_background_task = MagicMock()
+
+    coord = CirculationFanCoordinator(mock_hass, config_entry, "gs1", main_coord)
+    coord._on_tick(object())
+
+    config_entry.async_create_background_task.assert_called_once()
+    _, kwargs = config_entry.async_create_background_task.call_args_list[0][0], config_entry.async_create_background_task.call_args_list[0][1]
+    call_args = config_entry.async_create_background_task.call_args
+    assert call_args[0][0] is mock_hass
+    assert call_args[0][2] == "circulation_fan_regulate"
+
+
+# ---------------------------------------------------------------------------
+# _async_regulate when _env_config is None (line 163)
+# ---------------------------------------------------------------------------
+
+
+async def test_async_regulate_no_env_config_returns_early(
+    mock_hass: MagicMock,
+) -> None:
+    """_async_regulate returns immediately when _env_config is None (missing growspace)."""
+    main_coord = MagicMock()
+    main_coord.growspaces = {}
+
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "nonexistent", main_coord)
+    assert coord._env_config is None
+
+    await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Unknown regulation mode (line 214)
+# ---------------------------------------------------------------------------
+
+
+async def test_async_regulate_unknown_mode_returns_early(
+    mock_hass: MagicMock,
+) -> None:
+    """An unrecognised regulation_mode value → no fan.set_percentage call."""
+    env = _make_env_config(mode=FanRegulationMode.HUMIDITY)
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    # Patch the regulation_mode to an unexpected value and mock _read_sensor to
+    # return a float so execution reaches the if-elif-else branch (not the
+    # earlier sensor_value is None guard).
+    coord._env_config.circulation_fan_config.regulation_mode = "unknown_mode"
+    with patch.object(coord, "_read_sensor", return_value=42.0):
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Exception handling in fan service call (lines 231-232)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("exc", [Exception("ha error"), TimeoutError()])
+async def test_fan_service_call_exception_is_logged_not_raised(
+    mock_hass: MagicMock, exc: Exception
+) -> None:
+    """HomeAssistantError or TimeoutError from fan.set_percentage is caught and logged."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        humidity_target=60.0,
+        humidity_tolerance=5.0,
+        min_speed=0,
+        max_speed=100,
+    )
+    mock_hass.states.get.return_value = MagicMock(state="70.0")
+    mock_hass.services.async_call = AsyncMock(side_effect=HomeAssistantError("fail"))
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    # Should not raise
+    await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once()
+
+
+async def test_fan_service_timeout_is_caught(
+    mock_hass: MagicMock,
+) -> None:
+    """TimeoutError from fan.set_percentage is caught without raising."""
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        humidity_target=60.0,
+        humidity_tolerance=5.0,
+        min_speed=0,
+        max_speed=100,
+    )
+    mock_hass.states.get.return_value = MagicMock(state="70.0")
+    mock_hass.services.async_call = AsyncMock(side_effect=TimeoutError())
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# _read_sensor with unknown mode (line 245)
+# ---------------------------------------------------------------------------
+
+
+def test_read_sensor_unknown_mode_returns_none(
+    mock_hass: MagicMock,
+) -> None:
+    """_read_sensor returns None for an unrecognised FanRegulationMode."""
+    env = _make_env_config()
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    result = coord._read_sensor("completely_unknown_mode")  # type: ignore[arg-type]
+
+    assert result is None
+    mock_hass.states.get.assert_not_called()
