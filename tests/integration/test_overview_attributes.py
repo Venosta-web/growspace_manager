@@ -166,3 +166,110 @@ async def test_environment_attributes_includes_circulation_fan_config(hass) -> N
     )
     assert attributes["circulation_fan_config"]["enabled"] is True
     assert attributes["circulation_fan_config"]["vpd_target"] == 1.2
+
+
+def _make_mock_env() -> MagicMock:
+    """Return a minimal mock EnvironmentConfig for attribute tests."""
+    mock_env = MagicMock()
+    mock_env.temperature_sensor = None
+    mock_env.humidity_sensor = None
+    mock_env.vpd_sensor = None
+    mock_env.co2_sensor = None
+    mock_env.soil_moisture_sensor = None
+    mock_env.temperature_sensors = []
+    mock_env.humidity_sensors = []
+    mock_env.vpd_sensors = []
+    mock_env.light_sensors = []
+    mock_env.exhaust_fan_entity = None
+    mock_env.exhaust_fan_entities = []
+    mock_env.circulation_fan_entity = None
+    mock_env.circulation_fan_entities = []
+    mock_env.humidifier_entity = None
+    mock_env.humidifier_entities = []
+    mock_env.dehumidifier_entity = None
+    mock_env.dehumidifier_entities = []
+    mock_env.irrigation_tanks = []
+    mock_env.sensor_groups = []
+    mock_env.sensor_coordinates = {}
+    mock_env.substrate_temperature_sensors = []
+    mock_env.power_sensors = []
+    mock_env.energy_sensors = []
+    mock_env.electricity_cost_per_kwh = 0.0
+    mock_env.camera_entities = []
+    mock_env.ph_sensors = []
+    mock_env.feed_ec_sensors = []
+    mock_env.bulk_ec_sensors = []
+    mock_env.pore_ec_sensors = []
+    mock_env.runoff_ec_sensors = []
+    mock_env.drain_volume_sensors = []
+    mock_env.irrigation_flow_sensors = []
+    mock_env.control_dehumidifier = False
+    mock_env.control_humidifier = False
+    mock_env.humidifier_thresholds = {}
+    mock_env.dehumidifier_thresholds = {}
+    mock_env.circulation_fan_config = CirculationFanConfig()
+    mock_env.vision_checkup_config = VisionCheckupConfig()
+    return mock_env
+
+
+@pytest.mark.asyncio
+async def test_substrate_ec_delta_present_when_both_configured(hass) -> None:
+    """substrate_ec_delta = pore_ec − bulk_ec when both sensor lists are configured."""
+    builder = GrowspaceViewModelBuilder(hass)
+
+    hass.states.async_set("sensor.bulk_1", "2.0")
+    hass.states.async_set("sensor.bulk_2", "2.4")
+    hass.states.async_set("sensor.pore_1", "1.6")
+
+    mock_env = _make_mock_env()
+    mock_env.bulk_ec_sensors = ["sensor.bulk_1", "sensor.bulk_2"]  # avg = 2.2
+    mock_env.pore_ec_sensors = ["sensor.pore_1"]  # avg = 1.6
+
+    mock_growspace = MagicMock()
+    mock_growspace.environment_config = mock_env
+    mock_growspace.irrigation_config = None
+
+    attributes = builder._get_environment_attributes(mock_growspace)
+
+    assert "substrate_ec_delta" in attributes
+    assert attributes["substrate_ec_delta"] == pytest.approx(1.6 - 2.2)
+
+
+@pytest.mark.asyncio
+async def test_substrate_ec_delta_absent_when_only_bulk_configured(hass) -> None:
+    """substrate_ec_delta is absent when only bulk_ec_sensors are configured."""
+    builder = GrowspaceViewModelBuilder(hass)
+
+    hass.states.async_set("sensor.bulk_1", "2.0")
+
+    mock_env = _make_mock_env()
+    mock_env.bulk_ec_sensors = ["sensor.bulk_1"]
+    mock_env.pore_ec_sensors = []
+
+    mock_growspace = MagicMock()
+    mock_growspace.environment_config = mock_env
+    mock_growspace.irrigation_config = None
+
+    attributes = builder._get_environment_attributes(mock_growspace)
+
+    assert "substrate_ec_delta" not in attributes
+
+
+@pytest.mark.asyncio
+async def test_substrate_ec_delta_absent_when_only_pore_configured(hass) -> None:
+    """substrate_ec_delta is absent when only pore_ec_sensors are configured."""
+    builder = GrowspaceViewModelBuilder(hass)
+
+    hass.states.async_set("sensor.pore_1", "1.4")
+
+    mock_env = _make_mock_env()
+    mock_env.bulk_ec_sensors = []
+    mock_env.pore_ec_sensors = ["sensor.pore_1"]
+
+    mock_growspace = MagicMock()
+    mock_growspace.environment_config = mock_env
+    mock_growspace.irrigation_config = None
+
+    attributes = builder._get_environment_attributes(mock_growspace)
+
+    assert "substrate_ec_delta" not in attributes
