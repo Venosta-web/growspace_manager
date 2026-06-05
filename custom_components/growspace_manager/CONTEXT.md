@@ -26,7 +26,19 @@ The single `PlantStage` that wins when a growspace contains plants at multiple s
 
 ## EnvironmentConfig
 
-The set of HA sensor entity IDs linked to a growspace. Covers: temperature, humidity, VPD, CO₂, substrate temperature, soil moisture, feed EC, substrate EC, runoff EC, pH, drain volume, irrigation flow, power, energy, irrigation tanks, lights, fans, humidifier, dehumidifier. All sensor types can be linked to any growspace regardless of its `GrowspaceType`.
+The set of HA sensor entity IDs linked to a growspace. Covers: temperature, humidity, VPD, CO₂, substrate temperature, soil moisture, feed EC, bulk EC, pore EC, runoff EC, pH, drain volume, irrigation flow, power, energy, irrigation tanks, lights, fans, humidifier, dehumidifier. All sensor types can be linked to any growspace regardless of its `GrowspaceType`.
+
+## Bulk EC
+
+Electrical conductivity measured by a TDR or capacitance probe that reads the combined water-and-media mixture at the roots. Stored as `bulk_ec_sensors` on `EnvironmentConfig`. Replaces the former `substrate_ec_sensors` field (silent migration on load).
+
+## Pore EC
+
+Electrical conductivity of the water fraction only at the roots, measured by a suction cup or pore water extractor. Stored as `pore_ec_sensors` on `EnvironmentConfig`. A growspace may have both bulk and pore EC sensors configured simultaneously.
+
+## Substrate EC Delta
+
+The difference between **Pore EC** and **Bulk EC** (pore − bulk). Surfaced as a computed attribute on the growspace sensor entity; only present when both `bulk_ec_sensors` and `pore_ec_sensors` are configured. A growing delta indicates salt accumulation in the media — salts are bound in the substrate matrix, so bulk EC reads high while pore EC (what the roots actually see in solution) reads lower. Never a standalone HA sensor entity.
 
 ## IrrigationStrategy
 
