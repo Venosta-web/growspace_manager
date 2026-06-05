@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.exceptions import ServiceValidationError
 
 
 @pytest.fixture
@@ -87,3 +88,58 @@ async def test_save_notification_settings_sends_error_when_no_coordinator(
 
     mock_connection.send_error.assert_called_once()
     assert mock_connection.send_error.call_args[0][1] == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_get_coordinator_returns_coordinator_when_available(
+    mock_connection: MagicMock,
+) -> None:
+    """_get_coordinator returns coordinator when get_for_service_call succeeds."""
+    from custom_components.growspace_manager.websocket.notifications import (
+        _get_coordinator,
+    )
+
+    coordinator = MagicMock()
+    with patch(
+        "custom_components.growspace_manager.websocket.notifications.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
+    ):
+        result = _get_coordinator(MagicMock(), mock_connection)
+
+    assert result is coordinator
+
+
+@pytest.mark.asyncio
+async def test_get_coordinator_returns_none_on_service_validation_error(
+    mock_connection: MagicMock,
+) -> None:
+    """_get_coordinator returns None when get_for_service_call raises ServiceValidationError."""
+    from custom_components.growspace_manager.websocket.notifications import (
+        _get_coordinator,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.notifications.GrowspaceCoordinator.get_for_service_call",
+        side_effect=ServiceValidationError("not found"),
+    ):
+        result = _get_coordinator(MagicMock(), mock_connection)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_coordinator_returns_none_on_unexpected_exception(
+    mock_connection: MagicMock,
+) -> None:
+    """_get_coordinator returns None when get_for_service_call raises any exception."""
+    from custom_components.growspace_manager.websocket.notifications import (
+        _get_coordinator,
+    )
+
+    with patch(
+        "custom_components.growspace_manager.websocket.notifications.GrowspaceCoordinator.get_for_service_call",
+        side_effect=RuntimeError("unexpected"),
+    ):
+        result = _get_coordinator(MagicMock(), mock_connection)
+
+    assert result is None
