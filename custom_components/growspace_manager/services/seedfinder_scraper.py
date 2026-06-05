@@ -67,7 +67,7 @@ class SeedfinderScraper:
                 if response.status == 403:
                     _LOGGER.warning(
                         "Seedfinder search blocked (403) — the site is behind bot "
-                        "protection (Cloudflare). Automated access is not possible."
+                        "protection (Cloudflare). Automated access is not possible"
                     )
                     raise ServiceValidationError(
                         "Seedfinder is temporarily unavailable: the site is currently "
