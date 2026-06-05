@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.models import CirculationFanConfig
+from custom_components.growspace_manager.models import CirculationFanConfig, VisionCheckupConfig
 from custom_components.growspace_manager.presentation.growspace_view_model import (
     GrowspaceViewModelBuilder,
 )
@@ -54,6 +54,7 @@ async def test_growspace_view_model_includes_temp_hum(hass) -> None:
     mock_env.humidifier_thresholds = {}
     mock_env.dehumidifier_thresholds = {}
     mock_env.circulation_fan_config = CirculationFanConfig()
+    mock_env.vision_checkup_config = VisionCheckupConfig()
 
     mock_growspace = MagicMock()
     mock_growspace.environment_config = mock_env
@@ -151,6 +152,7 @@ async def test_environment_attributes_includes_circulation_fan_config(hass) -> N
     mock_env.humidifier_thresholds = {}
     mock_env.dehumidifier_thresholds = {}
     mock_env.circulation_fan_config = fan_cfg
+    mock_env.vision_checkup_config = VisionCheckupConfig()
 
     mock_growspace = MagicMock()
     mock_growspace.environment_config = mock_env
