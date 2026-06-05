@@ -42,6 +42,8 @@
   dict({
     'bayesian_options': dict({
     }),
+    'bulk_ec_sensors': list([
+    ]),
     'camera_entities': list([
     ]),
     'circulation_fan_config': dict({
@@ -107,6 +109,8 @@
     'mold_threshold': 0.75,
     'ph_sensors': list([
     ]),
+    'pore_ec_sensors': list([
+    ]),
     'power_sensors': list([
     ]),
     'runoff_ec_sensors': list([
@@ -118,8 +122,6 @@
     'snapshot_interval_hours': 24,
     'soil_moisture_sensor': None,
     'stress_threshold': 0.7,
-    'substrate_ec_sensors': list([
-    ]),
     'substrate_temperature_sensors': list([
     ]),
     'temperature_sensor': 'sensor.temp',
@@ -171,6 +173,8 @@
     'environment_config': dict({
       'bayesian_options': dict({
       }),
+      'bulk_ec_sensors': list([
+      ]),
       'camera_entities': list([
       ]),
       'circulation_fan_config': dict({
@@ -235,6 +239,8 @@
       'mold_threshold': 0.75,
       'ph_sensors': list([
       ]),
+      'pore_ec_sensors': list([
+      ]),
       'power_sensors': list([
       ]),
       'runoff_ec_sensors': list([
@@ -246,8 +252,6 @@
       'snapshot_interval_hours': 24,
       'soil_moisture_sensor': None,
       'stress_threshold': 0.7,
-      'substrate_ec_sensors': list([
-      ]),
       'substrate_temperature_sensors': list([
       ]),
       'temperature_sensor': None,

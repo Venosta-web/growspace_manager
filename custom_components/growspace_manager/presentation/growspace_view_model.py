@@ -530,7 +530,8 @@ class GrowspaceViewModelBuilder:
         # EC / pH / flow sensors (used by frontend for capability detection)
         attributes["ph_sensors"] = env_config.ph_sensors
         attributes["feed_ec_sensors"] = env_config.feed_ec_sensors
-        attributes["substrate_ec_sensors"] = env_config.substrate_ec_sensors
+        attributes["bulk_ec_sensors"] = env_config.bulk_ec_sensors
+        attributes["pore_ec_sensors"] = env_config.pore_ec_sensors
         attributes["runoff_ec_sensors"] = env_config.runoff_ec_sensors
         attributes["drain_volume_sensors"] = env_config.drain_volume_sensors
         attributes["irrigation_flow_sensors"] = env_config.irrigation_flow_sensors

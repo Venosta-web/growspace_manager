@@ -5,8 +5,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.growspace_manager.const import (
+    CONF_BULK_EC_SENSORS,
     CONF_DEHUMIDIFIER_THRESHOLDS,
     CONF_HUMIDITY_SENSOR,
+    CONF_PORE_EC_SENSORS,
     CONF_TEMP_SENSOR,
 )
 from custom_components.growspace_manager.models import (
@@ -371,4 +373,28 @@ async def test_handle_configure_circulation_fan_gs_not_found(
         ServiceValidationError, match="Growspace 'non_existent' not found"
     ):
         await handle_configure_circulation_fan(mock_hass, mock_coordinator, mock_call)
+
+
+@pytest.mark.asyncio
+async def test_configure_environment_accepts_bulk_and_pore_ec_sensors(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """configure_environment service writes bulk_ec_sensors and pore_ec_sensors to EnvironmentConfig."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        CONF_BULK_EC_SENSORS: ["sensor.bulk_ec_1"],
+        CONF_PORE_EC_SENSORS: ["sensor.pore_ec_1"],
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    env: EnvironmentConfig = mock_gs.environment_config
+    assert env.bulk_ec_sensors == ["sensor.bulk_ec_1"]
+    assert env.pore_ec_sensors == ["sensor.pore_ec_1"]
 

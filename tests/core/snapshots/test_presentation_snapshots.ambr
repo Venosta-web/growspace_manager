@@ -7,6 +7,8 @@
     'environment': dict({
       'active_events': dict({
       }),
+      'bulk_ec_sensors': list([
+      ]),
       'camera_entities': list([
       ]),
       'circulation_fan_config': dict({
@@ -63,11 +65,11 @@
       ]),
       'ph_sensors': list([
       ]),
+      'pore_ec_sensors': list([
+      ]),
       'power_sensors': list([
       ]),
       'runoff_ec_sensors': list([
-      ]),
-      'substrate_ec_sensors': list([
       ]),
       'substrate_temperature_sensors': list([
       ]),

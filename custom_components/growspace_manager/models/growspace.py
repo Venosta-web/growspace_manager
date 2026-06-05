@@ -162,7 +162,8 @@ class EnvironmentConfig(BaseModel):
     snapshot_interval_hours: int = 24
     ph_sensors: list[str] = field(default_factory=list)
     feed_ec_sensors: list[str] = field(default_factory=list)
-    substrate_ec_sensors: list[str] = field(default_factory=list)
+    bulk_ec_sensors: list[str] = field(default_factory=list)
+    pore_ec_sensors: list[str] = field(default_factory=list)
     runoff_ec_sensors: list[str] = field(default_factory=list)
     drain_volume_sensors: list[str] = field(default_factory=list)
     irrigation_flow_sensors: list[str] = field(default_factory=list)
@@ -255,7 +256,8 @@ class EnvironmentConfig(BaseModel):
             "lung_room_temp_sensors",
             "ph_sensors",
             "feed_ec_sensors",
-            "substrate_ec_sensors",
+            "bulk_ec_sensors",
+            "pore_ec_sensors",
             "runoff_ec_sensors",
             "drain_volume_sensors",
             "irrigation_flow_sensors",
@@ -282,7 +284,8 @@ class EnvironmentConfig(BaseModel):
             "vpd_sensor": "vpd_sensors",
             "ph_sensor": "ph_sensors",
             "feed_ec_sensor": "feed_ec_sensors",
-            "substrate_ec_sensor": "substrate_ec_sensors",
+            "substrate_ec_sensor": "bulk_ec_sensors",
+            "substrate_ec_sensors": "bulk_ec_sensors",
             "runoff_ec_sensor": "runoff_ec_sensors",
             "drain_volume_sensor": "drain_volume_sensors",
             "irrigation_flow_sensor": "irrigation_flow_sensors",
@@ -292,8 +295,10 @@ class EnvironmentConfig(BaseModel):
             if old_key in data and new_key not in data:
                 val = data.get(old_key)
                 # Ensure we handle potentially None values from old config
-                if val:
-                    data[new_key] = [val] if isinstance(val, str) else []
+                if isinstance(val, list):
+                    data[new_key] = val
+                elif val:
+                    data[new_key] = [val]
                 else:
                     data[new_key] = []
                 data.pop(old_key)
