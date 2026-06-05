@@ -39,6 +39,12 @@ def mock_hass():
 
     hass.async_create_task = MagicMock(side_effect=mock_create_task)
     hass.data = {}
+
+    # async_call_later uses hass.loop internally
+    mock_loop = MagicMock()
+    mock_loop.time.return_value = 0.0
+    hass.loop = mock_loop
+
     return hass
 
 
