@@ -1097,7 +1097,7 @@ def test_get_stage_vpd_target_returns_correct_value(
     ):
         main_coord = _make_coordinator("gs1", env, plants=[plant])
         coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-        result = coord._get_stage_vpd_target(is_day)
+        result = coord._get_stage_vpd_target(env.circulation_fan_config, is_day)
 
     assert result == expected_target
 
@@ -1272,8 +1272,8 @@ def test_get_stage_vpd_target_override_present_uses_override(
     ):
         main_coord = _make_coordinator("gs1", env, plants=[plant])
         coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-        assert coord._get_stage_vpd_target(is_day=True) == override_day
-        assert coord._get_stage_vpd_target(is_day=False) == override_night
+        assert coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True) == override_day
+        assert coord._get_stage_vpd_target(env.circulation_fan_config, is_day=False) == override_night
 
 
 def test_get_stage_vpd_target_override_absent_uses_default(
@@ -1293,7 +1293,7 @@ def test_get_stage_vpd_target_override_absent_uses_default(
     ):
         main_coord = _make_coordinator("gs1", env, plants=[plant])
         coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-        assert coord._get_stage_vpd_target(is_day=True) == FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["day"]
+        assert coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True) == FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["day"]
 
 
 def test_get_stage_vpd_target_no_plants_falls_back_to_vpd_target(
@@ -1309,7 +1309,7 @@ def test_get_stage_vpd_target_no_plants_falls_back_to_vpd_target(
     )
     main_coord = _make_coordinator("gs1", env, plants=[])
     coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-    assert coord._get_stage_vpd_target(is_day=True) == static_target
+    assert coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True) == static_target
 
 
 # ---------------------------------------------------------------------------

@@ -20,6 +20,7 @@ from .domain.stage_calculator import determine_coordinator_stage
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+    from .models import CirculationFanConfig, EnvironmentConfig
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -131,7 +132,7 @@ class CirculationFanCoordinator:
         self._last_known_is_day: bool | None = None
 
     @property
-    def _env_config(self):
+    def _env_config(self) -> EnvironmentConfig | None:
         gs = self.main_coordinator.growspaces.get(self.growspace_id)
         return gs.environment_config if gs else None
 
@@ -200,7 +201,7 @@ class CirculationFanCoordinator:
         elif cfg.regulation_mode == FanRegulationMode.VPD:
             if cfg.stage_vpd_enabled:
                 is_day = self._determine_is_day()
-                effective_vpd_target = self._get_stage_vpd_target(is_day)
+                effective_vpd_target = self._get_stage_vpd_target(cfg, is_day)
             else:
                 effective_vpd_target = cfg.vpd_target
             speed = compute_fan_speed(
@@ -274,12 +275,11 @@ class CirculationFanCoordinator:
 
         return self._last_known_is_day if self._last_known_is_day is not None else True
 
-    def _get_stage_vpd_target(self, is_day: bool) -> float:
+    def _get_stage_vpd_target(self, cfg: CirculationFanConfig, is_day: bool) -> float:
         """Resolve the effective VPD target from stage defaults.
 
         Falls back to the static vpd_target when the growspace has no plants.
         """
-        cfg = self._env_config.circulation_fan_config
         plants = self.main_coordinator.services.growspaces.get_growspace_plants(
             self.growspace_id
         )

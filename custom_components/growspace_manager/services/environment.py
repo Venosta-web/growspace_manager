@@ -73,8 +73,12 @@ _VPD_OVERRIDE_MIN = 0.1
 _VPD_OVERRIDE_MAX = 3.0
 
 
-def _validate_stage_vpd_overrides(overrides: dict) -> dict[str, dict[str, float]]:
+def _validate_stage_vpd_overrides(overrides: dict | None) -> dict[str, dict[str, float]]:
     """Validate and return stage_vpd_overrides, raising ServiceValidationError on bad input."""
+    if overrides is None:
+        return {}
+    if not isinstance(overrides, dict):
+        raise ServiceValidationError("stage_vpd_overrides must be a dictionary.")
     for stage_key, entry in overrides.items():
         if stage_key not in _VALID_STAGE_KEYS:
             raise ServiceValidationError(
@@ -87,6 +91,10 @@ def _validate_stage_vpd_overrides(overrides: dict) -> dict[str, dict[str, float]
             )
         for period in ("day", "night"):
             val = entry[period]
+            if not isinstance(val, (int, float)):
+                raise ServiceValidationError(
+                    f"Stage '{stage_key}' {period} VPD override must be a number."
+                )
             if not (_VPD_OVERRIDE_MIN <= val <= _VPD_OVERRIDE_MAX):
                 raise ServiceValidationError(
                     f"Stage '{stage_key}' {period} VPD override {val} kPa is out of range "
