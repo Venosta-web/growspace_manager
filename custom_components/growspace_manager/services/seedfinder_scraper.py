@@ -30,6 +30,15 @@ class SeedfinderScraper:
         session = async_get_clientsession(self.hass)
         try:
             async with session.get(url, timeout=15) as response:
+                if response.status == 403:
+                    _LOGGER.warning(
+                        "Seedfinder fetch blocked (403) — the site is behind bot "
+                        "protection (Cloudflare). Automated access is not possible"
+                    )
+                    raise ServiceValidationError(
+                        "Seedfinder is temporarily unavailable: the site is currently "
+                        "blocking automated access. Try again later or add the strain manually."
+                    )
                 if response.status != 200:
                     _LOGGER.error("Error fetching %s: %s", url, response.status)
                     return None
@@ -41,7 +50,6 @@ class SeedfinderScraper:
             AttributeError,
             KeyError,
             ValueError,
-            ServiceValidationError,
             GrowspaceError,
         ) as err:
             _LOGGER.error("Unexpected error fetching %s: %s", url, err)
@@ -56,6 +64,15 @@ class SeedfinderScraper:
 
         try:
             async with session.get(SEARCH_URL, params=params, timeout=10) as response:
+                if response.status == 403:
+                    _LOGGER.warning(
+                        "Seedfinder search blocked (403) — the site is behind bot "
+                        "protection (Cloudflare). Automated access is not possible"
+                    )
+                    raise ServiceValidationError(
+                        "Seedfinder is temporarily unavailable: the site is currently "
+                        "blocking automated access. Try again later or add the strain manually."
+                    )
                 if response.status != 200:
                     _LOGGER.error("Error searching Seedfinder: %s", response.status)
                     return []
@@ -119,7 +136,6 @@ class SeedfinderScraper:
             AttributeError,
             KeyError,
             ValueError,
-            ServiceValidationError,
             GrowspaceError,
         ) as err:
             _LOGGER.error("Unexpected error searching Seedfinder: %s", err)
