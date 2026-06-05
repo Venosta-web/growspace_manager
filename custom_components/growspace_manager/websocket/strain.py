@@ -167,7 +167,11 @@ async def websocket_query_external_strain(
     except (AttributeError, KeyError, RuntimeError):
         _LOGGER.debug("Could not retrieve coordinator for blacklist, using empty list")
 
-    results = await scraper.async_search_strains(query, blacklist=blacklist)
+    try:
+        results = await scraper.async_search_strains(query, blacklist=blacklist)
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "seedfinder_unavailable", str(err))
+        return
     connection.send_result(msg["id"], results)
 
 
@@ -183,7 +187,11 @@ async def websocket_get_external_strain_details(
     coordinator = GrowspaceCoordinator.get_any(hass)
     scraper = coordinator.seedfinder_scraper
 
-    raw = await scraper.async_get_strain_details(url)
+    try:
+        raw = await scraper.async_get_strain_details(url)
+    except ServiceValidationError as err:
+        connection.send_error(msg["id"], "seedfinder_unavailable", str(err))
+        return
     if raw is None:
         connection.send_result(msg["id"], None)
         return
