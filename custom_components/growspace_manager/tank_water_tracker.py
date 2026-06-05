@@ -300,6 +300,38 @@ class TankWaterTracker:
             and dt_util.as_local(_parse_ts(ev["timestamp"])) >= day_start
         )
 
+    def get_total_liters_since(self, cycle_start_date: str | None = None) -> float:
+        """Return total liters consumed since the start of the given local date.
+
+        If cycle_start_date is None or empty, sums all consumption events.
+        cycle_start_date must be an ISO date string (YYYY-MM-DD).
+        """
+        if not cycle_start_date:
+            return sum(
+                ev["liters"]
+                for ev in self.tank.water_history.events
+                if ev["event_type"] == "consumption"
+            )
+        try:
+            from datetime import date as _date, datetime as _datetime  # noqa: PLC0415
+
+            d = _date.fromisoformat(cycle_start_date)
+            cycle_start_local = dt_util.as_local(
+                _datetime(d.year, d.month, d.day, 0, 0, 0)
+            )
+        except (ValueError, TypeError):
+            return sum(
+                ev["liters"]
+                for ev in self.tank.water_history.events
+                if ev["event_type"] == "consumption"
+            )
+        return sum(
+            ev["liters"]
+            for ev in self.tank.water_history.events
+            if ev["event_type"] == "consumption"
+            and dt_util.as_local(_parse_ts(ev["timestamp"])) >= cycle_start_local
+        )
+
     def get_stage_aggregates(self) -> dict[str, float]:
         """Return total liters consumed per growth stage.
 

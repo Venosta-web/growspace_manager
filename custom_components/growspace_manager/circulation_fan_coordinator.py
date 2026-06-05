@@ -10,19 +10,35 @@ import time
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import ATTR_ENTITY_ID, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 
-from .const import FanRegulationMode
+from .const import FanRegulationMode, PlantStage
+from .domain.stage_calculator import determine_coordinator_stage
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+    from .models import CirculationFanConfig, EnvironmentConfig
 
 _LOGGER = logging.getLogger(__name__)
 
 _TICK_INTERVAL = timedelta(seconds=10)
+
+# Per-stage VPD targets (day / night) for dynamic VPD mode.
+# Values are midpoints of the tightest Bayesian optimal range for each stage.
+FAN_VPD_STAGE_DEFAULTS: dict[PlantStage, dict[str, float]] = {
+    PlantStage.SEEDLING:      {"day": 0.60, "night": 0.60},
+    PlantStage.CLONE:         {"day": 0.50, "night": 0.50},
+    PlantStage.MOTHER:        {"day": 0.70, "night": 0.60},
+    PlantStage.VEG:           {"day": 0.70, "night": 0.60},
+    PlantStage.FLOWER_EARLY:  {"day": 1.15, "night": 1.00},
+    PlantStage.FLOWER_MID:    {"day": 1.20, "night": 1.00},
+    PlantStage.FLOWER_LATE:   {"day": 1.25, "night": 1.05},
+    PlantStage.DRY:           {"day": 0.95, "night": 0.95},
+    PlantStage.CURE:          {"day": 0.75, "night": 0.75},
+}
 
 
 def evaluate_temp_override(
@@ -113,16 +129,12 @@ class CirculationFanCoordinator:
         self._temp_override_active: bool = False
         self._temp_override_direction: str | None = None
         self._start_time: float = 0.0
+        self._last_known_is_day: bool | None = None
 
-        growspace = self.main_coordinator.growspaces.get(growspace_id)
-        if not growspace:
-            _LOGGER.error(
-                "Growspace %s not found for CirculationFanCoordinator", growspace_id
-            )
-            self._env_config = None
-            return
-
-        self._env_config = growspace.environment_config
+    @property
+    def _env_config(self) -> EnvironmentConfig | None:
+        gs = self.main_coordinator.growspaces.get(self.growspace_id)
+        return gs.environment_config if gs else None
 
     async def async_setup(self) -> None:
         """Start the 10-second polling tick."""
@@ -187,9 +199,14 @@ class CirculationFanCoordinator:
                 cfg.max_speed,
             )
         elif cfg.regulation_mode == FanRegulationMode.VPD:
+            if cfg.stage_vpd_enabled:
+                is_day = self._determine_is_day()
+                effective_vpd_target = self._get_stage_vpd_target(cfg, is_day)
+            else:
+                effective_vpd_target = cfg.vpd_target
             speed = compute_fan_speed(
                 sensor_value,
-                cfg.vpd_target,
+                effective_vpd_target,
                 cfg.vpd_tolerance,
                 cfg.min_speed,
                 cfg.max_speed,
@@ -233,6 +250,52 @@ class CirculationFanCoordinator:
                     "Failed to set percentage on %s", entity_id, exc_info=True
                 )
 
+    def _determine_is_day(self) -> bool:
+        """Return True if lights are on (OR logic across all light sensors)."""
+        light_sensors = self._env_config.light_sensors if self._env_config else []
+        if not light_sensors:
+            return True
+
+        any_valid = False
+        any_on = False
+        for sensor_id in light_sensors:
+            state = self.hass.states.get(sensor_id)
+            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                any_valid = True
+                try:
+                    if float(state.state) > 0:
+                        any_on = True
+                except ValueError:
+                    if state.state == STATE_ON:
+                        any_on = True
+
+        if any_valid:
+            self._last_known_is_day = any_on
+            return any_on
+
+        return self._last_known_is_day if self._last_known_is_day is not None else True
+
+    def _get_stage_vpd_target(self, cfg: CirculationFanConfig, is_day: bool) -> float:
+        """Resolve the effective VPD target from stage defaults.
+
+        Falls back to the static vpd_target when the growspace has no plants.
+        """
+        plants = self.main_coordinator.services.growspaces.get_growspace_plants(
+            self.growspace_id
+        )
+        if not plants:
+            return cfg.vpd_target
+
+        stage = determine_coordinator_stage(plants)
+        day_key = "day" if is_day else "night"
+        override = cfg.stage_vpd_overrides.get(stage.value)
+        if override:
+            return override[day_key]
+        stage_entry = FAN_VPD_STAGE_DEFAULTS.get(stage)
+        if stage_entry:
+            return stage_entry[day_key]
+        return cfg.vpd_target
+
     def _read_sensor(self, mode: FanRegulationMode) -> float | None:
         """Read the first available sensor value for the given regulation mode."""
         if mode == FanRegulationMode.HUMIDITY:
@@ -254,6 +317,14 @@ class CirculationFanCoordinator:
             return float(state.state)
         except ValueError:
             return None
+
+    async def async_restart(self) -> None:
+        """Restart the polling tick after a config change."""
+        self.unload()
+        self._temp_override_active = False
+        self._temp_override_direction = None
+        self._start_time = 0.0
+        await self.async_setup()
 
     def unload(self) -> None:
         """Stop the polling tick."""

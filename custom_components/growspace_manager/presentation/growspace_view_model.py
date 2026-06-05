@@ -120,6 +120,7 @@ class GrowspaceViewModelBuilder:
         max_dry_days: int = 0,
         max_cure_days: int = 0,
         active_events: dict[str, dict[str, Any]] | None = None,
+        liters_today: float | None = None,
     ) -> dict[str, Any]:
         """Build complete growspace payload with all calculated fields.
 
@@ -237,6 +238,7 @@ class GrowspaceViewModelBuilder:
                 "total_liters": growspace.water_usage.total_liters,
                 "cycle_start_date": growspace.water_usage.cycle_start_date,
                 "daily_readings": growspace.water_usage.daily_readings,
+                **({"liters_today": liters_today} if liters_today is not None else {}),
             }
             if getattr(growspace, "water_usage", None)
             else None

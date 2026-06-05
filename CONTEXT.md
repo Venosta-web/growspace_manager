@@ -49,6 +49,14 @@ Projected number of days until the plant's current weight reaches the Target Dry
 **Active Growspace**
 A growspace with `total_plants > 0`, regardless of `PlantStage`. A growspace in `dry` or `cure` mode still counts as active if plants are present. An empty growspace (no plants at all) is inactive.
 
+**Water Usage Cycle**
+The period over which cumulative water consumption is tracked for a growspace. Begins on `cycle_start_date` (set when the grower calls `reset_water_tracking`) and accumulates until the next reset. `WaterUsageSensor` reports total liters since `cycle_start_date` as its primary value.
+
+**Tank-Derived Water Mode**
+The implicit fallback mode for water consumption tracking. Active when a growspace has at least one tank with `volume_liters` configured and no `irrigation_flow_sensors` or `drain_volume_sensors` are set. In this mode, `WaterUsageSensor` derives cumulative consumption by summing events from all qualifying `TankWaterTracker` instances since `cycle_start_date`, rather than reading from `WaterUsageData`. The `reset_water_tracking` service advances `cycle_start_date` in both modes; `TankWaterHistory` is never cleared on reset.
+
+The growspace view model payload includes `water_usage.liters_today` (sum of `TankWaterTracker.get_total_liters_today()` across all qualifying tanks) so the frontend chip can display today's consumption without reading from the HA sensor entity. The `growspace_manager/get_tank_water_history` WebSocket command returns pre-bucketed consumption data (aggregated across all qualifying tanks) for the frontend [[Tank Water Chart]].
+
 ## Drying Thresholds (Constants)
 
 | Threshold | Value | Source |
@@ -119,7 +127,13 @@ When regulation mode is `vpd`, two additional thresholds apply: `critical_temp_l
 Runs in parallel with the Regulation Layer regardless of mode. Adds a sinusoidal ±offset to the regulation speed: `offset = wind_amplitude_pct × sin(2π × elapsed_seconds / wind_period_seconds)`. The final speed after adding the offset is clamped to `[min_speed, max_speed]`. The grower configures `wind_period_seconds` (default 60) and `wind_amplitude_pct` (default 10).
 
 **CirculationFanConfig**
-The dataclass stored on `EnvironmentConfig` that holds all fan controller settings: `enabled`, `regulation_mode`, `min_speed`, `max_speed`, per-mode `target` and `tolerance`, `critical_temp_low`, `critical_temp_high`, `critical_temp_hysteresis`, `wind_enabled`, `wind_period_seconds`, `wind_amplitude_pct`. Absent or `enabled=False` means no fan control.
+The dataclass stored on `EnvironmentConfig` that holds all fan controller settings: `enabled`, `regulation_mode`, `min_speed`, `max_speed`, per-mode `target` and `tolerance`, `critical_temp_low`, `critical_temp_high`, `critical_temp_hysteresis`, `wind_enabled`, `wind_period_seconds`, `wind_amplitude_pct`, `stage_vpd_enabled`, `stage_vpd_overrides`. Absent or `enabled=False` means no fan control.
+
+**Stage-Aware VPD Mode**
+An optional sub-mode of VPD regulation (`stage_vpd_enabled = True`) that resolves the effective VPD target from the active plant stage and time of day (day/night) rather than the static `vpd_target`. Defaults for all nine stages (`seedling`, `clone`, `mother`, `veg`, `flower_early`, `flower_mid`, `flower_late`, `dry`, `cure`) are defined in `FAN_VPD_STAGE_DEFAULTS`. Falls back to `vpd_target` when the growspace has no plants or the current stage is not in the lookup table.
+
+**Stage VPD Overrides**
+A sparse dict stored on `CirculationFanConfig` as `stage_vpd_overrides`. Keyed by stage name (the string value of `PlantStage`, e.g. `"veg"`, `"flower_early"`); each entry is `{"day": float, "night": float}`. Only stages the user has explicitly edited are present — absent stages resolve to `FAN_VPD_STAGE_DEFAULTS`. Deleting all entries (or an individual entry) restores the default for that stage. Validation rules: values must be in the range 0.1–3.0 kPa; unknown stage keys are rejected (not silently dropped); each entry must contain both `"day"` and `"night"` keys — a half-specified entry is invalid.
 
 **Fan Speed Composition**
 `final_speed = clamp(regulation_speed + wind_offset, min_speed, max_speed)` where `regulation_speed` is the output of the active regulation mode (or the safety override when active), and `wind_offset` is the sine term (zero when `wind_enabled=False`).
