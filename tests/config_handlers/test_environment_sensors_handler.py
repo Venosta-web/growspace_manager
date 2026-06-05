@@ -12,10 +12,14 @@ from custom_components.growspace_manager.config_handlers.environment_sensors_han
 from custom_components.growspace_manager.const import (
     CANONICAL_ID_CURE,
     CANONICAL_ID_DRY,
+    CONF_BULK_EC_SENSORS,
+    CONF_FEED_EC_SENSORS,
     CONF_HUMIDITY_SENSOR,
     CONF_HUMIDITY_SENSORS,
     CONF_IRRIGATION_TANK_SENSORS,
     CONF_IRRIGATION_TANK_WARNING_LEVEL,
+    CONF_PORE_EC_SENSORS,
+    CONF_RUNOFF_EC_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_TEMP_SENSORS,
 )
@@ -629,3 +633,18 @@ def test_lst_offset_default_is_negative_two_for_standard_stage() -> None:
 
     assert CONF_LST_OFFSET in defaults
     assert defaults[CONF_LST_OFFSET] == -2.0
+
+
+def test_advanced_sensors_schema_order_is_feed_bulk_pore_runoff() -> None:
+    """Advanced sensors section lists EC sensors in order: Feed → Bulk → Pore → Runoff."""
+    flow = _make_flow(configure_advanced=True)
+    handler = EnvironmentSensorsHandler(flow)
+
+    options: dict = {}
+    schema = handler.get_environment_schema_step1(options)
+
+    ec_sensor_keys = (CONF_FEED_EC_SENSORS, CONF_BULK_EC_SENSORS, CONF_PORE_EC_SENSORS, CONF_RUNOFF_EC_SENSORS)
+    keys = [k.schema if hasattr(k, "schema") else str(k) for k in schema.schema]
+    ec_keys = [k for k in keys if k in ec_sensor_keys]
+
+    assert ec_keys == [CONF_FEED_EC_SENSORS, CONF_BULK_EC_SENSORS, CONF_PORE_EC_SENSORS, CONF_RUNOFF_EC_SENSORS]

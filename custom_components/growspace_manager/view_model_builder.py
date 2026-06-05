@@ -234,11 +234,14 @@ class ViewModelBuilder:
                 growspace_id, preloaded_plants=plants
             )
 
+        options = self.coordinator.config_entry.options
         return {
             "growspaces": self.growspaces,
             "plants": self.plants,
             "notifications_sent": self.notifications_sent,
             "notifications_enabled": self.notifications_enabled,
+            "notification_settings": options.get("notification_settings", {}),
+            "timed_notifications": options.get("timed_notifications", []),
             "_version": dt_util.now().isoformat(),
             "serialized_growspaces": serialized_growspaces,
             "air_exchange_recommendations": recs,

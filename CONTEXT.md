@@ -137,3 +137,9 @@ A sparse dict stored on `CirculationFanConfig` as `stage_vpd_overrides`. Keyed b
 
 **Fan Speed Composition**
 `final_speed = clamp(regulation_speed + wind_offset, min_speed, max_speed)` where `regulation_speed` is the output of the active regulation mode (or the safety override when active), and `wind_offset` is the sine term (zero when `wind_enabled=False`).
+
+**Notification Settings**
+A dict of six timing/cooldown parameters stored in `config_entry.options["notification_settings"]`. Keys: `critical_cooldown_minutes`, `warning_cooldown_minutes`, `recovery_cooldown_minutes`, `escalation_delay_minutes`, `min_stress_duration_seconds`, `warning_persistence_minutes`. Each value falls back to the corresponding hardcoded constant in `const.py` when absent, so the dict may be partially populated or omitted entirely without breaking behaviour. Exposed as a top-level key in the global coordinator data payload and written atomically via the `save_notification_settings` WebSocket command.
+
+**Timed Notification**
+A user-configured reminder that fires on a specific day of a plant's lifecycle stage. Stored as a list in `config_entry.options["timed_notifications"]`. Each entry has `id` (UUID), `message`, `trigger_type`, `day`, and `growspace_ids`. Managed by `NotificationSettingsManager`. Exposed as a top-level key in the global coordinator data payload alongside Notification Settings.

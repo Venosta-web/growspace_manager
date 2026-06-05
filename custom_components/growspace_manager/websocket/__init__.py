@@ -17,6 +17,7 @@ from . import (
     irrigation,
     lineage,
     logbook,
+    notifications,
     nutrients,
     plant,
     strain,
@@ -184,6 +185,7 @@ _MODULES = [
     subareas,
     vision,
     irrigation,
+    notifications,
     ai_assistant,
 ]
 

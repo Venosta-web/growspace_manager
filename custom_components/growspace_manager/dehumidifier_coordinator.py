@@ -15,9 +15,9 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -99,6 +99,7 @@ class DehumidifierCoordinator:
         # Timing state for short-cycling prevention
         self._last_turn_on_time: float = 0.0
         self._last_turn_off_time: float = 0.0
+        self._retry_cancel: CALLBACK_TYPE | None = None
 
         # Light-sensor fallback state
         self._last_known_is_day: bool | None = None
@@ -218,7 +219,12 @@ class DehumidifierCoordinator:
 
         # Check timing guards to prevent short-cycling
         if self._is_locked_by_timer(is_on):
+            self._schedule_retry_if_needed(is_on)
             return
+
+        if self._retry_cancel is not None:
+            self._retry_cancel()
+            self._retry_cancel = None
 
         # Evaluate VPD thresholds with hysteresis
         if current_vpd < on_threshold and not is_on:
@@ -285,6 +291,31 @@ class DehumidifierCoordinator:
                 return True
 
         return False
+
+    def _schedule_retry_if_needed(self, is_on: bool) -> None:
+        """Schedule a deferred check for when the active timer lock expires."""
+        if self._retry_cancel is not None:
+            return
+        now = time.monotonic()
+        if is_on:
+            elapsed = now - self._last_turn_on_time
+            min_duration = self.dehumidifier_config.get(
+                "min_runtime", DEFAULT_DEHUMIDIFIER_MIN_RUNTIME
+            )
+        else:
+            elapsed = now - self._last_turn_off_time
+            min_duration = self.dehumidifier_config.get(
+                "min_offtime", DEFAULT_DEHUMIDIFIER_MIN_OFFTIME
+            )
+        remaining = max(1.0, min_duration - elapsed)
+
+        @callback
+        def _retry(_now: Any) -> None:
+            self._retry_cancel = None
+            self.hass.async_create_task(self.async_check_and_control())
+
+        self._retry_cancel = async_call_later(self.hass, remaining, _retry)
+        _LOGGER.debug("Retry check scheduled in %.0fs", remaining)
 
     def _get_growth_stage(self) -> PlantStage:
         """Determine the current growth stage for threshold selection."""
@@ -368,6 +399,9 @@ class DehumidifierCoordinator:
 
     def unload(self) -> None:
         """Unload the coordinator and remove listeners."""
+        if self._retry_cancel is not None:
+            self._retry_cancel()
+            self._retry_cancel = None
         for remove_listener in self._remove_listeners:
             remove_listener()
         self._remove_listeners.clear()

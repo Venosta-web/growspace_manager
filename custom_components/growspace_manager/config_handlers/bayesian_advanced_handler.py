@@ -42,8 +42,9 @@ from custom_components.growspace_manager.const import (
     CONF_PROB_VPD_STRESS_FLOWER_LATE,
     CONF_PROB_VPD_STRESS_VEG_EARLY,
     CONF_PROB_VPD_STRESS_VEG_LATE,
+    CONF_BULK_EC_SENSORS,
+    CONF_PORE_EC_SENSORS,
     CONF_RUNOFF_EC_SENSORS,
-    CONF_SUBSTRATE_EC_SENSORS,
 )
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -180,7 +181,8 @@ class BayesianAdvancedHandler(BaseConfigHandler[dict[str, Any]]):
             "dehumidifier_entity",
             CONF_PH_SENSORS,
             CONF_FEED_EC_SENSORS,
-            CONF_SUBSTRATE_EC_SENSORS,
+            CONF_BULK_EC_SENSORS,
+            CONF_PORE_EC_SENSORS,
             CONF_RUNOFF_EC_SENSORS,
             CONF_DRAIN_VOLUME_SENSORS,
             CONF_IRRIGATION_FLOW_SENSORS,

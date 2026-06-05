@@ -396,6 +396,18 @@ class GrowspaceViewModelBuilder:
 
         return sensor_types
 
+    def _average_sensor_values(self, entity_ids: list[str]) -> float | None:
+        """Return mean float state across entity_ids, or None if none are readable."""
+        if not entity_ids:
+            return None
+        values: list[float] = []
+        for entity_id in entity_ids:
+            state_obj = self.hass.states.get(entity_id)
+            if state_obj and state_obj.state not in ("unknown", "unavailable"):
+                with contextlib.suppress(ValueError, TypeError):
+                    values.append(float(state_obj.state))
+        return sum(values) / len(values) if values else None
+
     def _get_environment_attributes(
         self,
         growspace: Growspace,
@@ -530,10 +542,16 @@ class GrowspaceViewModelBuilder:
         # EC / pH / flow sensors (used by frontend for capability detection)
         attributes["ph_sensors"] = env_config.ph_sensors
         attributes["feed_ec_sensors"] = env_config.feed_ec_sensors
-        attributes["substrate_ec_sensors"] = env_config.substrate_ec_sensors
+        attributes["bulk_ec_sensors"] = env_config.bulk_ec_sensors
+        attributes["pore_ec_sensors"] = env_config.pore_ec_sensors
         attributes["runoff_ec_sensors"] = env_config.runoff_ec_sensors
         attributes["drain_volume_sensors"] = env_config.drain_volume_sensors
         attributes["irrigation_flow_sensors"] = env_config.irrigation_flow_sensors
+
+        bulk_ec_avg = self._average_sensor_values(env_config.bulk_ec_sensors)
+        pore_ec_avg = self._average_sensor_values(env_config.pore_ec_sensors)
+        if bulk_ec_avg is not None and pore_ec_avg is not None:
+            attributes["substrate_ec_delta"] = round(pore_ec_avg - bulk_ec_avg, 4)
 
         # Irrigation Pumps (States for change detection in 3D heatmap)
         if growspace.irrigation_config:
@@ -617,5 +635,8 @@ class GrowspaceViewModelBuilder:
         # Circulation fan controller config — must be included so the frontend
         # dialog re-opens with the persisted enabled state (not the default False).
         attributes["circulation_fan_config"] = asdict(env_config.circulation_fan_config)
+
+        # Vision checkup config — same reason: persisted enabled state must round-trip.
+        attributes["vision_checkup_config"] = asdict(env_config.vision_checkup_config)
 
         return attributes
