@@ -76,6 +76,13 @@
       'temperature_sensors': list([
         'sensor.temp',
       ]),
+      'vision_checkup_config': dict({
+        'early_check_offset_minutes': 60,
+        'enabled': False,
+        'history_limit': 10,
+        'late_check_offset_minutes': 60,
+        'mid_check_hours': 6,
+      }),
       'vpd': None,
       'vpd_sensor': 'sensor.vpd',
       'vpd_sensors': list([

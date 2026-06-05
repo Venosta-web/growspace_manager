@@ -98,6 +98,24 @@ class NotificationManager:
         NotificationTier.PHOTOPERIOD_FLIP: timedelta(minutes=PHOTOPERIOD_FLIP_COOLDOWN_MINUTES),
     }
 
+    _TIER_OPTION_KEYS: ClassVar[dict[str, tuple[str, int]]] = {
+        NotificationTier.CRITICAL: ("critical_cooldown_minutes", CRITICAL_COOLDOWN_MINUTES),
+        NotificationTier.WARNING: ("warning_cooldown_minutes", WARNING_COOLDOWN_MINUTES),
+        "recovery": ("recovery_cooldown_minutes", RECOVERY_COOLDOWN_MINUTES),
+    }
+
+    def _get_notification_option(self, key: str, fallback: int) -> int:
+        """Read a timing/cooldown value from notification_settings options, with fallback."""
+        settings: dict = self.coordinator.options.get("notification_settings", {})
+        return settings.get(key, fallback)
+
+    def _get_tier_cooldown(self, tier: str) -> timedelta:
+        """Return the cooldown timedelta for a tier, respecting user-configured options."""
+        if tier in self._TIER_OPTION_KEYS:
+            option_key, fallback = self._TIER_OPTION_KEYS[tier]
+            return timedelta(minutes=self._get_notification_option(option_key, fallback))
+        return self._TIER_COOLDOWNS.get(tier, timedelta(minutes=CRITICAL_COOLDOWN_MINUTES))
+
     def _set_cooldown(self, growspace_id: str, tier: str) -> None:
         """Set cooldown timestamp for a specific tier and growspace."""
         if growspace_id not in self._cooldowns:
@@ -110,9 +128,7 @@ class NotificationManager:
         last_sent = cooldown_map.get(tier)
         if not last_sent:
             return False
-        cooldown_duration = self._TIER_COOLDOWNS.get(
-            tier, timedelta(minutes=CRITICAL_COOLDOWN_MINUTES)
-        )
+        cooldown_duration = self._get_tier_cooldown(tier)
         return (now - last_sent) < cooldown_duration
 
     @callback
@@ -177,7 +193,9 @@ class NotificationManager:
                 self.async_schedule_notification(growspace_id)
 
             alert.notification_timer = async_call_later(
-                self.hass, MIN_STRESS_DURATION_SECONDS, _fire_critical
+                self.hass,
+                self._get_notification_option("min_stress_duration_seconds", MIN_STRESS_DURATION_SECONDS),
+                _fire_critical,
             )
         elif (
             probability < CRITICAL_PROBABILITY_THRESHOLD
@@ -460,7 +478,7 @@ class NotificationManager:
                 and alert.last_probability >= CRITICAL_PROBABILITY_THRESHOLD
             ):
                 elapsed = (now - alert.first_triggered).total_seconds() / 60
-                if elapsed >= ESCALATION_DELAY_MINUTES:
+                if elapsed >= self._get_notification_option("escalation_delay_minutes", ESCALATION_DELAY_MINUTES):
                     if not self._is_on_cooldown(
                         growspace_id, NotificationTier.CRITICAL, now
                     ):
@@ -471,7 +489,7 @@ class NotificationManager:
             # Warning persistence check: not yet notified, persistence met
             if not alert.notified:
                 elapsed = (now - alert.first_triggered).total_seconds() / 60
-                if elapsed >= WARNING_PERSISTENCE_MINUTES:
+                if elapsed >= self._get_notification_option("warning_persistence_minutes", WARNING_PERSISTENCE_MINUTES):
                     if not self._is_on_cooldown(
                         growspace_id, NotificationTier.WARNING, now
                     ):
