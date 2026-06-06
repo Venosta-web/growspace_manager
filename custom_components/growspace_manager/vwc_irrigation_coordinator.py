@@ -5,11 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.util.dt import now
 
 if TYPE_CHECKING:
@@ -49,6 +49,16 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         _LOGGER.info(
             "Setting up VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
+        # Reset daily safety-guard counters at midnight (mirrors IrrigationCoordinator)
+        self._listeners.append(
+            async_track_time_change(
+                self.hass,
+                self._async_reset_daily_counters,
+                hour=0,
+                minute=0,
+                second=0,
+            )
+        )
         # Check every minute for phase updates and actions
         self._remove_update_listener = async_track_time_interval(
             self.hass, self._update_loop, timedelta(minutes=1)
@@ -71,6 +81,17 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         if self._remove_update_listener:
             self._remove_update_listener()
             self._remove_update_listener = None
+
+    async def _async_reset_daily_counters(self, *_: Any) -> None:
+        """Reset daily safety-guard counters at local midnight."""
+        _LOGGER.debug(
+            "Resetting daily VWC irrigation counters for growspace %s",
+            self._growspace_id,
+        )
+        self._cycles_today = 0
+        self._volume_dispensed_today = 0.0
+        self._target_reached_today = False
+        self._last_reset_date = None
 
     async def _update_loop(self, _now: datetime) -> None:
         """Main update loop triggered every minute."""
