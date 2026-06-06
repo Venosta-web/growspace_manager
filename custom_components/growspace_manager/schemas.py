@@ -534,6 +534,7 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_ENERGY_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ELECTRICITY_COST): vol.Coerce(float),
         vol.Optional("circulation_fan_config"): dict,
+        vol.Optional("vpd_optimal_overrides"): dict,
     }
 )
 

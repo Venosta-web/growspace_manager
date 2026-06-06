@@ -41,6 +41,24 @@ def test_configure_environment_schema_supports_multi_entities() -> None:
     assert validated[CONF_EXHAUST_FAN_ENTITIES] == ["switch.exhaust1"]
 
 
+def test_configure_environment_schema_accepts_vpd_optimal_overrides() -> None:
+    """Test that CONFIGURE_ENVIRONMENT_SCHEMA accepts vpd_optimal_overrides."""
+    payload = {
+        "growspace_id": "test_growspace_id",
+        CONF_TEMP_SENSOR: "sensor.temp",
+        CONF_HUMIDITY_SENSOR: "sensor.humidity",
+        "vpd_optimal_overrides": {
+            "flower_mid": {"day": {"low": 0.5, "high": 1.45}, "night": {"low": 0.6, "high": 1.0}},
+        },
+    }
+    try:
+        validated = CONFIGURE_ENVIRONMENT_SCHEMA(payload)
+    except vol.Error as e:
+        pytest.fail(f"Schema rejected vpd_optimal_overrides: {e}")
+
+    assert validated["vpd_optimal_overrides"]["flower_mid"]["day"]["low"] == 0.5
+
+
 def test_configure_environment_schema_supports_single_entities() -> None:
     """Test that schema still supports single entities passed via list (frontend behavior)."""
     # The frontend now sends lists for these fields even if single selection,
