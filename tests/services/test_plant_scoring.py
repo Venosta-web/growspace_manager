@@ -12,7 +12,7 @@ from custom_components.growspace_manager.models import (
     PlantGenetics,
 )
 from custom_components.growspace_manager.schemas import SCORE_PLANT_SCHEMA
-from custom_components.growspace_manager.services.plant import handle_score_plant
+from custom_components.growspace_manager.services.plant_scoring import handle_score_plant
 from homeassistant.exceptions import ServiceValidationError
 
 
@@ -75,7 +75,7 @@ async def test_handle_score_plant_all_fields(
     mock_coordinator.plants["test_plant_1"] = plant
 
     with patch(
-        "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
+        "custom_components.growspace_manager.services.plant_scoring._ensure_plant_loaded",
         new_callable=AsyncMock,
     ) as mock_ensure:
         mock_ensure.return_value = True
@@ -118,7 +118,7 @@ async def test_handle_score_plant_partial(
     plant.phenotype_score.vigor = 4
 
     with patch(
-        "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
+        "custom_components.growspace_manager.services.plant_scoring._ensure_plant_loaded",
         new_callable=AsyncMock,
     ) as mock_ensure:
         mock_ensure.return_value = True
@@ -155,7 +155,7 @@ async def test_handle_score_plant_clear_fields(
     plant.phenotype_score.vigor = 5
 
     with patch(
-        "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
+        "custom_components.growspace_manager.services.plant_scoring._ensure_plant_loaded",
         new_callable=AsyncMock,
     ) as mock_ensure:
         mock_ensure.return_value = True
@@ -185,7 +185,7 @@ async def test_handle_score_plant_not_found(
     }
 
     with patch(
-        "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
+        "custom_components.growspace_manager.services.plant_scoring._ensure_plant_loaded",
         new_callable=AsyncMock,
     ) as mock_ensure:
         mock_ensure.return_value = True

@@ -15,14 +15,20 @@ from custom_components.growspace_manager.exceptions import (
 )
 from custom_components.growspace_manager.services.plant import (
     handle_add_plant,
-    handle_harvest_plant,
-    handle_move_clone,
-    handle_move_plant,
     handle_remove_plant,
-    handle_switch_plants,
-    handle_take_clone,
-    handle_transition_plant_stage,
     handle_update_plant,
+)
+from custom_components.growspace_manager.services.plant_cloning import (
+    handle_move_clone,
+    handle_take_clone,
+)
+from custom_components.growspace_manager.services.plant_lifecycle import (
+    handle_harvest_plant,
+    handle_transition_plant_stage,
+)
+from custom_components.growspace_manager.services.plant_spatial import (
+    handle_move_plant,
+    handle_switch_plants,
 )
 from custom_components.growspace_manager.utils import parse_date_field
 from homeassistant.core import HomeAssistant, ServiceCall
