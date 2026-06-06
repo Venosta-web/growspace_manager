@@ -39,8 +39,7 @@ def mock_hass():
 @pytest.fixture
 def mock_call():
     """Fixture for a mock ServiceCall instance."""
-    call = MagicMock(spec=ServiceCall)
-    return call
+    return MagicMock(spec=ServiceCall)
 
 
 @pytest.mark.asyncio
@@ -279,9 +278,7 @@ async def test_handle_configure_environment_preserves_tank_runtime_data(
         last_recorded_level=20.0,
         peak_level=30.0,
     )
-    mock_gs.environment_config = EnvironmentConfig(
-        irrigation_tanks=[existing_tank]
-    )
+    mock_gs.environment_config = EnvironmentConfig(irrigation_tanks=[existing_tank])
     mock_coordinator.growspaces = {growspace_id: mock_gs}
 
     # Call with new tank configuration having same sensor_entity
@@ -437,9 +434,340 @@ async def test_configure_environment_rejects_invalid_vpd_optimal_overrides(
 
     mock_call.data = {
         "growspace_id": growspace_id,
-        "vpd_optimal_overrides": {"unknown_stage": {"day": {"low": 0.5, "high": 1.2}, "night": {"low": 0.4, "high": 1.0}}},
+        "vpd_optimal_overrides": {
+            "unknown_stage": {
+                "day": {"low": 0.5, "high": 1.2},
+                "night": {"low": 0.4, "high": 1.0},
+            }
+        },
     }
 
     with pytest.raises(ServiceValidationError, match="Unknown stage key"):
         await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
 
+
+@pytest.mark.asyncio
+async def test_validate_stage_vpd_overrides_none_and_invalid_types(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test stage_vpd_overrides validation edge cases."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "stage_vpd_overrides": None,
+    }
+    await handle_configure_circulation_fan(mock_hass, mock_coordinator, mock_call)
+    assert mock_gs.environment_config.circulation_fan_config.stage_vpd_overrides == {}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "stage_vpd_overrides": ["invalid", "list"],
+    }
+    with pytest.raises(
+        ServiceValidationError, match="stage_vpd_overrides must be a dictionary"
+    ):
+        await handle_configure_circulation_fan(mock_hass, mock_coordinator, mock_call)
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "stage_vpd_overrides": {"veg": {"day": "not_a_number", "night": 1.0}},
+    }
+    with pytest.raises(ServiceValidationError, match="VPD override must be a number"):
+        await handle_configure_circulation_fan(mock_hass, mock_coordinator, mock_call)
+
+
+@pytest.mark.asyncio
+async def test_validate_vpd_optimal_overrides_invalid_type(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test vpd_optimal_overrides validation with non-dictionary type."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "vpd_optimal_overrides": ["not", "a", "dict"],
+    }
+    with pytest.raises(
+        ServiceValidationError, match="vpd_optimal_overrides must be a dictionary"
+    ):
+        await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_with_circulation_fan_config(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test configure_environment service parses circulation_fan_config raw dictionary."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.environment_config = None
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    raw_fan_config = {
+        "enabled": True,
+        "regulation_mode": "vpd",
+        "min_speed": 15,
+        "max_speed": 85,
+        "vpd_target": 1.1,
+        "vpd_tolerance": 0.1,
+        "wind_enabled": True,
+        "wind_period_seconds": 90,
+        "wind_amplitude_pct": 8,
+        "stage_vpd_enabled": True,
+        "stage_vpd_overrides": {"veg": {"day": 1.0, "night": 0.8}},
+    }
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "circulation_fan_config": raw_fan_config,
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    env: EnvironmentConfig = mock_gs.environment_config
+    assert env.circulation_fan_config.enabled is True
+    assert env.circulation_fan_config.regulation_mode == "vpd"
+    assert env.circulation_fan_config.min_speed == 15
+    assert env.circulation_fan_config.max_speed == 85
+    assert env.circulation_fan_config.vpd_target == 1.1
+    assert env.circulation_fan_config.vpd_tolerance == 0.1
+    assert env.circulation_fan_config.wind_enabled is True
+    assert env.circulation_fan_config.wind_period_seconds == 90
+    assert env.circulation_fan_config.wind_amplitude_pct == 8
+    assert env.circulation_fan_config.stage_vpd_enabled is True
+    assert env.circulation_fan_config.stage_vpd_overrides == {
+        "veg": {"day": 1.0, "night": 0.8}
+    }
+
+
+@pytest.mark.asyncio
+async def test_parse_fan_config_fallback_none(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test _parse_fan_config returns default CirculationFanConfig when raw and existing config are None."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.environment_config = None
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "circulation_fan_config": None,
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    env: EnvironmentConfig = mock_gs.environment_config
+    assert isinstance(env.circulation_fan_config, CirculationFanConfig)
+    assert env.circulation_fan_config.enabled is False
+    assert env.circulation_fan_config.min_speed == 0
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_circulation_fan_config_none(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test configure_circulation_fan initializes environment config when it is None."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = None
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "enabled": True,
+    }
+
+    await handle_configure_circulation_fan(mock_hass, mock_coordinator, mock_call)
+
+    assert isinstance(mock_gs.environment_config, EnvironmentConfig)
+    assert mock_gs.environment_config.circulation_fan_config.enabled is True
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match_msg"),
+    [
+        (
+            {"unknown_stage": {"day": 1.0, "night": 1.0}},
+            "Unknown stage key",
+        ),
+        (
+            {"veg": ["not", "a", "dict"]},
+            "must contain both 'day' and 'night' keys",
+        ),
+        (
+            {"veg": {"day": 1.0}},
+            "must contain both 'day' and 'night' keys",
+        ),
+        (
+            {"veg": {"night": 1.0}},
+            "must contain both 'day' and 'night' keys",
+        ),
+        (
+            {"veg": {"day": 0.05, "night": 1.0}},
+            "out of range",
+        ),
+        (
+            {"veg": {"day": 3.05, "night": 1.0}},
+            "out of range",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_validate_stage_vpd_overrides_errors(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+    overrides: dict,
+    match_msg: str,
+) -> None:
+    """Test various validation errors in stage_vpd_overrides."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "stage_vpd_overrides": overrides,
+    }
+    with pytest.raises(ServiceValidationError, match=match_msg):
+        await handle_configure_circulation_fan(mock_hass, mock_coordinator, mock_call)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match_msg"),
+    [
+        (
+            {"veg": ["not", "a", "dict"]},
+            "must contain both 'day' and 'night' keys",
+        ),
+        (
+            {"veg": {"day": {"low": 0.5, "high": 1.2}}},
+            "must contain both 'day' and 'night' keys",
+        ),
+        (
+            {"veg": {"day": ["not", "a", "dict"], "night": {"low": 0.5, "high": 1.2}}},
+            "must contain both 'low' and 'high' keys",
+        ),
+        (
+            {"veg": {"day": {"low": 0.5}, "night": {"low": 0.5, "high": 1.2}}},
+            "must contain both 'low' and 'high' keys",
+        ),
+        (
+            {
+                "veg": {
+                    "day": {"low": 0.05, "high": 1.2},
+                    "night": {"low": 0.5, "high": 1.2},
+                }
+            },
+            "VPD values out of range",
+        ),
+        (
+            {
+                "veg": {
+                    "day": {"low": 0.5, "high": 3.05},
+                    "night": {"low": 0.5, "high": 1.2},
+                }
+            },
+            "VPD values out of range",
+        ),
+        (
+            {
+                "veg": {
+                    "day": {"low": 1.5, "high": 1.2},
+                    "night": {"low": 0.5, "high": 1.2},
+                }
+            },
+            "low .* must be < high",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_validate_vpd_optimal_overrides_errors(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+    overrides: dict,
+    match_msg: str,
+) -> None:
+    """Test various validation errors in vpd_optimal_overrides."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "vpd_optimal_overrides": overrides,
+    }
+    with pytest.raises(ServiceValidationError, match=match_msg):
+        await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_no_fan_controller(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test configure_environment when circulation fan controller is not present."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = None
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+    mock_coordinator.subsystem_manager.get_circulation_fan_controller.return_value = (
+        None
+    )
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "temp_sensor": "sensor.temp",
+        "humidity_sensor": "sensor.humidity",
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+    assert mock_gs.environment_config is not None
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_circulation_fan_no_fan_controller(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test configure_circulation_fan when circulation fan controller is not present."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+    mock_coordinator.subsystem_manager.get_circulation_fan_controller.return_value = (
+        None
+    )
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "enabled": True,
+    }
+
+    await handle_configure_circulation_fan(mock_hass, mock_coordinator, mock_call)
+    assert mock_gs.environment_config.circulation_fan_config.enabled is True
