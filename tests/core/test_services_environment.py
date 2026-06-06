@@ -538,9 +538,11 @@ async def test_handle_configure_environment_with_circulation_fan_config(
 
     env: EnvironmentConfig = mock_gs.environment_config
     assert env.circulation_fan_config.enabled is True
+    assert env.circulation_fan_config.regulation_mode == "vpd"
     assert env.circulation_fan_config.min_speed == 15
     assert env.circulation_fan_config.max_speed == 85
     assert env.circulation_fan_config.vpd_target == 1.1
+    assert env.circulation_fan_config.vpd_tolerance == 0.1
     assert env.circulation_fan_config.wind_enabled is True
     assert env.circulation_fan_config.wind_period_seconds == 90
     assert env.circulation_fan_config.wind_amplitude_pct == 8
