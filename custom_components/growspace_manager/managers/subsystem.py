@@ -1,14 +1,14 @@
 """Subsystem Manager for Growspace Manager.
 
-This module encapsulates the management of sub-coordinators (Irrigation, Dehumidifier)
-to reduce the responsibility of the main GrowspaceCoordinator.
+This module encapsulates the management of sub-coordinators (Irrigation, Dehumidifier,
+Humidifier, CirculationFan) to reduce the responsibility of the main GrowspaceCoordinator.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from custom_components.growspace_manager.circulation_fan_coordinator import (
     CirculationFanCoordinator,
@@ -36,6 +36,23 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+@runtime_checkable
+class EnvironmentController(Protocol):
+    """Protocol satisfied by all per-growspace environment controllers.
+
+    Any class with async_setup() and unload() qualifies — no explicit
+    inheritance required. Register new controllers (AC, CO2, etc.) by
+    instantiating them in async_setup_growspace_sub_coordinators and
+    appending to the environment_controllers list for the growspace.
+    """
+
+    async def async_setup(self) -> None:
+        """Start the controller."""
+
+    def unload(self) -> None:
+        """Stop the controller and release listeners."""
+
+
 class SubsystemManager:
     """Manages sub-coordinators for Growspace Manager."""
 
@@ -53,10 +70,10 @@ class SubsystemManager:
         self.irrigation_coordinators: dict[
             str, IrrigationCoordinator | VWCIrrigationCoordinator
         ] = {}
-        self.dehumidifier_coordinators: dict[str, DehumidifierCoordinator] = {}
-        self.humidifier_coordinators: dict[str, HumidifierCoordinator] = {}
         self.light_cycle_trackers: dict[str, LightCycleTracker] = {}
-        self.circulation_fan_coordinators: dict[str, CirculationFanCoordinator] = {}
+        # All VPD/temperature/humidity controllers keyed by growspace_id.
+        # Each list is ordered: [DehumidifierCoordinator, HumidifierCoordinator, CirculationFanCoordinator, ...]
+        self.environment_controllers: dict[str, list[EnvironmentController]] = {}
 
     async def async_initialize_sub_coordinators(
         self, growspaces: dict[str, Growspace]
@@ -100,31 +117,41 @@ class SubsystemManager:
         await irrigation_coordinator.async_setup()
         self.irrigation_coordinators[growspace_id] = irrigation_coordinator
 
-        # Dehumidifier coordinator setup
-        dehumidifier_coordinator = DehumidifierCoordinator(
-            self.hass, self.entry, growspace_id, self.coordinator
-        )
-        await dehumidifier_coordinator.async_setup()
-        self.dehumidifier_coordinators[growspace_id] = dehumidifier_coordinator
-
-        # Humidifier coordinator setup
-        humidifier_coordinator = HumidifierCoordinator(
-            self.hass, self.entry, growspace_id, self.coordinator
-        )
-        await humidifier_coordinator.async_setup()
-        self.humidifier_coordinators[growspace_id] = humidifier_coordinator
-
-        # Light cycle tracker setup
         light_cycle_tracker = LightCycleTracker(self.hass, growspace_id, self.coordinator)
         await light_cycle_tracker.async_setup()
         self.light_cycle_trackers[growspace_id] = light_cycle_tracker
 
-        # Circulation fan coordinator setup
-        circulation_fan_coordinator = CirculationFanCoordinator(
-            self.hass, self.entry, growspace_id, self.coordinator
-        )
-        await circulation_fan_coordinator.async_setup()
-        self.circulation_fan_coordinators[growspace_id] = circulation_fan_coordinator
+        controllers: list[EnvironmentController] = [
+            DehumidifierCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
+            HumidifierCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
+            CirculationFanCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
+        ]
+        for controller in controllers:
+            await controller.async_setup()
+        self.environment_controllers[growspace_id] = controllers
+
+    def get_dehumidifier_controller(self, growspace_id: str) -> DehumidifierCoordinator | None:
+        """Return the dehumidifier coordinator for a growspace, or None."""
+        for c in self.environment_controllers.get(growspace_id, []):
+            if isinstance(c, DehumidifierCoordinator):
+                return c
+        return None
+
+    def get_humidifier_controller(self, growspace_id: str) -> HumidifierCoordinator | None:
+        """Return the humidifier coordinator for a growspace, or None."""
+        for c in self.environment_controllers.get(growspace_id, []):
+            if isinstance(c, HumidifierCoordinator):
+                return c
+        return None
+
+    def get_circulation_fan_controller(
+        self, growspace_id: str
+    ) -> CirculationFanCoordinator | None:
+        """Return the circulation fan coordinator for a growspace, or None."""
+        for c in self.environment_controllers.get(growspace_id, []):
+            if isinstance(c, CirculationFanCoordinator):
+                return c
+        return None
 
     def async_cancel_all(self) -> None:
         """Cancel all sub-coordinator listeners."""
@@ -134,27 +161,15 @@ class SubsystemManager:
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Error cancelling irrigation listeners: %s", err)
 
-        for dehum_coordinator in self.dehumidifier_coordinators.values():
-            try:
-                dehum_coordinator.unload()
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.error("Error unloading dehumidifier coordinator: %s", err)
-
-        for hum_coordinator in self.humidifier_coordinators.values():
-            try:
-                hum_coordinator.unload()
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.error("Error unloading humidifier coordinator: %s", err)
-
         for tracker in self.light_cycle_trackers.values():
             try:
                 tracker.unload()
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Error unloading light cycle tracker: %s", err)
 
-        for fan_coordinator in self.circulation_fan_coordinators.values():
-            try:
-                fan_coordinator.unload()
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.error("Error unloading circulation fan coordinator: %s", err)
-
+        for controllers in self.environment_controllers.values():
+            for controller in controllers:
+                try:
+                    controller.unload()
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.error("Error unloading environment controller: %s", err)

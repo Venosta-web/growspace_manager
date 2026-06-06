@@ -10,12 +10,13 @@ import time
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import FanRegulationMode, PlantStage
+from .domain.day_night import DayNightTracker
 from .domain.stage_calculator import determine_coordinator_stage
 
 if TYPE_CHECKING:
@@ -129,7 +130,7 @@ class CirculationFanCoordinator:
         self._temp_override_active: bool = False
         self._temp_override_direction: str | None = None
         self._start_time: float = 0.0
-        self._last_known_is_day: bool | None = None
+        self._day_night = DayNightTracker(growspace_id)
 
     @property
     def _env_config(self) -> EnvironmentConfig | None:
@@ -200,7 +201,8 @@ class CirculationFanCoordinator:
             )
         elif cfg.regulation_mode == FanRegulationMode.VPD:
             if cfg.stage_vpd_enabled:
-                is_day = self._determine_is_day()
+                light_sensors = self._env_config.light_sensors if self._env_config else []
+                is_day = self._day_night.determine(self.hass, light_sensors)
                 effective_vpd_target = self._get_stage_vpd_target(cfg, is_day)
             else:
                 effective_vpd_target = cfg.vpd_target
@@ -249,31 +251,6 @@ class CirculationFanCoordinator:
                 _LOGGER.warning(
                     "Failed to set percentage on %s", entity_id, exc_info=True
                 )
-
-    def _determine_is_day(self) -> bool:
-        """Return True if lights are on (OR logic across all light sensors)."""
-        light_sensors = self._env_config.light_sensors if self._env_config else []
-        if not light_sensors:
-            return True
-
-        any_valid = False
-        any_on = False
-        for sensor_id in light_sensors:
-            state = self.hass.states.get(sensor_id)
-            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                any_valid = True
-                try:
-                    if float(state.state) > 0:
-                        any_on = True
-                except ValueError:
-                    if state.state == STATE_ON:
-                        any_on = True
-
-        if any_valid:
-            self._last_known_is_day = any_on
-            return any_on
-
-        return self._last_known_is_day if self._last_known_is_day is not None else True
 
     def _get_stage_vpd_target(self, cfg: CirculationFanConfig, is_day: bool) -> float:
         """Resolve the effective VPD target from stage defaults.

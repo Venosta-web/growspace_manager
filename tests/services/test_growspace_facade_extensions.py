@@ -12,7 +12,7 @@ def _make_coordinator() -> MagicMock:
     coordinator.growspaces = {}
     coordinator.subsystem_manager = MagicMock()
     coordinator.subsystem_manager.irrigation_coordinators = {}
-    coordinator.subsystem_manager.dehumidifier_coordinators = {}
+    coordinator.subsystem_manager.get_dehumidifier_controller.return_value = None
     coordinator.environment_analyzer = MagicMock()
     return coordinator
 
@@ -51,7 +51,7 @@ def test_get_dehumidifier_coordinator_returns_coord_when_present() -> None:
     """Returns the dehumidifier coordinator for a known growspace."""
     dehum_coord = MagicMock()
     coordinator = _make_coordinator()
-    coordinator.subsystem_manager.dehumidifier_coordinators = {"tent1": dehum_coord}
+    coordinator.subsystem_manager.get_dehumidifier_controller.return_value = dehum_coord
     facade = GrowspaceFacade(coordinator)
 
     result = facade.get_dehumidifier_coordinator("tent1")

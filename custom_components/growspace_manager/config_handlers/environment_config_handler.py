@@ -12,6 +12,7 @@ import voluptuous as vol
 from custom_components.growspace_manager.const import (
     CANONICAL_ID_CURE,
     CANONICAL_ID_DRY,
+    CONF_BULK_EC_SENSORS,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -49,6 +50,7 @@ from custom_components.growspace_manager.const import (
     CONF_OFF,
     CONF_ON,
     CONF_PH_SENSORS,
+    CONF_PORE_EC_SENSORS,
     CONF_POWER_SENSORS,
     CONF_PROB_HUMIDITY_HIGH_FLOWER,
     CONF_PROB_HUMIDITY_HIGH_VEG_EARLY,
@@ -79,8 +81,6 @@ from custom_components.growspace_manager.const import (
     CONF_RUNOFF_EC_SENSORS,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
-    CONF_BULK_EC_SENSORS,
-    CONF_PORE_EC_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_TEMP_SENSORS,
     CONF_TREND_TEMPERATURE_DURATION,
@@ -100,6 +100,9 @@ from custom_components.growspace_manager.const import (
 )
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DEFAULT_THRESHOLDS,
+)
+from custom_components.growspace_manager.humidifier_coordinator import (
+    DEFAULT_THRESHOLDS as HUMIDIFIER_DEFAULT_THRESHOLDS,
 )
 from custom_components.growspace_manager.models import (
     CirculationFanConfig,
@@ -335,6 +338,10 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         cleaned_input = self.clean_input(user_input)
         merged = self.merge_options({}, cleaned_input)
 
+        # Check if humidifier configuration is requested
+        if merged.get(CONF_CONFIGURE_HUMIDIFIER):
+            return await self.async_step_configure_humidifier()
+
         # Check if dehumidifier configuration is requested
         if merged.get(CONF_CONFIGURE_DEHUMIDIFIER):
             return await self.async_step_configure_dehumidifier()
@@ -349,6 +356,89 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         # Default to sensor placement
         return await self.async_step_configure_sensor_placement()
+
+    async def async_step_configure_humidifier(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the form for configuring humidifier thresholds."""
+        try:
+            coordinator = self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
+        growspace_id = self.flow.selected_growspace_id
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
+
+        if not growspace:
+            return self.flow.async_abort(reason="growspace_not_found")
+
+        current_thresholds = (
+            growspace.environment_config.humidifier_thresholds
+            if growspace.environment_config
+            else {}
+        )
+
+        if user_input is not None:
+            new_thresholds: dict[str, Any] = {}
+            for stage in DEHUMIDIFIER_STAGES:
+                new_thresholds[stage] = {}
+                for cycle in ["day", "night"]:
+                    new_thresholds[stage][cycle] = {
+                        "on": user_input[f"{stage}_{cycle}_on"],
+                        "off": user_input[f"{stage}_{cycle}_off"],
+                    }
+
+            env_config = self.flow.env_config_step1.copy()
+            env_config["humidifier_thresholds"] = new_thresholds
+
+            if env_config.get("configure_advanced"):
+                self.flow.env_config_step1 = env_config
+                return await self.async_step_configure_advanced_bayesian()
+
+            env_config.pop("configure_advanced", None)
+            self.flow.env_config_step1 = env_config
+            return await self.async_step_configure_sensor_placement()
+
+        return self.flow.async_show_form(
+            step_id="configure_humidifier",
+            data_schema=self.get_humidifier_schema(current_thresholds),
+            description_placeholders={"growspace_name": growspace.name},
+        )
+
+    def get_humidifier_schema(self, current_thresholds: dict[str, Any]) -> vol.Schema:
+        """Generate schema for humidifier threshold settings."""
+        schema_dict = {}
+        for stage in DEHUMIDIFIER_STAGES:
+            for cycle in [CONF_DAY, CONF_NIGHT]:
+                defaults = current_thresholds.get(stage, {}).get(
+                    cycle, HUMIDIFIER_DEFAULT_THRESHOLDS[stage][cycle]
+                )
+                schema_dict[
+                    vol.Required(
+                        f"{stage}_{cycle}_{CONF_ON}", default=defaults[CONF_ON]
+                    )
+                ] = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=3.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="kPa",
+                    )
+                )
+                schema_dict[
+                    vol.Required(
+                        f"{stage}_{cycle}_{CONF_OFF}", default=defaults[CONF_OFF]
+                    )
+                ] = selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=3.0,
+                        step=0.01,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="kPa",
+                    )
+                )
+        return vol.Schema(schema_dict)
 
     async def async_step_configure_dehumidifier(
         self, user_input: dict[str, Any] | None = None

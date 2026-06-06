@@ -38,8 +38,7 @@ def subsystem_manager(
 async def test_initialization(subsystem_manager: SubsystemManager) -> None:
     """Test initialization."""
     assert subsystem_manager.irrigation_coordinators == {}
-    assert subsystem_manager.dehumidifier_coordinators == {}
-    assert subsystem_manager.circulation_fan_coordinators == {}
+    assert subsystem_manager.environment_controllers == {}
 
 
 @pytest.mark.asyncio
@@ -47,7 +46,6 @@ async def test_async_initialize_sub_coordinators(
     subsystem_manager: SubsystemManager,
 ) -> None:
     """Test initializing sub-coordinators for growspaces."""
-    # Define growspaces
     gs1 = Growspace(
         id="gs1",
         name="Growspace 1",
@@ -60,7 +58,6 @@ async def test_async_initialize_sub_coordinators(
     )
     growspaces = {"gs1": gs1, "gs2": gs2}
 
-    # Mock the coordinator classes
     with (
         patch(
             "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator",
@@ -83,7 +80,6 @@ async def test_async_initialize_sub_coordinators(
             autospec=True,
         ) as mock_tracker,
     ):
-        # Setup async_setup mocks
         mock_irrigation.return_value.async_setup = AsyncMock()
         mock_vwc.return_value.async_setup = AsyncMock()
         mock_dehum.return_value.async_setup = AsyncMock()
@@ -92,7 +88,6 @@ async def test_async_initialize_sub_coordinators(
 
         await subsystem_manager.async_initialize_sub_coordinators(growspaces)
 
-        # Verify IrrigationCoordinator creation (gs1)
         mock_irrigation.assert_called_with(
             subsystem_manager.hass,
             subsystem_manager.entry,
@@ -101,7 +96,6 @@ async def test_async_initialize_sub_coordinators(
         )
         assert "gs1" in subsystem_manager.irrigation_coordinators
 
-        # Verify VWCIrrigationCoordinator creation (gs2)
         mock_vwc.assert_called_with(
             subsystem_manager.hass,
             subsystem_manager.entry,
@@ -110,15 +104,13 @@ async def test_async_initialize_sub_coordinators(
         )
         assert "gs2" in subsystem_manager.irrigation_coordinators
 
-        # Verify DehumidifierCoordinator creation
         assert mock_dehum.call_count == 2
-        assert "gs1" in subsystem_manager.dehumidifier_coordinators
-        assert "gs2" in subsystem_manager.dehumidifier_coordinators
+        assert "gs1" in subsystem_manager.environment_controllers
+        assert "gs2" in subsystem_manager.environment_controllers
 
-        # Verify HumidifierCoordinator creation
         assert mock_hum.call_count == 2
-        assert "gs1" in subsystem_manager.humidifier_coordinators
-        assert "gs2" in subsystem_manager.humidifier_coordinators
+        assert len(subsystem_manager.environment_controllers["gs1"]) >= 2
+        assert len(subsystem_manager.environment_controllers["gs2"]) >= 2
 
 
 @pytest.mark.asyncio
@@ -133,33 +125,27 @@ async def test_async_initialize_sub_coordinators_failure(
         "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator",
         autospec=True,
     ) as mock_irrigation:
-        # Simulate setup failure
         mock_irrigation.return_value.async_setup = AsyncMock(
             side_effect=ValueError("Setup failed")
         )
 
-        # Should catch exception and log warning (no crash)
         await subsystem_manager.async_initialize_sub_coordinators(growspaces)
 
-        # Should not have added to dict if failed (logic check: logic adds to dict AFTER await async_setup)
         assert "gs1" not in subsystem_manager.irrigation_coordinators
 
 
 @pytest.mark.asyncio
 async def test_async_cancel_all(subsystem_manager: SubsystemManager) -> None:
     """Test cancellation of all coordinators."""
-    # Setup dummy coordinators
     mock_irr = MagicMock()
     mock_irr.async_cancel_listeners = MagicMock()
     subsystem_manager.irrigation_coordinators["gs1"] = mock_irr
 
     mock_dehum = MagicMock()
     mock_dehum.unload = MagicMock()
-    subsystem_manager.dehumidifier_coordinators["gs1"] = mock_dehum
-
     mock_hum = MagicMock()
     mock_hum.unload = MagicMock()
-    subsystem_manager.humidifier_coordinators["gs1"] = mock_hum
+    subsystem_manager.environment_controllers["gs1"] = [mock_dehum, mock_hum]
 
     mock_tracker = MagicMock()
     mock_tracker.unload = MagicMock()
@@ -217,7 +203,7 @@ async def test_circulation_fan_coordinators_setup_and_cancel(
             "gs1",
             subsystem_manager.coordinator,
         )
-        assert "gs1" in subsystem_manager.circulation_fan_coordinators
+        assert "gs1" in subsystem_manager.environment_controllers
 
         mock_fan_instance = mock_fan.return_value
         subsystem_manager.async_cancel_all()
@@ -228,7 +214,7 @@ async def test_circulation_fan_coordinators_setup_and_cancel(
 async def test_async_cancel_all_exceptions(
     subsystem_manager: SubsystemManager,
 ) -> None:
-    """Test that exceptions during cancellation of individual coordinators are handled gracefully."""
+    """Test that exceptions during cancellation are handled gracefully."""
     mock_irr = MagicMock()
     mock_irr.async_cancel_listeners = MagicMock(
         side_effect=RuntimeError("Irrigation cancel error")
@@ -237,11 +223,9 @@ async def test_async_cancel_all_exceptions(
 
     mock_dehum = MagicMock()
     mock_dehum.unload = MagicMock(side_effect=RuntimeError("Dehumidifier unload error"))
-    subsystem_manager.dehumidifier_coordinators["gs1"] = mock_dehum
-
     mock_hum = MagicMock()
     mock_hum.unload = MagicMock(side_effect=RuntimeError("Humidifier unload error"))
-    subsystem_manager.humidifier_coordinators["gs1"] = mock_hum
+    subsystem_manager.environment_controllers["gs1"] = [mock_dehum, mock_hum]
 
     mock_tracker = MagicMock()
     mock_tracker.unload = MagicMock(
@@ -249,30 +233,27 @@ async def test_async_cancel_all_exceptions(
     )
     subsystem_manager.light_cycle_trackers["gs1"] = mock_tracker
 
-    # We mock _LOGGER to verify error messages are logged
     with patch(
         "custom_components.growspace_manager.managers.subsystem._LOGGER"
     ) as mock_logger:
         subsystem_manager.async_cancel_all()
 
-        # Verify that all unloads were called despite preceding exceptions
         mock_irr.async_cancel_listeners.assert_called_once()
         mock_dehum.unload.assert_called_once()
         mock_hum.unload.assert_called_once()
         mock_tracker.unload.assert_called_once()
 
-        # Verify logger.error was called for each exception
         assert mock_logger.error.call_count == 4
         mock_logger.error.assert_any_call(
             "Error cancelling irrigation listeners: %s",
             mock_irr.async_cancel_listeners.side_effect,
         )
         mock_logger.error.assert_any_call(
-            "Error unloading dehumidifier coordinator: %s",
+            "Error unloading environment controller: %s",
             mock_dehum.unload.side_effect,
         )
         mock_logger.error.assert_any_call(
-            "Error unloading humidifier coordinator: %s",
+            "Error unloading environment controller: %s",
             mock_hum.unload.side_effect,
         )
         mock_logger.error.assert_any_call(

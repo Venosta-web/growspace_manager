@@ -122,6 +122,8 @@
         'late_check_offset_minutes': 60,
         'mid_check_hours': 6,
       }),
+      'vpd_optimal_overrides': dict({
+      }),
       'vpd_sensor': None,
       'vpd_sensors': list([
       ]),

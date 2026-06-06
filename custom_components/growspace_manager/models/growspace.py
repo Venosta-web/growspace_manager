@@ -189,6 +189,9 @@ class EnvironmentConfig(BaseModel):
     circulation_fan_config: CirculationFanConfig = field(
         default_factory=CirculationFanConfig
     )
+    vpd_optimal_overrides: dict[str, dict[str, dict[str, float]]] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         """Sync singular fields to plural lists for initialization support."""

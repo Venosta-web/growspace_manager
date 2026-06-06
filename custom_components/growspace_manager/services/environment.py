@@ -10,12 +10,12 @@ from custom_components.growspace_manager.circulation_fan_coordinator import (
     FAN_VPD_STAGE_DEFAULTS,
 )
 from custom_components.growspace_manager.const import (
+    CONF_BULK_EC_SENSORS,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
     CONF_CO2_SENSOR,
     CONF_CONTROL_DEHUMIDIFIER,
-    CONF_CONTROL_HUMIDIFIER,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
@@ -35,12 +35,11 @@ from custom_components.growspace_manager.const import (
     CONF_LUNG_ROOM_TEMP_SENSORS,
     CONF_MOLD_THRESHOLD,
     CONF_PH_SENSORS,
+    CONF_PORE_EC_SENSORS,
     CONF_POWER_SENSORS,
     CONF_RUNOFF_EC_SENSORS,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
-    CONF_BULK_EC_SENSORS,
-    CONF_PORE_EC_SENSORS,
     CONF_SUBSTRATE_TEMP_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
@@ -74,7 +73,9 @@ _VPD_OVERRIDE_MIN = 0.1
 _VPD_OVERRIDE_MAX = 3.0
 
 
-def _validate_stage_vpd_overrides(overrides: dict | None) -> dict[str, dict[str, float]]:
+def _validate_stage_vpd_overrides(
+    overrides: dict | None,
+) -> dict[str, dict[str, float]]:
     """Validate and return stage_vpd_overrides, raising ServiceValidationError on bad input."""
     if overrides is None:
         return {}
@@ -104,6 +105,50 @@ def _validate_stage_vpd_overrides(overrides: dict | None) -> dict[str, dict[str,
     return overrides
 
 
+def _validate_vpd_optimal_overrides(
+    overrides: dict | None,
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Validate vpd_optimal_overrides, raising ServiceValidationError on bad input."""
+    if overrides is None:
+        return {}
+    if not isinstance(overrides, dict):
+        raise ServiceValidationError("vpd_optimal_overrides must be a dictionary.")
+    for stage_key, entry in overrides.items():
+        if stage_key not in _VALID_STAGE_KEYS:
+            raise ServiceValidationError(
+                f"Unknown stage key '{stage_key}' in vpd_optimal_overrides. "
+                f"Valid keys: {sorted(_VALID_STAGE_KEYS)}"
+            )
+        if not isinstance(entry, dict) or "day" not in entry or "night" not in entry:
+            raise ServiceValidationError(
+                f"Stage '{stage_key}' entry must contain both 'day' and 'night' keys."
+            )
+        for period in ("day", "night"):
+            period_entry = entry[period]
+            if (
+                not isinstance(period_entry, dict)
+                or "low" not in period_entry
+                or "high" not in period_entry
+            ):
+                raise ServiceValidationError(
+                    f"Stage '{stage_key}' {period} entry must contain both 'low' and 'high' keys."
+                )
+            low = period_entry["low"]
+            high = period_entry["high"]
+            if not (_VPD_OVERRIDE_MIN <= low <= _VPD_OVERRIDE_MAX) or not (
+                _VPD_OVERRIDE_MIN <= high <= _VPD_OVERRIDE_MAX
+            ):
+                raise ServiceValidationError(
+                    f"Stage '{stage_key}' {period} VPD values out of range "
+                    f"({_VPD_OVERRIDE_MIN}–{_VPD_OVERRIDE_MAX} kPa). Got low={low}, high={high}."
+                )
+            if low >= high:
+                raise ServiceValidationError(
+                    f"Stage '{stage_key}' {period}: low ({low}) must be < high ({high})."
+                )
+    return overrides
+
+
 def _parse_fan_config(
     raw: dict | None,
     existing_env: EnvironmentConfig | None,
@@ -112,7 +157,9 @@ def _parse_fan_config(
     if raw:
         return CirculationFanConfig(
             enabled=bool(raw.get("enabled", False)),
-            regulation_mode=FanRegulationMode(raw.get("regulation_mode", FanRegulationMode.VPD)),
+            regulation_mode=FanRegulationMode(
+                raw.get("regulation_mode", FanRegulationMode.VPD)
+            ),
             min_speed=int(raw.get("min_speed", 0)),
             max_speed=int(raw.get("max_speed", 100)),
             vpd_target=float(raw.get("vpd_target", 1.0)),
@@ -128,7 +175,9 @@ def _parse_fan_config(
             wind_period_seconds=int(raw.get("wind_period_seconds", 60)),
             wind_amplitude_pct=int(raw.get("wind_amplitude_pct", 10)),
             stage_vpd_enabled=bool(raw.get("stage_vpd_enabled", False)),
-            stage_vpd_overrides=_validate_stage_vpd_overrides(raw.get("stage_vpd_overrides", {})),
+            stage_vpd_overrides=_validate_stage_vpd_overrides(
+                raw.get("stage_vpd_overrides", {})
+            ),
         )
     if existing_env is not None:
         return existing_env.circulation_fan_config
@@ -248,6 +297,9 @@ async def handle_configure_environment(
             call.data.get("circulation_fan_config"),
             growspace.environment_config,
         ),
+        vpd_optimal_overrides=_validate_vpd_optimal_overrides(
+            call.data.get("vpd_optimal_overrides")
+        ),
     )
 
     # Store in growspace
@@ -259,7 +311,9 @@ async def handle_configure_environment(
     # Trigger coordinator update to create/update binary sensors
     await coordinator.services.request_refresh()
 
-    fan_coord = coordinator.subsystem_manager.circulation_fan_coordinators.get(growspace_id)
+    fan_coord = coordinator.subsystem_manager.get_circulation_fan_controller(
+        growspace_id
+    )
     if fan_coord:
         await fan_coord.async_restart()
 
@@ -365,7 +419,9 @@ async def handle_configure_circulation_fan(
 
     fan_cfg = CirculationFanConfig(
         enabled=bool(call.data.get("enabled", False)),
-        regulation_mode=FanRegulationMode(call.data.get("regulation_mode", FanRegulationMode.VPD)),
+        regulation_mode=FanRegulationMode(
+            call.data.get("regulation_mode", FanRegulationMode.VPD)
+        ),
         min_speed=int(call.data.get("min_speed", 0)),
         max_speed=int(call.data.get("max_speed", 100)),
         vpd_target=float(call.data.get("vpd_target", 1.0)),
@@ -394,7 +450,9 @@ async def handle_configure_circulation_fan(
     await coordinator.services.save()
     await coordinator.services.request_refresh()
 
-    fan_coord = coordinator.subsystem_manager.circulation_fan_coordinators.get(growspace_id)
+    fan_coord = coordinator.subsystem_manager.get_circulation_fan_controller(
+        growspace_id
+    )
     if fan_coord:
         await fan_coord.async_restart()
 

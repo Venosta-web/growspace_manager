@@ -2479,11 +2479,11 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
 
         mock_dehum.assert_called_once()
         mock_dehum_instance.async_setup.assert_awaited_once()
-        assert "gs1" in coordinator.subsystem_manager.dehumidifier_coordinators
+        assert "gs1" in coordinator.subsystem_manager.environment_controllers
 
         mock_hum.assert_called_once()
         mock_hum_instance.async_setup.assert_awaited_once()
-        assert "gs1" in coordinator.subsystem_manager.humidifier_coordinators
+        assert "gs1" in coordinator.subsystem_manager.environment_controllers
 
     # Setup VWC
     with (

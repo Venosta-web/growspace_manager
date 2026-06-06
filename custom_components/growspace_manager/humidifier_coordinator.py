@@ -2,22 +2,7 @@
 
 from __future__ import annotations
 
-import logging
-import time
-from typing import TYPE_CHECKING, Any
-
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    ATTR_ENTITY_ID,
-    SERVICE_TURN_OFF,
-    SERVICE_TURN_ON,
-    STATE_ON,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-)
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.helpers.event import async_call_later, async_track_state_change_event
-from homeassistant.util import dt as dt_util
+from typing import TYPE_CHECKING
 
 from .const import (
     CATEGORY_HUMIDIFIER,
@@ -25,13 +10,10 @@ from .const import (
     DEFAULT_HUMIDIFIER_MIN_RUNTIME,
     PlantStage,
 )
-from .domain.stage_calculator import determine_coordinator_stage
-from .models import GrowspaceEvent
+from .vpd_on_off_controller import VpdOnOffController
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 # Default thresholds — humidifier turns ON when VPD exceeds `on`, OFF when it drops below `off`.
 # High VPD = low humidity = needs humidification.
@@ -72,317 +54,24 @@ DEFAULT_THRESHOLDS = {
 }
 
 
-class HumidifierCoordinator:
-    """Manages humidifier logic based on VPD and growth stage."""
+class HumidifierCoordinator(VpdOnOffController):
+    """Controls a humidifier based on VPD and growth stage.
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        config_entry: ConfigEntry,
-        growspace_id: str,
-        main_coordinator: GrowspaceCoordinator,
-    ) -> None:
-        """Initialize the Humidifier Coordinator."""
-        self.hass = hass
-        self.config_entry = config_entry
-        self.growspace_id = growspace_id
-        self.main_coordinator = main_coordinator
-        self._remove_listeners: list[Any] = []
+    Turns ON when VPD rises above the threshold (air is too dry).
+    Turns OFF when VPD falls below the off threshold (sufficient humidity).
+    """
 
-        self._last_turn_on_time: float = 0.0
-        self._last_turn_off_time: float = 0.0
-        self._retry_cancel: CALLBACK_TYPE | None = None
+    _CONTROL_FLAG_ATTR = "control_humidifier"
+    _THRESHOLDS_ATTR = "humidifier_thresholds"
+    _DEVICE_CONFIG_ATTR = "humidifier_config"
+    _ON_TRIGGER_IS_HIGH_VPD = True
+    _DEFAULT_THRESHOLDS = DEFAULT_THRESHOLDS
+    _LOGBOOK_SENSOR_TYPE = "humidifier_control"
+    _LOGBOOK_CATEGORY = CATEGORY_HUMIDIFIER
+    _DEFAULT_MIN_RUNTIME = DEFAULT_HUMIDIFIER_MIN_RUNTIME
+    _DEFAULT_MIN_OFFTIME = DEFAULT_HUMIDIFIER_MIN_OFFTIME
 
-        self.growspace = self.main_coordinator.growspaces.get(growspace_id)
-        if not self.growspace:
-            _LOGGER.error(
-                "Growspace %s not found for HumidifierCoordinator", growspace_id
-            )
-            return
-
-        self.env_config: Any = self.growspace.environment_config or {}
-        self.humidifier_config = getattr(self.growspace, "humidifier_config", {})
-
-        self.vpd_sensor = getattr(self.env_config, "vpd_sensor", None)
-        self.light_sensors = getattr(self.env_config, "light_sensors", [])
-        self.humidifier_entities = getattr(self.env_config, "humidifier_entities", [])
-        self.control_humidifier = getattr(self.env_config, "control_humidifier", False)
-        self.user_thresholds: dict[str, Any] = getattr(
-            self.env_config, "humidifier_thresholds", {}
-        )
-
-        if self.vpd_sensor and self.humidifier_entities and self.control_humidifier:
-            _LOGGER.debug(
-                "HumidifierCoordinator initialized for %s. Call async_setup() to start monitoring",
-                self.growspace.name,
-            )
-
-    async def async_setup(self) -> None:
-        """Set up the coordinator and start monitoring."""
-        if self.vpd_sensor and self.humidifier_entities and self.control_humidifier:
-            self._setup_listeners()
-            # Start initial check after reload/startup
-            await self.async_check_and_control()
-            _LOGGER.info(
-                "HumidifierCoordinator started for %s (VPD: %s, Devices: %d)",
-                self.growspace.name,
-                self.vpd_sensor,
-                len(self.humidifier_entities),
-            )
-        elif not self.control_humidifier:
-            _LOGGER.info(
-                "HumidifierCoordinator disabled for %s (control_humidifier is False)",
-                self.growspace.name,
-            )
-        else:
-            _LOGGER.warning(
-                "HumidifierCoordinator skipped for %s: Missing VPD sensor or humidifier entities",
-                self.growspace.name,
-            )
-
-    def _setup_listeners(self) -> None:
-        """Set up state change listeners."""
-        entities_to_track: list[str] = [e for e in [self.vpd_sensor] if e]
-        if self.light_sensors:
-            entities_to_track.extend([e for e in self.light_sensors if e])
-
-        self._remove_listeners.append(
-            async_track_state_change_event(
-                self.hass, entities_to_track, self._on_sensor_change
-            )
-        )
-
-    async def _on_sensor_change(self, event: Any) -> None:
-        """Handle sensor state changes."""
-        await self.async_check_and_control()
-
-    async def async_check_and_control(self) -> None:
-        """Evaluate conditions and control the humidifier."""
-        if not self.vpd_sensor or not self.humidifier_entities:
-            return
-
-        current_vpd = self._get_current_vpd()
-        if current_vpd is None:
-            return
-
-        stage_name = self._get_growth_stage()
-        is_day = self._determine_is_day()
-        thresholds = self._get_current_thresholds(stage_name, is_day)
-        on_threshold = thresholds["on"]
-        off_threshold = thresholds["off"]
-
-        is_on = self._determine_is_device_on()
-
-        if self._is_locked_by_timer(is_on):
-            self._schedule_retry_if_needed(is_on)
-            return
-
-        if self._retry_cancel is not None:
-            self._retry_cancel()
-            self._retry_cancel = None
-
-        # High VPD = low humidity → turn humidifier ON
-        # Low VPD = sufficient humidity → turn humidifier OFF
-        if current_vpd > on_threshold and not is_on:
-            _LOGGER.info(
-                "VPD Trigger: Current %.2f > Target %.2f (%s, %s) -> Turning ON Humidifier",
-                current_vpd,
-                on_threshold,
-                stage_name,
-                "Day" if is_day else "Night",
-            )
-            await self._control_humidifier(True)
-            self._fire_logbook_event(
-                True, current_vpd, stage_name, is_day, on_threshold, off_threshold
-            )
-        elif current_vpd < off_threshold and is_on:
-            _LOGGER.info(
-                "VPD Trigger: Current %.2f < Threshold %.2f (%s, %s) -> Turning OFF Humidifier",
-                current_vpd,
-                off_threshold,
-                stage_name,
-                "Day" if is_day else "Night",
-            )
-            await self._control_humidifier(False)
-            self._fire_logbook_event(
-                False, current_vpd, stage_name, is_day, on_threshold, off_threshold
-            )
-
-    def _is_locked_by_timer(self, is_on: bool) -> bool:
-        """Check if state change is blocked by minimum run/off timers."""
-        now = time.monotonic()
-
-        if is_on:
-            elapsed_on = now - self._last_turn_on_time
-            min_runtime = self.humidifier_config.get(
-                "min_runtime", DEFAULT_HUMIDIFIER_MIN_RUNTIME
-            )
-            if self._last_turn_on_time > 0 and elapsed_on < min_runtime:
-                _LOGGER.debug(
-                    "Locked by Min Runtime (remaining: %.0fs)",
-                    min_runtime - elapsed_on,
-                )
-                return True
-        else:
-            elapsed_off = now - self._last_turn_off_time
-            min_offtime = self.humidifier_config.get(
-                "min_offtime", DEFAULT_HUMIDIFIER_MIN_OFFTIME
-            )
-            if self._last_turn_off_time > 0 and elapsed_off < min_offtime:
-                _LOGGER.debug(
-                    "Locked by Min Offtime (remaining: %.0fs)",
-                    min_offtime - elapsed_off,
-                )
-                return True
-
-        return False
-
-    def _schedule_retry_if_needed(self, is_on: bool) -> None:
-        """Schedule a deferred check for when the active timer lock expires."""
-        if self._retry_cancel is not None:
-            return
-        now = time.monotonic()
-        if is_on:
-            elapsed = now - self._last_turn_on_time
-            min_duration = self.humidifier_config.get(
-                "min_runtime", DEFAULT_HUMIDIFIER_MIN_RUNTIME
-            )
-        else:
-            elapsed = now - self._last_turn_off_time
-            min_duration = self.humidifier_config.get(
-                "min_offtime", DEFAULT_HUMIDIFIER_MIN_OFFTIME
-            )
-        remaining = max(1.0, min_duration - elapsed)
-
-        @callback
-        def _retry(_now: Any) -> None:
-            self._retry_cancel = None
-            self.hass.async_create_task(self.async_check_and_control())
-
-        self._retry_cancel = async_call_later(self.hass, remaining, _retry)
-        _LOGGER.debug("Retry check scheduled in %.0fs", remaining)
-
-    def _get_growth_stage(self) -> PlantStage:
-        """Determine the current growth stage for threshold selection."""
-        plants = self.main_coordinator.services.growspaces.get_growspace_plants(self.growspace_id)
-        return determine_coordinator_stage(plants)
-
-    def _get_current_thresholds(self, stage: str, is_day: bool) -> dict[str, float]:
-        """Get the ON/OFF thresholds for the current state."""
-        day_key = "day" if is_day else "night"
-
-        if stage in self.user_thresholds and day_key in self.user_thresholds[stage]:
-            return dict(self.user_thresholds[stage][day_key])
-
-        return DEFAULT_THRESHOLDS.get(stage, DEFAULT_THRESHOLDS["veg"])[day_key]
-
-    async def _control_humidifier(self, turn_on: bool) -> None:
-        """Turn the humidifier(s) on or off."""
-        service = SERVICE_TURN_ON if turn_on else SERVICE_TURN_OFF
-
-        for entity_id in self.humidifier_entities:
-            domain = entity_id.split(".")[0]
-
-            if domain not in ("switch", "humidifier", "fan", "input_boolean"):
-                domain = "homeassistant"
-
-            try:
-                await self.hass.services.async_call(
-                    domain,
-                    service,
-                    {ATTR_ENTITY_ID: entity_id},
-                    blocking=False,
-                )
-            except Exception :  # noqa: BLE001
-                _LOGGER.warning("Failed to control device %s", entity_id, exc_info=True)
-
-        if turn_on:
-            self._last_turn_on_time = time.monotonic()
-        else:
-            self._last_turn_off_time = time.monotonic()
-
-    def _fire_logbook_event(
-        self,
-        turned_on: bool,
-        vpd: float,
-        stage: str,
-        is_day: bool,
-        on_threshold: float,
-        off_threshold: float,
-    ) -> None:
-        """Fire a logbook event for a humidifier control action."""
-        now = dt_util.now().isoformat()
-        action = "Turned ON" if turned_on else "Turned OFF"
-        period = "Day" if is_day else "Night"
-        stage_label = stage.replace("_", " ").title()
-        event = GrowspaceEvent(
-            sensor_type="humidifier_control",
-            growspace_id=self.growspace_id,
-            start_time=now,
-            end_time=now,
-            duration_sec=0,
-            severity=0.3,
-            category=CATEGORY_HUMIDIFIER,
-            reasons=[
-                action,
-                f"VPD: {vpd:.2f} kPa",
-                f"Stage: {stage_label}",
-                f"Period: {period}",
-                f"Thresholds: {on_threshold:.2f}/{off_threshold:.2f} kPa",
-            ],
-        )
-        self.main_coordinator.add_event(self.growspace_id, event)
-
-    def unload(self) -> None:
-        """Unload the coordinator and remove listeners."""
-        if self._retry_cancel is not None:
-            self._retry_cancel()
-            self._retry_cancel = None
-        for remove_listener in self._remove_listeners:
-            remove_listener()
-        self._remove_listeners.clear()
-
-    def _get_current_vpd(self) -> float | None:
-        """Get the current VPD value."""
-        if not self.vpd_sensor:
-            return None
-        vpd_state = self.hass.states.get(self.vpd_sensor)
-        if not vpd_state or vpd_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            return None
-        try:
-            return float(vpd_state.state)
-        except ValueError:
-            return None
-
-    def _determine_is_day(self) -> bool:
-        """Determine Day/Night state (OR logic)."""
-        is_day = True
-        if self.light_sensors:
-            any_valid = False
-            any_on = False
-            for sensor in self.light_sensors:
-                light_state = self.hass.states.get(sensor)
-                if light_state and light_state.state not in (
-                    STATE_UNKNOWN,
-                    STATE_UNAVAILABLE,
-                ):
-                    any_valid = True
-                    try:
-                        light_val = float(light_state.state)
-                        if light_val > 0:
-                            any_on = True
-                    except ValueError:
-                        if light_state.state == STATE_ON:
-                            any_on = True
-
-            if any_valid:
-                is_day = any_on
-        return is_day
-
-    def _determine_is_device_on(self) -> bool:
-        """Determine if any controlled humidifier device is on."""
-        for entity in self.humidifier_entities:
-            state = self.hass.states.get(entity)
-            if state and state.state == STATE_ON:
-                return True
-        return False
+    def _get_all_controlled_entities(self) -> list[str]:
+        if not self.growspace or not self.growspace.environment_config:
+            return []
+        return list(self.growspace.environment_config.humidifier_entities or [])
