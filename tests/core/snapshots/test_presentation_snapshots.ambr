@@ -86,6 +86,8 @@
         'mid_check_hours': 6,
       }),
       'vpd': None,
+      'vpd_optimal_overrides': dict({
+      }),
       'vpd_sensor': 'sensor.vpd',
       'vpd_sensors': list([
         'sensor.vpd',

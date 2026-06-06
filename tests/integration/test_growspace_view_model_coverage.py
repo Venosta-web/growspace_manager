@@ -610,3 +610,22 @@ def test_view_model_builder_liters_today_absent_with_drain_volume_sensors(
 
     water_usage = result["irrigation"]["water_usage"]
     assert "liters_today" not in water_usage
+
+
+def test_vpd_optimal_overrides_round_trips_in_environment_attributes(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """vpd_optimal_overrides must be returned by _get_environment_attributes so the dialog re-opens with saved values."""
+    overrides = {
+        "flower_mid": {
+            "day": {"low": 0.5, "high": 1.45},
+            "night": {"low": 0.6, "high": 1.0},
+        }
+    }
+    env_config = EnvironmentConfig(vpd_optimal_overrides=overrides)
+    gs = Growspace(id="gs1", name="GS1", environment_config=env_config)
+
+    attrs = builder._get_environment_attributes(gs)
+
+    assert attrs["vpd_optimal_overrides"] == overrides
+    assert attrs["vpd_optimal_overrides"]["flower_mid"]["day"]["low"] == 0.5

@@ -639,4 +639,6 @@ class GrowspaceViewModelBuilder:
         # Vision checkup config — same reason: persisted enabled state must round-trip.
         attributes["vision_checkup_config"] = asdict(env_config.vision_checkup_config)
 
+        attributes["vpd_optimal_overrides"] = env_config.vpd_optimal_overrides
+
         return attributes
