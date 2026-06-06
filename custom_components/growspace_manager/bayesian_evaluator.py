@@ -830,6 +830,46 @@ def _evaluate_optimal_temp_lights_off(
         )
 
 
+_ACCLIMATION_STAGES = frozenset(
+    {BayesianStage.SEEDLING, BayesianStage.CLONE}
+)
+
+_OVERRIDE_STAGE_MAP: dict[str, BayesianStage] = {
+    "seedling": BayesianStage.SEEDLING_STANDARD,
+    "clone": BayesianStage.CLONE_STANDARD,
+    "mother": BayesianStage.MOTHER,
+    "veg": BayesianStage.VEG,
+    "flower_early": BayesianStage.FLOWER_EARLY,
+    "flower_mid": BayesianStage.FLOWER_MID,
+    "flower_late": BayesianStage.FLOWER_LATE,
+    "dry": BayesianStage.DRY,
+    "cure": BayesianStage.CURE,
+}
+_OVERRIDE_BAYESIAN_TO_KEY: dict[BayesianStage, str] = {
+    v: k for k, v in _OVERRIDE_STAGE_MAP.items()
+}
+
+
+def _get_optimal_limits(
+    stage: BayesianStage,
+    time_of_day: str,
+    overrides: dict[str, Any],
+) -> list[tuple[float, float, tuple[float, float]]]:
+    """Return optimal VPD limits for *stage*, substituting any user override.
+
+    Acclimation sub-stages (SEEDLING, CLONE) always use hardcoded defaults.
+    """
+    if stage not in _ACCLIMATION_STAGES:
+        override_key = _OVERRIDE_BAYESIAN_TO_KEY.get(stage)
+        if override_key and override_key in overrides:
+            period = overrides[override_key].get(time_of_day, {})
+            low = period.get("low")
+            high = period.get("high")
+            if low is not None and high is not None:
+                return [(low, high, PROB_PERFECT)]
+    return VPD_OPTIMAL_THRESHOLDS.get(stage, {}).get(time_of_day, [])
+
+
 def evaluate_optimal_vpd(
     state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
@@ -853,9 +893,10 @@ def evaluate_optimal_vpd(
         state.mother_days,
     )
     time_of_day = "night" if state.is_lights_on is False else "day"
+    vpd_overrides: dict[str, Any] = env_config.get("vpd_optimal_overrides", {})
 
-    limits_a = VPD_OPTIMAL_THRESHOLDS.get(stage_a, {}).get(time_of_day, [])
-    limits_b = VPD_OPTIMAL_THRESHOLDS.get(stage_b, {}).get(time_of_day, [])
+    limits_a = _get_optimal_limits(stage_a, time_of_day, vpd_overrides)
+    limits_b = _get_optimal_limits(stage_b, time_of_day, vpd_overrides)
 
     # Interpolate ranges
     for i in range(min(len(limits_a), len(limits_b))):

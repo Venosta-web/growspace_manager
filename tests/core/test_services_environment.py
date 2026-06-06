@@ -398,3 +398,48 @@ async def test_configure_environment_accepts_bulk_and_pore_ec_sensors(
     assert env.bulk_ec_sensors == ["sensor.bulk_ec_1"]
     assert env.pore_ec_sensors == ["sensor.pore_ec_1"]
 
+
+@pytest.mark.asyncio
+async def test_configure_environment_stores_vpd_optimal_overrides(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """configure_environment service writes vpd_optimal_overrides to EnvironmentConfig."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    overrides = {
+        "veg": {"day": {"low": 0.5, "high": 1.2}, "night": {"low": 0.4, "high": 1.0}},
+    }
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "vpd_optimal_overrides": overrides,
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    env: EnvironmentConfig = mock_gs.environment_config
+    assert env.vpd_optimal_overrides == overrides
+
+
+@pytest.mark.asyncio
+async def test_configure_environment_rejects_invalid_vpd_optimal_overrides(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """configure_environment raises ServiceValidationError for invalid vpd_optimal_overrides."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "vpd_optimal_overrides": {"unknown_stage": {"day": {"low": 0.5, "high": 1.2}, "night": {"low": 0.4, "high": 1.0}}},
+    }
+
+    with pytest.raises(ServiceValidationError, match="Unknown stage key"):
+        await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
