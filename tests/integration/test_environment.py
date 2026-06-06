@@ -27,7 +27,7 @@ def mock_coordinator():
     _fan_coord_mock = MagicMock()
     _fan_coord_mock.async_restart = AsyncMock()
     coordinator.subsystem_manager = MagicMock()
-    coordinator.subsystem_manager.circulation_fan_coordinators.get = MagicMock(
+    coordinator.subsystem_manager.get_circulation_fan_controller = MagicMock(
         return_value=_fan_coord_mock
     )
     return coordinator

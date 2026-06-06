@@ -107,6 +107,7 @@ from .environment_config_handler import EnvironmentConfigHandler  # noqa: E402
 from .environment_sensors_handler import EnvironmentSensorsHandler  # noqa: E402
 from .fan_controller_handler import FanControllerHandler  # noqa: E402
 from .growspace_config_handler import GrowspaceConfigHandler  # noqa: E402
+from .humidifier_handler import HumidifierHandler  # noqa: E402
 from .irrigation_config_handler import IrrigationConfigHandler  # noqa: E402
 from .notification_config_handler import NotificationConfigHandler  # noqa: E402
 from .plant_config_handler import PlantConfigHandler  # noqa: E402
@@ -121,6 +122,7 @@ __all__ = [
     "EnvironmentSensorsHandler",
     "FanControllerHandler",
     "GrowspaceConfigHandler",
+    "HumidifierHandler",
     "IrrigationConfigHandler",
     "NotificationConfigHandler",
     "PlantConfigHandler",

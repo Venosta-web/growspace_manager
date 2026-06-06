@@ -52,7 +52,7 @@ def mock_hass():
 def mock_track_state_change_event():
     """Mock async_track_state_change_event."""
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.async_track_state_change_event"
+        "custom_components.growspace_manager.vpd_on_off_controller.async_track_state_change_event"
     ) as mock:
         yield mock
 
@@ -106,8 +106,8 @@ async def test_initialization(
     """Test successful initialization."""
     assert coordinator.vpd_sensor == "sensor.vpd"
     assert coordinator.light_sensors == ["sensor.light"]
-    assert coordinator.dehumidifier_entities == ["switch.dehumidifier"]
-    assert coordinator.control_dehumidifier is True
+    assert coordinator._get_all_controlled_entities() == ["switch.dehumidifier"]
+    assert coordinator.control_enabled is True
 
     # Verify listener setup
     assert len(coordinator._remove_listeners) > 0
@@ -127,7 +127,7 @@ async def test_initialization_disabled(
     await coord.async_setup()
     setattr(coord, "async_check_and_control", MagicMock())
 
-    assert coord.control_dehumidifier is False
+    assert coord.control_enabled is False
     assert len(coord._remove_listeners) == 0
     mock_track_state_change_event.assert_not_called()
     mock_hass.async_create_task.assert_not_called()
@@ -430,7 +430,7 @@ def test_init_missing_growspace(
             mock_hass, MagicMock(), "nonexistent", mock_main_coordinator
         )
 
-    assert "Growspace nonexistent not found" in caplog.text
+    assert "growspace nonexistent not found" in caplog.text.lower()
 
 
 @pytest.mark.asyncio
@@ -493,7 +493,7 @@ async def test_binary_light_sensor(
     coordinator._get_current_thresholds = MagicMock(  # type: ignore[method-assign]
         return_value={"on": 1.0, "off": 2.0}
     )
-    coordinator._control_dehumidifier = AsyncMock()  # type: ignore[method-assign]
+    coordinator._control_devices = AsyncMock()  # type: ignore[method-assign]
 
     await coordinator.async_check_and_control()
 
@@ -527,7 +527,7 @@ async def test_generic_domain_control(
     await coordinator.async_setup()
 
     # Manually invoke control
-    await coordinator._control_dehumidifier(True)
+    await coordinator._control_devices(True)
 
     # Should call input_boolean.turn_on
     mock_hass.services.async_call.assert_awaited_with(
@@ -577,7 +577,7 @@ async def test_growth_stage_detection_cure_dry_seedling(
 async def test_control_domain_fallback(
     mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
 ) -> None:
-    """Test domain fallback in _control_dehumidifier."""
+    """Test domain fallback in _control_devices."""
     mock_growspace.environment_config.dehumidifier_entities = ["light.dehumidifier"]
     mock_main_coordinator.growspaces = {"gs1": mock_growspace}
 
@@ -586,7 +586,7 @@ async def test_control_domain_fallback(
     )
     await coordinator.async_setup()
 
-    await coordinator._control_dehumidifier(True)
+    await coordinator._control_devices(True)
 
     # light is not in the list of recognized domains, so should fallback to homeassistant
     mock_hass.services.async_call.assert_awaited_with(
@@ -600,11 +600,11 @@ async def test_control_domain_fallback(
 async def test_control_device_exception(
     coordinator, mock_hass, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Test exception handling in _control_dehumidifier."""
+    """Test exception handling in _control_devices."""
     mock_hass.services.async_call.side_effect = HomeAssistantError("Service failure")
 
     with caplog.at_level(logging.WARNING):
-        await coordinator._control_dehumidifier(True)
+        await coordinator._control_devices(True)
 
     assert "Failed to control device" in caplog.text
 
@@ -684,16 +684,16 @@ async def test_determine_is_day_all_sensors_unavailable_uses_cached_state(
 
     # Prime the cache with night state (sensor reports 0 lux)
     mock_hass.states.get.side_effect = lambda entity_id: MagicMock(state="0")
-    assert coord._determine_is_day() is False
-    assert coord._last_known_is_day is False
+    assert coord._day_night.determine(coord.hass, coord.light_sensors) is False
+    assert coord._day_night._last_known_is_day is False
 
     # Now all sensors become unavailable
     mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
         state=STATE_UNAVAILABLE
     )
     # Should return cached False, not True
-    assert coord._determine_is_day() is False
-    assert coord._sensors_unavailable_since is not None
+    assert coord._day_night.determine(coord.hass, coord.light_sensors) is False
+    assert coord._day_night._sensors_unavailable_since is not None
 
 
 async def test_determine_is_day_all_sensors_unavailable_no_cache_defaults_true(
@@ -713,8 +713,8 @@ async def test_determine_is_day_all_sensors_unavailable_no_cache_defaults_true(
         state=STATE_UNAVAILABLE
     )
     # No prior cache — should still default to True (safe fallback)
-    assert coord._determine_is_day() is True
-    assert coord._sensors_unavailable_since is not None
+    assert coord._day_night.determine(coord.hass, coord.light_sensors) is True
+    assert coord._day_night._sensors_unavailable_since is not None
 
 
 async def test_determine_is_day_valid_read_clears_unavailability_timer(
@@ -731,14 +731,14 @@ async def test_determine_is_day_valid_read_clears_unavailability_timer(
     await coord.async_setup()
 
     # Simulate prior unavailability
-    coord._sensors_unavailable_since = time.monotonic() - 100
+    coord._day_night._sensors_unavailable_since = time.monotonic() - 100
 
     mock_hass.states.get.side_effect = lambda entity_id: MagicMock(state="500")
-    result = coord._determine_is_day()
+    result = coord._day_night.determine(coord.hass, coord.light_sensors)
 
     assert result is True
-    assert coord._last_known_is_day is True
-    assert coord._sensors_unavailable_since is None
+    assert coord._day_night._last_known_is_day is True
+    assert coord._day_night._sensors_unavailable_since is None
 
 
 async def test_determine_is_day_prolonged_unavailability_logs_warning(
@@ -755,32 +755,32 @@ async def test_determine_is_day_prolonged_unavailability_logs_warning(
     )
     await coord.async_setup()
 
-    coord._last_known_is_day = True
-    coord._sensors_unavailable_since = time.monotonic() - 400  # > 300 s
+    coord._day_night._last_known_is_day = True
+    coord._day_night._sensors_unavailable_since = time.monotonic() - 400  # > 300 s
 
     mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
         state=STATE_UNAVAILABLE
     )
 
     with caplog.at_level(logging.WARNING):
-        coord._determine_is_day()
+        coord._day_night.determine(coord.hass, coord.light_sensors)
 
     assert any("unavailable" in r.message.lower() for r in caplog.records)
 
 
 async def test_determine_is_device_on_exhaust_fans(coordinator, mock_hass) -> None:
-    """Test _determine_is_device_on checks exhaust fans."""
-    coordinator.dehumidifier_entities = []
-    coordinator.exhaust_fan_entities = ["fan.exhaust"]
+    """Test _is_device_on checks exhaust fans."""
+    coordinator.growspace.environment_config.dehumidifier_entities = []
+    coordinator.growspace.environment_config.exhaust_fan_entities = ["fan.exhaust"]
 
     mock_hass.states.get.side_effect = lambda entity_id: {
         "fan.exhaust": MagicMock(state=STATE_ON),
     }.get(entity_id)
 
-    assert coordinator._determine_is_device_on() is True
+    assert coordinator._is_device_on() is True
 
     mock_hass.states.get.side_effect = lambda entity_id: {
         "fan.exhaust": MagicMock(state=STATE_OFF),
     }.get(entity_id)
 
-    assert coordinator._determine_is_device_on() is False
+    assert coordinator._is_device_on() is False

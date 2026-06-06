@@ -574,9 +574,7 @@ class GrowspaceFacade:
 
     def get_dehumidifier_coordinator(self, growspace_id: str) -> Any | None:
         """Return the dehumidifier coordinator for a growspace, or None."""
-        return self._coordinator.subsystem_manager.dehumidifier_coordinators.get(
-            growspace_id
-        )
+        return self._coordinator.subsystem_manager.get_dehumidifier_controller(growspace_id)
 
     def calculate_biological_metrics(
         self, growspace_id: str, *args: Any, **kwargs: Any

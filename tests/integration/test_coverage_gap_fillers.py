@@ -18,6 +18,8 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
+from custom_components.growspace_manager.domain.day_night import DayNightTracker
+from custom_components.growspace_manager.vpd_on_off_controller import VpdOnOffController
 
 # Direct imports of the functions we want to test
 from custom_components.growspace_manager.services.plant import handle_add_plants
@@ -173,27 +175,24 @@ def test_environment_config_handler_clean_input(hass: HomeAssistant) -> None:
 
 
 async def test_dehumidifier_coordinator_control_exceptions(hass: HomeAssistant) -> None:
-    """Test _control_dehumidifier exception handling and domain fallback."""
+    """Test _control_devices exception handling and domain fallback."""
     coordinator = Mock(spec=DehumidifierCoordinator)
     coordinator.hass = hass
-    coordinator.dehumidifier_entities = [
-        "light.fake_dehumidifier"
-    ]  # Unknown domain -> homeassistant
-    coordinator.exhaust_fan_entities = []
-    # Bind the method to the mock object so self works
-    coordinator._control_dehumidifier = (
-        DehumidifierCoordinator._control_dehumidifier.__get__(
-            coordinator, DehumidifierCoordinator
-        )
+    coordinator._last_turn_on_time = 0.0
+    coordinator._last_turn_off_time = 0.0
+    # Bind the base-class method so self works
+    coordinator._control_devices = VpdOnOffController._control_devices.__get__(
+        coordinator, DehumidifierCoordinator
     )
 
-    # Test 1: Fallback domain
+    # Test 1: Fallback domain — 'light' is not in allowed list → homeassistant
+    coordinator._get_all_controlled_entities = MagicMock(
+        return_value=["light.fake_dehumidifier"]
+    )
     with patch(
         "homeassistant.core.ServiceRegistry.async_call", new_callable=AsyncMock
     ) as mock_call:
-        await coordinator._control_dehumidifier(True)
-        # Should call homeassistant.turn_on because 'light' is not in allowed list?
-        # Allowed: switch, humidifier, fan, input_boolean
+        await coordinator._control_devices(True)
         mock_call.assert_called_with(
             "homeassistant",
             "turn_on",
@@ -202,12 +201,12 @@ async def test_dehumidifier_coordinator_control_exceptions(hass: HomeAssistant) 
         )
 
     # Test 2: Exception handling
-    coordinator.dehumidifier_entities = ["switch.valid"]
+    coordinator._get_all_controlled_entities = MagicMock(return_value=["switch.valid"])
     with patch(
         "homeassistant.core.ServiceRegistry.async_call", side_effect=HomeAssistantError("Boom")
-    ) as mock_call:
+    ):
         # Should not raise
-        await coordinator._control_dehumidifier(True)
+        await coordinator._control_devices(True)
 
 
 def test_dehumidifier_coordinator_vpd_parsing(hass: HomeAssistant) -> None:
@@ -233,26 +232,21 @@ def test_dehumidifier_coordinator_vpd_parsing(hass: HomeAssistant) -> None:
 
 
 def test_dehumidifier_coordinator_is_day_logic(hass: HomeAssistant) -> None:
-    """Test _determine_is_day logic including ValueError fallback."""
-    coordinator = Mock(spec=DehumidifierCoordinator)
-    coordinator.hass = hass
-    coordinator.light_sensors = ["sensor.light"]
-    coordinator._determine_is_day = DehumidifierCoordinator._determine_is_day.__get__(
-        coordinator, DehumidifierCoordinator
-    )
+    """Test DayNightTracker.determine() including ValueError fallback via STATE_ON."""
+    tracker = DayNightTracker("gs1")
 
     # Test 1: Float value > 0
     hass.states.async_set("sensor.light", "100")
-    assert coordinator._determine_is_day() is True
+    assert tracker.determine(hass, ["sensor.light"]) is True
 
     # Test 2: Float value 0
     hass.states.async_set("sensor.light", "0")
-    assert coordinator._determine_is_day() is False
+    assert tracker.determine(hass, ["sensor.light"]) is False
 
-    # Test 3: String value "on" (ValueError fallback)
+    # Test 3: String value "on" (STATE_ON path in DayNightTracker)
     hass.states.async_set("sensor.light", "on")
-    assert coordinator._determine_is_day() is True
+    assert tracker.determine(hass, ["sensor.light"]) is True
 
     # Test 4: String value "off"
     hass.states.async_set("sensor.light", "off")
-    assert coordinator._determine_is_day() is False
+    assert tracker.determine(hass, ["sensor.light"]) is False

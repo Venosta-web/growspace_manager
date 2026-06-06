@@ -1194,61 +1194,6 @@ async def test_stage_vpd_no_plants_falls_back_to_static_target(
 
 
 # ---------------------------------------------------------------------------
-# _determine_is_day
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("light_state,expected_day", [
-    ("1.0", True),
-    ("0.0", False),
-    (STATE_ON, True),
-    (STATE_UNAVAILABLE, True),   # no valid sensors → default True
-    (STATE_UNKNOWN, True),       # no valid sensors → default True
-])
-def test_determine_is_day(
-    mock_hass: MagicMock,
-    light_state: str,
-    expected_day: bool,
-) -> None:
-    """_determine_is_day reads light sensor state and returns correct bool."""
-    env = _make_env_config(light_sensors=["sensor.light"])
-    main_coord = _make_coordinator("gs1", env)
-    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-    mock_hass.states.get.return_value = MagicMock(state=light_state)
-
-    result = coord._determine_is_day()
-
-    assert result is expected_day
-
-
-def test_determine_is_day_no_light_sensors_returns_true(
-    mock_hass: MagicMock,
-) -> None:
-    """_determine_is_day returns True when no light sensors are configured."""
-    env = _make_env_config(light_sensors=[])
-    main_coord = _make_coordinator("gs1", env)
-    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-
-    assert coord._determine_is_day() is True
-    mock_hass.states.get.assert_not_called()
-
-
-def test_determine_is_day_uses_last_known_when_unavailable(
-    mock_hass: MagicMock,
-) -> None:
-    """_determine_is_day uses cached state when all sensors are unavailable."""
-    env = _make_env_config(light_sensors=["sensor.light"])
-    main_coord = _make_coordinator("gs1", env)
-    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-
-    # Prime cache with a valid reading
-    coord._last_known_is_day = False
-
-    mock_hass.states.get.return_value = MagicMock(state=STATE_UNAVAILABLE)
-    assert coord._determine_is_day() is False
-
-
-# ---------------------------------------------------------------------------
 # Stage VPD Overrides — coordinator lookup
 # ---------------------------------------------------------------------------
 

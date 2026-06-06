@@ -27,6 +27,7 @@ from .config_handlers import (
     EnvironmentSensorsHandler,
     FanControllerHandler,
     GrowspaceConfigHandler,
+    HumidifierHandler,
     IrrigationConfigHandler,
     NotificationConfigHandler,
     PlantConfigHandler,
@@ -200,6 +201,7 @@ class OptionsFlowHandler(OptionsFlow):
         self._env_handler: EnvironmentConfigHandler | None = None
         self._env_sensors_handler: EnvironmentSensorsHandler | None = None
         self._dehumidifier_handler: DehumidifierHandler | None = None
+        self._humidifier_handler: HumidifierHandler | None = None
         self._fan_controller_handler: FanControllerHandler | None = None
         self._bayesian_advanced_handler: BayesianAdvancedHandler | None = None
         self._irrigation_handler: IrrigationConfigHandler | None = None
@@ -247,6 +249,13 @@ class OptionsFlowHandler(OptionsFlow):
         if self._dehumidifier_handler is None:
             self._dehumidifier_handler = DehumidifierHandler(self)
         return self._dehumidifier_handler
+
+    @property
+    def humidifier_handler(self) -> HumidifierHandler:
+        """Get the humidifier handler."""
+        if self._humidifier_handler is None:
+            self._humidifier_handler = HumidifierHandler(self)
+        return self._humidifier_handler
 
     @property
     def fan_controller_handler(self) -> FanControllerHandler:
@@ -422,6 +431,12 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Delegate environment configuration to the handler."""
         return await self.env_handler.async_step_configure_environment(user_input)
+
+    async def async_step_configure_humidifier(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate humidifier configuration to the handler."""
+        return await self.humidifier_handler.async_step_configure_humidifier(user_input)
 
     async def async_step_configure_dehumidifier(
         self, user_input: dict[str, Any] | None = None

@@ -1,11 +1,15 @@
 """Regression test: dehumidifier retry after timer-lock with stable VPD."""
 
 import asyncio
-import time
 from datetime import date, timedelta
-from unittest.mock import AsyncMock, MagicMock, call, patch
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from custom_components.growspace_manager.dehumidifier_coordinator import (
+    DehumidifierCoordinator,
+)
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -14,11 +18,6 @@ from homeassistant.const import (
     STATE_ON,
 )
 from homeassistant.core import HomeAssistant
-
-from custom_components.growspace_manager.dehumidifier_coordinator import (
-    DehumidifierCoordinator,
-)
-from custom_components.growspace_manager.domain.stage import PlantStage
 
 
 @pytest.fixture
@@ -76,8 +75,7 @@ def mock_main_coordinator(mock_plant_flower_day_45):
 async def test_retry_fires_after_timer_lock_expires_with_stable_vpd(
     mock_hass, mock_main_coordinator, mock_growspace
 ) -> None:
-    """
-    Regression: after a timer-lock blocks a turn-off, a retry must be scheduled
+    """Regression: after a timer-lock blocks a turn-off, a retry must be scheduled
     so the dehumidifier turns off once the minimum runtime expires — even if VPD
     stays stable and no sensor state-change events fire
     """
@@ -98,10 +96,10 @@ async def test_retry_fires_after_timer_lock_expires_with_stable_vpd(
 
     with (
         patch(
-            "custom_components.growspace_manager.dehumidifier_coordinator.async_track_state_change_event"
+            "custom_components.growspace_manager.vpd_on_off_controller.async_track_state_change_event"
         ),
         patch(
-            "custom_components.growspace_manager.dehumidifier_coordinator.async_call_later",
+            "custom_components.growspace_manager.vpd_on_off_controller.async_call_later",
             side_effect=fake_async_call_later,
         ),
     ):
@@ -128,7 +126,7 @@ async def test_retry_fires_after_timer_lock_expires_with_stable_vpd(
     }.get(entity_id)
 
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.async_call_later",
+        "custom_components.growspace_manager.vpd_on_off_controller.async_call_later",
         side_effect=fake_async_call_later,
     ):
         await coordinator.async_check_and_control()
@@ -178,10 +176,10 @@ async def test_retry_not_duplicated_on_repeated_locked_checks(
 
     with (
         patch(
-            "custom_components.growspace_manager.dehumidifier_coordinator.async_track_state_change_event"
+            "custom_components.growspace_manager.vpd_on_off_controller.async_track_state_change_event"
         ),
         patch(
-            "custom_components.growspace_manager.dehumidifier_coordinator.async_call_later",
+            "custom_components.growspace_manager.vpd_on_off_controller.async_call_later",
             side_effect=fake_async_call_later,
         ),
     ):
@@ -195,7 +193,7 @@ async def test_retry_not_duplicated_on_repeated_locked_checks(
     scheduled_calls.clear()
 
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.async_call_later",
+        "custom_components.growspace_manager.vpd_on_off_controller.async_call_later",
         side_effect=fake_async_call_later,
     ):
         await coordinator.async_check_and_control()
@@ -221,10 +219,10 @@ async def test_retry_cancelled_on_unload(
 
     with (
         patch(
-            "custom_components.growspace_manager.dehumidifier_coordinator.async_track_state_change_event"
+            "custom_components.growspace_manager.vpd_on_off_controller.async_track_state_change_event"
         ),
         patch(
-            "custom_components.growspace_manager.dehumidifier_coordinator.async_call_later",
+            "custom_components.growspace_manager.vpd_on_off_controller.async_call_later",
             return_value=cancel_mock,
         ),
     ):
@@ -235,7 +233,7 @@ async def test_retry_cancelled_on_unload(
 
     coordinator._last_turn_on_time = time.monotonic() - 60
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.async_call_later",
+        "custom_components.growspace_manager.vpd_on_off_controller.async_call_later",
         return_value=cancel_mock,
     ):
         await coordinator.async_check_and_control()

@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.websocket import (
     websocket_add_growspace_note,
     websocket_add_subarea,
@@ -33,6 +32,7 @@ from homeassistant.exceptions import ServiceValidationError
 
 @pytest.fixture
 def mock_connection() -> MagicMock:
+    """Return a mock WebSocket connection."""
     conn = MagicMock()
     conn.send_result = MagicMock()
     conn.send_error = MagicMock()
@@ -491,6 +491,28 @@ async def test_websocket_query_external_strain_blacklist_error(
     mock_connection.send_result.assert_called_once_with(23, [])
 
 
+@pytest.mark.asyncio
+async def test_websocket_query_external_strain_service_validation_error(
+    hass: HomeAssistant, mock_connection: MagicMock
+) -> None:
+    """Cover ServiceValidationError branch in websocket_query_external_strain."""
+    msg = {"id": 22, "query": "OG Kush"}
+    mock_coordinator = MagicMock()
+    mock_coordinator.config_entry.options.get.return_value = []
+    mock_coordinator.seedfinder_scraper = AsyncMock()
+    mock_coordinator.seedfinder_scraper.async_search_strains = AsyncMock(
+        side_effect=ServiceValidationError("unavailable")
+    )
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+        return_value=mock_coordinator,
+    ):
+        await websocket_query_external_strain(hass, mock_connection, msg)
+    mock_connection.send_error.assert_called_once_with(
+        22, "seedfinder_unavailable", "unavailable"
+    )
+
+
 # ---------------------------------------------------------------------------
 # websocket_get_external_strain_details (lines 1641-1659)
 # ---------------------------------------------------------------------------
@@ -593,6 +615,66 @@ async def test_websocket_get_external_strain_details_single_flowering_time(
     result = mock_connection.send_result.call_args[0][1]
     assert result["flowering_days"] == 60
     assert result["parents"] is None
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_external_strain_details_service_validation_error(
+    hass: HomeAssistant, mock_connection: MagicMock
+) -> None:
+    """Cover ServiceValidationError branch in websocket_get_external_strain_details."""
+    msg = {"id": 25, "url": "https://example.com/strain/gelato"}
+    mock_coordinator = MagicMock()
+    mock_coordinator.seedfinder_scraper = AsyncMock()
+    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
+        side_effect=ServiceValidationError("unavailable")
+    )
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+        return_value=mock_coordinator,
+    ):
+        await websocket_get_external_strain_details(hass, mock_connection, msg)
+    mock_connection.send_error.assert_called_once_with(
+        25, "seedfinder_unavailable", "unavailable"
+    )
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_external_strain_details_no_flowering_time_match(
+    hass: HomeAssistant, mock_connection: MagicMock
+) -> None:
+    """Cover the branch where flowering_time pattern does not match."""
+    msg = {"id": 27, "url": "https://example.com/strain/og-kush"}
+    raw = {
+        "name": "OG Kush",
+        "breeder": "DNA Genetics",
+        "type": "indica",
+        "composition": None,
+        "flowering_time": "unknown days",
+        "description": None,
+        "image": None,
+        "yield_potential": None,
+        "height": None,
+        "thc": None,
+        "cbd": None,
+        "cbg": None,
+        "awards": None,
+        "lineage_tree": None,
+        "lineage_str": None,
+        "effects": None,
+        "aroma": None,
+        "taste": None,
+    }
+    mock_coordinator = MagicMock()
+    mock_coordinator.seedfinder_scraper = AsyncMock()
+    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(return_value=raw)
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+        return_value=mock_coordinator,
+    ):
+        await websocket_get_external_strain_details(hass, mock_connection, msg)
+
+    result = mock_connection.send_result.call_args[0][1]
+    assert result["flowering_days"] is None
 
 
 # ---------------------------------------------------------------------------

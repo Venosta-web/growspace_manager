@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.domain.stage import PlantStage
 from custom_components.growspace_manager.humidifier_coordinator import (
     HumidifierCoordinator,
 )
-from custom_components.growspace_manager.domain.stage import PlantStage
 from custom_components.growspace_manager.models import Plant
 from homeassistant.const import (
     ATTR_ENTITY_ID,
@@ -20,6 +20,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 
 @pytest.fixture
@@ -49,7 +50,7 @@ def mock_hass():
 def mock_track_state_change_event():
     """Mock async_track_state_change_event."""
     with patch(
-        "custom_components.growspace_manager.humidifier_coordinator.async_track_state_change_event"
+        "custom_components.growspace_manager.vpd_on_off_controller.async_track_state_change_event"
     ) as mock:
         yield mock
 
@@ -101,8 +102,8 @@ async def test_initialization(
     """Test successful initialization."""
     assert coordinator.vpd_sensor == "sensor.vpd"
     assert coordinator.light_sensors == ["sensor.light"]
-    assert coordinator.humidifier_entities == ["switch.humidifier"]
-    assert coordinator.control_humidifier is True
+    assert coordinator._get_all_controlled_entities() == ["switch.humidifier"]
+    assert coordinator.control_enabled is True
     assert len(coordinator._remove_listeners) > 0
     mock_track_state_change_event.assert_called_once()
 
@@ -119,7 +120,7 @@ async def test_initialization_disabled(
     )
     await coord.async_setup()
 
-    assert coord.control_humidifier is False
+    assert coord.control_enabled is False
     assert len(coord._remove_listeners) == 0
     mock_track_state_change_event.assert_not_called()
     mock_hass.async_create_task.assert_not_called()
@@ -379,13 +380,15 @@ def test_init_missing_growspace(
             mock_hass, MagicMock(), "nonexistent", mock_main_coordinator
         )
 
-    assert "Growspace nonexistent not found" in caplog.text
+    assert "growspace nonexistent not found" in caplog.text.lower()
 
 
 async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> None:
     """Test correct growth stage detection."""
     plant = MagicMock(spec=Plant)
-    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        plant
+    ]
 
     with patch(
         "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
@@ -412,7 +415,7 @@ async def test_generic_domain_control(
     )
     await coord.async_setup()
 
-    await coord._control_humidifier(True)
+    await coord._control_devices(True)
 
     mock_hass.services.async_call.assert_awaited_with(
         "homeassistant",
@@ -425,11 +428,11 @@ async def test_generic_domain_control(
 async def test_control_device_exception(
     coordinator, mock_hass, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Test exception handling in _control_humidifier."""
-    mock_hass.services.async_call.side_effect = Exception("Service failure")
+    """Test exception handling in _control_devices."""
+    mock_hass.services.async_call.side_effect = HomeAssistantError("Service failure")
 
     with caplog.at_level(logging.WARNING):
-        await coordinator._control_humidifier(True)
+        await coordinator._control_devices(True)
 
     assert "Failed to control device" in caplog.text
 
