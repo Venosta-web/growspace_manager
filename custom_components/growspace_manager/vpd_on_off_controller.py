@@ -270,7 +270,7 @@ class VpdOnOffController:
                     {ATTR_ENTITY_ID: entity_id},
                     blocking=False,
                 )
-            except HomeAssistantError, TimeoutError:
+            except (HomeAssistantError, TimeoutError):
                 _LOGGER.warning("Failed to control device %s", entity_id, exc_info=True)
         if turn_on:
             self._last_turn_on_time = time.monotonic()
