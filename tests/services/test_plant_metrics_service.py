@@ -17,7 +17,7 @@ from custom_components.growspace_manager.models import (
     Plant,
     PlantGenetics,
 )
-from custom_components.growspace_manager.services.plant import (
+from custom_components.growspace_manager.services.plant_scoring import (
     handle_update_harvest_metrics,
 )
 
@@ -61,7 +61,7 @@ async def test_handle_update_harvest_metrics_success(
 
     # Run the handler
     with patch(
-        "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
+        "custom_components.growspace_manager.services.plant_scoring._ensure_plant_loaded",
         new_callable=AsyncMock,
     ) as mock_ensure:
         mock_ensure.return_value = True
@@ -107,7 +107,7 @@ async def test_handle_update_harvest_metrics_partial(
     plant.harvest_metrics.dry_weight = 10.0  # Pretend this was set previously
 
     with patch(
-        "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
+        "custom_components.growspace_manager.services.plant_scoring._ensure_plant_loaded",
         new_callable=AsyncMock,
     ) as mock_ensure:
         mock_ensure.return_value = True
@@ -140,7 +140,7 @@ async def test_handle_update_harvest_metrics_not_found(
     from homeassistant.exceptions import ServiceValidationError
 
     with patch(
-        "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
+        "custom_components.growspace_manager.services.plant_scoring._ensure_plant_loaded",
         new_callable=AsyncMock,
     ) as mock_ensure:
         mock_ensure.return_value = True

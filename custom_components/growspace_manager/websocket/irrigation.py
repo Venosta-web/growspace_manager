@@ -9,6 +9,9 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.crop_steering_history import (
+    CropSteeringHistoryAnalyzer,
+)
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
@@ -28,6 +31,14 @@ SCHEMA_WS_GET_TANK_WATER_HISTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.ext
         vol.Required("type"): WS_TYPE_GET_TANK_WATER_HISTORY,
         vol.Required("growspace_id"): str,
         vol.Required("range"): vol.In(["1h", "6h", "24h", "7d"]),
+    }
+)
+
+WS_TYPE_GET_CROP_STEERING_HISTORY = f"{DOMAIN}/get_crop_steering_history"
+SCHEMA_WS_GET_CROP_STEERING_HISTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_CROP_STEERING_HISTORY,
+        vol.Required("growspace_id"): str,
     }
 )
 
@@ -108,6 +119,31 @@ async def websocket_get_tank_water_history(
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
+async def websocket_get_crop_steering_history(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return bucketed crop steering sensor history for a growspace."""
+    try:
+        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+        growspace_id: str = msg["growspace_id"]
+
+        growspace = coordinator.growspaces.get(growspace_id)
+        if growspace is None:
+            connection.send_error(
+                msg["id"], "not_found", f"Growspace {growspace_id} not found"
+            )
+            return
+
+        analyzer = CropSteeringHistoryAnalyzer(hass)
+        history = await analyzer.async_get_history(growspace)
+
+        connection.send_result(msg["id"], {"growspace_id": growspace_id, **history})
+    except Exception as e:  # noqa: BLE001
+        connection.send_error(msg["id"], "unknown_error", str(e))
+
+
 COMMANDS: list[tuple[str, Any, Any, bool]] = [
     (
         WS_TYPE_GET_IRRIGATION_ANALYTICS,
@@ -119,6 +155,12 @@ COMMANDS: list[tuple[str, Any, Any, bool]] = [
         WS_TYPE_GET_TANK_WATER_HISTORY,
         websocket_get_tank_water_history,
         SCHEMA_WS_GET_TANK_WATER_HISTORY,
+        False,
+    ),
+    (
+        WS_TYPE_GET_CROP_STEERING_HISTORY,
+        websocket_get_crop_steering_history,
+        SCHEMA_WS_GET_CROP_STEERING_HISTORY,
         False,
     ),
 ]

@@ -13,6 +13,8 @@ from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.plant import (
     handle_add_plants,
     handle_add_timeline_note,
+)
+from custom_components.growspace_manager.services.plant_lifecycle import (
     handle_harvest_plant,
 )
 from homeassistant.core import HomeAssistant, ServiceCall

@@ -1,6 +1,7 @@
 """Coverage-focused tests for EnvironmentConfigHandler."""
 
 from dataclasses import asdict
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1388,3 +1389,136 @@ async def test_process_irrigation_tanks_edge_cases(
     assert "water_history" not in t
     assert "last_recorded_level" not in t
     assert "peak_level" not in t
+
+
+# ---------------------------------------------------------------------------
+# async_step_configure_humidifier + get_humidifier_schema — missing coverage
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_configure_humidifier_branch(handler: EnvironmentConfigHandler) -> None:
+    """Test branching to humidifier config when configure_humidifier is True."""
+    gs = Growspace(id="gs1", name="GS1")
+    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
+    handler.flow.selected_growspace_id = "gs1"
+
+    user_input = {
+        "temperature_sensors": ["sensor.t1"],
+        "humidity_sensors": ["sensor.h1"],
+        "configure_humidifier": True,
+    }
+
+    with patch.object(
+        handler, "async_step_configure_humidifier", return_value={"type": "form"}
+    ) as mock_step:
+        await handler.async_step_configure_environment(user_input)
+        mock_step.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_configure_humidifier_show_form(handler: EnvironmentConfigHandler) -> None:
+    """Test async_step_configure_humidifier shows form when user_input is None."""
+    gs = Growspace(id="gs1", name="GS1")
+    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
+    handler.flow.selected_growspace_id = "gs1"
+
+    result = await handler.async_step_configure_humidifier()
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "configure_humidifier"
+
+
+@pytest.mark.asyncio
+async def test_configure_humidifier_abort_missing_coordinator(
+    handler: EnvironmentConfigHandler,
+) -> None:
+    """Test async_step_configure_humidifier aborts when config_entry is None."""
+    handler.config_entry = None
+    result = await handler.async_step_configure_humidifier()
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "setup_error"
+
+
+@pytest.mark.asyncio
+async def test_configure_humidifier_abort_growspace_not_found(
+    handler: EnvironmentConfigHandler,
+) -> None:
+    """Test async_step_configure_humidifier aborts when growspace is missing."""
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = None
+    handler.flow.selected_growspace_id = "missing"
+
+    result = await handler.async_step_configure_humidifier()
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "growspace_not_found"
+
+
+@pytest.mark.asyncio
+async def test_configure_humidifier_success_to_sensor_placement(
+    handler: EnvironmentConfigHandler,
+) -> None:
+    """Test humidifier submission routes to sensor placement when configure_advanced is not set."""
+    gs = Growspace(id="gs1", name="GS1")
+    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
+    handler.flow.selected_growspace_id = "gs1"
+    handler.flow.env_config_step1 = {"any": "config"}
+
+    user_input: dict[str, Any] = {}
+    for stage in DEHUMIDIFIER_STAGES:
+        for cycle in ["day", "night"]:
+            user_input[f"{stage}_{cycle}_on"] = 0.8
+            user_input[f"{stage}_{cycle}_off"] = 0.6
+
+    with patch.object(
+        handler, "async_step_configure_sensor_placement", return_value={"type": "form"}
+    ) as mock_next:
+        await handler.async_step_configure_humidifier(user_input)
+        assert "humidifier_thresholds" in handler.flow.env_config_step1
+        mock_next.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_configure_humidifier_to_advanced_bayesian(
+    handler: EnvironmentConfigHandler,
+) -> None:
+    """Test humidifier submission routes to advanced Bayesian when configure_advanced is set."""
+    gs = Growspace(id="gs1", name="GS1")
+    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
+    handler.flow.selected_growspace_id = "gs1"
+    handler.flow.env_config_step1 = {"configure_advanced": True}
+
+    user_input: dict[str, Any] = {}
+    for stage in DEHUMIDIFIER_STAGES:
+        for cycle in ["day", "night"]:
+            user_input[f"{stage}_{cycle}_on"] = 0.8
+            user_input[f"{stage}_{cycle}_off"] = 0.6
+
+    with patch.object(
+        handler,
+        "async_step_configure_advanced_bayesian",
+        return_value={"type": "form"},
+    ) as mock_next:
+        await handler.async_step_configure_humidifier(user_input)
+        assert "humidifier_thresholds" in handler.flow.env_config_step1
+        mock_next.assert_called_once()
+
+
+def test_get_humidifier_schema(handler: EnvironmentConfigHandler) -> None:
+    """Test get_humidifier_schema returns a valid voluptuous Schema."""
+    schema = handler.get_humidifier_schema({})
+    assert isinstance(schema, vol.Schema)
+
+    # Confirm schema is populated (one key per stage × cycle × on/off)
+    keys = [str(k.schema) for k in schema.schema]
+    assert any("_on" in k for k in keys)
+    assert any("_off" in k for k in keys)
+
+
+def test_get_humidifier_schema_with_existing_thresholds(
+    handler: EnvironmentConfigHandler,
+) -> None:
+    """Test get_humidifier_schema uses existing thresholds as defaults."""
+    thresholds = {
+        "veg": {"day": {"on": 1.5, "off": 1.2}, "night": {"on": 1.3, "off": 1.0}},
+    }
+    schema = handler.get_humidifier_schema(thresholds)
+    assert isinstance(schema, vol.Schema)

@@ -4,6 +4,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.circulation_fan_coordinator import (
+    CirculationFanCoordinator,
+)
+from custom_components.growspace_manager.dehumidifier_coordinator import (
+    DehumidifierCoordinator,
+)
+from custom_components.growspace_manager.humidifier_coordinator import (
+    HumidifierCoordinator,
+)
 from custom_components.growspace_manager.managers.subsystem import SubsystemManager
 from custom_components.growspace_manager.models import Growspace, IrrigationStrategy
 
@@ -208,6 +217,48 @@ async def test_circulation_fan_coordinators_setup_and_cancel(
         mock_fan_instance = mock_fan.return_value
         subsystem_manager.async_cancel_all()
         mock_fan_instance.unload.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("getter_name", "controller_class"),
+    [
+        ("get_dehumidifier_controller", DehumidifierCoordinator),
+        ("get_humidifier_controller", HumidifierCoordinator),
+        ("get_circulation_fan_controller", CirculationFanCoordinator),
+    ],
+)
+def test_get_controller_returns_matching_instance(
+    subsystem_manager: SubsystemManager,
+    getter_name: str,
+    controller_class: type,
+) -> None:
+    """Each getter returns the controller of its type from a mixed list."""
+    matching = MagicMock(spec=controller_class)
+    other = MagicMock(spec=object)
+    subsystem_manager.environment_controllers["gs1"] = [other, matching]
+
+    getter = getattr(subsystem_manager, getter_name)
+    assert getter("gs1") is matching
+
+
+@pytest.mark.parametrize(
+    "getter_name",
+    [
+        "get_dehumidifier_controller",
+        "get_humidifier_controller",
+        "get_circulation_fan_controller",
+    ],
+)
+def test_get_controller_returns_none_when_absent(
+    subsystem_manager: SubsystemManager,
+    getter_name: str,
+) -> None:
+    """Each getter returns None when no matching controller or growspace exists."""
+    subsystem_manager.environment_controllers["gs1"] = [MagicMock(spec=object)]
+
+    getter = getattr(subsystem_manager, getter_name)
+    assert getter("gs1") is None
+    assert getter("unknown_growspace") is None
 
 
 @pytest.mark.asyncio

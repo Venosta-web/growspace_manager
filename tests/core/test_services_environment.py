@@ -578,6 +578,34 @@ async def test_parse_fan_config_fallback_none(
 
 
 @pytest.mark.asyncio
+async def test_handle_configure_environment_preserves_existing_fan_config(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test that configure_environment preserves existing circulation fan config when not provided."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    existing_fan_config = CirculationFanConfig(enabled=True, min_speed=30)
+    mock_gs.environment_config = EnvironmentConfig(
+        circulation_fan_config=existing_fan_config
+    )
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "circulation_fan_config": None,
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    env: EnvironmentConfig = mock_gs.environment_config
+    assert env.circulation_fan_config.enabled is True
+    assert env.circulation_fan_config.min_speed == 30
+
+
+@pytest.mark.asyncio
 async def test_handle_configure_circulation_fan_config_none(
     mock_hass: HomeAssistant,
     mock_coordinator: MagicMock,
