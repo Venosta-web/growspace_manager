@@ -109,6 +109,7 @@ class IrrigationConfig(BaseModel):
     auto_advance_p2_to_p3: bool = False
     halt_on_runoff_ec_threshold: float | None = None
     active_steering_phase: str = "p2"
+    phase_changed_at: str | None = None
 
 
 @dataclass(slots=True)

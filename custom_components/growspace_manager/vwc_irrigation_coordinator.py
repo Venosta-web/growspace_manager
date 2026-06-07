@@ -376,6 +376,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         canonical = self._CANONICAL_PHASE.get(phase)
         if canonical is not None:
             self.growspace.irrigation_config.active_steering_phase = canonical
+            if canonical == "p3":
+                self.growspace.irrigation_config.phase_changed_at = now().isoformat()
 
         if self.growspace.irrigation_config.log_to_logbook:
             self._fire_logbook_event(
