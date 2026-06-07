@@ -642,6 +642,49 @@ class BaseIrrigationCoordinator:
             if event_type in self._running_tasks:
                 self._running_tasks.pop(event_type)
 
+    async def async_manual_run(self, duration: int | None) -> None:
+        """Trigger a manual irrigation cycle, bypassing the schedule.
+
+        Args:
+            duration: Duration in seconds. Uses the configured default when None.
+
+        Raises:
+            ServiceValidationError: When no irrigation pump entity is configured or
+                no duration can be determined.
+        """
+        options = self.growspace.irrigation_config
+        pump_entity = options.irrigation_pump_entity
+        if not pump_entity:
+            raise ServiceValidationError(
+                f"No irrigation pump entity configured for growspace '{self._growspace_id}'"
+            )
+
+        effective_duration = duration or options.irrigation_duration
+        if not effective_duration:
+            raise ServiceValidationError(
+                f"No irrigation duration provided or configured for growspace '{self._growspace_id}'"
+            )
+
+        if (
+            "irrigation" in self._running_tasks
+            and self._running_tasks["irrigation"]
+            and not self._running_tasks["irrigation"].done()
+        ):
+            _LOGGER.warning(
+                "Cancelling running irrigation cycle for %s to start manual run",
+                self._growspace_id,
+            )
+            self._running_tasks["irrigation"].cancel()
+
+        task = self._config_entry.async_create_background_task(
+            self.hass,
+            self._run_pump_cycle(
+                "irrigation", pump_entity, int(effective_duration), {"manual": True}
+            ),
+            f"irrigation_manual_run_{self._growspace_id}",
+        )
+        self._running_tasks["irrigation"] = task
+
 
 class IrrigationCoordinator(BaseIrrigationCoordinator):
     """Manages irrigation and drain schedules for a specific growspace."""
@@ -866,45 +909,4 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
 
         return soonest.isoformat() if soonest else None
 
-    async def async_manual_run(self, duration: int | None) -> None:
-        """Trigger a manual irrigation cycle, bypassing the schedule.
 
-        Args:
-            duration: Duration in seconds. Uses the configured default when None.
-
-        Raises:
-            ServiceValidationError: When no irrigation pump entity is configured or
-                no duration can be determined.
-        """
-        options = self.growspace.irrigation_config
-        pump_entity = options.irrigation_pump_entity
-        if not pump_entity:
-            raise ServiceValidationError(
-                f"No irrigation pump entity configured for growspace '{self._growspace_id}'"
-            )
-
-        effective_duration = duration or options.irrigation_duration
-        if not effective_duration:
-            raise ServiceValidationError(
-                f"No irrigation duration provided or configured for growspace '{self._growspace_id}'"
-            )
-
-        if (
-            "irrigation" in self._running_tasks
-            and self._running_tasks["irrigation"]
-            and not self._running_tasks["irrigation"].done()
-        ):
-            _LOGGER.warning(
-                "Cancelling running irrigation cycle for %s to start manual run",
-                self._growspace_id,
-            )
-            self._running_tasks["irrigation"].cancel()
-
-        task = self._config_entry.async_create_background_task(
-            self.hass,
-            self._run_pump_cycle(
-                "irrigation", pump_entity, int(effective_duration), {"manual": True}
-            ),
-            f"irrigation_manual_run_{self._growspace_id}",
-        )
-        self._running_tasks["irrigation"] = task
