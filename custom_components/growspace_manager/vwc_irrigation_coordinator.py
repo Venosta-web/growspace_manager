@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any, override
 
@@ -355,6 +355,79 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         "P3 - Dry Back": "p3",
         "P3": "p3",
     }
+
+    def _phase_boundary_times(
+        self, strategy: IrrigationStrategy, growspace: Growspace, reference_date: date
+    ) -> tuple[datetime, datetime, datetime]:
+        """Return (p0_end, p2_stop, lights_off) datetimes anchored on reference_date."""
+        lights_on_source = strategy.detected_lights_on_time or strategy.lights_on_time
+        try:
+            lights_on = datetime.strptime(lights_on_source, "%H:%M:%S").time()
+        except ValueError:
+            lights_on = datetime.strptime(lights_on_source, "%H:%M").time()
+
+        day_hours = 12
+        if growspace.environment_config:
+            day_hours = getattr(
+                growspace.environment_config,
+                "flower_day_hours",
+                getattr(growspace.environment_config, "veg_day_hours", 12),
+            )
+
+        lights_on_dt = datetime.combine(reference_date, lights_on, tzinfo=now().tzinfo)
+        p0_end_dt = lights_on_dt + timedelta(minutes=strategy.p0_duration_minutes)
+        lights_off_dt = lights_on_dt + timedelta(hours=day_hours)
+        p2_stop_dt = lights_off_dt - timedelta(
+            minutes=strategy.p2_stop_before_lights_off_minutes
+        )
+        return p0_end_dt, p2_stop_dt, lights_off_dt
+
+    @property
+    @override
+    def projected_shot_window(self) -> dict[str, str] | None:
+        """Return the {start, end} ISO range for the next projected crop-steering shot.
+
+        Bounded by operational guardrails (shot cooldown, phase-window timing) rather
+        than a statistical confidence interval, so it's meaningful from day one without
+        any VWC sensor history. See ADR-0011 (lovelace-growspace-manager-card) for the
+        reasoning behind a guardrail-bound range over a depletion-rate model.
+        """
+        growspace = self.growspace
+        strategy = growspace.irrigation_strategy
+        if not strategy or not strategy.enabled:
+            return None
+        if not strategy.lights_on_time or strategy.shot_interval_minutes is None:
+            return None
+
+        current_dt = now()
+        today = current_dt.date()
+        p0_end_dt, p2_stop_dt, _ = self._phase_boundary_times(strategy, growspace, today)
+
+        # Match on the display string directly — the canonical p1/p2/p3 mapping
+        # collapses P0 into "p1" for the frontend's active_steering_phase, but P0
+        # has its own time-bound window distinct from P1's threshold-driven one.
+        if self._current_phase == "P0 - Activation":
+            latest = p0_end_dt
+        elif self._current_phase in ("P1 - Ramp Up", "P2 - Maintenance"):
+            latest = p2_stop_dt
+        else:
+            # P3 (or unknown/disabled) — no shots fire today; roll forward to tomorrow
+            return self._tomorrows_shot_window(strategy, growspace, today)
+
+        earliest = current_dt + timedelta(minutes=strategy.shot_interval_minutes)
+        if earliest >= latest:
+            # Today's active window has effectively closed — roll forward to tomorrow
+            return self._tomorrows_shot_window(strategy, growspace, today)
+
+        return {"start": earliest.isoformat(), "end": latest.isoformat()}
+
+    def _tomorrows_shot_window(
+        self, strategy: IrrigationStrategy, growspace: Growspace, today: date
+    ) -> dict[str, str]:
+        """Return tomorrow's {start, end} projected shot window (P1 start to P2 stop)."""
+        tomorrow = today + timedelta(days=1)
+        p0_end_dt, p2_stop_dt, _ = self._phase_boundary_times(strategy, growspace, tomorrow)
+        return {"start": p0_end_dt.isoformat(), "end": p2_stop_dt.isoformat()}
 
     def _set_phase(self, phase: str) -> bool:
         """Update phase state; log the transition to the HA logbook when enabled.

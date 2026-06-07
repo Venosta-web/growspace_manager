@@ -69,6 +69,15 @@ class BaseIrrigationCoordinator:
         return None
 
     @property
+    def projected_shot_window(self) -> dict[str, str] | None:
+        """Return the {start, end} ISO range of the next projected shot, or None.
+
+        Crop-steering-only concept (see VWCIrrigationCoordinator); base/manual
+        scheduling has no equivalent estimate to project.
+        """
+        return None
+
+    @property
     def cycles_today(self) -> int:
         """Return the number of irrigation cycles completed today."""
         return self._cycles_today

@@ -1018,3 +1018,98 @@ async def test_halt_on_runoff_ec_threshold_not_exceeded(
     mock_hass.services.async_call.assert_any_call(
         "switch", "turn_on", {"entity_id": "switch.pump"}, blocking=True
     )
+
+
+async def test_projected_shot_window_during_active_watering_window(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """In P1/P2 (the active watering window), the window spans cooldown end to P2 stop."""
+    # 09:30 — inside the P1/P2 window (P0 ends 09:00, P2 stops 18:00)
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._current_phase = "P2 - Maintenance"
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        window = vwc_coordinator.projected_shot_window
+
+    assert window == {
+        "start": datetime(2023, 1, 1, 9, 45, 0, tzinfo=dt_util.UTC).isoformat(),
+        "end": datetime(2023, 1, 1, 18, 0, 0, tzinfo=dt_util.UTC).isoformat(),
+    }
+
+
+async def test_projected_shot_window_during_p0_activation(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """In P0, the window spans cooldown end to the P0→P1 boundary."""
+    # 08:30 — inside P0 (lights on 08:00, P0 ends 09:00)
+    now_dt = datetime(2023, 1, 1, 8, 30, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._current_phase = "P0 - Activation"
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        window = vwc_coordinator.projected_shot_window
+
+    assert window == {
+        "start": datetime(2023, 1, 1, 8, 45, 0, tzinfo=dt_util.UTC).isoformat(),
+        "end": datetime(2023, 1, 1, 9, 0, 0, tzinfo=dt_util.UTC).isoformat(),
+    }
+
+
+async def test_projected_shot_window_rolls_to_tomorrow_during_dryback(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """In P3 (Dry-back), the window rolls forward to tomorrow's P1 start / P2 stop."""
+    # 22:00 — in P3 (lights off at 20:00)
+    now_dt = datetime(2023, 1, 1, 22, 0, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._current_phase = "P3 - Dry Back"
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        window = vwc_coordinator.projected_shot_window
+
+    # Tomorrow: lights on 08:00 + p0_duration 60min = P1 start 09:00; P2 stop 18:00
+    assert window == {
+        "start": datetime(2023, 1, 2, 9, 0, 0, tzinfo=dt_util.UTC).isoformat(),
+        "end": datetime(2023, 1, 2, 18, 0, 0, tzinfo=dt_util.UTC).isoformat(),
+    }
+
+
+async def test_projected_shot_window_rolls_to_tomorrow_near_end_of_active_window(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """When cooldown would push past today's P2 stop, the window rolls to tomorrow."""
+    # 17:50 — still in P2, but cooldown (15 min) pushes earliest past P2 stop (18:00)
+    now_dt = datetime(2023, 1, 1, 17, 50, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._current_phase = "P2 - Maintenance"
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        window = vwc_coordinator.projected_shot_window
+
+    assert window == {
+        "start": datetime(2023, 1, 2, 9, 0, 0, tzinfo=dt_util.UTC).isoformat(),
+        "end": datetime(2023, 1, 2, 18, 0, 0, tzinfo=dt_util.UTC).isoformat(),
+    }
+
+
+async def test_projected_shot_window_none_when_steering_disabled(
+    vwc_coordinator: VWCIrrigationCoordinator, mock_growspace: Growspace
+) -> None:
+    """Returns None when crop steering is not enabled, mirroring next_scheduled_cycle."""
+    mock_growspace.irrigation_strategy.enabled = False
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        assert vwc_coordinator.projected_shot_window is None

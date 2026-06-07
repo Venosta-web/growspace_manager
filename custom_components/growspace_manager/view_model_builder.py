@@ -141,6 +141,7 @@ class ViewModelBuilder:
         active_events = {}
         last_cycle_timestamp: str | None = None
         next_scheduled_cycle: str | None = None
+        projected_shot_window: dict[str, str] | None = None
         cycles_today: int = 0
         volume_dispensed_today: float = 0.0
         irr_coord = self.coordinator.services.growspaces.get_irrigation_coordinator(
@@ -150,6 +151,7 @@ class ViewModelBuilder:
             active_events = irr_coord.active_events
             last_cycle_timestamp = irr_coord.last_cycle_timestamp
             next_scheduled_cycle = irr_coord.next_scheduled_cycle
+            projected_shot_window = irr_coord.projected_shot_window
             cycles_today = irr_coord.cycles_today
             volume_dispensed_today = irr_coord.volume_dispensed_today
 
@@ -180,6 +182,7 @@ class ViewModelBuilder:
         # Inject irrigation cycle telemetry into the irrigation sub-object
         serialized["irrigation"]["last_cycle_timestamp"] = last_cycle_timestamp
         serialized["irrigation"]["next_scheduled_cycle"] = next_scheduled_cycle
+        serialized["irrigation"]["projected_shot_window"] = projected_shot_window
         serialized["irrigation"]["cycles_today"] = cycles_today
         serialized["irrigation"]["volume_dispensed_today"] = volume_dispensed_today
 
