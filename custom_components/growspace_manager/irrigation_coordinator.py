@@ -669,9 +669,9 @@ class BaseIrrigationCoordinator:
             )
 
         effective_duration = duration or options.irrigation_duration
-        if not effective_duration:
+        if not effective_duration or effective_duration <= 0:
             raise ServiceValidationError(
-                f"No irrigation duration provided or configured for growspace '{self._growspace_id}'"
+                f"No valid irrigation duration provided or configured for growspace '{self._growspace_id}'"
             )
 
         if (
