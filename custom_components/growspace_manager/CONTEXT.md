@@ -50,6 +50,10 @@ An optional sub-feature of Crop Steering. When `IrrigationStrategy.auto_light_tr
 
 **Precondition**: only active when `IrrigationStrategy.enabled = True`.
 
+## Crop Steering History Chart
+
+A chart of soil moisture, pore EC, and bulk EC readings bucketed into 5-minute averages, anchored to the most recently completed lighting cycle (resolved via **Light Cycle Tracking**: `detected_lights_on_time ?? lights_on_time`). The chart window always begins 2 hours before lights-on — the **pre-dawn baseline** — so the resting/dark-period state is visible alongside the active cycle for comparison. If the current time falls before today's lights-on (i.e. the dark period is still in progress), the chart anchors to *yesterday's* lights-on instead, so it always shows a complete, in-progress-or-recent cycle rather than an empty or inverted window.
+
 ## Photoperiod Flip
 
 The event when any plant in a growspace transitions from veg to flower stage (i.e. `Plant.flower_start` becomes today). At this moment the daily light hours must drop from `EnvironmentConfig.veg_day_hours` (default 18h) to `EnvironmentConfig.flower_day_hours` (default 12h). The system fires a HA notification via the existing `NotificationManager` and surfaces a persistent **FlowerFlipChip** in the card.
