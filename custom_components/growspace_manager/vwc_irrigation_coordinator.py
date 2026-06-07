@@ -9,7 +9,10 @@ from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
+from homeassistant.helpers.event import (
+    async_track_time_change,
+    async_track_time_interval,
+)
 from homeassistant.util.dt import now
 
 if TYPE_CHECKING:
@@ -340,9 +343,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """Get configured irrigation pump entity."""
         growspace = self.growspace
         # Ensure we return a string or None, explicitly cast if needed or rely on typed access
-        return (
-            growspace.irrigation_config.irrigation_pump_entity or None
-        )
+        return growspace.irrigation_config.irrigation_pump_entity or None
 
     # Maps internal phase display strings to the canonical p1/p2/p3 values stored on
     # IrrigationConfig and read by the frontend.  Phases without an entry (e.g.
