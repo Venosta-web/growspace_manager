@@ -401,7 +401,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
         current_dt = now()
         today = current_dt.date()
-        p0_end_dt, p2_stop_dt, _ = self._phase_boundary_times(strategy, growspace, today)
+        p0_end_dt, p2_stop_dt, _ = self._phase_boundary_times(
+            strategy, growspace, today
+        )
 
         # Match on the display string directly — the canonical p1/p2/p3 mapping
         # collapses P0 into "p1" for the frontend's active_steering_phase, but P0
@@ -414,7 +416,14 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             # P3 (or unknown/disabled) — no shots fire today; roll forward to tomorrow
             return self._tomorrows_shot_window(strategy, growspace, today)
 
-        earliest = current_dt + timedelta(minutes=strategy.shot_interval_minutes)
+        earliest = current_dt
+        if self._last_shot_time:
+            cooldown_end = self._last_shot_time + timedelta(
+                minutes=strategy.shot_interval_minutes
+            )
+            if cooldown_end > current_dt:
+                earliest = cooldown_end
+
         if earliest >= latest:
             # Today's active window has effectively closed — roll forward to tomorrow
             return self._tomorrows_shot_window(strategy, growspace, today)
@@ -426,7 +435,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     ) -> dict[str, str]:
         """Return tomorrow's {start, end} projected shot window (P1 start to P2 stop)."""
         tomorrow = today + timedelta(days=1)
-        p0_end_dt, p2_stop_dt, _ = self._phase_boundary_times(strategy, growspace, tomorrow)
+        p0_end_dt, p2_stop_dt, _ = self._phase_boundary_times(
+            strategy, growspace, tomorrow
+        )
         return {"start": p0_end_dt.isoformat(), "end": p2_stop_dt.isoformat()}
 
     def _set_phase(self, phase: str) -> bool:
