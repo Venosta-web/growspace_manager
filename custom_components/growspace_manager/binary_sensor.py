@@ -69,7 +69,12 @@ from .strategies.mold import MoldRiskEvaluatorStrategy
 from .strategies.optimal import OptimalConditionsEvaluatorStrategy
 from .strategies.stress import StressEvaluatorStrategy
 from .trend_analyzer import TrendAnalyzer
-from .utils import VPDCalculator, calculate_days_since, calculate_stage_transition
+from .utils import (
+    VPDCalculator,
+    any_light_sensor_on,
+    calculate_days_since,
+    calculate_stage_transition,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -490,32 +495,10 @@ class BayesianEnvironmentSensor(
         if not light_sensors:
             return None
 
-        any_on = False
-        any_valid = False
-
-        for sensor in light_sensors:
-            is_on, valid = self._check_light_sensor(sensor)
-            if valid:
-                any_valid = True
-                if is_on:
-                    any_on = True
-
-        current_lights_on = any_on if any_valid else None
+        current_lights_on = any_light_sensor_on(self.hass, light_sensors)
         self._check_light_state_change(current_lights_on)
         self._last_light_state = current_lights_on
         return current_lights_on
-
-    def _check_light_sensor(self, sensor_id: str) -> tuple[bool, bool]:
-        """Check a single light sensor state and return (is_on, is_valid)."""
-        state = self.hass.states.get(sensor_id)
-        if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return False, False
-
-        if state.domain == "sensor":
-            val = self._get_sensor_value(sensor_id)
-            return val is not None and val > 0, val is not None
-
-        return state.state == "on", True
 
     def _check_light_state_change(self, current_lights_on: bool | None) -> None:
         """Check for state change to trigger notification cooldown."""

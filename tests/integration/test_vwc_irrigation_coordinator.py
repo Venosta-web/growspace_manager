@@ -415,7 +415,7 @@ async def test_shot_interval_logic(vwc_coordinator, mock_hass) -> None:
     strategy.shot_interval_minutes = 15
 
     # 1. Fire first shot
-    vwc_coordinator._last_shot_time = None
+    vwc_coordinator._last_cycle_timestamp = None
     vwc_coordinator._handle_watering(strategy, "P1")
 
     # Await the async task triggered by _handle_watering
@@ -425,11 +425,11 @@ async def test_shot_interval_logic(vwc_coordinator, mock_hass) -> None:
     mock_hass.services.async_call.reset_mock()
 
     # 2. Try again 5 minutes later via _handle_watering directly
-    # Need to patch now() inside the method or set _last_shot_time manually
+    # Need to patch now() inside the method or set _last_cycle_timestamp manually
 
     # Set last shot time to 12:00
     last_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
-    vwc_coordinator._last_shot_time = last_time
+    vwc_coordinator._last_cycle_timestamp = last_time.isoformat()
 
     # Current time 12:05 (Elapsed 5 min < 15)
     current_time = datetime(2023, 1, 1, 12, 5, 0, tzinfo=dt_util.UTC)
@@ -599,6 +599,48 @@ async def test_vwc_skips_watering_when_dark_and_skip_enabled(
         await await_pump_task()
 
     mock_hass.services.async_call.assert_not_called()
+
+
+async def test_vwc_waters_when_numeric_light_sensor_reports_on(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+) -> None:
+    """A numeric power sensor reporting a positive value means lights are ON.
+
+    Reproduces a real-world bug: a `sensor.*_current_power` entity reporting
+    "4" (watts) was misread as "off" by a binary-only on-check, permanently
+    blocking VWC pulse watering via the dark-period skip guard.
+    """
+    mock_growspace.irrigation_config.skip_during_dark = True
+    mock_growspace.environment_config = EnvironmentConfig(
+        soil_moisture_sensor="sensor.moisture",
+        light_sensors=["sensor.grow_light_power"],
+    )
+
+    def states_side_effect(entity_id: str) -> MagicMock | None:
+        if entity_id == "sensor.grow_light_power":
+            return MagicMock(state="4", domain="sensor")  # Light draws 4W → ON
+        if entity_id == "sensor.moisture":
+            return MagicMock(state="40.0")
+        return None
+
+    mock_hass.states.get.side_effect = states_side_effect
+
+    now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        await vwc_coordinator._update_loop(now_dt)
+        await await_pump_task()
+
+    mock_hass.services.async_call.assert_any_call(
+        "switch",
+        "turn_on",
+        {"entity_id": mock_growspace.irrigation_config.irrigation_pump_entity},
+        blocking=True,
+    )
 
 
 async def test_vwc_phase_transition_fires_logbook_event(
@@ -960,8 +1002,8 @@ async def test_handle_watering_cancels_lingering_task(
     mock_task.done.return_value = False
     vwc_coordinator._running_tasks["irrigation"] = mock_task
 
-    # We trigger watering (ensure _last_shot_time allows it)
-    vwc_coordinator._last_shot_time = None
+    # We trigger watering (ensure _last_cycle_timestamp allows it)
+    vwc_coordinator._last_cycle_timestamp = None
 
     now_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
     with patch(
@@ -1033,7 +1075,7 @@ async def test_projected_shot_window_during_active_watering_window(
     # 09:30 — inside the P1/P2 window (P0 ends 09:00, P2 stops 18:00)
     now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
     vwc_coordinator._current_phase = "P2 - Maintenance"
-    vwc_coordinator._last_shot_time = None
+    vwc_coordinator._last_cycle_timestamp = None
 
     with patch(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
@@ -1054,7 +1096,9 @@ async def test_projected_shot_window_during_active_watering_window_with_cooldown
     # 09:30 — inside the P1/P2 window; last shot 5 minutes ago, interval is 15 minutes
     now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
     vwc_coordinator._current_phase = "P2 - Maintenance"
-    vwc_coordinator._last_shot_time = datetime(2023, 1, 1, 9, 25, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._last_cycle_timestamp = (
+        datetime(2023, 1, 1, 9, 25, 0, tzinfo=dt_util.UTC)
+    ).isoformat()
 
     with patch(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
@@ -1075,7 +1119,9 @@ async def test_projected_shot_window_ignores_expired_cooldown(
     # 09:30 — last shot 20 minutes ago, interval is 15 minutes, so cooldown has expired
     now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
     vwc_coordinator._current_phase = "P2 - Maintenance"
-    vwc_coordinator._last_shot_time = datetime(2023, 1, 1, 9, 10, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._last_cycle_timestamp = (
+        datetime(2023, 1, 1, 9, 10, 0, tzinfo=dt_util.UTC)
+    ).isoformat()
 
     with patch(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
@@ -1096,7 +1142,7 @@ async def test_projected_shot_window_during_p0_activation(
     # 08:30 — inside P0 (lights on 08:00, P0 ends 09:00)
     now_dt = datetime(2023, 1, 1, 8, 30, 0, tzinfo=dt_util.UTC)
     vwc_coordinator._current_phase = "P0 - Activation"
-    vwc_coordinator._last_shot_time = None
+    vwc_coordinator._last_cycle_timestamp = None
 
     with patch(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
@@ -1138,9 +1184,9 @@ async def test_projected_shot_window_rolls_to_tomorrow_near_end_of_active_window
     # 17:50 — still in P2; last shot 5 minutes ago means cooldown ends 18:05, past P2 stop (18:00)
     now_dt = datetime(2023, 1, 1, 17, 50, 0, tzinfo=dt_util.UTC)
     vwc_coordinator._current_phase = "P2 - Maintenance"
-    vwc_coordinator._last_shot_time = datetime(
+    vwc_coordinator._last_cycle_timestamp = datetime(
         2023, 1, 1, 17, 45, 0, tzinfo=dt_util.UTC
-    )
+    ).isoformat()
 
     with patch(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",

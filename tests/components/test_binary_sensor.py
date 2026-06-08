@@ -1228,6 +1228,28 @@ def test_determine_light_state_unavailable(
     assert sensor._determine_light_state() is None
 
 
+def test_determine_light_state_numeric_power_sensor(
+    hass: HomeAssistant, mock_coordinator, env_config
+) -> None:
+    """A numeric power-consumption sensor reporting > 0 means lights are on."""
+    sensor = create_test_sensor(
+        mock_coordinator,
+        "gs1",
+        GrowspaceSensorType.STRESS,
+        StressEvaluatorStrategy,
+        env_config,
+    )
+    sensor.hass = hass
+
+    env_config.light_sensors = ["sensor.grow_light_power"]
+
+    set_sensor_state(hass, "sensor.grow_light_power", "4")
+    assert sensor._determine_light_state() is True
+
+    set_sensor_state(hass, "sensor.grow_light_power", "0")
+    assert sensor._determine_light_state() is False
+
+
 @patch(
     "custom_components.growspace_manager.binary_sensor.BayesianEnvironmentSensor.async_analyze_sensor_trend",
     new_callable=AsyncMock,
@@ -2272,15 +2294,30 @@ class TestBayesianEnvironmentSensor:
         assert result is None
 
     def test_get_base_environment_state_light_sensor_domain_sensor(self, base_sensor):
-        """Test _get_base_environment_state when light sensor is a sensor domain."""
+        """Test _get_base_environment_state when light sensor is a sensor domain.
+
+        The light sensor's on/off determination reads directly from
+        `hass.states` (via `any_light_sensor_on`/`is_light_sensor_on`), so its
+        state must be driven through `hass.states.get` rather than through the
+        unrelated `_get_sensor_value` instance method (used for the other
+        environment readings like temperature/humidity).
+        """
         base_sensor.hass = MagicMock()
         base_sensor.env_config.light_sensors = ["sensor.light_level"]
 
-        # Mock light_state to have domain "sensor"
-        mock_light_state = MagicMock(spec=State)
-        mock_light_state.domain = "sensor"
-        mock_light_state.state = "100"
-        base_sensor.hass.states.get.return_value = mock_light_state
+        light_state_value = "100"
+
+        def _states_get_side_effect(entity_id):
+            if entity_id == "sensor.light_level":
+                mock_light_state = MagicMock(spec=State)
+                mock_light_state.domain = "sensor"
+                mock_light_state.state = light_state_value
+                return mock_light_state
+            return MagicMock(spec=State, domain="sensor", state="0")
+
+        base_sensor.hass.states.get.side_effect = lambda eid: _states_get_side_effect(
+            eid
+        )
 
         def _get_sensor_value_side_effect(entity_id):
             values = {
@@ -2288,7 +2325,6 @@ class TestBayesianEnvironmentSensor:
                 "sensor.humidity": 60.0,
                 "sensor.vpd": 1.0,
                 "sensor.co2": 800.0,
-                "sensor.light_level": 100.0,
                 "sensor.exhaust": 0.0,
                 "sensor.humidifier": 0.0,
                 "sensor.soil_moisture": 0.0,
@@ -2297,7 +2333,7 @@ class TestBayesianEnvironmentSensor:
 
         with patch.object(
             base_sensor, "_get_sensor_value", side_effect=_get_sensor_value_side_effect
-        ) as mock_get_value:
+        ):
             # Mock _get_growth_stage_info
             base_sensor._get_growth_stage_info = MagicMock(
                 return_value={"veg_days": 20, "flower_days": -1}
@@ -2305,6 +2341,7 @@ class TestBayesianEnvironmentSensor:
 
             # Test with sensor_value > 0
             # Avoid hysteresis
+            light_state_value = "100"
             base_sensor._last_light_change_time = utcnow() - timedelta(minutes=10)
             base_sensor._last_light_state = True
 
@@ -2312,16 +2349,7 @@ class TestBayesianEnvironmentSensor:
             assert env_state.is_lights_on is True
 
             # Test with sensor_value = 0
-            mock_get_value.side_effect = lambda eid: {
-                "sensor.temp": 25.0,
-                "sensor.humidity": 60.0,
-                "sensor.vpd": 1.0,
-                "sensor.co2": 800.0,
-                "sensor.light_level": 0.0,
-                "sensor.exhaust": 0.0,
-                "sensor.humidifier": 0.0,
-                "sensor.soil_moisture": 0.0,
-            }.get(eid, 0.0)  # Light sensor value is 0
+            light_state_value = "0"
             # Reset hysteresis avoidance for new state
             base_sensor._last_light_change_time = utcnow() - timedelta(minutes=10)
             base_sensor._last_light_state = False
@@ -2329,21 +2357,12 @@ class TestBayesianEnvironmentSensor:
             env_state = base_sensor._get_base_environment_state()
             assert env_state.is_lights_on is False
 
-            # Test with sensor_value is None
-            mock_get_value.side_effect = lambda eid: {
-                "sensor.temp": 25.0,
-                "sensor.humidity": 60.0,
-                "sensor.vpd": 1.0,
-                "sensor.co2": 800.0,
-                "sensor.light_level": None,
-                "sensor.exhaust": 0.0,
-                "sensor.humidifier": 0.0,
-                "sensor.soil_moisture": 0.0,
-            }.get(eid, 0.0)  # Light sensor value is None
+            # Test with sensor_value unavailable (no valid reading)
+            light_state_value = STATE_UNAVAILABLE
             base_sensor._last_light_change_time = utcnow() - timedelta(minutes=10)
             base_sensor._last_light_state = False
             env_state = base_sensor._get_base_environment_state()
-            assert env_state.is_lights_on is None  # None when sensor_value is None
+            assert env_state.is_lights_on is None  # None when no valid reading
 
 
 @pytest.mark.asyncio
