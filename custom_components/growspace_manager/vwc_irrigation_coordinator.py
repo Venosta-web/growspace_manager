@@ -13,7 +13,7 @@ from homeassistant.helpers.event import (
     async_track_time_change,
     async_track_time_interval,
 )
-from homeassistant.util.dt import now
+from homeassistant.util.dt import now, parse_datetime
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -39,7 +39,6 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
         # State tracking
         self._current_phase = "P3"  # Start in safe state
-        self._last_shot_time: datetime | None = None
         self._target_reached_today = False
         self._last_reset_date: str | None = None
 
@@ -277,12 +276,24 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 )
                 self._handle_watering(strategy, "P2")
 
+    def _last_shot_dt(self) -> datetime | None:
+        """Return the last confirmed pump-cycle start time, or None.
+
+        Reads `_last_cycle_timestamp` (set by `_run_pump_cycle` only after the
+        switch is confirmed on) rather than stamping optimistically — a skipped
+        cycle (e.g. dark-period guard) must not silently rate-limit future shots.
+        """
+        if not self._last_cycle_timestamp:
+            return None
+        return parse_datetime(self._last_cycle_timestamp)
+
     def _handle_watering(self, strategy: IrrigationStrategy, phase: str) -> None:
         """Handle execution of a shot if interval permits."""
         now_dt = now()
 
-        if self._last_shot_time:
-            elapsed = (now_dt - self._last_shot_time).total_seconds() / 60.0
+        last_shot = self._last_shot_dt()
+        if last_shot:
+            elapsed = (now_dt - last_shot).total_seconds() / 60.0
             if elapsed < strategy.shot_interval_minutes:
                 return
 
@@ -317,8 +328,6 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             f"irrigation_pump_{self._growspace_id}_irrigation",
         )
         self._running_tasks["irrigation"] = task
-
-        self._last_shot_time = now_dt
 
     def _is_halted_by_runoff_ec(self, growspace: Growspace) -> bool:
         """Return True and log a warning when the latest drain EC exceeds the configured threshold."""
@@ -417,10 +426,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             return self._tomorrows_shot_window(strategy, growspace, today)
 
         earliest = current_dt
-        if self._last_shot_time:
-            cooldown_end = self._last_shot_time + timedelta(
-                minutes=strategy.shot_interval_minutes
-            )
+        last_shot = self._last_shot_dt()
+        if last_shot:
+            cooldown_end = last_shot + timedelta(minutes=strategy.shot_interval_minutes)
             if cooldown_end > current_dt:
                 earliest = cooldown_end
 

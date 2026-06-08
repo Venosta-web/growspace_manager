@@ -347,6 +347,38 @@ def read_sensor_value(hass: HomeAssistant, sensor_id: str | None) -> float | Non
         return None
 
 
+def is_light_sensor_on(hass: HomeAssistant, sensor_id: str) -> tuple[bool, bool]:
+    """Return (is_on, is_valid) for a light sensor.
+
+    Numeric `sensor.` domain entities (e.g. power-consumption sensors) are
+    considered on when their value is greater than zero. Binary-style entities
+    (binary_sensor, switch, etc.) are considered on when their state is "on".
+    Unavailable/unknown/missing entities are reported as invalid.
+    """
+    state = hass.states.get(sensor_id)
+    if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return False, False
+
+    if state.domain == "sensor":
+        value = read_sensor_value(hass, sensor_id)
+        return value is not None and value > 0, value is not None
+
+    return state.state == "on", True
+
+
+def any_light_sensor_on(hass: HomeAssistant, sensor_ids: list[str]) -> bool | None:
+    """OR-aggregate light sensor states; None when no sensor has a valid reading."""
+    any_on = False
+    any_valid = False
+    for sensor_id in sensor_ids:
+        is_on, valid = is_light_sensor_on(hass, sensor_id)
+        if valid:
+            any_valid = True
+            if is_on:
+                any_on = True
+    return any_on if any_valid else None
+
+
 def read_aggregated_sensor_value(
     hass: HomeAssistant, sensor_ids: list[str]
 ) -> float | None:

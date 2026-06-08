@@ -26,6 +26,7 @@ from .const import (
 )
 from .exceptions import GrowspaceError
 from .models import Growspace, GrowspaceEvent
+from .utils import any_light_sensor_on
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -354,18 +355,17 @@ class BaseIrrigationCoordinator:
         return duration * flow_rate / 1000.0
 
     def _is_lights_dark(self) -> bool:
-        """Return True when all configured light sensors report off or are unavailable.
+        """Return True when no configured light sensor reports lights on.
 
         Returns False (lights considered on) when no light sensors are configured,
-        so irrigation is not blocked by default.
+        so irrigation is not blocked by default. Sensors that are unavailable or
+        unknown fail toward "dark" — under-watering for one cycle is recoverable,
+        whereas watering during an actual dark/dry-back period is not.
         """
         light_sensors = self.growspace.environment_config.light_sensors
         if not light_sensors:
             return False
-        return all(
-            (state := self.hass.states.get(sensor)) is None or state.state != "on"
-            for sensor in light_sensors
-        )
+        return any_light_sensor_on(self.hass, light_sensors) is not True
 
     def _find_low_tank(self) -> tuple[str, float, float] | None:
         """Return (name, current_level, warning_level) for the first below-warning tank.

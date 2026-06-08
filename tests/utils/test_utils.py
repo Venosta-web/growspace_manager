@@ -33,6 +33,8 @@ from custom_components.growspace_manager.utils import (
     parse_date_field_v2,
     read_aggregated_sensor_value,
     read_environment_vpd,
+    any_light_sensor_on,
+    is_light_sensor_on,
     read_sensor_value,
     strip_markdown_fence,
 )
@@ -436,6 +438,52 @@ def test_read_sensor_value(hass: HomeAssistant) -> None:
     # 5. Invalid float states
     hass.states.async_set("sensor.invalid_test", "not-a-float")
     assert read_sensor_value(hass, "sensor.invalid_test") is None
+
+
+def test_is_light_sensor_on_numeric_sensor(hass: HomeAssistant) -> None:
+    """A numeric power sensor reporting a positive value is considered on."""
+    hass.states.async_set("sensor.light_power", "4")
+    assert is_light_sensor_on(hass, "sensor.light_power") == (True, True)
+
+    hass.states.async_set("sensor.light_power", "0")
+    assert is_light_sensor_on(hass, "sensor.light_power") == (False, True)
+
+
+def test_is_light_sensor_on_binary_sensor(hass: HomeAssistant) -> None:
+    """A binary-style entity is on/off based on its literal state string."""
+    hass.states.async_set("binary_sensor.light_switch", "on")
+    assert is_light_sensor_on(hass, "binary_sensor.light_switch") == (True, True)
+
+    hass.states.async_set("binary_sensor.light_switch", "off")
+    assert is_light_sensor_on(hass, "binary_sensor.light_switch") == (False, True)
+
+
+def test_is_light_sensor_on_unavailable_is_invalid(hass: HomeAssistant) -> None:
+    """Unavailable, unknown, or missing entities are reported as invalid."""
+    assert is_light_sensor_on(hass, "sensor.does_not_exist") == (False, False)
+
+    hass.states.async_set("sensor.flaky", STATE_UNAVAILABLE)
+    assert is_light_sensor_on(hass, "sensor.flaky") == (False, False)
+
+    hass.states.async_set("sensor.flaky", STATE_UNKNOWN)
+    assert is_light_sensor_on(hass, "sensor.flaky") == (False, False)
+
+
+def test_any_light_sensor_on_or_aggregates(hass: HomeAssistant) -> None:
+    """any_light_sensor_on ORs across sensors and is None when none are valid."""
+    assert any_light_sensor_on(hass, []) is None
+    assert any_light_sensor_on(hass, ["sensor.missing"]) is None
+
+    hass.states.async_set("sensor.power_a", "0")
+    hass.states.async_set("sensor.power_b", "5")
+    assert any_light_sensor_on(hass, ["sensor.power_a", "sensor.power_b"]) is True
+
+    hass.states.async_set("sensor.power_b", "0")
+    assert any_light_sensor_on(hass, ["sensor.power_a", "sensor.power_b"]) is False
+
+    assert (
+        any_light_sensor_on(hass, ["sensor.power_a", "sensor.unavailable_one"]) is False
+    )
 
 
 def test_read_aggregated_sensor_value(hass: HomeAssistant) -> None:
