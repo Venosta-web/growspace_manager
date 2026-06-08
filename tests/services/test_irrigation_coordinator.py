@@ -20,6 +20,23 @@ from homeassistant.exceptions import ServiceValidationError
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
 
+_REAL_ASYNCIO_SLEEP = asyncio.sleep
+
+
+async def _await_settling_report(add_event_mock: MagicMock) -> None:
+    """Yield to the event loop until the deferred settling-report task fires.
+
+    The completion report runs in a background task after a settling delay
+    (see Sensor Settling Delay), so tests must yield control for it to run.
+    Uses the real asyncio.sleep — tests patch asyncio.sleep to resolve
+    instantly, and the autouse freeze_time fixture breaks wait_for() timeouts.
+    """
+    for _ in range(1000):
+        if add_event_mock.call_count:
+            return
+        await _REAL_ASYNCIO_SLEEP(0)
+    pytest.fail("Settling report task never completed")
+
 
 @pytest.fixture
 def mock_main_coordinator() -> MagicMock:
@@ -274,9 +291,10 @@ async def test_run_pump_cycle(
                 found_notify = True
                 break
         assert found_notify, "Notification service call not found"
-        mock_sleep.assert_awaited_once_with(30)
+        mock_sleep.assert_any_await(30)
 
-        # Verify event logging
+        # Verify event logging — fired from the deferred settling-report task
+        await _await_settling_report(mock_main_coordinator.add_event)
         mock_main_coordinator.add_event.assert_called_once()
         args, _ = mock_main_coordinator.add_event.call_args
         assert args[0] == GROWSPACE_ID
@@ -774,6 +792,7 @@ async def test_run_pump_cycle_with_moisture_logging(
     ):
         await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
 
+        await _await_settling_report(mock_main_coordinator.add_event)
         mock_main_coordinator.add_event.assert_called_once()
         _args, _ = mock_main_coordinator.add_event.call_args
         # Removed unused event = args[1]
@@ -815,12 +834,88 @@ async def test_run_pump_cycle_moisture_after_only(
     ):
         await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
 
+        await _await_settling_report(mock_main_coordinator.add_event)
         mock_main_coordinator.add_event.assert_called_once()
         args, _ = mock_main_coordinator.add_event.call_args
         event = args[1]
 
         # Verify moisture is in reasons (only after value)
         assert any("Moisture: 55.8%" in r for r in event.reasons)
+
+
+async def test_run_pump_cycle_defers_completion_report_until_sensor_settles(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that the completion report waits for the sensor to settle.
+
+    The "after" moisture reading and completion logbook/event must not be
+    captured the instant the cycle ends — they wait for the settling delay so
+    the sensor has time to physically catch up, then read the live value.
+    """
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    mock_main_coordinator.growspaces[GROWSPACE_ID].environment_config = MagicMock()
+    mock_main_coordinator.growspaces[
+        GROWSPACE_ID
+    ].environment_config.soil_moisture_sensor = "sensor.moisture"
+
+    mock_before_state = MagicMock(state="40.0")
+    mock_after_state = MagicMock(state="60.0")
+    mock_hass.states.get.side_effect = [mock_before_state, mock_after_state]
+
+    real_sleep = asyncio.sleep
+    settling_started = asyncio.Event()
+    settling_can_proceed = asyncio.Event()
+    sleep_calls: list[int] = []
+
+    async def fake_sleep(duration: int) -> None:
+        sleep_calls.append(duration)
+        if len(sleep_calls) == 1:
+            return  # the cycle's run duration — resolve instantly
+        settling_started.set()
+        await settling_can_proceed.wait()
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock, side_effect=fake_sleep),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {}
+        )
+
+        # Time is frozen in this test suite (autouse freeze_time), so
+        # asyncio.wait_for()'s monotonic-clock timeout never elapses — poll
+        # with bare yields instead.
+        for _ in range(1000):
+            if settling_started.is_set():
+                break
+            await real_sleep(0)
+        else:
+            pytest.fail("Settling delay was never started")
+
+        # The cycle has ended and the pump is off, but the report must not
+        # have fired yet — it's waiting for the sensor to settle.
+        mock_main_coordinator.add_event.assert_not_called()
+
+        settling_can_proceed.set()
+
+        for _ in range(1000):
+            if mock_main_coordinator.add_event.call_count:
+                break
+            await real_sleep(0)
+        else:
+            pytest.fail("Completion report was never fired after settling delay")
+
+        args, _ = mock_main_coordinator.add_event.call_args
+        event = args[1]
+        assert any("Moisture: 40.0% -> 60.0%" in r for r in event.reasons)
 
 
 @pytest.mark.asyncio

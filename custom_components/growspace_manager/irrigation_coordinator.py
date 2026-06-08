@@ -23,6 +23,7 @@ from .const import (
     CATEGORY_ALERT,
     CATEGORY_IRRIGATION_ERROR,
     EVENT_GROWSPACE_LOG_ENTRY,
+    SENSOR_SETTLING_DELAY_CAP_SECONDS,
 )
 from .exceptions import GrowspaceError
 from .models import Growspace, GrowspaceEvent
@@ -48,6 +49,7 @@ class BaseIrrigationCoordinator:
         self._main_coordinator = main_coordinator
         self._listeners: list[Callable[[], None]] = []
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._settling_tasks: set[asyncio.Task[Any]] = set()
         self._active_events: dict[str, dict[str, Any]] = {}
         self._last_cycle_timestamp: str | None = None
         # Daily safety-guard counters (reset by sub-coordinators at midnight)
@@ -136,6 +138,11 @@ class BaseIrrigationCoordinator:
                 if task and not task.done():
                     task.cancel()
             self._running_tasks.clear()
+
+            for settling_task in list(self._settling_tasks):
+                if not settling_task.done():
+                    settling_task.cancel()
+            self._settling_tasks.clear()
         _LOGGER.debug(
             "Cancelled all irrigation listeners for growspace %s", self._growspace_id
         )
@@ -592,50 +599,14 @@ class BaseIrrigationCoordinator:
                         cycle_volume = self._compute_cycle_volume_liters(duration)
                         self._volume_dispensed_today += cycle_volume
 
-                    # Capture moisture after
-                    moisture_after = None
-                    if self.growspace.environment_config.soil_moisture_sensor:
-                        moisture_after = self._get_sensor_value(
-                            self.growspace.environment_config.soil_moisture_sensor
-                        )
-
-                    # Build reasons
-                    reasons = [f"{event_type.capitalize()} cycle completed"]
-
-                    # Add Duration
-                    reasons.append(f"Duration: {int(duration_sec)}s")
-
-                    # Add Moisture Data
-                    if moisture_before is not None and moisture_after is not None:
-                        reasons.append(
-                            f"Moisture: {moisture_before:.1f}% -> {moisture_after:.1f}%"
-                        )
-                    elif moisture_after is not None:
-                        reasons.append(f"Moisture: {moisture_after:.1f}%")
-
-                    if (
-                        event_type == "irrigation"
-                        and self.growspace.irrigation_config.log_to_logbook
-                    ):
-                        self._fire_logbook_event(
-                            f"Irrigation completed — {int(duration_sec)}s "
-                            f"({self._volume_dispensed_today:.3f}L dispensed today)",
-                        )
-
-                    # Create and add the event
-                    event = GrowspaceEvent(
-                        sensor_type="irrigation"
-                        if event_type == "irrigation"
-                        else "drain",
-                        growspace_id=self._growspace_id,
-                        start_time=start_dt.isoformat(),
-                        end_time=end_dt.isoformat(),
-                        duration_sec=int(duration_sec),
-                        severity=1.0,
-                        category="irrigation",
-                        reasons=reasons,
+                    self._async_spawn_settling_report(
+                        event_type=event_type,
+                        start_dt=start_dt,
+                        end_dt=end_dt,
+                        duration_sec=duration_sec,
+                        moisture_before=moisture_before,
+                        volume_dispensed_today=self._volume_dispensed_today,
                     )
-                    self._main_coordinator.add_event(self._growspace_id, event)
             except Exception as e:  # noqa: BLE001
                 _LOGGER.error("Failed to log %s event: %s", event_type, e)
 
@@ -650,6 +621,95 @@ class BaseIrrigationCoordinator:
             )
             if event_type in self._running_tasks:
                 self._running_tasks.pop(event_type)
+
+    @callback
+    def _async_spawn_settling_report(
+        self,
+        *,
+        event_type: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        duration_sec: float,
+        moisture_before: float | None,
+        volume_dispensed_today: float,
+    ) -> None:
+        """Spawn a background task that reports cycle completion after the sensor settles.
+
+        Snapshots everything the report needs up front so a fast-following
+        cycle can't corrupt the numbers describing this one — the only "live"
+        read the background task performs is the post-wait moisture value.
+        """
+        wait_seconds = min(duration_sec, SENSOR_SETTLING_DELAY_CAP_SECONDS)
+        task = self.hass.async_create_task(
+            self._async_report_cycle_completion(
+                event_type=event_type,
+                start_dt=start_dt,
+                end_dt=end_dt,
+                duration_sec=duration_sec,
+                moisture_before=moisture_before,
+                volume_dispensed_today=volume_dispensed_today,
+                wait_seconds=wait_seconds,
+            ),
+            name=f"irrigation_settling_report_{self._growspace_id}_{event_type}",
+        )
+        self._settling_tasks.add(task)
+        task.add_done_callback(self._settling_tasks.discard)
+
+    async def _async_report_cycle_completion(
+        self,
+        *,
+        event_type: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        duration_sec: float,
+        moisture_before: float | None,
+        volume_dispensed_today: float,
+        wait_seconds: float,
+    ) -> None:
+        """Wait for the moisture sensor to settle, then report cycle completion."""
+        try:
+            # Water needs time to redistribute through the substrate before the
+            # sensor reflects the cycle's true effect.
+            await asyncio.sleep(wait_seconds)
+        except asyncio.CancelledError:
+            return
+
+        moisture_after = None
+        if self.growspace.environment_config.soil_moisture_sensor:
+            moisture_after = self._get_sensor_value(
+                self.growspace.environment_config.soil_moisture_sensor
+            )
+
+        reasons = [
+            f"{event_type.capitalize()} cycle completed",
+            f"Duration: {int(duration_sec)}s",
+        ]
+
+        if moisture_before is not None and moisture_after is not None:
+            reasons.append(f"Moisture: {moisture_before:.1f}% -> {moisture_after:.1f}%")
+        elif moisture_after is not None:
+            reasons.append(f"Moisture: {moisture_after:.1f}%")
+
+        if (
+            event_type == "irrigation"
+            and self.growspace.irrigation_config.log_to_logbook
+        ):
+            self._fire_logbook_event(
+                f"Irrigation completed — {int(duration_sec)}s "
+                f"({volume_dispensed_today:.3f}L dispensed today)",
+            )
+
+        event = GrowspaceEvent(
+            sensor_type="irrigation" if event_type == "irrigation" else "drain",
+            growspace_id=self._growspace_id,
+            start_time=start_dt.isoformat(),
+            end_time=end_dt.isoformat(),
+            duration_sec=int(duration_sec),
+            severity=1.0,
+            category="irrigation",
+            reasons=reasons,
+        )
+        self._main_coordinator.add_event(self._growspace_id, event)
 
     async def async_manual_run(self, duration: int | None) -> None:
         """Trigger a manual irrigation cycle, bypassing the schedule.

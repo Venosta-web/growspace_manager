@@ -788,6 +788,9 @@ NOTIFICATION_DEBOUNCE_SECONDS: Final = 5
 MIN_STRESS_DURATION_SECONDS: Final = 180
 """Minimum seconds a stress event must persist before any notification is sent."""
 
+SENSOR_SETTLING_DELAY_CAP_SECONDS: Final = 15
+"""Upper bound on how long to wait for a moisture sensor to settle after a cycle."""
+
 NOTIFICATION_GROUP: Final = "growspace-manager"
 """Notification group/thread identifier for grouping on Android and iOS."""
 

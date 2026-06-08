@@ -77,6 +77,16 @@ Contrast with **dark period skip** (category `irrigation_error`, gated by `log_t
 
 Success events (irrigation started, irrigation completed) use `CATEGORY_ALERT` and are gated by `log_to_logbook`.
 
+## Sensor Settling Delay
+
+The wait inserted between a cycle's pump turning off and the moment its "after" sensor reading (e.g. soil moisture) is captured for reporting. Water needs time to redistribute through the substrate before a moisture sensor reflects the cycle's true effect — reading immediately produces misleading "before -> after" comparisons (e.g. `46.2% -> 46.2%`) that look like the cycle had no effect.
+
+Computed as `min(measured_cycle_duration, 15s)` — longer cycles imply more water moved, so more settling time is allowed, capped so a long manual run doesn't stall reporting indefinitely.
+
+Applies to both **irrigation** and **drain** cycles (drain reporting does not yet capture moisture, but the delay is shared infrastructure for when it does). It runs as a background task *after* the pump is switched off and the cycle is freed up to run again — it never delays turning off hardware or blocks the next scheduled cycle. All values needed for the eventual report (timestamps, duration, moisture-before, volume/cycle counters) are snapshotted before the background task starts, so a fast-following cycle can't corrupt the numbers being reported for the previous one.
+
+Contrast with **Irrigation Failure Event** — failure paths (abort, error, skip) report immediately and do not wait for sensor settling, since there's no "after" reading to compare.
+
 ## IrrigationConfig.log_to_logbook
 
 Boolean flag (default `True`) that gates verbose operational logbook entries: successful starts, successful completions, and dark-period skips. It does **not** gate failure events — low tank, safety guard, aborts, and exceptions always appear in the logbook regardless of this flag.
