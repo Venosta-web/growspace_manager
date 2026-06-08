@@ -1,17 +1,12 @@
 """Tests for update_vision_checkup_config WebSocket handler."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from homeassistant.core import HomeAssistant
-
-from custom_components.growspace_manager.models import (
-    EnvironmentConfig,
-    Growspace,
-    VisionCheckupConfig,
-)
+from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
 
 
 @pytest.fixture
@@ -113,7 +108,9 @@ async def test_update_vision_checkup_config_no_env_config(mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_update_vision_checkup_config_partial_update(mock_coordinator, mock_growspace):
+async def test_update_vision_checkup_config_partial_update(
+    mock_coordinator, mock_growspace
+):
     from custom_components.growspace_manager.websocket import (
         websocket_update_vision_checkup_config,
     )

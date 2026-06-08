@@ -465,7 +465,7 @@ async def test_async_manual_run_no_duration(
     with pytest.raises(ServiceValidationError) as excinfo:
         await coordinator.async_manual_run(None)
 
-    assert "No irrigation duration provided or configured" in str(excinfo.value)
+    assert "No valid irrigation duration provided or configured" in str(excinfo.value)
 
 
 async def test_async_manual_run_cancels_running_irrigation(

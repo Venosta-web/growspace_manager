@@ -9,12 +9,14 @@ import pytest
 
 from custom_components.growspace_manager.crop_steering_history import (
     CropSteeringHistoryAnalyzer,
+    get_recorder_instance,
 )
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     IrrigationStrategy,
 )
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
@@ -43,6 +45,15 @@ def create_mock_history(
     return history
 
 
+def test_get_recorder_instance_returns_recorder_for_hass(mock_hass) -> None:
+    """get_recorder_instance should defer to the recorder helper's get_instance."""
+    with patch("homeassistant.helpers.recorder.get_instance") as mock_get_instance:
+        mock_get_instance.return_value = "recorder"
+
+        assert get_recorder_instance(mock_hass) == "recorder"
+        mock_get_instance.assert_called_once_with(mock_hass)
+
+
 @patch(
     "custom_components.growspace_manager.crop_steering_history.get_recorder_instance"
 )
@@ -69,6 +80,31 @@ async def test_async_get_history_anchor_prefers_detected_lights_on_time(
     result = await analyzer.async_get_history(growspace)
 
     assert result["lights_on"] == "2026-06-07T07:00:00+00:00"
+
+
+@patch(
+    "custom_components.growspace_manager.crop_steering_history.get_recorder_instance"
+)
+@pytest.mark.asyncio
+@freeze_time("2026-06-07 10:00:00")
+async def test_async_get_history_parses_lights_on_time_without_seconds(
+    mock_get_recorder, analyzer, mock_hass
+) -> None:
+    """A lights-on time given as HH:MM (no seconds) should still be parsed."""
+    mock_recorder_instance = MagicMock()
+    mock_get_recorder.return_value = mock_recorder_instance
+    mock_recorder_instance.async_add_executor_job = AsyncMock(return_value={})
+
+    growspace = Growspace(
+        id="tent1",
+        name="Tent 1",
+        environment_config=EnvironmentConfig(),
+        irrigation_strategy=IrrigationStrategy(lights_on_time="06:30"),
+    )
+
+    result = await analyzer.async_get_history(growspace)
+
+    assert result["lights_on"] == "2026-06-07T06:30:00+00:00"
 
 
 @patch(
@@ -159,6 +195,40 @@ async def test_async_get_history_averages_pore_ec_across_sensors_skipping_missin
 )
 @pytest.mark.asyncio
 @freeze_time("2026-06-07 06:12:00")
+async def test_async_get_history_includes_bulk_ec_when_sensors_configured(
+    mock_get_recorder, analyzer, mock_hass
+) -> None:
+    """The bulk_ec key should appear when bulk_ec_sensors are configured."""
+    mock_recorder_instance = MagicMock()
+    mock_get_recorder.return_value = mock_recorder_instance
+
+    history = create_mock_history(
+        {
+            "sensor.bulk1": [(datetime(2026, 6, 7, 4, 1, tzinfo=dt_util.UTC), 1.5)],
+        }
+    )
+    mock_recorder_instance.async_add_executor_job = AsyncMock(return_value=history)
+
+    growspace = Growspace(
+        id="tent1",
+        name="Tent 1",
+        environment_config=EnvironmentConfig(bulk_ec_sensors=["sensor.bulk1"]),
+        irrigation_strategy=IrrigationStrategy(lights_on_time="06:00:00"),
+    )
+
+    result = await analyzer.async_get_history(growspace)
+
+    assert result["bulk_ec"][0] == {
+        "timestamp": "2026-06-07T04:00:00+00:00",
+        "value": 1.5,
+    }
+
+
+@patch(
+    "custom_components.growspace_manager.crop_steering_history.get_recorder_instance"
+)
+@pytest.mark.asyncio
+@freeze_time("2026-06-07 06:12:00")
 async def test_async_get_history_clips_buckets_at_now_and_omits_unconfigured_keys(
     mock_get_recorder, analyzer, mock_hass
 ) -> None:
@@ -181,3 +251,43 @@ async def test_async_get_history_clips_buckets_at_now_and_omits_unconfigured_key
     assert len(result["soil_moisture"]) == 27
     assert "pore_ec" not in result
     assert "bulk_ec" not in result
+
+
+@patch(
+    "custom_components.growspace_manager.crop_steering_history.get_recorder_instance"
+)
+@pytest.mark.asyncio
+@freeze_time("2026-06-07 06:12:00")
+async def test_async_get_history_ignores_non_numeric_readings_in_bucket_average(
+    mock_get_recorder, analyzer, mock_hass
+) -> None:
+    """Unknown, unavailable, empty, and non-numeric readings are excluded from buckets."""
+    mock_recorder_instance = MagicMock()
+    mock_get_recorder.return_value = mock_recorder_instance
+
+    history = create_mock_history(
+        {
+            "sensor.soil1": [
+                (datetime(2026, 6, 7, 4, 1, tzinfo=dt_util.UTC), STATE_UNKNOWN),
+                (datetime(2026, 6, 7, 4, 2, tzinfo=dt_util.UTC), STATE_UNAVAILABLE),
+                (datetime(2026, 6, 7, 4, 3, tzinfo=dt_util.UTC), ""),
+                (datetime(2026, 6, 7, 4, 4, tzinfo=dt_util.UTC), "not_a_number"),
+                (datetime(2026, 6, 7, 4, 4, 30, tzinfo=dt_util.UTC), "12.5"),
+            ]
+        }
+    )
+    mock_recorder_instance.async_add_executor_job = AsyncMock(return_value=history)
+
+    growspace = Growspace(
+        id="tent1",
+        name="Tent 1",
+        environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.soil1"),
+        irrigation_strategy=IrrigationStrategy(lights_on_time="06:00:00"),
+    )
+
+    result = await analyzer.async_get_history(growspace)
+
+    assert result["soil_moisture"][0] == {
+        "timestamp": "2026-06-07T04:00:00+00:00",
+        "value": 12.5,
+    }

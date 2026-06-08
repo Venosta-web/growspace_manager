@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from homeassistant.core import HomeAssistant
-
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.vision_checkup_scheduler import (
     VisionCheckupScheduler,
 )
+from homeassistant.core import HomeAssistant
 
 
 def test_coordinator_has_vision_scheduler(hass: HomeAssistant) -> None:

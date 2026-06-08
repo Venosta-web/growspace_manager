@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 
 @pytest.mark.asyncio
@@ -43,7 +44,9 @@ async def test_import_lineage_marks_ancestors_as_stubs():
     assert "Haze" in marked
     assert "Blue Dream" not in marked
     for sql, _ in stub_update_sqls:
-        assert "breeder IS NULL" in sql, "Stub UPDATE must guard against overwriting real entries"
+        assert "breeder IS NULL" in sql, (
+            "Stub UPDATE must guard against overwriting real entries"
+        )
 
 
 @pytest.mark.asyncio
@@ -66,6 +69,7 @@ async def test_add_strain_clears_stub_flag():
         def __await__(self):
             async def _noop():
                 return self
+
             return _noop().__await__()
 
         async def __aenter__(self):
@@ -106,7 +110,11 @@ async def test_add_strain_clears_stub_flag():
 async def test_load_populates_is_stub_from_db():
     """load() must read is_stub from the DB row and store it as a bool in meta."""
     import aiosqlite
-    from custom_components.growspace_manager.strain_library import StrainLibrary, STRAIN_LIBRARY_SCHEMA
+
+    from custom_components.growspace_manager.strain_library import (
+        STRAIN_LIBRARY_SCHEMA,
+        StrainLibrary,
+    )
 
     hass = MagicMock()
     hass.config.path.return_value = "/tmp/test_load_is_stub.db"
@@ -123,10 +131,19 @@ async def test_load_populates_is_stub_from_db():
         await db.commit()
 
         # Insert one stub (no breeder) and one real entry
-        await db.execute("INSERT INTO strains (strain_name, is_stub) VALUES (?, ?)", ("Haze", 1))
-        await db.execute("INSERT INTO strains (strain_name, breeder, is_stub) VALUES (?, ?, ?)", ("OG Kush", "DJ Short", 0))
-        await db.execute("INSERT INTO phenotypes (strain_id, phenotype_name) SELECT strain_id, 'default' FROM strains WHERE strain_name = 'Haze'")
-        await db.execute("INSERT INTO phenotypes (strain_id, phenotype_name) SELECT strain_id, 'default' FROM strains WHERE strain_name = 'OG Kush'")
+        await db.execute(
+            "INSERT INTO strains (strain_name, is_stub) VALUES (?, ?)", ("Haze", 1)
+        )
+        await db.execute(
+            "INSERT INTO strains (strain_name, breeder, is_stub) VALUES (?, ?, ?)",
+            ("OG Kush", "DJ Short", 0),
+        )
+        await db.execute(
+            "INSERT INTO phenotypes (strain_id, phenotype_name) SELECT strain_id, 'default' FROM strains WHERE strain_name = 'Haze'"
+        )
+        await db.execute(
+            "INSERT INTO phenotypes (strain_id, phenotype_name) SELECT strain_id, 'default' FROM strains WHERE strain_name = 'OG Kush'"
+        )
         await db.commit()
 
         lib._db = db
