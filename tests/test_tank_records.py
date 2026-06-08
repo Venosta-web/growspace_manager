@@ -44,8 +44,8 @@ def test_consumption_detection() -> None:
 
 
 def test_minor_refill_updates_peak_after_confirmation() -> None:
-    """Verify that a minor refill (below 3%) advances the consumption baseline (peak_level)
-    once a second reading confirms the level is stable.
+    """Verify that a minor refill (below 3%) advances the consumption baseline
+    (peak_level) once a second reading confirms the level is stable.
 
     The trough baseline (last_recorded_level) is preserved so that cumulative rises
     can still accumulate toward the 3% refill threshold.  A single-reading spike that
@@ -95,7 +95,9 @@ def test_sequential_refill_grouping() -> None:
     step2_ts = step1_ts + timedelta(seconds=45)
     tracker.record_level(57.0, step2_ts.isoformat())
 
-    refill_events = [e for e in tank.water_history.events if e["event_type"] == "refill"]
+    refill_events = [
+        e for e in tank.water_history.events if e["event_type"] == "refill"
+    ]
     assert len(refill_events) == 1
     assert refill_events[0]["liters"] == 7.0
     assert refill_events[0]["pct_delta"] == 7.0
@@ -119,7 +121,9 @@ def test_sequential_refill_no_grouping_outside_window() -> None:
     step2_ts = step1_ts + timedelta(minutes=11)
     tracker.record_level(57.0, step2_ts.isoformat())
 
-    refill_events = [e for e in tank.water_history.events if e["event_type"] == "refill"]
+    refill_events = [
+        e for e in tank.water_history.events if e["event_type"] == "refill"
+    ]
     assert len(refill_events) == 2
     assert refill_events[0]["pct_delta"] == 3.0
     assert refill_events[1]["pct_delta"] == 4.0
