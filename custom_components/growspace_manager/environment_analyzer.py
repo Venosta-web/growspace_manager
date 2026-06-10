@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import entity_registry as er
 
-from .bayesian_data import VPD_STRESS_THRESHOLDS
 from .const import DOMAIN
-from .domain.stage import BayesianStage, StageDays, StageClassification, classify_stages
-from .utils import VPDCalculator, interpolate_value
+from .domain.environmental_targets import StageEnvironmentalTargets
+from .domain.stage import BayesianStage, StageDays, classify_stages
+from .utils import VPDCalculator
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -75,37 +75,15 @@ class EnvironmentAnalyzer:
         stage_b = classification.stage_b
         factor = classification.factor
 
-        # Get thresholds for both stages
-        thr_a = VPD_STRESS_THRESHOLDS.get(stage_a, VPD_STRESS_THRESHOLDS["veg"])
-        thr_b = VPD_STRESS_THRESHOLDS.get(stage_b, VPD_STRESS_THRESHOLDS["veg"])
-
-        # Interpolate targets specifically for Day and Night
-        def interpolate_targets(data_a, data_b, f):
-            stress_a = data_a.get("stress", (0.8, 1.4))
-            stress_b = data_b.get("stress", (0.8, 1.4))
-            mild_a = data_a.get("mild", (1.0, 1.2))
-            mild_b = data_b.get("mild", (1.0, 1.2))
-
-            return (
-                interpolate_value(stress_a[0], stress_b[0], f),
-                interpolate_value(stress_a[1], stress_b[1], f),
-                interpolate_value(mild_a[0], mild_b[0], f),
-                interpolate_value(mild_a[1], mild_b[1], f),
-            )
-
-        # Day Targets
-        day_a = thr_a["day"]
-        day_b = thr_b["day"]
-        d_danger_min, d_danger_max, d_target_min, d_target_max = interpolate_targets(
-            day_a, day_b, factor
-        )
-
-        # Night Targets
-        night_a = thr_a["night"]
-        night_b = thr_b["night"]
-        n_danger_min, n_danger_max, n_target_min, n_target_max = interpolate_targets(
-            night_a, night_b, factor
-        )
+        display = StageEnvironmentalTargets(stage_a, stage_b, factor).vpd_display_targets()
+        d_danger_min = display.day_danger_min
+        d_danger_max = display.day_danger_max
+        d_target_min = display.day_target_min
+        d_target_max = display.day_target_max
+        n_danger_min = display.night_danger_min
+        n_danger_max = display.night_danger_max
+        n_target_min = display.night_target_min
+        n_target_max = display.night_target_max
 
         # Determine current active targets based on is_day
         danger_min = d_danger_min if is_day else n_danger_min
