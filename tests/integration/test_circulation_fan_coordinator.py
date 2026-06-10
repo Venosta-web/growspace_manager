@@ -1257,6 +1257,29 @@ def test_get_stage_vpd_target_no_plants_falls_back_to_vpd_target(
     assert coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True) == static_target
 
 
+def test_get_stage_vpd_target_unknown_stage_falls_back_to_vpd_target(
+    mock_hass: MagicMock,
+) -> None:
+    """When the current stage is not in defaults or overrides, it falls back to the static vpd_target."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=1.15,
+        stage_vpd_enabled=True,
+    )
+    plant = MagicMock()
+    mock_stage = MagicMock()
+    mock_stage.value = "non_existent_stage"
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        return_value=mock_stage,
+    ):
+        main_coord = _make_coordinator("gs1", env, plants=[plant])
+        coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+        result = coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True)
+
+    assert result == 1.15
+
+
 # ---------------------------------------------------------------------------
 # Stage VPD Overrides — validation
 # ---------------------------------------------------------------------------
@@ -1290,3 +1313,47 @@ def test_stage_vpd_overrides_validation(
 
     with pytest.raises(ServiceValidationError, match=match):
         _validate_stage_vpd_overrides(bad_overrides)
+
+
+# ---------------------------------------------------------------------------
+# async_restart / reload
+# ---------------------------------------------------------------------------
+
+
+async def test_async_restart_resets_state_and_restarts_tick(
+    mock_hass: MagicMock,
+    mock_track_time_interval: MagicMock,
+) -> None:
+    """async_restart unloads the coordinator, resets safety override state, and starts setup again."""
+    env = _make_env_config()
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    # Pre-populate state
+    coord._temp_override_active = True
+    coord._temp_override_direction = "high"
+    coord._start_time = 100.0
+
+    # Mock unload callback
+    remove_tick_mock = MagicMock()
+    coord._remove_tick = remove_tick_mock
+
+    mock_track_time_interval.reset_mock()
+
+    # Call restart
+    await coord.async_restart()
+
+    # Verify unload was called
+    remove_tick_mock.assert_called_once()
+
+    # Verify override state is reset
+    assert coord._temp_override_active is False
+    assert coord._temp_override_direction is None
+
+    # Verify new start time is set (since async_setup ran)
+    assert coord._start_time > 0.0
+    assert coord._start_time != 100.0
+
+    # Verify async_setup re-registered tick
+    mock_track_time_interval.assert_called_once()
+
