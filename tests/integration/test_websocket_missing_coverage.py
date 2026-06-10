@@ -414,7 +414,7 @@ async def test_websocket_import_strain_lineage_tree_not_loaded(
         side_effect=ServiceValidationError("not loaded"),
     ):
         await websocket_import_strain_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(20, "not_loaded", "Strain library not loaded")
+    mock_connection.send_error.assert_called_once_with(20, "not_loaded", "not loaded")
 
 
 @pytest.mark.asyncio

@@ -53,6 +53,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
+from ._common import handle_ws_errors
+
 _LOGGER = logging.getLogger(__name__)
 
 _OPT_DATE = vol.Any(str, None)
@@ -270,514 +272,424 @@ def _parse_date_kwargs(msg: dict[str, Any]) -> dict[str, Any]:
     return {f: parse_date_field(msg[f]) for f in add_date_fields if f in msg}
 
 
+@handle_ws_errors()
 async def websocket_water_plant(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Water a plant."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        await coordinator.services.plants.water_plant(
-            plant_id=msg[ATTR_PLANT_ID],
-            amount=msg[ATTR_AMOUNT],
-            nutrients=msg.get(ATTR_NUTRIENTS),
-            preset_id=msg.get(ATTR_PRESET_ID),
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_water_plant")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    await coordinator.services.plants.water_plant(
+        plant_id=msg[ATTR_PLANT_ID],
+        amount=msg[ATTR_AMOUNT],
+        nutrients=msg.get(ATTR_NUTRIENTS),
+        preset_id=msg.get(ATTR_PRESET_ID),
+    )
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_add_plant(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Add a single plant to a growspace."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        growspace_id: str = msg[ATTR_GROWSPACE_ID]
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    growspace_id: str = msg[ATTR_GROWSPACE_ID]
 
-        if growspace_id not in coordinator.growspaces:
-            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+    if growspace_id not in coordinator.growspaces:
+        raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
 
-        parsed_dates = _parse_date_kwargs(msg)
-        if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
-            parsed_dates["mother_start"] = dt_util.utcnow()
+    parsed_dates = _parse_date_kwargs(msg)
+    if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
+        parsed_dates["mother_start"] = dt_util.utcnow()
 
-        seed_batch_id = msg.get(ATTR_SEED_BATCH_ID)
-        batch = (
-            coordinator.services.genetics.seed_batch_by_id(seed_batch_id)
-            if seed_batch_id
-            else None
-        )
+    seed_batch_id = msg.get(ATTR_SEED_BATCH_ID)
+    batch = (
+        coordinator.services.genetics.seed_batch_by_id(seed_batch_id)
+        if seed_batch_id
+        else None
+    )
 
-        try:
-            await coordinator.services.plants.add_plant(
-                growspace_id=growspace_id,
-                strain=msg[ATTR_STRAIN],
-                row=msg[ATTR_ROW],
-                col=msg[ATTR_COL],
-                phenotype=msg.get(ATTR_PHENOTYPE, ""),
-                seed_batch_id=seed_batch_id,
-                generation=batch.generation if batch else "",
-                **parsed_dates,
-            )
-        except GrowspaceError as err:
-            raise ServiceValidationError(str(err)) from err
+    await coordinator.services.plants.add_plant(
+        growspace_id=growspace_id,
+        strain=msg[ATTR_STRAIN],
+        row=msg[ATTR_ROW],
+        col=msg[ATTR_COL],
+        phenotype=msg.get(ATTR_PHENOTYPE, ""),
+        seed_batch_id=seed_batch_id,
+        generation=batch.generation if batch else "",
+        **parsed_dates,
+    )
 
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_add_plant")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_add_plants(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Batch-add plants to a growspace."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        growspace_id: str = msg[ATTR_GROWSPACE_ID]
-        strain: str = msg[ATTR_STRAIN]
-        amount: int = msg[ATTR_AMOUNT]
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    growspace_id: str = msg[ATTR_GROWSPACE_ID]
+    strain: str = msg[ATTR_STRAIN]
+    amount: int = msg[ATTR_AMOUNT]
 
-        if growspace_id not in coordinator.growspaces:
-            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+    if growspace_id not in coordinator.growspaces:
+        raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
 
-        free_row, free_col = coordinator.validator.find_first_available_position(growspace_id)
-        if free_row is None or free_col is None:
-            raise ServiceValidationError(f"Growspace '{growspace_id}' is full")
+    free_row, free_col = coordinator.validator.find_first_available_position(growspace_id)
+    if free_row is None or free_col is None:
+        raise ServiceValidationError(f"Growspace '{growspace_id}' is full")
 
-        parsed_dates = _parse_date_kwargs(msg)
-        if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
-            parsed_dates["mother_start"] = dt_util.utcnow()
+    parsed_dates = _parse_date_kwargs(msg)
+    if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
+        parsed_dates["mother_start"] = dt_util.utcnow()
 
-        start_number: int = msg.get(ATTR_START_NUMBER, 1)
-        base_phenotype: str | None = msg.get(ATTR_PHENOTYPE)
-        seed_batch_id: str | None = msg.get(ATTR_SEED_BATCH_ID)
-        batch = (
-            coordinator.services.genetics.seed_batch_by_id(seed_batch_id)
-            if seed_batch_id
-            else None
+    start_number: int = msg.get(ATTR_START_NUMBER, 1)
+    base_phenotype: str | None = msg.get(ATTR_PHENOTYPE)
+    seed_batch_id: str | None = msg.get(ATTR_SEED_BATCH_ID)
+    batch = (
+        coordinator.services.genetics.seed_batch_by_id(seed_batch_id)
+        if seed_batch_id
+        else None
+    )
+    generation = batch.generation if batch else ""
+
+    plants_added = 0
+    for i in range(amount):
+        current_number = start_number + i
+        phenotype = (
+            f"{base_phenotype} #{current_number}"
+            if base_phenotype
+            else f"{strain} #{current_number}"
         )
-        generation = batch.generation if batch else ""
-
-        plants_added = 0
-        for i in range(amount):
-            current_number = start_number + i
-            phenotype = (
-                f"{base_phenotype} #{current_number}"
-                if base_phenotype
-                else f"{strain} #{current_number}"
+        row, col = coordinator.validator.find_first_available_position(growspace_id)
+        if row is None or col is None:
+            _LOGGER.warning(
+                "Growspace %s full after %d plants; stopping batch", growspace_id, plants_added
             )
-            row, col = coordinator.validator.find_first_available_position(growspace_id)
-            if row is None or col is None:
-                _LOGGER.warning(
-                    "Growspace %s full after %d plants; stopping batch", growspace_id, plants_added
-                )
-                break
-            try:
-                await coordinator.services.plants.add_plant(
-                    growspace_id=growspace_id,
-                    strain=strain,
-                    row=row,
-                    col=col,
-                    phenotype=phenotype,
-                    seed_batch_id=seed_batch_id,
-                    generation=generation,
-                    **parsed_dates,
-                )
-                plants_added += 1
-            except GrowspaceError as err:
-                _LOGGER.error("Batch add stopped at plant %d: %s", i + 1, err)
-                break
+            break
+        try:
+            await coordinator.services.plants.add_plant(
+                growspace_id=growspace_id,
+                strain=strain,
+                row=row,
+                col=col,
+                phenotype=phenotype,
+                seed_batch_id=seed_batch_id,
+                generation=generation,
+                **parsed_dates,
+            )
+            plants_added += 1
+        except GrowspaceError as err:
+            _LOGGER.error("Batch add stopped at plant %d: %s", i + 1, err)
+            break
 
-        connection.send_result(msg["id"], {"plants_added": plants_added})
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_add_plants")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    connection.send_result(msg["id"], {"plants_added": plants_added})
 
 
+@handle_ws_errors()
 async def websocket_update_plant(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Update attributes on a plant."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        plant_id: str = msg[ATTR_PLANT_ID]
-        coordinator.validator.validate_plant_exists(plant_id)
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    plant_id: str = msg[ATTR_PLANT_ID]
+    coordinator.validator.validate_plant_exists(plant_id)
 
-        skip_keys = {"id", "type", ATTR_PLANT_ID}
-        update_data: dict[str, Any] = {}
-        for k, v in msg.items():
-            if k in skip_keys:
-                continue
-            if v is None and k not in DATE_FIELDS:
-                continue
-            if k in DATE_FIELDS:
-                update_data[k] = parse_date_field(v)
-            else:
-                update_data[k] = v
+    skip_keys = {"id", "type", ATTR_PLANT_ID}
+    update_data: dict[str, Any] = {}
+    for k, v in msg.items():
+        if k in skip_keys:
+            continue
+        if v is None and k not in DATE_FIELDS:
+            continue
+        if k in DATE_FIELDS:
+            update_data[k] = parse_date_field(v)
+        else:
+            update_data[k] = v
 
-        if update_data:
-            await coordinator.services.plants.update_plant(plant_id, **update_data)
+    if update_data:
+        await coordinator.services.plants.update_plant(plant_id, **update_data)
 
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_update_plant")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_remove_plant(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Remove a plant from its growspace."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        plant_id: str = msg[ATTR_PLANT_ID]
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    plant_id: str = msg[ATTR_PLANT_ID]
 
-        if plant_id not in coordinator.plants:
-            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+    if plant_id not in coordinator.plants:
+        raise ServiceValidationError(f"Plant '{plant_id}' not found")
 
-        await coordinator.services.plants.remove_plant(plant_id)
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_remove_plant")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await coordinator.services.plants.remove_plant(plant_id)
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_harvest_plant(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Harvest a plant, optionally with yield metrics."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        plant_id: str = msg[ATTR_PLANT_ID]
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    plant_id: str = msg[ATTR_PLANT_ID]
 
-        if plant_id not in coordinator.plants:
-            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+    if plant_id not in coordinator.plants:
+        raise ServiceValidationError(f"Plant '{plant_id}' not found")
 
-        transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
-        transition_date: str | None = None
-        if transition_date_str:
-            parsed = parse_date_field(transition_date_str)
-            if parsed:
-                transition_date = parsed.date().isoformat()
-            else:
-                raise ServiceValidationError(f"Invalid transition_date: {transition_date_str}")
+    transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
+    transition_date: str | None = None
+    if transition_date_str:
+        parsed = parse_date_field(transition_date_str)
+        if parsed:
+            transition_date = parsed.date().isoformat()
+        else:
+            raise ServiceValidationError(f"Invalid transition_date: {transition_date_str}")
 
-        await coordinator.services.plants.transition_plant(
-            plant_id=plant_id,
-            target_growspace_id=msg.get(ATTR_TARGET_GROWSPACE_ID),
-            target_growspace_name=None,
-            transition_date=transition_date,
-            wet_weight=msg.get(ATTR_WET_WEIGHT),
-            dry_weight=msg.get(ATTR_DRY_WEIGHT),
-            trim_weight=msg.get(ATTR_TRIM_WEIGHT),
-            thc_percentage=msg.get(ATTR_THC_PERCENTAGE),
-            cbd_percentage=msg.get(ATTR_CBD_PERCENTAGE),
-            terpene_profile=msg.get(ATTR_TERPENE_PROFILE),
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_harvest_plant")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await coordinator.services.plants.transition_plant(
+        plant_id=plant_id,
+        target_growspace_id=msg.get(ATTR_TARGET_GROWSPACE_ID),
+        target_growspace_name=None,
+        transition_date=transition_date,
+        wet_weight=msg.get(ATTR_WET_WEIGHT),
+        dry_weight=msg.get(ATTR_DRY_WEIGHT),
+        trim_weight=msg.get(ATTR_TRIM_WEIGHT),
+        thc_percentage=msg.get(ATTR_THC_PERCENTAGE),
+        cbd_percentage=msg.get(ATTR_CBD_PERCENTAGE),
+        terpene_profile=msg.get(ATTR_TERPENE_PROFILE),
+    )
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_move_plant(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Transplant a non-clone plant to a different growspace."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        plant_id: str = msg[ATTR_PLANT_ID]
-        target_growspace_id: str = msg[ATTR_TARGET_GROWSPACE_ID]
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    plant_id: str = msg[ATTR_PLANT_ID]
+    target_growspace_id: str = msg[ATTR_TARGET_GROWSPACE_ID]
 
-        if plant_id not in coordinator.plants:
-            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+    if plant_id not in coordinator.plants:
+        raise ServiceValidationError(f"Plant '{plant_id}' not found")
 
-        transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
-        transition_date: str | None = None
-        if transition_date_str:
-            parsed = parse_date_field(transition_date_str)
-            if parsed:
-                transition_date = parsed.date().isoformat()
+    transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
+    transition_date: str | None = None
+    if transition_date_str:
+        parsed = parse_date_field(transition_date_str)
+        if parsed:
+            transition_date = parsed.date().isoformat()
 
-        await coordinator.services.plants.transition_plant(
-            plant_id=plant_id,
-            target_growspace_id=target_growspace_id,
-            target_growspace_name=None,
-            transition_date=transition_date,
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_move_plant")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await coordinator.services.plants.transition_plant(
+        plant_id=plant_id,
+        target_growspace_id=target_growspace_id,
+        target_growspace_name=None,
+        transition_date=transition_date,
+    )
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_move_clone(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Promote a clone to the next growth stage in a target growspace."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        plant_id: str = msg[ATTR_PLANT_ID]
-        target_growspace_id: str = msg[ATTR_TARGET_GROWSPACE_ID]
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    plant_id: str = msg[ATTR_PLANT_ID]
+    target_growspace_id: str = msg[ATTR_TARGET_GROWSPACE_ID]
 
-        transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
-        transition_date = (
-            (parse_date_field(transition_date_str) or dt_util.utcnow()).date()
-            if transition_date_str
-            else dt_util.utcnow().date()
-        )
+    transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
+    transition_date = (
+        (parse_date_field(transition_date_str) or dt_util.utcnow()).date()
+        if transition_date_str
+        else dt_util.utcnow().date()
+    )
 
-        await coordinator.services.plants.promote_clone(
-            clone_id=plant_id,
-            target_growspace_id=target_growspace_id,
-            transition_date=transition_date,
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except (GrowspaceError, ValueError) as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_move_clone")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await coordinator.services.plants.promote_clone(
+        clone_id=plant_id,
+        target_growspace_id=target_growspace_id,
+        transition_date=transition_date,
+    )
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_switch_plants(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Swap the grid positions of two plants."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        plant1_id: str = msg[ATTR_PLANT1_ID]
-        plant2_id: str = msg[ATTR_PLANT2_ID]
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    plant1_id: str = msg[ATTR_PLANT1_ID]
+    plant2_id: str = msg[ATTR_PLANT2_ID]
 
-        if plant1_id not in coordinator.plants:
-            raise ServiceValidationError(f"Plant '{plant1_id}' not found")
-        if plant2_id not in coordinator.plants:
-            raise ServiceValidationError(f"Plant '{plant2_id}' not found")
+    if plant1_id not in coordinator.plants:
+        raise ServiceValidationError(f"Plant '{plant1_id}' not found")
+    if plant2_id not in coordinator.plants:
+        raise ServiceValidationError(f"Plant '{plant2_id}' not found")
 
-        await coordinator.services.plants.switch_plants(plant1_id, plant2_id)
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_switch_plants")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await coordinator.services.plants.switch_plants(plant1_id, plant2_id)
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_take_clone(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Take clones from a mother plant."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        mother_plant_id: str = msg[ATTR_MOTHER_PLANT_ID]
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    mother_plant_id: str = msg[ATTR_MOTHER_PLANT_ID]
 
-        if mother_plant_id not in coordinator.plants:
-            raise ServiceValidationError(f"Mother plant '{mother_plant_id}' not found")
+    if mother_plant_id not in coordinator.plants:
+        raise ServiceValidationError(f"Mother plant '{mother_plant_id}' not found")
 
-        transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
-        transition_date = (
-            (parse_date_field(transition_date_str) or dt_util.utcnow()).date()
-            if transition_date_str
-            else dt_util.utcnow().date()
-        )
+    transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
+    transition_date = (
+        (parse_date_field(transition_date_str) or dt_util.utcnow()).date()
+        if transition_date_str
+        else dt_util.utcnow().date()
+    )
 
-        try:
-            await coordinator.services.plants.take_clones(
-                mother_plant_id=mother_plant_id,
-                num_clones=msg.get(ATTR_NUM_CLONES, 1),
-                target_growspace_id=msg.get(ATTR_TARGET_GROWSPACE_ID),
-                transition_date=transition_date,
-            )
-        except (GrowspaceError, ValueError) as err:
-            raise ServiceValidationError(str(err)) from err
+    await coordinator.services.plants.take_clones(
+        mother_plant_id=mother_plant_id,
+        num_clones=msg.get(ATTR_NUM_CLONES, 1),
+        target_growspace_id=msg.get(ATTR_TARGET_GROWSPACE_ID),
+        transition_date=transition_date,
+    )
 
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_take_clone")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_score_plant(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Score phenotype traits on a plant."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        plant_id: str = msg[ATTR_PLANT_ID]
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    plant_id: str = msg[ATTR_PLANT_ID]
 
-        if plant_id not in coordinator.plants:
-            raise ServiceValidationError(f"Plant '{plant_id}' not found")
+    if plant_id not in coordinator.plants:
+        raise ServiceValidationError(f"Plant '{plant_id}' not found")
 
-        await coordinator.services.plants.score_plant(
-            plant_id=plant_id,
-            vigor=msg.get(ATTR_VIGOR),
-            structure=msg.get(ATTR_STRUCTURE),
-            aroma=msg.get(ATTR_AROMA),
-            resin=msg.get(ATTR_RESIN),
-            pest_resistance=msg.get(ATTR_PEST_RESISTANCE),
-            internodal_spacing=msg.get(ATTR_INTERNODAL_SPACING),
-            terpene_intensity=msg.get(ATTR_TERPENE_INTENSITY),
-            mold_resistance=msg.get(ATTR_MOLD_RESISTANCE),
-            yield_potential=msg.get(ATTR_YIELD_POTENTIAL),
-            keeper=msg.get(ATTR_KEEPER),
-            notes=msg.get("notes"),
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_score_plant")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await coordinator.services.plants.score_plant(
+        plant_id=plant_id,
+        vigor=msg.get(ATTR_VIGOR),
+        structure=msg.get(ATTR_STRUCTURE),
+        aroma=msg.get(ATTR_AROMA),
+        resin=msg.get(ATTR_RESIN),
+        pest_resistance=msg.get(ATTR_PEST_RESISTANCE),
+        internodal_spacing=msg.get(ATTR_INTERNODAL_SPACING),
+        terpene_intensity=msg.get(ATTR_TERPENE_INTENSITY),
+        mold_resistance=msg.get(ATTR_MOLD_RESISTANCE),
+        yield_potential=msg.get(ATTR_YIELD_POTENTIAL),
+        keeper=msg.get(ATTR_KEEPER),
+        notes=msg.get("notes"),
+    )
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_log_drying_weight(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Log a drying weight reading for a plant."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        await coordinator.services.plants.log_drying_weight(
-            plant_id=msg[ATTR_PLANT_ID],
-            weight_grams=msg["weight_grams"],
-            date=msg.get("date"),
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_log_drying_weight")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    await coordinator.services.plants.log_drying_weight(
+        plant_id=msg[ATTR_PLANT_ID],
+        weight_grams=msg["weight_grams"],
+        date=msg.get("date"),
+    )
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_log_moisture_reading(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Log a substrate moisture reading for a plant."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        await coordinator.services.plants.log_moisture_reading(
-            plant_id=msg[ATTR_PLANT_ID],
-            moisture_percent=msg["moisture_percent"],
-            date=msg.get("date"),
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_log_moisture_reading")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    await coordinator.services.plants.log_moisture_reading(
+        plant_id=msg[ATTR_PLANT_ID],
+        moisture_percent=msg["moisture_percent"],
+        date=msg.get("date"),
+    )
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_set_visual_tag(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Attach or clear a visual tag on a plant."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        await coordinator.services.plants.set_visual_tag(
-            plant_id=msg[ATTR_PLANT_ID],
-            visual_tag=msg["visual_tag"],
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_set_visual_tag")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    await coordinator.services.plants.set_visual_tag(
+        plant_id=msg[ATTR_PLANT_ID],
+        visual_tag=msg["visual_tag"],
+    )
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_update_harvest_metrics(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Persist harvest yield metrics on a plant."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        await coordinator.services.plants.update_harvest_metrics(
-            plant_id=msg[ATTR_PLANT_ID],
-            wet_weight=msg.get(ATTR_WET_WEIGHT),
-            dry_weight=msg.get(ATTR_DRY_WEIGHT),
-            trim_weight=msg.get(ATTR_TRIM_WEIGHT),
-            thc_percentage=msg.get(ATTR_THC_PERCENTAGE),
-            cbd_percentage=msg.get(ATTR_CBD_PERCENTAGE),
-            terpene_profile=msg.get(ATTR_TERPENE_PROFILE),
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_update_harvest_metrics")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    await coordinator.services.plants.update_harvest_metrics(
+        plant_id=msg[ATTR_PLANT_ID],
+        wet_weight=msg.get(ATTR_WET_WEIGHT),
+        dry_weight=msg.get(ATTR_DRY_WEIGHT),
+        trim_weight=msg.get(ATTR_TRIM_WEIGHT),
+        thc_percentage=msg.get(ATTR_THC_PERCENTAGE),
+        cbd_percentage=msg.get(ATTR_CBD_PERCENTAGE),
+        terpene_profile=msg.get(ATTR_TERPENE_PROFILE),
+    )
+    connection.send_result(msg["id"])
 
 
+@handle_ws_errors()
 async def websocket_print_label(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Print a label for a plant or strain via the Niimbot service."""
-    try:
-        skip_keys = {"id", "type"}
-        service_data = {k: v for k, v in msg.items() if k not in skip_keys}
-        await hass.services.async_call(
-            DOMAIN, "print_label", service_data, blocking=True
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "validation_failed", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_print_label")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    skip_keys = {"id", "type"}
+    service_data = {k: v for k, v in msg.items() if k not in skip_keys}
+    await hass.services.async_call(DOMAIN, "print_label", service_data, blocking=True)
+    connection.send_result(msg["id"])
 
 
 COMMANDS: list[tuple[str, Any, Any, bool]] = [

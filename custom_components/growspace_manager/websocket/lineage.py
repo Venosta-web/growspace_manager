@@ -14,7 +14,15 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
+from ._common import WSErrorMap, handle_ws_errors
+
 _LOGGER = logging.getLogger(__name__)
+
+# Strain library lookups report "not loaded" rather than a generic failure.
+_STRAIN_LIBRARY_ERROR_MAP: WSErrorMap = (
+    (ServiceValidationError, "not_loaded", False, None),
+    (Exception, "unknown_error", False, None),
+)
 
 WS_TYPE_GET_LINEAGE_TREE = f"{DOMAIN}/get_lineage_tree"
 SCHEMA_WS_GET_LINEAGE_TREE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
@@ -98,58 +106,44 @@ async def websocket_get_lineage_tree(
         connection.send_error(msg["id"], "unknown_error", str(e))
 
 
+@handle_ws_errors(_STRAIN_LIBRARY_ERROR_MAP)
 async def websocket_get_strain_lineage_tree(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Handle get_strain_lineage_tree command."""
     strain_name = msg["strain_name"]
-    try:
-        coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library = coordinator.services.config.strain_library
-        tree = strain_library.get_strain_lineage_tree(strain_name)
-        connection.send_result(msg["id"], tree)
-    except ServiceValidationError:
-        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:  # noqa: BLE001
-        connection.send_error(msg["id"], "unknown_error", str(e))
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    strain_library = coordinator.services.config.strain_library
+    tree = strain_library.get_strain_lineage_tree(strain_name)
+    connection.send_result(msg["id"], tree)
 
 
+@handle_ws_errors(_STRAIN_LIBRARY_ERROR_MAP)
 async def websocket_update_strain_lineage_tree(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Handle update_strain_lineage_tree command."""
     strain_name = msg["strain_name"]
     parents = msg["parents"]
-    try:
-        coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library = coordinator.services.config.strain_library
-        flat_lineage = await strain_library.update_strain_lineage_tree(
-            strain_name, parents
-        )
-        connection.send_result(msg["id"], {"lineage": flat_lineage})
-    except ServiceValidationError:
-        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:  # noqa: BLE001
-        connection.send_error(msg["id"], "unknown_error", str(e))
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    strain_library = coordinator.services.config.strain_library
+    flat_lineage = await strain_library.update_strain_lineage_tree(strain_name, parents)
+    connection.send_result(msg["id"], {"lineage": flat_lineage})
 
 
+@handle_ws_errors(_STRAIN_LIBRARY_ERROR_MAP)
 async def websocket_import_strain_lineage_tree(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Import a full seedfinder lineage tree, creating ancestor stubs as needed."""
     strain_name = msg["strain_name"]
     tree = msg["tree"]
-    try:
-        coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library = coordinator.services.config.strain_library
-        await strain_library.async_import_seedfinder_lineage_tree(
-            strain_name, tree, scraper=coordinator.seedfinder_scraper
-        )
-        connection.send_result(msg["id"], {"ok": True})
-    except ServiceValidationError:
-        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:  # noqa: BLE001
-        connection.send_error(msg["id"], "unknown_error", str(e))
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    strain_library = coordinator.services.config.strain_library
+    await strain_library.async_import_seedfinder_lineage_tree(
+        strain_name, tree, scraper=coordinator.seedfinder_scraper
+    )
+    connection.send_result(msg["id"], {"ok": True})
 
 
 COMMANDS: list[tuple[str, Any, Any, bool]] = [

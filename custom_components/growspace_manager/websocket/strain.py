@@ -17,7 +17,19 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import slugify
 
+from ._common import WSErrorMap, handle_ws_errors, handle_ws_errors_sync
+
 _LOGGER = logging.getLogger(__name__)
+
+_LIBRARY_ERROR_MAP: WSErrorMap = (
+    (ServiceValidationError, "not_loaded", False, "Growspace Manager strain library not loaded"),
+    (Exception, "unknown_error", True, None),
+)
+
+_IMAGE_ERROR_MAP: WSErrorMap = (
+    (ServiceValidationError, "not_loaded", False, "Strain library not loaded"),
+    (Exception, "unknown_error", False, None),
+)
 
 WS_TYPE_GET_STRAIN_LIBRARY = f"{DOMAIN}/get_strain_library"
 SCHEMA_WS_GET_STRAIN_LIBRARY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
@@ -68,49 +80,39 @@ SCHEMA_WS_DOWNLOAD_STRAIN_IMAGE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exte
 
 
 @callback
+@handle_ws_errors_sync(_LIBRARY_ERROR_MAP)
 def websocket_get_strain_library(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     """Handle get strain library command via WebSocket."""
-    try:
-        coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library: StrainLibrary = coordinator.services.config.strain_library
-        all_strains = strain_library.get_all()
-        response = {
-            "strains": all_strains,
-            "strain_list": list(all_strains.keys()),
-        }
-        connection.send_result(msg["id"], response)
-    except ServiceValidationError:
-        connection.send_error(
-            msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
-        )
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_get_strain_library")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    strain_library: StrainLibrary = coordinator.services.config.strain_library
+    all_strains = strain_library.get_all()
+    response = {
+        "strains": all_strains,
+        "strain_list": list(all_strains.keys()),
+    }
+    connection.send_result(msg["id"], response)
 
 
+@handle_ws_errors(_IMAGE_ERROR_MAP)
 async def websocket_upload_strain_image(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Upload a strain image to disk and return its local path."""
-    try:
-        coordinator = GrowspaceCoordinator.get_any(hass)
-        image_manager = coordinator.services.config.strain_library.image_manager
-        abs_path = await image_manager.save_strain_image(
-            slugify(msg["strain"]), slugify(msg["phenotype"]), msg["image_base64"]
-        )
-        filename = Path(abs_path).name
-        local_path = f"/local/growspace_manager/strains/{filename}"
-        connection.send_result(msg["id"], {"path": local_path})
-    except ServiceValidationError:
-        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:  # noqa: BLE001
-        connection.send_error(msg["id"], "unknown_error", str(e))
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    image_manager = coordinator.services.config.strain_library.image_manager
+    abs_path = await image_manager.save_strain_image(
+        slugify(msg["strain"]), slugify(msg["phenotype"]), msg["image_base64"]
+    )
+    filename = Path(abs_path).name
+    local_path = f"/local/growspace_manager/strains/{filename}"
+    connection.send_result(msg["id"], {"path": local_path})
 
 
+@handle_ws_errors(_IMAGE_ERROR_MAP)
 async def websocket_download_strain_image(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
@@ -120,34 +122,29 @@ async def websocket_download_strain_image(
     import base64 as _base64  # noqa: PLC0415
 
     url = msg["url"]
-    try:
-        coordinator = GrowspaceCoordinator.get_any(hass)
-        image_manager = coordinator.services.config.strain_library.image_manager
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    image_manager = coordinator.services.config.strain_library.image_manager
 
-        session = async_get_clientsession(hass)
-        headers = {
-            "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant)",
-            "Accept": "image/webp,image/png,image/jpeg,*/*",
-            "Referer": "https://en.seedfinder.eu/",
-        }
-        async with session.get(url, timeout=15, headers=headers, allow_redirects=True, max_redirects=20) as response:
-            if response.status != 200:
-                connection.send_error(msg["id"], "fetch_failed", f"HTTP {response.status}")
-                return
-            raw = await response.read()
+    session = async_get_clientsession(hass)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant)",
+        "Accept": "image/webp,image/png,image/jpeg,*/*",
+        "Referer": "https://en.seedfinder.eu/",
+    }
+    async with session.get(url, timeout=15, headers=headers, allow_redirects=True, max_redirects=20) as response:
+        if response.status != 200:
+            connection.send_error(msg["id"], "fetch_failed", f"HTTP {response.status}")
+            return
+        raw = await response.read()
 
-        mime_type = response.headers.get("Content-Type", "image/jpeg")
-        image_base64 = f"data:{mime_type};base64," + _base64.b64encode(raw).decode()
-        abs_path = await image_manager.save_strain_image(
-            slugify(msg["strain"]), slugify(msg["phenotype"]), image_base64
-        )
-        filename = Path(abs_path).name
-        local_path = f"/local/growspace_manager/strains/{filename}"
-        connection.send_result(msg["id"], {"path": local_path})
-    except ServiceValidationError:
-        connection.send_error(msg["id"], "not_loaded", "Strain library not loaded")
-    except Exception as e:  # noqa: BLE001
-        connection.send_error(msg["id"], "unknown_error", str(e))
+    mime_type = response.headers.get("Content-Type", "image/jpeg")
+    image_base64 = f"data:{mime_type};base64," + _base64.b64encode(raw).decode()
+    abs_path = await image_manager.save_strain_image(
+        slugify(msg["strain"]), slugify(msg["phenotype"]), image_base64
+    )
+    filename = Path(abs_path).name
+    local_path = f"/local/growspace_manager/strains/{filename}"
+    connection.send_result(msg["id"], {"path": local_path})
 
 
 async def websocket_query_external_strain(
