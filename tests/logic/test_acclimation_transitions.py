@@ -4,8 +4,8 @@ from custom_components.growspace_manager.bayesian_evaluator import (
     evaluate_direct_humidity_stress,
     evaluate_direct_vpd_stress,
 )
+from custom_components.growspace_manager.domain.stage import StageDays, classify_stages
 from custom_components.growspace_manager.models import EnvironmentState
-from custom_components.growspace_manager.utils import calculate_stage_transition
 
 
 def test_seedling_acclimation_humidity_stress():
@@ -89,33 +89,13 @@ def test_clone_acclimation_vpd_stress():
 
 
 def test_stage_transition_logic():
-    """Verify the stage transition factors for acclimation."""
-    # Day 1
-    s, t, f = calculate_stage_transition(-1, -1, 1, -1)
-    assert s == "seedling"
-    assert t == "seedling"
-    assert f == 0.0
+    """Verify the stage transition factors for seedling acclimation."""
+    def sc(seedling: int) -> tuple[str, str, float]:
+        r = classify_stages(StageDays(seedling=seedling))
+        return r.stage_a, r.stage_b, r.factor
 
-    # Day 3 (Edge of full acclimation)
-    s, t, f = calculate_stage_transition(-1, -1, 3, -1)
-    assert s == "seedling"
-    assert t == "seedling"
-    assert f == 0.0
-
-    # Day 5 (Midpoint)
-    s, t, f = calculate_stage_transition(-1, -1, 5, -1)
-    assert s == "seedling"
-    assert t == "seedling_standard"
-    assert f == 0.5
-
-    # Day 7 (End of transition)
-    s, t, f = calculate_stage_transition(-1, -1, 7, -1)
-    assert s == "seedling"
-    assert t == "seedling_standard"
-    assert f == 1.0
-
-    # Day 8 (Standard)
-    s, t, f = calculate_stage_transition(-1, -1, 8, -1)
-    assert s == "seedling_standard"
-    assert t == "seedling_standard"
-    assert f == 0.0
+    assert sc(1) == ("seedling", "seedling", 0.0)
+    assert sc(3) == ("seedling", "seedling", 0.0)
+    assert sc(5) == ("seedling", "seedling_standard", 0.5)
+    assert sc(7) == ("seedling", "seedling_standard", 1.0)
+    assert sc(8) == ("seedling_standard", "seedling_standard", 0.0)

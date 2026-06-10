@@ -24,6 +24,14 @@ The lifecycle phase of an individual plant (`seedling`, `clone`, `veg`, `flower`
 
 The single `PlantStage` that wins when a growspace contains plants at multiple stages. Computed by `determine_coordinator_stage()` using the priority ladder above. Maps to the growspace's effective `GrowspaceType`.
 
+## StageDays
+
+The aggregated per-stage maximum-days inputs for a growspace, derived from its plants. Each field holds the highest number of days any plant has spent in that stage, or `-1` if no plant is in that stage. `StageDays` is the single input to `classify_stages()` and is constructed by the view model builder from plant records. An all-`-1` `StageDays` (no plants in any stage) classifies as `EMPTY`.
+
+## StageClassification
+
+The canonical output of `classify_stages(StageDays)`, defined in `domain/stage.py`. Carries `stage_a` and `stage_b` (`BayesianStage` enum values) and a `factor` (0.0–1.0) for smooth VPD threshold interpolation across stage boundaries, plus a `display_stage` property that collapses internal Bayesian sub-stages (e.g. `SEEDLING_STANDARD` → `SEEDLING`) and applies the factor-≥-0.5 flip rule for the card-visible label. `EMPTY` classification disables VPD monitoring and Bayesian evaluation — used when a growspace has no active plants.
+
 ## EnvironmentConfig
 
 The set of HA sensor entity IDs linked to a growspace. Covers: temperature, humidity, VPD, CO₂, substrate temperature, soil moisture, feed EC, bulk EC, pore EC, runoff EC, pH, drain volume, irrigation flow, power, energy, irrigation tanks, lights, fans, humidifier, dehumidifier. All sensor types can be linked to any growspace regardless of its `GrowspaceType`.

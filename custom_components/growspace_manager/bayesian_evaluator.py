@@ -106,9 +106,9 @@ from .const import (
     CONF_TREND_SENSOR_MAP,
     CONF_TREND_THRESHOLD_MAP,
 )
-from .domain.stage import BayesianStage
+from .domain.stage import BayesianStage, StageDays, StageClassification, classify_stages
 from .models import EnvironmentState
-from .utils import calculate_stage_transition, interpolate_value
+from .utils import interpolate_value
 
 if TYPE_CHECKING:
     from .models import EnvironmentConfig
@@ -117,6 +117,20 @@ _LOGGER = logging.getLogger(__name__)
 
 # Type aliases for readability
 Obs = tuple[float, float]
+
+
+def _classify(state: EnvironmentState) -> StageClassification:
+    return classify_stages(StageDays(
+        veg=state.veg_days,
+        flower=state.flower_days,
+        dry=state.dry_days,
+        cure=state.cure_days,
+        seedling=state.seedling_days,
+        clone=state.clone_days,
+        mother=state.mother_days,
+    ))
+
+
 Reason = tuple[float, str]
 ObservationList = list[Obs]
 ReasonList = list[Reason]
@@ -542,16 +556,10 @@ def evaluate_direct_humidity_stress(
         observations.append(prob)
         reasons.append((prob[0], f"Humidity Dry ({hum})"))
 
-    # Stage-dependent transition logic
-    stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days,
-        state.veg_days,
-        state.seedling_days,
-        state.clone_days,
-        state.dry_days,
-        state.cure_days,
-        state.mother_days,
-    )
+    sc = _classify(state)
+    if sc.stage_a == BayesianStage.EMPTY:
+        return observations, reasons
+    stage_a, stage_b, factor = sc.stage_a, sc.stage_b, sc.factor
 
     def get_hum_limits(stage):
         if stage in (BayesianStage.SEEDLING, BayesianStage.CLONE):
@@ -605,16 +613,10 @@ def evaluate_direct_vpd_stress(
     if state.vpd is None:
         return observations, reasons
 
-    # Use transition logic
-    stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days,
-        state.veg_days,
-        state.seedling_days,
-        state.clone_days,
-        state.dry_days,
-        state.cure_days,
-        state.mother_days,
-    )
+    sc = _classify(state)
+    if sc.stage_a == BayesianStage.EMPTY:
+        return observations, reasons
+    stage_a, stage_b, factor = sc.stage_a, sc.stage_b, sc.factor
     time_of_day = "night" if state.is_lights_on is False else "day"
 
     thr_a = VPD_STRESS_THRESHOLDS[stage_a][time_of_day]
@@ -883,15 +885,10 @@ def evaluate_optimal_vpd(
     vpd_optimal = False
     prob_vpd_out_of_range = PROB_VPD_STRESS_OUT_OF_RANGE  # Reuse stress probability
 
-    stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days,
-        state.veg_days,
-        state.seedling_days,
-        state.clone_days,
-        state.dry_days,
-        state.cure_days,
-        state.mother_days,
-    )
+    sc = _classify(state)
+    if sc.stage_a == BayesianStage.EMPTY:
+        return observations, reasons
+    stage_a, stage_b, factor = sc.stage_a, sc.stage_b, sc.factor
     time_of_day = "night" if state.is_lights_on is False else "day"
     vpd_overrides: dict[str, Any] = env_config.get("vpd_optimal_overrides", {})
 
@@ -934,16 +931,10 @@ def evaluate_optimal_co2(
     co2 = state.co2
     co2_optimal = False
 
-    # Use stage transition logic for smooth interpolation
-    stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days,
-        state.veg_days,
-        state.seedling_days,
-        state.clone_days,
-        state.dry_days,
-        state.cure_days,
-        state.mother_days,
-    )
+    sc = _classify(state)
+    if sc.stage_a == BayesianStage.EMPTY:
+        return observations, reasons
+    stage_a, stage_b, factor = sc.stage_a, sc.stage_b, sc.factor
 
     limits_a = CO2_OPTIMAL_THRESHOLDS.get(stage_a, [])
     limits_b = CO2_OPTIMAL_THRESHOLDS.get(stage_b, [])

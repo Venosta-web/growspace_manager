@@ -12,6 +12,7 @@ from custom_components.growspace_manager.const import (
     SPECIAL_GROWSPACES,
     VERSION,
 )
+from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
     determine_coordinator_stage,
 )
@@ -577,11 +578,11 @@ class GrowspaceFacade:
         return self._coordinator.subsystem_manager.get_dehumidifier_controller(growspace_id)
 
     def calculate_biological_metrics(
-        self, growspace_id: str, *args: Any, **kwargs: Any
+        self, growspace_id: str, growspace: Growspace, days: StageDays
     ) -> dict[str, Any]:
         """Calculate biological metrics for a growspace via the environment analyzer."""
         return self._coordinator.environment_analyzer.calculate_biological_metrics(
-            *args, **kwargs
+            growspace, days
         )
 
     async def update_options(self, options: dict[str, Any]) -> None:

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
+from .domain.stage import StageDays
 from .models import Plant
 from .presentation import GrowspaceViewModelBuilder
 from .utils import calculate_days_since
@@ -122,18 +123,20 @@ class ViewModelBuilder:
         max_dry_days = max_days["max_dry_days"]
         max_cure_days = max_days["max_cure_days"]
 
-        # Calculate biological metrics via EnvironmentAnalyzer (View Model assembly)
+        stage_days = StageDays(
+            veg=max_days["max_veg_days"],
+            flower=max_days["max_flower_days"],
+            dry=max_days["max_dry_days"],
+            cure=max_days["max_cure_days"],
+            seedling=max_days["max_seedling_days"],
+            clone=max_days["max_clone_days"],
+            mother=max_days["max_mother_days"],
+        )
         biological_metrics = (
             self.coordinator.services.growspaces.calculate_biological_metrics(
                 growspace_id,
                 growspace,
-                max_days["max_veg_days"],
-                max_days["max_flower_days"],
-                max_days["max_dry_days"],
-                max_days["max_cure_days"],
-                max_days["max_seedling_days"],
-                max_days["max_clone_days"],
-                max_days["max_mother_days"],
+                stage_days,
             )
         )
 

@@ -334,8 +334,8 @@ def test_get_current_stage_key_branches(mock_coordinator: MagicMock) -> None:
         calculate_days=lambda d: 30,
     )
 
-    # 1. Vega (0 days)
-    assert sensor._get_current_stage_key({"flower_days": -1}) == PlantStage.VEG
+    # 1. Empty (no plants) — returns EMPTY, not VEG
+    assert sensor._get_current_stage_key({"flower_days": -1}) == "empty"
 
     # 2. Early Flower (10 days)
     assert sensor._get_current_stage_key({"flower_days": 10}) == "flower_early"
@@ -346,8 +346,8 @@ def test_get_current_stage_key_branches(mock_coordinator: MagicMock) -> None:
     # 4. Late Flower (50 days)
     assert sensor._get_current_stage_key({"flower_days": 50}) == "flower_late"
 
-    # 5. Fallback (< 0 days)
-    assert sensor._get_current_stage_key({"flower_days": -1}) == PlantStage.VEG
+    # 5. No-plants fallback also returns EMPTY
+    assert sensor._get_current_stage_key({"flower_days": -1}) == "empty"
 
 
 @pytest.mark.asyncio

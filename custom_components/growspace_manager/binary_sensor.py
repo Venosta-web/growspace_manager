@@ -69,11 +69,11 @@ from .strategies.mold import MoldRiskEvaluatorStrategy
 from .strategies.optimal import OptimalConditionsEvaluatorStrategy
 from .strategies.stress import StressEvaluatorStrategy
 from .trend_analyzer import TrendAnalyzer
+from .domain.stage import StageDays, classify_stages
 from .utils import (
     VPDCalculator,
     any_light_sensor_on,
     calculate_days_since,
-    calculate_stage_transition,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -1109,16 +1109,16 @@ class LightCycleVerificationSensor(
         return {"veg_days": max_veg, "flower_days": max_flower}
 
     def _get_current_stage_key(self, stage_info: dict[str, int]) -> str:
-        _, stage_b, _ = calculate_stage_transition(
-            stage_info.get("flower_days", -1),
-            stage_info.get("veg_days", -1),
-            stage_info.get("seedling_days", -1),
-            stage_info.get("clone_days", -1),
-            stage_info.get("dry_days", -1),
-            stage_info.get("cure_days", -1),
-            stage_info.get("mother_days", -1),
-        )
-        return stage_b
+        sc = classify_stages(StageDays(
+            veg=stage_info.get("veg_days", -1),
+            flower=stage_info.get("flower_days", -1),
+            dry=stage_info.get("dry_days", -1),
+            cure=stage_info.get("cure_days", -1),
+            seedling=stage_info.get("seedling_days", -1),
+            clone=stage_info.get("clone_days", -1),
+            mother=stage_info.get("mother_days", -1),
+        ))
+        return sc.stage_b
 
     @callback
     def _async_light_sensor_changed(self, event: Event[EventStateChangedData]) -> None:

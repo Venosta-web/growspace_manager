@@ -10,7 +10,6 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.util.dt import now
 
-from .bayesian_constants import ACCLIMATION_END_DAYS, ACCLIMATION_START_DAYS
 from .const import DOMAIN
 from .domain.date_logic import (
     calculate_days_since as calculate_days_since_logic,
@@ -18,10 +17,8 @@ from .domain.date_logic import (
     parse_date_field,
 )
 from .domain.stage import (
-    DEFAULT_FLOWER_EARLY_DAYS,
     SPECIAL_GROWSPACE_STAGES,
     STAGES_ORDERED,
-    TRANSITION_WINDOW,
     BayesianStage,
     PlantStage,
 )
@@ -226,98 +223,6 @@ def _get_stage_from_growspace(plant: Plant) -> str | None:
 
     return None
 
-
-def calculate_stage_transition(
-    flower_days: int = -1,
-    veg_days: int = -1,
-    seedling_days: int = -1,
-    clone_days: int = -1,
-    dry_days: int = -1,
-    cure_days: int = -1,
-    mother_days: int = -1,
-) -> tuple[BayesianStage, BayesianStage, float]:
-    """Calculate the current stage transition and interpolation factor."""
-    # Post-harvest stages — no interpolation needed
-    if cure_days >= 0:
-        return BayesianStage.CURE, BayesianStage.CURE, 0.0
-    if dry_days >= 0:
-        return BayesianStage.DRY, BayesianStage.DRY, 0.0
-
-    # Mother plants — perpetual vegetative, no sub-stage interpolation
-    if mother_days >= 0:
-        return BayesianStage.MOTHER, BayesianStage.MOTHER, 0.0
-
-    # Primary progression: Flower takes precedence
-    if flower_days >= 0:
-        b1 = DEFAULT_FLOWER_EARLY_DAYS
-        b2 = DEFAULT_FLOWER_EARLY_DAYS + 21
-
-        if flower_days <= b1:
-            if flower_days < b1 - TRANSITION_WINDOW:
-                return BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_EARLY, 0.0
-            factor = (flower_days - (b1 - TRANSITION_WINDOW)) / TRANSITION_WINDOW
-            return (
-                BayesianStage.FLOWER_EARLY,
-                BayesianStage.FLOWER_MID,
-                round(float(factor), 2),
-            )
-
-        if flower_days <= b2:
-            if flower_days < b2 - TRANSITION_WINDOW:
-                return BayesianStage.FLOWER_MID, BayesianStage.FLOWER_MID, 0.0
-            factor = (flower_days - (b2 - TRANSITION_WINDOW)) / TRANSITION_WINDOW
-            return (
-                BayesianStage.FLOWER_MID,
-                BayesianStage.FLOWER_LATE,
-                round(float(factor), 2),
-            )
-
-        return BayesianStage.FLOWER_LATE, BayesianStage.FLOWER_LATE, 0.0
-
-    if veg_days >= 0:
-        if veg_days < TRANSITION_WINDOW:
-            # Transition from seedling/clone standard to veg
-            factor = veg_days / TRANSITION_WINDOW
-            return (
-                BayesianStage.SEEDLING_STANDARD,
-                BayesianStage.VEG,
-                round(float(factor), 2),
-            )
-        return BayesianStage.VEG, BayesianStage.VEG, 0.0
-
-    if seedling_days >= 0:
-        ac_start = ACCLIMATION_START_DAYS
-        ac_end = ACCLIMATION_END_DAYS
-        if seedling_days <= ac_end:
-            if seedling_days <= ac_start:
-                return BayesianStage.SEEDLING, BayesianStage.SEEDLING, 0.0
-
-            window = ac_end - ac_start
-            factor = (seedling_days - ac_start) / window
-            return (
-                BayesianStage.SEEDLING,
-                BayesianStage.SEEDLING_STANDARD,
-                round(float(factor), 2),
-            )
-        return BayesianStage.SEEDLING_STANDARD, BayesianStage.SEEDLING_STANDARD, 0.0
-
-    if clone_days >= 0:
-        ac_start = ACCLIMATION_START_DAYS
-        ac_end = ACCLIMATION_END_DAYS
-        if clone_days <= ac_end:
-            if clone_days <= ac_start:
-                return BayesianStage.CLONE, BayesianStage.CLONE, 0.0
-
-            window = ac_end - ac_start
-            factor = (clone_days - ac_start) / window
-            return (
-                BayesianStage.CLONE,
-                BayesianStage.CLONE_STANDARD,
-                round(float(factor), 2),
-            )
-        return BayesianStage.CLONE_STANDARD, BayesianStage.CLONE_STANDARD, 0.0
-
-    return BayesianStage.VEG, BayesianStage.VEG, 0.0
 
 
 def interpolate_value(val_a: float, val_b: float, factor: float) -> float:

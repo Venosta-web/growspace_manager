@@ -15,12 +15,15 @@ from custom_components.growspace_manager.models import (
     Growspace,
     GrowspaceType,
 )
-from custom_components.growspace_manager.utils import (
+from custom_components.growspace_manager.domain.stage import (
     BayesianStage,
+    StageDays,
+    classify_stages,
+)
+from custom_components.growspace_manager.utils import (
     VPDCalculator,
     calculate_days_since,
     calculate_plant_stage,
-    calculate_stage_transition,
     days_to_week,
     find_first_free_position,
     format_date,
@@ -288,95 +291,69 @@ def test_interpolate_value() -> None:
     assert interpolate_value(10.0, 20.0, 2.0) == 20.0
 
 
-def test_calculate_stage_transition() -> None:
-    """Test calculate_stage_transition for all branches (covers 246-315)."""
-    # 1. Flower branch
-    # Early flower
-    s1, s2, f = calculate_stage_transition(flower_days=10)
-    assert s1 == BayesianStage.FLOWER_EARLY
-    assert s2 == BayesianStage.FLOWER_EARLY
-    assert f == 0.0
+def test_classify_stages() -> None:
+    """Test classify_stages for all branches."""
+    def sc(days: StageDays) -> tuple[BayesianStage, BayesianStage, float]:
+        r = classify_stages(days)
+        return r.stage_a, r.stage_b, r.factor
 
-    # Transition to mid (window is 3, b1 is 21)
-    s1, s2, f = calculate_stage_transition(flower_days=20)
-    assert s1 == BayesianStage.FLOWER_EARLY
-    assert s2 == BayesianStage.FLOWER_MID
-    assert f == 0.67
+    # Flower — early (before transition window)
+    assert sc(StageDays(flower=10)) == (BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_EARLY, 0.0)
+    # Flower — early→mid transition (window is 3, boundary is 21)
+    assert sc(StageDays(flower=20)) == (BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_MID, 0.67)
+    # Flower — mid
+    assert sc(StageDays(flower=25)) == (BayesianStage.FLOWER_MID, BayesianStage.FLOWER_MID, 0.0)
+    # Flower — mid→late transition (boundary is 42)
+    assert sc(StageDays(flower=41)) == (BayesianStage.FLOWER_MID, BayesianStage.FLOWER_LATE, 0.67)
+    # Flower — late
+    assert sc(StageDays(flower=50)) == (BayesianStage.FLOWER_LATE, BayesianStage.FLOWER_LATE, 0.0)
 
-    # Mid flower
-    s1, s2, f = calculate_stage_transition(flower_days=25)
-    assert s1 == BayesianStage.FLOWER_MID
-    assert s2 == BayesianStage.FLOWER_MID
-    assert f == 0.0
+    # Veg — transition from seedling_standard (window is 3)
+    assert sc(StageDays(veg=1)) == (BayesianStage.SEEDLING_STANDARD, BayesianStage.VEG, 0.33)
+    # Veg — stable
+    assert sc(StageDays(veg=5)) == (BayesianStage.VEG, BayesianStage.VEG, 0.0)
 
-    # Transition to late (b2 is 42)
-    s1, s2, f = calculate_stage_transition(flower_days=41)
-    assert s1 == BayesianStage.FLOWER_MID
-    assert s2 == BayesianStage.FLOWER_LATE
-    assert f == 0.67
+    # Seedling — acclimation (start=3, end=7)
+    assert sc(StageDays(seedling=2)) == (BayesianStage.SEEDLING, BayesianStage.SEEDLING, 0.0)
+    assert sc(StageDays(seedling=5)) == (BayesianStage.SEEDLING, BayesianStage.SEEDLING_STANDARD, 0.5)
+    assert sc(StageDays(seedling=8)) == (BayesianStage.SEEDLING_STANDARD, BayesianStage.SEEDLING_STANDARD, 0.0)
 
-    # Late flower
-    s1, s2, f = calculate_stage_transition(flower_days=50)
-    assert s1 == BayesianStage.FLOWER_LATE
-    assert s2 == BayesianStage.FLOWER_LATE
-    assert f == 0.0
+    # Clone — acclimation
+    assert sc(StageDays(clone=2)) == (BayesianStage.CLONE, BayesianStage.CLONE, 0.0)
+    assert sc(StageDays(clone=5)) == (BayesianStage.CLONE, BayesianStage.CLONE_STANDARD, 0.5)
+    assert sc(StageDays(clone=8)) == (BayesianStage.CLONE_STANDARD, BayesianStage.CLONE_STANDARD, 0.0)
 
-    # 2. Veg branch
-    # Transition to veg (window is 3)
-    s1, s2, f = calculate_stage_transition(veg_days=1)
-    assert s1 == BayesianStage.SEEDLING_STANDARD
-    assert s2 == BayesianStage.VEG
-    assert f == 0.33
+    # Empty — no plants at all (was previously VEG fallback)
+    assert sc(StageDays()) == (BayesianStage.EMPTY, BayesianStage.EMPTY, 0.0)
 
-    # Stable veg
-    s1, s2, f = calculate_stage_transition(veg_days=5)
-    assert s1 == BayesianStage.VEG
-    assert s2 == BayesianStage.VEG
-    assert f == 0.0
+    # Post-harvest priority
+    assert sc(StageDays(cure=5)) == (BayesianStage.CURE, BayesianStage.CURE, 0.0)
+    assert sc(StageDays(dry=3)) == (BayesianStage.DRY, BayesianStage.DRY, 0.0)
+    assert sc(StageDays(mother=10)) == (BayesianStage.MOTHER, BayesianStage.MOTHER, 0.0)
 
-    # 3. Seedling branch
-    # Seedling acclimation (start is 3, end is 7)
-    s1, s2, f = calculate_stage_transition(seedling_days=2)
-    assert s1 == BayesianStage.SEEDLING
-    assert s2 == BayesianStage.SEEDLING
-    assert f == 0.0
 
-    s1, s2, f = calculate_stage_transition(seedling_days=5)
-    assert s1 == BayesianStage.SEEDLING
-    assert s2 == BayesianStage.SEEDLING_STANDARD
-    assert f == 0.5
+def test_classify_stages_display_stage() -> None:
+    """Test display_stage collapses sub-stages and applies factor threshold."""
+    # Sub-stage collapsing
+    assert classify_stages(StageDays(seedling=8)).display_stage == BayesianStage.SEEDLING
+    assert classify_stages(StageDays(clone=8)).display_stage == BayesianStage.CLONE
+    assert classify_stages(StageDays(veg=5)).display_stage == BayesianStage.VEG
 
-    s1, s2, f = calculate_stage_transition(seedling_days=8)
-    assert s1 == BayesianStage.SEEDLING_STANDARD
-    assert s2 == BayesianStage.SEEDLING_STANDARD
-    assert f == 0.0
+    # Factor < 0.5 → display stage_a (collapsed)
+    r = classify_stages(StageDays(seedling=5))  # factor=0.5, stage_a=SEEDLING, stage_b=SEEDLING_STANDARD
+    assert r.factor == 0.5
+    assert r.display_stage == BayesianStage.SEEDLING  # 0.5 >= 0.5 → stage_b, collapsed to SEEDLING
 
-    # 4. Clone branch
-    # Clone acclimation start
-    s1, s2, f = calculate_stage_transition(clone_days=2)
-    assert s1 == BayesianStage.CLONE
-    assert s2 == BayesianStage.CLONE
-    assert f == 0.0
+    # Factor >= 0.5 → stage_b
+    r = classify_stages(StageDays(flower=20))  # factor=0.67, stage_a=FLOWER_EARLY, stage_b=FLOWER_MID
+    assert r.display_stage == BayesianStage.FLOWER_MID
 
-    # Clone mid-acclimation (acclimation is 3-7 days)
-    # window = 7 - 3 = 4
-    # clone_days = 5 -> (5 - 3) / 4 = 0.5
-    s1, s2, f = calculate_stage_transition(clone_days=5)
-    assert s1 == BayesianStage.CLONE
-    assert s2 == BayesianStage.CLONE_STANDARD
-    assert f == 0.5
+    # Factor < 0.5 → stage_a
+    r = classify_stages(StageDays(flower=10))  # factor=0.0 → stage_a=FLOWER_EARLY
+    assert r.display_stage == BayesianStage.FLOWER_EARLY
 
-    # Clone post-acclimation
-    s1, s2, f = calculate_stage_transition(clone_days=8)
-    assert s1 == BayesianStage.CLONE_STANDARD
-    assert s2 == BayesianStage.CLONE_STANDARD
-    assert f == 0.0
-
-    # 5. Default branch
-    s1, s2, f = calculate_stage_transition()
-    assert s1 == BayesianStage.VEG
-    assert s2 == BayesianStage.VEG
-    assert f == 0.0
+    # Empty → EMPTY
+    assert classify_stages(StageDays()).display_stage == BayesianStage.EMPTY
 
 
 @pytest.mark.parametrize(
@@ -396,24 +373,24 @@ def test_strip_markdown_fence(raw: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("kwargs", "expected_stage_1", "expected_stage_2", "expected_factor"),
+    ("days", "expected_stage_1", "expected_stage_2", "expected_factor"),
     [
-        ({"cure_days": 5}, BayesianStage.CURE, BayesianStage.CURE, 0.0),
-        ({"dry_days": 3}, BayesianStage.DRY, BayesianStage.DRY, 0.0),
-        ({"mother_days": 10}, BayesianStage.MOTHER, BayesianStage.MOTHER, 0.0),
+        (StageDays(cure=5), BayesianStage.CURE, BayesianStage.CURE, 0.0),
+        (StageDays(dry=3), BayesianStage.DRY, BayesianStage.DRY, 0.0),
+        (StageDays(mother=10), BayesianStage.MOTHER, BayesianStage.MOTHER, 0.0),
     ],
 )
-def test_calculate_stage_transition_post_harvest_and_mother(
-    kwargs: dict[str, int],
+def test_classify_stages_post_harvest_and_mother(
+    days: StageDays,
     expected_stage_1: BayesianStage,
     expected_stage_2: BayesianStage,
     expected_factor: float,
 ) -> None:
-    """Test post-harvest and mother stages for calculate_stage_transition."""
-    s1, s2, f = calculate_stage_transition(**kwargs)
-    assert s1 == expected_stage_1
-    assert s2 == expected_stage_2
-    assert f == expected_factor
+    """Test post-harvest and mother stages for classify_stages."""
+    r = classify_stages(days)
+    assert r.stage_a == expected_stage_1
+    assert r.stage_b == expected_stage_2
+    assert r.factor == expected_factor
 
 
 def test_read_sensor_value(hass: HomeAssistant) -> None:
