@@ -49,6 +49,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._current_phase = "P3"  # Start in safe state
         self._target_reached_today = False
         self._last_reset_date: str | None = None
+        self._shot_scale_factor = 1.0
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
         self._sensor_warning_logged = False
@@ -88,6 +89,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """Reset crop-steering target tracking at local midnight."""
         self._target_reached_today = False
         self._last_reset_date = None
+        self._shot_scale_factor = 1.0
 
     async def _update_loop(self, _now: datetime) -> None:
         """Main update loop triggered every minute."""
@@ -252,12 +254,15 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             return
 
         duration = strategy.shot_duration_seconds
+        scaled_duration = max(1, int(round(duration * self._shot_scale_factor)))
 
         _LOGGER.info(
-            "Firing %s shot for growspace %s. Duration: %ss",
+            "Firing %s shot for growspace %s. Duration: %ss (scaled from %ss, factor: %.2f)",
             phase,
             self._growspace_id,
+            scaled_duration,
             duration,
+            self._shot_scale_factor,
         )
 
         existing_task = self._running_tasks.get("irrigation")
@@ -274,7 +279,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # skip_during_dark, and log_to_logbook.
         task = self._config_entry.async_create_background_task(
             self.hass,
-            self._run_pump_cycle("irrigation", pump_entity, duration, {"phase": phase}),
+            self._run_pump_cycle("irrigation", pump_entity, scaled_duration, {"phase": phase}),
             f"irrigation_pump_{self._growspace_id}_irrigation",
         )
         self._running_tasks["irrigation"] = task
@@ -425,9 +430,91 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             if canonical == "p3":
                 self.growspace.irrigation_config.phase_changed_at = now().isoformat()
 
+        if old_phase == "P1 - Ramp Up" and phase == "P2 - Maintenance":
+            _LOGGER.info(
+                "Growspace %s transitioned from P1 to P2. Resetting feedback scale factor",
+                self._growspace_id,
+            )
+            self._shot_scale_factor = 1.0
+
         if self.growspace.irrigation_config.log_to_logbook:
             self._fire_logbook_event(
                 f"VWC phase transition: {old_phase} → {phase}",
                 category="irrigation",
             )
         return True
+
+    @override
+    async def _async_report_cycle_completion(
+        self,
+        *,
+        event_type: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        duration_sec: float,
+        moisture_before: float | None,
+        volume_dispensed_today: float,
+        wait_seconds: float,
+    ) -> None:
+        """Wait for the moisture sensor to settle, report cycle completion, and update dynamic shot scaling."""
+        await super()._async_report_cycle_completion(
+            event_type=event_type,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            duration_sec=duration_sec,
+            moisture_before=moisture_before,
+            volume_dispensed_today=volume_dispensed_today,
+            wait_seconds=wait_seconds,
+        )
+        if event_type == "irrigation":
+            sensor_entity = self.growspace.environment_config.soil_moisture_sensor
+            if sensor_entity:
+                moisture_after = self._get_sensor_value(sensor_entity)
+                self._update_shot_feedback(moisture_before, moisture_after)
+
+    def _update_shot_feedback(
+        self, moisture_before: float | None, moisture_after: float | None
+    ) -> None:
+        """Evaluate the shot's effect on soil moisture and adjust the scale factor."""
+        if moisture_before is None or moisture_after is None:
+            return
+
+        target = self.growspace.irrigation_strategy.target_vwc_percent
+        d_target = target - moisture_before
+        d_actual = moisture_after - moisture_before
+
+        # Guard against division by very small numbers or non-positive actual delta
+        if d_target <= 0.5 or d_actual <= 0:
+            return
+
+        ratio = d_actual / d_target
+        if ratio > 1.0:
+            # Overshot target: reduce scale factor
+            aggressiveness = 1.0
+            self._shot_scale_factor = max(
+                0.5,
+                min(1.0, self._shot_scale_factor - aggressiveness * (ratio - 1.0)),
+            )
+            _LOGGER.debug(
+                "Growspace %s overshot VWC target. Expected delta: %.2f%%, actual: %.2f%%. "
+                "New feedback scale factor: %.2f",
+                self._growspace_id,
+                d_target,
+                d_actual,
+                self._shot_scale_factor,
+            )
+        else:
+            # Undershot or met target: recover scale factor
+            beta = 0.1
+            self._shot_scale_factor = max(
+                0.5,
+                min(1.0, self._shot_scale_factor + beta * (1.0 - ratio)),
+            )
+            _LOGGER.debug(
+                "Growspace %s dynamic shot VWC feedback. Expected delta: %.2f%%, actual: %.2f%%. "
+                "New feedback scale factor: %.2f",
+                self._growspace_id,
+                d_target,
+                d_actual,
+                self._shot_scale_factor,
+            )

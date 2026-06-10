@@ -1212,3 +1212,108 @@ async def test_projected_shot_window_none_when_steering_disabled(
         return_value=now_dt,
     ):
         assert vwc_coordinator.projected_shot_window is None
+
+
+async def test_dynamic_shot_scaling_overshoot(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """Test that when a shot overshoots the target, the scale factor is reduced."""
+    # Target is 50.0% (from mock_growspace).
+    # moisture_before = 40.0%, moisture_after = 55.0%
+    # Target delta = 10.0%, Actual delta = 15.0%, Ratio = 1.5
+    # Overshoot ratio = 1.5 > 1.0 -> factor decreases by 0.5
+    vwc_coordinator._shot_scale_factor = 1.0
+    vwc_coordinator._update_shot_feedback(40.0, 55.0)
+    assert vwc_coordinator._shot_scale_factor == 0.5
+
+    # Test clamping to min_scale of 0.5
+    vwc_coordinator._update_shot_feedback(40.0, 55.0)
+    assert vwc_coordinator._shot_scale_factor == 0.5
+
+
+async def test_dynamic_shot_scaling_recovery(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """Test that when a shot undershoots/meets target, the scale factor recovers."""
+    # Target is 50.0% (from mock_growspace).
+    # moisture_before = 40.0%, moisture_after = 45.0%
+    # Target delta = 10.0%, Actual delta = 5.0%, Ratio = 0.5
+    # Ratio <= 1.0 -> recovers by beta * (1 - ratio) = 0.1 * 0.5 = 0.05
+    vwc_coordinator._shot_scale_factor = 0.6
+    vwc_coordinator._update_shot_feedback(40.0, 45.0)
+    assert abs(vwc_coordinator._shot_scale_factor - 0.65) < 1e-6
+
+    # Test recovery clamping to 1.0
+    vwc_coordinator._shot_scale_factor = 0.98
+    vwc_coordinator._update_shot_feedback(40.0, 45.0)
+    assert vwc_coordinator._shot_scale_factor == 1.0
+
+
+async def test_dynamic_shot_scaling_guards(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """Test dynamic shot scaling guards for tiny deltas and invalid data."""
+    vwc_coordinator._shot_scale_factor = 0.7
+
+    # Case 1: Tiny expected delta (<= 0.5%) -> should not update scale factor
+    # Target = 50.0, moisture_before = 49.6 -> Expected delta = 0.4%
+    vwc_coordinator._update_shot_feedback(49.6, 52.0)
+    assert vwc_coordinator._shot_scale_factor == 0.7
+
+    # Case 2: Negative/zero actual delta -> should not update scale factor
+    vwc_coordinator._update_shot_feedback(40.0, 39.0)
+    assert vwc_coordinator._shot_scale_factor == 0.7
+
+    # Case 3: None inputs -> should not update scale factor
+    vwc_coordinator._update_shot_feedback(None, 45.0)
+    assert vwc_coordinator._shot_scale_factor == 0.7
+    vwc_coordinator._update_shot_feedback(40.0, None)
+    assert vwc_coordinator._shot_scale_factor == 0.7
+
+
+async def test_dynamic_shot_scaling_phase_transition_reset(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """Test that scale factor is reset to 1.0 when transitioning from P1 to P2."""
+    vwc_coordinator._shot_scale_factor = 0.6
+    vwc_coordinator._current_phase = "P1 - Ramp Up"
+
+    # Transition to P2 - Maintenance
+    vwc_coordinator._set_phase("P2 - Maintenance")
+    assert vwc_coordinator._shot_scale_factor == 1.0
+
+
+async def test_dynamic_shot_scaling_daily_reset(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """Test that midnight daily state reset sets scale factor back to 1.0."""
+    vwc_coordinator._shot_scale_factor = 0.6
+    vwc_coordinator._reset_extra_daily_state()
+    assert vwc_coordinator._shot_scale_factor == 1.0
+
+
+async def test_dynamic_shot_scaled_duration_applied(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+    mock_sleep: AsyncMock,
+) -> None:
+    """Test that scaled duration is applied to pump cycles in _handle_watering."""
+    strategy = mock_growspace.irrigation_strategy
+    strategy.shot_duration_seconds = 10
+    vwc_coordinator._shot_scale_factor = 0.6
+
+    vwc_coordinator._last_cycle_timestamp = None
+    now_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        vwc_coordinator._handle_watering(strategy, "P1")
+
+    # Await the pump task to execute
+    await await_pump_task()
+
+    # Verify that sleep was called with scaled duration (10s * 0.6 = 6s)
+    mock_sleep.assert_any_call(6)

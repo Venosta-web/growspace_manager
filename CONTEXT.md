@@ -63,6 +63,12 @@ The four phases of `VWCIrrigationCoordinator`'s crop-steering loop, derived each
 **Crop Steering Phase Boundaries**
 The four datetimes (`lights_on`, `p0_end`, `p2_stop`, `lights_off`) for a given calendar day that delimit the Crop Steering Phase windows. Computed by `_phase_boundary_times()` from `IrrigationStrategy.lights_on_time`/`detected_lights_on_time`, `p0_duration_minutes`, `p2_stop_before_lights_off_minutes`, and the growspace's day-length config (`flower_day_hours`/`veg_day_hours`, defaulting to 12). Returned as a `SteeringPhaseBoundaries` dataclass and used both to determine the current phase (`_determine_time_period`) and to project the next shot window (`projected_shot_window`).
 
+**Dynamic VWC Steering Shot**
+An irrigation shot in the VWC crop-steering loop whose duration is dynamically adjusted (clamped between 50% and 100% of standard duration) based on the VWC feedback scale factor calculated from the substrate's response to the previous shot.
+
+**VWC Feedback Scale Factor**
+The scalar multiplier applied to the next steering shot's duration, calculated by comparing the actual volumetric water content (VWC) increase from the last settled shot against the expected target increase. Resets to 1.0 at lights-on and during the P1-to-P2 phase transition.
+
 ## Drying Thresholds (Constants)
 
 | Threshold | Value | Source |
