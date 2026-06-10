@@ -57,6 +57,12 @@ The implicit fallback mode for water consumption tracking. Active when a growspa
 
 The growspace view model payload includes `water_usage.liters_today` (sum of `TankWaterTracker.get_total_liters_today()` across all qualifying tanks) so the frontend chip can display today's consumption without reading from the HA sensor entity. The `growspace_manager/get_tank_water_history` WebSocket command returns pre-bucketed consumption data (aggregated across all qualifying tanks) for the frontend [[Tank Water Chart]].
 
+**Crop Steering Phases**
+The four phases of `VWCIrrigationCoordinator`'s crop-steering loop, derived each minute from the current time and soil VWC reading: `P0` (Activation, immediately after lights-on), `P1` (Ramp Up, watering until `target_vwc_percent` is reached), `P2` (Maintenance, pulse watering when VWC drops below the maintenance trigger), and `P3` (Dry Back, no watering — spans the dark period and any post-`p2_stop` window). The active phase is exposed to the frontend via `IrrigationConfig.active_steering_phase` using a collapsed `p1`/`p2`/`p3` mapping (P0 collapses into `p1`).
+
+**Crop Steering Phase Boundaries**
+The four datetimes (`lights_on`, `p0_end`, `p2_stop`, `lights_off`) for a given calendar day that delimit the Crop Steering Phase windows. Computed by `_phase_boundary_times()` from `IrrigationStrategy.lights_on_time`/`detected_lights_on_time`, `p0_duration_minutes`, `p2_stop_before_lights_off_minutes`, and the growspace's day-length config (`flower_day_hours`/`veg_day_hours`, defaulting to 12). Returned as a `SteeringPhaseBoundaries` dataclass and used both to determine the current phase (`_determine_time_period`) and to project the next shot window (`projected_shot_window`).
+
 ## Drying Thresholds (Constants)
 
 | Threshold | Value | Source |

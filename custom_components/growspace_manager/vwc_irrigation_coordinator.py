@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, Any, override
+from typing import TYPE_CHECKING, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import (
-    async_track_time_change,
-    async_track_time_interval,
-)
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util.dt import now, parse_datetime
 
 if TYPE_CHECKING:
@@ -21,6 +19,16 @@ from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class SteeringPhaseBoundaries:
+    """Datetimes anchored on a reference date marking crop-steering phase transitions."""
+
+    lights_on: datetime
+    p0_end: datetime
+    p2_stop: datetime
+    lights_off: datetime
 
 
 class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
@@ -51,16 +59,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         _LOGGER.info(
             "Setting up VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
-        # Reset daily safety-guard counters at midnight (mirrors IrrigationCoordinator)
-        self._listeners.append(
-            async_track_time_change(
-                self.hass,
-                self._async_reset_daily_counters,
-                hour=0,
-                minute=0,
-                second=0,
-            )
-        )
+        self._register_daily_reset_listener()
         # Check every minute for phase updates and actions
         self._remove_update_listener = async_track_time_interval(
             self.hass, self._update_loop, timedelta(minutes=1)
@@ -84,14 +83,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             self._remove_update_listener()
             self._remove_update_listener = None
 
-    async def _async_reset_daily_counters(self, *_: Any) -> None:
-        """Reset daily safety-guard counters at local midnight."""
-        _LOGGER.debug(
-            "Resetting daily VWC irrigation counters for growspace %s",
-            self._growspace_id,
-        )
-        self._cycles_today = 0
-        self._volume_dispensed_today = 0.0
+    @override
+    def _reset_extra_daily_state(self) -> None:
+        """Reset crop-steering target tracking at local midnight."""
         self._target_reached_today = False
         self._last_reset_date = None
 
@@ -152,64 +146,20 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self, strategy: IrrigationStrategy, growspace: Growspace
     ) -> str:
         """Determine the current steering phase based on time of day."""
-
-        lights_on_source = strategy.detected_lights_on_time or strategy.lights_on_time
-        try:
-            lights_on = datetime.strptime(lights_on_source, "%H:%M:%S").time()
-        except ValueError:
-            lights_on = datetime.strptime(lights_on_source, "%H:%M").time()
-
-        # Calculate Lights Off Time (derived from photoperiod settings in config)
-        # Default to 12/12 if not set, or read from growspace options
-        # We need to know the day hours.
-        # Assuming we can access veg_day_hours or flower_day_hours from environment config options via handler logic?
-        # Actually growspace.environment_config has the unified settings.
-        # Let's check stage to decide hours.
-        # For simplicity, if we lack stage info, we assume 12 hours for flowering.
-
-        # Let's check environment config for day lengths.
-        day_hours = 12  # Default
-        if growspace.environment_config:
-            # This is a simplification. A more robust implementation would determine the dominant
-            # plant stage in the growspace and use the corresponding day hours.
-            # For now, we prefer flower hours if available, as steering is often flower-focused.
-            day_hours = getattr(
-                growspace.environment_config,
-                "flower_day_hours",
-                getattr(growspace.environment_config, "veg_day_hours", 12),
-            )
-
-        # Calculate P0 End
-        # We need datetime arithmetic then convert back to time
-        today_start_dt = datetime.combine(now().date(), lights_on, tzinfo=now().tzinfo)
         current_dt = now()
+        boundaries = self._phase_boundary_times(strategy, growspace, current_dt.date())
 
-        # Adjust for wrapping if needed? Assume Lights On is today.
-        # If current time is before lights on, it might be "Night" (P3) from previous cycle or before P0.
-
-        p0_end_dt = today_start_dt + timedelta(minutes=strategy.p0_duration_minutes)
-        p1_start_dt = p0_end_dt
-
-        # Calculate Lights Off
-        lights_off_dt = today_start_dt + timedelta(hours=day_hours)
-
-        # P2 Stop
-        p2_stop_dt = lights_off_dt - timedelta(
-            minutes=strategy.p2_stop_before_lights_off_minutes
-        )
-
-        if current_dt < today_start_dt:
+        if current_dt < boundaries.lights_on:
             # Before lights on -> P3 (Dry Back) from yesterday
             return "P3"
 
-        if current_dt < p1_start_dt:
-            # P0 Activation
+        if current_dt < boundaries.p0_end:
             return "P0"
 
-        if current_dt < p2_stop_dt:
+        if current_dt < boundaries.p2_stop:
             return "WINDOW"
 
-        if current_dt < lights_off_dt:
+        if current_dt < boundaries.lights_off:
             # Only enter early P3 when the flag is explicitly enabled.
             if growspace.irrigation_config.auto_advance_p2_to_p3:
                 return "P3"
@@ -367,14 +317,16 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
     def _phase_boundary_times(
         self, strategy: IrrigationStrategy, growspace: Growspace, reference_date: date
-    ) -> tuple[datetime, datetime, datetime]:
-        """Return (p0_end, p2_stop, lights_off) datetimes anchored on reference_date."""
+    ) -> SteeringPhaseBoundaries:
+        """Return the crop-steering phase boundary datetimes anchored on reference_date."""
         lights_on_source = strategy.detected_lights_on_time or strategy.lights_on_time
         try:
             lights_on = datetime.strptime(lights_on_source, "%H:%M:%S").time()
         except ValueError:
             lights_on = datetime.strptime(lights_on_source, "%H:%M").time()
 
+        # Default to 12 hours when the growspace has no day-length config.
+        # Prefer flower hours, as crop steering is typically flower-focused.
         day_hours = 12
         if growspace.environment_config:
             day_hours = getattr(
@@ -389,7 +341,12 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         p2_stop_dt = lights_off_dt - timedelta(
             minutes=strategy.p2_stop_before_lights_off_minutes
         )
-        return p0_end_dt, p2_stop_dt, lights_off_dt
+        return SteeringPhaseBoundaries(
+            lights_on=lights_on_dt,
+            p0_end=p0_end_dt,
+            p2_stop=p2_stop_dt,
+            lights_off=lights_off_dt,
+        )
 
     @property
     @override
@@ -410,17 +367,15 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
         current_dt = now()
         today = current_dt.date()
-        p0_end_dt, p2_stop_dt, _ = self._phase_boundary_times(
-            strategy, growspace, today
-        )
+        boundaries = self._phase_boundary_times(strategy, growspace, today)
 
         # Match on the display string directly — the canonical p1/p2/p3 mapping
         # collapses P0 into "p1" for the frontend's active_steering_phase, but P0
         # has its own time-bound window distinct from P1's threshold-driven one.
         if self._current_phase == "P0 - Activation":
-            latest = p0_end_dt
+            latest = boundaries.p0_end
         elif self._current_phase in ("P1 - Ramp Up", "P2 - Maintenance"):
-            latest = p2_stop_dt
+            latest = boundaries.p2_stop
         else:
             # P3 (or unknown/disabled) — no shots fire today; roll forward to tomorrow
             return self._tomorrows_shot_window(strategy, growspace, today)
@@ -443,10 +398,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     ) -> dict[str, str]:
         """Return tomorrow's {start, end} projected shot window (P1 start to P2 stop)."""
         tomorrow = today + timedelta(days=1)
-        p0_end_dt, p2_stop_dt, _ = self._phase_boundary_times(
-            strategy, growspace, tomorrow
-        )
-        return {"start": p0_end_dt.isoformat(), "end": p2_stop_dt.isoformat()}
+        boundaries = self._phase_boundary_times(strategy, growspace, tomorrow)
+        return {"start": boundaries.p0_end.isoformat(), "end": boundaries.p2_stop.isoformat()}
 
     def _set_phase(self, phase: str) -> bool:
         """Update phase state; log the transition to the HA logbook when enabled.

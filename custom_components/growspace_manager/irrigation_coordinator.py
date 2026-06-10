@@ -104,6 +104,31 @@ class BaseIrrigationCoordinator:
     async def async_setup(self) -> None:
         """Set up the coordinator."""
 
+    def _register_daily_reset_listener(self) -> None:
+        """Register a midnight listener that resets the daily safety-guard counters."""
+        self._listeners.append(
+            async_track_time_change(
+                self.hass,
+                self._async_reset_daily_counters,
+                hour=0,
+                minute=0,
+                second=0,
+            )
+        )
+
+    async def _async_reset_daily_counters(self, *_: Any) -> None:
+        """Reset daily safety-guard counters at local midnight."""
+        _LOGGER.debug(
+            "Resetting daily irrigation counters for growspace %s",
+            self._growspace_id,
+        )
+        self._cycles_today = 0
+        self._volume_dispensed_today = 0.0
+        self._reset_extra_daily_state()
+
+    def _reset_extra_daily_state(self) -> None:
+        """Reset subclass-specific daily state. Override for additional fields."""
+
     async def async_unload(self) -> None:
         """Unload the coordinator and stop listeners."""
         self.async_cancel_listeners(cancel_tasks=True)
@@ -794,28 +819,10 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
     @override
     async def async_setup(self) -> None:
         """Set up the irrigation schedules."""
-        # Register midnight reset for daily counters
-        self._listeners.append(
-            async_track_time_change(
-                self.hass,
-                self._async_reset_daily_counters,
-                hour=0,
-                minute=0,
-                second=0,
-            )
-        )
+        self._register_daily_reset_listener()
 
         # Load schedules without triggering updates
         await self.async_update_listeners()
-
-    async def _async_reset_daily_counters(self, *_: Any) -> None:
-        """Reset daily safety-guard counters at local midnight."""
-        _LOGGER.debug(
-            "Resetting daily irrigation counters for growspace %s",
-            self._growspace_id,
-        )
-        self._cycles_today = 0
-        self._volume_dispensed_today = 0.0
 
     async def async_update_listeners(self, *args: Any) -> None:
         """Remove old listeners and create new ones based on current config."""
