@@ -104,7 +104,7 @@ async def test_service_wrapper_execution_no_strain_lib(
     hass.services.async_register.side_effect = capture_register
 
     # Mock the CORRECT async method that the handler actually awaits!
-    mock_coordinator.services.growspaces.remove_growspace = AsyncMock()
+    mock_coordinator.services.growspaces.remove_growspace_from_call = AsyncMock()
 
     with patch(
         "homeassistant.config_entries.ConfigEntries.async_entries",
@@ -122,7 +122,9 @@ async def test_service_wrapper_execution_no_strain_lib(
         )
         await captured_wrapper(call)
 
-        mock_coordinator.services.growspaces.remove_growspace.assert_called_once_with("gs1")
+        mock_coordinator.services.growspaces.remove_growspace_from_call.assert_called_once_with(
+            hass, call
+        )
 
 
 async def test_service_wrapper_error_handling(
@@ -144,7 +146,7 @@ async def test_service_wrapper_error_handling(
     hass.services.async_register.side_effect = capture_register
 
     # Throw the error from the correct async method
-    mock_coordinator.services.growspaces.remove_growspace = AsyncMock(
+    mock_coordinator.services.growspaces.remove_growspace_from_call = AsyncMock(
         side_effect=GrowspaceError("Test error")
     )
 
@@ -170,11 +172,11 @@ async def test_service_wrapper_error_handling(
 
 async def test_register_services_subset_modules(hass: HomeAssistant) -> None:
     """Test that only services from the provided _SERVICE_MODULES are registered."""
-    from custom_components.growspace_manager.services import plant
+    from custom_components.growspace_manager.services import plant_facade
 
     strain_lib = MagicMock()
 
-    with patch.object(service_registration_module, "_SERVICE_MODULES", [plant]):
+    with patch.object(service_registration_module, "_SERVICE_MODULES", [plant_facade]):
         await register_services(hass, strain_lib)
 
     assert hass.services.has_service(DOMAIN, "add_plant")
@@ -211,8 +213,13 @@ async def test_register_services_handler_raises_growspace_error(
     mock_module = MagicMock()
     mock_module.SERVICES = [custom_service]
 
-    with patch.object(service_registration_module, "_SERVICE_MODULES", [mock_module]), \
-         patch("homeassistant.config_entries.ConfigEntries.async_entries", return_value=[mock_config_entry]):
+    with (
+        patch.object(service_registration_module, "_SERVICE_MODULES", [mock_module]),
+        patch(
+            "homeassistant.config_entries.ConfigEntries.async_entries",
+            return_value=[mock_config_entry],
+        ),
+    ):
         await register_services(hass, strain_lib)
 
     assert captured_wrapper is not None
@@ -226,4 +233,3 @@ async def test_register_services_handler_raises_growspace_error(
 
     with pytest.raises(ServiceValidationError, match="Direct GrowspaceError"):
         await captured_wrapper(call)
-

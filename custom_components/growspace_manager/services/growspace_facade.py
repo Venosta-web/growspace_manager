@@ -3,20 +3,34 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.const import (
     ATTR_DRAIN_TIMES,
+    ATTR_GROWSPACE_ID,
+    ATTR_IMAGES,
     ATTR_IRRIGATION_TIMES,
+    ATTR_NAME,
+    ATTR_NOTES,
+    ATTR_NOTIFICATION_TARGET,
+    ATTR_PLANTS_PER_ROW,
+    ATTR_ROWS,
+    CATEGORY_NOTE,
     DOMAIN,
+    EVENT_GROWSPACE_LOG_ENTRY,
     SPECIAL_GROWSPACES,
     VERSION,
+    GrowspaceService,
 )
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
     determine_coordinator_stage,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceError,
+    GrowspaceNotFoundError,
+)
 from custom_components.growspace_manager.models import (
     DrainReading,
     ECTargetRange,
@@ -25,13 +39,23 @@ from custom_components.growspace_manager.models import (
     Subarea,
     WaterUsageData,
 )
+from custom_components.growspace_manager.schemas import (
+    ADD_GROWSPACE_SCHEMA,
+    REMOVE_GROWSPACE_SCHEMA,
+    UPDATE_GROWSPACE_SCHEMA,
+)
+from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
 from custom_components.growspace_manager.utils import (
     generate_growspace_overview_unique_id,
 )
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util, slugify
+
+from ._definition import ServiceDefinition
+from .utils import handle_service_errors
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -62,7 +86,9 @@ class GrowspaceFacade:
 
     def get_all_growspaces(self) -> dict[str, Growspace]:
         """Return all growspaces keyed by ID."""
-        return {gs.id: gs for gs in self._coordinator.data_repository.get_all_growspaces()}
+        return {
+            gs.id: gs for gs in self._coordinator.data_repository.get_all_growspaces()
+        }
 
     def get_sorted_growspace_options(self) -> list[tuple[str, str]]:
         """Return a sorted list of (growspace_id, name) tuples."""
@@ -86,8 +112,10 @@ class GrowspaceFacade:
             manufacturer="Growspace Manager",
             sw_version=VERSION,
         )
-        await self._coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
-            growspace.id, growspace
+        await (
+            self._coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
+                growspace.id, growspace
+            )
         )
         _LOGGER.info("Added growspace %s (%s)", growspace.name, growspace.id)
         return growspace
@@ -226,7 +254,8 @@ class GrowspaceFacade:
         updated_settings = {
             k: v
             for k, v in user_input.items()
-            if k not in [ATTR_IRRIGATION_TIMES, ATTR_DRAIN_TIMES, "growspace_id_read_only"]
+            if k
+            not in [ATTR_IRRIGATION_TIMES, ATTR_DRAIN_TIMES, "growspace_id_read_only"]
         }
         for pump_key in ("irrigation_pump_entity", "drain_pump_entity"):
             if pump_key in updated_settings and not updated_settings[pump_key]:
@@ -271,7 +300,11 @@ class GrowspaceFacade:
                 existing.feed_ec_max = feed_ec_max
                 break
         else:
-            ranges.append(ECTargetRange(stage=stage, feed_ec_min=feed_ec_min, feed_ec_max=feed_ec_max))
+            ranges.append(
+                ECTargetRange(
+                    stage=stage, feed_ec_min=feed_ec_min, feed_ec_max=feed_ec_max
+                )
+            )
         self._coordinator.cache.invalidate(growspace_id)
         await self._coordinator.async_commit()
         await self._coordinator.async_request_refresh()
@@ -286,7 +319,9 @@ class GrowspaceFacade:
         """Add a schedule item to a growspace."""
         irrigation_coord = await self._get_irrigation_coordinator(growspace_id)
         if duration_minutes is None:
-            item_type = "irrigation" if "irrigation" in schedule_key.lower() else "drain"
+            item_type = (
+                "irrigation" if "irrigation" in schedule_key.lower() else "drain"
+            )
             duration_minutes = irrigation_coord.get_default_duration(item_type)
         await irrigation_coord.async_add_schedule_item(
             schedule_key, time_str, duration_minutes
@@ -300,13 +335,19 @@ class GrowspaceFacade:
         await irrigation_coord.async_remove_schedule_item(schedule_key, time_str)
 
     async def _get_irrigation_coordinator(self, growspace_id: str) -> Any:
-        if growspace_id not in self._coordinator.subsystem_manager.irrigation_coordinators:
+        if (
+            growspace_id
+            not in self._coordinator.subsystem_manager.irrigation_coordinators
+        ):
             growspace = self._coordinator.growspaces.get(growspace_id)
             if growspace:
                 await self._coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
                     growspace_id, growspace
                 )
-            if growspace_id not in self._coordinator.subsystem_manager.irrigation_coordinators:
+            if (
+                growspace_id
+                not in self._coordinator.subsystem_manager.irrigation_coordinators
+            ):
                 raise ServiceValidationError(
                     f"Growspace '{growspace_id}' not found or has no irrigation setup."
                 )
@@ -468,7 +509,9 @@ class GrowspaceFacade:
                 plants = self.get_growspace_plants(gid)
                 return determine_coordinator_stage(plants).value
 
-            gs_trackers[tank_entity] = TankWaterTracker(tank, stage_resolver=_stage_resolver)
+            gs_trackers[tank_entity] = TankWaterTracker(
+                tank, stage_resolver=_stage_resolver
+            )
         return gs_trackers[tank_entity]
 
     def get_all_trackers_for_growspace(
@@ -575,7 +618,9 @@ class GrowspaceFacade:
 
     def get_dehumidifier_coordinator(self, growspace_id: str) -> Any | None:
         """Return the dehumidifier coordinator for a growspace, or None."""
-        return self._coordinator.subsystem_manager.get_dehumidifier_controller(growspace_id)
+        return self._coordinator.subsystem_manager.get_dehumidifier_controller(
+            growspace_id
+        )
 
     def calculate_biological_metrics(
         self, growspace_id: str, growspace: Growspace, days: StageDays
@@ -596,3 +641,169 @@ class GrowspaceFacade:
         )
         await self._coordinator.async_commit()
         _LOGGER.info("Integration options updated: %s", options)
+
+    # -------------------------------------------------------------------------
+    # Notes
+    # -------------------------------------------------------------------------
+
+    async def add_growspace_note(
+        self,
+        hass: HomeAssistant,
+        growspace_id: str,
+        notes: str,
+        images_base64: list[str] | None = None,
+    ) -> None:
+        """Add a note to a growspace."""
+        if images_base64 is None:
+            images_base64 = []
+
+        if growspace_id not in self._coordinator.growspaces:
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+
+        strain_library = self._coordinator.services.config.strain_library
+
+        image_paths: list[str] = []
+        if images_base64 and strain_library and strain_library.image_manager:
+            for img_b64 in images_base64:
+                try:
+                    abs_path = await strain_library.image_manager.save_timeline_image(
+                        plant_id=growspace_id,
+                        image_base64=img_b64,
+                    )
+                    image_paths.append(f"timeline/{Path(abs_path).name}")
+                except (
+                    AttributeError,
+                    KeyError,
+                    ValueError,
+                    ServiceValidationError,
+                    GrowspaceError,
+                    OSError,
+                ) as e:
+                    _LOGGER.error("Failed to save growspace note image: %s", e)
+
+        event_data: dict[str, Any] = {
+            ATTR_GROWSPACE_ID: growspace_id,
+            ATTR_NOTES: notes,
+            ATTR_IMAGES: image_paths,
+            "category": CATEGORY_NOTE,
+            "timestamp": dt_util.now().isoformat(),
+        }
+
+        hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, event_data)
+        _LOGGER.info("Added note for growspace %s", growspace_id)
+
+    # -------------------------------------------------------------------------
+    # Service call adapters
+    # -------------------------------------------------------------------------
+
+    @handle_service_errors
+    async def add_growspace_from_call(
+        self,
+        hass: HomeAssistant,
+        strain_library: StrainLibrary,
+        call: ServiceCall,
+    ) -> None:
+        """Unpack an add_growspace ServiceCall and delegate to add_growspace."""
+        device_registry = dr.async_get(hass)
+        mobile_devices = [
+            d.name
+            for d in device_registry.devices.values()
+            if any("mobile_app" in entry_id for entry_id in d.config_entries)
+        ]
+        notification_target = call.data.get(ATTR_NOTIFICATION_TARGET)
+        if notification_target and notification_target not in mobile_devices:
+            notification_target = None
+
+        name = call.data[ATTR_NAME]
+        rows = call.data[ATTR_ROWS]
+        plants_per_row = call.data[ATTR_PLANTS_PER_ROW]
+
+        growspace_id = await self.add_growspace(
+            name=name,
+            rows=rows,
+            plants_per_row=plants_per_row,
+            notification_target=notification_target,
+        )
+
+        _LOGGER.info("Growspace %s added successfully via service call", growspace_id)
+
+    @handle_service_errors
+    async def update_growspace_from_call(
+        self,
+        hass: HomeAssistant,
+        strain_library: StrainLibrary,
+        call: ServiceCall,
+    ) -> None:
+        """Unpack an update_growspace ServiceCall and delegate to update_growspace."""
+        growspace_id = call.data[ATTR_GROWSPACE_ID]
+        await self.update_growspace(
+            growspace_id=growspace_id,
+            name=call.data.get(ATTR_NAME),
+            rows=call.data.get(ATTR_ROWS),
+            plants_per_row=call.data.get(ATTR_PLANTS_PER_ROW),
+            notification_target=call.data.get(ATTR_NOTIFICATION_TARGET),
+        )
+        _LOGGER.info("Growspace %s updated successfully", growspace_id)
+
+    @handle_service_errors
+    async def remove_growspace_from_call(
+        self,
+        hass: HomeAssistant,
+        call: ServiceCall,
+    ) -> None:
+        """Unpack a remove_growspace ServiceCall and delegate to remove_growspace."""
+        growspace_id = call.data[ATTR_GROWSPACE_ID]
+        await self.remove_growspace(growspace_id)
+        _LOGGER.info("Growspace %s removed successfully", growspace_id)
+
+
+async def _handle_add_growspace(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    await coordinator.services.growspaces.add_growspace_from_call(
+        hass, strain_library, call
+    )
+
+
+async def _handle_update_growspace(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    call: ServiceCall,
+) -> None:
+    await coordinator.services.growspaces.update_growspace_from_call(
+        hass, strain_library, call
+    )
+
+
+async def _handle_remove_growspace(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    await coordinator.services.growspaces.remove_growspace_from_call(hass, call)
+
+
+SERVICES: list[ServiceDefinition] = [
+    ServiceDefinition(
+        GrowspaceService.ADD_GROWSPACE,
+        _handle_add_growspace,
+        ADD_GROWSPACE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_GROWSPACE,
+        _handle_remove_growspace,
+        REMOVE_GROWSPACE_SCHEMA,
+        needs_strain_lib=False,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_GROWSPACE,
+        _handle_update_growspace,
+        UPDATE_GROWSPACE_SCHEMA,
+        needs_strain_lib=True,
+    ),
+]

@@ -10,10 +10,7 @@ from custom_components.growspace_manager.const import (
     ATTR_PLANT_ID,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.services.plant import (
-    handle_add_plants,
-    handle_add_timeline_note,
-)
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from custom_components.growspace_manager.services.plant_lifecycle import (
     handle_harvest_plant,
 )
@@ -36,12 +33,14 @@ async def test_handle_add_timeline_note_service_call() -> None:
     }
 
     with patch(
-        "custom_components.growspace_manager.services.plant._ensure_plant_loaded"
+        "custom_components.growspace_manager.services.plant_facade._ensure_plant_loaded"
     ), patch(
-        "custom_components.growspace_manager.services.plant._resolve_plant_id",
+        "custom_components.growspace_manager.services.plant_facade._resolve_plant_id",
         return_value="plant1",
     ):
-        await handle_add_timeline_note(hass, coordinator, strain_library, mock_call)
+        await PlantFacade(coordinator).add_timeline_note_from_call(
+            hass, strain_library, mock_call
+        )
         
     coordinator.services.add_timeline_note.assert_awaited_once_with(
         plant_id="plant1",
@@ -76,7 +75,9 @@ async def test_handle_add_plants_success() -> None:
         "start_number": 10,
     }
 
-    await handle_add_plants(hass, mock_coordinator, mock_strain_library, mock_call)
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+    await facade.add_plants_from_call(hass, mock_strain_library, mock_call)
 
     assert mock_coordinator.services.plants.add_plant.call_count == 2
     # Check that phenotype uses start_number
@@ -119,17 +120,21 @@ async def test_handle_add_plants_errors() -> None:
 
     mock_call = MagicMock(spec=ServiceCall)
 
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+
     # 1. Growspace not found (245-246)
     mock_call.data = {"growspace_id": "missing", "strain": "S1", "amount": 1}
     with pytest.raises(ServiceValidationError, match=".*does not exist.*"):
-        await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
+        await facade.add_plants_from_call(hass, MagicMock(), mock_call)
 
     # 2. GrowspaceError during add (297-299)
     mock_call.data = {"growspace_id": "gs1", "strain": "S1", "amount": 2}
     mock_coordinator.services.plants.add_plant = AsyncMock(
         side_effect=GrowspaceError("Fail")
     )
-    await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+    await facade.add_plants_from_call(hass, MagicMock(), mock_call)
     assert (
         mock_coordinator.services.plants.add_plant.call_count == 1
     )  # Stopped after first error
@@ -139,7 +144,7 @@ async def test_handle_add_plants_errors() -> None:
         "Boom"
     )
     with pytest.raises(ServiceValidationError, match="Failed to batch add plants"):
-        await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
+        await facade.add_plants_from_call(hass, MagicMock(), mock_call)
 
 
 @pytest.mark.asyncio
@@ -153,10 +158,13 @@ async def test_handle_add_plants_full() -> None:
     mock_call = MagicMock(spec=ServiceCall)
     mock_call.data = {"growspace_id": "gs1", "strain": "S1", "amount": 2}
 
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+
     # Case: Full from the start (282)
     mock_coordinator.validator.find_first_available_position.return_value = (None, None)
     with pytest.raises(ServiceValidationError, match=".*is full.*"):
-        await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
+        await facade.add_plants_from_call(hass, MagicMock(), mock_call)
 
     # Case: Becomes full during batch (284)
     # 1. find_first_available_position (initial check)
@@ -167,5 +175,5 @@ async def test_handle_add_plants_full() -> None:
         (0, 0),
         (None, None),
     ]
-    await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
+    await facade.add_plants_from_call(hass, MagicMock(), mock_call)
     assert mock_coordinator.services.plants.add_plant.call_count == 1

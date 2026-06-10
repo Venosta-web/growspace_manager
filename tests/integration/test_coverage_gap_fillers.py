@@ -22,7 +22,7 @@ from custom_components.growspace_manager.domain.day_night import DayNightTracker
 from custom_components.growspace_manager.vpd_on_off_controller import VpdOnOffController
 
 # Direct imports of the functions we want to test
-from custom_components.growspace_manager.services.plant import handle_add_plants
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from custom_components.growspace_manager.websocket import _merge_logbook_event
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -55,7 +55,9 @@ async def test_add_plants_with_base_phenotype(hass: HomeAssistant) -> None:
     call.data = data
 
     # Execute
-    await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+    await facade.add_plants_from_call(hass, mock_strain_library, call)
 
     # Verify
     mock_coordinator.services.plants.add_plant.assert_called_once()

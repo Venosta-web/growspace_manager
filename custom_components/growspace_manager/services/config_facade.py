@@ -8,11 +8,32 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from custom_components.growspace_manager.const import (
+    ATTR_GROWSPACE_ID,
+    ATTR_ITEMS,
+    ATTR_MIN_DAYS_IN_STAGE,
+    ATTR_NAME,
+    ATTR_NOTES,
+    ATTR_PLANT_IDS,
+    ATTR_PRESET_ID,
+    ATTR_STAGE,
+    ATTR_TYPE,
+    GrowspaceService,
+)
 from custom_components.growspace_manager.models import (
     ECRampCurve,
     IPMPreset,
     NutrientPreset,
 )
+from custom_components.growspace_manager.schemas import (
+    APPLY_IPM_SCHEMA,
+    REMOVE_IPM_PRESET_SCHEMA,
+    SAVE_IPM_PRESET_SCHEMA,
+)
+from homeassistant.core import HomeAssistant, ServiceCall
+
+from ._definition import ServiceDefinition
+from .utils import handle_service_errors
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -109,7 +130,14 @@ class ConfigFacade:
     ) -> NutrientPreset:
         """Create or update a nutrient preset."""
         return await self._coordinator.nutrient_manager.async_save_nutrient_preset(
-            name, nutrients, stage, min_days_in_stage, preset_id, week, ec_target, ph_target
+            name,
+            nutrients,
+            stage,
+            min_days_in_stage,
+            preset_id,
+            week,
+            ec_target,
+            ph_target,
         )
 
     async def remove_nutrient_preset(self, preset_id: str) -> None:
@@ -181,3 +209,75 @@ class ConfigFacade:
         if svc is None:
             return
         svc.remove_stock(nutrient_id)
+
+    # -------------------------------------------------------------------------
+    # Service call adapters
+    # -------------------------------------------------------------------------
+
+    @handle_service_errors
+    async def save_ipm_preset_from_call(
+        self, hass: HomeAssistant, call: ServiceCall
+    ) -> None:
+        """Unpack a save_ipm_preset ServiceCall and delegate to save_ipm_preset."""
+        await self.save_ipm_preset(
+            name=call.data[ATTR_NAME],
+            preset_type=call.data[ATTR_TYPE],
+            items=call.data[ATTR_ITEMS],
+            stage=call.data.get(ATTR_STAGE),
+            min_days_in_stage=call.data.get(ATTR_MIN_DAYS_IN_STAGE),
+            preset_id=call.data.get(ATTR_PRESET_ID),
+        )
+
+    @handle_service_errors
+    async def remove_ipm_preset_from_call(
+        self, hass: HomeAssistant, call: ServiceCall
+    ) -> None:
+        """Unpack a remove_ipm_preset ServiceCall and delegate to remove_ipm_preset."""
+        await self.remove_ipm_preset(call.data[ATTR_PRESET_ID])
+
+    @handle_service_errors
+    async def apply_ipm_from_call(self, hass: HomeAssistant, call: ServiceCall) -> None:
+        """Unpack an apply_ipm ServiceCall and delegate to PlantFacade.apply_ipm."""
+        await self._coordinator.services.plants.apply_ipm(
+            preset_id=call.data[ATTR_PRESET_ID],
+            growspace_id=call.data.get(ATTR_GROWSPACE_ID),
+            plant_ids=call.data.get(ATTR_PLANT_IDS),
+            notes=call.data.get(ATTR_NOTES),
+        )
+
+
+async def _handle_save_ipm_preset(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, call: ServiceCall
+) -> None:
+    await coordinator.services.config.save_ipm_preset_from_call(hass, call)
+
+
+async def _handle_remove_ipm_preset(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, call: ServiceCall
+) -> None:
+    await coordinator.services.config.remove_ipm_preset_from_call(hass, call)
+
+
+async def _handle_apply_ipm(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, call: ServiceCall
+) -> None:
+    await coordinator.services.config.apply_ipm_from_call(hass, call)
+
+
+SERVICES: list[ServiceDefinition] = [
+    ServiceDefinition(
+        GrowspaceService.SAVE_IPM_PRESET,
+        _handle_save_ipm_preset,
+        SAVE_IPM_PRESET_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_IPM_PRESET,
+        _handle_remove_ipm_preset,
+        REMOVE_IPM_PRESET_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.APPLY_IPM,
+        _handle_apply_ipm,
+        APPLY_IPM_SCHEMA,
+    ),
+]

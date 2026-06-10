@@ -63,7 +63,13 @@ def test_websocket_update_nutrient_stock_not_loaded(
     hass: HomeAssistant, mock_connection: MagicMock
 ) -> None:
     """Cover ServiceValidationError branch in websocket_update_nutrient_stock."""
-    msg = {"id": 2, "nutrient_id": "n1", "name": "N1", "current_ml": 500, "initial_ml": 1000}
+    msg = {
+        "id": 2,
+        "nutrient_id": "n1",
+        "name": "N1",
+        "current_ml": 500,
+        "initial_ml": 1000,
+    }
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         side_effect=ServiceValidationError("not loaded"),
@@ -150,17 +156,18 @@ async def test_websocket_add_growspace_note_validation_error(
 ) -> None:
     """Cover ServiceValidationError branch in websocket_add_growspace_note."""
     msg = {"id": 7, "growspace_id": "gs1", "notes": "hello"}
-    with (
-        patch(
-            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
-        ),
-        patch(
-            "custom_components.growspace_manager.websocket.timeline.async_add_growspace_note",
-            side_effect=ServiceValidationError("invalid growspace"),
-        ),
+    coordinator = MagicMock()
+    coordinator.services.growspaces.add_growspace_note = AsyncMock(
+        side_effect=ServiceValidationError("invalid growspace")
+    )
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
     ):
         await websocket_add_growspace_note(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(7, "invalid_args", "invalid growspace")
+    mock_connection.send_error.assert_called_once_with(
+        7, "invalid_args", "invalid growspace"
+    )
 
 
 @pytest.mark.asyncio
@@ -169,14 +176,13 @@ async def test_websocket_add_growspace_note_generic_error(
 ) -> None:
     """Cover generic Exception branch in websocket_add_growspace_note."""
     msg = {"id": 8, "growspace_id": "gs1", "notes": "hello"}
-    with (
-        patch(
-            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
-        ),
-        patch(
-            "custom_components.growspace_manager.websocket.timeline.async_add_growspace_note",
-            side_effect=RuntimeError("boom"),
-        ),
+    coordinator = MagicMock()
+    coordinator.services.growspaces.add_growspace_note = AsyncMock(
+        side_effect=RuntimeError("boom")
+    )
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
     ):
         await websocket_add_growspace_note(hass, mock_connection, msg)
     mock_connection.send_error.assert_called_once_with(8, "unknown_error", "boom")
@@ -211,7 +217,9 @@ async def test_websocket_add_subarea_generic_error(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.services.growspaces.add_subarea = AsyncMock(side_effect=RuntimeError("fail"))
+        mock_get.return_value.services.growspaces.add_subarea = AsyncMock(
+            side_effect=RuntimeError("fail")
+        )
         await websocket_add_subarea(hass, mock_connection, msg)
     mock_connection.send_error.assert_called_once_with(9, "unknown_error", "fail")
 
@@ -250,7 +258,9 @@ async def test_websocket_update_subarea_generic_error(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.services.growspaces.update_subarea = AsyncMock(side_effect=RuntimeError("oops"))
+        mock_get.return_value.services.growspaces.update_subarea = AsyncMock(
+            side_effect=RuntimeError("oops")
+        )
         await websocket_update_subarea(hass, mock_connection, msg)
     mock_connection.send_error.assert_called_once_with(11, "unknown_error", "oops")
 
@@ -279,7 +289,9 @@ async def test_websocket_remove_subarea_generic_error(
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
     ) as mock_get:
-        mock_get.return_value.services.growspaces.remove_subarea = AsyncMock(side_effect=RuntimeError("fail"))
+        mock_get.return_value.services.growspaces.remove_subarea = AsyncMock(
+            side_effect=RuntimeError("fail")
+        )
         await websocket_remove_subarea(hass, mock_connection, msg)
     mock_connection.send_error.assert_called_once_with(13, "unknown_error", "fail")
 
@@ -327,13 +339,17 @@ async def test_websocket_get_lineage_tree_inner_exception(
     msg = {"id": 16, "plant_id": "p1"}
     mock_coordinator = MagicMock()
     mock_coordinator.plants = {"p1": MagicMock()}
-    mock_coordinator.services.genetics.get_lineage_tree.side_effect = RuntimeError("inner crash")
+    mock_coordinator.services.genetics.get_lineage_tree.side_effect = RuntimeError(
+        "inner crash"
+    )
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
         return_value=mock_coordinator,
     ):
         await websocket_get_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(16, "unknown_error", "inner crash")
+    mock_connection.send_error.assert_called_once_with(
+        16, "unknown_error", "inner crash"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +364,9 @@ async def test_websocket_get_strain_lineage_tree_generic_error(
     """Cover generic Exception branch in websocket_get_strain_lineage_tree."""
     msg = {"id": 17, "strain_name": "OG Kush"}
     mock_coordinator = MagicMock()
-    mock_coordinator.strain_library.get_strain_lineage_tree.side_effect = RuntimeError("fail")
+    mock_coordinator.strain_library.get_strain_lineage_tree.side_effect = RuntimeError(
+        "fail"
+    )
     mock_coordinator.services.config.strain_library = mock_coordinator.strain_library
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
@@ -371,7 +389,9 @@ async def test_websocket_update_strain_lineage_tree_generic_error(
     mock_coordinator = MagicMock()
     mock_coordinator.strain_library = AsyncMock()
     mock_coordinator.services.config.strain_library = mock_coordinator.strain_library
-    mock_coordinator.strain_library.update_strain_lineage_tree.side_effect = RuntimeError("fail")
+    mock_coordinator.strain_library.update_strain_lineage_tree.side_effect = (
+        RuntimeError("fail")
+    )
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
@@ -426,15 +446,17 @@ async def test_websocket_import_strain_lineage_tree_generic_error(
     mock_coordinator = MagicMock()
     mock_coordinator.strain_library = AsyncMock()
     mock_coordinator.services.config.strain_library = mock_coordinator.strain_library
-    mock_coordinator.strain_library.async_import_seedfinder_lineage_tree.side_effect = RuntimeError(
-        "import failed"
+    mock_coordinator.strain_library.async_import_seedfinder_lineage_tree.side_effect = (
+        RuntimeError("import failed")
     )
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
     ):
         await websocket_import_strain_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(21, "unknown_error", "import failed")
+    mock_connection.send_error.assert_called_once_with(
+        21, "unknown_error", "import failed"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -472,7 +494,9 @@ async def test_websocket_query_external_strain_blacklist_error(
     msg = {"id": 23, "query": "Gelato"}
     mock_coordinator = MagicMock()
     mock_coordinator.seedfinder_scraper = AsyncMock()
-    mock_coordinator.seedfinder_scraper.async_search_strains = AsyncMock(return_value=[])
+    mock_coordinator.seedfinder_scraper.async_search_strains = AsyncMock(
+        return_value=[]
+    )
     # Make the second get_any call (blacklist retrieval) raise AttributeError
     call_count = 0
 
@@ -526,7 +550,9 @@ async def test_websocket_get_external_strain_details_none(
     msg = {"id": 24, "url": "https://example.com/strain/og-kush"}
     mock_coordinator = MagicMock()
     mock_coordinator.seedfinder_scraper = AsyncMock()
-    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(return_value=None)
+    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
+        return_value=None
+    )
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
@@ -563,7 +589,9 @@ async def test_websocket_get_external_strain_details_with_data(
     }
     mock_coordinator = MagicMock()
     mock_coordinator.seedfinder_scraper = AsyncMock()
-    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(return_value=raw)
+    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
+        return_value=raw
+    )
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
@@ -605,7 +633,9 @@ async def test_websocket_get_external_strain_details_single_flowering_time(
     }
     mock_coordinator = MagicMock()
     mock_coordinator.seedfinder_scraper = AsyncMock()
-    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(return_value=raw)
+    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
+        return_value=raw
+    )
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
@@ -666,7 +696,9 @@ async def test_websocket_get_external_strain_details_no_flowering_time_match(
     }
     mock_coordinator = MagicMock()
     mock_coordinator.seedfinder_scraper = AsyncMock()
-    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(return_value=raw)
+    mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
+        return_value=raw
+    )
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,

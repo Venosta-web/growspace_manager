@@ -14,11 +14,7 @@ from custom_components.growspace_manager.const import (
     ATTR_TYPE,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.services.ipm import (
-    handle_apply_ipm,
-    handle_remove_ipm_preset,
-    handle_save_ipm_preset,
-)
+from custom_components.growspace_manager.services.config_facade import ConfigFacade
 from custom_components.growspace_manager.services.irrigation import (
     handle_add_drain_time,
     handle_add_irrigation_time,
@@ -34,9 +30,7 @@ from custom_components.growspace_manager.services.nutrient_presets import (
     handle_remove_nutrient_preset,
     handle_save_nutrient_preset,
 )
-from custom_components.growspace_manager.services.training import (
-    handle_log_training_event,
-)
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
@@ -124,17 +118,21 @@ async def test_ipm_error_handling(mock_hass, mock_coordinator) -> None:
         ATTR_PRESET_ID: "p1",
     }
 
+    config_facade = ConfigFacade(mock_coordinator)
+    config_facade.save_ipm_preset = mock_coordinator.services.config.save_ipm_preset
+    config_facade.remove_ipm_preset = mock_coordinator.services.config.remove_ipm_preset
+
     # Save IPM Preset - GrowspaceError
     mock_coordinator.services.config.save_ipm_preset.side_effect = GrowspaceError(
         "Save failed"
     )
     with pytest.raises(ServiceValidationError, match="Save failed"):
-        await handle_save_ipm_preset(mock_hass, mock_coordinator, call)
+        await config_facade.save_ipm_preset_from_call(mock_hass, call)
 
     # Save IPM Preset - Generic Exception
     mock_coordinator.services.config.save_ipm_preset.side_effect = Exception("Crash")
     with pytest.raises(ServiceValidationError, match="Operation failed"):
-        await handle_save_ipm_preset(mock_hass, mock_coordinator, call)
+        await config_facade.save_ipm_preset_from_call(mock_hass, call)
 
     # Remove IPM Preset - GrowspaceError
     call.data = {ATTR_PRESET_ID: "p1"}
@@ -142,22 +140,22 @@ async def test_ipm_error_handling(mock_hass, mock_coordinator) -> None:
         "Remove failed"
     )
     with pytest.raises(ServiceValidationError, match="Remove failed"):
-        await handle_remove_ipm_preset(mock_hass, mock_coordinator, call)
+        await config_facade.remove_ipm_preset_from_call(mock_hass, call)
 
     # Remove IPM Preset - Generic Exception
     mock_coordinator.services.config.remove_ipm_preset.side_effect = Exception("Crash")
     with pytest.raises(ServiceValidationError, match="Operation failed"):
-        await handle_remove_ipm_preset(mock_hass, mock_coordinator, call)
+        await config_facade.remove_ipm_preset_from_call(mock_hass, call)
 
     # Apply IPM - GrowspaceError
     mock_coordinator.services.plants.apply_ipm.side_effect = GrowspaceError("Apply failed")
     with pytest.raises(ServiceValidationError, match="Apply failed"):
-        await handle_apply_ipm(mock_hass, mock_coordinator, call)
+        await config_facade.apply_ipm_from_call(mock_hass, call)
 
     # Apply IPM - Generic Exception
     mock_coordinator.services.plants.apply_ipm.side_effect = Exception("Crash")
     with pytest.raises(ServiceValidationError, match="Operation failed"):
-        await handle_apply_ipm(mock_hass, mock_coordinator, call)
+        await config_facade.apply_ipm_from_call(mock_hass, call)
 
 
 @pytest.mark.asyncio
@@ -267,17 +265,20 @@ async def test_training_error_handling(mock_hass, mock_coordinator) -> None:
     call = MagicMock(spec=ServiceCall)
     call.data = {ATTR_TECHNIQUE: "topping"}
 
+    plant_facade = PlantFacade(mock_coordinator)
+    plant_facade.log_training_event = mock_coordinator.services.plants.log_training_event
+
     # Log Training - GrowspaceError
     mock_coordinator.services.plants.log_training_event.side_effect = GrowspaceError(
         "Log failed"
     )
     with pytest.raises(ServiceValidationError, match="Log failed"):
-        await handle_log_training_event(mock_hass, mock_coordinator, call)
+        await plant_facade.log_training_event_from_call(mock_hass, call)
 
     # Log Training - Generic Exception
     mock_coordinator.services.plants.log_training_event.side_effect = Exception("Crash")
     with pytest.raises(ServiceValidationError, match="Operation failed"):
-        await handle_log_training_event(mock_hass, mock_coordinator, call)
+        await plant_facade.log_training_event_from_call(mock_hass, call)
 
 
 @pytest.mark.asyncio

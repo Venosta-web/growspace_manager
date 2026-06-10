@@ -21,9 +21,6 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.services.growspace import (
-    async_add_growspace_note,
-)
 from homeassistant.components import websocket_api
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.db_schema import Events
@@ -100,12 +97,9 @@ async def websocket_add_growspace_note(
     """Handle add growspace note command via WebSocket."""
     try:
         coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        strain_library = coordinator.services.config.strain_library
 
-        await async_add_growspace_note(
-            hass,
-            coordinator,
-            strain_library,
+        await coordinator.services.growspaces.add_growspace_note(
+            hass=hass,
             growspace_id=msg[ATTR_GROWSPACE_ID],
             notes=msg[ATTR_NOTES],
             images_base64=msg.get(ATTR_IMAGES),
@@ -141,7 +135,22 @@ async def websocket_remove_timeline_event(
 
 
 COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (WS_TYPE_ADD_TIMELINE_NOTE, websocket_add_timeline_note, SCHEMA_WS_ADD_TIMELINE_NOTE, False),
-    (WS_TYPE_ADD_GROWSPACE_NOTE, websocket_add_growspace_note, SCHEMA_WS_ADD_GROWSPACE_NOTE, False),
-    (WS_TYPE_REMOVE_TIMELINE_EVENT, websocket_remove_timeline_event, SCHEMA_WS_REMOVE_TIMELINE_EVENT, False),
+    (
+        WS_TYPE_ADD_TIMELINE_NOTE,
+        websocket_add_timeline_note,
+        SCHEMA_WS_ADD_TIMELINE_NOTE,
+        False,
+    ),
+    (
+        WS_TYPE_ADD_GROWSPACE_NOTE,
+        websocket_add_growspace_note,
+        SCHEMA_WS_ADD_GROWSPACE_NOTE,
+        False,
+    ),
+    (
+        WS_TYPE_REMOVE_TIMELINE_EVENT,
+        websocket_remove_timeline_event,
+        SCHEMA_WS_REMOVE_TIMELINE_EVENT,
+        False,
+    ),
 ]

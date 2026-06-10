@@ -19,7 +19,6 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import PlantStage
-from custom_components.growspace_manager.services.plant import handle_add_timeline_note
 from homeassistant.core import HomeAssistant, ServiceCall
 
 
@@ -192,9 +191,8 @@ async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
         ATTR_TAGS: ["test"],
     }
 
-    await handle_add_timeline_note(
+    await coordinator.services.plants.add_timeline_note_from_call(
         hass,
-        coordinator,
         coordinator.strain_library,
         call,
     )

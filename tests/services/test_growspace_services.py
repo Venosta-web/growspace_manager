@@ -10,11 +10,8 @@ from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.ai_assistant import (
     handle_ask_grow_advice,
 )
-from custom_components.growspace_manager.services.growspace import (
-    async_add_growspace_note,
-    handle_add_growspace,
-    handle_remove_growspace,
-    handle_update_growspace,
+from custom_components.growspace_manager.services.growspace_facade import (
+    GrowspaceFacade,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.core import Context, HomeAssistant, ServiceCall, State
@@ -88,8 +85,8 @@ async def test_handle_add_growspace(
     mock_device.config_entries = {"mobile_app_test"}
     mock_async_get.return_value.devices = {"device_id": mock_device}
 
-    await handle_add_growspace(
-        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    await mock_coordinator.services.growspaces.add_growspace_from_call(
+        mock_hass, mock_strain_library, mock_call
     )
 
     mock_coordinator.growspace_manager.add_growspace.assert_awaited_once_with(
@@ -113,8 +110,8 @@ async def test_handle_update_growspace(
         "plants_per_row": 5,
     }
 
-    await handle_update_growspace(
-        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    await mock_coordinator.services.growspaces.update_growspace_from_call(
+        mock_hass, mock_strain_library, mock_call
     )
 
     mock_coordinator.growspace_manager.update_growspace.assert_awaited_once_with(
@@ -144,8 +141,8 @@ async def test_handle_add_growspace_no_mobile_app_notification(
     }
     mock_async_get.return_value.devices = {}  # No mobile devices registered
 
-    await handle_add_growspace(
-        mock_hass, mock_coordinator, mock_strain_library, mock_call
+    await mock_coordinator.services.growspaces.add_growspace_from_call(
+        mock_hass, mock_strain_library, mock_call
     )
 
     mock_coordinator.growspace_manager.add_growspace.assert_awaited_once_with(
@@ -175,8 +172,8 @@ async def test_handle_add_growspace_exception(
     mock_async_get.return_value.devices = {}
 
     with pytest.raises(ServiceValidationError, match="Operation failed: Add failed"):
-        await handle_add_growspace(
-            mock_hass, mock_coordinator, mock_strain_library, mock_call
+        await mock_coordinator.services.growspaces.add_growspace_from_call(
+            mock_hass, mock_strain_library, mock_call
         )
 
 
@@ -187,9 +184,13 @@ async def test_handle_remove_growspace(
     """Test handle_remove_growspace service."""
     mock_call.data = {"growspace_id": "gs1"}
 
-    await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
+    facade = GrowspaceFacade(mock_coordinator)
+    facade.remove_growspace = mock_coordinator.services.growspaces.remove_growspace
+    await facade.remove_growspace_from_call(mock_hass, mock_call)
 
-    mock_coordinator.services.growspaces.remove_growspace.assert_awaited_once_with("gs1")
+    mock_coordinator.services.growspaces.remove_growspace.assert_awaited_once_with(
+        "gs1"
+    )
     mock_hass.bus.async_fire.assert_not_called()
 
 
@@ -202,10 +203,14 @@ async def test_handle_remove_growspace_exception(
 ) -> None:
     """Test handle_remove_growspace with an exception."""
     mock_call.data = {"growspace_id": "gs1"}
-    mock_coordinator.services.growspaces.remove_growspace.side_effect = Exception("Remove failed")
+    mock_coordinator.services.growspaces.remove_growspace.side_effect = Exception(
+        "Remove failed"
+    )
 
+    facade = GrowspaceFacade(mock_coordinator)
+    facade.remove_growspace = mock_coordinator.services.growspaces.remove_growspace
     with pytest.raises(ServiceValidationError, match="Operation failed: Remove failed"):
-        await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
+        await facade.remove_growspace_from_call(mock_hass, mock_call)
 
 
 @pytest.mark.asyncio
@@ -371,8 +376,8 @@ async def test_handle_add_growspace_growspace_error(
     mock_async_get.return_value.devices = {}
 
     with pytest.raises(ServiceValidationError, match="Specific error"):
-        await handle_add_growspace(
-            mock_hass, mock_coordinator, mock_strain_library, mock_call
+        await mock_coordinator.services.growspaces.add_growspace_from_call(
+            mock_hass, mock_strain_library, mock_call
         )
 
 
@@ -390,8 +395,8 @@ async def test_handle_update_growspace_exception(
     )
 
     with pytest.raises(ServiceValidationError, match="Operation failed: Update failed"):
-        await handle_update_growspace(
-            mock_hass, mock_coordinator, mock_strain_library, mock_call
+        await mock_coordinator.services.growspaces.update_growspace_from_call(
+            mock_hass, mock_strain_library, mock_call
         )
 
 
@@ -409,8 +414,8 @@ async def test_handle_update_growspace_growspace_error(
     )
 
     with pytest.raises(ServiceValidationError, match="Update error"):
-        await handle_update_growspace(
-            mock_hass, mock_coordinator, mock_strain_library, mock_call
+        await mock_coordinator.services.growspaces.update_growspace_from_call(
+            mock_hass, mock_strain_library, mock_call
         )
 
 
@@ -427,8 +432,10 @@ async def test_handle_remove_growspace_growspace_error(
         "Remove error"
     )
 
+    facade = GrowspaceFacade(mock_coordinator)
+    facade.remove_growspace = mock_coordinator.services.growspaces.remove_growspace
     with pytest.raises(ServiceValidationError, match="Remove error"):
-        await handle_remove_growspace(mock_hass, mock_coordinator, mock_call)
+        await facade.remove_growspace_from_call(mock_hass, mock_call)
 
 
 # ---------------------------------------------------------------------------
@@ -444,11 +451,10 @@ async def test_async_add_growspace_note_growspace_not_found(
 ) -> None:
     """Raise ServiceValidationError when growspace_id not in coordinator.growspaces."""
     mock_coordinator.growspaces = {}
+    mock_coordinator.services.config.strain_library = mock_strain_library
     with pytest.raises(ServiceValidationError, match="not found"):
-        await async_add_growspace_note(
-            mock_hass,
-            mock_coordinator,
-            mock_strain_library,
+        await mock_coordinator.services.growspaces.add_growspace_note(
+            hass=mock_hass,
             growspace_id="missing_gs",
             notes="hello",
         )
@@ -462,12 +468,11 @@ async def test_async_add_growspace_note_no_images(
 ) -> None:
     """Fire event with empty image list when images_base64 is None."""
     mock_coordinator.growspaces = {"gs1": MagicMock()}
+    mock_coordinator.services.config.strain_library = mock_strain_library
     mock_hass.bus = MagicMock()
 
-    await async_add_growspace_note(
-        mock_hass,
-        mock_coordinator,
-        mock_strain_library,
+    await mock_coordinator.services.growspaces.add_growspace_note(
+        hass=mock_hass,
         growspace_id="gs1",
         notes="A note",
         images_base64=None,
@@ -488,6 +493,7 @@ async def test_async_add_growspace_note_with_images_success(
 ) -> None:
     """Save images and include paths in fired event when images_base64 is provided."""
     mock_coordinator.growspaces = {"gs1": MagicMock()}
+    mock_coordinator.services.config.strain_library = mock_strain_library
     mock_hass.bus = MagicMock()
 
     mock_image_manager = MagicMock()
@@ -496,10 +502,8 @@ async def test_async_add_growspace_note_with_images_success(
     )
     mock_strain_library.image_manager = mock_image_manager
 
-    await async_add_growspace_note(
-        mock_hass,
-        mock_coordinator,
-        mock_strain_library,
+    await mock_coordinator.services.growspaces.add_growspace_note(
+        hass=mock_hass,
         growspace_id="gs1",
         notes="Note with image",
         images_base64=["base64data=="],
@@ -520,16 +524,15 @@ async def test_async_add_growspace_note_image_save_error(
 ) -> None:
     """Log error and continue when saving a growspace note image fails."""
     mock_coordinator.growspaces = {"gs1": MagicMock()}
+    mock_coordinator.services.config.strain_library = mock_strain_library
     mock_hass.bus = MagicMock()
 
     mock_image_manager = MagicMock()
     mock_image_manager.save_timeline_image = AsyncMock(side_effect=OSError("disk full"))
     mock_strain_library.image_manager = mock_image_manager
 
-    await async_add_growspace_note(
-        mock_hass,
-        mock_coordinator,
-        mock_strain_library,
+    await mock_coordinator.services.growspaces.add_growspace_note(
+        hass=mock_hass,
         growspace_id="gs1",
         notes="Note with bad image",
         images_base64=["bad_base64"],
@@ -549,13 +552,12 @@ async def test_async_add_growspace_note_no_image_manager(
 ) -> None:
     """Skip image saving when strain_library has no image_manager."""
     mock_coordinator.growspaces = {"gs1": MagicMock()}
+    mock_coordinator.services.config.strain_library = mock_strain_library
     mock_hass.bus = MagicMock()
     mock_strain_library.image_manager = None
 
-    await async_add_growspace_note(
-        mock_hass,
-        mock_coordinator,
-        mock_strain_library,
+    await mock_coordinator.services.growspaces.add_growspace_note(
+        hass=mock_hass,
         growspace_id="gs1",
         notes="Note",
         images_base64=["somedata"],

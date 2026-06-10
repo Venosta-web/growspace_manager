@@ -16,10 +16,7 @@ from custom_components.growspace_manager.services.irrigation_watering import (
     handle_water_growspace,
     handle_water_plant,
 )
-from custom_components.growspace_manager.services.plant import (
-    handle_add_plant,
-    handle_add_plants,
-)
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
@@ -55,8 +52,11 @@ async def test_handle_add_plant_wraps_error(
         ATTR_COL: 1,
     }
 
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+
     with pytest.raises(ServiceValidationError, match="Failed to add plant: Boom"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+        await facade.add_plant_from_call(hass, mock_strain_library, call)
 
 
 async def test_handle_add_plants_wraps_error(
@@ -75,10 +75,13 @@ async def test_handle_add_plants_wraps_error(
         ATTR_AMOUNT: 3,
     }
 
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+
     with pytest.raises(
         ServiceValidationError, match="Failed to batch add plants: Boom Batch"
     ):
-        await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
+        await facade.add_plants_from_call(hass, mock_strain_library, call)
 
 
 async def test_handle_water_plant_wraps_growspace_error(

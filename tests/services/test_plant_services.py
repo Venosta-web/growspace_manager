@@ -13,15 +13,11 @@ from custom_components.growspace_manager.exceptions import (
     PlantNotFoundError,
     ValidationChangeError,
 )
-from custom_components.growspace_manager.services.plant import (
-    handle_add_plant,
-    handle_remove_plant,
-    handle_update_plant,
-)
 from custom_components.growspace_manager.services.plant_cloning import (
     handle_move_clone,
     handle_take_clone,
 )
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from custom_components.growspace_manager.services.plant_lifecycle import (
     handle_harvest_plant,
     handle_transition_plant_stage,
@@ -61,7 +57,9 @@ async def test_add_plant_success(
         },
     )
 
-    await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.add_plant_from_call(
+        hass, mock_strain_library, call
+    )
     await hass.async_block_till_done()
 
     mock_coordinator.plant_manager.add_plant.assert_called_once()
@@ -91,7 +89,9 @@ async def test_add_plant_growspace_not_found(
 
     # Patch the notification function
     with pytest.raises(ServiceValidationError, match="not found"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.add_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
     # Assert no plant was added
     mock_coordinator.plant_manager.add_plant.assert_not_called()
@@ -126,7 +126,9 @@ async def test_add_plant_position_out_of_bounds(
     )
 
     with pytest.raises(ServiceValidationError, match="outside growspace"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.add_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
     # Ensure the coordinator was called
     mock_coordinator.plant_manager.add_plant.assert_called_once()
@@ -164,7 +166,9 @@ async def test_add_plant_position_occupied(
     )
 
     with pytest.raises(ServiceValidationError, match="occupied"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.add_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
     mock_coordinator.plant_manager.add_plant.assert_called_once()
 
@@ -191,7 +195,9 @@ async def test_add_plant_with_dates(
         },
     )
 
-    await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.add_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
     call_kwargs = mock_coordinator.plant_manager.add_plant.call_args.kwargs
     assert call_kwargs["veg_start"] == as_local(datetime(2024, 1, 15, 0, 0))
@@ -217,7 +223,9 @@ async def test_add_plant_mother_growspace_auto_date(
         },
     )
 
-    await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.add_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
     call_kwargs = mock_coordinator.plant_manager.add_plant.call_args.kwargs
     # Service converts date.today() to datetime via parse_date_field
@@ -245,7 +253,9 @@ async def test_add_plant_exception(
     )
 
     with pytest.raises(ServiceValidationError, match="Failed to add plant: Test error"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.add_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
 
 # ============================================================================
@@ -650,7 +660,9 @@ async def test_move_clone_exception_during_move(
     """Test exception during clone move."""
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
-    mock_coordinator.services.plants.promote_clone.side_effect = GrowspaceError("Test error")
+    mock_coordinator.services.plants.promote_clone.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -691,7 +703,9 @@ async def test_update_plant_success(
     )
 
     # Act
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
     await hass.async_block_till_done()
 
     mock_coordinator.plant_manager.update_plant.assert_called_once()
@@ -720,7 +734,9 @@ async def test_update_plant_not_found(
     with pytest.raises(
         ServiceValidationError, match="Failed to update plant: 'nonexistent'"
     ):
-        await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.update_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
     mock_coordinator.plant_manager.update_plant.assert_not_called()
 
@@ -744,7 +760,9 @@ async def test_update_plant_with_dates(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
     call_kwargs = mock_coordinator.plant_manager.update_plant.call_args.kwargs
     assert call_kwargs["veg_start"] == as_local(datetime(2024, 1, 15, 0, 0))
@@ -769,7 +787,9 @@ async def test_update_plant_with_date_strings(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
     call_kwargs = mock_coordinator.plant_manager.update_plant.call_args.kwargs
     # Date strings are parsed to datetime objects with local timezone
@@ -797,7 +817,9 @@ async def test_update_plant_invalid_date(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
     call_kwargs = mock_coordinator.plant_manager.update_plant.call_args[1]
     assert call_kwargs["veg_start"] is None
@@ -821,7 +843,9 @@ async def test_update_plant_none_values(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
     call_kwargs = mock_coordinator.plant_manager.update_plant.call_args[1]
     assert "strain" not in call_kwargs  # None values should be skipped
@@ -844,7 +868,9 @@ async def test_update_plant_no_update_fields(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
     mock_coordinator.plant_manager.update_plant.assert_not_called()
 
@@ -870,7 +896,9 @@ async def test_update_plant_exception(
     )
 
     with pytest.raises(Exception, match="Test error"):
-        await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.update_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
 
 # ============================================================================
@@ -897,7 +925,9 @@ async def test_remove_plant_success(
 
     # Assert
     # Act
-    await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+    facade = PlantFacade(mock_coordinator)
+    facade.remove_plant = mock_coordinator.services.plants.remove_plant
+    await facade.remove_plant_from_call(hass, mock_strain_library, call)
     await hass.async_block_till_done()
 
     # Assert
@@ -921,7 +951,9 @@ async def test_remove_plant_not_found(
     )
 
     with pytest.raises(ServiceValidationError, match="not found"):
-        await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.remove_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
 
 @pytest.mark.asyncio
@@ -930,7 +962,9 @@ async def test_remove_plant_exception(
 ) -> None:
     """Test exception handling in remove_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.services.plants.remove_plant.side_effect = GrowspaceError("Test error")
+    mock_coordinator.services.plants.remove_plant.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -941,8 +975,10 @@ async def test_remove_plant_exception(
         },
     )
 
+    facade = PlantFacade(mock_coordinator)
+    facade.remove_plant = mock_coordinator.services.plants.remove_plant
     with pytest.raises(Exception, match="Test error"):
-        await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+        await facade.remove_plant_from_call(hass, mock_strain_library, call)
 
 
 # ============================================================================
@@ -1091,7 +1127,9 @@ async def test_update_plant_adds_to_strain_library_if_new(
     )
 
     # Act
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
     await hass.async_block_till_done()
 
     # Assert
@@ -1692,7 +1730,9 @@ async def test_harvest_plant_exception(
 ) -> None:
     """Test exception handling in harvest_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.services.plants.transition_plant.side_effect = GrowspaceError("Test error")
+    mock_coordinator.services.plants.transition_plant.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -1795,7 +1835,9 @@ async def test_update_plant_moves_to_free_space_if_occupied(
     )
 
     # Act
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
     await hass.async_block_till_done()
 
     # Assert
@@ -1997,7 +2039,9 @@ async def test_resolve_position_conflict_no_space(
         "plant_1": mock_plant,
     }  # plant_1 occupies 2,3
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    facade = PlantFacade(mock_coordinator)
+    facade.update_plant = mock_coordinator.services.plants.update_plant
+    await facade.update_plant_from_call(hass, mock_strain_library, call)
 
     # Verify row/col were popped from update data (not updated)
     update_call_args = mock_coordinator.services.plants.update_plant.call_args.kwargs
@@ -2042,14 +2086,18 @@ async def test_remove_plant_growspace_error(
 ) -> None:
     """Test error handling in remove plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.services.plants.remove_plant.side_effect = GrowspaceError("Remove failed")
+    mock_coordinator.services.plants.remove_plant.side_effect = GrowspaceError(
+        "Remove failed"
+    )
 
     call = ServiceCall(
         hass, domain=DOMAIN, service="remove_plant", data={"plant_id": "plant_1"}
     )
 
+    facade = PlantFacade(mock_coordinator)
+    facade.remove_plant = mock_coordinator.services.plants.remove_plant
     with pytest.raises(ServiceValidationError, match="Remove failed"):
-        await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+        await facade.remove_plant_from_call(hass, mock_strain_library, call)
 
 
 @pytest.mark.asyncio
@@ -2079,8 +2127,8 @@ async def test_transition_plant_stage_growspace_error(
 ) -> None:
     """Test error handling in transition plant stage."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.services.plants.transition_plant_stage.side_effect = GrowspaceError(
-        "Transition failed"
+    mock_coordinator.services.plants.transition_plant_stage.side_effect = (
+        GrowspaceError("Transition failed")
     )
 
     call = ServiceCall(

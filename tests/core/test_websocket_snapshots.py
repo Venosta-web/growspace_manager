@@ -107,7 +107,9 @@ async def test_websocket_get_nutrient_inventory_snapshot(
         }
     }
     # coordinator.nutrient_manager.inventory_service.get_inventory() returns it
-    coordinator.nutrient_manager.inventory_service.get_inventory.return_value = inventory
+    coordinator.nutrient_manager.inventory_service.get_inventory.return_value = (
+        inventory
+    )
 
     with (
         patch(
@@ -225,15 +227,12 @@ async def test_websocket_add_growspace_note_snapshot(
     coordinator.growspaces = {"gs1": MagicMock()}
     coordinator.strain_library = MagicMock()
 
-    with (
-        patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-            return_value=coordinator,
-        ),
-        patch(
-            "custom_components.growspace_manager.websocket.timeline.async_add_growspace_note",
-            new_callable=AsyncMock,
-        ) as mock_add_note,
+    coordinator.services = MagicMock()
+    coordinator.services.growspaces.add_growspace_note = AsyncMock()
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
     ):
         msg = {
             "id": 7,
@@ -244,7 +243,7 @@ async def test_websocket_add_growspace_note_snapshot(
         }
         await websocket_add_growspace_note(hass, mock_connection, msg)
 
-        mock_add_note.assert_called_once()
+        coordinator.services.growspaces.add_growspace_note.assert_called_once()
         mock_connection.send_result.assert_called_once_with(7)
 
 

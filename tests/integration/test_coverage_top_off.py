@@ -38,10 +38,7 @@ from custom_components.growspace_manager.models import (
     NutrientInventory,
     Plant,
 )
-from custom_components.growspace_manager.services.plant import (
-    handle_add_plants,
-    handle_add_timeline_note,
-)
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from custom_components.growspace_manager.storage_manager import StorageManager
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
@@ -307,7 +304,9 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
             ATTR_AMOUNT: 1,
         }
 
-        await handle_add_plants(hass, mock_coordinator, MagicMock(), call)
+        await mock_coordinator.services.plants.add_plants_from_call(
+            hass, MagicMock(), call
+        )
         _args, kwargs = mock_coordinator.services.plants.add_plant.call_args
         assert kwargs.get("mother_start") is not None
 
@@ -323,7 +322,9 @@ async def test_handle_add_timeline_note_coverage(hass: HomeAssistant) -> None:
     call.data = {ATTR_PLANT_ID: "p1", ATTR_NOTES: "My note"}
 
     mock_coordinator.services.add_timeline_note = AsyncMock()
-    await handle_add_timeline_note(hass, mock_coordinator, mock_strain_lib, call)
+    await PlantFacade(mock_coordinator).add_timeline_note_from_call(
+        hass, mock_strain_lib, call
+    )
     mock_coordinator.services.add_timeline_note.assert_awaited_once()
 
 
