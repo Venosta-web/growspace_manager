@@ -49,7 +49,7 @@ from .const import (
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
-from .drying_calculator import is_cure_ready
+from .domain.stage import StageDays, classify_stages
 from .exceptions import GrowspaceError
 from .models import (
     EnvironmentConfig,
@@ -60,6 +60,7 @@ from .models import (
     Plant,
 )
 from .notification_manager import NotificationManager
+from .sensor.drying import DryingReadyForCureSensor
 from .services.ai_assistant import GrowAssistant
 from .strain_library import StrainLibrary
 from .strategies.curing import CuringEvaluatorStrategy
@@ -69,12 +70,7 @@ from .strategies.mold import MoldRiskEvaluatorStrategy
 from .strategies.optimal import OptimalConditionsEvaluatorStrategy
 from .strategies.stress import StressEvaluatorStrategy
 from .trend_analyzer import TrendAnalyzer
-from .domain.stage import StageDays, classify_stages
-from .utils import (
-    VPDCalculator,
-    any_light_sensor_on,
-    calculate_days_since,
-)
+from .utils import VPDCalculator, any_light_sensor_on, calculate_days_since
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -156,6 +152,14 @@ async def async_setup_entry(
                     initialized_sensors,
                     new_entities,
                 )
+
+        for growspace_id in coordinator.services.growspaces.get_all_growspaces():
+            for plant in coordinator.services.growspaces.get_growspace_plants(growspace_id):
+                if plant.dry_start is not None:
+                    key = f"{plant.plant_id}_ready_for_cure"
+                    if key not in initialized_sensors:
+                        new_entities.append(DryingReadyForCureSensor(coordinator, plant))
+                        initialized_sensors.add(key)
 
         if new_entities:
             async_add_entities(new_entities)
@@ -1177,34 +1181,3 @@ class LightCycleVerificationSensor(
         self._time_in_current_state = time_since_last_changed
         self._expected_schedule = f"{day_hours}/{24 - day_hours}"
         self.async_write_ha_state()
-
-
-class DryingReadyForCureSensor(CoordinatorEntity[GrowspaceCoordinator], BinarySensorEntity):  # type: ignore[misc]
-    """Binary sensor that is on when a plant's moisture is at or below the cure threshold."""
-
-    _attr_has_entity_name = True
-    _attr_translation_key = "drying_ready_for_cure"
-    _attr_icon = "mdi:jar-outline"
-
-    def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
-        """Initialize the ready-for-cure binary sensor."""
-        super().__init__(coordinator)
-        self._plant_id = plant.plant_id
-        self._get_plant = coordinator.services.plants.get_plant
-        self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_ready_for_cure"
-        growspace = coordinator.services.growspaces.get_growspace(plant.growspace_id)
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, plant.growspace_id)},
-            name=growspace.name if growspace else plant.growspace_id,
-            model="Growspace",
-            manufacturer="Growspace Manager",
-        )
-
-    @property
-    @override  # type: ignore[misc]
-    def is_on(self) -> bool:
-        """Return True when the latest moisture reading is at or below the cure threshold."""
-        plant = self._get_plant(self._plant_id)
-        if not plant:
-            return False
-        return is_cure_ready(plant.drying_data.moisture_log)

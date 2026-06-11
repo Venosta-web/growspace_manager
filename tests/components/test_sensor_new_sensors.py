@@ -154,7 +154,7 @@ async def test_create_initial_entities_dli_and_energy_sensors_created() -> None:
         ),
     ):
         await _create_initial_entities(
-            hass, coordinator, config_entry, initial_entities, {}, {}, set(), set()
+            hass, coordinator, config_entry, initial_entities, {}, {}, set(), set(), set()
         )
 
     assert any(isinstance(e, DLISensor) for e in initial_entities)
@@ -201,7 +201,7 @@ async def test_create_initial_entities_dict_env_config_with_tank() -> None:
     ):
         mock_tdp.return_value.async_update = AsyncMock()
         await _create_initial_entities(
-            hass, coordinator, config_entry, [], {}, {}, set(), set()
+            hass, coordinator, config_entry, [], {}, {}, set(), set(), set()
         )
 
     mock_tdp.assert_called_once()

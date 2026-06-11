@@ -8,8 +8,10 @@ from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.drying_calculator import (
     compute_days_to_target,
     compute_weight_lost_pct,
+    is_cure_ready,
 )
 from custom_components.growspace_manager.models import Plant
+from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -31,16 +33,16 @@ class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._plant_id = plant.plant_id
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_drying_weight"
-        growspace: Any = coordinator.growspaces.get(plant.growspace_id, {})
+        growspace = coordinator.services.growspaces.get_growspace(plant.growspace_id)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, plant.growspace_id)},
-            name=getattr(growspace, "name", plant.growspace_id),
+            name=growspace.name if growspace else plant.growspace_id,
             model="Growspace",
             manufacturer="Growspace Manager",
         )
 
     def _get_plant(self) -> Plant | None:
-        return self.coordinator.plants.get(self._plant_id)
+        return self.coordinator.services.plants.get_plant(self._plant_id)
 
     @property
     @override  # type: ignore[misc]
@@ -83,16 +85,16 @@ class DryingMoistureSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity
         super().__init__(coordinator)
         self._plant_id = plant.plant_id
         self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_drying_moisture"
-        growspace: Any = coordinator.growspaces.get(plant.growspace_id, {})
+        growspace = coordinator.services.growspaces.get_growspace(plant.growspace_id)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, plant.growspace_id)},
-            name=getattr(growspace, "name", plant.growspace_id),
+            name=growspace.name if growspace else plant.growspace_id,
             model="Growspace",
             manufacturer="Growspace Manager",
         )
 
     def _get_plant(self) -> Plant | None:
-        return self.coordinator.plants.get(self._plant_id)
+        return self.coordinator.services.plants.get_plant(self._plant_id)
 
     @property
     @override  # type: ignore[misc]
@@ -102,3 +104,36 @@ class DryingMoistureSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity
         if not plant or not plant.drying_data.moisture_log:
             return None
         return plant.drying_data.moisture_log[-1].moisture_percent
+
+
+class DryingReadyForCureSensor(CoordinatorEntity[GrowspaceCoordinator], BinarySensorEntity):  # type: ignore[misc]
+    """Binary sensor that is on when a plant's moisture is at or below the cure threshold."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "drying_ready_for_cure"
+    _attr_icon = "mdi:jar-outline"
+
+    def __init__(self, coordinator: GrowspaceCoordinator, plant: Plant) -> None:
+        """Initialize the ready-for-cure binary sensor."""
+        from custom_components.growspace_manager.const import DOMAIN  # noqa: PLC0415
+
+        super().__init__(coordinator)
+        self._plant_id = plant.plant_id
+        self._get_plant = coordinator.services.plants.get_plant
+        self._attr_unique_id = f"{DOMAIN}_{plant.plant_id}_ready_for_cure"
+        growspace = coordinator.services.growspaces.get_growspace(plant.growspace_id)
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, plant.growspace_id)},
+            name=growspace.name if growspace else plant.growspace_id,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    @override  # type: ignore[misc]
+    def is_on(self) -> bool:
+        """Return True when the latest moisture reading is at or below the cure threshold."""
+        plant = self._get_plant(self._plant_id)
+        if not plant:
+            return False
+        return is_cure_ready(plant.drying_data.moisture_log)

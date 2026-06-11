@@ -112,11 +112,14 @@ def mock_coordinator(mock_growspace):
 
     coordinator.plants = {
         "p1": MagicMock(
-            veg_start=(date.today() - timedelta(days=10)).isoformat(), flower_start=None
+            veg_start=(date.today() - timedelta(days=10)).isoformat(),
+            flower_start=None,
+            dry_start=None,
         ),
         "p2": MagicMock(
             veg_start=(date.today() - timedelta(days=30)).isoformat(),
             flower_start=(date.today() - timedelta(days=5)).isoformat(),
+            dry_start=None,
         ),
     }
 
