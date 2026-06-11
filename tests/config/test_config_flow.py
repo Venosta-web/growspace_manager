@@ -3571,11 +3571,11 @@ async def test_delegated_fan_steps(
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
 
-    # Mock the environment config handler and its delegated method
-    mock_env_handler = MagicMock()
+    # Mock the fan controller handler and its delegated method
+    mock_fan_handler = MagicMock()
     mock_delegated = AsyncMock(return_value={"type": FlowResultType.FORM})
-    setattr(mock_env_handler, delegated_method_name, mock_delegated)
-    flow._env_handler = mock_env_handler  # noqa: SLF001
+    setattr(mock_fan_handler, delegated_method_name, mock_delegated)
+    flow._fan_controller_handler = mock_fan_handler  # noqa: SLF001
 
     user_input = {"some_key": "some_value"}
     method = getattr(flow, method_name)
