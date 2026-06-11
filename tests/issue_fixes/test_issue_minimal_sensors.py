@@ -37,9 +37,6 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator._notification_manager,
-        strain_library=coordinator._strain_library,
-        options=coordinator.options,
     )
 
 
@@ -96,8 +93,8 @@ async def test_minimal_sensor_vpd_calculation(mock_coordinator) -> None:
 
     mock_states.get.side_effect = mock_get_state
 
-    # 4. Trigger evaluation logic (private method that builds state)
-    env_state = sensor._get_base_environment_state()
+    # 4. Trigger evaluation logic (the assembler builds the state)
+    env_state = sensor.assembler.assemble().state
 
     # 5. Assertions
     # VPD is calculated using the LST (Leaf Surface Temperature) model with the

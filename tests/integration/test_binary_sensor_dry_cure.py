@@ -37,9 +37,6 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator._notification_manager,
-        strain_library=coordinator._strain_library,
-        options=coordinator.options,
     )
 
 
@@ -130,10 +127,11 @@ def test_get_growth_stage_info_dry_growspace(mock_coordinator) -> None:
     # This calls _get_growth_stage_info internally relies on coordinator.get_growspace_plants
     # We expect it to currently return the actual days (50), effectively failing the desired behavior
     # After the fix, it should return 0.
-    info = sensor._get_growth_stage_info()
+    info = sensor.assembler._growth_stage_info(
+        mock_coordinator.growspaces["dry"]
+    )
 
-    # NOTE: This assertion is designed to PASS AFTER the fix.
-    # Before the fix, it would be 50.
+
     assert info["flower_days"] == -1
     assert info["veg_days"] == -1
 
@@ -157,6 +155,8 @@ def test_get_growth_stage_info_cure_growspace(mock_coordinator) -> None:
         mock_coordinator.growspaces["cure"].environment_config,
     )
 
-    info = sensor._get_growth_stage_info()
+    info = sensor.assembler._growth_stage_info(
+        mock_coordinator.growspaces["cure"]
+    )
     assert info["flower_days"] == -1
     assert info["veg_days"] == -1

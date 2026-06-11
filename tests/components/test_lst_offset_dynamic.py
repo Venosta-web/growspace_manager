@@ -143,37 +143,15 @@ def test_bayesian_sensor_fallback_vpd_dynamic_offset(
         get_growspace=lambda eid: mock_coordinator.growspaces.get(eid),
         get_plants=lambda eid: [],
         add_event=MagicMock(),
-        notification_manager=None,
-        strain_library=None,
-        options={},
     )
     sensor.hass = mock_hass
 
-    # Patch _get_growth_stage_info and others to avoid complex logic
-    sensor._get_growth_stage_info = MagicMock(return_value={})
-    sensor._determine_light_state = MagicMock(return_value=True)
-    sensor._determine_fan_state = MagicMock(return_value=False)
-    sensor._determine_dehumidifier_state = MagicMock(return_value=False)
-    sensor._determine_exhaust_value = MagicMock(return_value=0.0)
-    sensor._determine_humidifier_value = MagicMock(return_value=0.0)
-    sensor._determine_humidifier_state = MagicMock(return_value=False)
-    sensor._get_sensor_value = MagicMock(return_value=None)
-    sensor._get_aggregated_sensor_value = MagicMock(return_value=None)
-
-    # Force using aggregated value helper to return our mock states
-    def mock_agg(sensors):
-        if "sensor.temp" in sensors:
-            return 20.0
-        if "sensor.humidity" in sensors:
-            return 60.0
-        return None
-
-    sensor._get_aggregated_sensor_value.side_effect = mock_agg
-
-    state = sensor._get_base_environment_state()
+    # The assembler reads temp/humidity from hass; all other entities are
+    # unconfigured and resolve to None, so no helper stubbing is needed.
+    result = sensor.assembler.assemble()
     expected_flower_vpd = VPDCalculator.calculate_vpd_with_lst_offset(20.0, 60.0, -2.0)
-    assert state.vpd == pytest.approx(expected_flower_vpd)
-    assert sensor._sensor_states["lst_offset"] == -2.0
+    assert result.state.vpd == pytest.approx(expected_flower_vpd)
+    assert result.observations["lst_offset"] == -2.0
 
     # 2. Setup Dry Growspace
     gs_dry = Growspace(
@@ -188,7 +166,7 @@ def test_bayesian_sensor_fallback_vpd_dynamic_offset(
     )
     mock_coordinator.growspaces = {"gs1": gs_dry}
 
-    state = sensor._get_base_environment_state()
+    result = sensor.assembler.assemble()
     expected_dry_vpd = VPDCalculator.calculate_vpd_with_lst_offset(20.0, 60.0, 0.0)
-    assert state.vpd == pytest.approx(expected_dry_vpd)
-    assert sensor._sensor_states["lst_offset"] == 0.0
+    assert result.state.vpd == pytest.approx(expected_dry_vpd)
+    assert result.observations["lst_offset"] == 0.0

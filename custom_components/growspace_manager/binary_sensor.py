@@ -37,7 +37,6 @@ from .const import (
     ATTR_REASONS,
     ATTR_THRESHOLD,
     ATTR_TIME_IN_CURRENT_STATE,
-    CONF_AI_AUTO_ALERTS,
     CONF_VEG_DAY_HOURS,
     DEFAULT_BAYESIAN_PRIORS,
     DEFAULT_BAYESIAN_THRESHOLDS,
@@ -49,20 +48,13 @@ from .const import (
     PlantStage,
 )
 from .coordinator import GrowspaceCoordinator
+from .domain.environment_state_assembler import EnvironmentStateAssembler
 from .domain.stage import StageDays, classify_stages
 from .exceptions import GrowspaceError
-from .models import (
-    EnvironmentConfig,
-    EnvironmentState,
-    Growspace,
-    GrowspaceEvent,
-    GrowspaceType,
-    Plant,
-)
-from .notification_manager import NotificationManager
+from .models import EnvironmentConfig, Growspace, GrowspaceEvent, GrowspaceType, Plant
+from .notifications.evaluation_snapshot import EvaluationSnapshot
+from .notifications.formatting import generate_notification_message
 from .sensor.drying import DryingReadyForCureSensor
-from .services.ai_assistant import GrowAssistant
-from .strain_library import StrainLibrary
 from .strategies.curing import CuringEvaluatorStrategy
 from .strategies.drying import DryingEvaluatorStrategy
 from .strategies.evaluator_strategy import BayesianEvaluatorStrategy
@@ -70,7 +62,6 @@ from .strategies.mold import MoldRiskEvaluatorStrategy
 from .strategies.optimal import OptimalConditionsEvaluatorStrategy
 from .strategies.stress import StressEvaluatorStrategy
 from .trend_analyzer import TrendAnalyzer
-from .utils import VPDCalculator, any_light_sensor_on, calculate_days_since
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -136,7 +127,10 @@ async def async_setup_entry(
         """Check for new growspaces with environment config and add sensors."""
         new_entities: list[BinarySensorEntity] = []
 
-        for growspace_id, growspace in coordinator.services.growspaces.get_all_growspaces().items():
+        for (
+            growspace_id,
+            growspace,
+        ) in coordinator.services.growspaces.get_all_growspaces().items():
             env_config = getattr(growspace, "environment_config", None)
 
             # Ensure env_config is an EnvironmentConfig object and valid
@@ -154,11 +148,15 @@ async def async_setup_entry(
                 )
 
         for growspace_id in coordinator.services.growspaces.get_all_growspaces():
-            for plant in coordinator.services.growspaces.get_growspace_plants(growspace_id):
+            for plant in coordinator.services.growspaces.get_growspace_plants(
+                growspace_id
+            ):
                 if plant.dry_start is not None:
                     key = f"{plant.plant_id}_ready_for_cure"
                     if key not in initialized_sensors:
-                        new_entities.append(DryingReadyForCureSensor(coordinator, plant))
+                        new_entities.append(
+                            DryingReadyForCureSensor(coordinator, plant)
+                        )
                         initialized_sensors.add(key)
 
         if new_entities:
@@ -204,7 +202,9 @@ def _process_growspace_sensors(
         allowed_types.add(GrowspaceSensorType.MOLD)
         allowed_types.add(GrowspaceSensorType.OPTIMAL)
 
-    # 2. Iterate descriptions and add if allowed
+    # 2. Iterate descriptions and add if allowed. Each sensor builds its own
+    #    assembler (whose get_state reads self.hass lazily); assemble() is not
+    #    cached, so a shared instance would dedupe no reads.
     for description in SENSOR_TYPES:
         if description.sensor_type in allowed_types:
             key = f"{growspace_id}_{description.sensor_type}"
@@ -221,9 +221,6 @@ def _process_growspace_sensors(
                         get_growspace=coordinator.services.growspaces.get_growspace,
                         get_plants=coordinator.services.growspaces.get_growspace_plants,
                         add_event=coordinator.add_event,
-                        notification_manager=coordinator.services.notifications.manager,
-                        strain_library=coordinator.services.config.strain_library,
-                        options=coordinator.options,
                     )
                 )
                 initialized_sensors.add(key)
@@ -289,11 +286,19 @@ class BayesianEnvironmentSensor(
         get_growspace: Callable[[str], Growspace | None],
         get_plants: Callable[[str], list[Plant]],
         add_event: Callable[[str, GrowspaceEvent], None],
-        notification_manager: NotificationManager | None,
-        strain_library: StrainLibrary | None,
-        options: dict[str, Any],
+        assembler: EnvironmentStateAssembler | None = None,
     ) -> None:
-        """Initialize the Bayesian environment sensor."""
+        """Initialize the Bayesian environment sensor.
+
+        The sensor's only notification surface is
+        ``coordinator.services.notifications.report_evaluation``; it pushes an
+        immutable snapshot per update rather than holding a manager reference.
+
+        ``assembler`` is normally injected; when none is supplied (e.g. in unit
+        tests that construct a sensor directly) one is built whose ``get_state``
+        reads ``self.hass`` lazily, so it works even though ``hass`` is not yet
+        attached at construction time.
+        """
         super().__init__(coordinator)
         self.entity_description = description  # Set this first
         self.coordinator = coordinator
@@ -307,8 +312,14 @@ class BayesianEnvironmentSensor(
         self._get_growspace = get_growspace
         self._get_plants = get_plants
         self._add_event = add_event
-        self._strain_library = strain_library
-        self._options = options
+
+        self.assembler = assembler or EnvironmentStateAssembler(
+            growspace_id=growspace_id,
+            env_config=env_config,
+            get_state=lambda entity_id: self.hass.states.get(entity_id),
+            get_growspace=get_growspace,
+            get_plants=get_plants,
+        )
 
         growspace = get_growspace(growspace_id)
         if not growspace:
@@ -342,21 +353,9 @@ class BayesianEnvironmentSensor(
         self._probability = 0.0
         self._event_start_time: datetime | None = None
         self._event_max_prob: float = 0.0
-        self._last_light_state: bool | None = None
 
         # TrendAnalyzer will be initialized in async_added_to_hass when self.hass is available
         self.trend_analyzer: TrendAnalyzer | None = None
-        self.notification_manager = notification_manager
-
-    @property
-    def sensor_states(self) -> dict[str, Any]:
-        """Return the observed sensor states."""
-        return self._sensor_states
-
-    @property
-    def reasons(self) -> list[tuple[float, str]]:
-        """Return the current reasons for the sensor state."""
-        return self._reasons
 
     @property
     @override  # type: ignore[misc]
@@ -380,144 +379,6 @@ class BayesianEnvironmentSensor(
             ).total_seconds()
         return attrs
 
-    def _get_base_environment_state(self) -> EnvironmentState:
-        """Fetch sensor values and return a structured EnvironmentState object."""
-        # Always fetch the latest config from the coordinator
-        growspace = self._get_growspace(self.growspace_id)
-        if growspace and growspace.environment_config:
-            self.env_config = growspace.environment_config
-
-        # Aggregate sensors with fallback to singular if needed
-        temp = self._get_aggregated_sensor_value(
-            [
-                s
-                for s in (
-                    self.env_config.temperature_sensor,
-                    *self.env_config.temperature_sensors,
-                )
-                if s is not None
-            ]
-        )
-        humidity = self._get_aggregated_sensor_value(
-            [
-                s
-                for s in (
-                    self.env_config.humidity_sensor,
-                    *self.env_config.humidity_sensors,
-                )
-                if s is not None
-            ]
-        )
-        vpd = self._get_aggregated_sensor_value(
-            [
-                s
-                for s in (self.env_config.vpd_sensor, *self.env_config.vpd_sensors)
-                if s is not None
-            ]
-        )
-
-        # Fallback: Calculate VPD if sensor is missing but Temp/Hum are available
-        active_lst_offset = self.env_config.lst_offset
-        if growspace and growspace.growspace_type in (
-            GrowspaceType.DRY,
-            GrowspaceType.CURE,
-        ):
-            active_lst_offset = 0.0
-
-        if vpd is None and temp is not None and humidity is not None:
-            vpd = VPDCalculator.calculate_vpd_with_lst_offset(
-                temp, humidity, active_lst_offset
-            )
-
-        co2 = self._get_sensor_value(self.env_config.co2_sensor)
-
-        stage_info = self._get_growth_stage_info()
-        veg_days = stage_info.get("veg_days", 0)
-        flower_days = stage_info.get("flower_days", 0)
-        seedling_days = stage_info.get("seedling_days", 0)
-        clone_days = stage_info.get("clone_days", 0)
-
-        is_lights_on = self._determine_light_state()
-
-        fan_off = self._determine_fan_state()
-        dehumidifier_on = self._determine_dehumidifier_state()
-        exhaust_value = self._determine_exhaust_value()
-        humidifier_value = self._determine_humidifier_value()
-
-        soil_moisture_sensor = self.env_config.soil_moisture_sensor
-        soil_moisture = self._get_sensor_value(soil_moisture_sensor)
-
-        humidifier_on = self._determine_humidifier_state()
-
-        # Substrate temperature (average of configured sensors)
-        substrate_temp = self._get_aggregated_sensor_value(
-            self.env_config.substrate_temperature_sensors
-        )
-
-        self._sensor_states = {
-            "temperature": temp,
-            "humidity": humidity,
-            "vpd": vpd,
-            "co2": co2,
-            "soil_moisture": soil_moisture,
-            "substrate_temp": substrate_temp,
-            "lst_offset": active_lst_offset,
-            "veg_days": veg_days,
-            "flower_days": flower_days,
-            "seedling_days": seedling_days,
-            "clone_days": clone_days,
-            "is_lights_on": is_lights_on,
-            "fan_off": fan_off,
-            "dehumidifier_on": dehumidifier_on,
-            "exhaust_value": exhaust_value,
-            "humidifier_value": humidifier_value,
-            "humidifier_on": humidifier_on,
-        }
-
-        return EnvironmentState(
-            temp=temp,
-            humidity=humidity,
-            vpd=vpd,
-            co2=co2,
-            veg_days=veg_days,
-            flower_days=flower_days,
-            seedling_days=seedling_days,
-            clone_days=clone_days,
-            is_lights_on=is_lights_on,
-            fan_off=fan_off,
-            dehumidifier_on=dehumidifier_on,
-            exhaust_value=exhaust_value,
-            humidifier_value=humidifier_value,
-            humidifier_on=humidifier_on,
-            soil_moisture=soil_moisture,
-            substrate_temp=substrate_temp,
-        )
-
-    def _determine_light_state(self) -> bool | None:
-        """Determine the light state (OR logic) and trigger cooldown on switch."""
-        light_sensors = self.env_config.light_sensors
-        if not light_sensors:
-            return None
-
-        current_lights_on = any_light_sensor_on(self.hass, light_sensors)
-        self._check_light_state_change(current_lights_on)
-        self._last_light_state = current_lights_on
-        return current_lights_on
-
-    def _check_light_state_change(self, current_lights_on: bool | None) -> None:
-        """Check for state change to trigger notification cooldown."""
-        if (
-            self._last_light_state is not None
-            and current_lights_on is not None
-            and self._last_light_state != current_lights_on
-        ):
-            _LOGGER.debug(
-                "Light switched in %s. Triggering notification cooldown",
-                self.growspace_id,
-            )
-            if self.notification_manager:
-                self.notification_manager.trigger_cooldown(self.growspace_id)
-
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()
@@ -528,22 +389,15 @@ class BayesianEnvironmentSensor(
         # Wire strategy now that hass is available for get_state
         growspace_id = self.growspace_id
         coordinator = self.coordinator
-        notification_manager = self.notification_manager
         self.strategy = self._strategy_class(
             env_config=self.env_config,
             analyze_trend=self.async_analyze_sensor_trend,
             get_state=self.hass.states.get,
-            get_growspace=lambda: coordinator.services.growspaces.get_growspace(growspace_id),
-            get_notification_message=lambda msg, reasons: (
-                notification_manager.generate_notification_message(msg, reasons)
-                if notification_manager
-                else msg
+            get_growspace=lambda: coordinator.services.growspaces.get_growspace(
+                growspace_id
             ),
+            get_notification_message=generate_notification_message,
         )
-
-        # Register for batched notifications
-        if self.notification_manager:
-            self.notification_manager.attach_sensor(self.growspace_id, self)
 
         # Register stress/mold sensors with AlertMonitor for Inbox population
         if self.entity_description.sensor_type in ("stress", "mold"):
@@ -589,12 +443,6 @@ class BayesianEnvironmentSensor(
             f"initial_update_{self.entity_id or self.unique_id}",
         )
 
-    async def async_will_remove_from_hass(self) -> None:
-        """Unregister from batched notifications."""
-        if self.notification_manager:
-            self.notification_manager.detach_sensor(self.growspace_id, self)
-        await super().async_will_remove_from_hass()
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the data coordinator."""
@@ -612,105 +460,6 @@ class BayesianEnvironmentSensor(
             self.async_update_and_notify(),
             f"sensor_changed_{self.entity_id or self.unique_id}",
         )
-
-    def _get_sensor_value(self, sensor_id: str | None) -> float | None:
-        """Safely get the numeric value from a sensor's state."""
-        if not sensor_id:
-            return None
-
-        state = self.hass.states.get(sensor_id)
-        if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return None
-
-        try:
-            return float(state.state)
-        except (ValueError, TypeError):
-            return None
-
-    def _get_aggregated_sensor_value(self, sensor_ids: list[str]) -> float | None:
-        """Get the average value from a list of sensor entity IDs."""
-        if not sensor_ids:
-            return None
-
-        values = []
-        for sensor_id in sensor_ids:
-            val = self._get_sensor_value(sensor_id)
-            if val is not None:
-                values.append(val)
-
-        if not values:
-            return None
-
-        return sum(values) / len(values)
-
-    @staticmethod
-    def _days_since(date_str: str) -> int:
-        """Calculate the number of days since a given date string."""
-        return calculate_days_since(date_str)
-
-    def _get_growth_stage_info(self) -> dict[str, int]:
-        """Get the current growth stage duration for the growspace."""
-        growspace = self._get_growspace(self.growspace_id)
-        if growspace and growspace.growspace_type in (
-            GrowspaceType.DRY,
-            GrowspaceType.CURE,
-        ):
-            return {
-                "veg_days": -1,
-                "flower_days": -1,
-                "seedling_days": -1,
-                "clone_days": -1,
-            }
-
-        plants = self._get_plants(self.growspace_id)
-
-        if not plants:
-            return {
-                "veg_days": -1,
-                "flower_days": -1,
-                "seedling_days": -1,
-                "clone_days": -1,
-            }
-
-        max_veg = max(
-            (
-                self._days_since(p.veg_start)
-                for p in plants
-                if isinstance(p.veg_start, str)
-            ),
-            default=-1,
-        )
-        max_flower = max(
-            (
-                self._days_since(p.flower_start)
-                for p in plants
-                if isinstance(p.flower_start, str)
-            ),
-            default=-1,
-        )
-        max_seedling = max(
-            (
-                self._days_since(p.seedling_start)
-                for p in plants
-                if isinstance(p.seedling_start, str)
-            ),
-            default=-1,
-        )
-        max_clone = max(
-            (
-                self._days_since(p.clone_start)
-                for p in plants
-                if isinstance(p.clone_start, str)
-            ),
-            default=-1,
-        )
-
-        return {
-            "veg_days": max_veg,
-            "flower_days": max_flower,
-            "seedling_days": max_seedling,
-            "clone_days": max_clone,
-        }
 
     async def async_analyze_sensor_trend(
         self, sensor_id: str, duration_minutes: int, threshold: float
@@ -736,56 +485,6 @@ class BayesianEnvironmentSensor(
         ):
             _LOGGER.exception("Error analyzing sensor history for %s", sensor_id)
             return {"trend": "unknown", "crossed_threshold": False}
-
-    def generate_notification_message(self, base_message: str) -> str:
-        """Construct a detailed notification message from the list of reasons."""
-        if self.notification_manager:
-            return self.notification_manager.generate_notification_message(
-                base_message, self._reasons
-            )
-        return base_message
-
-    async def _send_notification(self, title: str, message: str) -> None:
-        """Send a notification to the configured target for the growspace."""
-        try:
-            # Check for AI Auto Alerts
-            final_message = message
-            ai_alerts_enabled = self._options.get(CONF_AI_AUTO_ALERTS, False)
-
-            if (
-                ai_alerts_enabled
-                and self._probability >= self.threshold
-                and self._strain_library
-            ):
-                try:
-                    assistant = GrowAssistant(
-                        self.hass, self.coordinator, self._strain_library
-                    )
-                    ai_message = await assistant.generate_alert_message(
-                        self.growspace_id,
-                        self.entity_description.sensor_type,
-                        [r[1] for r in self._reasons],
-                    )
-                    final_message = f"{ai_message}\n\n(Original: {message})"
-                except Exception:  # noqa: BLE001
-                    _LOGGER.warning(
-                        "Failed to generate AI alert, falling back to standard message"
-                    )
-
-            if self.notification_manager:
-                await self.notification_manager.async_send_notification(
-                    self.growspace_id, title, final_message, self._sensor_states
-                )
-        except Exception:
-            _LOGGER.exception("Failed to send notification to %s", self.growspace_id)
-
-    def get_notification_title_message(
-        self, new_state_on: bool
-    ) -> tuple[str, str] | None:
-        """Return the title and message for a notification based on state change."""
-        if self.strategy is None:
-            return None
-        return self.strategy.get_notification_title_message(new_state_on, self._reasons)
 
     def _calculate_bayesian_probability(
         self, start_prob: float, observations: list[tuple[float, float]]
@@ -818,7 +517,14 @@ class BayesianEnvironmentSensor(
         """Update probability using the assigned strategy."""
         if self.strategy is None:
             return
-        env_state = self._get_base_environment_state()
+        assembled = self.assembler.assemble()
+        self._sensor_states = assembled.observations
+        env_state = assembled.state
+
+        # Mirror the assembler's refreshed config view (the historical
+        # _get_base_environment_state rebound this attribute each call).
+        self.env_config = self.assembler.env_config
+
         all_observations, all_reasons = await self.strategy.async_evaluate(env_state)
 
         # Calculate final probability
@@ -891,87 +597,45 @@ class BayesianEnvironmentSensor(
             self._event_start_time = None
             self._event_max_prob = 0.0
 
-        # Update pending alert state on every probability update
-        # (replaces direct async_schedule_notification call on state change)
-        if (
-            self.notification_manager
-            and self.entity_description.sensor_type != GrowspaceSensorType.OPTIMAL
-        ):
-            self.notification_manager.update_pending_alert(self.growspace_id, self)
+        # Report the evaluation to the notification manager via the facade. The
+        # manager stores the snapshot for batching and drives pending alerts;
+        # it skips pending-alert tracking for the optimal sensor itself.
+        self.coordinator.services.notifications.report_evaluation(
+            self._build_snapshot()
+        )
 
         self.async_write_ha_state()
 
-    def _determine_fan_state(self) -> bool | None:
-        """Determine if circulation fans are off (AND logic)."""
-        fan_entities = self.env_config.circulation_fan_entities
-        if not fan_entities:
-            return None
+    def _build_snapshot(self) -> EvaluationSnapshot:
+        """Capture the current evaluation as an immutable snapshot."""
+        title: str | None = None
+        message: str | None = None
+        if self.is_on and self.strategy is not None:
+            title_msg = self.strategy.get_notification_title_message(
+                True, self._reasons
+            )
+            if title_msg and len(title_msg) == 2:
+                title, message = title_msg
 
-        all_off = True
-        any_valid = False
-        for entity in fan_entities:
-            state = self.hass.states.get(entity)
-            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                any_valid = True
-                if state.state != "off":
-                    all_off = False
+        try:
+            name = self.name
+        except AttributeError:
+            name = None
+        sensor_name = str(name or self.entity_id or self.unique_id)
 
-        return all_off if any_valid else None
-
-    def _determine_dehumidifier_state(self) -> bool | None:
-        """Determine if dehumidifier is on (OR logic)."""
-        dehum_entities = self.env_config.dehumidifier_entities
-        if not dehum_entities:
-            return None
-
-        any_on = False
-        any_valid = False
-        for entity in dehum_entities:
-            state = self.hass.states.get(entity)
-            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                any_valid = True
-                if state.state == "on":
-                    any_on = True
-
-        return any_on if any_valid else None
-
-    def _determine_exhaust_value(self) -> float | None:
-        """Determine exhaust value (Max value)."""
-        entities = self.env_config.exhaust_fan_entities
-        return self._get_max_sensor_value(entities)
-
-    def _determine_humidifier_value(self) -> float | None:
-        """Determine humidifier value (Max value)."""
-        entities = self.env_config.humidifier_entities
-        return self._get_max_sensor_value(entities)
-
-    def _determine_humidifier_state(self) -> bool | None:
-        """Determine if humidifier is on (OR logic)."""
-        entities = self.env_config.humidifier_entities
-        if not entities:
-            return None
-
-        any_on = False
-        any_valid = False
-        for entity in entities:
-            state = self.hass.states.get(entity)
-            if state and state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-                any_valid = True
-                if state.state == "on":
-                    any_on = True
-
-        return any_on if any_valid else None
-
-    def _get_max_sensor_value(self, entities: list[str]) -> float | None:
-        """Helper to get max value from list of entities."""
-        if not entities:
-            return None
-        values = []
-        for entity in entities:
-            val = self._get_sensor_value(entity)
-            if val is not None:
-                values.append(val)
-        return max(values) if values else None
+        return EvaluationSnapshot(
+            growspace_id=self.growspace_id,
+            sensor_type=self.entity_description.sensor_type,
+            sensor_name=sensor_name,
+            probability=self._probability,
+            threshold=self.threshold,
+            is_on=self.is_on,
+            reasons=self._reasons,
+            sensor_states=self._sensor_states,
+            lights_on=self._sensor_states.get("is_lights_on"),
+            notification_title=title,
+            notification_message=message,
+        )
 
 
 class LightCycleVerificationSensor(
@@ -1113,15 +777,17 @@ class LightCycleVerificationSensor(
         return {"veg_days": max_veg, "flower_days": max_flower}
 
     def _get_current_stage_key(self, stage_info: dict[str, int]) -> str:
-        sc = classify_stages(StageDays(
-            veg=stage_info.get("veg_days", -1),
-            flower=stage_info.get("flower_days", -1),
-            dry=stage_info.get("dry_days", -1),
-            cure=stage_info.get("cure_days", -1),
-            seedling=stage_info.get("seedling_days", -1),
-            clone=stage_info.get("clone_days", -1),
-            mother=stage_info.get("mother_days", -1),
-        ))
+        sc = classify_stages(
+            StageDays(
+                veg=stage_info.get("veg_days", -1),
+                flower=stage_info.get("flower_days", -1),
+                dry=stage_info.get("dry_days", -1),
+                cure=stage_info.get("cure_days", -1),
+                seedling=stage_info.get("seedling_days", -1),
+                clone=stage_info.get("clone_days", -1),
+                mother=stage_info.get("mother_days", -1),
+            )
+        )
         return sc.stage_b
 
     @callback

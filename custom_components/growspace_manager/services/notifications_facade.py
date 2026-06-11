@@ -10,6 +10,9 @@ if TYPE_CHECKING:
     from custom_components.growspace_manager.notification_manager import (
         NotificationManager,
     )
+    from custom_components.growspace_manager.notifications.evaluation_snapshot import (
+        EvaluationSnapshot,
+    )
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +56,10 @@ class NotificationsFacade:
         return self._coordinator.notification_settings.is_notifications_enabled(
             growspace_id
         )
+
+    def report_evaluation(self, snapshot: EvaluationSnapshot) -> None:
+        """Report a Bayesian sensor evaluation to the notification manager."""
+        self.manager.report_evaluation(snapshot)
 
     def get_timed_notifications(self) -> list[dict[str, Any]]:
         """Return the list of configured timed notifications."""

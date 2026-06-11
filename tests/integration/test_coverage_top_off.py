@@ -25,6 +25,9 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.domain.environment_state_assembler import (
+    AssembledEnvironment,
+)
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
@@ -127,9 +130,6 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.services.growspaces.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator._notification_manager,
-        strain_library=coordinator._strain_library,
-        options=coordinator.options,
     )
 
 
@@ -198,7 +198,9 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
         fan_off=False,
     )
     with patch.object(
-        sensor, "_get_base_environment_state", return_value=env_state_late
+        sensor.assembler,
+        "assemble",
+        return_value=AssembledEnvironment(state=env_state_late, observations={}),
     ):
         await sensor._async_update_probability()
         reasons = [r[1] for r in sensor._reasons]
@@ -217,7 +219,9 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
         fan_off=False,
     )
     with patch.object(
-        sensor, "_get_base_environment_state", return_value=env_state_mid
+        sensor.assembler,
+        "assemble",
+        return_value=AssembledEnvironment(state=env_state_mid, observations={}),
     ):
         await sensor._async_update_probability()
         reasons = [r[1] for r in sensor._reasons]
