@@ -178,10 +178,16 @@ def test_fan_all_off_and_logic() -> None:
     """fan_off is True only when every valid fan is off."""
     config = EnvironmentConfig(circulation_fan_entities=["switch.f1", "switch.f2"])
 
-    one_on = {"switch.f1": FakeState("on", "switch"), "switch.f2": FakeState("off", "switch")}
+    one_on = {
+        "switch.f1": FakeState("on", "switch"),
+        "switch.f2": FakeState("off", "switch"),
+    }
     assert build_assembler(config, one_on).assemble().state.fan_off is False
 
-    all_off = {"switch.f1": FakeState("off", "switch"), "switch.f2": FakeState("off", "switch")}
+    all_off = {
+        "switch.f1": FakeState("off", "switch"),
+        "switch.f2": FakeState("off", "switch"),
+    }
     assert build_assembler(config, all_off).assemble().state.fan_off is True
 
     unavail = {
@@ -200,10 +206,16 @@ def test_dehumidifier_any_on_or_logic() -> None:
     """dehumidifier_on is True when any valid entity is on."""
     config = EnvironmentConfig(dehumidifier_entities=["switch.d1", "switch.d2"])
 
-    one_on = {"switch.d1": FakeState("on", "switch"), "switch.d2": FakeState("off", "switch")}
+    one_on = {
+        "switch.d1": FakeState("on", "switch"),
+        "switch.d2": FakeState("off", "switch"),
+    }
     assert build_assembler(config, one_on).assemble().state.dehumidifier_on is True
 
-    all_off = {"switch.d1": FakeState("off", "switch"), "switch.d2": FakeState("off", "switch")}
+    all_off = {
+        "switch.d1": FakeState("off", "switch"),
+        "switch.d2": FakeState("off", "switch"),
+    }
     assert build_assembler(config, all_off).assemble().state.dehumidifier_on is False
 
     unavail = {
@@ -232,12 +244,22 @@ def test_exhaust_max_value() -> None:
     config = EnvironmentConfig(exhaust_fan_entities=["sensor.e1", "sensor.e2"])
 
     states = {"sensor.e1": FakeState("25.0"), "sensor.e2": FakeState("45.0")}
-    assert build_assembler(config, states).assemble().state.exhaust_value == pytest.approx(45.0)
+    assert build_assembler(
+        config, states
+    ).assemble().state.exhaust_value == pytest.approx(45.0)
 
-    partial = {"sensor.e1": FakeState(STATE_UNAVAILABLE), "sensor.e2": FakeState("15.0")}
-    assert build_assembler(config, partial).assemble().state.exhaust_value == pytest.approx(15.0)
+    partial = {
+        "sensor.e1": FakeState(STATE_UNAVAILABLE),
+        "sensor.e2": FakeState("15.0"),
+    }
+    assert build_assembler(
+        config, partial
+    ).assemble().state.exhaust_value == pytest.approx(15.0)
 
-    none_valid = {"sensor.e1": FakeState(STATE_UNAVAILABLE), "sensor.e2": FakeState(STATE_UNAVAILABLE)}
+    none_valid = {
+        "sensor.e1": FakeState(STATE_UNAVAILABLE),
+        "sensor.e2": FakeState(STATE_UNAVAILABLE),
+    }
     assert build_assembler(config, none_valid).assemble().state.exhaust_value is None
 
     assert build_assembler(EnvironmentConfig()).assemble().state.exhaust_value is None
