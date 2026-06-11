@@ -360,7 +360,7 @@ def test_drying_weight_sensor_no_plant(
     # Set up plants and growspaces in coordinator
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs_1": MagicMock()}
-    mock_coordinator.data_repository.get_plant.side_effect = (
+    mock_coordinator._data_repository.get_plant.side_effect = (
         lambda plant_id: mock_coordinator.plants.get(plant_id)
     )
 

@@ -468,7 +468,7 @@ async def test_async_unload_entry_with_coordinators_cleanup(mock_hass) -> None:
     coordinator = MagicMock()
     _async_cancel_coordinators(coordinator)
 
-    coordinator.subsystem_manager.async_cancel_all.assert_called_once()
+    coordinator.async_cancel_subsystems.assert_called_once()
 
 
 @pytest.mark.asyncio

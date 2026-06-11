@@ -24,7 +24,7 @@ async def test_update_special_growspace_name_fallback(hass: HomeAssistant) -> No
     coordinator._growspace_manager = mock_manager
 
     # Call the method
-    coordinator.growspace_manager._update_special_growspace_name(
+    coordinator._growspace_manager._update_special_growspace_name(
         "mother", "New Mother Name"
     )
 

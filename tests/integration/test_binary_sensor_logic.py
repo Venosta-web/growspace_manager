@@ -51,8 +51,8 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
+        notification_manager=coordinator._notification_manager,
+        strain_library=coordinator._strain_library,
         options=coordinator.options,
     )
 

@@ -104,10 +104,10 @@ async def test_websocket_simple_getters_error_handling(hass: HomeAssistant) -> N
     # 2. websocket_get_nutrient_presets
     # Mock GrowspaceCoordinator.get_for_service_call to return our mock
     coordinator = MagicMock()
-    coordinator.nutrient_manager = MagicMock()
+    coordinator._nutrient_manager = MagicMock()
 
     # Make get_serialization_data raise exception
-    coordinator.nutrient_manager.get_serialization_data.side_effect = Exception(
+    coordinator.services.config.get_nutrient_serialization_data.side_effect = Exception(
         "Nutrient Fail"
     )
 
@@ -120,7 +120,7 @@ async def test_websocket_simple_getters_error_handling(hass: HomeAssistant) -> N
 
     # 3. websocket_get_ipm_presets
     # Re-setup mock for second call
-    coordinator.nutrient_manager.get_serialization_data.side_effect = Exception(
+    coordinator.services.config.get_nutrient_serialization_data.side_effect = Exception(
         "IPM Fail"
     )
 

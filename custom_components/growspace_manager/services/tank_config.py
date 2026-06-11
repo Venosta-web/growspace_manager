@@ -41,7 +41,7 @@ async def handle_configure_tank(
     tank_entity: str = call.data[ATTR_TANK_ENTITY]
     volume_liters: float | None = call.data.get(ATTR_VOLUME_LITERS)
 
-    growspace = coordinator.data_repository.get_growspace(growspace_id)
+    growspace = coordinator._data_repository.get_growspace(growspace_id)
     tanks = (
         growspace.environment_config.irrigation_tanks
         if growspace and growspace.environment_config

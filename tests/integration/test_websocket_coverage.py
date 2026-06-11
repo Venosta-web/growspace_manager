@@ -512,7 +512,7 @@ async def test_websocket_breeder_commands_generic_error(
     strain_library.delete_breeder.side_effect = Exception("Breeder Delete Fail")
 
     mock_coordinator = MagicMock()
-    mock_coordinator.strain_library = strain_library
+    mock_coordinator._strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
 
@@ -596,7 +596,7 @@ async def test_websocket_get_strain_lineage_tree_success(mock_hass: MagicMock) -
         "parents": [],
     }
     mock_coordinator = MagicMock()
-    mock_coordinator.strain_library = strain_library
+    mock_coordinator._strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
     connection = MagicMock()
@@ -635,7 +635,7 @@ async def test_websocket_update_strain_lineage_tree_success(mock_hass: MagicMock
     strain_library = AsyncMock()
     strain_library.update_strain_lineage_tree.return_value = "OG Kush × Durban Poison"
     mock_coordinator = MagicMock()
-    mock_coordinator.strain_library = strain_library
+    mock_coordinator._strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
     connection = MagicMock()

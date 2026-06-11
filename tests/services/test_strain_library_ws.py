@@ -44,7 +44,7 @@ async def test_websocket_get_strain_library_success(mock_connection) -> None:
     mock_library.get_all.return_value = expected_strains
 
     coordinator = MagicMock()
-    coordinator.strain_library = mock_library
+    coordinator._strain_library = mock_library
     coordinator.services.config.strain_library = mock_library
 
     with patch(
@@ -90,7 +90,7 @@ async def test_websocket_get_strain_library_exception(mock_connection) -> None:
     mock_library.get_all.side_effect = RuntimeError("Unexpected error")
 
     coordinator = MagicMock()
-    coordinator.strain_library = mock_library
+    coordinator._strain_library = mock_library
     coordinator.services.config.strain_library = mock_library
 
     with patch(
@@ -113,7 +113,7 @@ async def test_websocket_get_nutrient_presets_success(mock_connection) -> None:
 
     coordinator = Mock()
     expected_data = {"preset_1": {"id": "preset_1", "name": "Veg A"}}
-    coordinator.nutrient_manager.get_serialization_data.return_value = {
+    coordinator.services.config.get_nutrient_serialization_data.return_value = {
         "nutrient_presets": expected_data
     }
 
@@ -133,7 +133,7 @@ async def test_websocket_get_ipm_presets_success(mock_connection) -> None:
 
     coordinator = Mock()
     expected_data = {"ipm_1": {"id": "ipm_1", "name": "Neem"}}
-    coordinator.nutrient_manager.get_serialization_data.return_value = {
+    coordinator.services.config.get_nutrient_serialization_data.return_value = {
         "ipm_presets": expected_data
     }
 
@@ -153,7 +153,7 @@ async def test_websocket_get_ec_ramp_curves_success(mock_connection) -> None:
 
     coordinator = Mock()
     expected_data = [{"id": "curve_1", "name": "Standard Curve"}]
-    coordinator.nutrient_manager.get_serialization_data.return_value = {
+    coordinator.services.config.get_nutrient_serialization_data.return_value = {
         "ec_ramp_curves": expected_data
     }
 
@@ -177,7 +177,7 @@ async def test_websocket_get_strain_lineage_tree_success(mock_connection) -> Non
     mock_library.get_strain_lineage_tree.return_value = expected_tree
 
     coordinator = MagicMock()
-    coordinator.strain_library = mock_library
+    coordinator._strain_library = mock_library
     coordinator.services.config.strain_library = mock_library
 
     with patch(

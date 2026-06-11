@@ -170,9 +170,9 @@ def _make_coordinator(
 
     # Irrigation coordinator
     if has_vwc_coord:
-        coordinator.subsystem_manager.irrigation_coordinators.get.return_value = MagicMock()
+        coordinator._subsystem_manager.irrigation_coordinators.get.return_value = MagicMock()
     else:
-        coordinator.subsystem_manager.irrigation_coordinators.get.return_value = None
+        coordinator._subsystem_manager.irrigation_coordinators.get.return_value = None
 
     # HA state
     state_mock = MagicMock()

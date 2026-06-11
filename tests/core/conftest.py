@@ -29,11 +29,11 @@ def mock_coordinator():
 
     # Initialize managers
     coordinator.storage_manager = MagicMock()
-    coordinator.plant_manager = MagicMock()
-    coordinator.growspace_manager = MagicMock()
+    coordinator._plant_manager = MagicMock()
+    coordinator._growspace_manager = MagicMock()
     coordinator.special_growspace_manager = MagicMock()
     coordinator.clone_manager = MagicMock()
-    coordinator.nutrient_manager = MagicMock()
+    coordinator._nutrient_manager = MagicMock()
     coordinator.training_manager = MagicMock()
     coordinator.harvest_manager = MagicMock()
 
@@ -43,29 +43,29 @@ def mock_coordinator():
     coordinator.async_request_refresh = AsyncMock()
 
     # Plant manager methods
-    coordinator.plant_manager.async_add_plant = AsyncMock()
-    coordinator.plant_manager.async_update_plant = AsyncMock()
-    coordinator.plant_manager.async_move_plant = AsyncMock()
-    coordinator.plant_manager.async_switch_plants = AsyncMock()
-    coordinator.plant_manager.async_transition_plant_stage = AsyncMock()
-    coordinator.plant_manager.async_transition_plant = AsyncMock()
-    coordinator.plant_manager.async_remove_plant = AsyncMock()
+    coordinator._plant_manager.async_add_plant = AsyncMock()
+    coordinator._plant_manager.async_update_plant = AsyncMock()
+    coordinator._plant_manager.async_move_plant = AsyncMock()
+    coordinator._plant_manager.async_switch_plants = AsyncMock()
+    coordinator._plant_manager.async_transition_plant_stage = AsyncMock()
+    coordinator._plant_manager.async_transition_plant = AsyncMock()
+    coordinator._plant_manager.async_remove_plant = AsyncMock()
 
     # Growspace manager methods
-    coordinator.growspace_manager.async_add_growspace = AsyncMock()
-    coordinator.growspace_manager.async_update_growspace = AsyncMock()
-    coordinator.growspace_manager.async_remove_growspace = AsyncMock()
-    coordinator.growspace_manager.async_update_environment_config = AsyncMock()
-    coordinator.growspace_manager.ensure_special_growspace = MagicMock(return_value="special_gs")
-    coordinator.growspace_manager.get_sorted_growspace_options = MagicMock(return_value=[])
+    coordinator._growspace_manager.async_add_growspace = AsyncMock()
+    coordinator._growspace_manager.async_update_growspace = AsyncMock()
+    coordinator._growspace_manager.async_remove_growspace = AsyncMock()
+    coordinator._growspace_manager.async_update_environment_config = AsyncMock()
+    coordinator._growspace_manager.ensure_special_growspace = MagicMock(return_value="special_gs")
+    coordinator._growspace_manager.get_sorted_growspace_options = MagicMock(return_value=[])
 
     # Clone manager methods
     coordinator.clone_manager.async_take_clones = AsyncMock(return_value=["clone_1"])
     coordinator.clone_manager.async_promote_clone = AsyncMock()
 
     # Nutrient manager methods
-    coordinator.nutrient_manager.async_commit_preset = AsyncMock()
-    coordinator.nutrient_manager.async_remove_preset = AsyncMock()
+    coordinator._nutrient_manager.async_commit_preset = AsyncMock()
+    coordinator._nutrient_manager.async_remove_preset = AsyncMock()
 
     # Training manager methods
     coordinator.training_manager.async_record_training = AsyncMock()
@@ -74,14 +74,14 @@ def mock_coordinator():
     coordinator.harvest_manager.async_record_harvest = AsyncMock()
 
     # Helper properties for legacy access if needed
-    type(coordinator).growspace_service = property(lambda self: self.growspace_manager)
-    type(coordinator).plant_service = property(lambda self: self.plant_manager)
+    type(coordinator).growspace_service = property(lambda self: self._growspace_manager)
+    type(coordinator).plant_service = property(lambda self: self._plant_manager)
 
     # Mock components
     coordinator.cache = MagicMock()
     coordinator.view_model_builder = MagicMock()
     coordinator.validator = MagicMock()
-    coordinator.notification_manager = MagicMock()
+    coordinator._notification_manager = MagicMock()
     coordinator.serializer = MagicMock()
 
     # Utility methods
@@ -92,8 +92,8 @@ def mock_coordinator():
     # Subsystem manager with async-safe fan coordinator mock
     _fan_coord_mock = MagicMock()
     _fan_coord_mock.async_restart = AsyncMock()
-    coordinator.subsystem_manager = MagicMock()
-    coordinator.subsystem_manager.get_circulation_fan_controller = MagicMock(
+    coordinator._subsystem_manager = MagicMock()
+    coordinator._subsystem_manager.get_circulation_fan_controller = MagicMock(
         return_value=_fan_coord_mock
     )
 

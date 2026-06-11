@@ -47,7 +47,7 @@ def _add_growspace_with_tank(
     growspace = Growspace(
         id=growspace_id, name="Test Tent", environment_config=env_config
     )
-    coordinator.data_repository.add_growspace(growspace)
+    coordinator._data_repository.add_growspace(growspace)
     return growspace
 
 
@@ -200,7 +200,7 @@ def test_get_tank_tracker_stage_resolver_reflects_plant_stage(hass: HomeAssistan
 
     # Add a plant in veg
     plant = Plant(plant_id="p1", growspace_id="gs_1", veg_start="2026-01-01")
-    coordinator.data_repository.add_plant(plant)
+    coordinator._data_repository.add_plant(plant)
 
     tracker = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.tank_1")
     assert tracker is not None
@@ -226,7 +226,7 @@ def test_get_tank_tracker_stage_resolver_reflects_cure_stage(hass: HomeAssistant
         dry_start="2024-05-01",
         cure_start="2024-06-01",
     )
-    coordinator.data_repository.add_plant(plant)
+    coordinator._data_repository.add_plant(plant)
 
     tracker = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.tank_1")
     assert tracker is not None

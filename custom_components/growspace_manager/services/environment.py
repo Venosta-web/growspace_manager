@@ -311,7 +311,7 @@ async def handle_configure_environment(
     # Trigger coordinator update to create/update binary sensors
     await coordinator.services.request_refresh()
 
-    fan_coord = coordinator.subsystem_manager.get_circulation_fan_controller(
+    fan_coord = coordinator._subsystem_manager.get_circulation_fan_controller(
         growspace_id
     )
     if fan_coord:
@@ -450,7 +450,7 @@ async def handle_configure_circulation_fan(
     await coordinator.services.save()
     await coordinator.services.request_refresh()
 
-    fan_coord = coordinator.subsystem_manager.get_circulation_fan_controller(
+    fan_coord = coordinator._subsystem_manager.get_circulation_fan_controller(
         growspace_id
     )
     if fan_coord:

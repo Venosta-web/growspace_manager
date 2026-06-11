@@ -25,10 +25,10 @@ def mock_growspace() -> Mock:
 def mock_coordinator(mock_growspace: Mock) -> Mock:
     """Create a mock coordinator."""
     coordinator = Mock()
-    coordinator.plant_manager = MagicMock()
-    coordinator.plant_manager.add_plant = AsyncMock()
+    coordinator._plant_manager = MagicMock()
+    coordinator._plant_manager.add_plant = AsyncMock()
     coordinator.growspaces = {"gs1": mock_growspace}
-    coordinator.services.plants.add_plant = coordinator.plant_manager.add_plant
+    coordinator.services.plants.add_plant = coordinator._plant_manager.add_plant
     coordinator.validator = Mock()
     # default infinite space
     coordinator.validator.find_first_available_position = Mock(return_value=(1, 1))

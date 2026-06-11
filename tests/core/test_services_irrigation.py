@@ -49,9 +49,9 @@ def mock_coordinator():
     """Create a mock growspace coordinator."""
     coordinator = MagicMock()
     coordinator.growspaces = {}
-    coordinator.subsystem_manager = MagicMock()
-    coordinator.subsystem_manager.irrigation_coordinators = {}
-    coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
+    coordinator._subsystem_manager = MagicMock()
+    coordinator._subsystem_manager.irrigation_coordinators = {}
+    coordinator._subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
 
     # FIX: Add the services namespace and make the target methods awaitable
     coordinator.services = MagicMock()
@@ -118,7 +118,7 @@ class TestGetIrrigationCoordinator:
         result = await _get_irrigation_coordinator(mock_coordinator, growspace_id)
 
         assert result == mock_irrigation_coordinator
-        mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators.assert_awaited_once_with(
+        mock_coordinator._subsystem_manager.async_setup_growspace_sub_coordinators.assert_awaited_once_with(
             growspace_id, mock_growspace
         )
 
@@ -135,7 +135,7 @@ class TestHandleSetIrrigationSettings:
     ):
         """Test setting irrigation settings."""
         # Setup
-        mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {
@@ -168,7 +168,7 @@ class TestHandleSetIrrigationSettings:
         mock_coordinator: MagicMock,
     ) -> None:
         """input_boolean entities are accepted for pump fields (no domain restriction in schema)."""
-        mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {
@@ -215,7 +215,7 @@ class TestHandleAddIrrigationTime:
     ):
         """Test adding irrigation time with explicit duration."""
         # Setup
-        mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00", "duration": 600}
@@ -266,7 +266,7 @@ class TestHandleRemoveIrrigationTime:
     ):
         """Test removing irrigation time."""
         # Setup
-        mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00"}
@@ -292,7 +292,7 @@ class TestHandleAddDrainTime:
     ):
         """Test adding drain time with explicit duration."""
         # Setup
-        mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00", "duration": 180}
@@ -343,7 +343,7 @@ class TestHandleRemoveDrainTime:
     ):
         """Test removing drain time."""
         # Setup
-        mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00"}
@@ -369,7 +369,7 @@ class TestHandleSetIrrigationStrategy:
     ) -> None:
         """Test setting irrigation strategy."""
         # Setup
-        mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
 
         call = MagicMock(spec=ServiceCall)
         call.data = {

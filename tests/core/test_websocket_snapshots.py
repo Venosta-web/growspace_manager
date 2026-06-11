@@ -77,7 +77,7 @@ async def test_websocket_get_strain_library_snapshot(
     }
 
     coordinator = MagicMock()
-    coordinator.strain_library = strain_library
+    coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
 
     with patch(
@@ -106,8 +106,8 @@ async def test_websocket_get_nutrient_inventory_snapshot(
             "n2": {"name": "Nutri-Plus B", "current_ml": 450, "initial_ml": 1000},
         }
     }
-    # coordinator.nutrient_manager.inventory_service.get_inventory() returns it
-    coordinator.nutrient_manager.inventory_service.get_inventory.return_value = (
+    # coordinator._nutrient_manager.inventory_service.get_inventory() returns it
+    coordinator._nutrient_manager.inventory_service.get_inventory.return_value = (
         inventory
     )
 
@@ -136,7 +136,7 @@ async def test_websocket_get_nutrient_presets_snapshot(
 ) -> None:
     """Test websocket_get_nutrient_presets output matches snapshot."""
     coordinator = MagicMock()
-    coordinator.nutrient_manager.get_serialization_data.return_value = {
+    coordinator.services.config.get_nutrient_serialization_data.return_value = {
         "nutrient_presets": [
             {"name": "Early Veg", "nutrients": {"n1": 2.0, "n2": 2.0}},
             {"name": "Late Veg", "nutrients": {"n1": 4.0, "n2": 4.0}},
@@ -163,7 +163,7 @@ async def test_websocket_get_ipm_presets_snapshot(
 ) -> None:
     """Test websocket_get_ipm_presets output matches snapshot."""
     coordinator = MagicMock()
-    coordinator.nutrient_manager.get_serialization_data.return_value = {
+    coordinator.services.config.get_nutrient_serialization_data.return_value = {
         "nutrient_presets": [],
         "ipm_presets": [
             {"name": "Neem Oil Spray", "application_type": "foliar"},
@@ -191,7 +191,7 @@ async def test_websocket_add_timeline_note_snapshot(
     coordinator = MagicMock()
     coordinator.services = MagicMock()
     coordinator.services.add_timeline_note = AsyncMock()
-    coordinator.strain_library = MagicMock()
+    coordinator._strain_library = MagicMock()
 
     with (
         patch(
@@ -225,7 +225,7 @@ async def test_websocket_add_growspace_note_snapshot(
     """Test websocket_add_growspace_note success."""
     coordinator = MagicMock()
     coordinator.growspaces = {"gs1": MagicMock()}
-    coordinator.strain_library = MagicMock()
+    coordinator._strain_library = MagicMock()
 
     coordinator.services = MagicMock()
     coordinator.services.growspaces.add_growspace_note = AsyncMock()
@@ -411,7 +411,7 @@ async def test_websocket_update_breeder_snapshot(
     strain_library.update_breeder = AsyncMock(return_value=5)
 
     coordinator = MagicMock()
-    coordinator.strain_library = strain_library
+    coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
 
     with patch(
@@ -441,7 +441,7 @@ async def test_websocket_delete_breeder_snapshot(
     strain_library.delete_breeder = AsyncMock(return_value=3)
 
     coordinator = MagicMock()
-    coordinator.strain_library = strain_library
+    coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
 
     with patch(

@@ -60,7 +60,7 @@ def preset_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coordinator = create_test_coordinator(hass)
 
     # Add a growspace and a plant
-    coordinator.data_repository.add_growspace(
+    coordinator._data_repository.add_growspace(
         Growspace(
             id="test_gs",
             name="Test Growspace",
@@ -69,7 +69,7 @@ def preset_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
         )
     )
 
-    coordinator.data_repository.add_plant(
+    coordinator._data_repository.add_plant(
         create_plant(
             plant_id="test_plant",
             growspace_id="test_gs",
@@ -106,7 +106,7 @@ class TestNutrientPresetCoordinator:
         assert len(preset.nutrients) == 2
         assert preset.stage == PlantStage.VEG
         assert preset.min_days_in_stage == 5
-        assert preset.id in preset_coordinator.nutrient_manager.nutrient_presets
+        assert preset.id in preset_coordinator._nutrient_manager.nutrient_presets
         preset_coordinator.storage_manager.async_force_save.assert_called_once()
 
     @pytest.mark.asyncio
@@ -123,7 +123,7 @@ class TestNutrientPresetCoordinator:
         # Remove it
         await preset_coordinator.services.config.remove_nutrient_preset(preset_id)
 
-        assert preset_id not in preset_coordinator.nutrient_manager.nutrient_presets
+        assert preset_id not in preset_coordinator._nutrient_manager.nutrient_presets
         assert preset_coordinator.storage_manager.async_force_save.call_count == 2
 
     @pytest.mark.asyncio
@@ -193,7 +193,7 @@ class TestNutrientPresetCoordinator:
             ],
         )
 
-        nutrient_map = preset_coordinator.nutrient_manager.nutrient_presets[
+        nutrient_map = preset_coordinator._nutrient_manager.nutrient_presets[
             preset.id
         ].get_nutrient_map()
 
@@ -205,7 +205,7 @@ class TestNutrientPresetCoordinator:
     ) -> None:
         """Test resolving nonexistent preset raises KeyError."""
         with pytest.raises(KeyError):
-            preset_coordinator.nutrient_manager.nutrient_presets["nonexistent"]
+            preset_coordinator._nutrient_manager.nutrient_presets["nonexistent"]
 
     @pytest.mark.asyncio
     async def test_get_applicable_presets_no_stage_but_min_days(
@@ -353,7 +353,7 @@ class TestServiceHandlersPresets:
         # Verify preset was saved
         presets = [
             p
-            for p in preset_coordinator.nutrient_manager.nutrient_presets.values()
+            for p in preset_coordinator._nutrient_manager.nutrient_presets.values()
             if p.name == "Service Preset"
         ]
         assert len(presets) == 1
@@ -384,7 +384,7 @@ class TestServiceHandlersPresets:
         await handle_save_nutrient_preset(hass, preset_coordinator, call)
 
         # 3. Verify update
-        updated = preset_coordinator.nutrient_manager.nutrient_presets[initial_id]
+        updated = preset_coordinator._nutrient_manager.nutrient_presets[initial_id]
         assert updated.name == "Updated Name"
         assert updated.nutrients[0]["dose_ml_l"] == 2.0
         assert updated.id == initial_id
@@ -405,7 +405,7 @@ class TestServiceHandlersPresets:
 
         await handle_remove_nutrient_preset(hass, preset_coordinator, call)
 
-        assert preset.id not in preset_coordinator.nutrient_manager.nutrient_presets
+        assert preset.id not in preset_coordinator._nutrient_manager.nutrient_presets
 
 
 class TestNutrientPresetSerialization:
@@ -610,7 +610,7 @@ class TestNutrientPresetNewFields:
         assert preset.ec_target == 2.1
         assert preset.ph_target == 5.9
 
-        stored = preset_coordinator.nutrient_manager.nutrient_presets[preset.id]
+        stored = preset_coordinator._nutrient_manager.nutrient_presets[preset.id]
         assert stored.week == 4
         assert stored.ec_target == 2.1
         assert stored.ph_target == 5.9
@@ -656,7 +656,7 @@ class TestNutrientPresetNewFields:
 
         presets = [
             p
-            for p in preset_coordinator.nutrient_manager.nutrient_presets.values()
+            for p in preset_coordinator._nutrient_manager.nutrient_presets.values()
             if p.name == "Handler Week Test"
         ]
         assert len(presets) == 1

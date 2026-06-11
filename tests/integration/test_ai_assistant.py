@@ -56,7 +56,7 @@ def mock_coordinator() -> MagicMock:
     data_repo.get_growspace_plants = shared_plant_mock
 
     # 4. Attach repositories to coordinator facade
-    coordinator.data_repository = data_repo
+    coordinator._data_repository = data_repo
     coordinator.plants = plant_repo
 
     coordinator.options = {
@@ -211,7 +211,7 @@ def testgather_growspace_data_missing(
 ) -> None:
     """Test gathering data for missing growspace."""
     # Ensure the repository returns None for missing IDs
-    mock_coordinator.data_repository.get_growspace.return_value = None
+    mock_coordinator._data_repository.get_growspace.return_value = None
 
     with pytest.raises(ServiceValidationError):
         assistant.gather_growspace_data("missing_id")
@@ -239,7 +239,7 @@ async def test_gather_growspace_data_legacy_dict(
     assistant: GrowAssistant, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
     """Test gathering data with legacy dict environment config."""
-    gs = mock_coordinator.data_repository.get_growspace(GROWSPACE_ID)
+    gs = mock_coordinator._data_repository.get_growspace(GROWSPACE_ID)
     gs.environment_config = {
         "temperature_sensor": "sensor.legacy_temp",
         "humidity_sensor": "sensor.legacy_humidity",
@@ -635,7 +635,7 @@ async def test_handle_strain_recommendation_with_growspace_error(
         {"growspace_id": "bad_id"},
         context=MagicMock(),
     )
-    mock_coordinator.data_repository.get_growspace.return_value = None
+    mock_coordinator._data_repository.get_growspace.return_value = None
 
     with patch(
         "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse"
@@ -740,7 +740,7 @@ def test_format_context_data_includes_strain_history(
 ) -> None:
     """Test _format_context_data includes STRAIN HISTORY when analytics are present."""
     plant = MagicMock(strain="Strain A", stage="veg", veg_start=None, flower_start=None)
-    mock_coordinator.data_repository.get_growspace_plants.return_value = [plant]
+    mock_coordinator._data_repository.get_growspace_plants.return_value = [plant]
 
     data = assistant.gather_growspace_data(GROWSPACE_ID)
     # Strain A has harvest data in mock_strain_library, so analytics should be populated

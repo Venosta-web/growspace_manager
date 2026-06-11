@@ -84,7 +84,7 @@ async def test_websocket_get_strain_library(
     entry.add_to_hass(hass)
 
     mock_coord = MagicMock()
-    mock_coord.strain_library = mock_strain_library
+    mock_coord._strain_library = mock_strain_library
     mock_coord.services.config.strain_library = mock_strain_library
     entry.runtime_data = mock_coord
 
@@ -453,7 +453,7 @@ async def test_websocket_get_presets(
     nutrient_presets_data = {"p1": {"name": "Nutrient Preset"}}
     ipm_presets_data = {"i1": {"name": "IPM Preset"}}
 
-    mock_coordinator.nutrient_manager.get_serialization_data.return_value = {
+    mock_coordinator.services.config.get_nutrient_serialization_data.return_value = {
         "nutrient_presets": nutrient_presets_data,
         "ipm_presets": ipm_presets_data,
     }
@@ -1267,7 +1267,7 @@ async def test_websocket_exceptions(
 
     # Inject it via a mock coordinator
     mock_coord = MagicMock()
-    mock_coord.strain_library = mock_lib
+    mock_coord._strain_library = mock_lib
     mock_coord.services.config.strain_library = mock_lib
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",

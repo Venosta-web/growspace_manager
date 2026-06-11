@@ -51,7 +51,7 @@ def mock_coordinator(hass: HomeAssistant, mock_plants):
     coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
 
     # Set up plants
-    coordinator.data_repository.load_plants(mock_plants)
+    coordinator._data_repository.load_plants(mock_plants)
     coordinator.services.save = AsyncMock()  # type: ignore[method-assign]
     coordinator.training_service._ctx.save_callback = coordinator.services.save
     mock_add_event = MagicMock()

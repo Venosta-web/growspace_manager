@@ -86,15 +86,15 @@ class PlantFacade:
 
     def get_plant(self, plant_id: str) -> Plant | None:
         """Return a plant by ID."""
-        return self._coordinator.data_repository.get_plant(plant_id)
+        return self._coordinator._data_repository.get_plant(plant_id)
 
     def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
         """Return all nutrient presets applicable to a plant."""
-        return self._coordinator.nutrient_manager.get_applicable_presets(plant_id)
+        return self._coordinator._nutrient_manager.get_applicable_presets(plant_id)
 
     async def add_plant(self, **kwargs: Any) -> Plant:
         """Add a new plant and register its HA device."""
-        plant = await self._coordinator.plant_manager.add_plant(**kwargs)
+        plant = await self._coordinator._plant_manager.add_plant(**kwargs)
         device_registry = dr.async_get(self._coordinator.hass)
         strain_name = plant.genetics.strain_name if plant.genetics else "Unknown"
         device_registry.async_get_or_create(
@@ -116,7 +116,7 @@ class PlantFacade:
 
     async def update_plant(self, plant_id: str, **kwargs: Any) -> Plant:
         """Update an existing plant and sync its HA device name if changed."""
-        plant = await self._coordinator.plant_manager.update_plant(plant_id, **kwargs)
+        plant = await self._coordinator._plant_manager.update_plant(plant_id, **kwargs)
         if "name" in kwargs:
             device_registry = dr.async_get(self._coordinator.hass)
             if device := device_registry.async_get_device(
@@ -128,7 +128,7 @@ class PlantFacade:
 
     async def remove_plant(self, plant_id: str) -> bool:
         """Remove a plant and its associated HA entities."""
-        removed = await self._coordinator.plant_manager.remove_plant(plant_id)
+        removed = await self._coordinator._plant_manager.remove_plant(plant_id)
         if removed:
             await self.remove_plant_entities(plant_id)
         return removed
@@ -159,7 +159,7 @@ class PlantFacade:
         **kwargs: Any,
     ) -> Plant:
         """Add a new mother plant."""
-        plant = await self._coordinator.plant_manager.add_mother_plant(
+        plant = await self._coordinator._plant_manager.add_mother_plant(
             phenotype=phenotype,
             strain=strain,
             row=row,
@@ -179,7 +179,7 @@ class PlantFacade:
         transition_date: date | None = None,
     ) -> list[Plant]:
         """Create clones from a mother plant."""
-        return await self._coordinator.plant_manager.take_clones(
+        return await self._coordinator._plant_manager.take_clones(
             mother_plant_id=mother_plant_id,
             num_clones=num_clones,
             target_growspace_id=target_growspace_id,
@@ -194,7 +194,7 @@ class PlantFacade:
         transition_date: date | None = None,
     ) -> None:
         """Promote a clone to the vegetative stage."""
-        await self._coordinator.plant_manager.promote_clone(
+        await self._coordinator._plant_manager.promote_clone(
             clone_id=clone_id,
             target_growspace_id=target_growspace_id,
             transition_date=transition_date,
@@ -202,11 +202,11 @@ class PlantFacade:
 
     async def switch_plants(self, plant1_id: str, plant2_id: str) -> None:
         """Switch the positions of two plants."""
-        await self._coordinator.plant_manager.switch_plants(plant1_id, plant2_id)
+        await self._coordinator._plant_manager.switch_plants(plant1_id, plant2_id)
 
     async def move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
         """Move a plant to a new grid position."""
-        await self._coordinator.plant_manager.move_plant(plant_id, new_row, new_col)
+        await self._coordinator._plant_manager.move_plant(plant_id, new_row, new_col)
 
     async def transition_plant_stage(
         self,
@@ -215,13 +215,13 @@ class PlantFacade:
         transition_date: date | None = None,
     ) -> None:
         """Transition a plant to a new growth stage."""
-        await self._coordinator.plant_manager.transition_plant_stage(
+        await self._coordinator._plant_manager.transition_plant_stage(
             plant_id, new_stage, transition_date
         )
 
     async def harvest(self, plant_id: str) -> Plant:
         """Mark a plant as harvested."""
-        return await self._coordinator.plant_manager.harvest(plant_id)
+        return await self._coordinator._plant_manager.harvest(plant_id)
 
     async def transition_plant(
         self,
@@ -237,7 +237,7 @@ class PlantFacade:
         terpene_profile: str | None = None,
     ) -> None:
         """Transition a plant out of its current growspace (harvest or move)."""
-        await self._coordinator.plant_manager.transition_plant(
+        await self._coordinator._plant_manager.transition_plant(
             plant_id=plant_id,
             target_growspace_id=target_growspace_id,
             target_growspace_name=target_growspace_name,
@@ -294,11 +294,11 @@ class PlantFacade:
             _LOGGER.info(
                 "Auto-harvesting plant %s (%s) in %s", plant_id, strain_name, gs_id
             )
-            await self._coordinator.plant_manager.harvest(
+            await self._coordinator._plant_manager.harvest(
                 plant_id=plant_id,
                 transition_date=today,
             )
-            await self._coordinator.notification_manager.async_send_notification(
+            await self._coordinator._notification_manager.async_send_notification(
                 growspace_id=gs_id,
                 title="Auto-harvest complete",
                 message=f"Plant {strain_name} has been auto-harvested",
@@ -446,7 +446,7 @@ class PlantFacade:
             ps.keeper = keeper
         if notes is not None:
             ps.notes = notes
-        await self._coordinator.plant_manager.update_plant(plant_id, phenotype_score=ps)
+        await self._coordinator._plant_manager.update_plant(plant_id, phenotype_score=ps)
         _LOGGER.info("Plant %s phenotype scored", plant_id)
 
     async def update_harvest_metrics(
@@ -484,7 +484,7 @@ class PlantFacade:
             metrics.terpene_profile = terpene_profile
             updated = True
         if updated:
-            await self._coordinator.plant_manager.update_plant(
+            await self._coordinator._plant_manager.update_plant(
                 plant_id, harvest_metrics=metrics
             )
             _LOGGER.info("Plant %s harvest metrics updated", plant_id)

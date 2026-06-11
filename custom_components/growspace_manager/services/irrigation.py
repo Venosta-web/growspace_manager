@@ -54,7 +54,7 @@ async def _get_irrigation_coordinator(
                 _LOGGER.info(
                     "Lazy initializing subsystems for growspace %s", growspace_id
                 )
-                await coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
+                await coordinator._subsystem_manager.async_setup_growspace_sub_coordinators(
                     growspace_id, growspace
                 )
                 irr_coord = coordinator.services.growspaces.get_irrigation_coordinator(growspace_id)

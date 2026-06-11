@@ -37,7 +37,7 @@ def mock_coordinator():
     services.config.strain_library = strain_service
 
     # Legacy/Direct access support
-    coordinator.strain_library = strain_service
+    coordinator._strain_library = strain_service
 
     # Setup AsyncMocks for all service calls
     strain_service.remove_strain = AsyncMock()
@@ -148,7 +148,7 @@ async def test_async_step_manage_strain_library_post_delete_fail(
 ) -> None:
     """Test deleting a strain failure."""
     coordinator = handler.config_entry.runtime_data
-    coordinator.strain_library.remove_strain = AsyncMock(side_effect=Exception("Error"))
+    coordinator._strain_library.remove_strain = AsyncMock(side_effect=Exception("Error"))
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
 
     result = await handler.async_step_manage_strain_library(
@@ -226,7 +226,7 @@ async def test_async_step_import_strain_library_errors(
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
 
     # FileNotFoundError
-    coordinator.strain_library.import_library_from_zip = AsyncMock(
+    coordinator._strain_library.import_library_from_zip = AsyncMock(
         side_effect=FileNotFoundError
     )
     await handler.async_step_import_strain_library({"file_path": "test.zip"})
@@ -235,7 +235,7 @@ async def test_async_step_import_strain_library_errors(
     }
 
     # ValueError
-    coordinator.strain_library.import_library_from_zip = AsyncMock(
+    coordinator._strain_library.import_library_from_zip = AsyncMock(
         side_effect=ValueError
     )
     await handler.async_step_import_strain_library({"file_path": "test.zip"})
@@ -244,7 +244,7 @@ async def test_async_step_import_strain_library_errors(
     }
 
     # Generic Exception
-    coordinator.strain_library.import_library_from_zip = AsyncMock(
+    coordinator._strain_library.import_library_from_zip = AsyncMock(
         side_effect=Exception
     )
     await handler.async_step_import_strain_library({"file_path": "test.zip"})
@@ -289,7 +289,7 @@ async def test_async_step_export_strain_library_fail(
 ) -> None:
     """Test export failure."""
     coordinator = handler.config_entry.runtime_data
-    coordinator.strain_library.export_library_to_zip = AsyncMock(side_effect=Exception)
+    coordinator._strain_library.export_library_to_zip = AsyncMock(side_effect=Exception)
     handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
     result = await handler.async_step_export_strain_library()
     assert result["type"] == "abort"
@@ -341,7 +341,7 @@ def test_get_strain_library_menu_schema_no_strains(
 ) -> None:
     """Test schema when no strains are present."""
     coordinator = handler.config_entry.runtime_data
-    coordinator.strain_library.get_all.return_value = {}
+    coordinator._strain_library.get_all.return_value = {}
 
     schema = handler._get_strain_library_menu_schema(coordinator)
     assert isinstance(schema, vol.Schema)

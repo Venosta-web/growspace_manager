@@ -919,6 +919,11 @@ split-on-trailing-comma = false
 "homeassistant/**" = ["PTH"]
 "tests/**" = ["PTH"]
 
+# The service facade layer is the sanctioned reader of coordinator internals
+# (see custom_components/growspace_manager/CONTEXT.md "Seam Enforcement"), so
+# private-member access on the coordinator is expected here, not a smell.
+"custom_components/growspace_manager/services/*" = ["SLF001"]
+
 [tool.ruff.lint.mccabe]
 max-complexity = 25
 

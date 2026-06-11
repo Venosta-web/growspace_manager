@@ -50,8 +50,8 @@ def mock_coordinator() -> MagicMock:
     coordinator.validator = MagicMock()
     coordinator.validator.validate_plant_exists = MagicMock()
     coordinator.validator.find_first_available_position = MagicMock(return_value=(0, 0))
-    coordinator.genetics_manager = MagicMock()
-    coordinator.genetics_manager.seed_batches = {}
+    coordinator._genetics_manager = MagicMock()
+    coordinator._genetics_manager.seed_batches = {}
     svc = MagicMock()
     svc.water_plant = AsyncMock()
     svc.add_plant = AsyncMock()

@@ -38,8 +38,8 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
+        notification_manager=coordinator._notification_manager,
+        strain_library=coordinator._strain_library,
         options=coordinator.options,
     )
 
@@ -80,8 +80,8 @@ def mock_coordinator_multi(mock_growspace_multi):
     # Add missing dependencies
     coordinator.get_growspace_plants = MagicMock(return_value=[])
     coordinator.add_event = MagicMock()
-    coordinator.notification_manager = MagicMock()
-    coordinator.strain_library = None
+    coordinator._notification_manager = MagicMock()
+    coordinator._strain_library = None
     return coordinator
 
 

@@ -84,7 +84,7 @@ def websocket_get_nutrient_presets(
 ) -> None:
     """Handle get nutrient presets command via WebSocket."""
     coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-    data = coordinator.nutrient_manager.get_serialization_data()
+    data = coordinator.services.config.get_nutrient_serialization_data()
     connection.send_result(msg["id"], data["nutrient_presets"])
 
 
@@ -95,7 +95,7 @@ def websocket_get_ipm_presets(
 ) -> None:
     """Handle get IPM presets command via WebSocket."""
     coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-    data = coordinator.nutrient_manager.get_serialization_data()
+    data = coordinator.services.config.get_nutrient_serialization_data()
     connection.send_result(msg["id"], data["ipm_presets"])
 
 
@@ -106,7 +106,7 @@ def websocket_get_ec_ramp_curves(
 ) -> None:
     """Handle get EC ramp curves command via WebSocket."""
     coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-    data = coordinator.nutrient_manager.get_serialization_data()
+    data = coordinator.services.config.get_nutrient_serialization_data()
     connection.send_result(msg["id"], data.get("ec_ramp_curves", []))
 
 

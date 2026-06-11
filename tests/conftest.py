@@ -186,8 +186,8 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
+        notification_manager=coordinator._notification_manager,
+        strain_library=coordinator._strain_library,
         options=coordinator.options,
     )
 
@@ -272,8 +272,8 @@ def cleanup_coordinators(request):
                         await irr_coord.async_shutdown()
 
             # Cancel debouncers and shut down dehumidifier coordinators
-            if hasattr(coord, "subsystem_manager") and coord.subsystem_manager:
-                sub_mgr = coord.subsystem_manager
+            if hasattr(coord, "subsystem_manager") and coord._subsystem_manager:
+                sub_mgr = coord._subsystem_manager
                 if hasattr(sub_mgr, "dehumidifier_coordinators") and sub_mgr.dehumidifier_coordinators:
                     for deh_coord in sub_mgr.dehumidifier_coordinators.values():
                         _cancel_debouncer(deh_coord)

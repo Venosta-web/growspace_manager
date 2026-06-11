@@ -50,15 +50,15 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
+        notification_manager=coordinator._notification_manager,
+        strain_library=coordinator._strain_library,
         options=coordinator.options,
     )
 
     if hass is not None:
         sensor.hass = hass
         sensor.trend_analyzer = TrendAnalyzer(hass)
-        notification_manager = coordinator.notification_manager
+        notification_manager = coordinator._notification_manager
         sensor.strategy = strategy_class(
             env_config=sensor.env_config,
             analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(*args, **kwargs),
@@ -203,7 +203,7 @@ async def test_ai_alert_exception_handling(
     sensor.notification_manager = MagicMock()
     # Explicitly make async_send_notification an AsyncMock
     sensor.notification_manager.async_send_notification = AsyncMock()
-    sensor.coordinator.strain_library = MagicMock()
+    sensor.coordinator._strain_library = MagicMock()
 
     sensor._options["ai_auto_alerts"] = True
 
@@ -237,7 +237,7 @@ async def test_ai_alert_success(mock_coordinator, hass: HomeAssistant) -> None:
     sensor.threshold = 0.8
     sensor.notification_manager = MagicMock()
     sensor.notification_manager.async_send_notification = AsyncMock()
-    sensor.coordinator.strain_library = MagicMock()
+    sensor.coordinator._strain_library = MagicMock()
 
     with patch(
         "custom_components.growspace_manager.binary_sensor.GrowAssistant"

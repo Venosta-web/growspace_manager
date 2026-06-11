@@ -74,7 +74,7 @@ async def test_plants_property(hass: HomeAssistant) -> None:
 
     coordinator = create_test_coordinator(hass)
     plant = _Plant(plant_id="p1", growspace_id="gs1", row=1, col=1)
-    coordinator.data_repository.add_plant(plant)
+    coordinator._data_repository.add_plant(plant)
     assert "p1" in coordinator.plants
     assert coordinator.plants["p1"] is plant
 
@@ -109,7 +109,7 @@ async def test_init_with_strain_library(hass: HomeAssistant) -> None:
     """Test coordinator init with provided strain_library (line 354)."""
     mock_lib = MagicMock()
     coordinator = create_test_coordinator(hass, strain_library=mock_lib)
-    assert coordinator.strain_library is mock_lib
+    assert coordinator._strain_library is mock_lib
 
 
 # =============================================================================
@@ -126,10 +126,10 @@ async def test_on_nutrient_inventory_loaded(hass: HomeAssistant) -> None:
     # Ensure load_data is callable (real NutrientManager)
     coordinator.on_nutrient_inventory_loaded(inv)
 
-    assert coordinator.nutrient_manager.inventory is inv
+    assert coordinator._nutrient_manager.inventory is inv
     # IPM presets should be synced
     assert (
-        coordinator.ipm_service.ipm_presets is coordinator.nutrient_manager.ipm_presets
+        coordinator.ipm_service.ipm_presets is coordinator._nutrient_manager.ipm_presets
     )
 
 
@@ -159,13 +159,13 @@ async def test_create_special_growspace_delegates(hass: HomeAssistant) -> None:
     """Test _create_special_growspace delegates to growspace_manager (line 537)."""
 
     coordinator = create_test_coordinator(hass)
-    coordinator.growspace_manager._create_special_growspace = MagicMock()
+    coordinator._growspace_manager._create_special_growspace = MagicMock()
 
-    coordinator.growspace_manager._create_special_growspace(
+    coordinator._growspace_manager._create_special_growspace(
         "mother", "Mother", 2, 5, GrowspaceType.MOTHER
     )
 
-    coordinator.growspace_manager._create_special_growspace.assert_called_once_with(
+    coordinator._growspace_manager._create_special_growspace.assert_called_once_with(
         "mother", "Mother", 2, 5, GrowspaceType.MOTHER
     )
 
@@ -184,7 +184,7 @@ async def test_update_special_growspace_name_public_method(hass: HomeAssistant) 
     mock_manager.update_special_growspace_name = MagicMock()
     coordinator._growspace_manager = mock_manager
 
-    coordinator.growspace_manager.update_special_growspace_name("mother", "New Name")
+    coordinator._growspace_manager.update_special_growspace_name("mother", "New Name")
 
     mock_manager.update_special_growspace_name.assert_called_once_with(
         "mother", "New Name"
@@ -204,16 +204,16 @@ async def test_update_growspace_structure_success(hass: HomeAssistant) -> None:
         name="Test GS", rows=2, plants_per_row=2
     )
 
-    coordinator.growspace_manager._update_growspace_structure = MagicMock(
+    coordinator._growspace_manager._update_growspace_structure = MagicMock(
         return_value=True
     )
 
     growspace = coordinator.growspaces.get(gs.id)
-    result = coordinator.growspace_manager._update_growspace_structure(
+    result = coordinator._growspace_manager._update_growspace_structure(
         growspace, {"name": "New Name"}, ["name"]
     )
     assert result is True
-    coordinator.growspace_manager._update_growspace_structure.assert_called_once()
+    coordinator._growspace_manager._update_growspace_structure.assert_called_once()
 
 
 # =============================================================================
@@ -229,16 +229,16 @@ async def test_update_growspace_config_success(hass: HomeAssistant) -> None:
         name="Config GS", rows=2, plants_per_row=2
     )
 
-    coordinator.growspace_manager._update_growspace_config = MagicMock(
+    coordinator._growspace_manager._update_growspace_config = MagicMock(
         return_value=True
     )
 
     growspace = coordinator.growspaces.get(gs.id)
-    result = coordinator.growspace_manager._update_growspace_config(
+    result = coordinator._growspace_manager._update_growspace_config(
         growspace, {"rows": 3}, ["rows"]
     )
     assert result is True
-    coordinator.growspace_manager._update_growspace_config.assert_called_once()
+    coordinator._growspace_manager._update_growspace_config.assert_called_once()
 
 
 # =============================================================================
@@ -344,12 +344,12 @@ async def test_async_update_plant(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
 
     mock_plant = MagicMock()
-    coordinator.plant_manager.update_plant = AsyncMock(return_value=mock_plant)
+    coordinator._plant_manager.update_plant = AsyncMock(return_value=mock_plant)
 
     result = await coordinator.services.plants.update_plant(
         "plant_1", strain="New Strain"
     )
-    coordinator.plant_manager.update_plant.assert_called_once_with(
+    coordinator._plant_manager.update_plant.assert_called_once_with(
         "plant_1", strain="New Strain"
     )
     assert result is mock_plant
@@ -480,7 +480,7 @@ async def test_async_save_nutrient_preset(hass: HomeAssistant) -> None:
     """Test async_save_nutrient_preset delegates to nutrient_manager (line 1132)."""
     coordinator = create_test_coordinator(hass)
     mock_preset = MagicMock()
-    coordinator.nutrient_manager.async_save_nutrient_preset = AsyncMock(
+    coordinator._nutrient_manager.async_save_nutrient_preset = AsyncMock(
         return_value=mock_preset
     )
 
@@ -488,7 +488,7 @@ async def test_async_save_nutrient_preset(hass: HomeAssistant) -> None:
         name="Bloom", nutrients=[{"name": "N", "amount": 1.0}]
     )
 
-    coordinator.nutrient_manager.async_save_nutrient_preset.assert_called_once()
+    coordinator._nutrient_manager.async_save_nutrient_preset.assert_called_once()
     assert result is mock_preset
 
 
@@ -496,11 +496,11 @@ async def test_async_save_nutrient_preset(hass: HomeAssistant) -> None:
 async def test_async_remove_nutrient_preset(hass: HomeAssistant) -> None:
     """Test async_remove_nutrient_preset delegates to nutrient_manager (line 1138)."""
     coordinator = create_test_coordinator(hass)
-    coordinator.nutrient_manager.async_remove_nutrient_preset = AsyncMock()
+    coordinator._nutrient_manager.async_remove_nutrient_preset = AsyncMock()
 
     await coordinator.services.config.remove_nutrient_preset("preset_1")
 
-    coordinator.nutrient_manager.async_remove_nutrient_preset.assert_called_once_with(
+    coordinator._nutrient_manager.async_remove_nutrient_preset.assert_called_once_with(
         "preset_1"
     )
 
@@ -509,11 +509,11 @@ async def test_async_remove_nutrient_preset(hass: HomeAssistant) -> None:
 async def test_get_applicable_presets(hass: HomeAssistant) -> None:
     """Test get_applicable_presets delegates to nutrient_manager (line 1142)."""
     coordinator = create_test_coordinator(hass)
-    coordinator.nutrient_manager.get_applicable_presets = MagicMock(return_value=[])
+    coordinator._nutrient_manager.get_applicable_presets = MagicMock(return_value=[])
 
     result = coordinator.services.plants.get_applicable_presets("plant_1")
 
-    coordinator.nutrient_manager.get_applicable_presets.assert_called_once_with(
+    coordinator._nutrient_manager.get_applicable_presets.assert_called_once_with(
         "plant_1"
     )
     assert result == []
@@ -525,9 +525,9 @@ async def test_resolve_preset_nutrients_found(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
     mock_preset = MagicMock()
     mock_preset.get_nutrient_map.return_value = {"N": 1.0}
-    coordinator.nutrient_manager.nutrient_presets = {"p1": mock_preset}
+    coordinator._nutrient_manager.nutrient_presets = {"p1": mock_preset}
 
-    result = coordinator.nutrient_manager.nutrient_presets["p1"].get_nutrient_map()
+    result = coordinator._nutrient_manager.nutrient_presets["p1"].get_nutrient_map()
     assert result == {"N": 1.0}
 
 
@@ -535,10 +535,10 @@ async def test_resolve_preset_nutrients_found(hass: HomeAssistant) -> None:
 async def test_resolve_preset_nutrients_not_found(hass: HomeAssistant) -> None:
     """Test accessing a missing nutrient preset raises KeyError."""
     coordinator = create_test_coordinator(hass)
-    coordinator.nutrient_manager.nutrient_presets = {}
+    coordinator._nutrient_manager.nutrient_presets = {}
 
     with pytest.raises(KeyError):
-        coordinator.nutrient_manager.nutrient_presets["missing_preset"]
+        coordinator._nutrient_manager.nutrient_presets["missing_preset"]
 
 
 # =============================================================================
@@ -666,14 +666,14 @@ async def test_async_log_drain_reading_alert(hass: HomeAssistant) -> None:
     gs.drain_config.max_ec_delta = 0.1
 
     coordinator.async_commit = AsyncMock()
-    coordinator.notification_manager.async_send_notification = AsyncMock()
+    coordinator._notification_manager.async_send_notification = AsyncMock()
 
     # drain_ec - feed_ec = 1.0 > 0.1 threshold
     await coordinator.services.growspaces.log_drain_reading(
         gs.id, feed_ec=2.0, drain_ec=3.0
     )
 
-    coordinator.notification_manager.async_send_notification.assert_called_once()
+    coordinator._notification_manager.async_send_notification.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -775,7 +775,7 @@ async def test_async_remove_ec_ramp_curve(hass: HomeAssistant) -> None:
 async def test_get_strain_options_no_library(hass: HomeAssistant) -> None:
     """Test get_strain_options returns [] when strain_library is None (line 1361)."""
     coordinator = create_test_coordinator(hass)
-    coordinator.strain_library = None
+    coordinator._strain_library = None
 
     result = coordinator.services.config.get_strain_options()
     assert result == []
@@ -787,7 +787,7 @@ async def test_get_strain_options_with_library(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
     mock_lib = MagicMock()
     mock_lib.get_all.return_value = {"Zkittlez": {}, "OG Kush": {}, "Blue Dream": {}}
-    coordinator.strain_library = mock_lib
+    coordinator._strain_library = mock_lib
 
     result = coordinator.services.config.get_strain_options()
     assert result == ["Blue Dream", "OG Kush", "Zkittlez"]
@@ -799,7 +799,7 @@ async def test_export_strain_library(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
     mock_lib = MagicMock()
     mock_lib.get_all.return_value = {"Strain A": {}}
-    coordinator.strain_library = mock_lib
+    coordinator._strain_library = mock_lib
 
     result = coordinator.services.config.export_strain_library()
     assert result == ["Strain A"]
@@ -809,7 +809,7 @@ async def test_export_strain_library(hass: HomeAssistant) -> None:
 async def test_clear_strains_no_library(hass: HomeAssistant) -> None:
     """Test clear_strains returns 0 when no library (line 1379)."""
     coordinator = create_test_coordinator(hass)
-    coordinator.strain_library = None
+    coordinator._strain_library = None
 
     result = await coordinator.services.config.clear_strains()
     assert result == 0
@@ -821,7 +821,7 @@ async def test_clear_strains_with_library(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
     mock_lib = MagicMock()
     mock_lib.clear = AsyncMock(return_value=5)
-    coordinator.strain_library = mock_lib
+    coordinator._strain_library = mock_lib
 
     result = await coordinator.services.config.clear_strains()
     assert result == 5
@@ -897,7 +897,7 @@ async def test_async_set_lighting_schedule(hass: HomeAssistant) -> None:
 
     env = EnvironmentConfig()
     gs = Growspace(id="gs1", name="Test GS", environment_config=env)
-    coordinator.data_repository.add_growspace(gs)
+    coordinator._data_repository.add_growspace(gs)
 
     # Test successful set
     await coordinator.services.growspaces.set_lighting_schedule("gs1", 18, 12, 35.5)

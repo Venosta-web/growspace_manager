@@ -181,20 +181,20 @@ async def test_growspace_handler_crud(mock_hass, mock_config_entry) -> None:
     coordinator = MagicMock()
     coordinator.services.growspaces.remove_growspace = AsyncMock()
     coordinator.services.save = AsyncMock()
-    coordinator.growspace_manager.add_growspace = AsyncMock()
-    coordinator.growspace_manager.update_growspace = AsyncMock()
+    coordinator._growspace_manager.add_growspace = AsyncMock()
+    coordinator._growspace_manager.update_growspace = AsyncMock()
     mock_config_entry.runtime_data = coordinator
 
     # Test Add
     add_input = {"name": "Test GS", "rows": 4, "plants_per_row": 4}
-    await coordinator.growspace_manager.add_growspace(add_input)
-    coordinator.growspace_manager.add_growspace.assert_awaited_with(add_input)
+    await coordinator._growspace_manager.add_growspace(add_input)
+    coordinator._growspace_manager.add_growspace.assert_awaited_with(add_input)
     # coordinator.async_save is irrelevant here as we are calling the mock service directly
 
     # Test Update
     update_input = {"name": "Updated GS", "empty_val": ""}
-    await coordinator.growspace_manager.update_growspace("gs1", update_input)
-    coordinator.growspace_manager.update_growspace.assert_awaited_with(
+    await coordinator._growspace_manager.update_growspace("gs1", update_input)
+    coordinator._growspace_manager.update_growspace.assert_awaited_with(
         "gs1", update_input
     )
 
@@ -207,7 +207,7 @@ def test_growspace_handler_schemas(mock_hass, mock_config_entry) -> None:
     """Test get_growspace_management_schema and get_add_growspace_schema."""
     handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
     coordinator = MagicMock()
-    coordinator.growspace_manager.get_sorted_growspace_options.return_value = [
+    coordinator._growspace_manager.get_sorted_growspace_options.return_value = [
         ("gs1", "GS 1")
     ]
 
@@ -347,7 +347,7 @@ def test_plant_handler_management_schema(mock_hass, mock_config_entry) -> None:
     handler = PlantConfigHandler(mock_hass, mock_config_entry)
     coordinator = MagicMock()
 
-    coordinator.growspace_manager.get_sorted_growspace_options.return_value = [
+    coordinator._growspace_manager.get_sorted_growspace_options.return_value = [
         ("gs1", "GS 1")
     ]
     coordinator.plants = {
@@ -456,7 +456,7 @@ async def test_growspace_handler_flow_manage_init(mock_hass, mock_config_entry) 
     handler = GrowspaceConfigHandler(mock_hass, mock_config_entry)
     handler.flow = MagicMock()
     coordinator = MagicMock()
-    coordinator.growspace_manager.get_sorted_growspace_options.return_value = []
+    coordinator._growspace_manager.get_sorted_growspace_options.return_value = []
     mock_config_entry.runtime_data = coordinator
 
     result = await handler.async_step_manage_growspaces(None)

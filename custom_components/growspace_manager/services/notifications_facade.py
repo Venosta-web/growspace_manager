@@ -24,7 +24,7 @@ class NotificationsFacade:
     @property
     def manager(self) -> NotificationManager:
         """Expose the raw NotificationManager for callers that need direct access."""
-        return self._coordinator.notification_manager
+        return self._coordinator._notification_manager
 
     async def _update_options(self, options: dict[str, Any]) -> None:
         if hasattr(self._coordinator, "options"):

@@ -82,25 +82,25 @@ class GrowspaceFacade:
 
     def get_growspace(self, growspace_id: str) -> Growspace | None:
         """Return a growspace by ID."""
-        return self._coordinator.data_repository.get_growspace(growspace_id)
+        return self._coordinator._data_repository.get_growspace(growspace_id)
 
     def get_all_growspaces(self) -> dict[str, Growspace]:
         """Return all growspaces keyed by ID."""
         return {
-            gs.id: gs for gs in self._coordinator.data_repository.get_all_growspaces()
+            gs.id: gs for gs in self._coordinator._data_repository.get_all_growspaces()
         }
 
     def get_sorted_growspace_options(self) -> list[tuple[str, str]]:
         """Return a sorted list of (growspace_id, name) tuples."""
-        return self._coordinator.growspace_manager.get_sorted_growspace_options()
+        return self._coordinator._growspace_manager.get_sorted_growspace_options()
 
     def get_canonical_special(self, gs_id: str) -> tuple[str, str]:
         """Return the canonical ID and name for a special growspace."""
-        return self._coordinator.growspace_manager.get_canonical_special(gs_id)
+        return self._coordinator._growspace_manager.get_canonical_special(gs_id)
 
     async def add_growspace(self, **kwargs: Any) -> Growspace:
         """Add a new growspace and register its HA device."""
-        growspace = await self._coordinator.growspace_manager.add_growspace(**kwargs)
+        growspace = await self._coordinator._growspace_manager.add_growspace(**kwargs)
         device_registry = dr.async_get(self._coordinator.hass)
         device_registry.async_get_or_create(
             config_entry_id=self._coordinator.config_entry.entry_id,
@@ -113,7 +113,7 @@ class GrowspaceFacade:
             sw_version=VERSION,
         )
         await (
-            self._coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
+            self._coordinator._subsystem_manager.async_setup_growspace_sub_coordinators(
                 growspace.id, growspace
             )
         )
@@ -122,7 +122,7 @@ class GrowspaceFacade:
 
     async def update_growspace(self, growspace_id: str, **kwargs: Any) -> Growspace:
         """Update an existing growspace and sync its HA device name if changed."""
-        growspace = await self._coordinator.growspace_manager.update_growspace(
+        growspace = await self._coordinator._growspace_manager.update_growspace(
             growspace_id, **kwargs
         )
         if "name" in kwargs:
@@ -136,11 +136,11 @@ class GrowspaceFacade:
 
     async def remove_growspace(self, growspace_id: str) -> None:
         """Remove a growspace."""
-        await self._coordinator.growspace_manager.remove_growspace(growspace_id)
+        await self._coordinator._growspace_manager.remove_growspace(growspace_id)
 
     def ensure_special_growspace(self, *args: Any, **kwargs: Any) -> Any:
         """Ensure a special growspace exists; delegates to GrowspaceManager."""
-        return self._coordinator.growspace_manager.ensure_special_growspace(
+        return self._coordinator._growspace_manager.ensure_special_growspace(
             *args, **kwargs
         )
 
@@ -150,11 +150,11 @@ class GrowspaceFacade:
 
     def get_subareas(self, growspace_id: str) -> list[Subarea]:
         """Return all subareas for a growspace."""
-        return self._coordinator.growspace_manager.get_subareas(growspace_id)
+        return self._coordinator._growspace_manager.get_subareas(growspace_id)
 
     async def add_subarea(self, growspace_id: str, name: str) -> Any:
         """Add a named subarea to a growspace."""
-        subarea = await self._coordinator.growspace_manager.add_subarea(
+        subarea = await self._coordinator._growspace_manager.add_subarea(
             growspace_id, name
         )
         _LOGGER.info("Added subarea %s to growspace %s", name, growspace_id)
@@ -164,7 +164,7 @@ class GrowspaceFacade:
         self, growspace_id: str, subarea_id: str, environment_config: dict[str, Any]
     ) -> Any:
         """Update a subarea's environment config."""
-        result = await self._coordinator.growspace_manager.update_subarea(
+        result = await self._coordinator._growspace_manager.update_subarea(
             growspace_id, subarea_id, environment_config
         )
         _LOGGER.info("Updated subarea %s in growspace %s", subarea_id, growspace_id)
@@ -172,7 +172,7 @@ class GrowspaceFacade:
 
     async def remove_subarea(self, growspace_id: str, subarea_id: str) -> None:
         """Remove a subarea from a growspace."""
-        await self._coordinator.growspace_manager.remove_subarea(
+        await self._coordinator._growspace_manager.remove_subarea(
             growspace_id, subarea_id
         )
         _LOGGER.info("Removed subarea %s from growspace %s", subarea_id, growspace_id)
@@ -183,11 +183,11 @@ class GrowspaceFacade:
 
     def get_growspace_plants(self, growspace_id: str) -> list[Any]:
         """Return all plants in a growspace."""
-        return self._coordinator.data_repository.get_growspace_plants(growspace_id)
+        return self._coordinator._data_repository.get_growspace_plants(growspace_id)
 
     def get_growspace_grid(self, growspace_id: str) -> list[list[str | None]]:
         """Return a 2D grid of plant IDs for a growspace."""
-        return self._coordinator.data_repository.get_growspace_grid(growspace_id)
+        return self._coordinator._data_repository.get_growspace_grid(growspace_id)
 
     # -------------------------------------------------------------------------
     # Lighting
@@ -337,21 +337,21 @@ class GrowspaceFacade:
     async def _get_irrigation_coordinator(self, growspace_id: str) -> Any:
         if (
             growspace_id
-            not in self._coordinator.subsystem_manager.irrigation_coordinators
+            not in self._coordinator._subsystem_manager.irrigation_coordinators
         ):
             growspace = self._coordinator.growspaces.get(growspace_id)
             if growspace:
-                await self._coordinator.subsystem_manager.async_setup_growspace_sub_coordinators(
+                await self._coordinator._subsystem_manager.async_setup_growspace_sub_coordinators(
                     growspace_id, growspace
                 )
             if (
                 growspace_id
-                not in self._coordinator.subsystem_manager.irrigation_coordinators
+                not in self._coordinator._subsystem_manager.irrigation_coordinators
             ):
                 raise ServiceValidationError(
                     f"Growspace '{growspace_id}' not found or has no irrigation setup."
                 )
-        return self._coordinator.subsystem_manager.irrigation_coordinators[growspace_id]
+        return self._coordinator._subsystem_manager.irrigation_coordinators[growspace_id]
 
     async def water_growspace(
         self,
@@ -404,7 +404,7 @@ class GrowspaceFacade:
                 ec_delta,
                 drain_config.max_ec_delta,
             )
-            await self._coordinator.notification_manager.async_send_notification(
+            await self._coordinator._notification_manager.async_send_notification(
                 growspace_id,
                 f"⚠️ High drain EC in {growspace.name}",
                 f"Drain EC delta ({ec_delta:.2f}) exceeds threshold ({drain_config.max_ec_delta:.2f}).",
@@ -600,7 +600,7 @@ class GrowspaceFacade:
         """Trigger background validation of plants after resizing a growspace."""
         self._coordinator.config_entry.async_create_background_task(
             self._coordinator.hass,
-            self._coordinator.growspace_manager._validate_plants_after_growspace_resize(  # noqa: SLF001
+            self._coordinator._growspace_manager._validate_plants_after_growspace_resize(
                 growspace_id, new_rows, new_plants_per_row
             ),
             f"validate_plants_{growspace_id}",
@@ -612,13 +612,13 @@ class GrowspaceFacade:
 
     def get_irrigation_coordinator(self, growspace_id: str) -> Any | None:
         """Return the irrigation coordinator for a growspace, or None."""
-        return self._coordinator.subsystem_manager.irrigation_coordinators.get(
+        return self._coordinator._subsystem_manager.irrigation_coordinators.get(
             growspace_id
         )
 
     def get_dehumidifier_coordinator(self, growspace_id: str) -> Any | None:
         """Return the dehumidifier coordinator for a growspace, or None."""
-        return self._coordinator.subsystem_manager.get_dehumidifier_controller(
+        return self._coordinator._subsystem_manager.get_dehumidifier_controller(
             growspace_id
         )
 

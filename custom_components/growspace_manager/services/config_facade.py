@@ -56,13 +56,13 @@ class ConfigFacade:
     @property
     def strain_library(self) -> StrainLibrary | None:
         """Expose the StrainLibrary; callers that need deep access use this."""
-        return self._coordinator.strain_library
+        return self._coordinator._strain_library
 
     def get_strain_options(self) -> list[str]:
         """Return a sorted list of unique strain names."""
-        if not self._coordinator.strain_library:
+        if not self._coordinator._strain_library:
             return []
-        return sorted(self._coordinator.strain_library.get_all().keys())
+        return sorted(self._coordinator._strain_library.get_all().keys())
 
     def export_strain_library(self) -> list[str]:
         """Export all strains from the library."""
@@ -70,9 +70,9 @@ class ConfigFacade:
 
     async def clear_strains(self) -> int:
         """Remove all strains from the library."""
-        if not self._coordinator.strain_library:
+        if not self._coordinator._strain_library:
             return 0
-        return await self._coordinator.strain_library.clear()
+        return await self._coordinator._strain_library.clear()
 
     # -------------------------------------------------------------------------
     # EC ramp curves
@@ -81,7 +81,7 @@ class ConfigFacade:
     @property
     def ec_ramp_curves(self) -> dict[str, Any]:
         """Return all EC ramp curves keyed by curve ID."""
-        return self._coordinator.nutrient_manager.ec_ramp_curves
+        return self._coordinator._nutrient_manager.ec_ramp_curves
 
     async def save_ec_ramp_curve(
         self,
@@ -103,7 +103,7 @@ class ConfigFacade:
             )
         if name is None or points is None:
             raise TypeError("save_ec_ramp_curve() missing required arguments")
-        return await self._coordinator.nutrient_manager.async_save_ec_ramp_curve(
+        return await self._coordinator._nutrient_manager.async_save_ec_ramp_curve(
             growspace_id, name, points, curve_id
         )
 
@@ -111,7 +111,7 @@ class ConfigFacade:
         self, growspace_id: str | None, curve_id: str
     ) -> None:
         """Remove an EC ramp curve."""
-        await self._coordinator.nutrient_manager.async_remove_ec_ramp_curve(curve_id)
+        await self._coordinator._nutrient_manager.async_remove_ec_ramp_curve(curve_id)
 
     # -------------------------------------------------------------------------
     # Nutrient presets
@@ -129,7 +129,7 @@ class ConfigFacade:
         ph_target: float | None = None,
     ) -> NutrientPreset:
         """Create or update a nutrient preset."""
-        return await self._coordinator.nutrient_manager.async_save_nutrient_preset(
+        return await self._coordinator._nutrient_manager.async_save_nutrient_preset(
             name,
             nutrients,
             stage,
@@ -142,15 +142,15 @@ class ConfigFacade:
 
     async def remove_nutrient_preset(self, preset_id: str) -> None:
         """Remove a nutrient preset."""
-        await self._coordinator.nutrient_manager.async_remove_nutrient_preset(preset_id)
+        await self._coordinator._nutrient_manager.async_remove_nutrient_preset(preset_id)
 
     def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
         """Return all nutrient presets applicable to a plant."""
-        return self._coordinator.nutrient_manager.get_applicable_presets(plant_id)
+        return self._coordinator._nutrient_manager.get_applicable_presets(plant_id)
 
     def get_nutrient_serialization_data(self) -> dict[str, Any]:
         """Return serialized nutrient data for WebSocket consumers."""
-        return self._coordinator.nutrient_manager.get_serialization_data()
+        return self._coordinator._nutrient_manager.get_serialization_data()
 
     # -------------------------------------------------------------------------
     # IPM presets
@@ -191,21 +191,21 @@ class ConfigFacade:
 
     def get_inventory(self) -> Any | None:
         """Return the current nutrient inventory, or None if not configured."""
-        svc = self._coordinator.nutrient_manager.inventory_service
+        svc = self._coordinator._nutrient_manager.inventory_service
         if svc is None:
             return None
         return svc.get_inventory()
 
     def update_stock(self, **kwargs: Any) -> None:
         """Update or create a nutrient stock entry."""
-        svc = self._coordinator.nutrient_manager.inventory_service
+        svc = self._coordinator._nutrient_manager.inventory_service
         if svc is None:
             return
         svc.update_stock(**kwargs)
 
     def remove_stock(self, nutrient_id: str) -> None:
         """Remove a nutrient stock entry."""
-        svc = self._coordinator.nutrient_manager.inventory_service
+        svc = self._coordinator._nutrient_manager.inventory_service
         if svc is None:
             return
         svc.remove_stock(nutrient_id)

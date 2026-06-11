@@ -24,7 +24,7 @@ async def mock_coordinator(hass: HomeAssistant):
     coord.view_model_builder.build_data_property.return_value = {}
 
     # Initialize basic data
-    coord.data_repository.add_growspace(
+    coord._data_repository.add_growspace(
         Growspace(id="gs1", name="Growspace 1", rows=1, plants_per_row=3)
     )
     for plant in [
@@ -32,7 +32,7 @@ async def mock_coordinator(hass: HomeAssistant):
         create_plant(plant_id="p2", growspace_id="gs1", row=1, col=2, strain="Strain"),
         create_plant(plant_id="p3", growspace_id="gs1", row=1, col=3, strain="Strain"),
     ]:
-        coord.data_repository.add_plant(plant)
+        coord._data_repository.add_plant(plant)
 
     # Mock nutrient manager and inventory
     inventory = NutrientInventory()
@@ -44,7 +44,7 @@ async def mock_coordinator(hass: HomeAssistant):
             initial_ml=1000.0,
         )
     }
-    coord.nutrient_manager.load_data({}, {}, inventory)
+    coord._nutrient_manager.load_data({}, {}, inventory)
 
     try:
         yield coord
@@ -68,7 +68,7 @@ async def test_water_growspace_total_amount_deduction(
         growspace_id="gs1", amount=total_amount, nutrients=nutrients
     )
 
-    stock = mock_coordinator.nutrient_manager.inventory.stocks["n1"]
+    stock = mock_coordinator._nutrient_manager.inventory.stocks["n1"]
     assert stock.current_ml == pytest.approx(90.0)
 
     mock_coordinator.storage_manager.async_force_save.assert_awaited()
@@ -90,5 +90,5 @@ async def test_water_growspace_per_plant_compatibility(
         growspace_id="gs1", amount_per_plant=amount_per_plant, nutrients=nutrients
     )
 
-    stock = mock_coordinator.nutrient_manager.inventory.stocks["n1"]
+    stock = mock_coordinator._nutrient_manager.inventory.stocks["n1"]
     assert stock.current_ml == pytest.approx(94.0)  # 100 - 6

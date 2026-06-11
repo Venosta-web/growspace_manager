@@ -143,8 +143,8 @@ def mock_coordinator(mock_growspace):
 
     # Add missing dependencies for refactored sensor
     coordinator.services.add_event = MagicMock()
-    coordinator.notification_manager = MagicMock(spec=NotificationManager)
-    coordinator.strain_library = None
+    coordinator._notification_manager = MagicMock(spec=NotificationManager)
+    coordinator._strain_library = None
 
     return coordinator
 
@@ -180,15 +180,15 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.services.growspaces.get_growspace_plants,
         add_event=coordinator.services.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
+        notification_manager=coordinator._notification_manager,
+        strain_library=coordinator._strain_library,
         options=coordinator.options,
     )
 
     if hass is not None:
         sensor.hass = hass
         sensor.trend_analyzer = TrendAnalyzer(hass)
-        notification_manager = coordinator.notification_manager
+        notification_manager = coordinator._notification_manager
         sensor.strategy = strategy_class(
             env_config=sensor.env_config,
             analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(*args, **kwargs),

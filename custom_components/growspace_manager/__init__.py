@@ -200,7 +200,7 @@ async def async_register_sidebar_panel(
 @callback
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
     """Cancel all sub-coordinator listeners via the subsystem manager."""
-    coordinator.subsystem_manager.async_cancel_all()
+    coordinator.async_cancel_subsystems()
 
 
 @callback

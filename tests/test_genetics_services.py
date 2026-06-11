@@ -109,7 +109,7 @@ def genetics_manager() -> AsyncMock:
 def mock_coordinator(genetics_manager: AsyncMock) -> MagicMock:
     """Mock GrowspaceCoordinator exposing services.genetics facade and plants."""
     coord = MagicMock()
-    coord.genetics_manager = genetics_manager
+    coord._genetics_manager = genetics_manager
     coord.services.genetics = genetics_manager
     coord.plants = {
         "plant-donor": Plant(

@@ -127,8 +127,8 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.services.growspaces.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
+        notification_manager=coordinator._notification_manager,
+        strain_library=coordinator._strain_library,
         options=coordinator.options,
     )
 
@@ -284,7 +284,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
     entry.add_to_hass(hass)
     mock_coordinator = GrowspaceCoordinator.build(hass, entry, data={})
 
-    mock_coordinator.data_repository.add_growspace(Growspace(id="mother", name="mother"))
+    mock_coordinator._data_repository.add_growspace(Growspace(id="mother", name="mother"))
     with patch.object(
         mock_coordinator.validator, "find_first_available_position", return_value=(1, 1)
     ):
@@ -295,7 +295,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
         mock_coordinator.services.plants.add_plant = AsyncMock(return_value=mock_plant)
 
         # mock plant manager add plant if needed, but the facade handles it
-        mock_coordinator.plant_manager.add_plant = AsyncMock(return_value=mock_plant)
+        mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=mock_plant)
 
         call = MagicMock()
         call.data = {

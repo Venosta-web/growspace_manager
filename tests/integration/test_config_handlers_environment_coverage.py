@@ -52,7 +52,7 @@ def handler():
     # 2. Setup Sub-Services/Repos
     service_mock = MagicMock()
     service_mock.save = AsyncMock()  # This was missing and causing TypeErrors
-    coordinator.data_repository = service_mock
+    coordinator._data_repository = service_mock
 
     # 3. Default Growspace setup to avoid asdict() errors
     default_gs = Growspace(id="gs1", name="GS1", environment_config=EnvironmentConfig())

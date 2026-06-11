@@ -41,7 +41,7 @@ def create_test_coordinator(
 async def test_cache_invalidation_add_plant(hass: HomeAssistant) -> None:
     """Test that adding a plant invalidates the growspace cache."""
     coordinator = create_test_coordinator(hass, data={})
-    gs = await coordinator.growspace_manager.add_growspace("Test GS")
+    gs = await coordinator._growspace_manager.add_growspace("Test GS")
 
     # 1. Get initial data
     data1 = coordinator.services.growspaces.get_growspace_data(gs.id)
@@ -67,12 +67,12 @@ async def test_cache_invalidation_add_plant(hass: HomeAssistant) -> None:
 async def test_cache_invalidation_update_growspace(hass: HomeAssistant) -> None:
     """Test that updating growspace invalidates cache."""
     coordinator = create_test_coordinator(hass, data={})
-    gs = await coordinator.growspace_manager.add_growspace("Test GS")
+    gs = await coordinator._growspace_manager.add_growspace("Test GS")
 
     data1 = coordinator.services.growspaces.get_growspace_data(gs.id)
     assert data1["identity"]["name"] == "Test GS"
 
-    await coordinator.growspace_manager.update_growspace(gs.id, name="Renamed GS")
+    await coordinator._growspace_manager.update_growspace(gs.id, name="Renamed GS")
 
     data2 = coordinator.services.growspaces.get_growspace_data(gs.id)
     assert data2["identity"]["name"] == "Renamed GS"
@@ -82,7 +82,7 @@ async def test_cache_invalidation_update_growspace(hass: HomeAssistant) -> None:
 async def test_cache_invalidation_update_plant(hass: HomeAssistant) -> None:
     """Test that updating a plant invalidates cache."""
     coordinator = create_test_coordinator(hass, data={})
-    gs = await coordinator.growspace_manager.add_growspace("Test GS")
+    gs = await coordinator._growspace_manager.add_growspace("Test GS")
 
     mock_plant = create_plant(
         plant_id="p1",
@@ -95,7 +95,7 @@ async def test_cache_invalidation_update_plant(hass: HomeAssistant) -> None:
         created_at="2025-01-01",
         updated_at="2025-01-01",
     )
-    coordinator.data_repository.add_plant(mock_plant)
+    coordinator._data_repository.add_plant(mock_plant)
     # Direct manual update requires manual cache invalidation or update call
     coordinator.growspaces[gs.id].plants_per_row = 5
     coordinator.growspaces[gs.id].rows = 5

@@ -148,7 +148,7 @@ async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
     coordinator.hass = hass
     coordinator.plants = {}
     coordinator.growspaces = {}
-    coordinator.strain_library = MagicMock()
+    coordinator._strain_library = MagicMock()
     coordinator.services = ServiceFacade(coordinator)
 
     plant_id = "test_plant"
@@ -193,7 +193,7 @@ async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
 
     await coordinator.services.plants.add_timeline_note_from_call(
         hass,
-        coordinator.strain_library,
+        coordinator._strain_library,
         call,
     )
 

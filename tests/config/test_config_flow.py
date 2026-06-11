@@ -2502,7 +2502,7 @@ async def test_options_flow_edit_strain_success(
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_strain_library"
-    # mock_coordinator.strain_library.update_strain.assert_called_once() # Not implemented in snippet
+    # mock_coordinator._strain_library.update_strain.assert_called_once() # Not implemented in snippet
 
 
 @pytest.mark.asyncio

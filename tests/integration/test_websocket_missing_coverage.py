@@ -364,10 +364,10 @@ async def test_websocket_get_strain_lineage_tree_generic_error(
     """Cover generic Exception branch in websocket_get_strain_lineage_tree."""
     msg = {"id": 17, "strain_name": "OG Kush"}
     mock_coordinator = MagicMock()
-    mock_coordinator.strain_library.get_strain_lineage_tree.side_effect = RuntimeError(
+    mock_coordinator._strain_library.get_strain_lineage_tree.side_effect = RuntimeError(
         "fail"
     )
-    mock_coordinator.services.config.strain_library = mock_coordinator.strain_library
+    mock_coordinator.services.config.strain_library = mock_coordinator._strain_library
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
@@ -387,9 +387,9 @@ async def test_websocket_update_strain_lineage_tree_generic_error(
         "parents": [{"name": "A", "source": "manual"}],
     }
     mock_coordinator = MagicMock()
-    mock_coordinator.strain_library = AsyncMock()
-    mock_coordinator.services.config.strain_library = mock_coordinator.strain_library
-    mock_coordinator.strain_library.update_strain_lineage_tree.side_effect = (
+    mock_coordinator._strain_library = AsyncMock()
+    mock_coordinator.services.config.strain_library = mock_coordinator._strain_library
+    mock_coordinator._strain_library.update_strain_lineage_tree.side_effect = (
         RuntimeError("fail")
     )
     with patch(
@@ -412,9 +412,9 @@ async def test_websocket_import_strain_lineage_tree_success(
     """Cover success path in websocket_import_strain_lineage_tree."""
     msg = {"id": 19, "strain_name": "Gelato", "tree": {"name": "Gelato", "parents": []}}
     mock_coordinator = MagicMock()
-    mock_coordinator.strain_library = AsyncMock()
-    mock_coordinator.services.config.strain_library = mock_coordinator.strain_library
-    mock_coordinator.strain_library.async_import_seedfinder_lineage_tree = AsyncMock()
+    mock_coordinator._strain_library = AsyncMock()
+    mock_coordinator.services.config.strain_library = mock_coordinator._strain_library
+    mock_coordinator._strain_library.async_import_seedfinder_lineage_tree = AsyncMock()
     with patch(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
@@ -444,9 +444,9 @@ async def test_websocket_import_strain_lineage_tree_generic_error(
     """Cover generic Exception branch in websocket_import_strain_lineage_tree."""
     msg = {"id": 21, "strain_name": "Gelato", "tree": {}}
     mock_coordinator = MagicMock()
-    mock_coordinator.strain_library = AsyncMock()
-    mock_coordinator.services.config.strain_library = mock_coordinator.strain_library
-    mock_coordinator.strain_library.async_import_seedfinder_lineage_tree.side_effect = (
+    mock_coordinator._strain_library = AsyncMock()
+    mock_coordinator.services.config.strain_library = mock_coordinator._strain_library
+    mock_coordinator._strain_library.async_import_seedfinder_lineage_tree.side_effect = (
         RuntimeError("import failed")
     )
     with patch(

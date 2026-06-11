@@ -28,7 +28,7 @@ def mock_coordinator(mock_hass: MagicMock) -> MagicMock:
     coordinator = MagicMock()
     coordinator.hass = mock_hass
     coordinator.growspaces = {}
-    coordinator.notification_manager.async_send_notification = AsyncMock()
+    coordinator.services.notifications.manager.async_send_notification = AsyncMock()
     
     created_coroutines = []
 
@@ -105,8 +105,8 @@ async def test_notification_sent_when_flower_start_is_today(
         checker.schedule_growspace("tent1")
         await _run_immediate_check(mock_coordinator)
 
-    mock_coordinator.notification_manager.async_send_notification.assert_called_once()
-    _, kwargs = mock_coordinator.notification_manager.async_send_notification.call_args
+    mock_coordinator.services.notifications.manager.async_send_notification.assert_called_once()
+    _, kwargs = mock_coordinator.services.notifications.manager.async_send_notification.call_args
     assert kwargs["tier"] == NotificationTier.PHOTOPERIOD_FLIP
 
 
@@ -135,7 +135,7 @@ async def test_no_notification_when_flower_start_is_future(
         checker.schedule_growspace("tent1")
         await _run_immediate_check(mock_coordinator)
 
-    mock_coordinator.notification_manager.async_send_notification.assert_not_called()  # future
+    mock_coordinator.services.notifications.manager.async_send_notification.assert_not_called()  # future
 
 
 @pytest.mark.asyncio
@@ -163,7 +163,7 @@ async def test_no_notification_when_flower_start_is_past(
         checker.schedule_growspace("tent1")
         await _run_immediate_check(mock_coordinator)
 
-    mock_coordinator.notification_manager.async_send_notification.assert_not_called()  # past
+    mock_coordinator.services.notifications.manager.async_send_notification.assert_not_called()  # past
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +206,7 @@ async def test_message_varies_on_auto_light_tracking(
         checker.schedule_growspace("tent1")
         await _run_immediate_check(mock_coordinator)
 
-    call = mock_coordinator.notification_manager.async_send_notification.call_args
+    call = mock_coordinator.services.notifications.manager.async_send_notification.call_args
     # positional: (growspace_id, title, message, ...)
     _growspace_id, title, message = call.args[:3]
     assert expected_fragment in message
@@ -362,7 +362,7 @@ async def test_malformed_flower_start_logs_warning_and_continues(
         await _run_immediate_check(mock_coordinator)
 
     assert "Malformed flower_start" in caplog.text
-    mock_coordinator.notification_manager.async_send_notification.assert_called_once()
+    mock_coordinator.services.notifications.manager.async_send_notification.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +408,7 @@ async def test_check_growspace_plant_without_flower_start(
         checker.schedule_growspace("tent1")
         await _run_immediate_check(mock_coordinator)
 
-    mock_coordinator.notification_manager.async_send_notification.assert_not_called()
+    mock_coordinator.services.notifications.manager.async_send_notification.assert_not_called()
 
 
 @pytest.mark.asyncio
