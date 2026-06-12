@@ -246,6 +246,8 @@
         'switch.pump': 'irrigation_pump',
       }),
     }),
+    'subareas': list([
+    ]),
   })
 # ---
 # name: test_plant_view_model_snapshot

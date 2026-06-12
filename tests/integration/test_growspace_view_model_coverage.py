@@ -11,6 +11,7 @@ from custom_components.growspace_manager.models import (
     IrrigationTank,
     Plant,
     SensorGroup,
+    Subarea,
     WaterUsageData,
 )
 from custom_components.growspace_manager.presentation.growspace_view_model import (
@@ -629,3 +630,60 @@ def test_vpd_optimal_overrides_round_trips_in_environment_attributes(
 
     assert attrs["vpd_optimal_overrides"] == overrides
     assert attrs["vpd_optimal_overrides"]["flower_mid"]["day"]["low"] == 0.5
+
+
+def test_build_includes_subareas(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """The growspace payload carries subareas in the get_subareas wire shape."""
+    subarea_env = EnvironmentConfig(
+        temperature_sensors=["sensor.shelf_temp"],
+        humidity_sensors=["sensor.shelf_hum"],
+    )
+    growspace = Growspace(
+        id="gs1",
+        name="Test Room",
+        subareas=[Subarea(id="sa1", name="Veg Shelf", environment_config=subarea_env)],
+    )
+
+    result = builder.build(growspace=growspace, plants=[], biological_metrics={})
+
+    assert len(result["subareas"]) == 1
+    serialized = result["subareas"][0]
+    assert serialized["id"] == "sa1"
+    assert serialized["name"] == "Veg Shelf"
+    assert serialized["environment_config"]["temperature_sensors"] == [
+        "sensor.shelf_temp"
+    ]
+    assert serialized["environment_config"]["humidity_sensors"] == ["sensor.shelf_hum"]
+
+
+def test_build_subareas_empty_when_none_configured(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """Growspaces without subareas serialize an empty list, not a missing key."""
+    growspace = Growspace(id="gs1", name="Test Room")
+
+    result = builder.build(growspace=growspace, plants=[], biological_metrics={})
+
+    assert result["subareas"] == []
+
+
+def test_view_model_builder_serializes_subareas_for_websocket_payload(
+    hass: HomeAssistant,
+) -> None:
+    """build_serialized_growspace (the get_growspace_data path) carries subareas."""
+    gs = Growspace(
+        id="gs1",
+        name="GS1",
+        subareas=[
+            Subarea(id="sa1", name="Veg Shelf"),
+            Subarea(id="sa2", name="Flower Shelf"),
+        ],
+    )
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    assert [s["id"] for s in result["subareas"]] == ["sa1", "sa2"]
+    assert all("environment_config" in s for s in result["subareas"])
