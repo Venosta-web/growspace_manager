@@ -24,7 +24,8 @@ def calculate_crop_steering_score(
     """Calculate the crop steering score from component metrics.
 
     Args:
-        dryback_percent: Today's dryback percentage (peak - trough) / peak * 100.
+        dryback_percent: Today's dryback in absolute VWC percentage points
+            (peak - trough; a 55% -> 45% VWC drop is 10.0).
         ec_trend: EC trend direction ("rising", "falling", "stable").
         shot_count: Number of irrigation shots today (None if unknown).
 
@@ -33,14 +34,14 @@ def calculate_crop_steering_score(
     """
     score = 0.0
 
-    # Dryback component: >30% = generative, <10% = vegetative
-    if dryback_percent > 30:
+    # Dryback component (absolute VWC points): >15 = generative, <8 = vegetative
+    if dryback_percent > 20:
         score += 0.4
-    elif dryback_percent > 20:
+    elif dryback_percent > 15:
         score += 0.2
-    elif dryback_percent < 10:
+    elif dryback_percent < 5:
         score -= 0.4
-    elif dryback_percent < 15:
+    elif dryback_percent < 8:
         score -= 0.2
 
     # EC trend component
@@ -103,9 +104,9 @@ def get_crop_steering_state(
         strategy.target_vwc_percent - strategy.maintenance_dryback_percent,
     )
 
-    dryback_percent = (
-        (peak_vwc - trough_vwc) / peak_vwc * 100 if peak_vwc > 0 else 0.0
-    )
+    # Dryback is always absolute VWC points (peak - trough), never relative
+    # to the peak — the single canonical convention (see CONTEXT.md "Dryback")
+    dryback_percent = peak_vwc - trough_vwc
 
     ec_trend = "stable"
     score = calculate_crop_steering_score(dryback_percent, ec_trend)
