@@ -65,8 +65,10 @@ def mock_growspace():
         p0_duration_minutes=60,  # Ends 09:00
         target_vwc_percent=50.0,
         maintenance_dryback_percent=2.0,
-        shot_duration_seconds=10,
-        shot_interval_minutes=15,
+        p1_shot_duration_seconds=10,
+        p1_shot_interval_minutes=15,
+        p2_shot_duration_seconds=10,
+        p2_shot_interval_minutes=15,
         p2_stop_before_lights_off_minutes=120,  # Lights off 20:00 (12h default) -> Stop 18:00
     )
     return growspace
@@ -412,7 +414,7 @@ async def test_before_lights_on(vwc_coordinator, mock_hass) -> None:
 async def test_shot_interval_logic(vwc_coordinator, mock_hass) -> None:
     """Test that shots are throttled by interval."""
     strategy = vwc_coordinator._main_coordinator.growspaces["gs1"].irrigation_strategy
-    strategy.shot_interval_minutes = 15
+    strategy.p1_shot_interval_minutes = 15
 
     # 1. Fire first shot
     vwc_coordinator._last_cycle_timestamp = None
@@ -1292,15 +1294,22 @@ async def test_dynamic_shot_scaling_daily_reset(
     assert vwc_coordinator._shot_scale_factor == 1.0
 
 
+@pytest.mark.parametrize(
+    ("phase", "expected_scaled_duration"),
+    [("P1", 6), ("P2", 12)],
+)
 async def test_dynamic_shot_scaled_duration_applied(
     vwc_coordinator: VWCIrrigationCoordinator,
     mock_hass: MagicMock,
     mock_growspace: Growspace,
     mock_sleep: AsyncMock,
+    phase: str,
+    expected_scaled_duration: int,
 ) -> None:
-    """Test that scaled duration is applied to pump cycles in _handle_watering."""
+    """The VWC feedback scale factor applies to whichever phase's shot is firing."""
     strategy = mock_growspace.irrigation_strategy
-    strategy.shot_duration_seconds = 10
+    strategy.p1_shot_duration_seconds = 10
+    strategy.p2_shot_duration_seconds = 20
     vwc_coordinator._shot_scale_factor = 0.6
 
     vwc_coordinator._last_cycle_timestamp = None
@@ -1310,10 +1319,105 @@ async def test_dynamic_shot_scaled_duration_applied(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        vwc_coordinator._handle_watering(strategy, "P1")
+        vwc_coordinator._handle_watering(strategy, phase)
 
     # Await the pump task to execute
     await await_pump_task()
 
-    # Verify that sleep was called with scaled duration (10s * 0.6 = 6s)
-    mock_sleep.assert_any_call(6)
+    # Verify that sleep was called with the phase duration times the scale factor
+    mock_sleep.assert_any_call(expected_scaled_duration)
+
+
+@pytest.mark.parametrize(
+    ("phase", "expected_duration"),
+    [("P1", 7), ("P2", 13)],
+)
+async def test_per_phase_shot_duration_used(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+    mock_sleep: AsyncMock,
+    phase: str,
+    expected_duration: int,
+) -> None:
+    """P1 shots use the P1 duration and P2 shots use the P2 duration."""
+    strategy = mock_growspace.irrigation_strategy
+    strategy.p1_shot_duration_seconds = 7
+    strategy.p2_shot_duration_seconds = 13
+    vwc_coordinator._last_cycle_timestamp = None
+
+    vwc_coordinator._handle_watering(strategy, phase)
+    await await_pump_task()
+
+    mock_sleep.assert_any_call(expected_duration)
+
+
+@pytest.mark.parametrize(
+    ("phase", "expected_call_count"),
+    [("P1", 0), ("P2", 2)],
+)
+async def test_per_phase_shot_cooldown(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    mock_growspace: Growspace,
+    mock_sleep: AsyncMock,
+    phase: str,
+    expected_call_count: int,
+) -> None:
+    """The cooldown check uses the firing phase's interval.
+
+    With 10 minutes elapsed since the last shot, a P1 shot (15 min interval)
+    is throttled while a P2 shot (5 min interval) fires.
+    """
+    strategy = mock_growspace.irrigation_strategy
+    strategy.p1_shot_interval_minutes = 15
+    strategy.p2_shot_interval_minutes = 5
+
+    last_time = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._last_cycle_timestamp = last_time.isoformat()
+    current_time = datetime(2023, 1, 1, 12, 10, 0, tzinfo=dt_util.UTC)
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=current_time,
+    ):
+        vwc_coordinator._handle_watering(strategy, phase)
+
+    await await_pump_task()
+    assert mock_hass.services.async_call.call_count == expected_call_count
+
+
+@pytest.mark.parametrize(
+    ("current_phase", "expected_start"),
+    [
+        ("P1 - Ramp Up", datetime(2023, 1, 1, 9, 45, 0, tzinfo=dt_util.UTC)),
+        ("P2 - Maintenance", datetime(2023, 1, 1, 9, 55, 0, tzinfo=dt_util.UTC)),
+    ],
+)
+async def test_projected_shot_window_uses_active_phase_interval(
+    vwc_coordinator: VWCIrrigationCoordinator,
+    mock_growspace: Growspace,
+    current_phase: str,
+    expected_start: datetime,
+) -> None:
+    """The cooldown anchor uses the active phase's interval (P1 15 min, P2 25 min)."""
+    strategy = mock_growspace.irrigation_strategy
+    strategy.p1_shot_interval_minutes = 15
+    strategy.p2_shot_interval_minutes = 25
+
+    now_dt = datetime(2023, 1, 1, 9, 35, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._current_phase = current_phase
+    vwc_coordinator._last_cycle_timestamp = (
+        datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    ).isoformat()
+
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=now_dt,
+    ):
+        window = vwc_coordinator.projected_shot_window
+
+    assert window == {
+        "start": expected_start.isoformat(),
+        "end": datetime(2023, 1, 1, 18, 0, 0, tzinfo=dt_util.UTC).isoformat(),
+    }

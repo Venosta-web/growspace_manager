@@ -23,8 +23,10 @@ class MockIrrigationConfig:
     lights_on_time: str = "06:00:00"
     target_vwc_percent: float = 55.0
     p0_duration_minutes: int = 60
-    shot_duration_seconds: int = 10
-    shot_interval_minutes: int = 15
+    p1_shot_duration_seconds: int = 10
+    p1_shot_interval_minutes: int = 15
+    p2_shot_duration_seconds: int = 10
+    p2_shot_interval_minutes: int = 15
     maintenance_dryback_percent: float = 2.0
     p2_stop_before_lights_off_minutes: int = 120
     irrigation_times: list = None

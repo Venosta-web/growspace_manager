@@ -103,6 +103,24 @@ def test_set_irrigation_strategy_schema_rejects_detected_lights_on_time() -> Non
 
 
 @pytest.mark.parametrize(
+    "field_name",
+    [
+        "p1_shot_duration_seconds",
+        "p1_shot_interval_minutes",
+        "p2_shot_duration_seconds",
+        "p2_shot_interval_minutes",
+        "shot_duration_seconds",
+        "shot_interval_minutes",
+    ],
+)
+def test_set_irrigation_strategy_schema_accepts_shot_fields(field_name: str) -> None:
+    """Per-phase shot fields and the deprecated shared aliases all validate."""
+    data = {"growspace_id": "gs1", field_name: 12}
+    result = SET_IRRIGATION_STRATEGY_SCHEMA(data)
+    assert result[field_name] == 12
+
+
+@pytest.mark.parametrize(
     ("schema", "sativa", "indica"),
     [
         (ADD_STRAIN_SCHEMA, 10, 90),

@@ -1018,15 +1018,43 @@ set_irrigation_strategy:
           max: 100.0
           step: 0.1
           unit_of_measurement: "%"
+    p1_shot_duration_seconds:
+      description: Duration of a single P1 (ramp-up) irrigation shot in seconds.
+      required: false
+      selector:
+        number:
+          min: 0
+          unit_of_measurement: "seconds"
+    p1_shot_interval_minutes:
+      description: Minimum interval between P1 (ramp-up) shots in minutes.
+      required: false
+      selector:
+        number:
+          min: 0
+          unit_of_measurement: "minutes"
+    p2_shot_duration_seconds:
+      description: Duration of a single P2 (maintenance) irrigation shot in seconds.
+      required: false
+      selector:
+        number:
+          min: 0
+          unit_of_measurement: "seconds"
+    p2_shot_interval_minutes:
+      description: Minimum interval between P2 (maintenance) shots in minutes.
+      required: false
+      selector:
+        number:
+          min: 0
+          unit_of_measurement: "minutes"
     shot_duration_seconds:
-      description: Duration of a single irrigation shot in seconds.
+      description: Deprecated. Shared shot duration in seconds; sets both P1 and P2.
       required: false
       selector:
         number:
           min: 0
           unit_of_measurement: "seconds"
     shot_interval_minutes:
-      description: Minimum interval between shots in minutes.
+      description: Deprecated. Shared shot interval in minutes; sets both P1 and P2.
       required: false
       selector:
         number:

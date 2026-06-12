@@ -275,8 +275,11 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 )
             ),
             vol.Optional(
-                "shot_duration_seconds",
-                default=irrigation_options.get("shot_duration_seconds", 10),
+                "p1_shot_duration_seconds",
+                default=irrigation_options.get(
+                    "p1_shot_duration_seconds",
+                    irrigation_options.get("shot_duration_seconds", 10),
+                ),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=1,
@@ -285,8 +288,37 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 )
             ),
             vol.Optional(
-                "shot_interval_minutes",
-                default=irrigation_options.get("shot_interval_minutes", 15),
+                "p1_shot_interval_minutes",
+                default=irrigation_options.get(
+                    "p1_shot_interval_minutes",
+                    irrigation_options.get("shot_interval_minutes", 15),
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "p2_shot_duration_seconds",
+                default=irrigation_options.get(
+                    "p2_shot_duration_seconds",
+                    irrigation_options.get("shot_duration_seconds", 10),
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    unit_of_measurement="sec",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "p2_shot_interval_minutes",
+                default=irrigation_options.get(
+                    "p2_shot_interval_minutes",
+                    irrigation_options.get("shot_interval_minutes", 15),
+                ),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=1,

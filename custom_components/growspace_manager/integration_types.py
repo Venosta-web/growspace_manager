@@ -166,6 +166,12 @@ class IrrigationStrategyData(TypedDict, total=False):
     p2_stop_before_lights_off_minutes: int
     target_vwc_percent: float
     maintenance_dryback_percent: float
+    p1_shot_duration_seconds: int
+    p1_shot_interval_minutes: int
+    p2_shot_duration_seconds: int
+    p2_shot_interval_minutes: int
+    # Deprecated shared shot fields; accepted on input and mirrored on output
+    # for backward compatibility (seed both phases when per-phase keys absent).
     shot_duration_seconds: int
     shot_interval_minutes: int
     auto_light_tracking: bool
