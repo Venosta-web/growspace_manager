@@ -49,8 +49,8 @@
 
 Growspace Manager implements professional **Crop Steering** principles by adjusting watering frequency and volume to influence plant behavior:
 
-- **Vegetative Steering**: Encourages structural biomass, root growth, and node density. It employs a higher frequency of smaller irrigation events (shots) during the day, maintaining higher Volumetric Water Content (VWC) in the substrate and keeping drybacks small (e.g., 10-15%).
-- **Generative Steering**: Signals the plant to focus energy on reproductive flower and resin production. It utilizes fewer, larger watering events with a significant overnight dryback (e.g., 25-30% dryback), prompting slight osmotic stress that increases flower formation.
+- **Vegetative Steering**: Encourages structural biomass, root growth, and node density. It employs a higher frequency of smaller irrigation events (shots) during the day, maintaining higher Volumetric Water Content (VWC) in the substrate and keeping drybacks small (e.g., under 8 VWC percentage points; a 55% -> 48% drop is a 7% dryback).
+- **Generative Steering**: Signals the plant to focus energy on reproductive flower and resin production. It utilizes fewer, larger watering events with a significant overnight dryback (e.g., more than 15 VWC percentage points), prompting slight osmotic stress that increases flower formation.
 - **Balanced Steering**: A middle-ground maintenance profile designed for transition stages or stable mother environments.
 - **Runoff & Drainage Control**: Link runoff sensors and a drain pump. The integration monitors feed EC versus drain EC to calculate salt buildup, triggers the drain pump automatically post-irrigation, and alerts you if runoff volume drifts from target percentages.
 
@@ -564,7 +564,7 @@ Configures high-level Volumetric Water Content (VWC) crop-steering automation sc
 | `p0_duration_minutes`|`integer`|No | `120` | Root warmup time post-sunrise before first irrigation. |
 | `p2_stop_before_lights_off_minutes`|`integer`|No| `120`| Stop irrigating before sunset to allow overnight dryback. |
 | `target_vwc_percent`|`float` | No | `65.0` | Target VWC percentage during Phase 1 (irrigation ramp). |
-| `maintenance_dryback_percent`|`float`|No| `5.0`| Target dryback drop before triggering single maintenance shots. |
+| `maintenance_dryback_percent`|`float`|No| `5.0`| Target dryback drop (absolute VWC percentage points below target) before triggering single maintenance shots. |
 | `shot_duration_seconds`|`integer`|No | `30` | Duration of each individual steering shot (seconds). |
 | `shot_interval_minutes`|`integer`|No | `15` | Minimum rest interval between steering shots. |
 
