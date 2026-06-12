@@ -136,7 +136,11 @@ class DrainConfig(BaseModel):
 
 @dataclass(slots=True)
 class CropSteeringState(BaseModel):
-    """Tracks crop steering metrics for a growspace."""
+    """Tracks crop steering metrics for a growspace.
+
+    ``dryback_percent`` is expressed in absolute VWC percentage points
+    (peak - trough), never relative to the peak.
+    """
 
     score: float = 0.0
     dryback_percent: float = 0.0

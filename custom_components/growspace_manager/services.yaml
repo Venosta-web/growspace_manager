@@ -1010,7 +1010,7 @@ set_irrigation_strategy:
           step: 0.1
           unit_of_measurement: "%"
     maintenance_dryback_percent:
-      description: Dryback percentage threshold before maintenance shot during Phase 2.
+      description: Dryback threshold in absolute VWC percentage points below target before maintenance shot during Phase 2.
       required: false
       selector:
         number:
