@@ -63,6 +63,45 @@ The four phases of `VWCIrrigationCoordinator`'s crop-steering loop, derived each
 **Crop Steering Phase Boundaries**
 The four datetimes (`lights_on`, `p0_end`, `p2_stop`, `lights_off`) for a given calendar day that delimit the Crop Steering Phase windows. Computed by `_phase_boundary_times()` from `IrrigationStrategy.lights_on_time`/`detected_lights_on_time`, `p0_duration_minutes`, `p2_stop_before_lights_off_minutes`, and the growspace's day-length config (`flower_day_hours`/`veg_day_hours`, defaulting to 12). Returned as a `SteeringPhaseBoundaries` dataclass and used both to determine the current phase (`_determine_time_period`) and to project the next shot window (`projected_shot_window`).
 
+**Dryback**
+The decrease in substrate volumetric water content from a local peak to the following trough, always expressed in **absolute VWC percentage points** (peak − trough; a drop from 55% to 45% is a 10% dryback) — never as a ratio relative to the peak. This is the single canonical convention across backend logic, dialogs, and charts; it matches how `maintenance_dryback_percent` already behaves (P2 trigger = target − dryback) and the convention growers quote. Any formula computing dryback relative to peak is wrong.
+
+**SubstrateTracker**
+The per-growspace component that turns raw soil-moisture and pore-EC readings into measured substrate events, following the [[Tank-Derived Water Mode]] tracker precedent: fed live by the crop-steering minute loop, persisting a rolling event history on the growspace model so derived metrics survive restarts. The recorder remains chart-only — automation and analytics never query it. v1 produces three measured metrics: [[Overnight Dryback]], [[In-Cycle Dryback]]s, and the [[EC Trend]]. Field-capacity detection is explicitly deferred.
+
+**Overnight Dryback**
+The headline daily [[Dryback]]: from the settled VWC peak after the day's **last** irrigation shot to the minimum VWC before the **next** day's first shot (shot-to-shot, not clock-bounded). Lights-off/lights-on times do not bound the window — when Auto-Advance ends shots early, the dryback window starts at the last shot, hours before lights-off. On a day with zero shots, the peak falls back to the lit-period maximum.
+
+**In-Cycle Dryback**
+A micro [[Dryback]] between two consecutive P2 shots: the settled peak after one shot to the trough immediately before the next. The set of a day's In-Cycle Drybacks yields shots/day context and the average P2 dryback, and validates that the configured maintenance trigger behaves as intended.
+
+**EC Trend**
+The direction of pore EC over the current day — `rising`, `stable`, or `falling` — computed from actual pore-EC sensor readings by the [[SubstrateTracker]]. Replaces the previously hardcoded `"stable"` placeholder in the steering score.
+
+**Steering Mode**
+The grower's declared steering intent for a growspace: `vegetative`, `generative`, or `balanced`. Selecting a mode is a **preset stamp**: it applies the mode's recommended setpoints (dryback target, P1/P2 shot sizes and intervals, P2-stop offset) into the ordinary editable strategy fields, one time — the grower may tweak any field afterwards and the coordinator only ever reads the explicit fields, never the mode. The mode is also stored as the **declared intent**, so the measured steering score can be reported against it ("intended generative, substrate reads vegetative"). Distinct from the score-derived classification, which is a measurement, not a setting.
+
+**Substrate Profile**
+Per-growspace description of the growing medium: media type (`coco`, `rockwool`, `soil`) and **liters per pot**. Total substrate volume is *liters per pot × live plant count* — shot sizing is therefore constant **per-plant dosing**: when plants are removed mid-grow, total shot volume scales down automatically while each remaining plant's dose stays constant. Any live-count change that alters computed shot volume is recorded in the logbook. At zero plants the growspace has no irrigation demand: crop steering suspends shots (loop stays alive, phase reports idle).
+
+**Shot Sizing Mode**
+An explicit per-growspace choice between two ways of expressing steering shot size: **Seconds Mode** (the default, today's behavior — raw pump seconds, works with any pump and no extra config) and **Volume Mode** ([[Volume-Based Shot Sizing]], opt-in). Volume Mode is never auto-activated by the mere presence of its prerequisites; the grower switches modes deliberately. Seconds Mode is a permanently supported first-class mode, not a legacy fallback.
+
+**Volume-Based Shot Sizing**
+The professional convention for expressing irrigation shot size as a **percentage of substrate volume** (e.g. "P2 shots of 4%") rather than raw pump seconds. An opt-in [[Shot Sizing Mode]], selectable only when both a [[Substrate Profile]] and a pump flow rate are configured; the backend converts percent → ml → pump seconds. [[Steering Mode]] presets carry both percent values and seconds defaults, stamping whichever matches the active mode. P1 and P2 each have their own shot size and interval — the pair is a steering lever in its own right (fewer/larger = generative).
+
+**Sensor-Gated Capability**
+The principle governing every crop-steering feature: each capability gates on **its own minimal prerequisites** and nothing else. A VWC sensor alone enables the full phase loop, dryback tracking, and the steering score; pore-EC sensors additionally enable [[EC Trend]] and [[EC Modulation]]; flow rate + [[Substrate Profile]] additionally enable Volume Mode; drain readings enable the runoff-EC halt. A grower with partial sensors gets every feature their sensors support — no feature bundle requires the full sensor suite, and adding a capability never degrades a growspace that lacks its prerequisites.
+
+**EC Modulation**
+Opt-in, bounded adjustment of P2 shot volume driven by measured pore EC versus the [[Pore EC Target Band]]: pore EC above the band scales shots up (inducing runoff to flush), below the band scales them down (stacking EC). This is the only EC actuation in the system — there is no dosing hardware; feed EC remains hand-mixed. The modulation factor is bounded (roughly ±25%) and never overrides safety caps.
+
+**Pore EC Target Band**
+An explicit min/max pore-EC range on the irrigation strategy that [[EC Modulation]] steers toward. Stamped by [[Steering Mode]] presets (generative modes stack higher) and freely editable afterwards. Deliberately distinct from the per-stage **feed** EC target ranges (`ECTargetRange`) — pore EC legitimately runs above feed EC when stacking, so the two must never be conflated.
+
+**Shot Size Composition**
+The effective steering shot volume is `base × VWC feedback factor × EC modulation factor`, then subject to safety caps. The two factors are computed independently, may pull in opposite directions (partially cancelling — physically sensible), and are both exposed in diagnostics so any fired shot is explainable.
+
 **Dynamic VWC Steering Shot**
 An irrigation shot in the VWC crop-steering loop whose duration is dynamically adjusted (clamped between 50% and 100% of standard duration) based on the VWC feedback scale factor calculated from the substrate's response to the previous shot.
 
