@@ -270,6 +270,7 @@ class GrowspaceViewModelBuilder:
             },
             "environment": env_attrs,
             "sensors": sensors,
+            "subareas": [asdict(s) for s in growspace.subareas],
             "irrigation": {
                 "irrigation_config": irrigation_options,
                 "irrigation_strategy": irrigation_strategy_dict,
