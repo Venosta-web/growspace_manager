@@ -590,6 +590,19 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
         vol.Optional("maintenance_dryback_percent"): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=100.0)
         ),
+        vol.Optional("p1_shot_duration_seconds"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("p1_shot_interval_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("p2_shot_duration_seconds"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("p2_shot_interval_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        # Deprecated shared shot fields: still accepted, write both phases
         vol.Optional("shot_duration_seconds"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
         ),

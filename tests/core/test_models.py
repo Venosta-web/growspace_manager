@@ -662,6 +662,117 @@ def test_growspace_irrigation_strategy_legacy_nested_load() -> None:
     assert gs.irrigation_strategy.detected_lights_on_time is None
 
 
+# ---------------------------------------------------------------------------
+# IrrigationStrategy — per-phase shot duration/interval (issue 443)
+# ---------------------------------------------------------------------------
+
+
+def test_irrigation_strategy_per_phase_shot_defaults() -> None:
+    """The four per-phase shot fields default to the old shared defaults."""
+    strategy = IrrigationStrategy()
+    assert strategy.p1_shot_duration_seconds == 10
+    assert strategy.p1_shot_interval_minutes == 15
+    assert strategy.p2_shot_duration_seconds == 10
+    assert strategy.p2_shot_interval_minutes == 15
+
+
+def test_irrigation_strategy_legacy_shot_fields_seed_both_phases() -> None:
+    """Stored configs with only the legacy shared shot fields seed both phases."""
+    legacy_data = {
+        "enabled": True,
+        "shot_duration_seconds": 12,
+        "shot_interval_minutes": 20,
+    }
+    strategy = IrrigationStrategy.from_dict(legacy_data)
+    assert strategy.p1_shot_duration_seconds == 12
+    assert strategy.p2_shot_duration_seconds == 12
+    assert strategy.p1_shot_interval_minutes == 20
+    assert strategy.p2_shot_interval_minutes == 20
+
+
+def test_irrigation_strategy_per_phase_keys_win_over_legacy() -> None:
+    """Explicit per-phase values are never overwritten by the legacy keys."""
+    mixed_data = {
+        "shot_duration_seconds": 12,
+        "shot_interval_minutes": 20,
+        "p2_shot_duration_seconds": 30,
+        "p2_shot_interval_minutes": 45,
+    }
+    strategy = IrrigationStrategy.from_dict(mixed_data)
+    assert strategy.p1_shot_duration_seconds == 12
+    assert strategy.p1_shot_interval_minutes == 20
+    assert strategy.p2_shot_duration_seconds == 30
+    assert strategy.p2_shot_interval_minutes == 45
+
+
+def test_irrigation_strategy_per_phase_roundtrip() -> None:
+    """Distinct per-phase values survive a to_dict / from_dict round-trip."""
+    strategy = IrrigationStrategy(
+        p1_shot_duration_seconds=5,
+        p1_shot_interval_minutes=7,
+        p2_shot_duration_seconds=9,
+        p2_shot_interval_minutes=11,
+    )
+    restored = IrrigationStrategy.from_dict(strategy.to_dict())
+    assert restored.p1_shot_duration_seconds == 5
+    assert restored.p1_shot_interval_minutes == 7
+    assert restored.p2_shot_duration_seconds == 9
+    assert restored.p2_shot_interval_minutes == 11
+
+
+def test_irrigation_strategy_to_dict_includes_per_phase_and_legacy_mirror() -> None:
+    """to_dict() carries the per-phase fields and mirrors P1 onto the legacy keys."""
+    strategy = IrrigationStrategy(
+        p1_shot_duration_seconds=5,
+        p1_shot_interval_minutes=7,
+        p2_shot_duration_seconds=9,
+        p2_shot_interval_minutes=11,
+    )
+    d = strategy.to_dict()
+    assert d["p1_shot_duration_seconds"] == 5
+    assert d["p1_shot_interval_minutes"] == 7
+    assert d["p2_shot_duration_seconds"] == 9
+    assert d["p2_shot_interval_minutes"] == 11
+    assert d["shot_duration_seconds"] == 5
+    assert d["shot_interval_minutes"] == 7
+
+
+def test_irrigation_strategy_legacy_alias_setter_writes_both_phases() -> None:
+    """Setting the deprecated shared fields writes both phases; reads return P1."""
+    strategy = IrrigationStrategy(
+        p1_shot_duration_seconds=5,
+        p2_shot_duration_seconds=9,
+        p1_shot_interval_minutes=7,
+        p2_shot_interval_minutes=11,
+    )
+    strategy.shot_duration_seconds = 42
+    strategy.shot_interval_minutes = 33
+    assert strategy.p1_shot_duration_seconds == 42
+    assert strategy.p2_shot_duration_seconds == 42
+    assert strategy.p1_shot_interval_minutes == 33
+    assert strategy.p2_shot_interval_minutes == 33
+    assert strategy.shot_duration_seconds == 42
+    assert strategy.shot_interval_minutes == 33
+
+
+def test_growspace_legacy_shot_fields_migrate_through_nested_load() -> None:
+    """Growspace.from_dict migrates a legacy irrigation_strategy sub-dict losslessly."""
+    data = {
+        "id": "gs1",
+        "name": "Old Tent",
+        "irrigation_strategy": {
+            "enabled": True,
+            "shot_duration_seconds": 12,
+            "shot_interval_minutes": 20,
+        },
+    }
+    gs = Growspace.from_dict(data)
+    assert gs.irrigation_strategy.p1_shot_duration_seconds == 12
+    assert gs.irrigation_strategy.p2_shot_duration_seconds == 12
+    assert gs.irrigation_strategy.p1_shot_interval_minutes == 20
+    assert gs.irrigation_strategy.p2_shot_interval_minutes == 20
+
+
 # --------------------
 # CirculationFanConfig Tests
 # --------------------

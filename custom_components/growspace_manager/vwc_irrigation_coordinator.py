@@ -239,21 +239,39 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             return None
         return parse_datetime(self._last_cycle_timestamp)
 
+    @staticmethod
+    def _shot_params_for_phase(
+        strategy: IrrigationStrategy, phase: str
+    ) -> tuple[int, int]:
+        """Return the (duration_seconds, interval_minutes) pair for a steering phase.
+
+        P2 maintenance shots use the P2 pair; everything else (P1 ramp-up, and
+        P0 which collapses into P1) uses the P1 pair.
+        """
+        if phase == "P2":
+            return (
+                strategy.p2_shot_duration_seconds,
+                strategy.p2_shot_interval_minutes,
+            )
+        return (
+            strategy.p1_shot_duration_seconds,
+            strategy.p1_shot_interval_minutes,
+        )
+
     def _handle_watering(self, strategy: IrrigationStrategy, phase: str) -> None:
-        """Handle execution of a shot if interval permits."""
+        """Handle execution of a shot if the phase's interval permits."""
         now_dt = now()
+        duration, interval_minutes = self._shot_params_for_phase(strategy, phase)
 
         last_shot = self._last_shot_dt()
         if last_shot:
             elapsed = (now_dt - last_shot).total_seconds() / 60.0
-            if elapsed < strategy.shot_interval_minutes:
+            if elapsed < interval_minutes:
                 return
 
         pump_entity = self._get_pump_entity()
         if not pump_entity:
             return
-
-        duration = strategy.shot_duration_seconds
         scaled_duration = max(1, int(round(duration * self._shot_scale_factor)))
 
         _LOGGER.info(
@@ -367,7 +385,12 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         strategy = growspace.irrigation_strategy
         if not strategy or not strategy.enabled:
             return None
-        if not strategy.lights_on_time or strategy.shot_interval_minutes is None:
+
+        # Cooldown anchors on the active phase's interval: P2 maintenance uses
+        # the P2 pair, everything else the P1 pair.
+        active_phase = "P2" if self._current_phase == "P2 - Maintenance" else "P1"
+        _, interval_minutes = self._shot_params_for_phase(strategy, active_phase)
+        if not strategy.lights_on_time or interval_minutes is None:
             return None
 
         current_dt = now()
@@ -388,7 +411,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         earliest = current_dt
         last_shot = self._last_shot_dt()
         if last_shot:
-            cooldown_end = last_shot + timedelta(minutes=strategy.shot_interval_minutes)
+            cooldown_end = last_shot + timedelta(minutes=interval_minutes)
             if cooldown_end > current_dt:
                 earliest = cooldown_end
 

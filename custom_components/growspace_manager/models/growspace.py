@@ -542,8 +542,13 @@ class Growspace(BaseModel):
             int_fields = [
                 "p0_duration_minutes",
                 "p2_stop_before_lights_off_minutes",
+                # Legacy shared shot fields (migrated to per-phase on deserialize)
                 "shot_duration_seconds",
                 "shot_interval_minutes",
+                "p1_shot_duration_seconds",
+                "p1_shot_interval_minutes",
+                "p2_shot_duration_seconds",
+                "p2_shot_interval_minutes",
             ]
             for f in int_fields:
                 if f in strat:

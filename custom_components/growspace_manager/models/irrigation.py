@@ -7,7 +7,7 @@ from typing import Any
 
 import homeassistant.util.dt as dt_util
 
-from .base import BaseModel
+from .base import BaseModel, _sanitize_numeric_fields
 from .types import IrrigationScheduleItem
 
 __all__ = [
@@ -25,9 +25,27 @@ __all__ = [
 ]
 
 
+# Legacy shared shot fields and the per-phase fields they seed on migration.
+_LEGACY_SHOT_FIELD_MAP: dict[str, tuple[str, str]] = {
+    "shot_duration_seconds": (
+        "p1_shot_duration_seconds",
+        "p2_shot_duration_seconds",
+    ),
+    "shot_interval_minutes": (
+        "p1_shot_interval_minutes",
+        "p2_shot_interval_minutes",
+    ),
+}
+
+
 @dataclass(slots=True)
 class IrrigationStrategy(BaseModel):
-    """Configuration for VWC-based crop steering strategy."""
+    """Configuration for VWC-based crop steering strategy.
+
+    Shot duration and interval are configured per steering phase: P1 (ramp-up)
+    and P2 (maintenance) each carry their own pair — the P1:P2 difference is a
+    steering lever in its own right (fewer/larger shots = generative).
+    """
 
     enabled: bool = False
     lights_on_time: str = "06:00:00"
@@ -35,10 +53,64 @@ class IrrigationStrategy(BaseModel):
     p2_stop_before_lights_off_minutes: int = 120
     target_vwc_percent: float = 55.0
     maintenance_dryback_percent: float = 2.0
-    shot_duration_seconds: int = 10
-    shot_interval_minutes: int = 15
+    p1_shot_duration_seconds: int = 10
+    p1_shot_interval_minutes: int = 15
+    p2_shot_duration_seconds: int = 10
+    p2_shot_interval_minutes: int = 15
     auto_light_tracking: bool = False
     detected_lights_on_time: str | None = None
+
+    @classmethod
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Migrate legacy shared shot fields by seeding both phases.
+
+        Stored configs predating the per-phase split carry only
+        ``shot_duration_seconds`` / ``shot_interval_minutes``; those values seed
+        both phases' fields so behavior is unchanged until a user edits one.
+        Explicit per-phase values always win over the legacy keys.
+        """
+        data = data.copy()
+        for legacy_key, phase_keys in _LEGACY_SHOT_FIELD_MAP.items():
+            if legacy_key in data:
+                legacy_value = data.pop(legacy_key)
+                for phase_key in phase_keys:
+                    data.setdefault(phase_key, legacy_value)
+        return _sanitize_numeric_fields(cls, data)
+
+    @classmethod
+    def __post_serialize__(cls, d: dict[str, Any]) -> dict[str, Any]:
+        """Mirror the P1 values onto the legacy keys.
+
+        Keeps older readers (frontend card pending its per-phase update,
+        rollbacks to earlier integration versions) working until they adopt
+        the per-phase fields. Deserialization prefers the per-phase keys, so
+        the mirror is lossless.
+        """
+        d["shot_duration_seconds"] = d["p1_shot_duration_seconds"]
+        d["shot_interval_minutes"] = d["p1_shot_interval_minutes"]
+        return d
+
+    @property
+    def shot_duration_seconds(self) -> int:
+        """Deprecated alias for the shared shot duration; reads the P1 value."""
+        return self.p1_shot_duration_seconds
+
+    @shot_duration_seconds.setter
+    def shot_duration_seconds(self, value: int) -> None:
+        """Preserve legacy shared semantics by writing both phases."""
+        self.p1_shot_duration_seconds = value
+        self.p2_shot_duration_seconds = value
+
+    @property
+    def shot_interval_minutes(self) -> int:
+        """Deprecated alias for the shared shot interval; reads the P1 value."""
+        return self.p1_shot_interval_minutes
+
+    @shot_interval_minutes.setter
+    def shot_interval_minutes(self, value: int) -> None:
+        """Preserve legacy shared semantics by writing both phases."""
+        self.p1_shot_interval_minutes = value
+        self.p2_shot_interval_minutes = value
 
 
 @dataclass(slots=True)
