@@ -383,10 +383,9 @@ async def test_take_clone_with_transition_date(
     await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
     call_kwargs = mock_coordinator.services.plants.take_clones.call_args.kwargs
-    # test_date is already a datetime object from the service call, but handle_take_clone converts it.
-    # We should update test to pass date if needed or rely on converter.
-    # handle_take_clone converts it to date.
-    assert call_kwargs["transition_date"] == test_date
+    # Lifecycle Timestamp (ADR-0013): the supplied date is promoted to a
+    # midnight-local datetime, no longer truncated to a date object.
+    assert call_kwargs["transition_date"] == as_local(datetime(2024, 1, 15, 0, 0))
 
 
 @pytest.mark.asyncio
@@ -612,7 +611,8 @@ async def test_move_clone_invalid_date(
     mock_coordinator.services.plants.promote_clone.assert_called_once()
     # Logic in service: transitions invalid date string to today
     kwargs = mock_coordinator.services.plants.promote_clone.call_args_list[0].kwargs
-    assert kwargs["transition_date"] == datetime.now().date()
+    # Unparseable date falls back to now as a full datetime (ADR-0013).
+    assert kwargs["transition_date"].date() == datetime.now(UTC).date()
 
 
 @pytest.mark.asyncio
@@ -1955,8 +1955,8 @@ async def test_move_clone_default_transition_date(
     # Moving a clone calls async_promote_clone.
     mock_coordinator.services.plants.promote_clone.assert_called_once()
     kwargs = mock_coordinator.services.plants.promote_clone.call_args.kwargs
-    # Should default to today's date as date object
-    assert kwargs["transition_date"] == date.today()
+    # Defaults to now as a full datetime (ADR-0013), not a date object.
+    assert kwargs["transition_date"].date() == date.today()
 
 
 @pytest.mark.asyncio

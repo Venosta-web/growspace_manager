@@ -129,13 +129,13 @@ async def test_transition_closes_existing_history(
     assert "stage_history" in plant.to_dict()  # Wait, to_dict/asdict might be used
     history = plant.stage_history
 
-    # Verify previous item closed
+    # Verify previous item closed (Lifecycle Timestamp is a full datetime, ADR-0013)
     assert history[1]["stage"] == "veg"
-    assert history[1]["end"] == today
+    assert history[1]["end"].startswith(today)
 
     # Verify new item added
     assert history[2]["stage"] == PlantStage.FLOWER
-    assert history[2]["start"] == today
+    assert history[2]["start"].startswith(today)
     assert history[2]["end"] is None
 
 

@@ -35,7 +35,7 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
                 try:
                     # Fallback to slower, more robust parser
                     dt = parser.isoparse(date_value)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     return None
 
     if dt is None:
@@ -44,6 +44,22 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
     if dt.tzinfo is None:
         return as_local(dt)
     return dt
+
+
+def to_lifecycle_timestamp(supplied: DateInput = None) -> str:
+    """Return the ISO datetime string to store for a Lifecycle Timestamp.
+
+    The single owner of how a plant stage-start (`seedling_start … cure_start`)
+    is represented on write (see CONTEXT.md "Lifecycle Timestamp", ADR-0013).
+    A supplied value preserves its moment; ``None`` defaults to the current
+    time. Always returns a full timezone-aware ISO 8601 datetime string — never
+    a date-only value — so no write site truncates with ``.date()``. A bare
+    `date` (or a date-only string) is promoted to midnight-local.
+    """
+    parsed = parse_date_field(supplied) if supplied is not None else now()
+    if parsed is None:
+        parsed = now()
+    return parsed.isoformat()
 
 
 def calculate_days_since(start_date: DateInput, end_date: DateInput = None) -> int:
