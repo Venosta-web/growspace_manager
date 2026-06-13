@@ -122,6 +122,7 @@ def _make_coordinator(
     sensor_state: str = "45.0",
     target_vwc: float = 55.0,
     maintenance_dryback: float = 5.0,
+    declared_intent: object | None = None,
 ) -> MagicMock:
     """Build a minimal coordinator mock for crop steering tests."""
     coordinator = MagicMock()
@@ -131,6 +132,7 @@ def _make_coordinator(
     growspace.irrigation_strategy.enabled = irrigation_enabled
     growspace.irrigation_strategy.target_vwc_percent = target_vwc
     growspace.irrigation_strategy.maintenance_dryback_percent = maintenance_dryback
+    growspace.irrigation_strategy.declared_steering_mode = declared_intent
     growspace.environment_config.soil_moisture_sensor = soil_moisture_sensor
     coordinator.growspaces.get.return_value = growspace
 
@@ -313,3 +315,33 @@ class TestGetCropSteeringState:
         assert result.ec_current is None
         # neutral dryback (10.0) + unavailable EC (0) → 0.0
         assert result.score == pytest.approx(0.0)
+
+    def test_measured_classification_derived_from_score(self) -> None:
+        """The state carries the measured classification bucket for the score."""
+        # current=70 > target=55, dryback 20 → score 0.2 → balanced bucket.
+        coordinator = _make_coordinator(sensor_state="70.0", target_vwc=55.0)
+        result = get_crop_steering_state(coordinator, "tent1")
+        assert result is not None
+        assert result.measured_classification == "balanced"
+
+    def test_intent_deviation_against_declared_mode(self) -> None:
+        """Deviation compares the measurement against the declared mode."""
+        from custom_components.growspace_manager.const import SteeringMode
+
+        # Measured balanced (score 0.2) vs declared generative → more_vegetative.
+        coordinator = _make_coordinator(
+            sensor_state="70.0",
+            target_vwc=55.0,
+            declared_intent=SteeringMode.GENERATIVE,
+        )
+        result = get_crop_steering_state(coordinator, "tent1")
+        assert result is not None
+        assert result.measured_classification == "balanced"
+        assert result.intent_deviation == "more_vegetative"
+
+    def test_intent_deviation_none_when_undeclared(self) -> None:
+        """No declared intent → deviation is None."""
+        coordinator = _make_coordinator(sensor_state="45.0", target_vwc=55.0)
+        result = get_crop_steering_state(coordinator, "tent1")
+        assert result is not None
+        assert result.intent_deviation is None

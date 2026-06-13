@@ -621,6 +621,7 @@ class GrowspaceService(StrEnum):
     SET_HUMIDIFIER_CONTROL = "set_humidifier_control"
     SET_IRRIGATION_SETTINGS = "set_irrigation_settings"
     SET_IRRIGATION_STRATEGY = "set_irrigation_strategy"
+    APPLY_STEERING_MODE = "apply_steering_mode"
     ADD_IRRIGATION_TIME = "add_irrigation_time"
     REMOVE_IRRIGATION_TIME = "remove_irrigation_time"
     ADD_DRAIN_TIME = "add_drain_time"
@@ -704,6 +705,21 @@ class ShotSizingMode(StrEnum):
 
     SECONDS = "seconds"
     VOLUME = "volume"
+
+
+class SteeringMode(StrEnum):
+    """The grower's declared steering intent for a growspace.
+
+    Selecting a mode is a preset *stamp*: it writes the mode's recommended
+    setpoints into the ordinary editable strategy fields once and records the
+    mode as the declared intent. The coordinator never reads the mode — only
+    the explicit fields (see CONTEXT.md "Steering Mode", ADR-0012). Distinct
+    from the score-derived Measured Classification, which is a measurement.
+    """
+
+    VEGETATIVE = "vegetative"
+    BALANCED = "balanced"
+    GENERATIVE = "generative"
 
 
 class TrainingTechnique(StrEnum):

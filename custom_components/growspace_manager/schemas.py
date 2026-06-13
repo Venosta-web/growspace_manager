@@ -56,6 +56,7 @@ from .const import (
     ATTR_SEED_BATCH_ID,
     ATTR_SEX,
     ATTR_STAGE,
+    ATTR_STEERING_MODE,
     ATTR_STRAIN,
     ATTR_STRAIN_NAME,
     ATTR_TAGS,
@@ -112,6 +113,7 @@ from .const import (
     PLANT_STAGES,
     FanRegulationMode,
     ShotSizingMode,
+    SteeringMode,
     SubstrateMediaType,
 )
 from .validation import valid_date_or_none, valid_growspace_id
@@ -949,6 +951,13 @@ SET_EC_TARGET_RANGE_SCHEMA = vol.Schema(
         vol.Required(ATTR_STAGE): vol.In(PLANT_STAGES),
         vol.Required(ATTR_FEED_EC_MIN): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Required(ATTR_FEED_EC_MAX): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+    }
+)
+
+APPLY_STEERING_MODE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_STEERING_MODE): vol.In([m.value for m in SteeringMode]),
     }
 )
 

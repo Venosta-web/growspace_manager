@@ -444,6 +444,30 @@ class TestHandleSetIrrigationStrategy:
             await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
 
 
+class TestHandleApplySteeringMode:
+    """Tests for handle_apply_steering_mode service handler (ADR-0012)."""
+
+    @pytest.mark.asyncio
+    async def test_apply_steering_mode_routes_to_facade(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """The handler converts the mode string and delegates to the facade."""
+        from custom_components.growspace_manager.const import SteeringMode
+        from custom_components.growspace_manager.services.irrigation import (
+            handle_apply_steering_mode,
+        )
+
+        mock_coordinator.services.growspaces.apply_steering_mode = AsyncMock()
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "steering_mode": "generative"}
+
+        await handle_apply_steering_mode(mock_hass, mock_coordinator, call)
+
+        mock_coordinator.services.growspaces.apply_steering_mode.assert_awaited_once_with(
+            "gs1", SteeringMode.GENERATIVE
+        )
+
+
 class TestHandleRunIrrigationCycle:
     """Tests for handle_run_irrigation_cycle service handler (US-4)."""
 

@@ -53,18 +53,18 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         if not state:
             return {}
 
-        if state.score > 0.3:
-            mode = "generative"
-        elif state.score < -0.3:
-            mode = "vegetative"
-        else:
-            mode = "balanced"
-
         attributes: dict[str, Any] = {
             "dryback_percent": round(state.dryback_percent, 1),
             "peak_vwc": round(state.peak_vwc, 1),
             "trough_vwc": round(state.trough_vwc, 1),
-            "steering_mode": mode,
+            # Score-derived Measured Classification (a measurement). Renamed
+            # from the old ``steering_mode`` key, which now belongs to the
+            # declared-intent setting (ADR-0012). ``intent_deviation`` compares
+            # it to the declared mode (None when undeclared or no reading). The
+            # declared mode itself is read from the strategy payload's
+            # ``declared_steering_mode``, not mirrored here (one source of truth).
+            "measured_classification": state.measured_classification,
+            "intent_deviation": state.intent_deviation,
             # ec_trend is None when no pore-EC sensors are configured (or no
             # reading yet). ec_trend_available distinguishes that from a
             # measured "stable" so the card can show its unlock hint.

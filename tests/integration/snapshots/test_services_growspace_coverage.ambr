@@ -159,6 +159,7 @@
     }),
     'irrigation_strategy': dict({
       'auto_light_tracking': False,
+      'declared_steering_mode': None,
       'detected_lights_on_time': None,
       'ec_modulation_enabled': False,
       'enabled': False,

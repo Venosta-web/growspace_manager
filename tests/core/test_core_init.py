@@ -32,6 +32,7 @@ from custom_components.growspace_manager.schemas import (
     ADD_TIMELINE_NOTE_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     APPLY_IPM_SCHEMA,
+    APPLY_STEERING_MODE_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
     BATCH_ACTION_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
@@ -275,6 +276,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "configure_circulation_fan": CONFIGURE_CIRCULATION_FAN_SCHEMA,
         "set_irrigation_settings": SET_IRRIGATION_SETTINGS_SCHEMA,
         "set_irrigation_strategy": SET_IRRIGATION_STRATEGY_SCHEMA,
+        "apply_steering_mode": APPLY_STEERING_MODE_SCHEMA,
         "add_irrigation_time": ADD_IRRIGATION_TIME_SCHEMA,
         "remove_irrigation_time": REMOVE_IRRIGATION_TIME_SCHEMA,
         "add_drain_time": ADD_DRAIN_TIME_SCHEMA,
@@ -945,7 +947,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 66
+        assert mock_reg.call_count == 67
 
 
 @pytest.mark.asyncio

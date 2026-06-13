@@ -6,7 +6,7 @@ from typing import Any
 
 import voluptuous as vol
 
-from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.const import DOMAIN, SteeringMode
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.crop_steering_history import (
     CropSteeringHistoryAnalyzer,
@@ -44,6 +44,15 @@ SCHEMA_WS_GET_CROP_STEERING_HISTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.
     }
 )
 
+WS_TYPE_APPLY_STEERING_MODE = f"{DOMAIN}/apply_steering_mode"
+SCHEMA_WS_APPLY_STEERING_MODE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_APPLY_STEERING_MODE,
+        vol.Required("growspace_id"): str,
+        vol.Required("steering_mode"): vol.In([m.value for m in SteeringMode]),
+    }
+)
+
 _RANGE_CONFIG: dict[str, tuple[str, int]] = {
     "1h": ("24h", 4),
     "6h": ("24h", 24),
@@ -61,7 +70,9 @@ async def websocket_get_irrigation_analytics(
     """Return water consumption aggregated by growth stage for a growspace."""
     coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     growspace_id: str = msg["growspace_id"]
-    trackers = coordinator.services.growspaces.get_all_trackers_for_growspace(growspace_id)
+    trackers = coordinator.services.growspaces.get_all_trackers_for_growspace(
+        growspace_id
+    )
 
     combined: dict[str, float] = {}
     for tracker in trackers.values():
@@ -87,15 +98,21 @@ async def websocket_get_tank_water_history(
 
     growspace = coordinator.growspaces.get(growspace_id)
     if growspace is None:
-        connection.send_result(msg["id"], {"growspace_id": growspace_id, "range": range_key, "buckets": []})
+        connection.send_result(
+            msg["id"], {"growspace_id": growspace_id, "range": range_key, "buckets": []}
+        )
         return
 
     env = growspace.environment_config
     if env.irrigation_flow_sensors or env.drain_volume_sensors:
-        connection.send_result(msg["id"], {"growspace_id": growspace_id, "range": range_key, "buckets": []})
+        connection.send_result(
+            msg["id"], {"growspace_id": growspace_id, "range": range_key, "buckets": []}
+        )
         return
 
-    trackers = coordinator.services.growspaces.get_all_trackers_for_growspace(growspace_id)
+    trackers = coordinator.services.growspaces.get_all_trackers_for_growspace(
+        growspace_id
+    )
     history_key, bucket_count = _RANGE_CONFIG[range_key]
 
     raw_histories: list[list[dict[str, Any]]] = []
@@ -106,7 +123,9 @@ async def websocket_get_tank_water_history(
             raw_histories.append(tracker.get_history_24h()[-bucket_count:])
 
     if not raw_histories:
-        connection.send_result(msg["id"], {"growspace_id": growspace_id, "range": range_key, "buckets": []})
+        connection.send_result(
+            msg["id"], {"growspace_id": growspace_id, "range": range_key, "buckets": []}
+        )
         return
 
     buckets: list[dict[str, Any]] = []
@@ -114,7 +133,10 @@ async def websocket_get_tank_water_history(
         total = sum(h[i]["liters_consumed"] for h in raw_histories)
         buckets.append({"timestamp": slot["bucket_start"], "liters": round(total, 4)})
 
-    connection.send_result(msg["id"], {"growspace_id": growspace_id, "range": range_key, "buckets": buckets})
+    connection.send_result(
+        msg["id"],
+        {"growspace_id": growspace_id, "range": range_key, "buckets": buckets},
+    )
 
 
 @handle_ws_errors(_ERROR_MAP)
@@ -129,13 +151,34 @@ async def websocket_get_crop_steering_history(
 
     growspace = coordinator.growspaces.get(growspace_id)
     if growspace is None:
-        connection.send_error(msg["id"], "not_found", f"Growspace {growspace_id} not found")
+        connection.send_error(
+            msg["id"], "not_found", f"Growspace {growspace_id} not found"
+        )
         return
 
     analyzer = CropSteeringHistoryAnalyzer(hass)
     history = await analyzer.async_get_history(growspace)
 
     connection.send_result(msg["id"], {"growspace_id": growspace_id, **history})
+
+
+@handle_ws_errors(_ERROR_MAP)
+async def websocket_apply_steering_mode(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Stamp a Steering Mode's preset values into the strategy (ADR-0012)."""
+    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    growspace_id: str = msg["growspace_id"]
+    mode = SteeringMode(msg["steering_mode"])
+
+    await coordinator.services.growspaces.apply_steering_mode(growspace_id, mode)
+
+    connection.send_result(
+        msg["id"],
+        {"growspace_id": growspace_id, "declared_steering_mode": mode.value},
+    )
 
 
 COMMANDS: list[tuple[str, Any, Any, bool]] = [
@@ -155,6 +198,12 @@ COMMANDS: list[tuple[str, Any, Any, bool]] = [
         WS_TYPE_GET_CROP_STEERING_HISTORY,
         websocket_get_crop_steering_history,
         SCHEMA_WS_GET_CROP_STEERING_HISTORY,
+        False,
+    ),
+    (
+        WS_TYPE_APPLY_STEERING_MODE,
+        websocket_apply_steering_mode,
+        SCHEMA_WS_APPLY_STEERING_MODE,
         False,
     ),
 ]
