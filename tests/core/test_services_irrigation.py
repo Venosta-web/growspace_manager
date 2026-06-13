@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.growspace_manager.services.irrigation import (
     _get_irrigation_coordinator,
+    _validate_volume_mode_selection,
     handle_add_drain_time,
     handle_add_irrigation_time,
     handle_remove_drain_time,
@@ -623,3 +624,27 @@ class TestVolumeModeStrategyValidation:
         await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
 
         mock_coordinator.services.growspaces.set_irrigation_strategy.assert_awaited_once()
+
+    def test_incoming_flow_rate_satisfies_gate(
+        self, mock_coordinator: MagicMock
+    ) -> None:
+        """An incoming pump flow rate wins over the stored one (config-flow path).
+
+        The config-flow form sets the flow rate and the mode in one submission, so
+        the gate must evaluate the incoming value, not the (still-zero) stored one.
+        """
+        mock_coordinator.growspaces = {"gs1": self._make_growspace(6.0, 0.0)}
+
+        # No raise: incoming flow rate is positive even though stored is 0.0.
+        _validate_volume_mode_selection(
+            mock_coordinator,
+            "gs1",
+            {"shot_sizing_mode": "volume", "pump_flow_rate_ml_per_sec": 12.0},
+        )
+
+        with pytest.raises(ServiceValidationError, match="Volume Mode requires"):
+            _validate_volume_mode_selection(
+                mock_coordinator,
+                "gs1",
+                {"shot_sizing_mode": "volume", "pump_flow_rate_ml_per_sec": 0.0},
+            )

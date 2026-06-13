@@ -188,11 +188,18 @@ def _validate_volume_mode_selection(
     if growspace is None:
         return
 
-    # Effective per-pot volume: the incoming update wins over the stored profile.
+    # Effective values: an incoming update wins over the stored state for both
+    # the per-pot volume and the pump flow rate, so a single call (e.g. the
+    # config-flow form) may set the profile, the flow rate, and the mode at once.
+    # The service schema never carries ``pump_flow_rate_ml_per_sec`` (a config
+    # field), so for the service path this falls back to the stored value.
     stored_profile = growspace.irrigation_strategy.substrate_profile
     profile_update = strategy.get("substrate_profile", {})
     liters_per_pot = profile_update.get("liters_per_pot", stored_profile.liters_per_pot)
-    flow_rate = growspace.irrigation_config.pump_flow_rate_ml_per_sec
+    flow_rate = strategy.get(
+        "pump_flow_rate_ml_per_sec",
+        growspace.irrigation_config.pump_flow_rate_ml_per_sec,
+    )
 
     if liters_per_pot <= 0.0 or flow_rate <= 0.0:
         raise ServiceValidationError(

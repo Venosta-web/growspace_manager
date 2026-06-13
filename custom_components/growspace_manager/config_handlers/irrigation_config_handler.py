@@ -9,6 +9,11 @@ from typing import Any
 
 import voluptuous as vol
 
+from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
+from custom_components.growspace_manager.services.irrigation import (
+    _build_substrate_profile_update,
+    _validate_volume_mode_selection,
+)
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
@@ -88,13 +93,27 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
 
-        # Load ALL current irrigation options for the growspace from the Growspace object
-        irrigation_options = asdict(growspace.irrigation_config)
+        # Load ALL current irrigation options for the growspace. The strategy and
+        # config carry disjoint field names, so a flat merge seeds every form
+        # field from its stored value (config wins on the impossible collision).
+        # ``use_vwc_steering`` is the form's name for the strategy ``enabled`` flag.
+        irrigation_options = {
+            **asdict(growspace.irrigation_strategy),
+            **asdict(growspace.irrigation_config),
+            "use_vwc_steering": growspace.irrigation_strategy.enabled,
+        }
 
         if user_input is not None:
-            # Delegate update logic to coordinator
+            # Fold the flat substrate fields into the nested ``substrate_profile``
+            # and reject Volume Mode without its prerequisites — reusing the exact
+            # helpers the set_irrigation_strategy service uses, so the form and the
+            # service share one write path and one validation rule (ADR-0011).
+            _build_substrate_profile_update(user_input)
+            _validate_volume_mode_selection(
+                coordinator, self.flow.selected_growspace_id, user_input
+            )
             await coordinator.services.growspaces.update_irrigation_config(
-                self.flow.selected_growspace_id, **user_input
+                self.flow.selected_growspace_id, user_input
             )
 
             # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
@@ -247,6 +266,7 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, irrigation_options: dict[str, Any]
     ) -> dict[Any, Any]:
         """Build the VWC (Volumetric Water Content) crop steering schema."""
+        substrate_profile = irrigation_options.get("substrate_profile") or {}
         return {
             vol.Optional(
                 "lights_on_time",
@@ -404,4 +424,97 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 "ec_modulation_enabled",
                 default=irrigation_options.get("ec_modulation_enabled", False),
             ): selector.BooleanSelector(),
+            # Shot Sizing Mode + Substrate Profile (Volume Mode, ADR-0011).
+            # Optional/suggested_value so untouched submissions round-trip the
+            # stored values idempotently and Seconds Mode users are unaffected.
+            # The flat substrate fields are folded into the nested profile on
+            # submit by the shared _build_substrate_profile_update helper.
+            vol.Optional(
+                "shot_sizing_mode",
+                description={
+                    "suggested_value": irrigation_options.get(
+                        "shot_sizing_mode", ShotSizingMode.SECONDS.value
+                    )
+                },
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=mode.value, label=mode.value)
+                        for mode in ShotSizingMode
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                "substrate_media_type",
+                description={
+                    "suggested_value": substrate_profile.get(
+                        "media_type", SubstrateMediaType.COCO.value
+                    )
+                },
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=media.value, label=media.value)
+                        for media in SubstrateMediaType
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                "substrate_liters_per_pot",
+                description={
+                    "suggested_value": substrate_profile.get("liters_per_pot")
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    step=0.1,
+                    unit_of_measurement="L",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "pump_flow_rate_ml_per_sec",
+                description={
+                    "suggested_value": irrigation_options.get(
+                        "pump_flow_rate_ml_per_sec"
+                    )
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    step=0.1,
+                    unit_of_measurement="mL/s",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "p1_shot_volume_percent",
+                description={
+                    "suggested_value": irrigation_options.get("p1_shot_volume_percent")
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    max=100.0,
+                    step=0.1,
+                    unit_of_measurement="%",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "p2_shot_volume_percent",
+                description={
+                    "suggested_value": irrigation_options.get("p2_shot_volume_percent")
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    max=100.0,
+                    step=0.1,
+                    unit_of_measurement="%",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
         }

@@ -1,6 +1,6 @@
 """Tests for the Irrigation Config Handler."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -40,10 +40,30 @@ class MockIrrigationConfig:
 
 
 @dataclass
+class MockSubstrateProfile:
+    media_type: str = "coco"
+    liters_per_pot: float = 0.0
+
+
+@dataclass
+class MockIrrigationStrategy:
+    enabled: bool = False
+    shot_sizing_mode: str = "seconds"
+    substrate_profile: MockSubstrateProfile = field(
+        default_factory=MockSubstrateProfile
+    )
+    p1_shot_volume_percent: float = 4.0
+    p2_shot_volume_percent: float = 4.0
+
+
+@dataclass
 class MockGrowspace:
     id: str
     name: str
     irrigation_config: MockIrrigationConfig
+    irrigation_strategy: MockIrrigationStrategy = field(
+        default_factory=MockIrrigationStrategy
+    )
 
 
 @pytest.fixture
@@ -180,7 +200,7 @@ async def test_async_step_irrigation_overview_post(
     result = await handler.async_step_irrigation_overview(user_input)
     assert result["type"] == "create_entry"
     coordinator.services.growspaces.update_irrigation_config.assert_called_once_with(
-        "gs1", **user_input
+        "gs1", user_input
     )
 
 
@@ -262,5 +282,5 @@ async def test_async_step_irrigation_overview_post_new_fields(
     result = await handler.async_step_irrigation_overview(user_input)
     assert result["type"] == "create_entry"
     coordinator.services.growspaces.update_irrigation_config.assert_called_once_with(
-        "gs1", **user_input
+        "gs1", user_input
     )
