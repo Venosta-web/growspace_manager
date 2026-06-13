@@ -199,6 +199,7 @@
       'irrigation_strategy': dict({
         'auto_light_tracking': False,
         'detected_lights_on_time': None,
+        'ec_modulation_enabled': False,
         'enabled': False,
         'lights_on_time': '06:00:00',
         'maintenance_dryback_percent': 2.0,
@@ -210,6 +211,8 @@
         'p2_shot_interval_minutes': 15,
         'p2_shot_volume_percent': 4.0,
         'p2_stop_before_lights_off_minutes': 120,
+        'pore_ec_target_max': None,
+        'pore_ec_target_min': None,
         'shot_duration_seconds': 10,
         'shot_interval_minutes': 15,
         'shot_sizing_mode': 'seconds',
@@ -220,6 +223,9 @@
         'target_vwc_percent': 55.0,
       }),
       'substrate': dict({
+        'ec_trend': None,
+        'ec_trend_available': False,
+        'ec_trend_detail': None,
         'incycle_dryback_avg': None,
         'incycle_dryback_count': 0,
         'latest_overnight_event': None,

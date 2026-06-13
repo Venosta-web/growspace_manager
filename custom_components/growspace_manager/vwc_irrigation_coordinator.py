@@ -3,17 +3,23 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util.dt import now, parse_datetime
 
-from .const import PlantStage, ShotSizingMode
+from .const import (
+    EC_MODULATION_FULL_SCALE_DELTA,
+    EC_MODULATION_MAX_FACTOR,
+    EC_MODULATION_MIN_FACTOR,
+    PlantStage,
+    ShotSizingMode,
+)
 from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
 
@@ -39,6 +45,28 @@ class SteeringPhaseBoundaries:
     lights_off: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class ShotComposition:
+    """Fully-explained composition of the most recent fired steering shot.
+
+    Surfaced in diagnostics/payload so any shot is explainable end to end:
+    ``effective = base × vwc_factor × ec_factor``, then safety caps clamp the
+    delivered duration (``capped`` is True when a cap actually reduced it).
+    ``ec_modulation_available`` distinguishes "modulation off / no pore-EC
+    sensor / no reading → factor 1.0" from "within band → factor 1.0".
+    """
+
+    phase: str
+    base_seconds: int
+    vwc_factor: float
+    ec_factor: float
+    ec_modulation_available: bool
+    composed_seconds: int
+    effective_seconds: int
+    capped: bool
+    timestamp: str
+
+
 class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     """Manages VWC-based crop steering irrigation for a growspace."""
 
@@ -58,6 +86,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._target_reached_today = False
         self._last_reset_date: str | None = None
         self._shot_scale_factor = 1.0
+        # Last fired shot's full composition, exposed for diagnostics so any
+        # shot is explainable (base × VWC × EC, then caps). None until a shot
+        # has fired this session.
+        self._last_shot_composition: ShotComposition | None = None
 
         # Last computed Volume Mode shot volume (ml) and the live plant count it
         # was derived from, so a count-driven volume change can be detected
@@ -389,6 +421,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     def _handle_watering(self, strategy: IrrigationStrategy, phase: str) -> None:
         """Handle execution of a shot if the phase's interval permits."""
         now_dt = now()
+        growspace = self.growspace
         seconds_duration, interval_minutes = self._shot_params_for_phase(
             strategy, phase
         )
@@ -406,8 +439,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # Derive the BASE per-shot duration. Volume Mode converts the per-phase
         # percent-of-substrate-volume size to pump seconds via the live plant
         # count and flow rate; Seconds Mode keeps the configured seconds exactly.
-        # The base is computed BEFORE the VWC feedback scale factor (and any
-        # downstream safety caps).
+        # The base is computed BEFORE the VWC feedback and EC modulation factors
+        # (and any downstream safety caps).
         if self._volume_mode_active(strategy):
             duration = self._volume_mode_base_duration(strategy, phase)
             if duration is None:
@@ -416,15 +449,43 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         else:
             duration = seconds_duration
 
-        scaled_duration = max(1, int(round(duration * self._shot_scale_factor)))
+        # Shot Size Composition: effective = base × VWC factor × EC factor.
+        # The two factors are computed independently (they may pull opposite
+        # ways and partially cancel — physically sensible). EC modulation
+        # applies to P2 maintenance shots only (the issue's actuation point);
+        # P1 ramp-up keeps a neutral EC factor of 1.0. Safety caps are applied
+        # LAST, downstream in _run_pump_cycle, against this composed duration.
+        if phase == "P2":
+            ec_factor, ec_available = self._compute_ec_modulation(strategy, growspace)
+        else:
+            ec_factor, ec_available = 1.0, False
+        composed_factor = self._shot_scale_factor * ec_factor
+        scaled_duration = max(1, int(round(duration * composed_factor)))
+
+        # Caps are evaluated last and never exceeded: record whether they would
+        # block this composed shot so a fired (or skipped) shot is explainable.
+        capped = self._check_safety_guards(scaled_duration) is not None
+        self._last_shot_composition = ShotComposition(
+            phase=phase,
+            base_seconds=duration,
+            vwc_factor=round(self._shot_scale_factor, 3),
+            ec_factor=round(ec_factor, 3),
+            ec_modulation_available=ec_available,
+            composed_seconds=scaled_duration,
+            effective_seconds=0 if capped else scaled_duration,
+            capped=capped,
+            timestamp=now_dt.isoformat(),
+        )
 
         _LOGGER.info(
-            "Firing %s shot for growspace %s. Duration: %ss (scaled from %ss, factor: %.2f)",
+            "Firing %s shot for growspace %s. Duration: %ss "
+            "(base %ss × VWC %.2f × EC %.2f)",
             phase,
             self._growspace_id,
             scaled_duration,
             duration,
             self._shot_scale_factor,
+            ec_factor,
         )
 
         existing_task = self._running_tasks.get("irrigation")
@@ -472,6 +533,98 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         )
         lit = boundaries.lights_on <= current_dt < boundaries.lights_off
         tracker.record_reading(current_vwc, current_dt.isoformat(), lit=lit)
+
+        # Feed the averaged pore-EC reading for the daily EC trend. Absent
+        # pore-EC sensors, the trend stays unavailable (never "stable").
+        pore_ec = self._average_pore_ec(growspace)
+        if pore_ec is not None:
+            tracker.record_pore_ec(pore_ec, current_dt.isoformat())
+
+    def _average_pore_ec(self, growspace: Growspace) -> float | None:
+        """Average the configured pore-EC sensors, or None if none are usable.
+
+        Skips ``unknown``/``unavailable``/non-numeric states exactly like the
+        VWC reading path, so a partial sensor dropout still yields a value from
+        the remaining sensors and a full dropout yields None (unavailable).
+        """
+        sensors = growspace.environment_config.pore_ec_sensors
+        if not sensors:
+            return None
+        values = [
+            value
+            for sensor in sensors
+            if (value := self._get_sensor_value(sensor)) is not None
+        ]
+        if not values:
+            return None
+        return sum(values) / len(values)
+
+    def shot_composition_payload(self) -> dict[str, Any]:
+        """Return the frontend/diagnostics view of the last shot composition.
+
+        Always carries the current modulation *capability* (whether opt-in,
+        band, and a pore-EC reading are all present) plus the configured band,
+        so the card can explain modulation even before the first shot fires.
+        ``last_shot`` is None until a P2/P1 shot has fired this session.
+        """
+        growspace = self.growspace
+        strategy = growspace.irrigation_strategy
+        _, ec_available = self._compute_ec_modulation(strategy, growspace)
+        composition = self._last_shot_composition
+        return {
+            "ec_modulation_enabled": strategy.ec_modulation_enabled,
+            "ec_modulation_available": ec_available,
+            "pore_ec_target_min": strategy.pore_ec_target_min,
+            "pore_ec_target_max": strategy.pore_ec_target_max,
+            "current_vwc_factor": round(self._shot_scale_factor, 3),
+            "last_shot": asdict(composition) if composition is not None else None,
+        }
+
+    @staticmethod
+    def _ec_modulation_factor_for_reading(
+        measured_ec: float, band_min: float, band_max: float
+    ) -> float:
+        """Map a measured pore EC against the band to a bounded shot factor.
+
+        Pure helper: above the band → factor > 1.0 (flush), below → < 1.0
+        (stack), within → exactly 1.0. The response is proportional to the
+        excursion past the nearest band edge, normalised so an excursion of
+        ``EC_MODULATION_FULL_SCALE_DELTA`` saturates at the bound, then clamped
+        to ``[EC_MODULATION_MIN_FACTOR, EC_MODULATION_MAX_FACTOR]``.
+        """
+        if measured_ec > band_max:
+            excursion = measured_ec - band_max
+            span = EC_MODULATION_MAX_FACTOR - 1.0
+            factor = 1.0 + span * (excursion / EC_MODULATION_FULL_SCALE_DELTA)
+            return min(EC_MODULATION_MAX_FACTOR, factor)
+        if measured_ec < band_min:
+            excursion = band_min - measured_ec
+            span = 1.0 - EC_MODULATION_MIN_FACTOR
+            factor = 1.0 - span * (excursion / EC_MODULATION_FULL_SCALE_DELTA)
+            return max(EC_MODULATION_MIN_FACTOR, factor)
+        return 1.0
+
+    def _compute_ec_modulation(
+        self, strategy: IrrigationStrategy, growspace: Growspace
+    ) -> tuple[float, bool]:
+        """Return ``(factor, available)`` for EC modulation on a P2 shot.
+
+        ``available`` is the modulation *capability* flag: True only when the
+        feature is opted in, a valid band is configured, and a measured pore EC
+        exists. When unavailable the factor is exactly 1.0 — distinct in the
+        payload from a measured "within band → 1.0" (available True, factor 1.0).
+        """
+        if not strategy.ec_modulation_enabled:
+            return 1.0, False
+        band_min = strategy.pore_ec_target_min
+        band_max = strategy.pore_ec_target_max
+        if band_min is None or band_max is None or band_min >= band_max:
+            return 1.0, False
+        measured_ec = self._average_pore_ec(growspace)
+        if measured_ec is None:
+            return 1.0, False
+        factor = self._ec_modulation_factor_for_reading(measured_ec, band_min, band_max)
+        return factor, True
 
     def _record_substrate_shot(self, phase: str) -> None:
         """Signal a fired shot to the SubstrateTracker for dryback bounding."""

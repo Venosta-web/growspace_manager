@@ -269,6 +269,23 @@ class GrowspaceFacade:
                 growspace.irrigation_strategy.substrate_profile,
                 updated_settings["substrate_profile"],
             )
+
+        # Validate the Pore EC Target Band (min < max) using the effective
+        # post-update values so setting a single edge is checked against the
+        # already-stored other edge.
+        strategy = growspace.irrigation_strategy
+        band_min = updated_settings.get(
+            "pore_ec_target_min", strategy.pore_ec_target_min
+        )
+        band_max = updated_settings.get(
+            "pore_ec_target_max", strategy.pore_ec_target_max
+        )
+        if band_min is not None and band_max is not None and band_min >= band_max:
+            raise ServiceValidationError(
+                f"Pore EC target band invalid: min ({band_min}) must be below "
+                f"max ({band_max})"
+            )
+
         for k, v in updated_settings.items():
             if hasattr(growspace.irrigation_config, k):
                 setattr(growspace.irrigation_config, k, v)

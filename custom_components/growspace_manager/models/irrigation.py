@@ -92,6 +92,19 @@ class IrrigationStrategy(BaseModel):
     p1_shot_volume_percent: float = 4.0
     p2_shot_volume_percent: float = 4.0
 
+    # ── Pore EC Target Band + EC Modulation ─────────────────────────────────
+    # Explicit min/max pore-EC band (mS/cm) that EC Modulation steers toward.
+    # DELIBERATELY DISTINCT from the per-stage *feed* EC ranges (ECTargetRange):
+    # pore EC legitimately runs above feed EC when stacking, so the two must
+    # never be conflated (CONTEXT.md "Pore EC Target Band"). Both None => no
+    # band configured; combined with ``ec_modulation_enabled`` defaulting False,
+    # existing stored configs deserialize unchanged (modulation off, factor 1.0).
+    pore_ec_target_min: float | None = None
+    pore_ec_target_max: float | None = None
+    # Opt-in: when False (or the band/sensors are absent), EC Modulation is
+    # inert and the modulation factor is exactly 1.0.
+    ec_modulation_enabled: bool = False
+
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Migrate legacy shared shot fields by seeding both phases.
@@ -218,6 +231,18 @@ class SubstrateHistory(BaseModel):
     # Whether any shot fired during current_day (drives the zero-shot fallback).
     shots_today: int = 0
 
+    # ── Daily pore-EC trend state ───────────────────────────────────────────
+    # Day-start (earliest) and latest averaged pore-EC readings for the current
+    # local day, the inputs to the rising/stable/falling EC trend. Persisted so
+    # a mid-day restart resumes the day's baseline rather than restarting it.
+    # ``ec_trend_day`` guards the daily reset (mirrors ``current_day`` but is
+    # driven by pore-EC readings, which may arrive independently of VWC).
+    ec_trend_day: str | None = None
+    ec_day_start_value: float | None = None
+    ec_day_start_ts: str | None = None
+    ec_latest_value: float | None = None
+    ec_latest_ts: str | None = None
+
 
 @dataclass(slots=True)
 class IrrigationTank(BaseModel):
@@ -304,7 +329,14 @@ class CropSteeringState(BaseModel):
     dryback_percent: float = 0.0
     peak_vwc: float = 0.0
     trough_vwc: float = 0.0
-    ec_trend: str = "stable"
+    # Measured pore-EC trend: "rising"/"stable"/"falling" when sensors report,
+    # else None (unavailable). ``ec_trend_available`` distinguishes a measured
+    # "stable" from "no pore-EC sensors", so the card shows its unlock hint only
+    # in the latter case. ``ec_day_start``/``ec_current`` are the trend inputs.
+    ec_trend: str | None = None
+    ec_trend_available: bool = False
+    ec_day_start: float | None = None
+    ec_current: float | None = None
     last_updated: str = ""
 
 

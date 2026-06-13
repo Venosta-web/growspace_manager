@@ -65,7 +65,13 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
             "peak_vwc": round(state.peak_vwc, 1),
             "trough_vwc": round(state.trough_vwc, 1),
             "steering_mode": mode,
+            # ec_trend is None when no pore-EC sensors are configured (or no
+            # reading yet). ec_trend_available distinguishes that from a
+            # measured "stable" so the card can show its unlock hint.
             "ec_trend": state.ec_trend,
+            "ec_trend_available": state.ec_trend_available,
+            "ec_day_start": state.ec_day_start,
+            "ec_current": state.ec_current,
         }
 
         # Measured substrate metrics from the SubstrateTracker (see ADR-0010).
@@ -85,5 +91,19 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
             attributes["incycle_dryback_avg"] = (
                 round(avg, 1) if avg is not None else None
             )
+
+        # Shot Size Composition: base × VWC factor × EC modulation factor, with
+        # the configured pore-EC band and modulation capability. Surfaced here
+        # (not in the static strategy payload) because the factors are runtime
+        # state on the VWC coordinator. Absent on time-based irrigation.
+        irrigation_coord = (
+            self.coordinator.services.growspaces.get_irrigation_coordinator(
+                self._growspace_id
+            )
+        )
+        if irrigation_coord is not None and hasattr(
+            irrigation_coord, "shot_composition_payload"
+        ):
+            attributes["shot_composition"] = irrigation_coord.shot_composition_payload()
 
         return attributes
