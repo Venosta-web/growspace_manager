@@ -736,3 +736,96 @@ def test_view_model_builder_serializes_subareas_for_websocket_payload(
 
     assert [s["id"] for s in result["subareas"]] == ["sa1", "sa2"]
     assert all("environment_config" in s for s in result["subareas"])
+
+
+def test_substrate_payload_surfaces_measured_steering_readout(
+    hass: HomeAssistant,
+) -> None:
+    """The substrate block carries the measured steering readout.
+
+    Score, Measured Classification, and Intent Deviation come from the computed
+    CropSteeringState.
+    """
+    from custom_components.growspace_manager.models.irrigation import CropSteeringState
+
+    gs = Growspace(id="gs1", name="GS1")
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    state = CropSteeringState(
+        score=0.6,
+        measured_classification="generative",
+        intent_deviation="more_generative",
+    )
+    with patch(
+        "custom_components.growspace_manager.view_model_builder.get_crop_steering_state",
+        return_value=state,
+    ):
+        result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    substrate = result["irrigation"]["substrate"]
+    assert substrate["score"] == pytest.approx(0.6)
+    assert substrate["measured_classification"] == "generative"
+    assert substrate["intent_deviation"] == "more_generative"
+
+
+def test_substrate_payload_steering_readout_null_when_no_state(
+    hass: HomeAssistant,
+) -> None:
+    """Measured readout fields are present but null when no state is available.
+
+    This is the strategy-disabled / no-reading-yet case.
+    """
+    gs = Growspace(id="gs1", name="GS1")
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    with patch(
+        "custom_components.growspace_manager.view_model_builder.get_crop_steering_state",
+        return_value=None,
+    ):
+        result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    substrate = result["irrigation"]["substrate"]
+    assert substrate["score"] is None
+    assert substrate["measured_classification"] is None
+    assert substrate["intent_deviation"] is None
+
+
+def test_substrate_payload_includes_shot_composition(hass: HomeAssistant) -> None:
+    """The substrate block carries the irrigation coordinator's shot composition."""
+    gs = Growspace(id="gs1", name="GS1")
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    irr_coord = MagicMock()
+    irr_coord.active_events = {}
+    irr_coord.last_cycle_timestamp = None
+    irr_coord.next_scheduled_cycle = None
+    irr_coord.projected_shot_window = None
+    irr_coord.cycles_today = 0
+    irr_coord.volume_dispensed_today = 0.0
+    composition = {"ec_modulation_enabled": True, "last_shot": None}
+    irr_coord.shot_composition_payload.return_value = composition
+    coordinator.services.growspaces.get_irrigation_coordinator.return_value = irr_coord
+
+    with patch(
+        "custom_components.growspace_manager.view_model_builder.get_crop_steering_state",
+        return_value=None,
+    ):
+        result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    assert result["irrigation"]["substrate"]["shot_composition"] == composition
+
+
+def test_substrate_payload_shot_composition_null_without_irrigation_coordinator(
+    hass: HomeAssistant,
+) -> None:
+    """Time-based irrigation (no VWC coordinator) leaves shot_composition null."""
+    gs = Growspace(id="gs1", name="GS1")
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    with patch(
+        "custom_components.growspace_manager.view_model_builder.get_crop_steering_state",
+        return_value=None,
+    ):
+        result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    assert result["irrigation"]["substrate"]["shot_composition"] is None
