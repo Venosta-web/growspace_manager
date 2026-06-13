@@ -335,6 +335,31 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         lit = boundaries.lights_on <= current_dt < boundaries.lights_off
         tracker.record_reading(current_vwc, current_dt.isoformat(), lit=lit)
 
+        # Feed the averaged pore-EC reading for the daily EC trend. Absent
+        # pore-EC sensors, the trend stays unavailable (never "stable").
+        pore_ec = self._average_pore_ec(growspace)
+        if pore_ec is not None:
+            tracker.record_pore_ec(pore_ec, current_dt.isoformat())
+
+    def _average_pore_ec(self, growspace: Growspace) -> float | None:
+        """Average the configured pore-EC sensors, or None if none are usable.
+
+        Skips ``unknown``/``unavailable``/non-numeric states exactly like the
+        VWC reading path, so a partial sensor dropout still yields a value from
+        the remaining sensors and a full dropout yields None (unavailable).
+        """
+        sensors = growspace.environment_config.pore_ec_sensors
+        if not sensors:
+            return None
+        values = [
+            value
+            for sensor in sensors
+            if (value := self._get_sensor_value(sensor)) is not None
+        ]
+        if not values:
+            return None
+        return sum(values) / len(values)
+
     def _record_substrate_shot(self, phase: str) -> None:
         """Signal a fired shot to the SubstrateTracker for dryback bounding."""
         tracker = self._main_coordinator.services.growspaces.get_substrate_tracker(

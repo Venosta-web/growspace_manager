@@ -181,6 +181,11 @@
     ]),
     'substrate_history': dict({
       'current_day': None,
+      'ec_day_start_ts': None,
+      'ec_day_start_value': None,
+      'ec_latest_ts': None,
+      'ec_latest_value': None,
+      'ec_trend_day': None,
       'events': list([
       ]),
       'lit_period_max': None,

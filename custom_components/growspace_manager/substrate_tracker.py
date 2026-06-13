@@ -29,7 +29,11 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
-from .const import SUBSTRATE_MAX_EVENTS, SUBSTRATE_NOISE_FLOOR_PCT
+from .const import (
+    SUBSTRATE_EC_TREND_DEADBAND,
+    SUBSTRATE_MAX_EVENTS,
+    SUBSTRATE_NOISE_FLOOR_PCT,
+)
 
 if TYPE_CHECKING:
     from .models import Growspace, SubstrateHistory
@@ -60,6 +64,7 @@ class SubstrateTracker:
     Public API:
 
     * :meth:`record_reading` — feed one VWC reading from the minute loop.
+    * :meth:`record_pore_ec` — feed one averaged pore-EC reading from the loop.
     * :meth:`record_shot` — signal that a P1/P2 shot fired this tick.
     * :meth:`get_latest_overnight_dryback` — most recent overnight event, or None.
     * :meth:`get_incycle_drybacks_today` — today's in-cycle events.
@@ -208,6 +213,32 @@ class SubstrateTracker:
             ):
                 history.pending_incycle_trough = vwc
                 history.pending_incycle_trough_ts = timestamp
+
+    def record_pore_ec(self, ec: float, timestamp: str) -> None:
+        """Feed one averaged pore-EC reading for the daily EC-trend.
+
+        The first reading of a local day fixes the day-start baseline; every
+        reading updates the latest value. Comparing baseline against latest
+        (with a deadband, see :meth:`get_ec_trend`) yields the day's EC trend.
+        State is persisted on ``SubstrateHistory`` so a mid-day restart resumes
+        the same baseline instead of resetting it.
+
+        ``ec`` is the average of the configured pore-EC sensors; callers skip
+        unknown/unavailable/non-numeric sensor states before averaging, so this
+        method only ever sees a valid measured value.
+        """
+        history = self._history
+        day = _local_date(timestamp)
+
+        if history.ec_trend_day != day:
+            # New local day: re-baseline. (A sensor that drops out mid-day and
+            # returns later keeps the same baseline because the day is unchanged.)
+            history.ec_trend_day = day
+            history.ec_day_start_value = ec
+            history.ec_day_start_ts = timestamp
+
+        history.ec_latest_value = ec
+        history.ec_latest_ts = timestamp
 
     # ── day rollover ────────────────────────────────────────────────────────────
 
@@ -365,3 +396,46 @@ class SubstrateTracker:
         if latest is not None:
             return (latest["peak_vwc"], latest["trough_vwc"], latest["dryback"])
         return None
+
+    def get_ec_trend(self) -> dict[str, Any] | None:
+        """Return the current day's pore-EC trend, or None when unavailable.
+
+        Returns ``None`` when no pore-EC reading has been ingested yet (no
+        sensors configured, or none have produced a valid value today) — the
+        caller must treat this as *unavailable*, distinct from ``"stable"``, so
+        the steering score's EC component stays neutral and the payload can flag
+        the metric for the card's unlock hint.
+
+        Otherwise returns a dict with the trend direction and its inputs::
+
+            {
+                "trend": "rising" | "stable" | "falling",
+                "day_start_ec": float,   # earliest reading of the local day
+                "current_ec": float,     # latest reading
+                "delta": float,          # current - day_start (signed)
+            }
+
+        A ``delta`` whose magnitude is at or below
+        :data:`SUBSTRATE_EC_TREND_DEADBAND` reads ``"stable"`` so noise does not
+        flap the trend between rising and falling.
+        """
+        history = self._history
+        start = history.ec_day_start_value
+        current = history.ec_latest_value
+        if start is None or current is None:
+            return None
+
+        delta = round(current - start, 4)
+        if abs(delta) <= SUBSTRATE_EC_TREND_DEADBAND:
+            trend = "stable"
+        elif delta > 0:
+            trend = "rising"
+        else:
+            trend = "falling"
+
+        return {
+            "trend": trend,
+            "day_start_ec": round(start, 4),
+            "current_ec": round(current, 4),
+            "delta": delta,
+        }

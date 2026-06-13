@@ -213,6 +213,9 @@
         'target_vwc_percent': 55.0,
       }),
       'substrate': dict({
+        'ec_trend': None,
+        'ec_trend_available': False,
+        'ec_trend_detail': None,
         'incycle_dryback_avg': None,
         'incycle_dryback_count': 0,
         'latest_overnight_event': None,

@@ -54,9 +54,10 @@ class TestCalculateCropSteeringScore:
             pytest.param("rising", 0.3, id="rising"),
             pytest.param("falling", -0.3, id="falling"),
             pytest.param("stable", 0.0, id="stable"),
+            pytest.param(None, 0.0, id="unavailable-neutral"),
         ],
     )
-    def test_ec_trend_component(self, ec_trend: str, expected: float) -> None:
+    def test_ec_trend_component(self, ec_trend: str | None, expected: float) -> None:
         """EC trend direction maps to the expected score contribution."""
         score = calculate_crop_steering_score(NEUTRAL_DRYBACK, ec_trend)
         assert score == pytest.approx(expected)
@@ -223,7 +224,9 @@ class TestGetCropSteeringState:
         assert result.peak_vwc == pytest.approx(55.0)
         assert result.trough_vwc == pytest.approx(45.0)
         assert result.dryback_percent == pytest.approx(10.0)
-        assert result.ec_trend == "stable"
+        # No pore-EC sensors / tracker → trend unavailable, never "stable".
+        assert result.ec_trend is None
+        assert result.ec_trend_available is False
         assert result.score == pytest.approx(0.0)
 
     def test_peak_vwc_uses_current_when_above_target(self) -> None:
@@ -269,3 +272,44 @@ class TestGetCropSteeringState:
         assert result.dryback_percent == pytest.approx(22.0)
         # High measured dryback + few shots drives a generative score.
         assert result.score == pytest.approx(0.7)
+
+    def test_measured_ec_trend_rising_feeds_score(self) -> None:
+        """A measured rising EC trend adds +0.3 and is reported in the state."""
+        coordinator = _make_coordinator(sensor_state="45.0", target_vwc=55.0)
+        tracker = MagicMock()
+        tracker.get_measured_peak_trough.return_value = None
+        tracker.get_shot_count_today.return_value = None
+        tracker.get_ec_trend.return_value = {
+            "trend": "rising",
+            "day_start_ec": 2.0,
+            "current_ec": 2.8,
+            "delta": 0.8,
+        }
+        coordinator.services.growspaces.get_substrate_tracker.return_value = tracker
+
+        result = get_crop_steering_state(coordinator, "tent1")
+        assert result is not None
+        assert result.ec_trend == "rising"
+        assert result.ec_trend_available is True
+        assert result.ec_day_start == pytest.approx(2.0)
+        assert result.ec_current == pytest.approx(2.8)
+        # neutral dryback (10.0) + rising EC (+0.3) → 0.3
+        assert result.score == pytest.approx(0.3)
+
+    def test_unavailable_ec_trend_keeps_ec_component_neutral(self) -> None:
+        """No pore-EC sensors → trend None, unavailable, EC contributes zero."""
+        coordinator = _make_coordinator(sensor_state="45.0", target_vwc=55.0)
+        tracker = MagicMock()
+        tracker.get_measured_peak_trough.return_value = None
+        tracker.get_shot_count_today.return_value = None
+        tracker.get_ec_trend.return_value = None
+        coordinator.services.growspaces.get_substrate_tracker.return_value = tracker
+
+        result = get_crop_steering_state(coordinator, "tent1")
+        assert result is not None
+        assert result.ec_trend is None
+        assert result.ec_trend_available is False
+        assert result.ec_day_start is None
+        assert result.ec_current is None
+        # neutral dryback (10.0) + unavailable EC (0) → 0.0
+        assert result.score == pytest.approx(0.0)

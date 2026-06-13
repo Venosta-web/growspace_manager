@@ -1421,3 +1421,62 @@ async def test_projected_shot_window_uses_active_phase_interval(
         "start": expected_start.isoformat(),
         "end": datetime(2023, 1, 1, 18, 0, 0, tzinfo=dt_util.UTC).isoformat(),
     }
+
+
+def _state(value: str) -> MagicMock:
+    """Build a mock HA state with a given string state."""
+    state = MagicMock()
+    state.state = value
+    return state
+
+
+def test_average_pore_ec_no_sensors_returns_none(
+    vwc_coordinator, mock_growspace
+) -> None:
+    """With no pore-EC sensors configured the average is None (unavailable)."""
+    mock_growspace.environment_config.pore_ec_sensors = []
+    assert vwc_coordinator._average_pore_ec(mock_growspace) is None
+
+
+def test_average_pore_ec_averages_valid_sensors(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """Pore-EC sensors are averaged across their valid numeric states."""
+    mock_growspace.environment_config.pore_ec_sensors = [
+        "sensor.ec_a",
+        "sensor.ec_b",
+    ]
+    mock_hass.states.get.side_effect = lambda eid: {
+        "sensor.ec_a": _state("2.0"),
+        "sensor.ec_b": _state("3.0"),
+    }[eid]
+    assert vwc_coordinator._average_pore_ec(mock_growspace) == pytest.approx(2.5)
+
+
+def test_average_pore_ec_skips_unusable_states(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """Unavailable/unknown/non-numeric sensors are skipped before averaging."""
+    mock_growspace.environment_config.pore_ec_sensors = [
+        "sensor.ec_a",
+        "sensor.ec_b",
+        "sensor.ec_c",
+        "sensor.ec_d",
+    ]
+    mock_hass.states.get.side_effect = lambda eid: {
+        "sensor.ec_a": _state("2.0"),
+        "sensor.ec_b": _state("unavailable"),
+        "sensor.ec_c": _state("unknown"),
+        "sensor.ec_d": _state("not_a_number"),
+    }[eid]
+    # Only the single valid 2.0 reading survives.
+    assert vwc_coordinator._average_pore_ec(mock_growspace) == pytest.approx(2.0)
+
+
+def test_average_pore_ec_all_unusable_returns_none(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """A full sensor dropout yields None (unavailable), not a stale value."""
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("unavailable")
+    assert vwc_coordinator._average_pore_ec(mock_growspace) is None
