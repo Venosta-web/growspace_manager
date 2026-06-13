@@ -217,7 +217,9 @@ SCHEMA_WS_LOG_MOISTURE_READING = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exten
     {
         vol.Required("type"): WS_TYPE_LOG_MOISTURE_READING,
         vol.Required(ATTR_PLANT_ID): str,
-        vol.Required("moisture_percent"): vol.All(vol.Any(float, int), vol.Range(min=0, max=100)),
+        vol.Required("moisture_percent"): vol.All(
+            vol.Any(float, int), vol.Range(min=0, max=100)
+        ),
         vol.Optional("date"): _OPT_DATE,
     }
 )
@@ -342,7 +344,9 @@ async def websocket_add_plants(
     if growspace_id not in coordinator.growspaces:
         raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
 
-    free_row, free_col = coordinator.validator.find_first_available_position(growspace_id)
+    free_row, free_col = coordinator.validator.find_first_available_position(
+        growspace_id
+    )
     if free_row is None or free_col is None:
         raise ServiceValidationError(f"Growspace '{growspace_id}' is full")
 
@@ -371,7 +375,9 @@ async def websocket_add_plants(
         row, col = coordinator.validator.find_first_available_position(growspace_id)
         if row is None or col is None:
             _LOGGER.warning(
-                "Growspace %s full after %d plants; stopping batch", growspace_id, plants_added
+                "Growspace %s full after %d plants; stopping batch",
+                growspace_id,
+                plants_added,
             )
             break
         try:
@@ -457,9 +463,11 @@ async def websocket_harvest_plant(
     if transition_date_str:
         parsed = parse_date_field(transition_date_str)
         if parsed:
-            transition_date = parsed.date().isoformat()
+            transition_date = parsed.isoformat()
         else:
-            raise ServiceValidationError(f"Invalid transition_date: {transition_date_str}")
+            raise ServiceValidationError(
+                f"Invalid transition_date: {transition_date_str}"
+            )
 
     await coordinator.services.plants.transition_plant(
         plant_id=plant_id,
@@ -495,7 +503,7 @@ async def websocket_move_plant(
     if transition_date_str:
         parsed = parse_date_field(transition_date_str)
         if parsed:
-            transition_date = parsed.date().isoformat()
+            transition_date = parsed.isoformat()
 
     await coordinator.services.plants.transition_plant(
         plant_id=plant_id,
@@ -518,10 +526,12 @@ async def websocket_move_clone(
     target_growspace_id: str = msg[ATTR_TARGET_GROWSPACE_ID]
 
     transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
+    # Keep the full datetime (no .date() truncation): the manager's Lifecycle
+    # Timestamp seam stores it with its time preserved (ADR-0013).
     transition_date = (
-        (parse_date_field(transition_date_str) or dt_util.utcnow()).date()
+        (parse_date_field(transition_date_str) or dt_util.utcnow())
         if transition_date_str
-        else dt_util.utcnow().date()
+        else dt_util.utcnow()
     )
 
     await coordinator.services.plants.promote_clone(
@@ -566,10 +576,12 @@ async def websocket_take_clone(
         raise ServiceValidationError(f"Mother plant '{mother_plant_id}' not found")
 
     transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
+    # Keep the full datetime (no .date() truncation): the manager's Lifecycle
+    # Timestamp seam stores it with its time preserved (ADR-0013).
     transition_date = (
-        (parse_date_field(transition_date_str) or dt_util.utcnow()).date()
+        (parse_date_field(transition_date_str) or dt_util.utcnow())
         if transition_date_str
-        else dt_util.utcnow().date()
+        else dt_util.utcnow()
     )
 
     await coordinator.services.plants.take_clones(
@@ -704,9 +716,24 @@ COMMANDS: list[tuple[str, Any, Any, bool]] = [
     (WS_TYPE_SWITCH_PLANTS, websocket_switch_plants, SCHEMA_WS_SWITCH_PLANTS, False),
     (WS_TYPE_TAKE_CLONE, websocket_take_clone, SCHEMA_WS_TAKE_CLONE, False),
     (WS_TYPE_SCORE_PLANT, websocket_score_plant, SCHEMA_WS_SCORE_PLANT, False),
-    (WS_TYPE_LOG_DRYING_WEIGHT, websocket_log_drying_weight, SCHEMA_WS_LOG_DRYING_WEIGHT, False),
-    (WS_TYPE_LOG_MOISTURE_READING, websocket_log_moisture_reading, SCHEMA_WS_LOG_MOISTURE_READING, False),
+    (
+        WS_TYPE_LOG_DRYING_WEIGHT,
+        websocket_log_drying_weight,
+        SCHEMA_WS_LOG_DRYING_WEIGHT,
+        False,
+    ),
+    (
+        WS_TYPE_LOG_MOISTURE_READING,
+        websocket_log_moisture_reading,
+        SCHEMA_WS_LOG_MOISTURE_READING,
+        False,
+    ),
     (WS_TYPE_SET_VISUAL_TAG, websocket_set_visual_tag, SCHEMA_WS_SET_VISUAL_TAG, False),
-    (WS_TYPE_UPDATE_HARVEST_METRICS, websocket_update_harvest_metrics, SCHEMA_WS_UPDATE_HARVEST_METRICS, False),
+    (
+        WS_TYPE_UPDATE_HARVEST_METRICS,
+        websocket_update_harvest_metrics,
+        SCHEMA_WS_UPDATE_HARVEST_METRICS,
+        False,
+    ),
     (WS_TYPE_PRINT_LABEL, websocket_print_label, SCHEMA_WS_PRINT_LABEL, False),
 ]

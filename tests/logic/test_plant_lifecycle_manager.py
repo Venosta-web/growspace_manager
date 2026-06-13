@@ -232,6 +232,39 @@ async def test_handle_transition_logic_fallthrough(manager, repository_mock) -> 
 
 
 @pytest.mark.asyncio
+async def test_update_plant_preserves_lifecycle_datetime_time(
+    manager, repository_mock
+) -> None:
+    """update_plant stores a lifecycle datetime with its time intact (ADR-0013).
+
+    Previously DATE_FIELDS were run through format_date, truncating to date-only;
+    the time the user picked was silently discarded on the way to storage.
+    """
+    plant = Plant(plant_id="p1", growspace_id="gs1")
+    repository_mock.get_plant.return_value = plant
+
+    await manager.update_plant("p1", flower_start="2026-03-01T14:30:00+00:00")
+
+    # Stored as a full datetime string, not truncated to "2026-03-01".
+    assert "T14:30" in plant.flower_start
+
+
+@pytest.mark.asyncio
+async def test_transition_plant_stage_preserves_supplied_datetime(
+    manager, repository_mock
+) -> None:
+    """A stage transition stamps the start field with the supplied datetime's time."""
+    plant = Plant(plant_id="p1", growspace_id="gs1")
+    repository_mock.get_plant.return_value = plant
+
+    await manager.transition_plant_stage(
+        "p1", PlantStage.FLOWER, "2026-03-01T14:30:00+00:00"
+    )
+
+    assert "T14:30" in plant.flower_start
+
+
+@pytest.mark.asyncio
 async def test_remove_plant_not_found(manager, repository_mock) -> None:
     """Test remove_plant returns False when plant does not exist."""
     repository_mock.get_plant.return_value = None

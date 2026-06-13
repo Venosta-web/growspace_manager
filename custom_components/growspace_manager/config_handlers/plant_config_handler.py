@@ -40,7 +40,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 return await self.async_step_update_plant()
             if action == "remove" and user_input.get("plant_id"):
                 try:
-                    plant = coordinator.services.plants.get_plant(user_input["plant_id"])
+                    plant = coordinator.services.plants.get_plant(
+                        user_input["plant_id"]
+                    )
                     if plant:
                         await self.async_destroy_plant(plant.plant_id)
                 except Exception:
@@ -71,7 +73,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
             self.flow.selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_add_plant()
 
-        growspace_options = coordinator.services.growspaces.get_sorted_growspace_options()
+        growspace_options = (
+            coordinator.services.growspaces.get_sorted_growspace_options()
+        )
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
 
@@ -218,7 +222,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     break
 
             if growspace_id:
-                growspace_obj = coordinator.services.growspaces.get_growspace(growspace_id)
+                growspace_obj = coordinator.services.growspaces.get_growspace(
+                    growspace_id
+                )
                 rows = getattr(growspace_obj, "rows", "?")
                 plants_per_row = getattr(growspace_obj, "plants_per_row", "?")
 
@@ -289,8 +295,8 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Optional("veg_start"): selector.DateSelector(),
-                vol.Optional("flower_start"): selector.DateSelector(),
+                vol.Optional("veg_start"): selector.DateTimeSelector(),
+                vol.Optional("flower_start"): selector.DateTimeSelector(),
             }
         )
 
@@ -299,7 +305,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
     ) -> vol.Schema:
         """Build the schema for the update plant form."""
         growspace = (
-            coordinator.services.growspaces.get_growspace(plant.growspace_id) if plant else None
+            coordinator.services.growspaces.get_growspace(plant.growspace_id)
+            if plant
+            else None
         )
 
         # Ensure rows and plants_per_row are integers
@@ -353,8 +361,8 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Optional("veg_start"): selector.DateSelector(),
-                vol.Optional("flower_start"): selector.DateSelector(),
+                vol.Optional("veg_start"): selector.DateTimeSelector(),
+                vol.Optional("flower_start"): selector.DateTimeSelector(),
             }
         )
 
@@ -365,7 +373,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
-        await coordinator.services.plants.transition_plant(plant_id, wet_weight=harvest_weight)
+        await coordinator.services.plants.transition_plant(
+            plant_id, wet_weight=harvest_weight
+        )
 
     async def async_destroy_plant(self, plant_id: str) -> None:
         """Destroy a plant."""

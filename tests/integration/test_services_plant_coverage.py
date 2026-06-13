@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import Plant, PlantGenetics
@@ -325,17 +326,19 @@ async def test_convenience_methods(service, repository_mock) -> None:
     with patch.object(
         service, "transition_plant_stage", return_value=None
     ) as mock_trans:
+        # Convenience methods no longer pass an explicit date — the transition
+        # seam defaults to now() with its time (ADR-0013).
         await service.start_flowering("p1")
-        mock_trans.assert_called_with("p1", "flower", date.today())
+        mock_trans.assert_called_with("p1", PlantStage.FLOWER)
 
         await service.start_drying("p1")
-        mock_trans.assert_called_with("p1", "dry", date.today())
+        mock_trans.assert_called_with("p1", PlantStage.DRY)
 
         await service.start_curing("p1")
-        mock_trans.assert_called_with("p1", "cure", date.today())
+        mock_trans.assert_called_with("p1", PlantStage.CURE)
 
         await service.harvest("p1")
-        mock_trans.assert_called_with("p1", "dry", date.today())
+        mock_trans.assert_called_with("p1", PlantStage.DRY)
 
 
 @pytest.mark.asyncio

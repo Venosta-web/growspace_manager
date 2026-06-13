@@ -151,7 +151,9 @@ async def test_async_create_mum(coordinator: GrowspaceCoordinator) -> None:
             "Pheno1", "StrainC", 1, 1, start_time_date
         )
 
-    assert mother.mother_start == start_time_iso
+    # Lifecycle Timestamp (ADR-0013): a supplied date is stored as a midnight
+    # datetime; the date portion matches the supplied value.
+    assert mother.mother_start.startswith(start_time_iso)
     assert mother.plant_id in coordinator.plants
     assert mother.type == "mother"
     assert mother.strain == "StrainC"
@@ -190,7 +192,7 @@ async def test_async_take_clones(coordinator: GrowspaceCoordinator) -> None:
         assert clone.stage == "clone"
         assert clone.source_mother == mother.plant_id
         assert clone.strain == mother.strain
-        assert clone.clone_start == clone_time_iso
+        assert clone.clone_start.startswith(clone_time_iso)
 
 
 @pytest.mark.asyncio
@@ -987,7 +989,7 @@ async def test_async_transition_clone_to_veg(coordinator: GrowspaceCoordinator) 
     clone = coordinator.plants[clone_id]
     assert clone.stage == PlantStage.VEG
     assert clone.growspace_id == "veg"
-    assert clone.veg_start == "2025-11-03"
+    assert clone.veg_start.startswith("2025-11-03")
 
     coordinator.async_commit.assert_awaited()
 
@@ -1050,7 +1052,7 @@ async def test_async_start_flowering(coordinator: GrowspaceCoordinator) -> None:
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
     assert updated_plant.stage == PlantStage.FLOWER
-    assert updated_plant.flower_start == date.today().isoformat()
+    assert updated_plant.flower_start.startswith(date.today().isoformat())
     assert updated_plant.updated_at == date.today().isoformat()
 
 
@@ -1067,7 +1069,7 @@ async def test_async_start_drying(coordinator: GrowspaceCoordinator) -> None:
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
     assert updated_plant.stage == PlantStage.DRY
-    assert updated_plant.dry_start == date.today().isoformat()
+    assert updated_plant.dry_start.startswith(date.today().isoformat())
     assert updated_plant.updated_at == date.today().isoformat()
 
 
@@ -1084,7 +1086,9 @@ async def test_async_start_curing(coordinator: GrowspaceCoordinator) -> None:
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
     assert updated_plant.stage == PlantStage.CURE
-    assert updated_plant.cure_start == date.today().isoformat()
+    # Lifecycle Timestamp (ADR-0013): cure_start is a full datetime; the date
+    # portion is today.
+    assert updated_plant.cure_start.startswith(date.today().isoformat())
     assert updated_plant.updated_at == date.today().isoformat()
 
 
@@ -1101,7 +1105,7 @@ async def test_async_harvest(coordinator: GrowspaceCoordinator) -> None:
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
     assert updated_plant.stage == PlantStage.DRY
-    assert updated_plant.dry_start == date.today().isoformat()
+    assert updated_plant.dry_start.startswith(date.today().isoformat())
     assert updated_plant.updated_at == date.today().isoformat()
 
 
@@ -1215,7 +1219,9 @@ async def test_async_transition_plant_auto_flow_to_cure(
     assert updated_plant is not None
     assert updated_plant.growspace_id == "cure"
     assert updated_plant.stage == PlantStage.CURE
-    assert updated_plant.cure_start == date.today().isoformat()
+    # Lifecycle Timestamp (ADR-0013): cure_start is a full datetime; the date
+    # portion is today.
+    assert updated_plant.cure_start.startswith(date.today().isoformat())
 
 
 @pytest.mark.asyncio
@@ -1691,8 +1697,10 @@ async def test_handle_transition_logic_explicit_target(hass: HomeAssistant) -> N
             transition_date="2025-01-01",
         )
 
+        # transition_plant promotes the date to a datetime via the Lifecycle
+        # Timestamp seam before delegating (ADR-0013).
         mock_harvest.assert_awaited_once_with(
-            "p1", plant, "target_gs", "Target GS", "2025-01-01"
+            "p1", plant, "target_gs", "Target GS", "2025-01-01T00:00:00+00:00"
         )
 
 
@@ -1714,7 +1722,9 @@ async def test_handle_transition_logic_auto_flow(hass: HomeAssistant) -> None:
             "p1", transition_date="2025-01-01"
         )
 
-        mock_auto.assert_awaited_once_with("p1", plant, None, "2025-01-01")
+        mock_auto.assert_awaited_once_with(
+            "p1", plant, None, "2025-01-01T00:00:00+00:00"
+        )
 
 
 @pytest.mark.asyncio

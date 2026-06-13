@@ -14,6 +14,9 @@ An individual cannabis plant tracked from seedling through cure. The atomic unit
 **PlantStage**
 The lifecycle phase of a Plant. Ordered stages: `seedling → clone → mother → veg → flower → dry → cure`. The `dry` and `cure` stages are fully-fledged lifecycle stages, not post-harvest metadata.
 
+**Lifecycle Timestamp**
+The recorded moment a Plant entered a stage: the `seedling_start`, `mother_start`, `clone_start`, `veg_start`, `flower_start`, `dry_start`, `cure_start` fields on `Plant`. Represented end-to-end as a timezone-aware **ISO 8601 datetime string** (date *and* time), never date-only — see [[ADR-0013]]. The model fields are typed `str | None` and store the ISO string; readers normalise via `parse_date_field` (which promotes any legacy date-only value to midnight-local on read). All write sites — create, stage transitions, cloning, WebSocket update — route through the `to_lifecycle_timestamp()` writer in `domain/date_logic.py`, the single owner of the representation: it preserves a supplied time or defaults to `dt_util.now()` and always returns an ISO string. Distinct from `WeightEntry`/`MoistureEntry` `date` fields (drying observations), which remain date-only.
+
 **Photoperiod Flip**
 The calendar day on which a Plant transitions from vegetative to flower stage — specifically, the day `flower_start == today`. The grower must change the light schedule to 12 hours on this day. When `IrrigationStrategy.auto_light_tracking` is enabled on the growspace, the integration will auto-adapt the light schedule from sensor data; otherwise the grower must update it manually. A notification is sent once per day per growspace when any plant's Photoperiod Flip day arrives.
 

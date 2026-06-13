@@ -400,7 +400,7 @@ async def test_harvest_plant_success_with_valid_transition_date(
     ):
         await websocket_harvest_plant(hass, mock_connection, msg)
     call_kwargs = mock_coordinator.services.plants.transition_plant.call_args[1]
-    assert call_kwargs["transition_date"] == "2026-01-10"
+    assert call_kwargs["transition_date"] == _FIXED_DT.isoformat()
 
 
 async def test_harvest_plant_invalid_transition_date_sends_error(
@@ -460,7 +460,7 @@ async def test_move_clone_success_with_transition_date(
     mock_coordinator.services.plants.promote_clone.assert_awaited_once_with(
         clone_id="clone1",
         target_growspace_id="veg",
-        transition_date=_FIXED_DT.date(),
+        transition_date=_FIXED_DT,
     )
     mock_connection.send_result.assert_called_once_with(40)
 
@@ -475,7 +475,7 @@ async def test_move_clone_success_no_transition_date_uses_utcnow(
     ):
         await websocket_move_clone(hass, mock_connection, msg)
     call_kwargs = mock_coordinator.services.plants.promote_clone.call_args[1]
-    assert call_kwargs["transition_date"] == _FIXED_NOW.date()
+    assert call_kwargs["transition_date"] == _FIXED_NOW
 
 
 async def test_move_clone_unparseable_date_falls_back_to_utcnow(
@@ -492,7 +492,7 @@ async def test_move_clone_unparseable_date_falls_back_to_utcnow(
     ):
         await websocket_move_clone(hass, mock_connection, msg)
     call_kwargs = mock_coordinator.services.plants.promote_clone.call_args[1]
-    assert call_kwargs["transition_date"] == _FIXED_NOW.date()
+    assert call_kwargs["transition_date"] == _FIXED_NOW
 
 
 @pytest.mark.parametrize("error", [GrowspaceError("bad"), ValueError("bad")])
@@ -538,7 +538,7 @@ async def test_take_clone_success(
         mother_plant_id="mother1",
         num_clones=1,
         target_growspace_id=None,
-        transition_date=_FIXED_NOW.date(),
+        transition_date=_FIXED_NOW,
     )
     mock_connection.send_result.assert_called_once_with(50)
 
@@ -819,7 +819,7 @@ async def test_move_plant_with_valid_transition_date(
     ):
         await websocket_move_plant(hass, mock_connection, msg)
     call_kwargs = mock_coordinator.services.plants.transition_plant.call_args[1]
-    assert call_kwargs["transition_date"] == "2026-01-10"
+    assert call_kwargs["transition_date"] == _FIXED_DT.isoformat()
     mock_connection.send_result.assert_called_once_with(82)
 
 

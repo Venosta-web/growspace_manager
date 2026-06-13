@@ -33,6 +33,7 @@ from custom_components.growspace_manager.exceptions import (
     PlantNotFoundError,
     ValidationChangeError,
 )
+from custom_components.growspace_manager.integration_types import DateInput
 from custom_components.growspace_manager.models import (
     GrowspaceEvent,
     Plant,
@@ -42,7 +43,10 @@ from custom_components.growspace_manager.services.context import (
     BaseService,
     ServiceContext,
 )
-from custom_components.growspace_manager.utils import calculate_plant_stage, format_date
+from custom_components.growspace_manager.utils import (
+    calculate_plant_stage,
+    to_lifecycle_timestamp,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -143,7 +147,13 @@ class PlantManager(BaseService):
             date_fields = {}
             for field in DATE_FIELDS:
                 if field in kwargs:
-                    date_fields[field] = format_date(kwargs[field])
+                    # Lifecycle Timestamp: store full datetime, never date-only
+                    # (ADR-0013). None stays None (field absent/cleared) — only a
+                    # real value is promoted to a datetime string.
+                    value = kwargs[field]
+                    date_fields[field] = (
+                        to_lifecycle_timestamp(value) if value is not None else None
+                    )
 
             final_plant_id = plant_id or str(uuid.uuid4())
 
@@ -200,7 +210,10 @@ class PlantManager(BaseService):
 
             for key in DATE_FIELDS:
                 if key in updates:
-                    updates[key] = format_date(updates[key])
+                    # Lifecycle Timestamp: store full datetime, never date-only
+                    # (ADR-0013). None means "clear the field", so it is left as-is.
+                    if updates[key] is not None:
+                        updates[key] = to_lifecycle_timestamp(updates[key])
 
             # Handle genetics updates
             if "strain" in updates:
@@ -330,7 +343,7 @@ class PlantManager(BaseService):
         # I used 'plant_type' in add_plant signature above.
 
         if mother_start is None:
-            mother_start = dt_util.now().date()
+            mother_start = dt_util.now()
 
         # Override plant_type via kwargs?
         # The add_plant signature has plant_type="normal".
@@ -372,7 +385,7 @@ class PlantManager(BaseService):
 
         new_plants: list[Plant] = []
         if transition_date is None:
-            transition_date = dt_util.now().date()
+            transition_date = dt_util.now()
 
         for _ in range(num_clones):
             # This logic was in Service calling Lifecycle.handle_clone_creation.
@@ -422,7 +435,7 @@ class PlantManager(BaseService):
         self,
         plant_id: str,
         new_stage: str | PlantStage,
-        transition_date: date | None = None,
+        transition_date: DateInput = None,
     ) -> None:
         """Execute a plant stage transition."""
         if isinstance(new_stage, PlantStage):
@@ -431,12 +444,8 @@ class PlantManager(BaseService):
         if new_stage not in PLANT_STAGES:
             raise ValidationChangeError(f"Invalid stage: {new_stage}")
 
-        transition_date_obj = transition_date or dt_util.now().date()
-        trans_date_str = (
-            transition_date_obj.isoformat()
-            if hasattr(transition_date_obj, "isoformat")
-            else str(transition_date_obj)
-        )
+        # Lifecycle Timestamp: preserve a supplied time, default to now (ADR-0013).
+        trans_date_str = to_lifecycle_timestamp(transition_date)
 
         updates: dict[str, Any] = {"stage": new_stage}
         stage_map = {
@@ -491,7 +500,9 @@ class PlantManager(BaseService):
                 duration_sec=0,
                 severity=1.0,
                 category=CATEGORY_MILESTONE,
-                reasons=[f"{(plant.genetics.strain_name if plant.genetics else None) or plant_id} entered {stage_label}"],
+                reasons=[
+                    f"{(plant.genetics.strain_name if plant.genetics else None) or plant_id} entered {stage_label}"
+                ],
             )
             self._emit(plant.growspace_id, event)
 
@@ -547,7 +558,7 @@ class PlantManager(BaseService):
         else:
             stage_before = calculate_plant_stage(plant)
 
-        transition_date_str = transition_date or dt_util.now().date().isoformat()
+        transition_date_str = to_lifecycle_timestamp(transition_date)
 
         # Store yield/lab metrics on the plant before analytics recording
         if hasattr(plant, "harvest_metrics"):
@@ -748,24 +759,19 @@ class PlantManager(BaseService):
         )
 
     async def start_flowering(self, plant_id: str) -> Plant:
-        """Transition a plant to the 'flower' stage, starting today."""
-        await self.transition_plant_stage(
-            plant_id, PlantStage.FLOWER, dt_util.now().date()
-        )
+        """Transition a plant to the 'flower' stage, starting now."""
+        # No explicit date: the transition seam defaults to now() with its time.
+        await self.transition_plant_stage(plant_id, PlantStage.FLOWER)
         return self.repository.require_plant(plant_id)
 
     async def start_drying(self, plant_id: str) -> Plant:
-        """Transition a plant to the 'drying' stage, starting today."""
-        await self.transition_plant_stage(
-            plant_id, PlantStage.DRY, dt_util.now().date()
-        )
+        """Transition a plant to the 'drying' stage, starting now."""
+        await self.transition_plant_stage(plant_id, PlantStage.DRY)
         return self.repository.require_plant(plant_id)
 
     async def start_curing(self, plant_id: str) -> Plant:
-        """Transition a plant to the 'curing' stage, starting today."""
-        await self.transition_plant_stage(
-            plant_id, PlantStage.CURE, dt_util.now().date()
-        )
+        """Transition a plant to the 'curing' stage, starting now."""
+        await self.transition_plant_stage(plant_id, PlantStage.CURE)
         return self.repository.require_plant(plant_id)
 
     async def harvest(self, plant_id: str) -> Plant:
@@ -816,7 +822,7 @@ class PlantManager(BaseService):
             row=row,
             col=col,
             stage=PlantStage.VEG,
-            veg_start=transition_date or dt_util.now().date(),
+            veg_start=transition_date or dt_util.now(),
         )
 
     async def _record_analytics(self, plant: Plant) -> None:
@@ -843,7 +849,7 @@ class PlantManager(BaseService):
                     cbd_percentage=metrics.cbd_percentage if metrics else None,
                     terpene_profile=metrics.terpene_profile if metrics else None,
                 )
-            except Exception as e :  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
                 _LOGGER.warning(
                     "Failed to record harvest analytics for %s: %s",
                     plant.plant_id,

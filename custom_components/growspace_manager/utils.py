@@ -15,6 +15,7 @@ from .domain.date_logic import (
     calculate_days_since as calculate_days_since_logic,
     format_date as format_date_logic,
     parse_date_field,
+    to_lifecycle_timestamp as to_lifecycle_timestamp_logic,
 )
 from .domain.stage import (
     SPECIAL_GROWSPACE_STAGES,
@@ -48,6 +49,11 @@ def calculate_days_since(
 def format_date(date_value: DateInput) -> str | None:
     """Format a date for display."""
     return format_date_logic(date_value)
+
+
+def to_lifecycle_timestamp(supplied: DateInput = None) -> str:
+    """Return the ISO datetime string to store for a Lifecycle Timestamp."""
+    return to_lifecycle_timestamp_logic(supplied)
 
 
 def days_to_week(days: int) -> int:
@@ -224,7 +230,6 @@ def _get_stage_from_growspace(plant: Plant) -> str | None:
     return None
 
 
-
 def interpolate_value(val_a: float, val_b: float, factor: float) -> float:
     """Linearly interpolate between two values based on a factor."""
     if factor <= 0:
@@ -248,7 +253,7 @@ def read_sensor_value(hass: HomeAssistant, sensor_id: str | None) -> float | Non
         return None
     try:
         return float(state.state)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -309,9 +314,7 @@ def read_environment_vpd(
 
     sensor_ids = list(
         dict.fromkeys(
-            s
-            for s in [env_config.vpd_sensor, *env_config.vpd_sensors]
-            if s is not None
+            s for s in [env_config.vpd_sensor, *env_config.vpd_sensors] if s is not None
         )
     )
     vpd = read_aggregated_sensor_value(hass, sensor_ids)
@@ -323,7 +326,10 @@ def read_environment_vpd(
         list(
             dict.fromkeys(
                 s
-                for s in [env_config.temperature_sensor, *env_config.temperature_sensors]
+                for s in [
+                    env_config.temperature_sensor,
+                    *env_config.temperature_sensors,
+                ]
                 if s is not None
             )
         ),
