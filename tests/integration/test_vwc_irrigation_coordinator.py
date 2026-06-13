@@ -1480,3 +1480,228 @@ def test_average_pore_ec_all_unusable_returns_none(
     mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("unavailable")
     assert vwc_coordinator._average_pore_ec(mock_growspace) is None
+
+
+# ── EC Modulation factor (pure mapping) ──────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("measured_ec", "expected_factor"),
+    [
+        # Within band → exactly 1.0 (band 2.0–3.0).
+        (2.0, 1.0),
+        (2.5, 1.0),
+        (3.0, 1.0),
+        # Above band → >1.0, proportional to excursion, full-scale delta 1.0.
+        (3.5, 1.125),  # 0.5 past max → 1 + 0.25*0.5
+        (4.0, 1.25),  # 1.0 past max → saturates at max bound
+        (10.0, 1.25),  # far above → clamped to max bound
+        # Below band → <1.0.
+        (1.5, 0.875),  # 0.5 below min → 1 - 0.25*0.5
+        (1.0, 0.75),  # 1.0 below min → saturates at min bound
+        (0.0, 0.75),  # far below → clamped to min bound
+    ],
+)
+def test_ec_modulation_factor_for_reading(
+    measured_ec: float, expected_factor: float
+) -> None:
+    """The pure factor map responds above/within/below the band, bounded ±25%."""
+    factor = VWCIrrigationCoordinator._ec_modulation_factor_for_reading(
+        measured_ec, 2.0, 3.0
+    )
+    assert factor == pytest.approx(expected_factor)
+
+
+# ── EC Modulation gating (capability) ────────────────────────────────────────
+
+
+def _set_band(growspace: Growspace, enabled: bool) -> None:
+    """Configure a 2.0–3.0 pore-EC band with the given opt-in flag."""
+    growspace.irrigation_strategy.pore_ec_target_min = 2.0
+    growspace.irrigation_strategy.pore_ec_target_max = 3.0
+    growspace.irrigation_strategy.ec_modulation_enabled = enabled
+
+
+def test_ec_modulation_disabled_factor_one_unavailable(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """Opt-in off → factor exactly 1.0 and capability False, even with sensors."""
+    _set_band(mock_growspace, enabled=False)
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("5.0")  # well above band
+
+    factor, available = vwc_coordinator._compute_ec_modulation(
+        mock_growspace.irrigation_strategy, mock_growspace
+    )
+    assert factor == 1.0
+    assert available is False
+
+
+def test_ec_modulation_no_sensors_factor_one_unavailable(
+    vwc_coordinator, mock_growspace
+) -> None:
+    """Enabled but no pore-EC sensors → factor 1.0, capability False (gated)."""
+    _set_band(mock_growspace, enabled=True)
+    mock_growspace.environment_config.pore_ec_sensors = []
+
+    factor, available = vwc_coordinator._compute_ec_modulation(
+        mock_growspace.irrigation_strategy, mock_growspace
+    )
+    assert factor == 1.0
+    assert available is False
+
+
+def test_ec_modulation_no_band_factor_one_unavailable(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """Enabled with sensors but no band configured → factor 1.0, capability False."""
+    mock_growspace.irrigation_strategy.ec_modulation_enabled = True
+    mock_growspace.irrigation_strategy.pore_ec_target_min = None
+    mock_growspace.irrigation_strategy.pore_ec_target_max = None
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("5.0")
+
+    factor, available = vwc_coordinator._compute_ec_modulation(
+        mock_growspace.irrigation_strategy, mock_growspace
+    )
+    assert factor == 1.0
+    assert available is False
+
+
+@pytest.mark.parametrize(
+    ("measured", "expected_factor"),
+    [("2.5", 1.0), ("4.0", 1.25), ("1.0", 0.75)],
+)
+def test_ec_modulation_available_within_above_below(
+    vwc_coordinator, mock_hass, mock_growspace, measured: str, expected_factor: float
+) -> None:
+    """Enabled + band + reading → capability True; within band still factor 1.0.
+
+    Distinguishes "within band → 1.0" (available True) from the gated cases
+    above where 1.0 comes with available False.
+    """
+    _set_band(mock_growspace, enabled=True)
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state(measured)
+
+    factor, available = vwc_coordinator._compute_ec_modulation(
+        mock_growspace.irrigation_strategy, mock_growspace
+    )
+    assert factor == pytest.approx(expected_factor)
+    assert available is True
+
+
+# ── Shot Size Composition (VWC × EC) and caps last ───────────────────────────
+
+
+async def test_ec_modulation_only_applies_to_p2(
+    vwc_coordinator, mock_hass, mock_growspace, mock_sleep
+) -> None:
+    """EC modulation applies to P2 shots only; P1 keeps a neutral EC factor."""
+    _set_band(mock_growspace, enabled=True)
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("4.0")  # above band → EC 1.25
+    strategy = mock_growspace.irrigation_strategy
+    strategy.p1_shot_duration_seconds = 20
+    vwc_coordinator._last_cycle_timestamp = None
+
+    vwc_coordinator._handle_watering(strategy, "P1")
+    await await_pump_task()
+
+    comp = vwc_coordinator._last_shot_composition
+    assert comp.ec_factor == 1.0
+    assert comp.ec_modulation_available is False
+    mock_sleep.assert_any_call(20)
+
+
+async def test_shot_composition_multiplies_vwc_and_ec(
+    vwc_coordinator, mock_hass, mock_growspace, mock_sleep
+) -> None:
+    """P2 effective duration = base × VWC factor × EC factor (partial cancel)."""
+    _set_band(mock_growspace, enabled=True)
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("4.0")  # above band → EC 1.25
+    strategy = mock_growspace.irrigation_strategy
+    strategy.p2_shot_duration_seconds = 100
+    # VWC feedback factor pulls down while EC pulls up: 100 × 0.85 × 1.25 = 106.
+    vwc_coordinator._shot_scale_factor = 0.85
+    vwc_coordinator._last_cycle_timestamp = None
+
+    vwc_coordinator._handle_watering(strategy, "P2")
+    await await_pump_task()
+
+    comp = vwc_coordinator._last_shot_composition
+    assert comp.base_seconds == 100
+    assert comp.vwc_factor == pytest.approx(0.85)
+    assert comp.ec_factor == pytest.approx(1.25)
+    assert comp.ec_modulation_available is True
+    assert comp.effective_seconds == 106  # round(100 * 0.85 * 1.25)
+    assert comp.capped is False
+    mock_sleep.assert_any_call(106)
+
+
+async def test_shot_composition_below_band_stacks_down(
+    vwc_coordinator, mock_hass, mock_growspace, mock_sleep
+) -> None:
+    """Below-band pore EC scales the P2 shot DOWN (stacking)."""
+    _set_band(mock_growspace, enabled=True)
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("1.0")  # below band → EC 0.75
+    strategy = mock_growspace.irrigation_strategy
+    strategy.p2_shot_duration_seconds = 100
+    vwc_coordinator._last_cycle_timestamp = None
+
+    vwc_coordinator._handle_watering(strategy, "P2")
+    await await_pump_task()
+
+    comp = vwc_coordinator._last_shot_composition
+    assert comp.ec_factor == pytest.approx(0.75)
+    assert comp.effective_seconds == 75
+    mock_sleep.assert_any_call(75)
+
+
+async def test_composed_shot_blocked_by_volume_cap_never_exceeds(
+    vwc_coordinator, mock_hass, mock_growspace, mock_sleep
+) -> None:
+    """A composed (EC-amplified) shot that would breach the daily volume cap is
+    clamped LAST: the safety guard blocks the cycle, no pump runs, and the
+    composition records capped=True with effective_seconds 0.
+    """
+    _set_band(mock_growspace, enabled=True)
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("4.0")  # above band → EC 1.25
+    strategy = mock_growspace.irrigation_strategy
+    strategy.p2_shot_duration_seconds = 100
+    # Flow rate so the composed 125 s shot pushes past a tiny daily cap.
+    mock_growspace.irrigation_config.pump_flow_rate_ml_per_sec = 10.0  # 1.25 L
+    mock_growspace.irrigation_config.daily_volume_cap_liters = 0.5
+    vwc_coordinator._last_cycle_timestamp = None
+
+    vwc_coordinator._handle_watering(strategy, "P2")
+    await await_pump_task()
+
+    comp = vwc_coordinator._last_shot_composition
+    assert comp.composed_seconds == 125  # base 100 × EC 1.25
+    assert comp.capped is True
+    assert comp.effective_seconds == 0
+    # Caps are applied last and never exceeded: the pump never ran its on-cycle
+    # for the composed 125 s duration, and the switch was never turned on.
+    pump_durations = [c.args[0] for c in mock_sleep.call_args_list if c.args]
+    assert 125 not in pump_durations
+    mock_hass.services.async_call.assert_not_called()
+
+
+def test_shot_composition_payload_capability_and_band(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """The payload carries the band, opt-in, and live capability flag."""
+    _set_band(mock_growspace, enabled=True)
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("2.5")
+
+    payload = vwc_coordinator.shot_composition_payload()
+    assert payload["ec_modulation_enabled"] is True
+    assert payload["ec_modulation_available"] is True
+    assert payload["pore_ec_target_min"] == 2.0
+    assert payload["pore_ec_target_max"] == 3.0
+    assert payload["last_shot"] is None  # no shot fired yet

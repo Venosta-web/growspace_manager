@@ -372,4 +372,36 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     mode=selector.NumberSelectorMode.BOX,
                 )
             ),
+            # Pore EC Target Band — distinct from the per-stage *feed* EC ranges;
+            # pore EC legitimately runs above feed EC when stacking (CONTEXT.md).
+            vol.Optional(
+                "pore_ec_target_min",
+                description={
+                    "suggested_value": irrigation_options.get("pore_ec_target_min")
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    step=0.1,
+                    unit_of_measurement="mS/cm",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "pore_ec_target_max",
+                description={
+                    "suggested_value": irrigation_options.get("pore_ec_target_max")
+                },
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.0,
+                    step=0.1,
+                    unit_of_measurement="mS/cm",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "ec_modulation_enabled",
+                default=irrigation_options.get("ec_modulation_enabled", False),
+            ): selector.BooleanSelector(),
         }
