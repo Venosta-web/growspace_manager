@@ -7,7 +7,10 @@ from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.config_flow import OptionsFlowHandler
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.models import IrrigationConfig
+from custom_components.growspace_manager.models import (
+    IrrigationConfig,
+    IrrigationStrategy,
+)
 from homeassistant.core import HomeAssistant
 
 
@@ -46,6 +49,7 @@ async def test_irrigation_config_optional_drain_pump(
         irrigation_pump_entity="switch.irrigation",
         drain_pump_entity="switch.drain_pump",
     )
+    mock_growspace.irrigation_strategy = IrrigationStrategy()
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     # Initialize Options Flow
@@ -76,7 +80,7 @@ async def test_irrigation_config_optional_drain_pump(
     
     assert len(call_args.args) >= 1, "Expected growspace_id as positional arg"
     growspace_id = call_args.args[0]
-    data = call_args.kwargs
+    data = call_args.args[1]
 
     assert growspace_id == "gs1"
     assert data.get("drain_pump_entity") is None, "drain_pump_entity should be None"
@@ -99,6 +103,7 @@ async def test_irrigation_config_omitted_drain_pump(
     mock_growspace.irrigation_config = IrrigationConfig(
         irrigation_pump_entity="switch.irrigation", drain_pump_entity=None
     )
+    mock_growspace.irrigation_strategy = IrrigationStrategy()
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     # Initialize Options Flow
@@ -122,7 +127,7 @@ async def test_irrigation_config_omitted_drain_pump(
 
     mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once()
     call_args = mock_coordinator.services.growspaces.update_irrigation_config.call_args
-    data = call_args.kwargs
+    data = call_args.args[1]
 
     # Coordinator logic:
     # if "drain_pump_entity" not in updated_settings: updated_settings["drain_pump_entity"] = None
@@ -169,6 +174,7 @@ async def test_irrigation_config_empty_string_drain_pump(
     mock_growspace.irrigation_config = IrrigationConfig(
         irrigation_pump_entity="switch.irrigation", drain_pump_entity="switch.old_drain"
     )
+    mock_growspace.irrigation_strategy = IrrigationStrategy()
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     # Initialize Options Flow
@@ -191,7 +197,7 @@ async def test_irrigation_config_empty_string_drain_pump(
 
     mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once()
     call_args = mock_coordinator.services.growspaces.update_irrigation_config.call_args
-    data = call_args.kwargs
+    data = call_args.args[1]
 
     # This assumes the coordinator normalization logic works on the input dictionary inplace
     # OR that the arguments passed to it are what we check.

@@ -36,6 +36,7 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     IrrigationConfig,
+    IrrigationStrategy,
 )
 from homeassistant.config_entries import HANDLERS
 from homeassistant.core import HomeAssistant
@@ -2276,6 +2277,7 @@ async def test_options_flow_select_growspace_for_irrigation_submit(
         name="Growspace 1",
         environment_config=EnvironmentConfig(),
         irrigation_config=IrrigationConfig(),
+        irrigation_strategy=IrrigationStrategy(),
     )
     # mock_gs.irrigation_config = {} # REMOVED: Must use dataclass
     mock_coordinator.growspaces = {"gs1": mock_gs}
@@ -2304,7 +2306,11 @@ async def test_options_flow_configure_irrigation_show_form(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(name="Growspace 1", irrigation_config=IrrigationConfig())
+    mock_growspace = Mock(
+        name="Growspace 1",
+        irrigation_config=IrrigationConfig(),
+        irrigation_strategy=IrrigationStrategy(),
+    )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -2326,7 +2332,11 @@ async def test_options_flow_configure_irrigation_submit(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(name="Growspace 1", irrigation_config=IrrigationConfig())
+    mock_growspace = Mock(
+        name="Growspace 1",
+        irrigation_config=IrrigationConfig(),
+        irrigation_strategy=IrrigationStrategy(),
+    )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -2345,7 +2355,7 @@ async def test_options_flow_configure_irrigation_submit(
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once_with(
-        "gs1", **user_input
+        "gs1", user_input
     )
 
 
@@ -2975,6 +2985,7 @@ async def test_options_flow_irrigation_save_clears_pumps(
     mock_gs = Mock(
         name="GS1",
         irrigation_config=mock_irrigation_config,
+        irrigation_strategy=IrrigationStrategy(),
         environment_config=EnvironmentConfig(),
     )
     mock_coordinator.growspaces = {"gs1": mock_gs}
