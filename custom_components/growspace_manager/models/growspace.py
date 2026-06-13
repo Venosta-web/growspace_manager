@@ -37,6 +37,7 @@ from .irrigation import (
     IrrigationConfig,
     IrrigationStrategy,
     IrrigationTank,
+    SubstrateHistory,
 )
 
 __all__ = [
@@ -464,6 +465,7 @@ class Growspace(BaseModel):
     water_usage: WaterUsageData = field(default_factory=lambda: WaterUsageData())
     vision_checkup_history: list[VisionCheckupResult] = field(default_factory=list)
     subareas: list[Subarea] = field(default_factory=list)
+    substrate_history: SubstrateHistory = field(default_factory=SubstrateHistory)
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -475,7 +477,7 @@ class Growspace(BaseModel):
             if field_name in data:
                 try:
                     data[field_name] = int(float(data[field_name]))
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     data[field_name] = 3  # Safe default
 
         # Coerce null environment_config to empty dict so mashumaro uses field defaults.
@@ -492,7 +494,7 @@ class Growspace(BaseModel):
                     irr_config["veg_day_hours"] = int(
                         float(irr_config["veg_day_hours"])
                     )
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     irr_config["veg_day_hours"] = 12
 
             # Migrate irrigation_times and drain_times
@@ -516,7 +518,7 @@ class Growspace(BaseModel):
                                     item["duration"] = int(
                                         float(item.pop("duration_seconds"))
                                     )
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     item["duration"] = 60
                             # Remove stale duration_seconds if both keys exist
                             elif "duration_seconds" in item and "duration" in item:
@@ -526,7 +528,7 @@ class Growspace(BaseModel):
                             if "duration" in item:
                                 try:
                                     item["duration"] = int(float(item["duration"]))
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     item["duration"] = 60
 
                         new_list.append(item)
@@ -554,7 +556,7 @@ class Growspace(BaseModel):
                 if f in strat:
                     try:
                         strat[f] = int(float(strat[f]))
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         # Remove invalid value to let dataclass default take over
                         if f in strat:
                             del strat[f]
