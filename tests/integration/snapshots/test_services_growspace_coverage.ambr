@@ -160,6 +160,7 @@
     'irrigation_strategy': dict({
       'auto_light_tracking': False,
       'detected_lights_on_time': None,
+      'ec_modulation_enabled': False,
       'enabled': False,
       'lights_on_time': '06:00:00',
       'maintenance_dryback_percent': 2.0,
@@ -169,6 +170,8 @@
       'p2_shot_duration_seconds': 10,
       'p2_shot_interval_minutes': 15,
       'p2_stop_before_lights_off_minutes': 120,
+      'pore_ec_target_max': None,
+      'pore_ec_target_min': None,
       'shot_duration_seconds': 10,
       'shot_interval_minutes': 15,
       'target_vwc_percent': 55.0,

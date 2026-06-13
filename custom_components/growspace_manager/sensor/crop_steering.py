@@ -92,4 +92,18 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
                 round(avg, 1) if avg is not None else None
             )
 
+        # Shot Size Composition: base × VWC factor × EC modulation factor, with
+        # the configured pore-EC band and modulation capability. Surfaced here
+        # (not in the static strategy payload) because the factors are runtime
+        # state on the VWC coordinator. Absent on time-based irrigation.
+        irrigation_coord = (
+            self.coordinator.services.growspaces.get_irrigation_coordinator(
+                self._growspace_id
+            )
+        )
+        if irrigation_coord is not None and hasattr(
+            irrigation_coord, "shot_composition_payload"
+        ):
+            attributes["shot_composition"] = irrigation_coord.shot_composition_payload()
+
         return attributes

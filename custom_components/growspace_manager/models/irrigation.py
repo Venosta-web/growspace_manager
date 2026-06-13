@@ -62,6 +62,19 @@ class IrrigationStrategy(BaseModel):
     auto_light_tracking: bool = False
     detected_lights_on_time: str | None = None
 
+    # ── Pore EC Target Band + EC Modulation ─────────────────────────────────
+    # Explicit min/max pore-EC band (mS/cm) that EC Modulation steers toward.
+    # DELIBERATELY DISTINCT from the per-stage *feed* EC ranges (ECTargetRange):
+    # pore EC legitimately runs above feed EC when stacking, so the two must
+    # never be conflated (CONTEXT.md "Pore EC Target Band"). Both None => no
+    # band configured; combined with ``ec_modulation_enabled`` defaulting False,
+    # existing stored configs deserialize unchanged (modulation off, factor 1.0).
+    pore_ec_target_min: float | None = None
+    pore_ec_target_max: float | None = None
+    # Opt-in: when False (or the band/sensors are absent), EC Modulation is
+    # inert and the modulation factor is exactly 1.0.
+    ec_modulation_enabled: bool = False
+
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Migrate legacy shared shot fields by seeding both phases.
