@@ -179,6 +179,22 @@
     'rows': 4,
     'subareas': list([
     ]),
+    'substrate_history': dict({
+      'current_day': None,
+      'events': list([
+      ]),
+      'lit_period_max': None,
+      'lit_period_max_ts': None,
+      'pending_incycle_peak': None,
+      'pending_incycle_peak_ts': None,
+      'pending_incycle_trough': None,
+      'pending_incycle_trough_ts': None,
+      'pending_overnight_peak': None,
+      'pending_overnight_peak_ts': None,
+      'pending_overnight_trough': None,
+      'pending_overnight_trough_ts': None,
+      'shots_today': 0,
+    }),
     'vision_checkup_history': list([
     ]),
     'water_usage': dict({

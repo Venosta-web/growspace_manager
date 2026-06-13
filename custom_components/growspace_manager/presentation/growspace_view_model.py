@@ -64,7 +64,7 @@ def _compute_tank_water_summaries(
             ts = datetime.fromisoformat(ts_str)
             if ts.tzinfo is None:
                 ts = ts.replace(tzinfo=dt_util.UTC)
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             continue
 
         local_ts = dt_util.as_local(ts)
@@ -198,7 +198,9 @@ class GrowspaceViewModelBuilder:
         overview_entity_id = self.entity_queries.lookup_overview_entity_id(growspace.id)
 
         # Build environment attributes, then extract sensor lookup data
-        env_attrs = self._get_environment_attributes(growspace, active_events=active_events)
+        env_attrs = self._get_environment_attributes(
+            growspace, active_events=active_events
+        )
         sensors = {
             "sensor_types": self._get_sensor_types(growspace),
             "sensor_coordinates": env_attrs.pop("sensor_coordinates", {}),
@@ -276,6 +278,7 @@ class GrowspaceViewModelBuilder:
                 "irrigation_strategy": irrigation_strategy_dict,
                 "drain_config": drain_config,
                 "water_usage": water_usage,
+                "substrate": self._build_substrate_metrics(growspace),
             },
             "metrics": {
                 **(biological_metrics or {}),
@@ -291,6 +294,30 @@ class GrowspaceViewModelBuilder:
                 "air_exchange": air_exchange,
                 "energy_tracking": energy_tracking,
             },
+        }
+
+    def _build_substrate_metrics(self, growspace: Growspace) -> dict[str, Any]:
+        """Build measured substrate dryback metrics for the frontend payload.
+
+        Reads the persisted ``substrate_history`` directly via a stateless
+        SubstrateTracker view — no recorder access (see ADR-0010).
+        """
+        from custom_components.growspace_manager.substrate_tracker import (  # noqa: PLC0415
+            SubstrateTracker,
+        )
+
+        tracker = SubstrateTracker(growspace)
+        latest_overnight = tracker.get_latest_overnight_dryback()
+        avg = tracker.get_average_incycle_dryback_today()
+        return {
+            "overnight_dryback": (
+                round(latest_overnight["dryback"], 1)
+                if latest_overnight is not None
+                else None
+            ),
+            "latest_overnight_event": latest_overnight,
+            "incycle_dryback_count": tracker.get_shot_count_today(),
+            "incycle_dryback_avg": round(avg, 1) if avg is not None else None,
         }
 
     def _build_rich_plant_grid(

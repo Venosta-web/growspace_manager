@@ -261,6 +261,10 @@ TANK_MAX_EVENTS = 500  # rolling event window
 TANK_REFILL_THRESHOLD_PCT = 3.0  # % rise → classified as refill
 TANK_NOISE_FLOOR_PCT = 1.0  # % change too small to record
 
+# Substrate tracker thresholds (measured dryback detection)
+SUBSTRATE_MAX_EVENTS = 200  # rolling dryback event window
+SUBSTRATE_NOISE_FLOOR_PCT = 0.5  # VWC change too small to move a peak/trough
+
 
 # Multi-Device Config Keys
 CONF_LIGHT_SENSORS = "light_sensors"

@@ -45,6 +45,7 @@ from custom_components.growspace_manager.schemas import (
     UPDATE_GROWSPACE_SCHEMA,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
+from custom_components.growspace_manager.substrate_tracker import SubstrateTracker
 from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
 from custom_components.growspace_manager.utils import (
     generate_growspace_overview_unique_id,
@@ -70,6 +71,7 @@ class GrowspaceFacade:
         """Initialise the facade with the coordinator."""
         self._coordinator = coordinator
         self._tank_water_trackers: dict[str, dict[str, TankWaterTracker]] = {}
+        self._substrate_trackers: dict[str, SubstrateTracker] = {}
 
     # -------------------------------------------------------------------------
     # CRUD
@@ -351,7 +353,9 @@ class GrowspaceFacade:
                 raise ServiceValidationError(
                     f"Growspace '{growspace_id}' not found or has no irrigation setup."
                 )
-        return self._coordinator._subsystem_manager.irrigation_coordinators[growspace_id]
+        return self._coordinator._subsystem_manager.irrigation_coordinators[
+            growspace_id
+        ]
 
     async def water_growspace(
         self,
@@ -519,6 +523,23 @@ class GrowspaceFacade:
     ) -> dict[str, TankWaterTracker]:
         """Return all cached tank water trackers for a growspace."""
         return self._tank_water_trackers.get(growspace_id, {})
+
+    def get_substrate_tracker(self, growspace_id: str) -> SubstrateTracker | None:
+        """Return the SubstrateTracker for a growspace, or None if absent.
+
+        The tracker reads and writes ``growspace.substrate_history`` directly, so
+        a single cached instance per growspace shares the persisted state with
+        the steering loop and the sensor.
+        """
+        growspace = self.get_growspace(growspace_id)
+        if growspace is None:
+            return None
+        tracker = self._substrate_trackers.get(growspace_id)
+        if tracker is None or tracker.growspace is not growspace:
+            # Re-bind if the growspace object was replaced (e.g. reload).
+            tracker = SubstrateTracker(growspace)
+            self._substrate_trackers[growspace_id] = tracker
+        return tracker
 
     async def async_unsubscribe_all_trackers(self) -> None:
         """Unsubscribe all tank water trackers on shutdown."""

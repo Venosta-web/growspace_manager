@@ -35,6 +35,8 @@ from .irrigation import (
     IrrigationConfig,
     IrrigationStrategy,
     IrrigationTank,
+    SubstrateEvent,
+    SubstrateHistory,
     TankWaterEvent,
     TankWaterHistory,
 )
@@ -116,6 +118,8 @@ __all__ = [
     "SensorGroup",
     "StageHistoryItem",
     "Subarea",
+    "SubstrateEvent",
+    "SubstrateHistory",
     "TankWaterEvent",
     "TankWaterHistory",
     "TimelineEventMetadata",

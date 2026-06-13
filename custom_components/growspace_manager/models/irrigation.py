@@ -20,6 +20,8 @@ __all__ = [
     "IrrigationConfig",
     "IrrigationStrategy",
     "IrrigationTank",
+    "SubstrateEvent",
+    "SubstrateHistory",
     "TankWaterEvent",
     "TankWaterHistory",
 ]
@@ -131,6 +133,60 @@ class TankWaterHistory(BaseModel):
     snapshots: list[dict[str, Any]] = field(default_factory=list)
     # Derived consumption / refill events
     events: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SubstrateEvent(BaseModel):
+    """A single measured substrate dryback event.
+
+    ``dryback`` is expressed in absolute VWC percentage points (peak - trough),
+    never relative to the peak (see CONTEXT.md "Dryback").
+    """
+
+    event_type: str = "in_cycle"  # "overnight" | "in_cycle"
+    peak_timestamp: str = ""
+    trough_timestamp: str = ""
+    peak_vwc: float = 0.0
+    trough_vwc: float = 0.0
+    dryback: float = 0.0
+
+
+@dataclass(slots=True)
+class SubstrateHistory(BaseModel):
+    """Rolling history of measured substrate dryback events.
+
+    Holds the persisted output of the SubstrateTracker plus the minimal pending
+    state needed to resume an in-flight dryback window after a restart. A peak
+    that is still awaiting its trough is stored in ``pending_*`` so a mid-night
+    HA restart can pick the window back up rather than discarding it.
+    """
+
+    events: list[dict[str, Any]] = field(default_factory=list)
+
+    # Pending overnight peak: settled VWC peak recorded after the day's last
+    # shot, awaiting the next day's first-shot trough. Persists across restarts.
+    pending_overnight_peak: float | None = None
+    pending_overnight_peak_ts: str | None = None
+    # Running minimum seen since the pending overnight peak (the trough so far).
+    pending_overnight_trough: float | None = None
+    pending_overnight_trough_ts: str | None = None
+
+    # Pending in-cycle peak: settled VWC peak after a P2 shot, awaiting the next
+    # P2 shot's pre-shot trough.
+    pending_incycle_peak: float | None = None
+    pending_incycle_peak_ts: str | None = None
+    pending_incycle_trough: float | None = None
+    pending_incycle_trough_ts: str | None = None
+
+    # Lit-period maximum, the zero-shot-day fallback for the overnight peak.
+    lit_period_max: float | None = None
+    lit_period_max_ts: str | None = None
+
+    # ISO date (local) of the day whose shots are currently being tracked, used
+    # to detect day rollover for the lit-period-max reset.
+    current_day: str | None = None
+    # Whether any shot fired during current_day (drives the zero-shot fallback).
+    shots_today: int = 0
 
 
 @dataclass(slots=True)

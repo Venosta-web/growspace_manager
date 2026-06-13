@@ -60,10 +60,30 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         else:
             mode = "balanced"
 
-        return {
+        attributes: dict[str, Any] = {
             "dryback_percent": round(state.dryback_percent, 1),
             "peak_vwc": round(state.peak_vwc, 1),
             "trough_vwc": round(state.trough_vwc, 1),
             "steering_mode": mode,
             "ec_trend": state.ec_trend,
         }
+
+        # Measured substrate metrics from the SubstrateTracker (see ADR-0010).
+        tracker = self.coordinator.services.growspaces.get_substrate_tracker(
+            self._growspace_id
+        )
+        if tracker is not None:
+            latest_overnight = tracker.get_latest_overnight_dryback()
+            attributes["overnight_dryback"] = (
+                round(latest_overnight["dryback"], 1)
+                if latest_overnight is not None
+                else None
+            )
+            incycle = tracker.get_incycle_drybacks_today()
+            attributes["incycle_dryback_count"] = len(incycle)
+            avg = tracker.get_average_incycle_dryback_today()
+            attributes["incycle_dryback_avg"] = (
+                round(avg, 1) if avg is not None else None
+            )
+
+        return attributes

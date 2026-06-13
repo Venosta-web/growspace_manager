@@ -96,20 +96,34 @@ def get_crop_steering_state(
     if current_vwc is None:
         return CropSteeringState()
 
-    # Simple peak/trough tracking from strategy targets
     strategy = growspace.irrigation_strategy
-    peak_vwc = max(current_vwc, strategy.target_vwc_percent)
-    trough_vwc = min(
-        current_vwc,
-        strategy.target_vwc_percent - strategy.maintenance_dryback_percent,
-    )
-
-    # Dryback is always absolute VWC points (peak - trough), never relative
-    # to the peak — the single canonical convention (see CONTEXT.md "Dryback")
-    dryback_percent = peak_vwc - trough_vwc
-
     ec_trend = "stable"
-    score = calculate_crop_steering_score(dryback_percent, ec_trend)
+
+    # Prefer the SubstrateTracker's measured peak/trough/dryback over a synthetic
+    # target-derived value, so the steering score is honest (see ADR-0010). The
+    # tracker reads only persisted events — never the recorder.
+    tracker = coordinator.services.growspaces.get_substrate_tracker(growspace_id)
+    measured = tracker.get_measured_peak_trough() if tracker is not None else None
+    shot_count = tracker.get_shot_count_today() if tracker is not None else None
+
+    if measured is not None:
+        peak_vwc, trough_vwc, dryback_percent = measured
+    else:
+        # No measured dryback yet (fresh install / no shots): fall back to a
+        # target-derived estimate so the score is still meaningful from day one.
+        peak_vwc = max(current_vwc, strategy.target_vwc_percent)
+        trough_vwc = min(
+            current_vwc,
+            strategy.target_vwc_percent - strategy.maintenance_dryback_percent,
+        )
+        # Dryback is always absolute VWC points (peak - trough), never relative
+        # to the peak — the single canonical convention (see CONTEXT.md "Dryback")
+        dryback_percent = peak_vwc - trough_vwc
+        shot_count = None
+
+    score = calculate_crop_steering_score(
+        dryback_percent, ec_trend, shot_count=shot_count
+    )
 
     return CropSteeringState(
         score=score,

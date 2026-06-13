@@ -131,6 +131,12 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
             phase_before = self._current_phase
             period = self._determine_time_period(strategy, growspace)
+
+            # Feed the SubstrateTracker before executing phase logic so the
+            # reading reflects the substrate state going into this tick's
+            # decision (and any shot it fires is recorded against this VWC).
+            self._feed_substrate_reading(current_vwc, period, growspace)
+
             self._execute_phase_logic(period, current_vwc, strategy)
 
             if self._current_phase != phase_before:
@@ -297,10 +303,50 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # skip_during_dark, and log_to_logbook.
         task = self._config_entry.async_create_background_task(
             self.hass,
-            self._run_pump_cycle("irrigation", pump_entity, scaled_duration, {"phase": phase}),
+            self._run_pump_cycle(
+                "irrigation", pump_entity, scaled_duration, {"phase": phase}
+            ),
             f"irrigation_pump_{self._growspace_id}_irrigation",
         )
         self._running_tasks["irrigation"] = task
+
+        # Bound substrate dryback windows on the shot. The pre-shot VWC is the
+        # trough for the just-closed in-cycle window; the tracker re-arms the
+        # post-shot peak from the readings that follow.
+        self._record_substrate_shot(phase)
+
+    def _feed_substrate_reading(
+        self, current_vwc: float, period: str, growspace: Growspace
+    ) -> None:
+        """Feed the current VWC reading to the growspace's SubstrateTracker.
+
+        ``lit`` marks whether the lit period is active (lights-on to lights-off),
+        which the tracker uses for the zero-shot-day overnight-peak fallback.
+        """
+        tracker = self._main_coordinator.services.growspaces.get_substrate_tracker(
+            self._growspace_id
+        )
+        if tracker is None:
+            return
+        current_dt = now()
+        boundaries = self._phase_boundary_times(
+            growspace.irrigation_strategy, growspace, current_dt.date()
+        )
+        lit = boundaries.lights_on <= current_dt < boundaries.lights_off
+        tracker.record_reading(current_vwc, current_dt.isoformat(), lit=lit)
+
+    def _record_substrate_shot(self, phase: str) -> None:
+        """Signal a fired shot to the SubstrateTracker for dryback bounding."""
+        tracker = self._main_coordinator.services.growspaces.get_substrate_tracker(
+            self._growspace_id
+        )
+        if tracker is None:
+            return
+        sensor_entity = self.growspace.environment_config.soil_moisture_sensor
+        vwc = self._get_sensor_value(sensor_entity) if sensor_entity else None
+        if vwc is None:
+            return
+        tracker.record_shot(phase, now().isoformat(), vwc)
 
     def _is_halted_by_runoff_ec(self, growspace: Growspace) -> bool:
         """Return True and log a warning when the latest drain EC exceeds the configured threshold."""
@@ -427,7 +473,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """Return tomorrow's {start, end} projected shot window (P1 start to P2 stop)."""
         tomorrow = today + timedelta(days=1)
         boundaries = self._phase_boundary_times(strategy, growspace, tomorrow)
-        return {"start": boundaries.p0_end.isoformat(), "end": boundaries.p2_stop.isoformat()}
+        return {
+            "start": boundaries.p0_end.isoformat(),
+            "end": boundaries.p2_stop.isoformat(),
+        }
 
     def _set_phase(self, phase: str) -> bool:
         """Update phase state; log the transition to the HA logbook when enabled.

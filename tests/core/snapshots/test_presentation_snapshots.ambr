@@ -212,6 +212,12 @@
         'shot_interval_minutes': 15,
         'target_vwc_percent': 55.0,
       }),
+      'substrate': dict({
+        'incycle_dryback_avg': None,
+        'incycle_dryback_count': 0,
+        'latest_overnight_event': None,
+        'overnight_dryback': None,
+      }),
       'water_usage': dict({
         'cycle_start_date': '',
         'daily_readings': list([

@@ -146,6 +146,9 @@ def _make_coordinator(
     state_mock.state = sensor_state
     coordinator.hass.states.get.return_value = state_mock
 
+    # No SubstrateTracker by default → exercise the target-derived fallback.
+    coordinator.services.growspaces.get_substrate_tracker.return_value = None
+
     return coordinator
 
 
@@ -249,3 +252,20 @@ class TestGetCropSteeringState:
         result = get_crop_steering_state(coordinator, "tent1")
         assert result is not None
         assert result.dryback_percent == pytest.approx(0.0)
+
+    def test_uses_measured_tracker_values_over_synthetic(self) -> None:
+        """Measured peak/trough/dryback from the tracker replace the synthetic estimate."""
+        coordinator = _make_coordinator(sensor_state="45.0", target_vwc=55.0)
+        tracker = MagicMock()
+        # Measured high dryback (60 - 38 = 22.0) → +0.4; 2 shots (<=3) → +0.3.
+        tracker.get_measured_peak_trough.return_value = (60.0, 38.0, 22.0)
+        tracker.get_shot_count_today.return_value = 2
+        coordinator.services.growspaces.get_substrate_tracker.return_value = tracker
+
+        result = get_crop_steering_state(coordinator, "tent1")
+        assert result is not None
+        assert result.peak_vwc == pytest.approx(60.0)
+        assert result.trough_vwc == pytest.approx(38.0)
+        assert result.dryback_percent == pytest.approx(22.0)
+        # High measured dryback + few shots drives a generative score.
+        assert result.score == pytest.approx(0.7)
