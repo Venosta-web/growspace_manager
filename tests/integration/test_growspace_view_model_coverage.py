@@ -72,6 +72,45 @@ def test_growspace_view_model_build_basic(hass: HomeAssistant, builder):
     assert result["grid"]["grid"]["position_1_2"] is None
 
 
+@pytest.mark.parametrize(
+    ("liters_per_pot", "flow_rate", "expected"),
+    [
+        (6.0, 20.0, True),  # both prerequisites present
+        (0.0, 20.0, False),  # no substrate profile
+        (6.0, 0.0, False),  # no pump flow rate
+        (0.0, 0.0, False),  # neither
+    ],
+)
+def test_volume_mode_capable_flag(
+    hass: HomeAssistant, builder, liters_per_pot, flow_rate, expected
+):
+    """The payload exposes volume_mode_capable per the Volume Mode prerequisites."""
+    from custom_components.growspace_manager.models import (
+        IrrigationStrategy,
+        SubstrateProfile,
+    )
+
+    growspace = Growspace(
+        id="gs1",
+        name="Test Room",
+        rows=1,
+        plants_per_row=1,
+        environment_config=EnvironmentConfig(),
+        irrigation_config=IrrigationConfig(pump_flow_rate_ml_per_sec=flow_rate),
+    )
+    growspace.irrigation_strategy = IrrigationStrategy(
+        substrate_profile=SubstrateProfile(liters_per_pot=liters_per_pot)
+    )
+
+    builder.entity_queries = MagicMock()
+    builder.entity_queries.lookup_overview_entity_id.return_value = "sensor.gs1"
+    builder.plant_builder = MagicMock()
+
+    result = builder.build(growspace=growspace, plants=[], biological_metrics={})
+
+    assert result["irrigation"]["volume_mode_capable"] is expected
+
+
 def test_get_sensor_types(builder):
     """Test mapping of entity IDs to sensor types."""
     env_config = EnvironmentConfig(
@@ -503,7 +542,9 @@ def test_water_history_includes_summaries_in_view_model(
         {"timestamp": now.isoformat(), "event_type": "consumption", "liters": 2.0},
         {"timestamp": now.isoformat(), "event_type": "refill", "liters": 30.0},
     ]
-    tank = IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+    tank = IrrigationTank(
+        sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0
+    )
     tank.water_history.events = events
 
     env_config = EnvironmentConfig(irrigation_tanks=[tank])
@@ -544,7 +585,9 @@ def _make_mock_coordinator(
     mock_coord.services.growspaces.get_growspace_plants.return_value = []
     mock_coord.services.growspaces.calculate_biological_metrics.return_value = {}
     mock_coord.services.growspaces.get_irrigation_coordinator.return_value = None
-    mock_coord.services.growspaces.get_all_trackers_for_growspace.return_value = trackers
+    mock_coord.services.growspaces.get_all_trackers_for_growspace.return_value = (
+        trackers
+    )
     return mock_coord
 
 
@@ -554,7 +597,9 @@ def test_view_model_builder_passes_liters_today_from_trackers(
     """ViewModelBuilder sums tracker liters_today and passes it to the builder."""
     env = EnvironmentConfig(
         irrigation_tanks=[
-            IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+            IrrigationTank(
+                sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0
+            )
         ],
     )
     gs = Growspace(
@@ -578,7 +623,9 @@ def test_view_model_builder_liters_today_absent_with_flow_sensors(
     env = EnvironmentConfig(
         irrigation_flow_sensors=["sensor.flow1"],
         irrigation_tanks=[
-            IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+            IrrigationTank(
+                sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0
+            )
         ],
     )
     gs = Growspace(
@@ -599,7 +646,9 @@ def test_view_model_builder_liters_today_absent_with_drain_volume_sensors(
     env = EnvironmentConfig(
         drain_volume_sensors=["sensor.drain1"],
         irrigation_tanks=[
-            IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+            IrrigationTank(
+                sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0
+            )
         ],
     )
     gs = Growspace(
