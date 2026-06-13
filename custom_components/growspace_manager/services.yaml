@@ -1096,6 +1096,27 @@ set_irrigation_settings:
           min: 1
           unit_of_measurement: "seconds"
 
+apply_steering_mode:
+  description: >-
+    Stamp a Steering Mode's recommended setpoints into the growspace's
+    irrigation strategy once and record it as the declared intent. Subsequent
+    field edits are preserved; the coordinator never reads the mode afterwards.
+  fields:
+    growspace_id:
+      description: The ID of the growspace to configure.
+      required: true
+      selector:
+        text:
+    steering_mode:
+      description: The declared steering intent to stamp.
+      required: true
+      selector:
+        select:
+          options:
+            - "vegetative"
+            - "balanced"
+            - "generative"
+
 add_irrigation_time:
   description: Add a specific time to the irrigation schedule.
   fields:

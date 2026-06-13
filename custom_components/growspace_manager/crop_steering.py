@@ -10,10 +10,51 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
+from .const import SteeringMode
 from .models import CropSteeringState
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+
+# Ordinal position of each mode on the vegetative -> generative axis, used to
+# derive the directional Intent Deviation (ADR-0012).
+_MODE_AXIS: dict[SteeringMode, int] = {
+    SteeringMode.VEGETATIVE: -1,
+    SteeringMode.BALANCED: 0,
+    SteeringMode.GENERATIVE: 1,
+}
+
+
+def classify_steering_score(score: float) -> SteeringMode:
+    """Classify a steering score into its Measured Classification bucket.
+
+    A measurement of how the substrate is actually behaving — never a setting.
+    Thresholds: ``score > 0.3`` -> generative, ``score < -0.3`` -> vegetative,
+    otherwise balanced (see CONTEXT.md "Measured Classification").
+    """
+    if score > 0.3:
+        return SteeringMode.GENERATIVE
+    if score < -0.3:
+        return SteeringMode.VEGETATIVE
+    return SteeringMode.BALANCED
+
+
+def compute_intent_deviation(
+    measured: SteeringMode, declared: SteeringMode | None
+) -> str | None:
+    """Compare the Measured Classification against the declared Steering Mode.
+
+    Returns ``on_target`` when the buckets match, ``more_generative`` /
+    ``more_vegetative`` when the substrate reads more generative / vegetative
+    than declared, or ``None`` when no intent has been declared (nothing to
+    deviate from). See CONTEXT.md "Intent Deviation".
+    """
+    if declared is None:
+        return None
+    delta = _MODE_AXIS[measured] - _MODE_AXIS[declared]
+    if delta == 0:
+        return "on_target"
+    return "more_generative" if delta > 0 else "more_vegetative"
 
 
 def calculate_crop_steering_score(
@@ -136,6 +177,16 @@ def get_crop_steering_state(
         dryback_percent, ec_trend, shot_count=shot_count
     )
 
+    # Steering Mode readout (ADR-0012): the measured classification is derived
+    # from the absolute score; the deviation compares it against the grower's
+    # declared mode without ever bending the score. The declared mode itself
+    # lives on the strategy (``declared_steering_mode``) and is not duplicated
+    # here — the payload carries it from there.
+    measured = classify_steering_score(score)
+    intent_deviation = compute_intent_deviation(
+        measured, strategy.declared_steering_mode
+    )
+
     return CropSteeringState(
         score=score,
         dryback_percent=dryback_percent,
@@ -145,4 +196,6 @@ def get_crop_steering_state(
         ec_trend_available=ec_trend_available,
         ec_day_start=ec_trend_info["day_start_ec"] if ec_trend_info else None,
         ec_current=ec_trend_info["current_ec"] if ec_trend_info else None,
+        measured_classification=measured.value,
+        intent_deviation=intent_deviation,
     )

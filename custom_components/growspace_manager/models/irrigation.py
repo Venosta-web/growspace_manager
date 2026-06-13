@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
+from custom_components.growspace_manager.const import (
+    ShotSizingMode,
+    SteeringMode,
+    SubstrateMediaType,
+)
 import homeassistant.util.dt as dt_util
 
 from .base import BaseModel, _sanitize_numeric_fields
@@ -104,6 +108,14 @@ class IrrigationStrategy(BaseModel):
     # Opt-in: when False (or the band/sensors are absent), EC Modulation is
     # inert and the modulation factor is exactly 1.0.
     ec_modulation_enabled: bool = False
+
+    # ── Steering Mode (declared intent, ADR-0012) ───────────────────────────
+    # The grower's declared steering intent. None means undeclared (never
+    # stamped) — a real third state distinct from an explicit BALANCED, so
+    # Intent Deviation reads null until the first stamp. The coordinator never
+    # reads this; selecting a mode stamps preset values into the explicit
+    # fields above. Existing stored configs deserialize with None unchanged.
+    declared_steering_mode: SteeringMode | None = None
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -337,6 +349,15 @@ class CropSteeringState(BaseModel):
     ec_trend_available: bool = False
     ec_day_start: float | None = None
     ec_current: float | None = None
+    # Steering Mode readout (ADR-0012). ``measured_classification`` is the
+    # score-derived bucket (a measurement); ``intent_deviation`` compares it
+    # against the declared mode ("on_target"/"more_generative"/"more_vegetative",
+    # None when undeclared or no current reading). The score itself never bends
+    # toward the declared mode. The declared intent itself is NOT mirrored here:
+    # its single source of truth is the ``declared_steering_mode`` strategy
+    # field, which the view-model payload already carries (one datum, one key).
+    measured_classification: str = "balanced"
+    intent_deviation: str | None = None
     last_updated: str = ""
 
 

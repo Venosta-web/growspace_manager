@@ -659,6 +659,32 @@ def test_irrigation_strategy_legacy_load_defaults_seconds_mode() -> None:
     assert strategy.substrate_profile.is_configured is False
 
 
+def test_irrigation_strategy_declared_steering_mode_defaults_none() -> None:
+    """declared_steering_mode is None until a Steering Mode is stamped."""
+    strategy = IrrigationStrategy()
+    assert strategy.declared_steering_mode is None
+
+
+def test_irrigation_strategy_declared_steering_mode_round_trips() -> None:
+    """declared_steering_mode survives a serialize/deserialize round-trip."""
+    from custom_components.growspace_manager.const import SteeringMode
+
+    strategy = IrrigationStrategy(declared_steering_mode=SteeringMode.GENERATIVE)
+    restored = IrrigationStrategy.from_dict(strategy.to_dict())
+    assert restored.declared_steering_mode == SteeringMode.GENERATIVE
+
+
+def test_irrigation_strategy_legacy_load_has_no_declared_intent() -> None:
+    """A config stored before Steering Mode has a null declared intent."""
+    legacy_data = {
+        "enabled": True,
+        "shot_duration_seconds": 10,
+        "shot_interval_minutes": 15,
+    }
+    strategy = IrrigationStrategy.from_dict(legacy_data)
+    assert strategy.declared_steering_mode is None
+
+
 def test_substrate_profile_is_configured() -> None:
     """is_configured tracks a positive per-pot volume."""
     from custom_components.growspace_manager.models import SubstrateProfile

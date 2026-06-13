@@ -22,6 +22,7 @@ from custom_components.growspace_manager.const import (
     SPECIAL_GROWSPACES,
     VERSION,
     GrowspaceService,
+    SteeringMode,
     SubstrateMediaType,
 )
 from custom_components.growspace_manager.domain.stage import StageDays
@@ -46,6 +47,7 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_GROWSPACE_SCHEMA,
     UPDATE_GROWSPACE_SCHEMA,
 )
+from custom_components.growspace_manager.steering_presets import resolve_steering_preset
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.substrate_tracker import SubstrateTracker
 from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
@@ -324,6 +326,50 @@ class GrowspaceFacade:
     ) -> None:
         """Set irrigation strategy for a growspace."""
         await self.update_irrigation_config(growspace_id, strategy)
+
+    async def apply_steering_mode(
+        self, growspace_id: str, mode: SteeringMode
+    ) -> None:
+        """Stamp a Steering Mode's preset values into the strategy (ADR-0012).
+
+        Looks up the preset for (mode, stored media type, active shot sizing
+        mode) and writes those values into the ordinary editable strategy
+        fields, then records the mode as the declared intent. The coordinator
+        never reads the mode afterwards — only the explicit fields. Always
+        re-stamps, so re-selecting the current mode resets the fields to that
+        mode's defaults (discarding hand tweaks). ``target_vwc_percent`` is
+        never written. Writes one logbook entry naming the mode and media.
+        """
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+
+        strategy = growspace.irrigation_strategy
+        media_type = strategy.substrate_profile.media_type
+        preset = resolve_steering_preset(
+            mode, media_type, strategy.shot_sizing_mode
+        )
+        for field_name, value in preset.items():
+            setattr(strategy, field_name, value)
+        strategy.declared_steering_mode = mode
+
+        if growspace.irrigation_config.log_to_logbook:
+            self._coordinator.hass.bus.async_fire(
+                EVENT_GROWSPACE_LOG_ENTRY,
+                {
+                    ATTR_GROWSPACE_ID: growspace_id,
+                    "message": f"Applied {mode.value} steering mode ({media_type.value})",
+                    "category": "irrigation",
+                    "timestamp": dt_util.now().isoformat(),
+                },
+            )
+
+        self._coordinator.cache.invalidate(growspace_id)
+        await self._coordinator.async_commit()
+        await self._coordinator.async_request_refresh()
+        _LOGGER.info(
+            "Applied %s steering mode for growspace '%s'", mode.value, growspace_id
+        )
 
     async def set_ec_target_range(
         self,

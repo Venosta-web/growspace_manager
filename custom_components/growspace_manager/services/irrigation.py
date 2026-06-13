@@ -13,12 +13,15 @@ from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
     ATTR_IRRIGATION_TIMES,
     ATTR_STAGE,
+    ATTR_STEERING_MODE,
     ATTR_TIME,
     GrowspaceService,
+    SteeringMode,
 )
 from custom_components.growspace_manager.schemas import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
+    APPLY_STEERING_MODE_SCHEMA,
     REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
     RUN_IRRIGATION_CYCLE_SCHEMA,
@@ -115,6 +118,25 @@ async def handle_set_irrigation_strategy(
         growspace_id, strategy
     )
     _LOGGER.info("Set irrigation strategy for growspace '%s'", growspace_id)
+
+
+@handle_service_errors
+async def handle_apply_steering_mode(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Stamp a Steering Mode's preset values into the strategy (ADR-0012).
+
+    The grower names the mode; the server expands it into concrete strategy
+    field values from its preset table and records the declared intent.
+    """
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    mode = SteeringMode(call.data[ATTR_STEERING_MODE])
+    await coordinator.services.growspaces.apply_steering_mode(growspace_id, mode)
+    _LOGGER.info(
+        "Applied %s steering mode for growspace '%s'", mode.value, growspace_id
+    )
 
 
 def _build_substrate_profile_update(strategy: dict) -> None:
@@ -305,6 +327,11 @@ SERVICES = [
         GrowspaceService.SET_IRRIGATION_STRATEGY,
         handle_set_irrigation_strategy,
         SET_IRRIGATION_STRATEGY_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.APPLY_STEERING_MODE,
+        handle_apply_steering_mode,
+        APPLY_STEERING_MODE_SCHEMA,
     ),
     ServiceDefinition(
         GrowspaceService.ADD_IRRIGATION_TIME,

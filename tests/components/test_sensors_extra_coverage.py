@@ -149,6 +149,8 @@ async def test_crop_steering_sensor(mock_coordinator, setup_sensor_for_test):
         mock_state.peak_vwc = 80.0
         mock_state.trough_vwc = 65.0
         mock_state.ec_trend = "flat"
+        mock_state.measured_classification = "generative"
+        mock_state.intent_deviation = None
         mock_get_state.return_value = mock_state
 
         sensor = CropSteeringSensor(mock_coordinator, "test_id", "Test Grow")
@@ -156,7 +158,7 @@ async def test_crop_steering_sensor(mock_coordinator, setup_sensor_for_test):
 
         assert sensor.native_value == 0.5
         attrs = sensor.extra_state_attributes
-        assert attrs["steering_mode"] == "generative"
+        assert attrs["measured_classification"] == "generative"
 
 
 async def test_ec_target_sensor(mock_coordinator, setup_sensor_for_test):
