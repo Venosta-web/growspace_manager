@@ -239,3 +239,107 @@ def test_event_history_is_bounded() -> None:
     t.record_reading(49.0, _ts(DAY1, 12, 45), lit=True)
     t.record_shot("P2", _ts(DAY1, 13), 49.0)
     assert len(history.events) == SUBSTRATE_MAX_EVENTS
+
+
+# ── daily pore-EC trend ─────────────────────────────────────────────────────────
+
+
+def test_ec_trend_unavailable_with_no_readings() -> None:
+    """No pore-EC reading ingested → trend is unavailable (None), never stable."""
+    t = _tracker()
+    assert t.get_ec_trend() is None
+
+
+def test_ec_trend_rising() -> None:
+    """Pore EC climbing well past the deadband reads rising."""
+    t = _tracker()
+    t.record_pore_ec(2.0, _ts(DAY1, 8))
+    t.record_pore_ec(2.4, _ts(DAY1, 12))
+    t.record_pore_ec(3.0, _ts(DAY1, 16))
+
+    trend = t.get_ec_trend()
+    assert trend is not None
+    assert trend["trend"] == "rising"
+    assert trend["day_start_ec"] == 2.0
+    assert trend["current_ec"] == 3.0
+    assert trend["delta"] == 1.0
+
+
+def test_ec_trend_falling() -> None:
+    """Pore EC dropping well past the deadband reads falling."""
+    t = _tracker()
+    t.record_pore_ec(3.0, _ts(DAY1, 8))
+    t.record_pore_ec(2.2, _ts(DAY1, 16))
+
+    trend = t.get_ec_trend()
+    assert trend is not None
+    assert trend["trend"] == "falling"
+    assert trend["delta"] == -0.8
+
+
+def test_ec_trend_stable_within_deadband() -> None:
+    """A small EC change within the deadband reads stable, not rising/falling."""
+    t = _tracker()
+    t.record_pore_ec(2.50, _ts(DAY1, 8))
+    # +0.15 is within the 0.2 deadband → stable, not rising.
+    t.record_pore_ec(2.65, _ts(DAY1, 16))
+
+    trend = t.get_ec_trend()
+    assert trend is not None
+    assert trend["trend"] == "stable"
+    assert trend["delta"] == 0.15
+
+
+def test_ec_trend_survives_sensor_dropout_midday() -> None:
+    """A mid-day gap in readings keeps the same day-start baseline.
+
+    The coordinator simply stops feeding readings while sensors are
+    unavailable; when they return the same local day, the baseline persists and
+    the trend resumes from it (no spurious re-baseline).
+    """
+    t = _tracker()
+    t.record_pore_ec(2.0, _ts(DAY1, 8))
+    t.record_pore_ec(2.3, _ts(DAY1, 10))
+    # ── sensor dropout 10:00 → 15:00: no readings fed ──
+    t.record_pore_ec(2.9, _ts(DAY1, 15))
+
+    trend = t.get_ec_trend()
+    assert trend is not None
+    # Baseline is still the 08:00 value, not the post-dropout 15:00 reading.
+    assert trend["day_start_ec"] == 2.0
+    assert trend["current_ec"] == 2.9
+    assert trend["trend"] == "rising"
+
+
+def test_ec_trend_rebaselines_on_new_day() -> None:
+    """The day-start baseline resets on a new local day."""
+    t = _tracker()
+    t.record_pore_ec(3.0, _ts(DAY1, 16))
+    # New day: the first reading becomes the new baseline.
+    t.record_pore_ec(2.0, _ts(DAY2, 8))
+    t.record_pore_ec(2.5, _ts(DAY2, 16))
+
+    trend = t.get_ec_trend()
+    assert trend is not None
+    assert trend["day_start_ec"] == 2.0
+    assert trend["current_ec"] == 2.5
+    assert trend["trend"] == "rising"
+
+
+def test_ec_trend_resumes_after_restart() -> None:
+    """Persisted EC-trend state on SubstrateHistory survives a tracker rebuild."""
+    growspace = Growspace(id="tent1", name="Tent 1")
+    t1 = SubstrateTracker(growspace)
+    t1.record_pore_ec(2.0, _ts(DAY1, 8))
+    t1.record_pore_ec(2.4, _ts(DAY1, 12))
+
+    # Simulate a restart: a fresh tracker over the same persisted history.
+    t2 = SubstrateTracker(growspace)
+    t2.record_pore_ec(3.1, _ts(DAY1, 16))
+
+    trend = t2.get_ec_trend()
+    assert trend is not None
+    # Baseline carried across the restart.
+    assert trend["day_start_ec"] == 2.0
+    assert trend["current_ec"] == 3.1
+    assert trend["trend"] == "rising"

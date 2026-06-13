@@ -309,6 +309,7 @@ class GrowspaceViewModelBuilder:
         tracker = SubstrateTracker(growspace)
         latest_overnight = tracker.get_latest_overnight_dryback()
         avg = tracker.get_average_incycle_dryback_today()
+        ec_trend = tracker.get_ec_trend()
         return {
             "overnight_dryback": (
                 round(latest_overnight["dryback"], 1)
@@ -318,6 +319,11 @@ class GrowspaceViewModelBuilder:
             "latest_overnight_event": latest_overnight,
             "incycle_dryback_count": tracker.get_shot_count_today(),
             "incycle_dryback_avg": round(avg, 1) if avg is not None else None,
+            # Measured daily pore-EC trend. None => no pore-EC sensors yet, so
+            # the card renders its unlock hint instead of a "stable" reading.
+            "ec_trend": ec_trend["trend"] if ec_trend is not None else None,
+            "ec_trend_available": ec_trend is not None,
+            "ec_trend_detail": ec_trend,
         }
 
     def _build_rich_plant_grid(

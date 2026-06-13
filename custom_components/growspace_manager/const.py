@@ -121,7 +121,9 @@ STAGE_PHOTOPERIOD_KEYS: Final[dict[PlantStage, str]] = {
 # Trend Analysis Constants
 CONF_TREND_VPD_THRESHOLD = "trend_vpd_threshold"
 CONF_TREND_TEMPERATURE_THRESHOLD = "trend_temperature_threshold"
-CONF_TREND_TEMP_THRESHOLD = CONF_TREND_TEMPERATURE_THRESHOLD  # Alias for backward compatibility
+CONF_TREND_TEMP_THRESHOLD = (
+    CONF_TREND_TEMPERATURE_THRESHOLD  # Alias for backward compatibility
+)
 CONF_TREND_HUMIDITY_THRESHOLD = "trend_humidity_threshold"
 CONF_TREND_VPD_DURATION = "trend_vpd_duration"
 CONF_TREND_TEMPERATURE_DURATION = "trend_temperature_duration"
@@ -264,6 +266,11 @@ TANK_NOISE_FLOOR_PCT = 1.0  # % change too small to record
 # Substrate tracker thresholds (measured dryback detection)
 SUBSTRATE_MAX_EVENTS = 200  # rolling dryback event window
 SUBSTRATE_NOISE_FLOOR_PCT = 0.5  # VWC change too small to move a peak/trough
+# Deadband for the daily pore-EC trend: a day-start-to-current EC delta whose
+# magnitude is at or below this many EC units (mS/cm) reads "stable" rather than
+# flapping rising<->falling on sensor noise. 0.2 mS/cm is a conservative default
+# below the typical day-to-day drift of substrate EC probes.
+SUBSTRATE_EC_TREND_DEADBAND = 0.2
 
 
 # Multi-Device Config Keys

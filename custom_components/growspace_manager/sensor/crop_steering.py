@@ -65,7 +65,13 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
             "peak_vwc": round(state.peak_vwc, 1),
             "trough_vwc": round(state.trough_vwc, 1),
             "steering_mode": mode,
+            # ec_trend is None when no pore-EC sensors are configured (or no
+            # reading yet). ec_trend_available distinguishes that from a
+            # measured "stable" so the card can show its unlock hint.
             "ec_trend": state.ec_trend,
+            "ec_trend_available": state.ec_trend_available,
+            "ec_day_start": state.ec_day_start,
+            "ec_current": state.ec_current,
         }
 
         # Measured substrate metrics from the SubstrateTracker (see ADR-0010).

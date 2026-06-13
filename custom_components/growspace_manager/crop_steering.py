@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 def calculate_crop_steering_score(
     dryback_percent: float,
-    ec_trend: str,
+    ec_trend: str | None,
     shot_count: int | None = None,
 ) -> float:
     """Calculate the crop steering score from component metrics.
@@ -26,7 +26,11 @@ def calculate_crop_steering_score(
     Args:
         dryback_percent: Today's dryback in absolute VWC percentage points
             (peak - trough; a 55% -> 45% VWC drop is 10.0).
-        ec_trend: EC trend direction ("rising", "falling", "stable").
+        ec_trend: Measured EC trend direction ("rising", "falling", "stable"),
+            or None when no pore-EC sensors are configured / no reading yet. A
+            None or "stable" trend contributes nothing to the score, but the two
+            are distinct upstream: None means *unavailable* (capability locked),
+            "stable" means *measured and flat*.
         shot_count: Number of irrigation shots today (None if unknown).
 
     Returns:
@@ -97,7 +101,6 @@ def get_crop_steering_state(
         return CropSteeringState()
 
     strategy = growspace.irrigation_strategy
-    ec_trend = "stable"
 
     # Prefer the SubstrateTracker's measured peak/trough/dryback over a synthetic
     # target-derived value, so the steering score is honest (see ADR-0010). The
@@ -105,6 +108,14 @@ def get_crop_steering_state(
     tracker = coordinator.services.growspaces.get_substrate_tracker(growspace_id)
     measured = tracker.get_measured_peak_trough() if tracker is not None else None
     shot_count = tracker.get_shot_count_today() if tracker is not None else None
+
+    # Measured pore-EC trend from the tracker. None means unavailable (no
+    # pore-EC sensors / no reading yet) — the score's EC component then stays
+    # neutral, distinct from a measured "stable". The hardcoded placeholder is
+    # gone: an absent trend is never silently reported as "stable".
+    ec_trend_info = tracker.get_ec_trend() if tracker is not None else None
+    ec_trend = ec_trend_info["trend"] if ec_trend_info is not None else None
+    ec_trend_available = ec_trend_info is not None
 
     if measured is not None:
         peak_vwc, trough_vwc, dryback_percent = measured
@@ -131,4 +142,7 @@ def get_crop_steering_state(
         peak_vwc=peak_vwc,
         trough_vwc=trough_vwc,
         ec_trend=ec_trend,
+        ec_trend_available=ec_trend_available,
+        ec_day_start=ec_trend_info["day_start_ec"] if ec_trend_info else None,
+        ec_current=ec_trend_info["current_ec"] if ec_trend_info else None,
     )
