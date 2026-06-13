@@ -22,6 +22,7 @@ from custom_components.growspace_manager.const import (
     SPECIAL_GROWSPACES,
     VERSION,
     GrowspaceService,
+    SubstrateMediaType,
 )
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
@@ -37,6 +38,7 @@ from custom_components.growspace_manager.models import (
     Growspace,
     IrrigationConfig,
     Subarea,
+    SubstrateProfile,
     WaterUsageData,
 )
 from custom_components.growspace_manager.schemas import (
@@ -262,6 +264,11 @@ class GrowspaceFacade:
         for pump_key in ("irrigation_pump_entity", "drain_pump_entity"):
             if pump_key in updated_settings and not updated_settings[pump_key]:
                 updated_settings[pump_key] = None
+        if "substrate_profile" in updated_settings:
+            updated_settings["substrate_profile"] = self._merge_substrate_profile(
+                growspace.irrigation_strategy.substrate_profile,
+                updated_settings["substrate_profile"],
+            )
         for k, v in updated_settings.items():
             if hasattr(growspace.irrigation_config, k):
                 setattr(growspace.irrigation_config, k, v)
@@ -271,6 +278,23 @@ class GrowspaceFacade:
         await self._coordinator.async_commit()
         await self._coordinator.async_request_refresh()
         _LOGGER.info("Updated irrigation config for %s", growspace_id)
+
+    @staticmethod
+    def _merge_substrate_profile(
+        existing: SubstrateProfile, update: Any
+    ) -> SubstrateProfile:
+        """Merge a partial substrate-profile update onto the existing profile.
+
+        The service surface may send only the media type or only the per-pot
+        volume; unspecified keys keep their current value (ADR-0011 profile).
+        """
+        if isinstance(update, SubstrateProfile):
+            return update
+        data = update if isinstance(update, dict) else {}
+        return SubstrateProfile(
+            media_type=SubstrateMediaType(data.get("media_type", existing.media_type)),
+            liters_per_pot=float(data.get("liters_per_pot", existing.liters_per_pot)),
+        )
 
     async def set_irrigation_settings(
         self, growspace_id: str, settings: dict[str, Any]

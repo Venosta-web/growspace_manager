@@ -13,12 +13,20 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util.dt import now, parse_datetime
 
-if TYPE_CHECKING:
-    from .coordinator import GrowspaceCoordinator
+from .const import PlantStage, ShotSizingMode
 from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
 
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
+
 _LOGGER = logging.getLogger(__name__)
+
+# Plant stages whose plants no longer sit on the irrigation line; excluded from
+# the live plant count that backs per-plant Volume Mode dosing (see ADR-0011).
+_NON_LIVE_STAGES: frozenset[str] = frozenset(
+    {PlantStage.DRY.value, PlantStage.CURE.value}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +58,12 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._target_reached_today = False
         self._last_reset_date: str | None = None
         self._shot_scale_factor = 1.0
+
+        # Last computed Volume Mode shot volume (ml) and the live plant count it
+        # was derived from, so a count-driven volume change can be detected
+        # across loop ticks and written to the logbook (ADR-0011).
+        self._last_shot_volume_ml: float | None = None
+        self._last_live_plant_count: int | None = None
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
         self._sensor_warning_logged = False
@@ -90,6 +104,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._target_reached_today = False
         self._last_reset_date = None
         self._shot_scale_factor = 1.0
+        self._last_shot_volume_ml = None
+        self._last_live_plant_count = None
 
     async def _update_loop(self, _now: datetime) -> None:
         """Main update loop triggered every minute."""
@@ -188,6 +204,17 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             self._target_reached_today = False
             self._last_reset_date = today_str
 
+        # Zero-plant suspend (ADR-0011): in active Volume Mode a growspace with no
+        # live plants has no irrigation demand. Keep the loop alive but report an
+        # idle phase and fire no shots — never a 0 ml no-op or a seconds fallback.
+        if (
+            period in ("P0", "WINDOW")
+            and self._volume_mode_active(strategy)
+            and self._live_plant_count() == 0
+        ):
+            self._set_phase("Idle (no plants)")
+            return
+
         if period == "P3":
             self._set_phase("P3 - Dry Back")
             return
@@ -264,10 +291,107 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             strategy.p1_shot_interval_minutes,
         )
 
+    def _live_plant_count(self) -> int:
+        """Return the number of live plants on the growspace's irrigation line.
+
+        "Live" excludes plants in the dry/cure stages, which no longer draw
+        irrigation. This is the per-plant dosing basis for Volume Mode (ADR-0011).
+        """
+        plants = self._main_coordinator.services.growspaces.get_growspace_plants(
+            self._growspace_id
+        )
+        return sum(
+            1 for p in plants if str(getattr(p, "stage", "")) not in _NON_LIVE_STAGES
+        )
+
+    @staticmethod
+    def _volume_prerequisites_met(
+        strategy: IrrigationStrategy, growspace: Growspace
+    ) -> bool:
+        """Return True when Volume Mode's prerequisites (profile + flow rate) are present."""
+        return (
+            strategy.substrate_profile.is_configured
+            and growspace.irrigation_config.pump_flow_rate_ml_per_sec > 0.0
+        )
+
+    def _volume_mode_active(self, strategy: IrrigationStrategy) -> bool:
+        """Return True when Volume Mode is selected AND its prerequisites hold.
+
+        Volume Mode never auto-activates on prerequisites alone — the mode must
+        be explicitly selected. If it is selected but prerequisites have lapsed,
+        this returns False (fail safe): the growspace is treated as not-capable
+        and no Volume Mode shots fire (callers suspend rather than guess seconds).
+        """
+        return (
+            strategy.shot_sizing_mode == ShotSizingMode.VOLUME
+            and self._volume_prerequisites_met(strategy, self.growspace)
+        )
+
+    def _volume_mode_base_duration(
+        self, strategy: IrrigationStrategy, phase: str
+    ) -> int | None:
+        """Return the base pump-seconds for a Volume Mode shot, or None to suspend.
+
+        Converts the per-phase percent-of-substrate-volume size to milliliters
+        (``percent/100 × liters_per_pot × live_count × 1000``) and then to pump
+        seconds via the flow rate (``ml / flow_rate_ml_per_sec``). Returns None
+        when the live plant count is zero so the caller suspends the shot rather
+        than firing a 1 s floor. Also writes a logbook entry when a live-count
+        change alters the computed shot volume (ADR-0011).
+        """
+        live_count = self._live_plant_count()
+        percent = (
+            strategy.p2_shot_volume_percent
+            if phase == "P2"
+            else strategy.p1_shot_volume_percent
+        )
+        profile = strategy.substrate_profile
+        flow_rate = self.growspace.irrigation_config.pump_flow_rate_ml_per_sec
+
+        shot_volume_ml = (
+            (percent / 100.0) * profile.liters_per_pot * live_count * 1000.0
+        )
+        self._maybe_log_volume_change(shot_volume_ml, live_count)
+
+        if live_count == 0 or shot_volume_ml <= 0.0:
+            return None
+        return max(1, int(round(shot_volume_ml / flow_rate)))
+
+    def _maybe_log_volume_change(self, shot_volume_ml: float, live_count: int) -> None:
+        """Write a logbook entry when a live-count change alters the shot volume.
+
+        Only fires in active Volume Mode when the computed volume actually
+        changed versus the previous tick, so Seconds Mode and unchanged ticks
+        never spam the logbook (ADR-0011).
+        """
+        prev_volume = self._last_shot_volume_ml
+        prev_count = self._last_live_plant_count
+        self._last_shot_volume_ml = shot_volume_ml
+        self._last_live_plant_count = live_count
+
+        if (
+            prev_volume is None
+            or prev_count is None
+            or round(prev_volume) == round(shot_volume_ml)
+            or prev_count == live_count
+        ):
+            return
+
+        if not self.growspace.irrigation_config.log_to_logbook:
+            return
+
+        self._fire_logbook_event(
+            f"shot volume {round(prev_volume)}→{round(shot_volume_ml)} ml: "
+            f"plant count {prev_count}→{live_count}",
+            category="irrigation",
+        )
+
     def _handle_watering(self, strategy: IrrigationStrategy, phase: str) -> None:
         """Handle execution of a shot if the phase's interval permits."""
         now_dt = now()
-        duration, interval_minutes = self._shot_params_for_phase(strategy, phase)
+        seconds_duration, interval_minutes = self._shot_params_for_phase(
+            strategy, phase
+        )
 
         last_shot = self._last_shot_dt()
         if last_shot:
@@ -278,6 +402,20 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         pump_entity = self._get_pump_entity()
         if not pump_entity:
             return
+
+        # Derive the BASE per-shot duration. Volume Mode converts the per-phase
+        # percent-of-substrate-volume size to pump seconds via the live plant
+        # count and flow rate; Seconds Mode keeps the configured seconds exactly.
+        # The base is computed BEFORE the VWC feedback scale factor (and any
+        # downstream safety caps).
+        if self._volume_mode_active(strategy):
+            duration = self._volume_mode_base_duration(strategy, phase)
+            if duration is None:
+                # Zero live plants: suspend rather than firing a floored shot.
+                return
+        else:
+            duration = seconds_duration
+
         scaled_duration = max(1, int(round(duration * self._shot_scale_factor)))
 
         _LOGGER.info(

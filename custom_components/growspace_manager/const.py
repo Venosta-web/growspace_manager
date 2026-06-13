@@ -121,7 +121,9 @@ STAGE_PHOTOPERIOD_KEYS: Final[dict[PlantStage, str]] = {
 # Trend Analysis Constants
 CONF_TREND_VPD_THRESHOLD = "trend_vpd_threshold"
 CONF_TREND_TEMPERATURE_THRESHOLD = "trend_temperature_threshold"
-CONF_TREND_TEMP_THRESHOLD = CONF_TREND_TEMPERATURE_THRESHOLD  # Alias for backward compatibility
+CONF_TREND_TEMP_THRESHOLD = (
+    CONF_TREND_TEMPERATURE_THRESHOLD  # Alias for backward compatibility
+)
 CONF_TREND_HUMIDITY_THRESHOLD = "trend_humidity_threshold"
 CONF_TREND_VPD_DURATION = "trend_vpd_duration"
 CONF_TREND_TEMPERATURE_DURATION = "trend_temperature_duration"
@@ -658,6 +660,26 @@ class FanRegulationMode(StrEnum):
     HUMIDITY = "humidity"
     TEMPERATURE = "temperature"
     VPD = "vpd"
+
+
+class SubstrateMediaType(StrEnum):
+    """Growing-medium type for a growspace's Substrate Profile."""
+
+    COCO = "coco"
+    ROCKWOOL = "rockwool"
+    SOIL = "soil"
+
+
+class ShotSizingMode(StrEnum):
+    """How steering shot size is expressed.
+
+    SECONDS is the default, first-class behavior (raw pump seconds). VOLUME is
+    an opt-in mode expressing shot size as a percentage of substrate volume,
+    converted to pump seconds via the substrate profile and pump flow rate.
+    """
+
+    SECONDS = "seconds"
+    VOLUME = "volume"
 
 
 class TrainingTechnique(StrEnum):

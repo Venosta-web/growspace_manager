@@ -46,7 +46,9 @@ async def _get_irrigation_coordinator(
 ) -> IrrigationCoordinator:
     """Get the irrigation coordinator for a specific growspace, raising on failure."""
     try:
-        irr_coord = coordinator.services.growspaces.get_irrigation_coordinator(growspace_id)
+        irr_coord = coordinator.services.growspaces.get_irrigation_coordinator(
+            growspace_id
+        )
 
         if irr_coord is None:
             growspace = coordinator.growspaces.get(growspace_id)
@@ -57,7 +59,9 @@ async def _get_irrigation_coordinator(
                 await coordinator._subsystem_manager.async_setup_growspace_sub_coordinators(
                     growspace_id, growspace
                 )
-                irr_coord = coordinator.services.growspaces.get_irrigation_coordinator(growspace_id)
+                irr_coord = coordinator.services.growspaces.get_irrigation_coordinator(
+                    growspace_id
+                )
 
             if irr_coord is None:
                 raise ServiceValidationError(
@@ -84,7 +88,9 @@ async def handle_set_irrigation_settings(
         key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
     }
 
-    await coordinator.services.growspaces.set_irrigation_settings(growspace_id, settings)
+    await coordinator.services.growspaces.set_irrigation_settings(
+        growspace_id, settings
+    )
     _LOGGER.info("Set irrigation settings for growspace '%s'", growspace_id)
 
 
@@ -102,9 +108,75 @@ async def handle_set_irrigation_strategy(
         key: value for key, value in call.data.items() if key != ATTR_GROWSPACE_ID
     }
 
-    await coordinator.services.growspaces.set_irrigation_strategy(growspace_id, strategy)
+    _build_substrate_profile_update(strategy)
+    _validate_volume_mode_selection(coordinator, growspace_id, strategy)
+
+    await coordinator.services.growspaces.set_irrigation_strategy(
+        growspace_id, strategy
+    )
     _LOGGER.info("Set irrigation strategy for growspace '%s'", growspace_id)
 
+
+def _build_substrate_profile_update(strategy: dict) -> None:
+    """Fold flat substrate-profile keys into a nested ``substrate_profile`` dict.
+
+    The service surface accepts ``substrate_media_type`` / ``substrate_liters_per_pot``
+    as flat fields; the model stores them on the nested ``SubstrateProfile``. We
+    merge them into a single dict so the generic setattr-based config updater can
+    deserialize them onto the strategy. Only the provided keys are touched so a
+    partial update preserves the other half of the profile.
+    """
+    from custom_components.growspace_manager.const import (  # noqa: PLC0415
+        SubstrateMediaType,
+    )
+
+    media_type = strategy.pop("substrate_media_type", None)
+    liters_per_pot = strategy.pop("substrate_liters_per_pot", None)
+    if media_type is None and liters_per_pot is None:
+        return
+
+    profile: dict[str, object] = {}
+    if media_type is not None:
+        profile["media_type"] = SubstrateMediaType(media_type).value
+    if liters_per_pot is not None:
+        profile["liters_per_pot"] = float(liters_per_pot)
+    strategy["substrate_profile"] = profile
+
+
+def _validate_volume_mode_selection(
+    coordinator: GrowspaceCoordinator,
+    growspace_id: str,
+    strategy: dict,
+) -> None:
+    """Reject selecting Volume Mode unless its prerequisites are met (ADR-0011).
+
+    Volume Mode is opt-in and is only selectable when a substrate profile
+    (positive liters-per-pot) and a positive pump flow rate are both configured.
+    Prerequisites are evaluated against the post-update state so a single call may
+    set the profile and the mode together.
+    """
+    from custom_components.growspace_manager.const import (  # noqa: PLC0415
+        ShotSizingMode,
+    )
+
+    if strategy.get("shot_sizing_mode") != ShotSizingMode.VOLUME.value:
+        return
+
+    growspace = coordinator.growspaces.get(growspace_id)
+    if growspace is None:
+        return
+
+    # Effective per-pot volume: the incoming update wins over the stored profile.
+    stored_profile = growspace.irrigation_strategy.substrate_profile
+    profile_update = strategy.get("substrate_profile", {})
+    liters_per_pot = profile_update.get("liters_per_pot", stored_profile.liters_per_pot)
+    flow_rate = growspace.irrigation_config.pump_flow_rate_ml_per_sec
+
+    if liters_per_pot <= 0.0 or flow_rate <= 0.0:
+        raise ServiceValidationError(
+            "Volume Mode requires a substrate profile (liters per pot) and a "
+            "pump flow rate to be configured first."
+        )
 
 
 @handle_service_errors

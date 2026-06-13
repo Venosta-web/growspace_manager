@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
 import homeassistant.util.dt as dt_util
 
 from .base import BaseModel, _sanitize_numeric_fields
@@ -22,9 +23,29 @@ __all__ = [
     "IrrigationTank",
     "SubstrateEvent",
     "SubstrateHistory",
+    "SubstrateProfile",
     "TankWaterEvent",
     "TankWaterHistory",
 ]
+
+
+@dataclass(slots=True)
+class SubstrateProfile(BaseModel):
+    """Per-growspace description of the growing medium.
+
+    Holds the media type and the substrate volume per pot in liters. Combined
+    with the live plant count it yields the total substrate volume that backs
+    percent-of-volume shot sizing in Volume Mode (see ADR-0011). A profile is
+    considered "set" once ``liters_per_pot`` is a positive number.
+    """
+
+    media_type: SubstrateMediaType = SubstrateMediaType.COCO
+    liters_per_pot: float = 0.0
+
+    @property
+    def is_configured(self) -> bool:
+        """Return True when the profile carries a usable per-pot volume."""
+        return self.liters_per_pot > 0.0
 
 
 # Legacy shared shot fields and the per-phase fields they seed on migration.
@@ -61,6 +82,15 @@ class IrrigationStrategy(BaseModel):
     p2_shot_interval_minutes: int = 15
     auto_light_tracking: bool = False
     detected_lights_on_time: str | None = None
+
+    # Shot Sizing Mode (ADR-0011). SECONDS is the default first-class behavior;
+    # VOLUME expresses shot sizes as a percent of substrate volume and is only
+    # active when a substrate profile and pump flow rate are both configured.
+    shot_sizing_mode: ShotSizingMode = ShotSizingMode.SECONDS
+    substrate_profile: SubstrateProfile = field(default_factory=SubstrateProfile)
+    # Per-phase shot sizes as a percent of total substrate volume (Volume Mode).
+    p1_shot_volume_percent: float = 4.0
+    p2_shot_volume_percent: float = 4.0
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:

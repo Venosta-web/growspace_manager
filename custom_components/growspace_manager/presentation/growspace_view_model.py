@@ -179,6 +179,15 @@ class GrowspaceViewModelBuilder:
             else None
         )
 
+        # Volume Mode prerequisites (ADR-0011): the card uses this to unlock the
+        # Volume Mode toggle. True only when a substrate profile (positive liters
+        # per pot) and a positive pump flow rate are both configured.
+        volume_mode_capable = bool(
+            growspace.irrigation_strategy
+            and growspace.irrigation_strategy.substrate_profile.is_configured
+            and growspace.irrigation_config.pump_flow_rate_ml_per_sec > 0.0
+        )
+
         # Create grid representation with entity data
         grid = self._build_rich_plant_grid(growspace, plants)
 
@@ -276,6 +285,7 @@ class GrowspaceViewModelBuilder:
             "irrigation": {
                 "irrigation_config": irrigation_options,
                 "irrigation_strategy": irrigation_strategy_dict,
+                "volume_mode_capable": volume_mode_capable,
                 "drain_config": drain_config,
                 "water_usage": water_usage,
                 "substrate": self._build_substrate_metrics(growspace),

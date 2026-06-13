@@ -86,7 +86,9 @@ class TestGetIrrigationCoordinator:
         self, mock_coordinator, mock_irrigation_coordinator
     ):
         """Test error when specified growspace is not found."""
-        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = None
+        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = (
+            None
+        )
         mock_coordinator.growspaces = {}
 
         with pytest.raises(
@@ -97,7 +99,9 @@ class TestGetIrrigationCoordinator:
     @pytest.mark.asyncio
     async def test_success(self, mock_coordinator, mock_irrigation_coordinator):
         """Test successful retrieval of irrigation coordinator."""
-        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = mock_irrigation_coordinator
+        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = (
+            mock_irrigation_coordinator
+        )
 
         result = await _get_irrigation_coordinator(mock_coordinator, "gs1")
         assert result == mock_irrigation_coordinator
@@ -135,7 +139,9 @@ class TestHandleSetIrrigationSettings:
     ):
         """Test setting irrigation settings."""
         # Setup
-        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {
+            "gs1": mock_irrigation_coordinator
+        }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {
@@ -168,7 +174,9 @@ class TestHandleSetIrrigationSettings:
         mock_coordinator: MagicMock,
     ) -> None:
         """input_boolean entities are accepted for pump fields (no domain restriction in schema)."""
-        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {
+            "gs1": mock_irrigation_coordinator
+        }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {
@@ -192,7 +200,9 @@ class TestHandleSetIrrigationSettings:
         self, mock_hass, mock_coordinator
     ):
         """Test error when growspace not found."""
-        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = None
+        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = (
+            None
+        )
         mock_coordinator.growspaces = {}
 
         call = MagicMock(spec=ServiceCall)
@@ -215,7 +225,9 @@ class TestHandleAddIrrigationTime:
     ):
         """Test adding irrigation time with explicit duration."""
         # Setup
-        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {
+            "gs1": mock_irrigation_coordinator
+        }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00", "duration": 600}
@@ -237,7 +249,9 @@ class TestHandleAddIrrigationTime:
     ):
         """Test adding irrigation time using default duration."""
         # Setup
-        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = mock_irrigation_coordinator
+        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = (
+            mock_irrigation_coordinator
+        )
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00"}
@@ -266,7 +280,9 @@ class TestHandleRemoveIrrigationTime:
     ):
         """Test removing irrigation time."""
         # Setup
-        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {
+            "gs1": mock_irrigation_coordinator
+        }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "08:00:00"}
@@ -292,7 +308,9 @@ class TestHandleAddDrainTime:
     ):
         """Test adding drain time with explicit duration."""
         # Setup
-        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {
+            "gs1": mock_irrigation_coordinator
+        }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00", "duration": 180}
@@ -314,7 +332,9 @@ class TestHandleAddDrainTime:
     ):
         """Test adding drain time using default duration."""
         # Setup
-        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = mock_irrigation_coordinator
+        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = (
+            mock_irrigation_coordinator
+        )
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00"}
@@ -343,7 +363,9 @@ class TestHandleRemoveDrainTime:
     ):
         """Test removing drain time."""
         # Setup
-        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {
+            "gs1": mock_irrigation_coordinator
+        }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "time": "10:00:00"}
@@ -369,7 +391,9 @@ class TestHandleSetIrrigationStrategy:
     ) -> None:
         """Test setting irrigation strategy."""
         # Setup
-        mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {
+            "gs1": mock_irrigation_coordinator
+        }
 
         call = MagicMock(spec=ServiceCall)
         call.data = {
@@ -407,7 +431,9 @@ class TestHandleSetIrrigationStrategy:
         self, mock_hass: MagicMock, mock_coordinator: MagicMock
     ) -> None:
         """Test error when growspace not found."""
-        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = None
+        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = (
+            None
+        )
         mock_coordinator.growspaces = {}
 
         call = MagicMock(spec=ServiceCall)
@@ -430,7 +456,9 @@ class TestHandleRunIrrigationCycle:
     ) -> None:
         """Calling the service triggers async_manual_run with the supplied duration."""
         mock_irrigation_coordinator.async_manual_run = AsyncMock()
-        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = mock_irrigation_coordinator
+        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = (
+            mock_irrigation_coordinator
+        )
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "duration": 45}
@@ -450,7 +478,9 @@ class TestHandleRunIrrigationCycle:
     ) -> None:
         """When duration is omitted the coordinator receives None and uses its default."""
         mock_irrigation_coordinator.async_manual_run = AsyncMock()
-        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = mock_irrigation_coordinator
+        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = (
+            mock_irrigation_coordinator
+        )
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1"}
@@ -468,7 +498,9 @@ class TestHandleRunIrrigationCycle:
         mock_coordinator: MagicMock,
     ) -> None:
         """Service raises ServiceValidationError when the growspace has no coordinator."""
-        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = None
+        mock_coordinator.services.growspaces.get_irrigation_coordinator.return_value = (
+            None
+        )
         mock_coordinator.growspaces = {}
 
         call = MagicMock(spec=ServiceCall)
@@ -477,3 +509,93 @@ class TestHandleRunIrrigationCycle:
         with pytest.raises(ServiceValidationError, match="not found"):
             await handle_run_irrigation_cycle(mock_hass, mock_coordinator, call)
 
+
+class TestVolumeModeStrategyValidation:
+    """Volume Mode gating + substrate-profile folding (ADR-0011)."""
+
+    def _make_growspace(self, liters_per_pot: float, flow_rate: float):
+        from custom_components.growspace_manager.models import (
+            Growspace,
+            IrrigationConfig,
+            IrrigationStrategy,
+            SubstrateProfile,
+        )
+
+        gs = Growspace(
+            id="gs1",
+            name="GS",
+            irrigation_config=IrrigationConfig(pump_flow_rate_ml_per_sec=flow_rate),
+        )
+        gs.irrigation_strategy = IrrigationStrategy(
+            substrate_profile=SubstrateProfile(liters_per_pot=liters_per_pot)
+        )
+        return gs
+
+    @pytest.mark.asyncio
+    async def test_volume_mode_rejected_without_profile(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """Selecting Volume Mode without a substrate profile is rejected."""
+        mock_coordinator.growspaces = {"gs1": self._make_growspace(0.0, 20.0)}
+
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "shot_sizing_mode": "volume"}
+
+        with pytest.raises(ServiceValidationError, match="Volume Mode requires"):
+            await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
+        mock_coordinator.services.growspaces.set_irrigation_strategy.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_volume_mode_rejected_without_flow_rate(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """Selecting Volume Mode without a pump flow rate is rejected."""
+        mock_coordinator.growspaces = {"gs1": self._make_growspace(6.0, 0.0)}
+
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "shot_sizing_mode": "volume"}
+
+        with pytest.raises(ServiceValidationError, match="Volume Mode requires"):
+            await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
+
+    @pytest.mark.asyncio
+    async def test_volume_mode_accepted_when_profile_set_in_same_call(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """A single call may set the profile and switch to Volume Mode together."""
+        mock_coordinator.growspaces = {"gs1": self._make_growspace(0.0, 20.0)}
+
+        call = MagicMock(spec=ServiceCall)
+        call.data = {
+            "growspace_id": "gs1",
+            "shot_sizing_mode": "volume",
+            "substrate_media_type": "rockwool",
+            "substrate_liters_per_pot": 6.0,
+        }
+
+        await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
+
+        _gid, strategy = (
+            mock_coordinator.services.growspaces.set_irrigation_strategy.await_args[0]
+        )
+        # Flat substrate keys are folded into a nested profile dict.
+        assert "substrate_media_type" not in strategy
+        assert strategy["substrate_profile"] == {
+            "media_type": "rockwool",
+            "liters_per_pot": 6.0,
+        }
+        assert strategy["shot_sizing_mode"] == "volume"
+
+    @pytest.mark.asyncio
+    async def test_seconds_mode_skips_volume_validation(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """Seconds Mode is accepted with no profile or flow rate."""
+        mock_coordinator.growspaces = {"gs1": self._make_growspace(0.0, 0.0)}
+
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "shot_sizing_mode": "seconds"}
+
+        await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
+
+        mock_coordinator.services.growspaces.set_irrigation_strategy.assert_awaited_once()

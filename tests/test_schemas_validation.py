@@ -121,6 +121,43 @@ def test_set_irrigation_strategy_schema_accepts_shot_fields(field_name: str) -> 
 
 
 @pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("shot_sizing_mode", "volume"),
+        ("shot_sizing_mode", "seconds"),
+        ("substrate_media_type", "rockwool"),
+        ("substrate_liters_per_pot", 6.0),
+        ("p1_shot_volume_percent", 4.0),
+        ("p2_shot_volume_percent", 3.5),
+    ],
+)
+def test_set_irrigation_strategy_schema_accepts_volume_mode_fields(
+    field_name: str, value
+) -> None:
+    """Volume Mode and substrate-profile fields validate (ADR-0011)."""
+    data = {"growspace_id": "gs1", field_name: value}
+    result = SET_IRRIGATION_STRATEGY_SCHEMA(data)
+    assert result[field_name] == value
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("shot_sizing_mode", "bogus"),
+        ("substrate_media_type", "gravel"),
+        ("p1_shot_volume_percent", 150.0),
+    ],
+)
+def test_set_irrigation_strategy_schema_rejects_invalid_volume_fields(
+    field_name: str, value
+) -> None:
+    """Invalid mode/media/percent values are rejected by the schema."""
+    data = {"growspace_id": "gs1", field_name: value}
+    with pytest.raises(vol.Invalid):
+        SET_IRRIGATION_STRATEGY_SCHEMA(data)
+
+
+@pytest.mark.parametrize(
     ("schema", "sativa", "indica"),
     [
         (ADD_STRAIN_SCHEMA, 10, 90),
