@@ -253,6 +253,44 @@ def _runoff_percent(reading: DrainReading | None) -> float | None:
     return reading.drain_volume_ml / reading.feed_volume_ml * 100.0
 
 
+# Crop Steering Score runoff buckets (ADR-0016 §3, ratified). Keyed off the
+# grower's max_ec_delta (Δmax); symmetric ±0.3, mirroring the EC-trend budget so
+# the runoff fill and a pore-EC trend occupy the same shared axis.
+_RUNOFF_SCORE_STRONG = 0.3
+_RUNOFF_SCORE_MODERATE = 0.2
+
+
+def runoff_score_component(readings: list[DrainReading], max_ec_delta: float) -> float:
+    """Bucket a sustained [[Feed-to-Runoff EC Delta]] into a steering-score nudge.
+
+    Fills the [[Crop Steering Score]]'s shared EC axis only when no pore-EC trend
+    is measured (the caller enforces that). "Sustained" reuses the same
+    unanimous-tail notion as the flush bias: the last 2–3 readings must all agree,
+    and the nudge is bucketed on the **weakest** agreeing reading (the min delta
+    when stacking, the max when diluting). Symmetric off ``max_ec_delta`` (Δmax):
+    ≥2·Δmax → +0.3, ≥Δmax → +0.2, ≤−Δmax → −0.2, ≤−2·Δmax → −0.3.
+
+    Returns 0.0 on a straddling/within-band tail, too few readings, or a
+    non-positive ``max_ec_delta`` — so a grower without drain data scores
+    unchanged.
+    """
+    tail = readings[-_SUSTAINED_WINDOW:]
+    if len(tail) < _SUSTAINED_MIN or max_ec_delta <= 0:
+        return 0.0
+    deltas = [r.drain_ec - r.feed_ec for r in tail]
+    weakest_stack = min(deltas)  # smallest positive when all stacking
+    weakest_dilute = max(deltas)  # largest (closest to 0) when all diluting
+    if weakest_stack >= 2 * max_ec_delta:
+        return _RUNOFF_SCORE_STRONG
+    if weakest_stack >= max_ec_delta:
+        return _RUNOFF_SCORE_MODERATE
+    if weakest_dilute <= -2 * max_ec_delta:
+        return -_RUNOFF_SCORE_STRONG
+    if weakest_dilute <= -max_ec_delta:
+        return -_RUNOFF_SCORE_MODERATE
+    return 0.0
+
+
 def _is_sustained_high_delta(readings: list[DrainReading], max_ec_delta: float) -> bool:
     """Return True when the recent drain readings *sustain* an over-target delta.
 

@@ -214,6 +214,9 @@ class ViewModelBuilder:
         substrate["intent_deviation"] = (
             steering_state.intent_deviation if steering_state is not None else None
         )
+        substrate["runoff_score"] = (
+            steering_state.runoff_score if steering_state is not None else None
+        )
 
         # Shot Size Composition is runtime state on the VWC coordinator (base ×
         # VWC factor × EC modulation), absent on time-based irrigation.

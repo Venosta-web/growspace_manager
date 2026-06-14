@@ -79,28 +79,45 @@ that triggered it does not by itself imply the substrate EC is high.
 
 ### 3. Runoff feeds the Crop Steering Score
 
-`calculate_crop_steering_score` ignores runoff entirely today. Add a bounded
-runoff component symmetric with the existing EC-trend component: a sustained
-[[Feed-to-Runoff EC Delta]] above target (salts stacking) nudges the score
-**generative**; runoff EC at or below feed EC with healthy [[Runoff Percentage]]
-(flushing through) nudges **vegetative**. The component is `None`-safe: absent
-drain data contributes exactly 0.0, so the score is unchanged for growers
-without a runoff pen. The [[Feed-to-Runoff EC Delta]] is the primary axis; the
-[[Runoff Percentage]] is a small trim; the component sum is clamped to ±0.3 so
-runoff cannot dominate dryback.
+`calculate_crop_steering_score` ignores runoff entirely today. Runoff joins the
+score on a **shared EC axis**, not as a fourth independent component — because the
+pore-[[EC Trend]] and a sustained [[Feed-to-Runoff EC Delta]] are *correlated EC
+signals* (both report salts moving). Summing both at full ±0.3 would make the
+EC-ish contribution ±0.6 — larger than dryback's ±0.4 — inverting the intended
+primacy of dryback. So the EC axis holds **one** value, capped ±0.3:
 
-**"Sustained" needs no new state.** It is read from the **tail (last 2–3 entries)
-of the already-persisted `DrainConfig.readings`** rolling window — drain readings
-are sparse (manually logged after a watering), so a few entries already span the
-recent feeds. This deliberately avoids adding runoff-EC trend state to the
-[[SubstrateTracker]], which ADR-0010 keeps recorder-free and measurement-only;
-runoff targets and trends are config/decision concerns, not measured VWC events.
+- When a pore-EC Trend is measured (`rising` → +0.3, `falling` → −0.3), it sets
+  the axis. The pore band is the closed loop (ADR-0012 stamps it), so a measured
+  in-substrate Trend is authoritative.
+- Only when the Trend is `None` (no pore-EC sensors) or `stable` does the runoff
+  delta fill the axis. Runoff's job is to **extend** the EC signal to growers
+  without pore-EC sensors, never to override or stack on a measured Trend. When
+  both agree, pore already maxes the axis, so the result is identical; the rule
+  only bites on disagreement, where the continuous in-substrate sensor wins.
 
-**Thresholds are an open HITL gate.** Only the *structure* (EC-delta primary +
-runoff-% trim, ±0.3 clamp, `None`-safe) is fixed here. The exact delta/percentage
-breakpoints and their nudge magnitudes are deferred to the implementation PR for
-agronomic sign-off, mirroring ADR-0012's baseline-table HITL gate — they are not
-baked into this ADR.
+The fill is `None`-safe: absent drain data contributes exactly 0.0, so the score
+is unchanged for growers without a runoff pen.
+
+**The ratified bucket (HITL gate, now closed).** "Sustained" reuses §2's notion —
+unanimous agreement across the tail (last 2–3 entries) of the already-persisted
+`DrainConfig.readings`, scored on the *weakest* agreeing reading (no new state, no
+[[SubstrateTracker]] involvement; ADR-0010 keeps it recorder-free). Symmetric,
+keyed off the grower's `max_ec_delta` (Δmax):
+
+| weakest reading in tail | nudge |
+|---|---|
+| ≥ 2·Δmax | +0.3 |
+| ≥ Δmax | +0.2 |
+| straddles / within ±Δmax | 0.0 |
+| ≤ −Δmax | −0.2 |
+| ≤ −2·Δmax | −0.3 |
+
+The +0.2 tier fires at exactly the `max_ec_delta` point §2's flush-bias engages,
+so actuator and readout agree. [[Runoff Percentage]] does **not** feed the score
+in v1 — it is a noisier, volume-sensor-gated, volume (not EC) signal; it stays in
+the `ECState` payload for display and may later join the shot-frequency axis. As
+in ADR-0012's baseline table, individual cells still take maintainer sign-off on
+the implementation PR.
 
 ### The interface delta on ECState
 
@@ -116,8 +133,11 @@ class ECState:                       # extended from 0015
 
 `ECRecommendation` stays the four modulation-direction values from 0015
 (`stack`/`hold`/`flush`/`unavailable`) — **no `HALT` member**. The hard halt is
-the separate `halt_irrigation` bool. The score reads a new
-`ECState.runoff_score_bias() -> float` (bounded, `None`-safe).
+the separate `halt_irrigation` bool. The score's runoff fill is a pure
+`runoff_score_component(readings, max_ec_delta) -> float` (the bucket table
+above, `None`-safe); `calculate_crop_steering_score` composes it onto the shared
+EC axis (pore Trend wins; the fill applies only when Trend is `None`/`stable`),
+so the score logic stays a pure function and no method is added to `ECState`.
 
 ### Why the halt is a separate field, not an enum member
 

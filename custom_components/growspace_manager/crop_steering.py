@@ -11,6 +11,7 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from .const import SteeringMode
+from .domain.ec_state import runoff_score_component
 from .models import CropSteeringState
 
 if TYPE_CHECKING:
@@ -61,6 +62,7 @@ def calculate_crop_steering_score(
     dryback_percent: float,
     ec_trend: str | None,
     shot_count: int | None = None,
+    runoff_delta_bucket: float = 0.0,
 ) -> float:
     """Calculate the crop steering score from component metrics.
 
@@ -69,17 +71,21 @@ def calculate_crop_steering_score(
             (peak - trough; a 55% -> 45% VWC drop is 10.0).
         ec_trend: Measured EC trend direction ("rising", "falling", "stable"),
             or None when no pore-EC sensors are configured / no reading yet. A
-            None or "stable" trend contributes nothing to the score, but the two
-            are distinct upstream: None means *unavailable* (capability locked),
+            None or "stable" trend contributes nothing *itself*, but the two are
+            distinct upstream: None means *unavailable* (capability locked),
             "stable" means *measured and flat*.
         shot_count: Number of irrigation shots today (None if unknown).
+        runoff_delta_bucket: The sustained Feed-to-Runoff EC Delta nudge
+            (``runoff_score_component``), in [-0.3, 0.3]. Fills the **shared EC
+            axis** only when no pore-EC trend is measured — see below (ADR-0016).
 
     Returns:
         Score clamped to [-1.0, 1.0].
     """
     score = 0.0
 
-    # Dryback component (absolute VWC points): >15 = generative, <8 = vegetative
+    # Dryback component (absolute VWC points): >15 = generative, <8 = vegetative.
+    # The ±0.4 primary axis — deliberately heavier than the EC and shot axes.
     if dryback_percent > 20:
         score += 0.4
     elif dryback_percent > 15:
@@ -89,11 +95,16 @@ def calculate_crop_steering_score(
     elif dryback_percent < 8:
         score -= 0.2
 
-    # EC trend component
+    # Shared EC axis (±0.3): a measured pore-EC trend wins; otherwise the
+    # sustained runoff delta fills it. Pore EC and runoff delta are correlated EC
+    # signals, so only one occupies this axis — runoff never stacks on a measured
+    # trend, keeping dryback the primary lever (ADR-0016).
     if ec_trend == "rising":
         score += 0.3
     elif ec_trend == "falling":
         score -= 0.3
+    else:
+        score += runoff_delta_bucket
 
     # Shot frequency component (if available)
     if shot_count is not None:
@@ -173,18 +184,33 @@ def get_crop_steering_state(
         dryback_percent = peak_vwc - trough_vwc
         shot_count = None
 
-    score = calculate_crop_steering_score(
-        dryback_percent, ec_trend, shot_count=shot_count
+    # Runoff fill for the shared EC axis: a sustained Feed-to-Runoff EC Delta
+    # bucketed off the grower's max_ec_delta (ADR-0016). Inert (0.0) without drain
+    # data, and ignored when a pore-EC trend is measured (the score composes it).
+    runoff_bucket = runoff_score_component(
+        growspace.drain_config.readings, growspace.drain_config.max_ec_delta
     )
+
+    score = calculate_crop_steering_score(
+        dryback_percent,
+        ec_trend,
+        shot_count=shot_count,
+        runoff_delta_bucket=runoff_bucket,
+    )
+
+    # Surface only the runoff contribution that actually entered the score: a
+    # measured pore-EC trend wins the shared EC axis, so runoff contributes 0.0
+    # in that case (the readout must not claim a contribution that was overridden).
+    effective_runoff_score = 0.0 if ec_trend in ("rising", "falling") else runoff_bucket
 
     # Steering Mode readout (ADR-0012): the measured classification is derived
     # from the absolute score; the deviation compares it against the grower's
     # declared mode without ever bending the score. The declared mode itself
     # lives on the strategy (``declared_steering_mode``) and is not duplicated
     # here — the payload carries it from there.
-    measured = classify_steering_score(score)
+    classification = classify_steering_score(score)
     intent_deviation = compute_intent_deviation(
-        measured, strategy.declared_steering_mode
+        classification, strategy.declared_steering_mode
     )
 
     return CropSteeringState(
@@ -196,6 +222,7 @@ def get_crop_steering_state(
         ec_trend_available=ec_trend_available,
         ec_day_start=ec_trend_info["day_start_ec"] if ec_trend_info else None,
         ec_current=ec_trend_info["current_ec"] if ec_trend_info else None,
-        measured_classification=measured.value,
+        measured_classification=classification.value,
         intent_deviation=intent_deviation,
+        runoff_score=effective_runoff_score,
     )
