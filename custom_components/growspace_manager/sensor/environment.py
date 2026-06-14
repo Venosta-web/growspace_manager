@@ -7,6 +7,7 @@ from typing import Any, override
 
 from custom_components.growspace_manager.const import DEFAULT_DLI_TARGET_FLOWER, DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.domain.ec_state import band_for_week
 from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -85,7 +86,7 @@ class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type:
             if state and state.state not in ("unknown", "unavailable"):
                 try:
                     return float(state.state)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     continue
         return None
 
@@ -196,7 +197,9 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
 
     def _get_current_week(self) -> int:
         """Get the current week number in the active stage."""
-        plants = self.coordinator.services.growspaces.get_growspace_plants(self._growspace_id)
+        plants = self.coordinator.services.growspaces.get_growspace_plants(
+            self._growspace_id
+        )
         if not plants:
             return 1
         stage = calculate_plant_stage(plants[0])
@@ -210,14 +213,10 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
         curve = self._get_active_curve()
         if not curve or not curve.points:
             return None
-        week = self._get_current_week()
-        for point in curve.points:
-            if point.week == week:
-                return round((point.ec_min + point.ec_max) / 2, 2)
-        last = curve.points[-1]
-        if week >= last.week:
-            return round((last.ec_min + last.ec_max) / 2, 2)
-        return None
+        band = band_for_week(curve.points, self._get_current_week())
+        if band is None:
+            return None
+        return round((band[0] + band[1]) / 2, 2)
 
     @property
     @override  # type: ignore[misc]
@@ -228,17 +227,8 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
             return {}
 
         week = self._get_current_week()
-        ec_min = ec_max = None
-        for point in curve.points:
-            if point.week == week:
-                ec_min = point.ec_min
-                ec_max = point.ec_max
-                break
-        if ec_min is None and curve.points:
-            last = curve.points[-1]
-            if week >= last.week:
-                ec_min = last.ec_min
-                ec_max = last.ec_max
+        band = band_for_week(curve.points, week) if curve.points else None
+        ec_min, ec_max = band if band is not None else (None, None)
 
         return {
             "ec_min": ec_min,

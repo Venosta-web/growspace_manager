@@ -157,11 +157,12 @@ def resolve_feed_stage_week(plants: list[Plant]) -> tuple[str | None, int]:
     return best_stage, days_to_week(max_days)
 
 
-def _band_for_week(points: list[ECRampPoint], week: int) -> tuple[float, float] | None:
+def band_for_week(points: list[ECRampPoint], week: int) -> tuple[float, float] | None:
     """Return ``(ec_min, ec_max)`` for ``week`` on a ramp curve, or None.
 
-    Matches the existing ``ECTargetSensor`` resolution: an exact week wins; past
-    the last defined week the final point holds; before the first week, None.
+    The single owner of ramp-curve week resolution, shared by the feed-target seam
+    and the ``ECTargetSensor``: an exact week wins; past the last defined week the
+    final point holds; before the first week, None.
     """
     for point in points:
         if point.week == week:
@@ -189,7 +190,7 @@ def resolve_active_feed_ec(
 
     curve = next((c for c in ec_ramp_curves.values() if c.stage == stage), None)
     if curve is not None and curve.points:
-        band = _band_for_week(curve.points, week)
+        band = band_for_week(curve.points, week)
         if band is not None:
             return band, "ramp_curve"
 
