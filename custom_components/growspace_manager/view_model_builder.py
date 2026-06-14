@@ -93,7 +93,9 @@ class ViewModelBuilder:
         if preloaded_plants is not None:
             plants = preloaded_plants
         else:
-            plants = self.coordinator.services.growspaces.get_growspace_plants(growspace_id)
+            plants = self.coordinator.services.growspaces.get_growspace_plants(
+                growspace_id
+            )
 
         # Calculate aggregated stats for the growspace
         stage_attr_map = {
@@ -163,8 +165,10 @@ class ViewModelBuilder:
         liters_today: float | None = None
         env = growspace.environment_config
         if env and not env.irrigation_flow_sensors and not env.drain_volume_sensors:
-            trackers = self.coordinator.services.growspaces.get_all_trackers_for_growspace(
-                growspace_id
+            trackers = (
+                self.coordinator.services.growspaces.get_all_trackers_for_growspace(
+                    growspace_id
+                )
             )
             liters_today = round(
                 sum(t.get_total_liters_today() for t in trackers.values()), 2
@@ -210,12 +214,23 @@ class ViewModelBuilder:
         substrate["intent_deviation"] = (
             steering_state.intent_deviation if steering_state is not None else None
         )
+        substrate["runoff_score"] = (
+            steering_state.runoff_score if steering_state is not None else None
+        )
 
         # Shot Size Composition is runtime state on the VWC coordinator (base ×
         # VWC factor × EC modulation), absent on time-based irrigation.
         substrate["shot_composition"] = (
             irr_coord.shot_composition_payload()
             if irr_coord is not None and hasattr(irr_coord, "shot_composition_payload")
+            else None
+        )
+
+        # EC State: the reconciled feed/pore EC view (ADR-0015), only on the VWC
+        # coordinator. None on time-based irrigation so the card can lock the panel.
+        serialized["irrigation"]["ec_state"] = (
+            irr_coord.ec_state_payload()
+            if irr_coord is not None and hasattr(irr_coord, "ec_state_payload")
             else None
         )
 

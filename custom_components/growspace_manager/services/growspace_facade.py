@@ -25,6 +25,7 @@ from custom_components.growspace_manager.const import (
     SteeringMode,
     SubstrateMediaType,
 )
+from custom_components.growspace_manager.domain.ec_state import record_drain_reading
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
     determine_coordinator_stage,
@@ -34,7 +35,6 @@ from custom_components.growspace_manager.exceptions import (
     GrowspaceNotFoundError,
 )
 from custom_components.growspace_manager.models import (
-    DrainReading,
     ECTargetRange,
     Growspace,
     IrrigationConfig,
@@ -327,9 +327,7 @@ class GrowspaceFacade:
         """Set irrigation strategy for a growspace."""
         await self.update_irrigation_config(growspace_id, strategy)
 
-    async def apply_steering_mode(
-        self, growspace_id: str, mode: SteeringMode
-    ) -> None:
+    async def apply_steering_mode(self, growspace_id: str, mode: SteeringMode) -> None:
         """Stamp a Steering Mode's preset values into the strategy (ADR-0012).
 
         Looks up the preset for (mode, stored media type, active shot sizing
@@ -346,9 +344,7 @@ class GrowspaceFacade:
 
         strategy = growspace.irrigation_strategy
         media_type = strategy.substrate_profile.media_type
-        preset = resolve_steering_preset(
-            mode, media_type, strategy.shot_sizing_mode
-        )
+        preset = resolve_steering_preset(mode, media_type, strategy.shot_sizing_mode)
         for field_name, value in preset.items():
             setattr(strategy, field_name, value)
         strategy.declared_steering_mode = mode
@@ -473,32 +469,24 @@ class GrowspaceFacade:
         growspace = self._coordinator.growspaces.get(growspace_id)
         if not growspace:
             raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
-        reading = DrainReading(
-            timestamp=dt_util.now().isoformat(),
-            feed_ec=feed_ec,
-            drain_ec=drain_ec,
-            drain_volume_ml=drain_volume_ml,
-            feed_volume_ml=feed_volume_ml,
-        )
         drain_config = growspace.drain_config
-        drain_config.readings.append(reading)
-        if len(drain_config.readings) > drain_config.max_readings:
-            drain_config.readings = drain_config.readings[-drain_config.max_readings :]
+        record = record_drain_reading(
+            drain_config, feed_ec, drain_ec, drain_volume_ml, feed_volume_ml
+        )
         await self._coordinator.async_commit()
-        ec_delta = drain_ec - feed_ec
-        if drain_config.enabled and ec_delta > drain_config.max_ec_delta:
+        if record.alert:
             _LOGGER.warning(
                 "Drain EC alert for %s: drain=%.2f, feed=%.2f, delta=%.2f exceeds threshold %.2f",
                 growspace_id,
                 drain_ec,
                 feed_ec,
-                ec_delta,
+                record.ec_delta,
                 drain_config.max_ec_delta,
             )
             await self._coordinator._notification_manager.async_send_notification(
                 growspace_id,
                 f"⚠️ High drain EC in {growspace.name}",
-                f"Drain EC delta ({ec_delta:.2f}) exceeds threshold ({drain_config.max_ec_delta:.2f}).",
+                f"Drain EC delta ({record.ec_delta:.2f}) exceeds threshold ({drain_config.max_ec_delta:.2f}).",
                 tier="drain_ec",
             )
 

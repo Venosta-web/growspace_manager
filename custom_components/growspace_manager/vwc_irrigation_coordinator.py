@@ -20,6 +20,15 @@ from .const import (
     PlantStage,
     ShotSizingMode,
 )
+from .domain.ec_state import (
+    ECRecommendation,
+    ECState,
+    ECStateResolver,
+    RunoffInputs,
+    resolve_active_feed_ec,
+    resolve_feed_stage_week,
+    runoff_halt,
+)
 from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
 
@@ -587,6 +596,65 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "last_shot": asdict(composition) if composition is not None else None,
         }
 
+    def _resolve_feed_target(
+        self, growspace: Growspace
+    ) -> tuple[tuple[float, float] | None, str]:
+        """Resolve the growspace's Active Feed EC Target as ``(band, source)``.
+
+        Reads the growspace's plants (for the furthest-along live stage and its
+        week), the configured EC ramp curves, and the per-stage feed-EC ranges.
+        """
+        plants = self._main_coordinator.services.growspaces.get_growspace_plants(
+            self._growspace_id
+        )
+        stage, week = resolve_feed_stage_week(plants)
+        ramp_curves = self._main_coordinator.services.config.ec_ramp_curves
+        return resolve_active_feed_ec(
+            stage, week, ramp_curves, growspace.irrigation_config.ec_target_ranges
+        )
+
+    def ec_state(self) -> ECState:
+        """Build the reconciled :class:`ECState` for this growspace.
+
+        The one place EC is reasoned about (ADR-0015): the modulation direction
+        (pore-vs-band) and the Active Feed EC Target, behind a single seam.
+        """
+        growspace = self.growspace
+        return ECStateResolver(
+            growspace.irrigation_strategy,
+            lambda: self._average_pore_ec(growspace),
+            lambda: self._resolve_feed_target(growspace),
+            lambda: self._runoff_inputs(growspace),
+        ).resolve()
+
+    @staticmethod
+    def _runoff_inputs(growspace: Growspace) -> RunoffInputs:
+        """Assemble the runoff inputs the EC State resolver needs."""
+        drain_config = growspace.drain_config
+        return RunoffInputs(
+            readings=drain_config.readings,
+            max_ec_delta=drain_config.max_ec_delta,
+            target_runoff_percent=drain_config.target_runoff_percent,
+            halt_threshold=growspace.irrigation_config.halt_on_runoff_ec_threshold,
+        )
+
+    def ec_state_payload(self) -> dict[str, Any]:
+        """Return the frontend/diagnostics view of the current EC State."""
+        state = self.ec_state()
+        return {
+            "pore_ec": state.pore_ec,
+            "recommendation": state.recommendation.value,
+            "active_feed_ec": (
+                list(state.active_feed_ec) if state.active_feed_ec is not None else None
+            ),
+            "feed_ec_source": state.feed_ec_source,
+            "runoff_ec": state.runoff_ec,
+            "feed_to_runoff_delta": state.feed_to_runoff_delta,
+            "runoff_percent": state.runoff_percent,
+            "runoff_pct_target": state.runoff_pct_target,
+            "halt_irrigation": state.halt_irrigation,
+        }
+
     @staticmethod
     def _ec_modulation_factor_for_reading(
         measured_ec: float, band_min: float, band_max: float
@@ -616,21 +684,41 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     ) -> tuple[float, bool]:
         """Return ``(factor, available)`` for EC modulation on a P2 shot.
 
-        ``available`` is the modulation *capability* flag: True only when the
-        feature is opted in, a valid band is configured, and a measured pore EC
-        exists. When unavailable the factor is exactly 1.0 — distinct in the
-        payload from a measured "within band → 1.0" (available True, factor 1.0).
+        Reads the direction from the [[EC State]] seam: the resolver decides
+        STACK/HOLD/FLUSH/UNAVAILABLE from pore-EC-vs-band, with a sustained
+        over-target runoff delta escalating HOLD→FLUSH (ADR-0016). The resolver is
+        built with pore + runoff inputs but **not** the feed target — feed EC is
+        display-only and never affects modulation, and omitting it keeps this
+        P2-shot hot path off the plant-reading path.
+
+        ``available`` is the modulation *capability* flag — True only when opted
+        in, a valid band is configured, and a measured pore EC exists
+        (recommendation is not UNAVAILABLE). When unavailable the factor is exactly
+        1.0 — distinct in the payload from a measured "within band → 1.0".
         """
-        if not strategy.ec_modulation_enabled:
+        state = ECStateResolver(
+            strategy,
+            lambda: self._average_pore_ec(growspace),
+            read_runoff=lambda: self._runoff_inputs(growspace),
+        ).resolve()
+        if state.recommendation is ECRecommendation.UNAVAILABLE:
             return 1.0, False
+
         band_min = strategy.pore_ec_target_min
         band_max = strategy.pore_ec_target_max
-        if band_min is None or band_max is None or band_min >= band_max:
-            return 1.0, False
-        measured_ec = self._average_pore_ec(growspace)
-        if measured_ec is None:
-            return 1.0, False
-        factor = self._ec_modulation_factor_for_reading(measured_ec, band_min, band_max)
+        # The flush magnitude reflects whichever EC is driving it, through the one
+        # helper (one explainable factor, ADR-0016): a pore-driven flush/stack uses
+        # pore EC; a runoff-driven flush (pore within band, escalated to FLUSH by
+        # sustained runoff stacking) uses the runoff EC, which sits above the band
+        # when stacking. pore_ec is guaranteed present here.
+        driver_ec = state.pore_ec
+        if (
+            state.recommendation is ECRecommendation.FLUSH
+            and state.pore_ec <= band_max
+            and state.runoff_ec is not None
+        ):
+            driver_ec = state.runoff_ec
+        factor = self._ec_modulation_factor_for_reading(driver_ec, band_min, band_max)
         return factor, True
 
     def _record_substrate_shot(self, phase: str) -> None:
@@ -647,23 +735,25 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         tracker.record_shot(phase, now().isoformat(), vwc)
 
     def _is_halted_by_runoff_ec(self, growspace: Growspace) -> bool:
-        """Return True and log a warning when the latest drain EC exceeds the configured threshold."""
-        threshold = growspace.irrigation_config.halt_on_runoff_ec_threshold
-        if threshold is None:
+        """Return True and log a warning when the runoff-EC safety halt is active.
+
+        Reads the single source of truth — ``runoff_halt`` over the same
+        ``RunoffInputs`` that back ``ECState.halt_irrigation`` — so the loop and
+        the payload always agree. The check is independent of EC Modulation
+        (ADR-0016) and deliberately does not build the full EC State (no pore/feed
+        reads) on this safety hot path.
+        """
+        runoff = self._runoff_inputs(growspace)
+        if not runoff_halt(runoff):
             return False
-        readings = growspace.drain_config.readings
-        if not readings:
-            return False
-        latest_ec = readings[-1].drain_ec
-        if latest_ec > threshold:
-            _LOGGER.warning(
-                "Growspace %s: drain EC %.2f exceeds halt threshold %.2f. Suspending irrigation",
-                self._growspace_id,
-                latest_ec,
-                threshold,
-            )
-            return True
-        return False
+        latest_ec = runoff.readings[-1].drain_ec
+        _LOGGER.warning(
+            "Growspace %s: drain EC %.2f exceeds halt threshold %.2f. Suspending irrigation",
+            self._growspace_id,
+            latest_ec,
+            runoff.halt_threshold,
+        )
+        return True
 
     def _get_pump_entity(self) -> str | None:
         """Get configured irrigation pump entity."""

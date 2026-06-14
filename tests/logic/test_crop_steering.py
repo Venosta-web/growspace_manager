@@ -10,7 +10,8 @@ from custom_components.growspace_manager.crop_steering import (
     calculate_crop_steering_score,
     get_crop_steering_state,
 )
-from custom_components.growspace_manager.models import CropSteeringState
+from custom_components.growspace_manager.domain.ec_state import runoff_score_component
+from custom_components.growspace_manager.models import CropSteeringState, DrainReading
 
 # Dryback value (absolute VWC points) inside the neutral band (8-15),
 # used when a test exercises a non-dryback component.
@@ -87,6 +88,41 @@ class TestCalculateCropSteeringScore:
         )
         assert score == pytest.approx(expected)
 
+    # Shared EC axis: runoff fill vs pore trend (ADR-0016)
+
+    @pytest.mark.parametrize(
+        ("ec_trend", "runoff_bucket", "expected"),
+        [
+            # Trend absent/stable → runoff fills the axis.
+            pytest.param(None, 0.3, 0.3, id="no-trend-runoff-fills-generative"),
+            pytest.param("stable", -0.2, -0.2, id="stable-trend-runoff-fills-veg"),
+            pytest.param(None, 0.0, 0.0, id="no-trend-no-runoff-neutral"),
+            # Measured trend wins; runoff is ignored even when it disagrees.
+            pytest.param("rising", -0.3, 0.3, id="rising-trend-overrides-runoff"),
+            pytest.param("falling", 0.3, -0.3, id="falling-trend-overrides-runoff"),
+        ],
+    )
+    def test_shared_ec_axis(
+        self, ec_trend: str | None, runoff_bucket: float, expected: float
+    ) -> None:
+        """Pore trend wins the shared EC axis; runoff fills only when absent/stable."""
+        score = calculate_crop_steering_score(
+            NEUTRAL_DRYBACK, ec_trend, runoff_delta_bucket=runoff_bucket
+        )
+        assert score == pytest.approx(expected)
+
+    def test_runoff_fill_never_exceeds_ec_axis_budget(self) -> None:
+        """Runoff fills the same ±0.3 axis — it cannot stack on a pore trend.
+
+        High dryback (+0.4) + rising trend (+0.3) maxes the EC axis; a positive
+        runoff bucket adds nothing because the trend already won the axis.
+        """
+        with_runoff = calculate_crop_steering_score(
+            25.0, "rising", runoff_delta_bucket=0.3
+        )
+        without_runoff = calculate_crop_steering_score(25.0, "rising")
+        assert with_runoff == pytest.approx(without_runoff)
+
     # Clamping and combinations
 
     def test_score_clamped_at_positive_one(self) -> None:
@@ -106,6 +142,58 @@ class TestCalculateCropSteeringScore:
         # high dryback (+0.4) + falling EC (-0.3) = 0.1
         score = calculate_crop_steering_score(25.0, "falling")
         assert score == pytest.approx(0.1)
+
+
+# ---------------------------------------------------------------------------
+# runoff_score_component — the ratified bucket table (ADR-0016 §3)
+# ---------------------------------------------------------------------------
+
+
+def _drain(feed_ec: float, drain_ec: float) -> DrainReading:
+    """Build a drain reading with the given feed/drain EC."""
+    return DrainReading(timestamp="t", feed_ec=feed_ec, drain_ec=drain_ec)
+
+
+class TestRunoffScoreComponent:
+    """The sustained Feed-to-Runoff EC Delta bucket (Δmax = max_ec_delta = 0.7)."""
+
+    @pytest.mark.parametrize(
+        ("deltas", "expected"),
+        [
+            # Δmax 0.7 → tiers at ±0.7 / ±1.4. Bucketed on the weakest reading.
+            pytest.param([1.5, 1.6, 2.0], 0.3, id="all-ge-2dmax-strong-generative"),
+            pytest.param([0.8, 1.0, 1.3], 0.2, id="all-ge-dmax-moderate-generative"),
+            pytest.param([0.8, 0.5, 1.0], 0.0, id="one-below-dmax-not-sustained"),
+            pytest.param([-0.8, -1.0, -1.3], -0.2, id="all-le-negdmax-moderate-veg"),
+            pytest.param([-1.5, -1.6, -2.0], -0.3, id="all-le-neg2dmax-strong-veg"),
+            pytest.param([1.0, -1.0, 1.2], 0.0, id="straddles-zero-neutral"),
+            pytest.param([0.1, 0.2, 0.3], 0.0, id="within-band-neutral"),
+        ],
+    )
+    def test_bucket(self, deltas: list[float], expected: float) -> None:
+        """The weakest agreeing reading in the tail sets the bucket."""
+        readings = [_drain(2.0, 2.0 + d) for d in deltas]
+        assert runoff_score_component(readings, max_ec_delta=0.7) == pytest.approx(
+            expected
+        )
+
+    def test_only_tail_considered(self) -> None:
+        """Older readings outside the last 3 do not affect the bucket."""
+        # First two are diluting; the last three all stack ≥ 2·Δmax → +0.3.
+        readings = [_drain(2.0, 1.0), _drain(2.0, 1.0)] + [
+            _drain(2.0, 3.5) for _ in range(3)
+        ]
+        assert runoff_score_component(readings, max_ec_delta=0.7) == pytest.approx(0.3)
+
+    def test_too_few_readings_is_neutral(self) -> None:
+        """A single reading is never 'sustained' → 0.0."""
+        assert runoff_score_component([_drain(2.0, 4.0)], max_ec_delta=0.7) == 0.0
+        assert runoff_score_component([], max_ec_delta=0.7) == 0.0
+
+    def test_non_positive_max_ec_delta_is_neutral(self) -> None:
+        """A non-positive Δmax disables the component (no division-by-zero tiers)."""
+        readings = [_drain(2.0, 4.0), _drain(2.0, 4.0)]
+        assert runoff_score_component(readings, max_ec_delta=0.0) == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +222,10 @@ def _make_coordinator(
     growspace.irrigation_strategy.maintenance_dryback_percent = maintenance_dryback
     growspace.irrigation_strategy.declared_steering_mode = declared_intent
     growspace.environment_config.soil_moisture_sensor = soil_moisture_sensor
+    # Real drain values so the runoff fill (ADR-0016) reads cleanly; default to
+    # no readings → runoff contributes 0.0 unless a test sets them.
+    growspace.drain_config.readings = []
+    growspace.drain_config.max_ec_delta = 0.7
     coordinator.growspaces.get.return_value = growspace
 
     # Irrigation coordinator
@@ -315,6 +407,47 @@ class TestGetCropSteeringState:
         assert result.ec_current is None
         # neutral dryback (10.0) + unavailable EC (0) → 0.0
         assert result.score == pytest.approx(0.0)
+
+    def test_runoff_fills_ec_axis_when_no_trend(self) -> None:
+        """Without a pore-EC trend, a sustained runoff delta fills the EC axis."""
+        coordinator = _make_coordinator(sensor_state="45.0", target_vwc=55.0)
+        tracker = MagicMock()
+        tracker.get_measured_peak_trough.return_value = None
+        tracker.get_shot_count_today.return_value = None
+        tracker.get_ec_trend.return_value = None  # no pore-EC sensors
+        coordinator.services.growspaces.get_substrate_tracker.return_value = tracker
+        # Δmax 0.7; two readings each delta 1.0 (≥ Δmax) → +0.2 fill.
+        gs = coordinator.growspaces.get.return_value
+        gs.drain_config.readings = [_drain(2.0, 3.0), _drain(2.0, 3.0)]
+
+        result = get_crop_steering_state(coordinator, "tent1")
+        assert result is not None
+        # neutral dryback (10.0) + runoff fill (+0.2) → 0.2
+        assert result.score == pytest.approx(0.2)
+        assert result.runoff_score == pytest.approx(0.2)
+
+    def test_pore_trend_overrides_runoff_and_zeroes_runoff_score(self) -> None:
+        """A measured trend wins the axis; the reported runoff_score is then 0.0."""
+        coordinator = _make_coordinator(sensor_state="45.0", target_vwc=55.0)
+        tracker = MagicMock()
+        tracker.get_measured_peak_trough.return_value = None
+        tracker.get_shot_count_today.return_value = None
+        tracker.get_ec_trend.return_value = {
+            "trend": "rising",
+            "day_start_ec": 2.0,
+            "current_ec": 2.8,
+            "delta": 0.8,
+        }
+        coordinator.services.growspaces.get_substrate_tracker.return_value = tracker
+        # Runoff would say diluting (−0.2), but the rising trend wins the axis.
+        gs = coordinator.growspaces.get.return_value
+        gs.drain_config.readings = [_drain(3.0, 2.0), _drain(3.0, 2.0)]
+
+        result = get_crop_steering_state(coordinator, "tent1")
+        assert result is not None
+        # neutral dryback (10.0) + rising trend (+0.3); runoff ignored → 0.3
+        assert result.score == pytest.approx(0.3)
+        assert result.runoff_score == pytest.approx(0.0)
 
     def test_measured_classification_derived_from_score(self) -> None:
         """The state carries the measured classification bucket for the score."""

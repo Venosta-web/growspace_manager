@@ -1666,6 +1666,54 @@ def test_ec_modulation_available_within_above_below(
     assert available is True
 
 
+def test_ec_modulation_runoff_flush_actuates_from_runoff_ec(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """Sustained over-target runoff delta enlarges a within-band-pore P2 shot.
+
+    Pore EC (2.5) sits within the 2.0–3.0 band → base HOLD (factor 1.0). Two drain
+    readings with delta 1.0 (> max_ec_delta 0.5) escalate HOLD→FLUSH, and the
+    magnitude comes from the runoff EC (4.0, above band) through the one helper:
+    factor 1.25 (ADR-0016).
+    """
+    from custom_components.growspace_manager.models import DrainReading
+
+    _set_band(mock_growspace, enabled=True)
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("2.5")  # within band → HOLD
+    mock_growspace.drain_config.max_ec_delta = 0.5
+    mock_growspace.drain_config.readings = [
+        DrainReading(timestamp="t1", feed_ec=3.0, drain_ec=4.0),
+        DrainReading(timestamp="t2", feed_ec=3.0, drain_ec=4.0),
+    ]
+
+    factor, available = vwc_coordinator._compute_ec_modulation(
+        mock_growspace.irrigation_strategy, mock_growspace
+    )
+    assert available is True
+    assert factor == pytest.approx(1.25)  # driven by runoff EC 4.0 vs band max 3.0
+
+
+def test_ec_modulation_single_high_runoff_does_not_actuate(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """A single over-target runoff reading is not 'sustained' → stays HOLD (1.0)."""
+    from custom_components.growspace_manager.models import DrainReading
+
+    _set_band(mock_growspace, enabled=True)
+    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_hass.states.get.return_value = _state("2.5")
+    mock_growspace.drain_config.max_ec_delta = 0.5
+    mock_growspace.drain_config.readings = [
+        DrainReading(timestamp="t1", feed_ec=3.0, drain_ec=4.0)
+    ]
+
+    factor, _ = vwc_coordinator._compute_ec_modulation(
+        mock_growspace.irrigation_strategy, mock_growspace
+    )
+    assert factor == pytest.approx(1.0)
+
+
 # ── Shot Size Composition (VWC × EC) and caps last ───────────────────────────
 
 

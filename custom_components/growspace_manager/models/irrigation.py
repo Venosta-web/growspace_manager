@@ -371,6 +371,10 @@ class CropSteeringState(BaseModel):
     # field, which the view-model payload already carries (one datum, one key).
     measured_classification: str = "balanced"
     intent_deviation: str | None = None
+    # The runoff fill contribution to the shared EC axis (ADR-0016), in
+    # [-0.3, 0.3]. 0.0 when no sustained runoff delta or a pore-EC trend already
+    # set the axis. Surfaced so the score's EC contribution is explainable.
+    runoff_score: float = 0.0
     last_updated: str = ""
 
 
