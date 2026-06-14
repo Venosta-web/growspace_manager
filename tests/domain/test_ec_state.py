@@ -14,9 +14,11 @@ from custom_components.growspace_manager.domain.ec_state import (
     ECRecommendation,
     ECState,
     ECStateResolver,
+    RunoffInputs,
     record_drain_reading,
     resolve_active_feed_ec,
     resolve_feed_stage_week,
+    runoff_halt,
 )
 from custom_components.growspace_manager.models import (
     DrainConfig,
@@ -213,11 +215,26 @@ def test_resolver_carries_feed_target_even_when_modulation_unavailable() -> None
 # ── Runoff measurements + drain recording (#465) ─────────────────────────────
 
 
+def _runoff(
+    *readings: DrainReading,
+    max_ec_delta: float = 0.5,
+    target_runoff_percent: float | None = None,
+    halt_threshold: float | None = None,
+) -> RunoffInputs:
+    """Build a RunoffInputs from the given readings and targets."""
+    return RunoffInputs(
+        readings=list(readings),
+        max_ec_delta=max_ec_delta,
+        target_runoff_percent=target_runoff_percent,
+        halt_threshold=halt_threshold,
+    )
+
+
 def test_resolver_populates_runoff_from_latest_reading() -> None:
     """runoff_ec and feed_to_runoff_delta come from the latest drain reading."""
     reading = DrainReading(timestamp="t", feed_ec=1.5, drain_ec=2.7)
     state = ECStateResolver(
-        _strategy(), lambda: 2.5, read_drain=lambda: reading
+        _strategy(), lambda: 2.5, read_runoff=lambda: _runoff(reading)
     ).resolve()
     assert state.runoff_ec == pytest.approx(2.7)
     assert state.feed_to_runoff_delta == pytest.approx(1.2)
@@ -228,6 +245,8 @@ def test_resolver_runoff_none_without_reading() -> None:
     state = ECStateResolver(_strategy(), lambda: 2.5).resolve()
     assert state.runoff_ec is None
     assert state.feed_to_runoff_delta is None
+    assert state.runoff_percent is None
+    assert state.halt_irrigation is False
 
 
 def test_record_drain_reading_appends_and_flags_alert() -> None:
@@ -264,3 +283,105 @@ def test_record_drain_reading_enforces_rolling_window() -> None:
         record_drain_reading(drain_config, feed_ec=1.0, drain_ec=1.0 + i)
     assert len(drain_config.readings) == 3
     assert drain_config.readings[-1].drain_ec == pytest.approx(5.0)  # newest kept
+
+
+# ── Runoff Reconciliation: percent, halt, sustained bias (#466) ──────────────
+
+
+def _reading(
+    feed_ec: float,
+    drain_ec: float,
+    *,
+    drain_volume_ml: float | None = None,
+    feed_volume_ml: float | None = None,
+) -> DrainReading:
+    """Build a single DrainReading."""
+    return DrainReading(
+        timestamp="t",
+        feed_ec=feed_ec,
+        drain_ec=drain_ec,
+        drain_volume_ml=drain_volume_ml,
+        feed_volume_ml=feed_volume_ml,
+    )
+
+
+def test_runoff_percent_from_volumes() -> None:
+    """runoff_percent = drain/feed volume × 100; target carried alongside."""
+    reading = _reading(1.5, 2.0, drain_volume_ml=300.0, feed_volume_ml=1000.0)
+    state = ECStateResolver(
+        _strategy(),
+        lambda: 2.5,
+        read_runoff=lambda: _runoff(reading, target_runoff_percent=20.0),
+    ).resolve()
+    assert state.runoff_percent == pytest.approx(30.0)
+    assert state.runoff_pct_target == pytest.approx(20.0)
+
+
+def test_runoff_percent_none_without_volumes() -> None:
+    """EC-only readings (no volumes) give delta but no runoff_percent."""
+    state = ECStateResolver(
+        _strategy(), lambda: 2.5, read_runoff=lambda: _runoff(_reading(1.5, 2.7))
+    ).resolve()
+    assert state.feed_to_runoff_delta == pytest.approx(1.2)
+    assert state.runoff_percent is None
+
+
+@pytest.mark.parametrize(
+    ("drain_ec", "threshold", "expected"),
+    [(3.5, 3.0, True), (2.5, 3.0, False), (3.5, None, False)],
+)
+def test_runoff_halt_function(
+    drain_ec: float, threshold: float | None, expected: bool
+) -> None:
+    """The pure halt owner: latest drain EC over threshold, threshold present."""
+    runoff = _runoff(_reading(2.0, drain_ec), halt_threshold=threshold)
+    assert runoff_halt(runoff) is expected
+
+
+def test_runoff_halt_no_readings() -> None:
+    """A configured threshold with no readings does not halt."""
+    assert runoff_halt(_runoff(halt_threshold=3.0)) is False
+
+
+def test_halt_independent_of_modulation_opt_out() -> None:
+    """The halt fires even with EC Modulation opted out — it is not gated by it."""
+    reading = _reading(2.0, 3.5)
+    state = ECStateResolver(
+        _strategy(enabled=False),
+        lambda: 5.0,
+        read_runoff=lambda: _runoff(reading, halt_threshold=3.0),
+    ).resolve()
+    assert state.recommendation is ECRecommendation.UNAVAILABLE
+    assert state.halt_irrigation is True
+
+
+def test_sustained_high_delta_escalates_hold_to_flush() -> None:
+    """Pore within band + sustained over-target delta → HOLD escalates to FLUSH."""
+    # max_ec_delta 0.5 (the _runoff default); each reading's delta is 1.0 → sustained.
+    readings = [_reading(1.0, 2.0), _reading(1.0, 2.0), _reading(1.0, 2.0)]
+    state = ECStateResolver(
+        _strategy(),
+        lambda: 2.5,  # within 2.0–3.0 band → base HOLD
+        read_runoff=lambda: _runoff(*readings),
+    ).resolve()
+    assert state.recommendation is ECRecommendation.FLUSH
+
+
+def test_single_high_delta_does_not_escalate() -> None:
+    """A single over-target reading is not 'sustained' → stays HOLD."""
+    readings = [_reading(1.0, 1.2), _reading(1.0, 2.0)]  # only the last exceeds 0.5
+    state = ECStateResolver(
+        _strategy(), lambda: 2.5, read_runoff=lambda: _runoff(*readings)
+    ).resolve()
+    assert state.recommendation is ECRecommendation.HOLD
+
+
+def test_runoff_bias_never_touches_stack() -> None:
+    """A STACK (pore below band) is never escalated, even on sustained delta."""
+    readings = [_reading(1.0, 2.0), _reading(1.0, 2.0)]
+    state = ECStateResolver(
+        _strategy(),
+        lambda: 1.0,  # below 2.0–3.0 band → STACK
+        read_runoff=lambda: _runoff(*readings),
+    ).resolve()
+    assert state.recommendation is ECRecommendation.STACK

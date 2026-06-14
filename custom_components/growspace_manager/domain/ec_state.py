@@ -6,17 +6,23 @@ five scattered fields. It follows the ``StageEnvironmentalTargets`` precedent: a
 pure object built per call from injected callables, unit-testable with plain
 lambdas, with no coordinator dependency and no polling lifecycle.
 
-The resolver populates the pore-EC modulation-direction recommendation (#463)
-and the [[Active Feed EC Target]] (``active_feed_ec`` / ``feed_ec_source``, #464).
-The runoff fields (``runoff_ec`` / ``feed_to_runoff_delta``) are part of the
-accepted ADR-0015 interface and default to absent here — issue #465 populates
-them without changing this dataclass's shape. The runoff-percentage and
-``halt_irrigation`` fields from ADR-0016 are added by issue #466.
+The resolver populates the pore-EC modulation-direction recommendation (#463),
+the [[Active Feed EC Target]] (``active_feed_ec`` / ``feed_ec_source``, #464), the
+runoff measurements (``runoff_ec`` / ``feed_to_runoff_delta``, #465), and the
+[[Runoff Reconciliation]] fields (``runoff_percent`` / ``runoff_pct_target`` /
+``halt_irrigation``, ADR-0016 #466).
 
-The recommendation is decided from pore-EC-vs-band **only** — feed and runoff EC
-are carried for display and reconciliation but never move the modulation
-decision, so feed EC and pore EC are never conflated (CONTEXT.md
-"Pore EC Target Band").
+The recommendation is decided from pore-EC-vs-band first; ADR-0016 lets a
+*sustained* [[Feed-to-Runoff EC Delta]] above ``max_ec_delta`` escalate a
+``HOLD`` to ``FLUSH`` (salts stacking faster than the pen shows). Feed EC itself
+is carried for display only and never moves the decision, so feed EC and pore EC
+are never conflated (CONTEXT.md "Pore EC Target Band").
+
+The hard runoff safety halt is the separate ``halt_irrigation`` boolean — never
+a member of ``ECRecommendation`` — computed unconditionally from
+``drain_ec > halt_on_runoff_ec_threshold`` regardless of ``ec_modulation_enabled``,
+so a grower opting out of EC Modulation can never mask the safety cut-off
+(ADR-0016).
 """
 
 from __future__ import annotations
@@ -96,6 +102,14 @@ class ECState:
     # no readings. Carried for display/reconciliation; ADR-0016 makes them steer.
     runoff_ec: float | None = None
     feed_to_runoff_delta: float | None = None
+    # Runoff Reconciliation (ADR-0016, #466). ``runoff_percent`` is the measured
+    # drain/feed volume fraction (None without volume sensors); ``runoff_pct_target``
+    # is the grower's goal. ``halt_irrigation`` is the hard safety cut-off — its
+    # own field, NOT an ``ECRecommendation`` member, computed independently of
+    # ``ec_modulation_enabled`` so it can never be masked by the modulation opt-out.
+    runoff_percent: float | None = None
+    runoff_pct_target: float | None = None
+    halt_irrigation: bool = False
 
 
 def _classify_pore_ec(
@@ -186,6 +200,73 @@ def resolve_active_feed_ec(
     return None, "none"
 
 
+# Sustained-delta window (ADR-0016): "sustained" means agreement across the tail
+# of the persisted DrainConfig.readings — up to the last 3 readings, requiring at
+# least 2, all exceeding max_ec_delta. Reads existing rolling-window state; adds
+# no new storage and never touches the recorder-free SubstrateTracker (ADR-0010).
+_SUSTAINED_WINDOW = 3
+_SUSTAINED_MIN = 2
+
+
+@dataclass(frozen=True, slots=True)
+class RunoffInputs:
+    """Everything the resolver needs about runoff, read once per resolve.
+
+    ``readings`` is the growspace's ``DrainConfig.readings`` (the resolver takes
+    its own tail for the sustained-delta check); ``max_ec_delta`` and
+    ``target_runoff_percent`` are the grower's drain-monitoring targets;
+    ``halt_threshold`` is ``IrrigationConfig.halt_on_runoff_ec_threshold`` (``None``
+    when the safety halt is disabled). An empty/None instance means "no runoff
+    data" — every derived field degrades to its absent value.
+    """
+
+    readings: list[DrainReading]
+    max_ec_delta: float
+    target_runoff_percent: float | None = None
+    halt_threshold: float | None = None
+
+
+def runoff_halt(runoff: RunoffInputs) -> bool:
+    """Return True when the hard runoff-EC safety halt is active.
+
+    The single owner of the halt decision (ADR-0016): the latest drain EC exceeds
+    ``halt_threshold``. Deliberately **independent of EC Modulation** — it never
+    consults ``ec_modulation_enabled`` — so a grower opting out of modulation can
+    never mask the safety cut-off. ``resolve()`` sets ``ECState.halt_irrigation``
+    from this, and the irrigation hot path calls it directly, so both agree
+    without either rebuilding the other's state.
+    """
+    if runoff.halt_threshold is None or not runoff.readings:
+        return False
+    return runoff.readings[-1].drain_ec > runoff.halt_threshold
+
+
+def _runoff_percent(reading: DrainReading | None) -> float | None:
+    """Return ``drain_volume_ml / feed_volume_ml × 100`` for a reading, or None.
+
+    ``None`` when there is no reading or either volume is absent/non-positive — a
+    lower [[Sensor-Gated Capability]] tier (EC-only growers get delta
+    reconciliation and the halt, but not [[Runoff Percentage]]).
+    """
+    if reading is None or reading.drain_volume_ml is None or not reading.feed_volume_ml:
+        return None
+    return reading.drain_volume_ml / reading.feed_volume_ml * 100.0
+
+
+def _is_sustained_high_delta(readings: list[DrainReading], max_ec_delta: float) -> bool:
+    """Return True when the recent drain readings *sustain* an over-target delta.
+
+    Looks at the last ``_SUSTAINED_WINDOW`` readings, requires at least
+    ``_SUSTAINED_MIN`` of them, and only reports True when **every** reading in
+    that tail has a [[Feed-to-Runoff EC Delta]] above ``max_ec_delta``. A single
+    mis-measured catch therefore cannot trigger a flush bias.
+    """
+    tail = readings[-_SUSTAINED_WINDOW:]
+    if len(tail) < _SUSTAINED_MIN:
+        return False
+    return all(r.drain_ec - r.feed_ec > max_ec_delta for r in tail)
+
+
 # ── Drain reading recording ──────────────────────────────────────────────────
 
 
@@ -253,25 +334,39 @@ class ECStateResolver:
         read_pore_ec: Callable[[], float | None],
         read_feed_target: Callable[[], tuple[tuple[float, float] | None, str]]
         | None = None,
-        read_drain: Callable[[], DrainReading | None] | None = None,
+        read_runoff: Callable[[], RunoffInputs] | None = None,
     ) -> None:
         """Initialize with the strategy and injected EC readers."""
         self._strategy = strategy
         self._read_pore_ec = read_pore_ec
         self._read_feed_target = read_feed_target or (lambda: (None, "none"))
-        self._read_drain = read_drain or (lambda: None)
+        self._read_runoff = read_runoff or (
+            lambda: RunoffInputs(readings=[], max_ec_delta=0.0)
+        )
 
     def resolve(self) -> ECState:
         """Resolve the current :class:`ECState`.
 
-        The feed target and runoff measurements are resolved independently of
-        modulation state — they are carried for display even when the
+        The feed target, runoff measurements, and the safety halt are resolved
+        independently of modulation state — they are carried even when the
         recommendation is ``UNAVAILABLE`` (opt out / no band / no reading), since
-        neither gates on the pore band.
+        none of them gate on the pore band. A sustained over-target runoff delta
+        then escalates a ``HOLD`` recommendation to ``FLUSH`` (ADR-0016).
         """
         active_feed_ec, feed_ec_source = self._read_feed_target()
-        runoff_ec, feed_to_runoff_delta = self._resolve_runoff()
+        runoff = self._read_runoff()
+        latest = runoff.readings[-1] if runoff.readings else None
+
+        runoff_ec = latest.drain_ec if latest is not None else None
+        feed_to_runoff_delta = (
+            latest.drain_ec - latest.feed_ec if latest is not None else None
+        )
+        runoff_percent = _runoff_percent(latest)
+        halt_irrigation = runoff_halt(runoff)
+
         recommendation, pore_ec = self._resolve_modulation()
+        recommendation = self._apply_runoff_bias(recommendation, runoff)
+
         return ECState(
             pore_ec=pore_ec,
             recommendation=recommendation,
@@ -279,18 +374,28 @@ class ECStateResolver:
             feed_ec_source=feed_ec_source,
             runoff_ec=runoff_ec,
             feed_to_runoff_delta=feed_to_runoff_delta,
+            runoff_percent=runoff_percent,
+            runoff_pct_target=runoff.target_runoff_percent,
+            halt_irrigation=halt_irrigation,
         )
 
-    def _resolve_runoff(self) -> tuple[float | None, float | None]:
-        """Return ``(runoff_ec, feed_to_runoff_delta)`` from the latest reading.
+    @staticmethod
+    def _apply_runoff_bias(
+        recommendation: ECRecommendation, runoff: RunoffInputs
+    ) -> ECRecommendation:
+        """Escalate ``HOLD → FLUSH`` on a sustained over-target runoff delta.
 
-        Both ``None`` when no drain reading exists — a graceful
-        [[Sensor-Gated Capability]] absence for growspaces without a runoff pen.
+        Only a ``HOLD`` (pore within band) is escalated: ``STACK`` is the grower
+        deliberately building EC, an existing ``FLUSH`` already induces runoff,
+        and ``UNAVAILABLE`` has no pore reading to reconcile against. The runoff
+        signal speaks *through* the one EC recommendation — it never adds a second
+        actuator (CONTEXT.md "Shot Size Composition").
         """
-        reading = self._read_drain()
-        if reading is None:
-            return None, None
-        return reading.drain_ec, reading.drain_ec - reading.feed_ec
+        if recommendation is not ECRecommendation.HOLD:
+            return recommendation
+        if _is_sustained_high_delta(runoff.readings, runoff.max_ec_delta):
+            return ECRecommendation.FLUSH
+        return recommendation
 
     def _resolve_modulation(self) -> tuple[ECRecommendation, float | None]:
         """Resolve the modulation direction and the pore reading behind it.

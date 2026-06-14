@@ -65,6 +65,18 @@ so **no new actuation path is introduced** — `FLUSH`-by-runoff and
 `_ec_modulation_factor_for_reading` magnitude helper. The recommendation gains
 runoff awareness; the actuator stays single.
 
+**Which EC drives the magnitude (implementation decision).** The helper maps an
+EC reading's excursion *past the band* to a factor, so a pore reading that is
+*within* the band yields exactly 1.0 — meaning a runoff-driven `FLUSH` (pore
+within band) would otherwise change the recommendation without enlarging the
+shot. The resolution: the magnitude reads **whichever EC is driving the flush**.
+A pore-driven flush/stack uses pore EC (byte-identical to today); a runoff-driven
+flush uses the **runoff EC**, which sits above the band precisely when salts are
+stacking. Both go through the one unchanged helper, so a fired shot stays
+explainable from a single factor. A runoff `FLUSH` whose runoff EC happens to be
+within the band yields a modest 1.0 — acceptable, since the over-target *delta*
+that triggered it does not by itself imply the substrate EC is high.
+
 ### 3. Runoff feeds the Crop Steering Score
 
 `calculate_crop_steering_score` ignores runoff entirely today. Add a bounded
