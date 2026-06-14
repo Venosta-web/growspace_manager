@@ -7,8 +7,10 @@ from typing import Any, override
 
 from custom_components.growspace_manager.const import DEFAULT_DLI_TARGET_FLOWER, DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.domain.ec_state import band_for_week
-from custom_components.growspace_manager.utils import calculate_plant_stage
+from custom_components.growspace_manager.domain.ec_state import (
+    band_for_week,
+    resolve_feed_stage_week,
+)
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -177,7 +179,13 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
         )
 
     def _get_active_curve(self) -> Any:
-        """Get the active EC ramp curve for this growspace's current stage."""
+        """Get the active EC ramp curve for this growspace's feed stage.
+
+        Resolves the stage through the EC State seam (``resolve_feed_stage_week``),
+        so the sensor agrees with the feed-target reconciliation and the card on
+        which stage and week are current: the furthest-along live stage, never an
+        arbitrary first plant.
+        """
         ec_ramp_curves = self.coordinator.services.config.ec_ramp_curves
         if not ec_ramp_curves:
             return None
@@ -185,26 +193,27 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
         plants = self.coordinator.services.growspaces.get_growspace_plants(
             self._growspace_id
         )
-        if not plants:
+        stage, _ = resolve_feed_stage_week(plants)
+        if stage is None:
             return None
 
-        current_stage = calculate_plant_stage(plants[0])
-
-        for curve in ec_ramp_curves.values():
-            if curve.stage == current_stage:
-                return curve
-        return None
+        return next(
+            (curve for curve in ec_ramp_curves.values() if curve.stage == stage),
+            None,
+        )
 
     def _get_current_week(self) -> int:
-        """Get the current week number in the active stage."""
+        """Get the current week in the feed stage via the canonical ``days_to_week``.
+
+        Resolved through the same seam as ``_get_active_curve`` so the week here
+        matches ``Plant.get_week_in_stage`` and the growspace view model (which
+        the prior inline ``(days // 7) + 1`` did not at 7-day boundaries).
+        """
         plants = self.coordinator.services.growspaces.get_growspace_plants(
             self._growspace_id
         )
-        if not plants:
-            return 1
-        stage = calculate_plant_stage(plants[0])
-        days = plants[0].get_days_in_stage(stage)
-        return max(1, (days // 7) + 1)
+        _, week = resolve_feed_stage_week(plants)
+        return week
 
     @property
     @override  # type: ignore[misc]
