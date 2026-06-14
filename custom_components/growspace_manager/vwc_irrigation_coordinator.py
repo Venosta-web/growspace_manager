@@ -86,6 +86,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._target_reached_today = False
         self._last_reset_date: str | None = None
         self._shot_scale_factor = 1.0
+        # Interval-domain sibling of the size factor (ADR-0014): scales the
+        # minimum-cooldown floor. Clamped [1.0, dynamic_interval_ceiling] — only
+        # ever lengthens spacing or recovers to nominal, never shortens.
+        self._interval_scale_factor = 1.0
         # Last fired shot's full composition, exposed for diagnostics so any
         # shot is explainable (base × VWC × EC, then caps). None until a shot
         # has fired this session.
@@ -136,6 +140,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._target_reached_today = False
         self._last_reset_date = None
         self._shot_scale_factor = 1.0
+        self._interval_scale_factor = 1.0
         self._last_shot_volume_ml = None
         self._last_live_plant_count = None
 
@@ -429,7 +434,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         last_shot = self._last_shot_dt()
         if last_shot:
             elapsed = (now_dt - last_shot).total_seconds() / 60.0
-            if elapsed < interval_minutes:
+            if elapsed < interval_minutes * self._interval_scale_factor:
                 return
 
         pump_entity = self._get_pump_entity()
@@ -577,6 +582,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "pore_ec_target_min": strategy.pore_ec_target_min,
             "pore_ec_target_max": strategy.pore_ec_target_max,
             "current_vwc_factor": round(self._shot_scale_factor, 3),
+            "current_interval_factor": round(self._interval_scale_factor, 3),
+            "dynamic_shot_enabled": strategy.dynamic_shot_enabled,
             "last_shot": asdict(composition) if composition is not None else None,
         }
 
@@ -748,7 +755,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         earliest = current_dt
         last_shot = self._last_shot_dt()
         if last_shot:
-            cooldown_end = last_shot + timedelta(minutes=interval_minutes)
+            effective_interval = interval_minutes * self._interval_scale_factor
+            cooldown_end = last_shot + timedelta(minutes=effective_interval)
             if cooldown_end > current_dt:
                 earliest = cooldown_end
 
@@ -795,10 +803,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
 
         if old_phase == "P1 - Ramp Up" and phase == "P2 - Maintenance":
             _LOGGER.info(
-                "Growspace %s transitioned from P1 to P2. Resetting feedback scale factor",
+                "Growspace %s transitioned from P1 to P2. Resetting feedback scale factors",
                 self._growspace_id,
             )
             self._shot_scale_factor = 1.0
+            self._interval_scale_factor = 1.0
 
         if self.growspace.irrigation_config.log_to_logbook:
             self._fire_logbook_event(
@@ -838,11 +847,21 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     def _update_shot_feedback(
         self, moisture_before: float | None, moisture_after: float | None
     ) -> None:
-        """Evaluate the shot's effect on soil moisture and adjust the scale factor."""
+        """Evaluate the shot's effect on soil moisture and adjust the feedback factors.
+
+        Drives both the size factor (shot volume/duration) and the interval
+        factor (minimum-cooldown spacing) from the same overshoot ratio: on
+        overshoot the shot shrinks and the interval lengthens; on undershoot
+        both recover toward nominal (1.0). Inert when Adaptive Shot Control is
+        disabled (ADR-0014).
+        """
+        strategy = self.growspace.irrigation_strategy
+        if not strategy.dynamic_shot_enabled:
+            return
         if moisture_before is None or moisture_after is None:
             return
 
-        target = self.growspace.irrigation_strategy.target_vwc_percent
+        target = strategy.target_vwc_percent
         d_target = target - moisture_before
         d_actual = moisture_after - moisture_before
 
@@ -850,34 +869,44 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         if d_target <= 0.5 or d_actual <= 0:
             return
 
+        aggressiveness = strategy.dynamic_aggressiveness
+        recovery = strategy.dynamic_recovery
+        size_floor = strategy.dynamic_shot_size_floor
+        interval_ceiling = strategy.dynamic_interval_ceiling
+
         ratio = d_actual / d_target
         if ratio > 1.0:
-            # Overshot target: reduce scale factor
-            aggressiveness = 1.0
+            # Overshot target: shrink the shot and lengthen the interval.
+            error = ratio - 1.0
             self._shot_scale_factor = max(
-                0.5,
-                min(1.0, self._shot_scale_factor - aggressiveness * (ratio - 1.0)),
+                size_floor,
+                min(1.0, self._shot_scale_factor - aggressiveness * error),
             )
-            _LOGGER.debug(
-                "Growspace %s overshot VWC target. Expected delta: %.2f%%, actual: %.2f%%. "
-                "New feedback scale factor: %.2f",
-                self._growspace_id,
-                d_target,
-                d_actual,
-                self._shot_scale_factor,
+            self._interval_scale_factor = min(
+                interval_ceiling,
+                max(1.0, self._interval_scale_factor + aggressiveness * error),
             )
+            direction = "overshot VWC target"
         else:
-            # Undershot or met target: recover scale factor
-            beta = 0.1
+            # Undershot or met target: recover both factors toward nominal.
+            error = 1.0 - ratio
             self._shot_scale_factor = max(
-                0.5,
-                min(1.0, self._shot_scale_factor + beta * (1.0 - ratio)),
+                size_floor,
+                min(1.0, self._shot_scale_factor + recovery * error),
             )
-            _LOGGER.debug(
-                "Growspace %s dynamic shot VWC feedback. Expected delta: %.2f%%, actual: %.2f%%. "
-                "New feedback scale factor: %.2f",
-                self._growspace_id,
-                d_target,
-                d_actual,
-                self._shot_scale_factor,
+            self._interval_scale_factor = min(
+                interval_ceiling,
+                max(1.0, self._interval_scale_factor - recovery * error),
             )
+            direction = "dynamic shot VWC feedback"
+
+        _LOGGER.debug(
+            "Growspace %s %s. Expected delta: %.2f%%, actual: %.2f%%. "
+            "Size factor: %.2f, interval factor: %.2f",
+            self._growspace_id,
+            direction,
+            d_target,
+            d_actual,
+            self._shot_scale_factor,
+            self._interval_scale_factor,
+        )

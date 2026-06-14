@@ -1290,8 +1290,83 @@ async def test_dynamic_shot_scaling_daily_reset(
 ) -> None:
     """Test that midnight daily state reset sets scale factor back to 1.0."""
     vwc_coordinator._shot_scale_factor = 0.6
+    vwc_coordinator._interval_scale_factor = 1.4
     vwc_coordinator._reset_extra_daily_state()
     assert vwc_coordinator._shot_scale_factor == 1.0
+    assert vwc_coordinator._interval_scale_factor == 1.0
+
+
+async def test_dynamic_interval_lengthens_on_overshoot(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """Overshoot lengthens the interval factor (ADR-0014), clamped to the ceiling."""
+    # Target 50.0, before 40.0, after 55.0 -> ratio 1.5, error 0.5.
+    # Default aggressiveness 1.0: interval factor 1.0 + 0.5 = 1.5 (== default ceiling).
+    vwc_coordinator._interval_scale_factor = 1.0
+    vwc_coordinator._update_shot_feedback(40.0, 55.0)
+    assert vwc_coordinator._interval_scale_factor == 1.5
+
+    # A further overshoot is clamped at the ceiling, never beyond.
+    vwc_coordinator._update_shot_feedback(40.0, 55.0)
+    assert vwc_coordinator._interval_scale_factor == 1.5
+
+
+async def test_dynamic_interval_recovers_on_undershoot(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """Undershoot recovers the interval factor toward nominal 1.0."""
+    # Target 50.0, before 40.0, after 45.0 -> ratio 0.5, error 0.5.
+    # Default recovery 0.1: interval factor 1.4 - 0.05 = 1.35.
+    vwc_coordinator._interval_scale_factor = 1.4
+    vwc_coordinator._update_shot_feedback(40.0, 45.0)
+    assert abs(vwc_coordinator._interval_scale_factor - 1.35) < 1e-6
+
+    # Recovery clamps at nominal 1.0, never below.
+    vwc_coordinator._interval_scale_factor = 1.02
+    vwc_coordinator._update_shot_feedback(40.0, 45.0)
+    assert vwc_coordinator._interval_scale_factor == 1.0
+
+
+async def test_dynamic_shot_disabled_is_inert(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """When Adaptive Shot Control is disabled, neither factor moves."""
+    vwc_coordinator.growspace.irrigation_strategy.dynamic_shot_enabled = False
+    vwc_coordinator._shot_scale_factor = 0.7
+    vwc_coordinator._interval_scale_factor = 1.2
+
+    vwc_coordinator._update_shot_feedback(40.0, 55.0)  # would overshoot
+    vwc_coordinator._update_shot_feedback(40.0, 45.0)  # would undershoot
+    assert vwc_coordinator._shot_scale_factor == 0.7
+    assert vwc_coordinator._interval_scale_factor == 1.2
+
+
+async def test_dynamic_tunables_respected(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """Custom aggressiveness/recovery/floor/ceiling drive the factors and clamps."""
+    strategy = vwc_coordinator.growspace.irrigation_strategy
+    strategy.dynamic_aggressiveness = 2.0
+    strategy.dynamic_shot_size_floor = 0.2
+    strategy.dynamic_interval_ceiling = 3.0
+
+    # Overshoot ratio 1.5, error 0.5: size 1.0 - 2.0*0.5 = 0.0 -> floor 0.2;
+    # interval 1.0 + 2.0*0.5 = 2.0 (below the 3.0 ceiling).
+    vwc_coordinator._shot_scale_factor = 1.0
+    vwc_coordinator._interval_scale_factor = 1.0
+    vwc_coordinator._update_shot_feedback(40.0, 55.0)
+    assert vwc_coordinator._shot_scale_factor == 0.2
+    assert vwc_coordinator._interval_scale_factor == 2.0
+
+
+async def test_interval_factor_phase_transition_reset(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """Interval factor resets to 1.0 on the P1->P2 transition, alongside size."""
+    vwc_coordinator._interval_scale_factor = 1.4
+    vwc_coordinator._current_phase = "P1 - Ramp Up"
+    vwc_coordinator._set_phase("P2 - Maintenance")
+    assert vwc_coordinator._interval_scale_factor == 1.0
 
 
 @pytest.mark.parametrize(

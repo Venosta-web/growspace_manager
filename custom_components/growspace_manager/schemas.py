@@ -630,6 +630,20 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
         vol.Optional("p2_shot_volume_percent"): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=100.0)
         ),
+        # Adaptive Shot Control (ADR-0014).
+        vol.Optional("dynamic_shot_enabled"): bool,
+        vol.Optional("dynamic_aggressiveness"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=5.0)
+        ),
+        vol.Optional("dynamic_recovery"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=1.0)
+        ),
+        vol.Optional("dynamic_shot_size_floor"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1, max=1.0)
+        ),
+        vol.Optional("dynamic_interval_ceiling"): vol.All(
+            vol.Coerce(float), vol.Range(min=1.0, max=5.0)
+        ),
     }
 )
 
