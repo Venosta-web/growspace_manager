@@ -120,7 +120,7 @@ def mock_coordinator(mock_hass):
     coordinator.get_growspace_plants = MagicMock(return_value=[])
     coordinator.async_save = AsyncMock()
     coordinator.async_commit = AsyncMock()
-    coordinator.strain_library = MagicMock()
+    coordinator._strain_library = MagicMock()
     return coordinator
 
 

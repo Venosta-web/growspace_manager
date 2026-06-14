@@ -14,7 +14,7 @@ from homeassistant.exceptions import ServiceValidationError
 async def test_update_plant_name_change(mock_coordinator, mock_plant) -> None:
     """Test updating plant name updates the device name."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.plant_manager.async_update_plant = AsyncMock(
+    mock_coordinator._plant_manager.async_update_plant = AsyncMock(
         return_value=mock_plant
     )
 
@@ -49,15 +49,15 @@ async def test_async_auto_harvest(mock_coordinator, mock_plant) -> None:
     mock_plant.growspace_id = "gs1"
 
     mock_coordinator.plants = {"p1": mock_plant}
-    mock_coordinator.plant_manager.harvest = AsyncMock()
-    mock_coordinator.notification_manager.async_send_notification = AsyncMock()
+    mock_coordinator._plant_manager.harvest = AsyncMock()
+    mock_coordinator._notification_manager.async_send_notification = AsyncMock()
 
     await facade.plants._async_auto_harvest()
 
-    mock_coordinator.plant_manager.harvest.assert_called_once_with(
+    mock_coordinator._plant_manager.harvest.assert_called_once_with(
         plant_id="p1", transition_date=today
     )
-    mock_coordinator.notification_manager.async_send_notification.assert_called_once()
+    mock_coordinator._notification_manager.async_send_notification.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -82,7 +82,7 @@ async def test_remove_plant_entities(mock_coordinator) -> None:
 
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er):
         # Service call to remove_plant will trigger _remove_plant_entities
-        mock_coordinator.plant_manager.remove_plant = AsyncMock(return_value=True)
+        mock_coordinator._plant_manager.remove_plant = AsyncMock(return_value=True)
         await facade.plants.remove_plant("p1")
 
     assert mock_er.async_remove.call_count == 2
@@ -141,8 +141,8 @@ async def test_growspace_lifecycle_services(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
 
     # 1. Mock orchestrator methods on the facade itself (since it delegates to coordinator)
-    # The facade delegates remove_growspace to coordinator.growspace_manager
-    mock_coordinator.growspace_manager.remove_growspace = AsyncMock()
+    # The facade delegates remove_growspace to coordinator._growspace_manager
+    mock_coordinator._growspace_manager.remove_growspace = AsyncMock()
     mock_coordinator.async_commit = AsyncMock()
 
     # We mock the coordinator methods that the facade implementation calls
@@ -154,7 +154,7 @@ async def test_growspace_lifecycle_services(mock_coordinator) -> None:
     mock_coordinator.growspaces = {"gs1": gs}
 
     await facade.growspaces.remove_growspace("gs1")
-    mock_coordinator.growspace_manager.remove_growspace.assert_called_once_with("gs1")
+    mock_coordinator._growspace_manager.remove_growspace.assert_called_once_with("gs1")
 
     await facade.growspaces.update_options({"opt": "val"})
     mock_coordinator.async_commit.assert_called()

@@ -51,8 +51,8 @@ async def async_get_config_entry_diagnostics(
         "system_stats": {
             "growspace_count": len(coordinator.growspaces),
             "plant_count": len(coordinator.plants),
-            "strain_library_count": len(coordinator.strain_library.get_all())
-            if coordinator.strain_library
+            "strain_library_count": len(coordinator.services.config.strain_library.get_all())
+            if coordinator.services.config.strain_library
             else 0,
         },
         "subsystems": {

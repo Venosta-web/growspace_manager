@@ -977,7 +977,7 @@ def _make_coordinator_with_growspace(
 
     coordinator = MagicMock()
     coordinator.growspaces = {"tent1": growspace}
-    coordinator.data_repository.get_growspace_plants.return_value = plants or []
+    coordinator.services.growspaces.get_growspace_plants.return_value = plants or []
     return coordinator
 
 

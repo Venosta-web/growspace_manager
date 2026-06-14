@@ -77,7 +77,7 @@ async def test_websocket_get_strain_library_snapshot(
     }
 
     coordinator = MagicMock()
-    coordinator.strain_library = strain_library
+    coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
 
     with patch(
@@ -106,8 +106,10 @@ async def test_websocket_get_nutrient_inventory_snapshot(
             "n2": {"name": "Nutri-Plus B", "current_ml": 450, "initial_ml": 1000},
         }
     }
-    # coordinator.nutrient_manager.inventory_service.get_inventory() returns it
-    coordinator.nutrient_manager.inventory_service.get_inventory.return_value = inventory
+    # coordinator._nutrient_manager.inventory_service.get_inventory() returns it
+    coordinator._nutrient_manager.inventory_service.get_inventory.return_value = (
+        inventory
+    )
 
     with (
         patch(
@@ -134,7 +136,7 @@ async def test_websocket_get_nutrient_presets_snapshot(
 ) -> None:
     """Test websocket_get_nutrient_presets output matches snapshot."""
     coordinator = MagicMock()
-    coordinator.nutrient_manager.get_serialization_data.return_value = {
+    coordinator.services.config.get_nutrient_serialization_data.return_value = {
         "nutrient_presets": [
             {"name": "Early Veg", "nutrients": {"n1": 2.0, "n2": 2.0}},
             {"name": "Late Veg", "nutrients": {"n1": 4.0, "n2": 4.0}},
@@ -161,7 +163,7 @@ async def test_websocket_get_ipm_presets_snapshot(
 ) -> None:
     """Test websocket_get_ipm_presets output matches snapshot."""
     coordinator = MagicMock()
-    coordinator.nutrient_manager.get_serialization_data.return_value = {
+    coordinator.services.config.get_nutrient_serialization_data.return_value = {
         "nutrient_presets": [],
         "ipm_presets": [
             {"name": "Neem Oil Spray", "application_type": "foliar"},
@@ -189,7 +191,7 @@ async def test_websocket_add_timeline_note_snapshot(
     coordinator = MagicMock()
     coordinator.services = MagicMock()
     coordinator.services.add_timeline_note = AsyncMock()
-    coordinator.strain_library = MagicMock()
+    coordinator._strain_library = MagicMock()
 
     with (
         patch(
@@ -223,17 +225,14 @@ async def test_websocket_add_growspace_note_snapshot(
     """Test websocket_add_growspace_note success."""
     coordinator = MagicMock()
     coordinator.growspaces = {"gs1": MagicMock()}
-    coordinator.strain_library = MagicMock()
+    coordinator._strain_library = MagicMock()
 
-    with (
-        patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-            return_value=coordinator,
-        ),
-        patch(
-            "custom_components.growspace_manager.websocket.timeline.async_add_growspace_note",
-            new_callable=AsyncMock,
-        ) as mock_add_note,
+    coordinator.services = MagicMock()
+    coordinator.services.growspaces.add_growspace_note = AsyncMock()
+
+    with patch(
+        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
+        return_value=coordinator,
     ):
         msg = {
             "id": 7,
@@ -244,7 +243,7 @@ async def test_websocket_add_growspace_note_snapshot(
         }
         await websocket_add_growspace_note(hass, mock_connection, msg)
 
-        mock_add_note.assert_called_once()
+        coordinator.services.growspaces.add_growspace_note.assert_called_once()
         mock_connection.send_result.assert_called_once_with(7)
 
 
@@ -412,7 +411,7 @@ async def test_websocket_update_breeder_snapshot(
     strain_library.update_breeder = AsyncMock(return_value=5)
 
     coordinator = MagicMock()
-    coordinator.strain_library = strain_library
+    coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
 
     with patch(
@@ -442,7 +441,7 @@ async def test_websocket_delete_breeder_snapshot(
     strain_library.delete_breeder = AsyncMock(return_value=3)
 
     coordinator = MagicMock()
-    coordinator.strain_library = strain_library
+    coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
 
     with patch(

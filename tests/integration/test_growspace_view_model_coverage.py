@@ -11,6 +11,7 @@ from custom_components.growspace_manager.models import (
     IrrigationTank,
     Plant,
     SensorGroup,
+    Subarea,
     WaterUsageData,
 )
 from custom_components.growspace_manager.presentation.growspace_view_model import (
@@ -69,6 +70,45 @@ def test_growspace_view_model_build_basic(hass: HomeAssistant, builder):
     assert result["metrics"]["metrics"] is True
     assert result["grid"]["grid"]["position_1_1"]["rich"] is True
     assert result["grid"]["grid"]["position_1_2"] is None
+
+
+@pytest.mark.parametrize(
+    ("liters_per_pot", "flow_rate", "expected"),
+    [
+        (6.0, 20.0, True),  # both prerequisites present
+        (0.0, 20.0, False),  # no substrate profile
+        (6.0, 0.0, False),  # no pump flow rate
+        (0.0, 0.0, False),  # neither
+    ],
+)
+def test_volume_mode_capable_flag(
+    hass: HomeAssistant, builder, liters_per_pot, flow_rate, expected
+):
+    """The payload exposes volume_mode_capable per the Volume Mode prerequisites."""
+    from custom_components.growspace_manager.models import (
+        IrrigationStrategy,
+        SubstrateProfile,
+    )
+
+    growspace = Growspace(
+        id="gs1",
+        name="Test Room",
+        rows=1,
+        plants_per_row=1,
+        environment_config=EnvironmentConfig(),
+        irrigation_config=IrrigationConfig(pump_flow_rate_ml_per_sec=flow_rate),
+    )
+    growspace.irrigation_strategy = IrrigationStrategy(
+        substrate_profile=SubstrateProfile(liters_per_pot=liters_per_pot)
+    )
+
+    builder.entity_queries = MagicMock()
+    builder.entity_queries.lookup_overview_entity_id.return_value = "sensor.gs1"
+    builder.plant_builder = MagicMock()
+
+    result = builder.build(growspace=growspace, plants=[], biological_metrics={})
+
+    assert result["irrigation"]["volume_mode_capable"] is expected
 
 
 def test_get_sensor_types(builder):
@@ -502,7 +542,9 @@ def test_water_history_includes_summaries_in_view_model(
         {"timestamp": now.isoformat(), "event_type": "consumption", "liters": 2.0},
         {"timestamp": now.isoformat(), "event_type": "refill", "liters": 30.0},
     ]
-    tank = IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+    tank = IrrigationTank(
+        sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0
+    )
     tank.water_history.events = events
 
     env_config = EnvironmentConfig(irrigation_tanks=[tank])
@@ -543,7 +585,9 @@ def _make_mock_coordinator(
     mock_coord.services.growspaces.get_growspace_plants.return_value = []
     mock_coord.services.growspaces.calculate_biological_metrics.return_value = {}
     mock_coord.services.growspaces.get_irrigation_coordinator.return_value = None
-    mock_coord.services.growspaces.get_all_trackers_for_growspace.return_value = trackers
+    mock_coord.services.growspaces.get_all_trackers_for_growspace.return_value = (
+        trackers
+    )
     return mock_coord
 
 
@@ -553,7 +597,9 @@ def test_view_model_builder_passes_liters_today_from_trackers(
     """ViewModelBuilder sums tracker liters_today and passes it to the builder."""
     env = EnvironmentConfig(
         irrigation_tanks=[
-            IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+            IrrigationTank(
+                sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0
+            )
         ],
     )
     gs = Growspace(
@@ -577,7 +623,9 @@ def test_view_model_builder_liters_today_absent_with_flow_sensors(
     env = EnvironmentConfig(
         irrigation_flow_sensors=["sensor.flow1"],
         irrigation_tanks=[
-            IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+            IrrigationTank(
+                sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0
+            )
         ],
     )
     gs = Growspace(
@@ -598,7 +646,9 @@ def test_view_model_builder_liters_today_absent_with_drain_volume_sensors(
     env = EnvironmentConfig(
         drain_volume_sensors=["sensor.drain1"],
         irrigation_tanks=[
-            IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0)
+            IrrigationTank(
+                sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0
+            )
         ],
     )
     gs = Growspace(
@@ -629,3 +679,153 @@ def test_vpd_optimal_overrides_round_trips_in_environment_attributes(
 
     assert attrs["vpd_optimal_overrides"] == overrides
     assert attrs["vpd_optimal_overrides"]["flower_mid"]["day"]["low"] == 0.5
+
+
+def test_build_includes_subareas(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """The growspace payload carries subareas in the get_subareas wire shape."""
+    subarea_env = EnvironmentConfig(
+        temperature_sensors=["sensor.shelf_temp"],
+        humidity_sensors=["sensor.shelf_hum"],
+    )
+    growspace = Growspace(
+        id="gs1",
+        name="Test Room",
+        subareas=[Subarea(id="sa1", name="Veg Shelf", environment_config=subarea_env)],
+    )
+
+    result = builder.build(growspace=growspace, plants=[], biological_metrics={})
+
+    assert len(result["subareas"]) == 1
+    serialized = result["subareas"][0]
+    assert serialized["id"] == "sa1"
+    assert serialized["name"] == "Veg Shelf"
+    assert serialized["environment_config"]["temperature_sensors"] == [
+        "sensor.shelf_temp"
+    ]
+    assert serialized["environment_config"]["humidity_sensors"] == ["sensor.shelf_hum"]
+
+
+def test_build_subareas_empty_when_none_configured(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """Growspaces without subareas serialize an empty list, not a missing key."""
+    growspace = Growspace(id="gs1", name="Test Room")
+
+    result = builder.build(growspace=growspace, plants=[], biological_metrics={})
+
+    assert result["subareas"] == []
+
+
+def test_view_model_builder_serializes_subareas_for_websocket_payload(
+    hass: HomeAssistant,
+) -> None:
+    """build_serialized_growspace (the get_growspace_data path) carries subareas."""
+    gs = Growspace(
+        id="gs1",
+        name="GS1",
+        subareas=[
+            Subarea(id="sa1", name="Veg Shelf"),
+            Subarea(id="sa2", name="Flower Shelf"),
+        ],
+    )
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    assert [s["id"] for s in result["subareas"]] == ["sa1", "sa2"]
+    assert all("environment_config" in s for s in result["subareas"])
+
+
+def test_substrate_payload_surfaces_measured_steering_readout(
+    hass: HomeAssistant,
+) -> None:
+    """The substrate block carries the measured steering readout.
+
+    Score, Measured Classification, and Intent Deviation come from the computed
+    CropSteeringState.
+    """
+    from custom_components.growspace_manager.models.irrigation import CropSteeringState
+
+    gs = Growspace(id="gs1", name="GS1")
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    state = CropSteeringState(
+        score=0.6,
+        measured_classification="generative",
+        intent_deviation="more_generative",
+    )
+    with patch(
+        "custom_components.growspace_manager.view_model_builder.get_crop_steering_state",
+        return_value=state,
+    ):
+        result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    substrate = result["irrigation"]["substrate"]
+    assert substrate["score"] == pytest.approx(0.6)
+    assert substrate["measured_classification"] == "generative"
+    assert substrate["intent_deviation"] == "more_generative"
+
+
+def test_substrate_payload_steering_readout_null_when_no_state(
+    hass: HomeAssistant,
+) -> None:
+    """Measured readout fields are present but null when no state is available.
+
+    This is the strategy-disabled / no-reading-yet case.
+    """
+    gs = Growspace(id="gs1", name="GS1")
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    with patch(
+        "custom_components.growspace_manager.view_model_builder.get_crop_steering_state",
+        return_value=None,
+    ):
+        result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    substrate = result["irrigation"]["substrate"]
+    assert substrate["score"] is None
+    assert substrate["measured_classification"] is None
+    assert substrate["intent_deviation"] is None
+
+
+def test_substrate_payload_includes_shot_composition(hass: HomeAssistant) -> None:
+    """The substrate block carries the irrigation coordinator's shot composition."""
+    gs = Growspace(id="gs1", name="GS1")
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    irr_coord = MagicMock()
+    irr_coord.active_events = {}
+    irr_coord.last_cycle_timestamp = None
+    irr_coord.next_scheduled_cycle = None
+    irr_coord.projected_shot_window = None
+    irr_coord.cycles_today = 0
+    irr_coord.volume_dispensed_today = 0.0
+    composition = {"ec_modulation_enabled": True, "last_shot": None}
+    irr_coord.shot_composition_payload.return_value = composition
+    coordinator.services.growspaces.get_irrigation_coordinator.return_value = irr_coord
+
+    with patch(
+        "custom_components.growspace_manager.view_model_builder.get_crop_steering_state",
+        return_value=None,
+    ):
+        result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    assert result["irrigation"]["substrate"]["shot_composition"] == composition
+
+
+def test_substrate_payload_shot_composition_null_without_irrigation_coordinator(
+    hass: HomeAssistant,
+) -> None:
+    """Time-based irrigation (no VWC coordinator) leaves shot_composition null."""
+    gs = Growspace(id="gs1", name="GS1")
+    coordinator = _make_mock_coordinator(hass, gs, {})
+
+    with patch(
+        "custom_components.growspace_manager.view_model_builder.get_crop_steering_state",
+        return_value=None,
+    ):
+        result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    assert result["irrigation"]["substrate"]["shot_composition"] is None

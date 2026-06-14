@@ -91,8 +91,8 @@ async def test_aggregate_plant_data(
 ) -> None:
     """Test data aggregation for the report."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
 
     with (
         patch(
@@ -150,8 +150,8 @@ async def test_export_grow_report_json(
 ) -> None:
     """Test generating a JSON report."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
 
     # Setup config path mock to handle subdirectories correctly
     hass.config.path = MagicMock(
@@ -196,8 +196,8 @@ async def test_export_grow_report_pdf(
 ) -> None:
     """Test generating a PDF report."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
 
     hass.config.path = MagicMock(
         side_effect=lambda *args: str(tmp_path.joinpath(*args))
@@ -258,7 +258,7 @@ async def test_export_plant_not_found(
     hass: HomeAssistant, mock_coordinator: MagicMock
 ) -> None:
     """Test export service fails if plant not found."""
-    mock_coordinator.data_repository.get_plant.return_value = None
+    mock_coordinator._data_repository.get_plant.return_value = None
     call = MagicMock(data={"plant_id": "missing_plant", "format": "json"})
 
     with pytest.raises(HomeAssistantError, match="Plant missing_plant not found"):
@@ -458,7 +458,7 @@ async def test_export_growspace_not_found_in_handle(
     hass: HomeAssistant, mock_coordinator: MagicMock
 ) -> None:
     """Test export fails when growspace not found."""
-    mock_coordinator.data_repository.get_growspace.return_value = None
+    mock_coordinator._data_repository.get_growspace.return_value = None
     call = MagicMock(data={"growspace_id": "missing_growspace", "format": "json"})
 
     with pytest.raises(
@@ -473,7 +473,7 @@ async def test_export_growspace_json(
 ) -> None:
     """Test generating a JSON report for growspace."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {
         "plant1": MagicMock(
             growspace_id="test_growspace",
@@ -566,7 +566,7 @@ async def test_export_growspace_pdf(
 ) -> None:
     """Test generating a PDF report for growspace."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
     # Setup config path mock to handle subdirectories correctly
@@ -666,7 +666,7 @@ async def test_aggregate_growspace_data_with_plants(
     mock_growspace.environment_config.humidity_sensor = "sensor.test_humidity"
     mock_growspace.environment_config.vpd_sensor = "sensor.test_vpd"
 
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {"plant1": plant1, "plant2": plant2}
 
     with (
@@ -712,7 +712,7 @@ async def test_aggregate_growspace_data_no_environment_config(
     mock_growspace.name = "Test Growspace"
     mock_growspace.environment_config = None
 
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
     data = await _aggregate_growspace_data(hass, mock_coordinator, "test_growspace")
@@ -736,7 +736,7 @@ async def test_aggregate_growspace_data_no_stats(
     mock_growspace.environment_config.humidity_sensor = None
     mock_growspace.environment_config.vpd_sensor = None
 
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
     with patch(
@@ -764,7 +764,7 @@ async def test_aggregate_growspace_data_stats_exception(
     mock_growspace.environment_config.humidity_sensor = None
     mock_growspace.environment_config.vpd_sensor = None
 
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
     with patch(
@@ -783,7 +783,7 @@ async def test_aggregate_growspace_data_growspace_not_found(
 ) -> None:
     """Test growspace aggregation when growspace not found."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_growspace.return_value = None
+    mock_coordinator._data_repository.get_growspace.return_value = None
 
     with pytest.raises(HomeAssistantError, match="Growspace missing_space not found"):
         await _aggregate_growspace_data(hass, mock_coordinator, "missing_space")
@@ -796,8 +796,8 @@ async def test_websocket_get_grow_report_plant(
     """Test WebSocket grow report request for plant."""
 
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
 
     mock_connection = MagicMock()
 
@@ -834,7 +834,7 @@ async def test_websocket_get_grow_report_growspace(
     """Test WebSocket grow report request for growspace."""
 
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
     mock_connection = MagicMock()
@@ -874,7 +874,7 @@ async def test_websocket_get_grow_report_plant_not_found(
     """Test WebSocket report when plant not found."""
 
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_plant.return_value = None
+    mock_coordinator._data_repository.get_plant.return_value = None
 
     mock_connection = MagicMock()
 
@@ -929,7 +929,7 @@ async def test_websocket_get_grow_report_exception(
     """Test WebSocket report handles exceptions."""
 
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_plant.side_effect = ValueError("DB Error")
+    mock_coordinator._data_repository.get_plant.side_effect = ValueError("DB Error")
 
     mock_connection = MagicMock()
 
@@ -957,8 +957,8 @@ async def test_export_notification_fired(
 ) -> None:
     """Test that notification is created after successful export."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
 
     hass.config.path = MagicMock(
         side_effect=lambda *args: str(tmp_path.joinpath(*args))
@@ -994,8 +994,8 @@ async def test_export_event_fired(
 ) -> None:
     """Test that event is fired after successful export."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
 
     hass.config.path = MagicMock(
         side_effect=lambda *args: str(tmp_path.joinpath(*args))
@@ -1035,8 +1035,8 @@ async def test_export_with_special_characters_in_name(
     mock_growspace.name = "Tent/1"
 
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
 
     hass.config.path = MagicMock(
         side_effect=lambda *args: str(tmp_path.joinpath(*args))
@@ -1078,8 +1078,8 @@ async def test_aggregate_data_with_invalid_dates(
 ) -> None:
     """Test data aggregation with invalid date strings (None/garbage)."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
 
     # 1. Test plant data with garbage dates
     mock_plant.stage_history = [
@@ -1113,7 +1113,7 @@ async def test_aggregate_data_with_invalid_dates(
     mock_growspace_2.id = "test_growspace"
     mock_growspace_2.name = "Test Growspace"
     mock_growspace_2.environment_config = None
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace_2
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace_2
 
     plant1 = MagicMock()
     plant1.growspace_id = "test_growspace"
@@ -1146,8 +1146,8 @@ async def test_aggregate_plant_data_no_sensors(
 ) -> None:
     """Test plant data aggregation when growspace has no environmental sensors configured."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
 
     mock_growspace.environment_config.temperature_sensor = None
     mock_growspace.environment_config.humidity_sensor = None
@@ -1170,8 +1170,8 @@ async def test_get_plant_environmental_stats_stage_date_edges(
 ) -> None:
     """Test stage history parsing including invalid starts, valid ends, and invalid ends."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
 
     mock_plant.stage_history = [
         {"stage": "invalid_start", "start": "garbage"},
@@ -1236,8 +1236,8 @@ async def test_export_as_pdf_import_error(
 ) -> None:
     """Test generating a PDF report raises HomeAssistantError if fpdf2 is not installed."""
     mock_coordinator = MagicMock()
-    mock_coordinator.data_repository.get_plant.return_value = mock_plant
-    mock_coordinator.data_repository.get_growspace.return_value = mock_growspace
+    mock_coordinator._data_repository.get_plant.return_value = mock_plant
+    mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
 
     hass.config.path = MagicMock(
         side_effect=lambda *args: str(tmp_path.joinpath(*args))

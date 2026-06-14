@@ -49,12 +49,12 @@ async def handle_export_grow_report(
 
     # Validate identifiers and get basic data before entering the try block
     if plant_id:
-        plant = coordinator.data_repository.get_plant(plant_id)
+        plant = coordinator._data_repository.get_plant(plant_id)
         if not plant:
             raise HomeAssistantError(f"Plant {plant_id} not found")
         safe_name = f"{plant.genetics.strain_name}_{plant.phenotype}"
     else:
-        growspace = coordinator.data_repository.get_growspace(growspace_id)  # type: ignore[arg-type]
+        growspace = coordinator._data_repository.get_growspace(growspace_id)  # type: ignore[arg-type]
         if not growspace:
             raise HomeAssistantError(f"Growspace {growspace_id} not found")
         safe_name = growspace.name
@@ -121,7 +121,7 @@ async def _aggregate_plant_data(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, plant: Plant
 ) -> dict[str, Any]:
     """Aggregate all data needed for the report."""
-    growspace = coordinator.data_repository.get_growspace(plant.growspace_id)
+    growspace = coordinator._data_repository.get_growspace(plant.growspace_id)
     if not growspace:
         raise HomeAssistantError(f"Growspace {plant.growspace_id} not found")
 
@@ -292,7 +292,7 @@ async def _aggregate_growspace_data(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, growspace_id: str
 ) -> dict[str, Any]:
     """Aggregate data for a whole growspace report."""
-    growspace = coordinator.data_repository.get_growspace(growspace_id)
+    growspace = coordinator._data_repository.get_growspace(growspace_id)
     if not growspace:
         raise HomeAssistantError(f"Growspace {growspace_id} not found")
 
@@ -419,7 +419,7 @@ async def async_websocket_get_grow_report(
         growspace_id = msg.get("growspace_id")
 
         if plant_id:
-            plant = coordinator.data_repository.get_plant(plant_id)
+            plant = coordinator._data_repository.get_plant(plant_id)
             if not plant:
                 connection.send_error(
                     msg["id"], "not_found", f"Plant {plant_id} not found"

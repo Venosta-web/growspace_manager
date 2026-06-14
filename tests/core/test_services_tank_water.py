@@ -31,10 +31,10 @@ def _make_growspace(tank_entity: str = "sensor.tank_1") -> Growspace:
 def coordinator():
     """Mock coordinator with tank-related async methods."""
     mock = MagicMock()
-    mock.data_repository = MagicMock()
-    mock.data_repository.get_growspace = MagicMock(return_value=_make_growspace())
-    mock.growspace_manager = MagicMock()
-    mock.growspace_manager.async_configure_tank = AsyncMock()
+    mock._data_repository = MagicMock()
+    mock._data_repository.get_growspace = MagicMock(return_value=_make_growspace())
+    mock._growspace_manager = MagicMock()
+    mock._growspace_manager.async_configure_tank = AsyncMock()
     mock.services.growspaces.configure_tank = AsyncMock()
     return mock
 

@@ -38,9 +38,6 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
-        options=coordinator.options,
     )
 
 
@@ -80,8 +77,8 @@ def mock_coordinator_multi(mock_growspace_multi):
     # Add missing dependencies
     coordinator.get_growspace_plants = MagicMock(return_value=[])
     coordinator.add_event = MagicMock()
-    coordinator.notification_manager = MagicMock()
-    coordinator.strain_library = None
+    coordinator._notification_manager = MagicMock()
+    coordinator._strain_library = None
     return coordinator
 
 
@@ -111,25 +108,25 @@ async def test_lights_or_logic(sensor_multi, hass: HomeAssistant) -> None:
     # Both off
     set_state(hass, "light.1", STATE_OFF)
     set_state(hass, "light.2", STATE_OFF)
-    state = sensor_multi._get_base_environment_state()
+    state = sensor_multi.assembler.assemble().state
     assert state.is_lights_on is False
 
     # Light 1 On
     set_state(hass, "light.1", STATE_ON)
     set_state(hass, "light.2", STATE_OFF)
-    state = sensor_multi._get_base_environment_state()
+    state = sensor_multi.assembler.assemble().state
     assert state.is_lights_on is True
 
     # Light 2 On
     set_state(hass, "light.1", STATE_OFF)
     set_state(hass, "light.2", STATE_ON)
-    state = sensor_multi._get_base_environment_state()
+    state = sensor_multi.assembler.assemble().state
     assert state.is_lights_on is True
 
     # Both On
     set_state(hass, "light.1", STATE_ON)
     set_state(hass, "light.2", STATE_ON)
-    state = sensor_multi._get_base_environment_state()
+    state = sensor_multi.assembler.assemble().state
     assert state.is_lights_on is True
 
 
@@ -139,23 +136,23 @@ async def test_fans_and_logic_for_off(sensor_multi, hass: HomeAssistant) -> None
     # Both off -> fan_off = True
     set_state(hass, "fan.1", STATE_OFF)
     set_state(hass, "fan.2", STATE_OFF)
-    state = sensor_multi._get_base_environment_state()
+    state = sensor_multi.assembler.assemble().state
     assert state.fan_off is True
 
     # Fan 1 On -> fan_off = False (system is active)
     set_state(hass, "fan.1", STATE_ON)
     set_state(hass, "fan.2", STATE_OFF)
-    state = sensor_multi._get_base_environment_state()
+    state = sensor_multi.assembler.assemble().state
     assert state.fan_off is False
 
     # Fan 2 On
     set_state(hass, "fan.1", STATE_OFF)
     set_state(hass, "fan.2", STATE_ON)
-    state = sensor_multi._get_base_environment_state()
+    state = sensor_multi.assembler.assemble().state
     assert state.fan_off is False
 
     # Both On
     set_state(hass, "fan.1", STATE_ON)
     set_state(hass, "fan.2", STATE_ON)
-    state = sensor_multi._get_base_environment_state()
+    state = sensor_multi.assembler.assemble().state
     assert state.fan_off is False

@@ -134,7 +134,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator: MagicMock) -> N
         ]
     )
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator.growspace_manager.ensure_special_growspace = Mock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
@@ -189,7 +189,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator: MagicMock) -> 
     mock_coordinator.growspaces = {"gs1": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator.growspace_manager.ensure_special_growspace = Mock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
@@ -254,7 +254,7 @@ async def test_async_setup_entry_vision_sensor(mock_coordinator: MagicMock) -> N
     mock_coordinator.growspaces = {"gs_vision": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator.growspace_manager.ensure_special_growspace = Mock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
@@ -302,7 +302,7 @@ async def test_async_setup_entry_global_vpd(mock_coordinator: MagicMock) -> None
     mock_coordinator.growspaces = {}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator.growspace_manager.ensure_special_growspace = Mock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
@@ -368,7 +368,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator: MagicMock) ->
     mock_coordinator.plants = {}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator.growspace_manager.ensure_special_growspace = Mock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()
@@ -790,7 +790,7 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
     """
     # Mock the new data structure from StrainLibrary.get_all()
     # Structure: {strain_name: { "phenotypes": { pheno_name: { "harvests": [], ...meta... } }, "meta": {} }}
-    mock_coordinator.strain_library.get_all.return_value = {
+    mock_coordinator._strain_library.get_all.return_value = {
         "Strain A": {
             "phenotypes": {
                 "Pheno A": {
@@ -825,7 +825,7 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
     }
 
     # Mock get_analytics to return what we expect, since the sensor calls it directly
-    mock_coordinator.strain_library.get_analytics.return_value = {
+    mock_coordinator._strain_library.get_analytics.return_value = {
         "strains": {
             "Strain A": {
                 "phenotypes": {
@@ -861,10 +861,10 @@ def test_strain_library_sensor_state_and_attributes(mock_coordinator) -> None:
 
     # Mirror setup on the facade path the sensor actually reads
     mock_coordinator.services.config.strain_library.get_all.return_value = (
-        mock_coordinator.strain_library.get_all.return_value
+        mock_coordinator._strain_library.get_all.return_value
     )
     mock_coordinator.services.config.strain_library.get_analytics.return_value = (
-        mock_coordinator.strain_library.get_analytics.return_value
+        mock_coordinator._strain_library.get_analytics.return_value
     )
 
     sensor = StrainLibrarySensor(mock_coordinator)
@@ -1189,7 +1189,7 @@ async def test_async_setup_entry_recreates_calculated_vpd(
     mock_coordinator.growspaces = {"gs1": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
-    mock_coordinator.growspace_manager.ensure_special_growspace = Mock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = Mock(
         side_effect=lambda x, y, rows, plants_per_row: x
     )
     mock_coordinator.async_set_updated_data = AsyncMock()

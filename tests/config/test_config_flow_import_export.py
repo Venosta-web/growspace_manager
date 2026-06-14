@@ -27,7 +27,7 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     strain_lib.get_all_strains.return_value = []
     strain_lib.import_library_from_zip = AsyncMock()
     strain_lib.export_library_to_zip = AsyncMock()
-    coordinator.strain_library = strain_lib
+    coordinator._strain_library = strain_lib
 
     cfg_facade = MagicMock()
     cfg_facade.strain_library = strain_lib
@@ -162,7 +162,7 @@ async def test_export_strain_library_success(
         "path": str(tmp_path / "export.zip")
     }
 
-    mock_coordinator.strain_library.export_library_to_zip.assert_awaited_once()
+    mock_coordinator._strain_library.export_library_to_zip.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -175,7 +175,7 @@ async def test_export_strain_library_failure(
     config_entry.runtime_data = MagicMock()
     config_entry.runtime_data = mock_coordinator
 
-    mock_coordinator.strain_library.export_library_to_zip.side_effect = Exception(
+    mock_coordinator._strain_library.export_library_to_zip.side_effect = Exception(
         "Export failed"
     )
 

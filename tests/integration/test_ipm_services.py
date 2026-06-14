@@ -15,11 +15,7 @@ from custom_components.growspace_manager.const import (
     ATTR_TYPE,
 )
 from custom_components.growspace_manager.schemas import APPLY_IPM_SCHEMA
-from custom_components.growspace_manager.services.ipm import (
-    handle_apply_ipm,
-    handle_remove_ipm_preset,
-    handle_save_ipm_preset,
-)
+from custom_components.growspace_manager.services.config_facade import ConfigFacade
 
 
 @pytest.mark.asyncio
@@ -39,7 +35,9 @@ async def test_handle_save_ipm_preset() -> None:
     call = MagicMock()
     call.data = data
 
-    await handle_save_ipm_preset(None, coordinator, call)
+    facade = ConfigFacade(coordinator)
+    facade.save_ipm_preset = coordinator.services.config.save_ipm_preset
+    await facade.save_ipm_preset_from_call(None, call)
 
     coordinator.services.config.save_ipm_preset.assert_awaited_once_with(
         name="Soap Spray",
@@ -61,7 +59,9 @@ async def test_handle_remove_ipm_preset() -> None:
     call = MagicMock()
     call.data = data
 
-    await handle_remove_ipm_preset(None, coordinator, call)
+    facade = ConfigFacade(coordinator)
+    facade.remove_ipm_preset = coordinator.services.config.remove_ipm_preset
+    await facade.remove_ipm_preset_from_call(None, call)
 
     coordinator.services.config.remove_ipm_preset.assert_awaited_once_with("preset_123")
 
@@ -81,7 +81,7 @@ async def test_handle_apply_ipm() -> None:
     call = MagicMock()
     call.data = data
 
-    await handle_apply_ipm(None, coordinator, call)
+    await ConfigFacade(coordinator).apply_ipm_from_call(None, call)
 
     coordinator.services.plants.apply_ipm.assert_awaited_once_with(
         preset_id="preset_123",

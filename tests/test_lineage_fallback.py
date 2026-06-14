@@ -130,7 +130,7 @@ def _make_coordinator(
     coordinator = MagicMock()
     coordinator.plants = plants
     coordinator.services.genetics.get_lineage_tree.return_value = genetics_tree
-    coordinator.strain_library = strain_library
+    coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
     return coordinator
 
@@ -211,7 +211,7 @@ async def test_no_fallback_when_pollination_tree_has_parents() -> None:
 
 @pytest.mark.asyncio
 async def test_fallback_skipped_when_strain_library_not_loaded() -> None:
-    """When coordinator.strain_library is None, no fallback occurs."""
+    """When coordinator._strain_library is None, no fallback occurs."""
 
     plant = MagicMock()
     plant.genetics.strain_name = "OG Kush"

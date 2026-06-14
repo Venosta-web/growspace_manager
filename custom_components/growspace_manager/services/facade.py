@@ -133,8 +133,8 @@ class ServiceFacade:
         metadata.update(external_metadata)
 
         image_paths: list[str] = []
-        if images_base64 and self._coordinator.strain_library:
-            image_manager = self._coordinator.strain_library.image_manager
+        if images_base64 and self._coordinator._strain_library:
+            image_manager = self._coordinator._strain_library.image_manager
             if image_manager:
                 for img_b64 in images_base64:
                     try:

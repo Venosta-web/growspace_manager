@@ -51,9 +51,6 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
-        options=coordinator.options,
     )
 
 
@@ -62,7 +59,7 @@ def mock_coordinator(hass: HomeAssistant):
     coord = MagicMock()
     coord.hass = hass
     coord.growspaces = {"gs1": Growspace(id="gs1", name="Test Growspace")}
-    coord.notification_manager = MagicMock()
+    coord._notification_manager = MagicMock()
     return coord
 
 

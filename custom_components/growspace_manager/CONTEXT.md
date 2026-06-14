@@ -24,6 +24,14 @@ The lifecycle phase of an individual plant (`seedling`, `clone`, `veg`, `flower`
 
 The single `PlantStage` that wins when a growspace contains plants at multiple stages. Computed by `determine_coordinator_stage()` using the priority ladder above. Maps to the growspace's effective `GrowspaceType`.
 
+## StageDays
+
+The aggregated per-stage maximum-days inputs for a growspace, derived from its plants. Each field holds the highest number of days any plant has spent in that stage, or `-1` if no plant is in that stage. `StageDays` is the single input to `classify_stages()` and is constructed by the view model builder from plant records. An all-`-1` `StageDays` (no plants in any stage) classifies as `EMPTY`.
+
+## StageClassification
+
+The canonical output of `classify_stages(StageDays)`, defined in `domain/stage.py`. Carries `stage_a` and `stage_b` (`BayesianStage` enum values) and a `factor` (0.0–1.0) for smooth VPD threshold interpolation across stage boundaries, plus a `display_stage` property that collapses internal Bayesian sub-stages (e.g. `SEEDLING_STANDARD` → `SEEDLING`) and applies the factor-≥-0.5 flip rule for the card-visible label. `EMPTY` classification disables VPD monitoring and Bayesian evaluation — used when a growspace has no active plants.
+
 ## EnvironmentConfig
 
 The set of HA sensor entity IDs linked to a growspace. Covers: temperature, humidity, VPD, CO₂, substrate temperature, soil moisture, feed EC, bulk EC, pore EC, runoff EC, pH, drain volume, irrigation flow, power, energy, irrigation tanks, lights, fans, humidifier, dehumidifier. All sensor types can be linked to any growspace regardless of its `GrowspaceType`.
@@ -150,3 +158,16 @@ The five sub-facades are:
 | `coordinator.services.config` | `ConfigFacade` | Nutrient presets, IPM presets, nutrient inventory (`get_inventory`, `update_stock`, `remove_stock`) |
 | `coordinator.services.notifications` | `NotificationsFacade` | Alert creation/resolution, alert sensor registration (`get_alerts`, `resolve_alert`, `register_alert_sensor`) |
 | `coordinator.services.genetics` | `GeneticsFacade` | Seed batches, lineage trees, pollination logs, phenotype scoring, plant sex assignment (`seed_batches`, `get_total_seed_count`, `get_lineage_tree`, etc.) |
+
+### Internal Mechanic vs Deep-Subsystem Accessor
+
+The coordinator's collaborators fall into two kinds, and the facade treats them differently:
+
+- **Internal mechanic** — `data_repository`, `plant_manager`, `growspace_manager`, `nutrient_manager`, `genetics_manager`, `subsystem_manager`. These have no business interface of their own that a consumer should see; the facade's *operation methods* (`services.plants.add_plant`, `services.growspaces.get_growspace_plants`, …) are the entire interface. No public accessor for the object is exposed.
+- **Deep-subsystem accessor** — `strain_library` and `notification_manager`. These are genuinely deep modules with wide, legitimate interfaces of their own (`StrainLibrary` alone is ~1,300 lines). Wrapping them behind dozens of forwarding methods would manufacture pass-throughs, so the sanctioned seam is a single *named accessor* — `coordinator.services.config.strain_library` and `coordinator.services.notifications.manager` — that hands out the subsystem. Reaching the subsystem through that accessor is correct; reaching it via `coordinator.strain_library` is a bypass.
+
+The line: a single named accessor onto a deep module is a seam (good); a wall of forwarding wrappers is a pass-through (bad).
+
+### Seam Enforcement
+
+The collaborators above are private attributes on the coordinator (`coordinator._data_repository`, `coordinator._plant_manager`, …). The only sanctioned readers are the coordinator itself (`coordinator.py`) and the sub-facades (`services/`). **Coordinator-owned subsystems — `photoperiod_flip_checker`, the AI schedulers — sit *outside* the seam: they are consumers and must go through `coordinator.services.*` like any entity or WebSocket handler.** The single lifecycle exception is teardown, wrapped as `coordinator.async_shutdown()` (so `__init__.py` never reaches `_subsystem_manager` directly). A CI guard test fails if a `coordinator._<internal>` access appears outside `services/` and `coordinator.py`; there is no per-file allowlist.

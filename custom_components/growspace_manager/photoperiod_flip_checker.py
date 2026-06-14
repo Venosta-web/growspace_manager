@@ -120,7 +120,7 @@ class PhotoperiodFlipChecker:
         message = _AUTO_TRACKING_MESSAGE if auto_tracking else _MANUAL_MESSAGE
         title = f"🌸 Photoperiod Flip: {growspace.name}"
 
-        await self.coordinator.notification_manager.async_send_notification(
+        await self.coordinator.services.notifications.manager.async_send_notification(
             growspace_id,
             title,
             message,

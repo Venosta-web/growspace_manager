@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import voluptuous as vol
@@ -14,7 +13,14 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 
-_LOGGER = logging.getLogger(__name__)
+from ._common import WSErrorMap, handle_ws_errors, handle_ws_errors_sync
+
+_GET_ERROR_MAP: WSErrorMap = ((Exception, "unknown_error", True, None),)
+
+_BREEDER_ERROR_MAP: WSErrorMap = (
+    (ServiceValidationError, "not_loaded", False, "Growspace Manager strain library not loaded"),
+    (Exception, "unknown_error", True, None),
+)
 
 WS_TYPE_GET_GENETICS_DATA = f"{DOMAIN}/get_genetics_data"
 SCHEMA_WS_GET_GENETICS_DATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
@@ -43,70 +49,50 @@ SCHEMA_WS_DELETE_BREEDER = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 @callback
+@handle_ws_errors_sync(_GET_ERROR_MAP)
 def websocket_get_genetics_data(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Handle get genetics data command via WebSocket."""
-    try:
-        coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(
-            hass, msg
-        )
-        connection.send_result(
-            msg["id"],
-            coordinator.services.genetics.get_serialization_data(),
-        )
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_get_genetics_data")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
+    connection.send_result(
+        msg["id"],
+        coordinator.services.genetics.get_serialization_data(),
+    )
 
 
+@handle_ws_errors(_BREEDER_ERROR_MAP)
 async def websocket_update_breeder(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Handle updating breeder info across all strains."""
-    try:
-        coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library: StrainLibrary = coordinator.services.config.strain_library
-        count = await strain_library.update_breeder(
-            original_name=msg["original_name"],
-            new_name=msg["new_name"],
-            logo=msg.get("logo"),
-        )
-        connection.send_result(msg["id"], {"updated": count})
-    except ServiceValidationError:
-        connection.send_error(
-            msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
-        )
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_update_breeder")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    strain_library: StrainLibrary = coordinator.services.config.strain_library
+    count = await strain_library.update_breeder(
+        original_name=msg["original_name"],
+        new_name=msg["new_name"],
+        logo=msg.get("logo"),
+    )
+    connection.send_result(msg["id"], {"updated": count})
 
 
+@handle_ws_errors(_BREEDER_ERROR_MAP)
 async def websocket_delete_breeder(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
     """Handle removing breeder association from all strains."""
-    try:
-        coordinator = GrowspaceCoordinator.get_any(hass)
-        strain_library: StrainLibrary = coordinator.services.config.strain_library
-
-        count = await strain_library.delete_breeder(
-            breeder_name=msg["breeder_name"],
-        )
-        connection.send_result(msg["id"], {"deleted": count})
-    except ServiceValidationError:
-        connection.send_error(
-            msg["id"], "not_loaded", "Growspace Manager strain library not loaded"
-        )
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_delete_breeder")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    coordinator = GrowspaceCoordinator.get_any(hass)
+    strain_library: StrainLibrary = coordinator.services.config.strain_library
+    count = await strain_library.delete_breeder(
+        breeder_name=msg["breeder_name"],
+    )
+    connection.send_result(msg["id"], {"deleted": count})
 
 
 COMMANDS: list[tuple[str, Any, Any, bool]] = [

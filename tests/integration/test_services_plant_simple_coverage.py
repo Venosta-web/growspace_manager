@@ -19,7 +19,6 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import PlantStage
-from custom_components.growspace_manager.services.plant import handle_add_timeline_note
 from homeassistant.core import HomeAssistant, ServiceCall
 
 
@@ -130,13 +129,13 @@ async def test_transition_closes_existing_history(
     assert "stage_history" in plant.to_dict()  # Wait, to_dict/asdict might be used
     history = plant.stage_history
 
-    # Verify previous item closed
+    # Verify previous item closed (Lifecycle Timestamp is a full datetime, ADR-0013)
     assert history[1]["stage"] == "veg"
-    assert history[1]["end"] == today
+    assert history[1]["end"].startswith(today)
 
     # Verify new item added
     assert history[2]["stage"] == PlantStage.FLOWER
-    assert history[2]["start"] == today
+    assert history[2]["start"].startswith(today)
     assert history[2]["end"] is None
 
 
@@ -149,7 +148,7 @@ async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
     coordinator.hass = hass
     coordinator.plants = {}
     coordinator.growspaces = {}
-    coordinator.strain_library = MagicMock()
+    coordinator._strain_library = MagicMock()
     coordinator.services = ServiceFacade(coordinator)
 
     plant_id = "test_plant"
@@ -192,10 +191,9 @@ async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
         ATTR_TAGS: ["test"],
     }
 
-    await handle_add_timeline_note(
+    await coordinator.services.plants.add_timeline_note_from_call(
         hass,
-        coordinator,
-        coordinator.strain_library,
+        coordinator._strain_library,
         call,
     )
 

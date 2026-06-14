@@ -82,8 +82,8 @@ async def test_handle_score_plant_all_fields(
         await handle_score_plant(mock_hass, mock_coordinator, mock_strain_library, call)
 
     # Check that update_plant was called
-    mock_coordinator.plant_manager.update_plant.assert_called_once()
-    call_args = mock_coordinator.plant_manager.update_plant.call_args[1]
+    mock_coordinator._plant_manager.update_plant.assert_called_once()
+    call_args = mock_coordinator._plant_manager.update_plant.call_args[1]
     assert "phenotype_score" in call_args
     scores: PhenotypeScore = call_args["phenotype_score"]
 
@@ -124,8 +124,8 @@ async def test_handle_score_plant_partial(
         mock_ensure.return_value = True
         await handle_score_plant(mock_hass, mock_coordinator, mock_strain_library, call)
 
-    mock_coordinator.plant_manager.update_plant.assert_called_once()
-    call_args = mock_coordinator.plant_manager.update_plant.call_args[1]
+    mock_coordinator._plant_manager.update_plant.assert_called_once()
+    call_args = mock_coordinator._plant_manager.update_plant.call_args[1]
     assert "phenotype_score" in call_args
     scores: PhenotypeScore = call_args["phenotype_score"]
 
@@ -161,8 +161,8 @@ async def test_handle_score_plant_clear_fields(
         mock_ensure.return_value = True
         await handle_score_plant(mock_hass, mock_coordinator, mock_strain_library, call)
 
-    mock_coordinator.plant_manager.update_plant.assert_called_once()
-    call_args = mock_coordinator.plant_manager.update_plant.call_args[1]
+    mock_coordinator._plant_manager.update_plant.assert_called_once()
+    call_args = mock_coordinator._plant_manager.update_plant.call_args[1]
     assert "phenotype_score" in call_args
     scores: PhenotypeScore = call_args["phenotype_score"]
 

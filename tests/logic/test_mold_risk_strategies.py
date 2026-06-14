@@ -66,6 +66,7 @@ async def test_evaluate_humidity_risk_branches(mock_sensor) -> None:
 
     # Test explicit "Veg" branch with high humidity but not extreme
     state.flower_days = -1
+    state.veg_days = 10  # must be non-empty to evaluate veg thresholds
     state.humidity = 82.0  # High > 80, Critical > 85
     # Should hit "High humidity" branch
     obs_list = []
@@ -106,6 +107,7 @@ async def test_evaluate_circulation_risk_branches(mock_sensor) -> None:
     # 2. Veg threshold (80.0)
     state.seedling_days = -1
     state.flower_days = -1
+    state.veg_days = 10  # must be non-empty to evaluate veg thresholds
     state.humidity = 79.0
     obs = []
     strategy._evaluate_circulation_risk(state, obs, [])

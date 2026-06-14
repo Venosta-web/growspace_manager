@@ -154,7 +154,7 @@ async def test_create_initial_entities_dli_and_energy_sensors_created() -> None:
         ),
     ):
         await _create_initial_entities(
-            hass, coordinator, config_entry, initial_entities, {}, {}, set(), set()
+            hass, coordinator, config_entry, initial_entities, {}, {}, set(), set(), set()
         )
 
     assert any(isinstance(e, DLISensor) for e in initial_entities)
@@ -201,7 +201,7 @@ async def test_create_initial_entities_dict_env_config_with_tank() -> None:
     ):
         mock_tdp.return_value.async_update = AsyncMock()
         await _create_initial_entities(
-            hass, coordinator, config_entry, [], {}, {}, set(), set()
+            hass, coordinator, config_entry, [], {}, {}, set(), set(), set()
         )
 
     mock_tdp.assert_called_once()
@@ -402,7 +402,7 @@ def test_crop_steering_sensor_native_value_none() -> None:
     ],
 )
 def test_crop_steering_sensor_extra_attrs_mode(score, expected_mode) -> None:
-    """Lines 1275-1289: extra_state_attributes returns the correct steering mode."""
+    """extra_state_attributes surfaces the measured classification from the state."""
     sensor, _ = _make_crop_sensor()
     state = CropSteeringState(
         score=score,
@@ -410,13 +410,14 @@ def test_crop_steering_sensor_extra_attrs_mode(score, expected_mode) -> None:
         peak_vwc=40.0,
         trough_vwc=25.0,
         ec_trend="stable",
+        measured_classification=expected_mode,
     )
     with patch(
         "custom_components.growspace_manager.sensor.crop_steering.get_crop_steering_state",
         return_value=state,
     ):
         attrs = sensor.extra_state_attributes
-    assert attrs["steering_mode"] == expected_mode
+    assert attrs["measured_classification"] == expected_mode
 
 
 def test_crop_steering_sensor_extra_attrs_no_state() -> None:
@@ -427,6 +428,30 @@ def test_crop_steering_sensor_extra_attrs_no_state() -> None:
         return_value=None,
     ):
         assert sensor.extra_state_attributes == {}
+
+
+def test_crop_steering_sensor_exposes_measured_classification_and_deviation() -> None:
+    """The sensor surfaces the measured classification and intent deviation."""
+    sensor, _ = _make_crop_sensor()
+    state = CropSteeringState(
+        score=0.2,
+        dryback_percent=20.0,
+        peak_vwc=70.0,
+        trough_vwc=50.0,
+        measured_classification="balanced",
+        intent_deviation="more_vegetative",
+    )
+    with patch(
+        "custom_components.growspace_manager.sensor.crop_steering.get_crop_steering_state",
+        return_value=state,
+    ):
+        attrs = sensor.extra_state_attributes
+    assert attrs["intent_deviation"] == "more_vegetative"
+    assert attrs["measured_classification"] == "balanced"
+    # The old ambiguous key is gone; declared intent lives in the strategy
+    # payload's declared_steering_mode, not duplicated on the sensor.
+    assert "steering_mode" not in attrs
+    assert "declared_intent" not in attrs
 
 
 # ---------------------------------------------------------------------------

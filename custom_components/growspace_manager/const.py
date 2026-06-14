@@ -121,7 +121,9 @@ STAGE_PHOTOPERIOD_KEYS: Final[dict[PlantStage, str]] = {
 # Trend Analysis Constants
 CONF_TREND_VPD_THRESHOLD = "trend_vpd_threshold"
 CONF_TREND_TEMPERATURE_THRESHOLD = "trend_temperature_threshold"
-CONF_TREND_TEMP_THRESHOLD = CONF_TREND_TEMPERATURE_THRESHOLD  # Alias for backward compatibility
+CONF_TREND_TEMP_THRESHOLD = (
+    CONF_TREND_TEMPERATURE_THRESHOLD  # Alias for backward compatibility
+)
 CONF_TREND_HUMIDITY_THRESHOLD = "trend_humidity_threshold"
 CONF_TREND_VPD_DURATION = "trend_vpd_duration"
 CONF_TREND_TEMPERATURE_DURATION = "trend_temperature_duration"
@@ -260,6 +262,34 @@ TANK_MAX_SNAPSHOTS = 2016  # 7d * 24h * 12 readings/h (5-min updates)
 TANK_MAX_EVENTS = 500  # rolling event window
 TANK_REFILL_THRESHOLD_PCT = 3.0  # % rise → classified as refill
 TANK_NOISE_FLOOR_PCT = 1.0  # % change too small to record
+
+# Substrate tracker thresholds (measured dryback detection)
+SUBSTRATE_MAX_EVENTS = 200  # rolling dryback event window
+SUBSTRATE_NOISE_FLOOR_PCT = 0.5  # VWC change too small to move a peak/trough
+# Deadband for the daily pore-EC trend: a day-start-to-current EC delta whose
+# magnitude is at or below this many EC units (mS/cm) reads "stable" rather than
+# flapping rising<->falling on sensor noise. 0.2 mS/cm is a conservative default
+# below the typical day-to-day drift of substrate EC probes.
+SUBSTRATE_EC_TREND_DEADBAND = 0.2
+
+# EC Modulation bounds and response (see CONTEXT.md "EC Modulation",
+# "Pore EC Target Band", "Shot Size Composition"). The modulation factor scales
+# the P2 maintenance shot volume based on how far measured pore EC sits outside
+# the configured target band: above the band the factor rises (>1.0) to induce
+# runoff and flush; below the band it falls (<1.0) to stack EC. Within the band
+# the factor is exactly 1.0. This is the system's only EC actuation — there is
+# no dosing hardware (CONTEXT.md), so it is deliberately gentle and bounded.
+#
+# The response is proportional to the EC excursion past the nearest band edge,
+# normalised by EC_MODULATION_FULL_SCALE_DELTA: an excursion of that magnitude
+# (or more) saturates the factor at the bound. ±25% (0.75–1.25) keeps a single
+# shot from ever swinging volume hard enough to overrun a dryback or a cap.
+EC_MODULATION_MIN_FACTOR = 0.75
+EC_MODULATION_MAX_FACTOR = 1.25
+# Pore-EC excursion (mS/cm) past the band edge that saturates the factor at a
+# bound. 1.0 mS/cm is roughly one full feed-strength step, a sensible "this is
+# clearly out of band, react fully" scale for substrate EC probes.
+EC_MODULATION_FULL_SCALE_DELTA = 1.0
 
 
 # Multi-Device Config Keys
@@ -591,6 +621,7 @@ class GrowspaceService(StrEnum):
     SET_HUMIDIFIER_CONTROL = "set_humidifier_control"
     SET_IRRIGATION_SETTINGS = "set_irrigation_settings"
     SET_IRRIGATION_STRATEGY = "set_irrigation_strategy"
+    APPLY_STEERING_MODE = "apply_steering_mode"
     ADD_IRRIGATION_TIME = "add_irrigation_time"
     REMOVE_IRRIGATION_TIME = "remove_irrigation_time"
     ADD_DRAIN_TIME = "add_drain_time"
@@ -654,6 +685,41 @@ class FanRegulationMode(StrEnum):
     HUMIDITY = "humidity"
     TEMPERATURE = "temperature"
     VPD = "vpd"
+
+
+class SubstrateMediaType(StrEnum):
+    """Growing-medium type for a growspace's Substrate Profile."""
+
+    COCO = "coco"
+    ROCKWOOL = "rockwool"
+    SOIL = "soil"
+
+
+class ShotSizingMode(StrEnum):
+    """How steering shot size is expressed.
+
+    SECONDS is the default, first-class behavior (raw pump seconds). VOLUME is
+    an opt-in mode expressing shot size as a percentage of substrate volume,
+    converted to pump seconds via the substrate profile and pump flow rate.
+    """
+
+    SECONDS = "seconds"
+    VOLUME = "volume"
+
+
+class SteeringMode(StrEnum):
+    """The grower's declared steering intent for a growspace.
+
+    Selecting a mode is a preset *stamp*: it writes the mode's recommended
+    setpoints into the ordinary editable strategy fields once and records the
+    mode as the declared intent. The coordinator never reads the mode — only
+    the explicit fields (see CONTEXT.md "Steering Mode", ADR-0012). Distinct
+    from the score-derived Measured Classification, which is a measurement.
+    """
+
+    VEGETATIVE = "vegetative"
+    BALANCED = "balanced"
+    GENERATIVE = "generative"
 
 
 class TrainingTechnique(StrEnum):

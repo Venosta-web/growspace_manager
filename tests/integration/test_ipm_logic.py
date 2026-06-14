@@ -80,10 +80,10 @@ async def test_ipm_preset_visible_after_storage_load_sync(
     # with a freshly-loaded dict (dict_C).  This breaks the reference if ipm_service still
     # holds the old empty dict (dict_A).
     fresh_presets: dict = {}
-    mock_coordinator.nutrient_manager.ipm_presets = fresh_presets
+    mock_coordinator._nutrient_manager.ipm_presets = fresh_presets
 
     # Apply the fix: re-point ipm_service at the same dict.
-    mock_coordinator.ipm_service.ipm_presets = mock_coordinator.nutrient_manager.ipm_presets
+    mock_coordinator.ipm_service.ipm_presets = mock_coordinator._nutrient_manager.ipm_presets
 
     items = [{"name": "Neem Oil", "dose_amount": 5.0, "dose_unit": "ml/L", "phi_days": 0}]
     preset = await mock_coordinator.services.config.save_ipm_preset(
@@ -91,7 +91,7 @@ async def test_ipm_preset_visible_after_storage_load_sync(
     )
 
     # The new preset must appear when nutrient_manager serialises (= what WebSocket returns)
-    serialized = mock_coordinator.nutrient_manager.get_serialization_data()
+    serialized = mock_coordinator._nutrient_manager.get_serialization_data()
     assert preset.id in serialized["ipm_presets"], (
         "IPM preset not visible in nutrient_manager after save — ipm_service/nutrient_manager desync"
     )
@@ -123,12 +123,12 @@ async def test_async_apply_ipm_to_growspace(
     """Test applying IPM to an entire growspace."""
     # Setup
     gs = Growspace(id="gs1", name="Veg Tent")
-    mock_coordinator.data_repository.add_growspace(gs)
+    mock_coordinator._data_repository.add_growspace(gs)
 
     p1 = create_plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
     p2 = create_plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
-    mock_coordinator.data_repository.add_plant(p1)
-    mock_coordinator.data_repository.add_plant(p2)
+    mock_coordinator._data_repository.add_plant(p1)
+    mock_coordinator._data_repository.add_plant(p2)
 
     preset = IPMPreset(
         id="ipm1",
@@ -172,12 +172,12 @@ async def test_async_apply_ipm_to_plants(
     """Test applying IPM to specific plants."""
     # Setup
     gs = Growspace(id="gs1", name="Veg Tent")
-    mock_coordinator.data_repository.add_growspace(gs)
+    mock_coordinator._data_repository.add_growspace(gs)
 
     p1 = create_plant(plant_id="p1", growspace_id="gs1", strain="Strain A")
     p2 = create_plant(plant_id="p2", growspace_id="gs1", strain="Strain B")
-    mock_coordinator.data_repository.add_plant(p1)
-    mock_coordinator.data_repository.add_plant(p2)
+    mock_coordinator._data_repository.add_plant(p1)
+    mock_coordinator._data_repository.add_plant(p2)
 
     preset = IPMPreset(id="ipm1", name="Spot Treat", type="drench", items=[])
     mock_coordinator.ipm_service.ipm_presets["ipm1"] = preset

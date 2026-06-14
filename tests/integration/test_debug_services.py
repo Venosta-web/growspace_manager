@@ -109,7 +109,7 @@ async def test_debug_reset_special_growspaces(
 ) -> None:
     """Test handle_debug_reset_special_growspaces service."""
     mock_coordinator.growspaces = {"dry": {}, "cure": {}}
-    mock_coordinator.growspace_manager.ensure_special_growspace = MagicMock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         side_effect=["dry", "cure"]
     )
 
@@ -126,7 +126,7 @@ async def test_debug_reset_special_growspaces_preserve_plants(
 ) -> None:
     """Test handle_debug_reset_special_growspaces service with preserve_plants flag."""
     mock_call.data = {"preserve_plants": True}
-    mock_coordinator.growspace_manager.ensure_special_growspace = MagicMock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         side_effect=["dry", "cure"]
     )
     mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[
@@ -162,7 +162,7 @@ async def test_debug_consolidate_duplicate_special(
         "dry_1": mock_dry_1_gs,
         "cure": mock_cure_gs,
     }
-    mock_coordinator.growspace_manager.ensure_special_growspace = MagicMock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         side_effect=["dry", "cure"]
     )
 
@@ -239,8 +239,8 @@ async def test_debug_consolidate_duplicate_special_with_missing_canonical_and_mu
             return "cure"
         return gs_id
 
-    mock_coordinator.growspace_manager.ensure_special_growspace.reset_mock()
-    mock_coordinator.growspace_manager.ensure_special_growspace.side_effect = (
+    mock_coordinator._growspace_manager.ensure_special_growspace.reset_mock()
+    mock_coordinator._growspace_manager.ensure_special_growspace.side_effect = (
         ensure_special_growspace_side_effect
     )
 
@@ -259,14 +259,14 @@ async def test_debug_consolidate_duplicate_special_with_missing_canonical_and_mu
             )
 
             # Assert that ensure_special_growspace was called for both dry and cure
-            mock_coordinator.growspace_manager.ensure_special_growspace.assert_any_call(
+            mock_coordinator._growspace_manager.ensure_special_growspace.assert_any_call(
                 "dry", "dry"
             )
-            mock_coordinator.growspace_manager.ensure_special_growspace.assert_any_call(
+            mock_coordinator._growspace_manager.ensure_special_growspace.assert_any_call(
                 "cure", "cure"
             )
             assert (
-                mock_coordinator.growspace_manager.ensure_special_growspace.call_count
+                mock_coordinator._growspace_manager.ensure_special_growspace.call_count
                 == 2
             )
 
@@ -384,7 +384,7 @@ async def test_handle_reset_dry_growspace_preserve_plants_no_plants(
 
     mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[])  # No plants
 
-    mock_coordinator.growspace_manager.ensure_special_growspace = MagicMock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         return_value="dry"
     )
     # mock_coordinator.growspaces.pop is already a MagicMock from the fixture
@@ -392,7 +392,7 @@ async def test_handle_reset_dry_growspace_preserve_plants_no_plants(
     await _handle_reset_dry_growspace(mock_hass, mock_coordinator, preserve_plants)
 
     mock_coordinator.growspaces.pop.assert_called_once_with("dry", None)
-    mock_coordinator.growspace_manager.ensure_special_growspace.assert_called_once_with(
+    mock_coordinator._growspace_manager.ensure_special_growspace.assert_called_once_with(
         "dry", "dry"
     )
     # Assert that _restore_plants_to_canonical_growspace was NOT called
@@ -442,7 +442,7 @@ async def test_handle_reset_dry_growspace_preserve_plants_with_plants(
     # Configure mock_coordinator.plants to contain these mock plants
     mock_coordinator.plants = {"p1": mock_plant_1, "p2": mock_plant_2}
 
-    mock_coordinator.growspace_manager.ensure_special_growspace = MagicMock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         return_value="dry"
     )
 
@@ -458,7 +458,7 @@ async def test_handle_reset_dry_growspace_preserve_plants_with_plants(
         assert mock_coordinator.growspaces.pop.call_count == 2
 
         # Assert that ensure_special_growspace was called
-        mock_coordinator.growspace_manager.ensure_special_growspace.assert_called_once_with(
+        mock_coordinator._growspace_manager.ensure_special_growspace.assert_called_once_with(
             "dry", "dry"
         )
 
@@ -488,7 +488,7 @@ async def test_handle_reset_cure_growspace_preserve_plants_no_plants(
 
     mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[])  # No plants
 
-    mock_coordinator.growspace_manager.ensure_special_growspace = MagicMock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         return_value="cure"
     )
     # mock_coordinator.growspaces.pop is already a MagicMock from the fixture
@@ -496,7 +496,7 @@ async def test_handle_reset_cure_growspace_preserve_plants_no_plants(
     await _handle_reset_cure_growspace(mock_hass, mock_coordinator, preserve_plants)
 
     mock_coordinator.growspaces.pop.assert_called_once_with("cure", None)
-    mock_coordinator.growspace_manager.ensure_special_growspace.assert_called_once_with(
+    mock_coordinator._growspace_manager.ensure_special_growspace.assert_called_once_with(
         "cure", "cure"
     )
     # Assert that _restore_plants_to_canonical_growspace was NOT called
@@ -546,7 +546,7 @@ async def test_handle_reset_cure_growspace_preserve_plants_with_plants(
     # Configure mock_coordinator.plants to contain these mock plants
     mock_coordinator.plants = {"p1": mock_plant_1, "p2": mock_plant_2}
 
-    mock_coordinator.growspace_manager.ensure_special_growspace = MagicMock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         return_value="cure"
     )
 
@@ -562,7 +562,7 @@ async def test_handle_reset_cure_growspace_preserve_plants_with_plants(
         assert mock_coordinator.growspaces.pop.call_count == 2
 
         # Assert that ensure_special_growspace was called
-        mock_coordinator.growspace_manager.ensure_special_growspace.assert_called_once_with(
+        mock_coordinator._growspace_manager.ensure_special_growspace.assert_called_once_with(
             "cure", "cure"
         )
 
@@ -646,7 +646,7 @@ async def test_debug_reset_special_growspaces_exception(
 ) -> None:
     """Test handle_debug_reset_special_growspaces service with an exception."""
     mock_coordinator.growspaces = {"dry": {}}
-    mock_coordinator.growspace_manager.ensure_special_growspace = MagicMock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         side_effect=RuntimeError("Test Exception")
     )
 
@@ -669,7 +669,7 @@ async def test_debug_consolidate_duplicate_special_exception(
         "dry_1": mock_dry1,
         "dry_2": mock_dry2,
     }
-    mock_coordinator.growspace_manager.ensure_special_growspace = MagicMock(
+    mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         side_effect=RuntimeError("Test Exception")
     )
 

@@ -22,15 +22,8 @@ from .bayesian_constants import (
     FLOWER_LATE_MIN_DAYS,
     FLOWER_MID_MIN_DAYS,
     HUMIDIFIER_ACTIVE_THRESHOLD,
-    HUMIDITY_ACCLIMATION_MAX,
-    HUMIDITY_ACCLIMATION_MIN,
     HUMIDITY_ACTIVE_DESICCATION_THRESHOLD,
     HUMIDITY_CHANGE_THRESHOLD,
-    HUMIDITY_FLOWER_LATE_MAX,
-    HUMIDITY_FLOWER_LATE_MIN,
-    HUMIDITY_FLOWER_MID_MAX,
-    HUMIDITY_FLOWER_MID_MIN,
-    HUMIDITY_HIGH_VEG_THRESHOLD,
     HUMIDITY_SATURATION_FLOWER_THRESHOLD,
     HUMIDITY_SATURATION_VEG_THRESHOLD,
     HUMIDITY_TOO_DRY_THRESHOLD,
@@ -40,9 +33,6 @@ from .bayesian_constants import (
     PROB_ACTIVE_SATURATION,
     PROB_CO2_HIGH,
     PROB_CO2_LOW,
-    PROB_HUMIDITY_FLOWER_LATE_OUT_OF_RANGE,
-    PROB_HUMIDITY_FLOWER_MID_OUT_OF_RANGE,
-    PROB_HUMIDITY_HIGH_VEG,
     PROB_HUMIDITY_TOO_DRY,
     PROB_NIGHT_TEMP_HIGH,
     PROB_TEMP_COLD,
@@ -86,15 +76,12 @@ from .bayesian_constants import (
     VPD_DANGER_ZONE_VEG,
 )
 from .bayesian_data import (
-    CO2_OPTIMAL_THRESHOLDS,
     PROB_ACCEPTABLE,
     PROB_GOOD,
     PROB_PERFECT,
     PROB_SOIL_MOISTURE_STRESS,
     PROB_STRESS_OUT_OF_RANGE,
     PROB_VPD_STRESS_OUT_OF_RANGE,
-    VPD_OPTIMAL_THRESHOLDS,
-    VPD_STRESS_THRESHOLDS,
 )
 from .const import (
     CONF_PROB_TREND_FAST_RISE,
@@ -106,9 +93,9 @@ from .const import (
     CONF_TREND_SENSOR_MAP,
     CONF_TREND_THRESHOLD_MAP,
 )
-from .domain.stage import BayesianStage
+from .domain.environmental_targets import StageEnvironmentalTargets
+from .domain.stage import BayesianStage, StageClassification, StageDays, classify_stages
 from .models import EnvironmentState
-from .utils import calculate_stage_transition, interpolate_value
 
 if TYPE_CHECKING:
     from .models import EnvironmentConfig
@@ -117,6 +104,20 @@ _LOGGER = logging.getLogger(__name__)
 
 # Type aliases for readability
 Obs = tuple[float, float]
+
+
+def _classify(state: EnvironmentState) -> StageClassification:
+    return classify_stages(StageDays(
+        veg=state.veg_days,
+        flower=state.flower_days,
+        dry=state.dry_days,
+        cure=state.cure_days,
+        seedling=state.seedling_days,
+        clone=state.clone_days,
+        mother=state.mother_days,
+    ))
+
+
 Reason = tuple[float, str]
 ObservationList = list[Obs]
 ReasonList = list[Reason]
@@ -542,53 +543,18 @@ def evaluate_direct_humidity_stress(
         observations.append(prob)
         reasons.append((prob[0], f"Humidity Dry ({hum})"))
 
-    # Stage-dependent transition logic
-    stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days,
-        state.veg_days,
-        state.seedling_days,
-        state.clone_days,
-        state.dry_days,
-        state.cure_days,
-        state.mother_days,
-    )
+    sc = _classify(state)
+    if sc.stage_a == BayesianStage.EMPTY:
+        return observations, reasons
 
-    def get_hum_limits(stage):
-        if stage in (BayesianStage.SEEDLING, BayesianStage.CLONE):
-            return HUMIDITY_ACCLIMATION_MIN, HUMIDITY_ACCLIMATION_MAX  # (95, 100)
-        if stage in (BayesianStage.SEEDLING_STANDARD, BayesianStage.CLONE_STANDARD):
-            return 0, 90  # Legacy high humidity allowed
-        if stage == BayesianStage.VEG:
-            return 0, HUMIDITY_HIGH_VEG_THRESHOLD  # (0, 80)
-        if stage == BayesianStage.FLOWER_LATE:
-            return HUMIDITY_FLOWER_LATE_MIN, HUMIDITY_FLOWER_LATE_MAX  # (40, 60)
-        # Default to mid flower for anything else (early/mid)
-        return HUMIDITY_FLOWER_MID_MIN, HUMIDITY_FLOWER_MID_MAX  # (45, 60)
+    band = StageEnvironmentalTargets(sc.stage_a, sc.stage_b, sc.factor).humidity_band(env_config)
 
-    low_a, high_a = get_hum_limits(stage_a)
-    low_b, high_b = get_hum_limits(stage_b)
-
-    # Interpolate limits
-    hum_min = interpolate_value(low_a, low_b, factor)
-    hum_max = interpolate_value(high_a, high_b, factor)
-
-    # Determine probability
-    if (
-        stage_a in (BayesianStage.SEEDLING, BayesianStage.CLONE, BayesianStage.VEG)
-        and factor < 0.5
-    ):
-        prob = env_config.get("prob_humidity_high_veg", PROB_HUMIDITY_HIGH_VEG)
-    elif (BayesianStage.FLOWER_LATE in (stage_a, stage_b)) and factor > 0.5:
-        prob = PROB_HUMIDITY_FLOWER_LATE_OUT_OF_RANGE
-    else:
-        prob = PROB_HUMIDITY_FLOWER_MID_OUT_OF_RANGE
-
-    if hum < hum_min or hum > hum_max:
-        observations.append(prob)
+    if hum < band.low or hum > band.high:
+        observations.append(band.prob)
         reasons.append(
             (
-                prob[0],
-                f"Humidity out of range (<{hum_min} or >{hum_max}) ({hum})",
+                band.prob[0],
+                f"Humidity out of range (<{band.low} or >{band.high}) ({hum})",
             )
         )
 
@@ -605,40 +571,21 @@ def evaluate_direct_vpd_stress(
     if state.vpd is None:
         return observations, reasons
 
-    # Use transition logic
-    stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days,
-        state.veg_days,
-        state.seedling_days,
-        state.clone_days,
-        state.dry_days,
-        state.cure_days,
-        state.mother_days,
-    )
+    sc = _classify(state)
+    if sc.stage_a == BayesianStage.EMPTY:
+        return observations, reasons
     time_of_day = "night" if state.is_lights_on is False else "day"
 
-    thr_a = VPD_STRESS_THRESHOLDS[stage_a][time_of_day]
-    thr_b = VPD_STRESS_THRESHOLDS[stage_b][time_of_day]
+    band = StageEnvironmentalTargets(sc.stage_a, sc.stage_b, sc.factor).vpd_stress_band(
+        time_of_day, env_config
+    )
 
-    # Interpolate
-    stress_low = interpolate_value(thr_a["stress"][0], thr_b["stress"][0], factor)
-    stress_high = interpolate_value(thr_a["stress"][1], thr_b["stress"][1], factor)
-    mild_low = interpolate_value(thr_a["mild"][0], thr_b["mild"][0], factor)
-    mild_high = interpolate_value(thr_a["mild"][1], thr_b["mild"][1], factor)
-
-    # Use probabilities from the closer stage
-    selected_thr = thr_a if factor < 0.5 else thr_b
-    prob_stress_key, prob_mild_key = selected_thr["prob_keys"]
-    prob_stress_default, prob_mild_default = selected_thr["prob_defaults"]
-
-    if state.vpd < stress_low or state.vpd > stress_high:
-        prob = env_config.get(prob_stress_key, prob_stress_default)
-        observations.append(prob)
-        reasons.append((prob[0], f"VPD out of range ({state.vpd})"))
-    elif state.vpd < mild_low or state.vpd > mild_high:
-        prob = env_config.get(prob_mild_key, prob_mild_default)
-        observations.append(prob)
-        reasons.append((prob[0], f"VPD out of range ({state.vpd})"))
+    if state.vpd < band.stress_low or state.vpd > band.stress_high:
+        observations.append(band.prob_stress)
+        reasons.append((band.prob_stress[0], f"VPD out of range ({state.vpd})"))
+    elif state.vpd < band.mild_low or state.vpd > band.mild_high:
+        observations.append(band.prob_mild)
+        reasons.append((band.prob_mild[0], f"VPD out of range ({state.vpd})"))
 
     return observations, reasons
 
@@ -830,46 +777,6 @@ def _evaluate_optimal_temp_lights_off(
         )
 
 
-_ACCLIMATION_STAGES = frozenset(
-    {BayesianStage.SEEDLING, BayesianStage.CLONE}
-)
-
-_OVERRIDE_STAGE_MAP: dict[str, BayesianStage] = {
-    "seedling": BayesianStage.SEEDLING_STANDARD,
-    "clone": BayesianStage.CLONE_STANDARD,
-    "mother": BayesianStage.MOTHER,
-    "veg": BayesianStage.VEG,
-    "flower_early": BayesianStage.FLOWER_EARLY,
-    "flower_mid": BayesianStage.FLOWER_MID,
-    "flower_late": BayesianStage.FLOWER_LATE,
-    "dry": BayesianStage.DRY,
-    "cure": BayesianStage.CURE,
-}
-_OVERRIDE_BAYESIAN_TO_KEY: dict[BayesianStage, str] = {
-    v: k for k, v in _OVERRIDE_STAGE_MAP.items()
-}
-
-
-def _get_optimal_limits(
-    stage: BayesianStage,
-    time_of_day: str,
-    overrides: dict[str, Any],
-) -> list[tuple[float, float, tuple[float, float]]]:
-    """Return optimal VPD limits for *stage*, substituting any user override.
-
-    Acclimation sub-stages (SEEDLING, CLONE) always use hardcoded defaults.
-    """
-    if stage not in _ACCLIMATION_STAGES:
-        override_key = _OVERRIDE_BAYESIAN_TO_KEY.get(stage)
-        if override_key and override_key in overrides:
-            period = overrides[override_key].get(time_of_day, {})
-            low = period.get("low")
-            high = period.get("high")
-            if low is not None and high is not None:
-                return [(low, high, PROB_PERFECT)]
-    return VPD_OPTIMAL_THRESHOLDS.get(stage, {}).get(time_of_day, [])
-
-
 def evaluate_optimal_vpd(
     state: EnvironmentState, env_config: dict[str, Any]
 ) -> tuple[ObservationList, ReasonList]:
@@ -881,32 +788,19 @@ def evaluate_optimal_vpd(
         return observations, reasons
 
     vpd_optimal = False
-    prob_vpd_out_of_range = PROB_VPD_STRESS_OUT_OF_RANGE  # Reuse stress probability
+    prob_vpd_out_of_range = PROB_VPD_STRESS_OUT_OF_RANGE
 
-    stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days,
-        state.veg_days,
-        state.seedling_days,
-        state.clone_days,
-        state.dry_days,
-        state.cure_days,
-        state.mother_days,
-    )
+    sc = _classify(state)
+    if sc.stage_a == BayesianStage.EMPTY:
+        return observations, reasons
     time_of_day = "night" if state.is_lights_on is False else "day"
     vpd_overrides: dict[str, Any] = env_config.get("vpd_optimal_overrides", {})
 
-    limits_a = _get_optimal_limits(stage_a, time_of_day, vpd_overrides)
-    limits_b = _get_optimal_limits(stage_b, time_of_day, vpd_overrides)
+    bands = StageEnvironmentalTargets(sc.stage_a, sc.stage_b, sc.factor).vpd_optimal_band(
+        time_of_day, vpd_overrides
+    )
 
-    # Interpolate ranges
-    for i in range(min(len(limits_a), len(limits_b))):
-        p_low_a, p_high_a, prob_a = limits_a[i]
-        p_low_b, p_high_b, prob_b = limits_b[i]
-
-        p_low = interpolate_value(p_low_a, p_low_b, factor)
-        p_high = interpolate_value(p_high_a, p_high_b, factor)
-        prob = prob_a if factor < 0.5 else prob_b
-
+    for p_low, p_high, prob in bands:
         if p_low <= state.vpd <= p_high:
             vpd_optimal = True
             observations.append(prob)
@@ -934,29 +828,14 @@ def evaluate_optimal_co2(
     co2 = state.co2
     co2_optimal = False
 
-    # Use stage transition logic for smooth interpolation
-    stage_a, stage_b, factor = calculate_stage_transition(
-        state.flower_days,
-        state.veg_days,
-        state.seedling_days,
-        state.clone_days,
-        state.dry_days,
-        state.cure_days,
-        state.mother_days,
-    )
+    sc = _classify(state)
+    if sc.stage_a == BayesianStage.EMPTY:
+        return observations, reasons
+    stage_a, stage_b = sc.stage_a, sc.stage_b
 
-    limits_a = CO2_OPTIMAL_THRESHOLDS.get(stage_a, [])
-    limits_b = CO2_OPTIMAL_THRESHOLDS.get(stage_b, [])
+    bands = StageEnvironmentalTargets(stage_a, stage_b, sc.factor).co2_optimal_band()
 
-    # Interpolate ranges
-    for i in range(min(len(limits_a), len(limits_b))):
-        co2_low_a, co2_high_a, prob_a = limits_a[i]
-        co2_low_b, co2_high_b, prob_b = limits_b[i]
-
-        co2_low = interpolate_value(co2_low_a, co2_low_b, factor)
-        co2_high = interpolate_value(co2_high_a, co2_high_b, factor)
-        prob = prob_a if factor < 0.5 else prob_b
-
+    for co2_low, co2_high, prob in bands:
         if co2_low <= co2 <= co2_high:
             co2_optimal = True
             observations.append(prob)
@@ -965,9 +844,7 @@ def evaluate_optimal_co2(
     # If no optimal range was met, reduce probability
     # Note: Late flower stages don't penalize out-of-range CO2 (backward compatibility)
     if not co2_optimal:
-        # Check if we're in late flower stage (either stage_a or stage_b is FLOWER_LATE)
         is_late_flower = BayesianStage.FLOWER_LATE in (stage_a, stage_b)
-
         if not is_late_flower:
             observations.append(prob_out_of_range)
             reason_detail = "CO2 Low" if co2 < CO2_LOW_THRESHOLD else "CO2 High"

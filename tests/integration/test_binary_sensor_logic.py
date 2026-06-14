@@ -22,7 +22,6 @@ from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.util.dt import utcnow
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -51,9 +50,6 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
-        options=coordinator.options,
     )
 
 @pytest.fixture
@@ -146,8 +142,8 @@ async def test_stress_sensor_high_heat(
             return_value=([("High Heat", 0.9)], []),
         ),
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 1, "flower_days": -1},
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
@@ -194,13 +190,6 @@ async def test_mold_risk_sensor_late_flower(
     await hass.async_block_till_done()
 
     with (
-        patch.object(
-            sensor,
-            "_days_since",
-            side_effect=lambda date_str: (
-                utcnow().date() - datetime.fromisoformat(date_str).date()
-            ).days,
-        ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
         patch.object(
             sensor,
@@ -243,8 +232,8 @@ async def test_optimal_conditions_sensor(
     # Mock stage info to be in veg
     with (
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 20, "flower_days": -1},
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),

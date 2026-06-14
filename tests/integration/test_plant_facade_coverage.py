@@ -30,18 +30,18 @@ async def test_get_plant(mock_coordinator: MagicMock) -> None:
     """Test get_plant calls data_repository."""
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_1", growspace_id="gs1")
-    mock_coordinator.data_repository.get_plant.return_value = plant
+    mock_coordinator._data_repository.get_plant.return_value = plant
     assert facade.get_plant("plant_1") == plant
-    mock_coordinator.data_repository.get_plant.assert_called_once_with("plant_1")
+    mock_coordinator._data_repository.get_plant.assert_called_once_with("plant_1")
 
 
 @pytest.mark.asyncio
 async def test_get_applicable_presets(mock_coordinator: MagicMock) -> None:
     """Test get_applicable_presets calls nutrient_manager."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.nutrient_manager.get_applicable_presets.return_value = ["preset1"]
+    mock_coordinator._nutrient_manager.get_applicable_presets.return_value = ["preset1"]
     assert facade.get_applicable_presets("plant_1") == ["preset1"]
-    mock_coordinator.nutrient_manager.get_applicable_presets.assert_called_once_with("plant_1")
+    mock_coordinator._nutrient_manager.get_applicable_presets.assert_called_once_with("plant_1")
 
 
 @pytest.mark.asyncio
@@ -50,7 +50,7 @@ async def test_add_plant_success(mock_coordinator: MagicMock) -> None:
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_1", growspace_id="gs1")
     plant.genetics = PlantGenetics(strain_name="OG Kush", phenotype_name="Pheno 1")
-    mock_coordinator.plant_manager.add_plant = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
     
     mock_dr = MagicMock()
     mock_dr.async_get_or_create = MagicMock()
@@ -76,7 +76,7 @@ async def test_add_plant_success_no_genetics(mock_coordinator: MagicMock) -> Non
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_1", growspace_id="gs1")
     plant.genetics = None
-    mock_coordinator.plant_manager.add_plant = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
     
     mock_dr = MagicMock()
     mock_dr.async_get_or_create = MagicMock()
@@ -101,7 +101,7 @@ async def test_update_plant_name_no_device(mock_coordinator: MagicMock) -> None:
     """Test update_plant when device is not found in the device registry."""
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_123", growspace_id="gs1")
-    mock_coordinator.plant_manager.update_plant = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.update_plant = AsyncMock(return_value=plant)
 
     # Mock device registry to return None (device not found)
     mock_dr = MagicMock()
@@ -120,7 +120,7 @@ async def test_update_plant_device_success(mock_coordinator: MagicMock) -> None:
     """Test update_plant when device is found and its name is updated in HA."""
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_123", growspace_id="gs1")
-    mock_coordinator.plant_manager.update_plant = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.update_plant = AsyncMock(return_value=plant)
 
     mock_dr = MagicMock()
     mock_device = MagicMock()
@@ -139,7 +139,7 @@ async def test_update_plant_device_success(mock_coordinator: MagicMock) -> None:
 async def test_remove_plant_not_removed(mock_coordinator: MagicMock) -> None:
     """Test remove_plant when coordinator remove_plant returns False."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.plant_manager.remove_plant = AsyncMock(return_value=False)
+    mock_coordinator._plant_manager.remove_plant = AsyncMock(return_value=False)
 
     # We patch remove_plant_entities to verify it is not called
     with patch.object(facade, "remove_plant_entities", new_callable=AsyncMock) as mock_remove_entities:
@@ -153,7 +153,7 @@ async def test_remove_plant_not_removed(mock_coordinator: MagicMock) -> None:
 async def test_remove_plant_success(mock_coordinator: MagicMock) -> None:
     """Test remove_plant when coordinator remove_plant returns True."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.plant_manager.remove_plant = AsyncMock(return_value=True)
+    mock_coordinator._plant_manager.remove_plant = AsyncMock(return_value=True)
 
     with patch.object(facade, "remove_plant_entities", new_callable=AsyncMock) as mock_remove_entities:
         result = await facade.remove_plant("plant_123")
@@ -166,7 +166,7 @@ async def test_remove_plant_success(mock_coordinator: MagicMock) -> None:
 async def test_async_remove_plant(mock_coordinator: MagicMock) -> None:
     """Test async_remove_plant alias."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.plant_manager.remove_plant = AsyncMock(return_value=True)
+    mock_coordinator._plant_manager.remove_plant = AsyncMock(return_value=True)
 
     # Patch remove_plant_entities to avoid HA registry calls
     with patch.object(facade, "remove_plant_entities", new_callable=AsyncMock) as mock_remove_entities:
@@ -203,7 +203,7 @@ async def test_add_mother_plant(mock_coordinator: MagicMock) -> None:
     """Test add_mother_plant calls coordinator plant_manager."""
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_123", growspace_id="gs1")
-    mock_coordinator.plant_manager.add_mother_plant = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.add_mother_plant = AsyncMock(return_value=plant)
     mock_coordinator.async_request_refresh = AsyncMock()
 
     result = await facade.add_mother_plant(
@@ -215,7 +215,7 @@ async def test_add_mother_plant(mock_coordinator: MagicMock) -> None:
     )
 
     assert result == plant
-    mock_coordinator.plant_manager.add_mother_plant.assert_called_once_with(
+    mock_coordinator._plant_manager.add_mother_plant.assert_called_once_with(
         phenotype="pheno1",
         strain="strain1",
         row=1,
@@ -230,7 +230,7 @@ async def test_take_clones(mock_coordinator: MagicMock) -> None:
     """Test take_clones calls coordinator plant_manager."""
     facade = PlantFacade(mock_coordinator)
     clones = [Plant(plant_id="clone_1", growspace_id="gs1")]
-    mock_coordinator.plant_manager.take_clones = AsyncMock(return_value=clones)
+    mock_coordinator._plant_manager.take_clones = AsyncMock(return_value=clones)
 
     result = await facade.take_clones(
         mother_plant_id="plant_123",
@@ -239,7 +239,7 @@ async def test_take_clones(mock_coordinator: MagicMock) -> None:
     )
 
     assert result == clones
-    mock_coordinator.plant_manager.take_clones.assert_called_once_with(
+    mock_coordinator._plant_manager.take_clones.assert_called_once_with(
         mother_plant_id="plant_123",
         num_clones=5,
         target_growspace_id="gs_clone",
@@ -252,11 +252,11 @@ async def test_take_clones(mock_coordinator: MagicMock) -> None:
 async def test_promote_clone(mock_coordinator: MagicMock) -> None:
     """Test promote_clone calls coordinator."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.plant_manager.promote_clone = AsyncMock()
+    mock_coordinator._plant_manager.promote_clone = AsyncMock()
 
     await facade.promote_clone("clone_123", target_growspace_id="veg")
 
-    mock_coordinator.plant_manager.promote_clone.assert_called_once_with(
+    mock_coordinator._plant_manager.promote_clone.assert_called_once_with(
         clone_id="clone_123",
         target_growspace_id="veg",
         transition_date=None,
@@ -267,33 +267,33 @@ async def test_promote_clone(mock_coordinator: MagicMock) -> None:
 async def test_switch_plants(mock_coordinator: MagicMock) -> None:
     """Test switch_plants calls coordinator."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.plant_manager.switch_plants = AsyncMock()
+    mock_coordinator._plant_manager.switch_plants = AsyncMock()
 
     await facade.switch_plants("plant1", "plant2")
 
-    mock_coordinator.plant_manager.switch_plants.assert_called_once_with("plant1", "plant2")
+    mock_coordinator._plant_manager.switch_plants.assert_called_once_with("plant1", "plant2")
 
 
 @pytest.mark.asyncio
 async def test_move_plant(mock_coordinator: MagicMock) -> None:
     """Test move_plant calls coordinator."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.plant_manager.move_plant = AsyncMock()
+    mock_coordinator._plant_manager.move_plant = AsyncMock()
 
     await facade.move_plant("plant1", 2, 3)
 
-    mock_coordinator.plant_manager.move_plant.assert_called_once_with("plant1", 2, 3)
+    mock_coordinator._plant_manager.move_plant.assert_called_once_with("plant1", 2, 3)
 
 
 @pytest.mark.asyncio
 async def test_transition_plant_stage(mock_coordinator: MagicMock) -> None:
     """Test transition_plant_stage calls coordinator."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.plant_manager.transition_plant_stage = AsyncMock()
+    mock_coordinator._plant_manager.transition_plant_stage = AsyncMock()
 
     await facade.transition_plant_stage("plant1", PlantStage.FLOWER)
 
-    mock_coordinator.plant_manager.transition_plant_stage.assert_called_once_with(
+    mock_coordinator._plant_manager.transition_plant_stage.assert_called_once_with(
         "plant1", PlantStage.FLOWER, None
     )
 
@@ -303,19 +303,19 @@ async def test_harvest(mock_coordinator: MagicMock) -> None:
     """Test harvest calls coordinator."""
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant1", growspace_id="gs1")
-    mock_coordinator.plant_manager.harvest = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.harvest = AsyncMock(return_value=plant)
 
     result = await facade.harvest("plant1")
 
     assert result == plant
-    mock_coordinator.plant_manager.harvest.assert_called_once_with("plant1")
+    mock_coordinator._plant_manager.harvest.assert_called_once_with("plant1")
 
 
 @pytest.mark.asyncio
 async def test_async_harvest_plant(mock_coordinator: MagicMock) -> None:
     """Test async_harvest_plant alias."""
     facade = PlantFacade(mock_coordinator)
-    mock_coordinator.plant_manager.transition_plant = AsyncMock()
+    mock_coordinator._plant_manager.transition_plant = AsyncMock()
 
     await facade.async_transition_plant(
         plant_id="plant_123",
@@ -323,7 +323,7 @@ async def test_async_harvest_plant(mock_coordinator: MagicMock) -> None:
         wet_weight=100.0,
     )
 
-    mock_coordinator.plant_manager.transition_plant.assert_called_once_with(
+    mock_coordinator._plant_manager.transition_plant.assert_called_once_with(
         plant_id="plant_123",
         target_growspace_id="gs_dry",
         target_growspace_name=None,
@@ -353,17 +353,17 @@ async def test_async_auto_harvest(mock_coordinator: MagicMock) -> None:
     plant2.stage = PlantStage.FLOWER
 
     mock_coordinator.plants = {"plant1": plant1, "plant2": plant2}
-    mock_coordinator.plant_manager.harvest = AsyncMock()
-    mock_coordinator.notification_manager.async_send_notification = AsyncMock()
+    mock_coordinator._plant_manager.harvest = AsyncMock()
+    mock_coordinator._notification_manager.async_send_notification = AsyncMock()
 
     # Call private method
     await facade._async_auto_harvest()
 
-    mock_coordinator.plant_manager.harvest.assert_called_once_with(
+    mock_coordinator._plant_manager.harvest.assert_called_once_with(
         plant_id="plant1",
         transition_date="2026-01-12",
     )
-    mock_coordinator.notification_manager.async_send_notification.assert_called_once_with(
+    mock_coordinator._notification_manager.async_send_notification.assert_called_once_with(
         growspace_id="gs1",
         title="Auto-harvest complete",
         message="Plant OG Kush has been auto-harvested",
@@ -519,7 +519,7 @@ async def test_score_plant_success_full(mock_coordinator: MagicMock) -> None:
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_123", growspace_id="gs1")
     mock_coordinator.plants = {"plant_123": plant}
-    mock_coordinator.plant_manager.update_plant = AsyncMock()
+    mock_coordinator._plant_manager.update_plant = AsyncMock()
 
     # Pass all standard, custom and legacy fields to cover all branches in score_plant
     await facade.score_plant(
@@ -544,7 +544,7 @@ async def test_score_plant_success_full(mock_coordinator: MagicMock) -> None:
     assert ps.keeper is True
     assert ps.notes == "Amazing vigor and resin"
 
-    mock_coordinator.plant_manager.update_plant.assert_called_once_with("plant_123", phenotype_score=ps)
+    mock_coordinator._plant_manager.update_plant.assert_called_once_with("plant_123", phenotype_score=ps)
 
 
 @pytest.mark.asyncio
@@ -554,7 +554,7 @@ async def test_score_plant_success_alternative_names(mock_coordinator: MagicMock
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_123", growspace_id="gs1")
     mock_coordinator.plants = {"plant_123": plant}
-    mock_coordinator.plant_manager.update_plant = AsyncMock()
+    mock_coordinator._plant_manager.update_plant = AsyncMock()
 
     await facade.score_plant(
         plant_id="plant_123",
@@ -568,7 +568,7 @@ async def test_score_plant_success_alternative_names(mock_coordinator: MagicMock
     assert ps.terpene_intensity == 8
     assert ps.mold_resistance == 7
 
-    mock_coordinator.plant_manager.update_plant.assert_called_once_with("plant_123", phenotype_score=ps)
+    mock_coordinator._plant_manager.update_plant.assert_called_once_with("plant_123", phenotype_score=ps)
 
 
 @pytest.mark.asyncio
@@ -587,7 +587,7 @@ async def test_update_harvest_metrics_success(mock_coordinator: MagicMock) -> No
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_123", growspace_id="gs1")
     mock_coordinator.plants = {"plant_123": plant}
-    mock_coordinator.plant_manager.update_plant = AsyncMock()
+    mock_coordinator._plant_manager.update_plant = AsyncMock()
 
     await facade.update_harvest_metrics(
         plant_id="plant_123",
@@ -607,7 +607,7 @@ async def test_update_harvest_metrics_success(mock_coordinator: MagicMock) -> No
     assert metrics.cbd_percentage == 0.8
     assert metrics.terpene_profile == "Myrcene, Limonene"
 
-    mock_coordinator.plant_manager.update_plant.assert_called_once_with("plant_123", harvest_metrics=metrics)
+    mock_coordinator._plant_manager.update_plant.assert_called_once_with("plant_123", harvest_metrics=metrics)
 
 
 @pytest.mark.asyncio
@@ -616,8 +616,8 @@ async def test_update_harvest_metrics_no_update(mock_coordinator: MagicMock) -> 
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_123", growspace_id="gs1")
     mock_coordinator.plants = {"plant_123": plant}
-    mock_coordinator.plant_manager.update_plant = AsyncMock()
+    mock_coordinator._plant_manager.update_plant = AsyncMock()
 
     await facade.update_harvest_metrics("plant_123")
 
-    mock_coordinator.plant_manager.update_plant.assert_not_called()
+    mock_coordinator._plant_manager.update_plant.assert_not_called()

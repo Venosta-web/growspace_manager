@@ -30,8 +30,8 @@ def mock_coordinator(hass: HomeAssistant):
     coordinator.growspaces = {}
     coordinator.plants = {}
 
-    coordinator.growspace_manager = MagicMock()
-    coordinator.plant_manager = MagicMock()
+    coordinator._growspace_manager = MagicMock()
+    coordinator._plant_manager = MagicMock()
 
     gs_facade = MagicMock()
     gs_facade.get_growspace = MagicMock(

@@ -13,6 +13,7 @@ from custom_components.growspace_manager.domain.date_logic import (
     get_days_since_training,
     get_days_since_watering,
     parse_date_field,
+    to_lifecycle_timestamp,
 )
 from custom_components.growspace_manager.domain.stage import PlantStage
 from homeassistant.util.dt import as_local, set_default_time_zone
@@ -25,6 +26,42 @@ DEFAULT_TZ = UTC
 def setup_tz():
     """Set up default timezone for tests."""
     set_default_time_zone(DEFAULT_TZ)
+
+
+def test_to_lifecycle_timestamp_preserves_supplied_time():
+    """A supplied datetime keeps its time, returned as an ISO string."""
+    result = to_lifecycle_timestamp("2026-03-01T14:30:00+00:00")
+    # Round-trips through parse_date_field, so the moment is preserved.
+    assert parse_date_field(result) == datetime(2026, 3, 1, 14, 30, tzinfo=UTC)
+    assert isinstance(result, str)
+
+
+def test_to_lifecycle_timestamp_promotes_date_only_to_datetime():
+    """A date-only value becomes a midnight-local datetime string, not truncated."""
+    result = to_lifecycle_timestamp("2026-01-15")
+    assert isinstance(result, str)
+    parsed = parse_date_field(result)
+    assert parsed.date() == date(2026, 1, 15)
+    assert parsed.tzinfo is not None
+    # The result is a full datetime string, never a bare date.
+    assert "T" in result
+
+
+def test_to_lifecycle_timestamp_accepts_date_object():
+    """A datetime.date object is accepted and promoted to a datetime string."""
+    result = to_lifecycle_timestamp(date(2026, 1, 15))
+    assert parse_date_field(result).date() == date(2026, 1, 15)
+    assert "T" in result
+
+
+def test_to_lifecycle_timestamp_defaults_to_now_when_none():
+    """None defaults to the current moment (full datetime, not date-only)."""
+    result = to_lifecycle_timestamp(None)
+    assert isinstance(result, str)
+    parsed = parse_date_field(result)
+    assert parsed is not None
+    # Carries a real time component, not midnight from a .date() truncation.
+    assert "T" in result
 
 
 def test_parse_date_field_none():

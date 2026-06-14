@@ -13,6 +13,9 @@ from custom_components.growspace_manager.binary_sensor import (
     GrowspaceSensorType,
 )
 from custom_components.growspace_manager.models import EnvironmentConfig, GrowspaceType
+from custom_components.growspace_manager.notifications.formatting import (
+    generate_notification_message,
+)
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
 )
@@ -45,25 +48,17 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
-        options=coordinator.options,
     )
 
     if hass is not None:
         sensor.hass = hass
         sensor.trend_analyzer = TrendAnalyzer(hass)
-        notification_manager = coordinator.notification_manager
         sensor.strategy = strategy_class(
             env_config=sensor.env_config,
             analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(*args, **kwargs),
             get_state=hass.states.get,
             get_growspace=lambda: coordinator.growspaces.get(growspace_id),
-            get_notification_message=lambda msg, r: (
-                notification_manager.generate_notification_message(msg, r)
-                if notification_manager
-                else msg
-            ),
+            get_notification_message=generate_notification_message,
         )
 
     return sensor
@@ -168,8 +163,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 1.1: Veg Safe
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
                 "flower_days": -1,
@@ -188,8 +183,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 1.2: Veg Danger
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
                 "flower_days": -1,
@@ -210,8 +205,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 2.1: Early Flower Safe
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 30, "flower_days": 10},
         ):
             set_sensor_state(hass, "sensor.humidity", 70)
@@ -223,8 +218,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 2.2: Early Flower Danger
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 30, "flower_days": 10},
         ):
             set_sensor_state(hass, "sensor.humidity", 71)
@@ -239,8 +234,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 3.1: Late Flower Safe
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 60, "flower_days": 45},
         ):
             set_sensor_state(hass, "sensor.humidity", 60)
@@ -252,8 +247,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 3.2: Late Flower Danger
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 60, "flower_days": 45},
         ):
             set_sensor_state(hass, "sensor.humidity", 61)
@@ -314,8 +309,8 @@ async def test_veg_stage_scenario_false_positive_prevention(
 
     with (
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
                 "flower_days": -1,
@@ -393,8 +388,8 @@ async def test_user_reported_veg_scenario(
 
     with (
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 34, "flower_days": -1},
         ),
         patch.object(sensor, "async_analyze_sensor_trend", side_effect=mock_analyze),
@@ -435,8 +430,8 @@ async def test_veg_fan_off_safe(
 
     with (
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
                 "flower_days": -1,
@@ -480,8 +475,8 @@ async def test_veg_fan_off_risk(
 
     with (
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
                 "flower_days": -1,

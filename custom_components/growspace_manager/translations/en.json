@@ -29,6 +29,9 @@
       },
       "light_verification": {
         "name": "Light cycle verification"
+      },
+      "drying_ready_for_cure": {
+        "name": "Ready for cure"
       }
     },
     "switch": {
@@ -84,6 +87,12 @@
       },
       "seed_inventory": {
         "name": "Seed inventory"
+      },
+      "drying_weight": {
+        "name": "Drying weight"
+      },
+      "drying_moisture": {
+        "name": "Drying moisture"
       }
     }
   },

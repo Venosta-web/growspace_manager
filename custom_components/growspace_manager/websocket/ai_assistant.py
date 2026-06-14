@@ -188,7 +188,7 @@ def _build_context_message(
     if growspace.growspace_type in (GrowspaceType.DRY, GrowspaceType.CURE):
         stage_line = f"Stage: {growspace.growspace_type.value}"
     else:
-        plants = coordinator.data_repository.get_growspace_plants(growspace_id)
+        plants = coordinator.services.growspaces.get_growspace_plants(growspace_id)
         if plants:
             max_flower = max(
                 (calculate_days_since(p.flower_start) for p in plants if p.flower_start),

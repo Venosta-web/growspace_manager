@@ -25,6 +25,9 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.domain.environment_state_assembler import (
+    AssembledEnvironment,
+)
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
@@ -38,10 +41,7 @@ from custom_components.growspace_manager.models import (
     NutrientInventory,
     Plant,
 )
-from custom_components.growspace_manager.services.plant import (
-    handle_add_plants,
-    handle_add_timeline_note,
-)
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from custom_components.growspace_manager.storage_manager import StorageManager
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
@@ -130,9 +130,6 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.services.growspaces.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
-        options=coordinator.options,
     )
 
 
@@ -201,7 +198,9 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
         fan_off=False,
     )
     with patch.object(
-        sensor, "_get_base_environment_state", return_value=env_state_late
+        sensor.assembler,
+        "assemble",
+        return_value=AssembledEnvironment(state=env_state_late, observations={}),
     ):
         await sensor._async_update_probability()
         reasons = [r[1] for r in sensor._reasons]
@@ -220,7 +219,9 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
         fan_off=False,
     )
     with patch.object(
-        sensor, "_get_base_environment_state", return_value=env_state_mid
+        sensor.assembler,
+        "assemble",
+        return_value=AssembledEnvironment(state=env_state_mid, observations={}),
     ):
         await sensor._async_update_probability()
         reasons = [r[1] for r in sensor._reasons]
@@ -287,7 +288,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
     entry.add_to_hass(hass)
     mock_coordinator = GrowspaceCoordinator.build(hass, entry, data={})
 
-    mock_coordinator.data_repository.add_growspace(Growspace(id="mother", name="mother"))
+    mock_coordinator._data_repository.add_growspace(Growspace(id="mother", name="mother"))
     with patch.object(
         mock_coordinator.validator, "find_first_available_position", return_value=(1, 1)
     ):
@@ -298,7 +299,7 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
         mock_coordinator.services.plants.add_plant = AsyncMock(return_value=mock_plant)
 
         # mock plant manager add plant if needed, but the facade handles it
-        mock_coordinator.plant_manager.add_plant = AsyncMock(return_value=mock_plant)
+        mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=mock_plant)
 
         call = MagicMock()
         call.data = {
@@ -307,7 +308,9 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
             ATTR_AMOUNT: 1,
         }
 
-        await handle_add_plants(hass, mock_coordinator, MagicMock(), call)
+        await mock_coordinator.services.plants.add_plants_from_call(
+            hass, MagicMock(), call
+        )
         _args, kwargs = mock_coordinator.services.plants.add_plant.call_args
         assert kwargs.get("mother_start") is not None
 
@@ -323,7 +326,9 @@ async def test_handle_add_timeline_note_coverage(hass: HomeAssistant) -> None:
     call.data = {ATTR_PLANT_ID: "p1", ATTR_NOTES: "My note"}
 
     mock_coordinator.services.add_timeline_note = AsyncMock()
-    await handle_add_timeline_note(hass, mock_coordinator, mock_strain_lib, call)
+    await PlantFacade(mock_coordinator).add_timeline_note_from_call(
+        hass, mock_strain_lib, call
+    )
     mock_coordinator.services.add_timeline_note.assert_awaited_once()
 
 

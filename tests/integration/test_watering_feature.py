@@ -52,14 +52,14 @@ def watering_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coordinator = create_test_coordinator(hass)
 
     # Manually add a growspace and plant for testing
-    coordinator.data_repository.add_growspace(Growspace(
+    coordinator._data_repository.add_growspace(Growspace(
         id="test_gs",
         name="Test Growspace",
         rows=3,
         plants_per_row=3,
     ))
 
-    coordinator.data_repository.add_plant(create_plant(
+    coordinator._data_repository.add_plant(create_plant(
         plant_id="test_plant",
         growspace_id="test_gs",
         strain="Test Strain",
@@ -68,7 +68,7 @@ def watering_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
         col=1,
     ))
 
-    coordinator.data_repository.add_plant(create_plant(
+    coordinator._data_repository.add_plant(create_plant(
         plant_id="test_plant_2",
         growspace_id="test_gs",
         strain="Test Strain 2",
@@ -237,7 +237,7 @@ class TestAsyncWaterGrowspace:
     ) -> None:
         """Test watering an empty growspace returns 0."""
         # Add an empty growspace
-        watering_coordinator.data_repository.add_growspace(
+        watering_coordinator._data_repository.add_growspace(
             Growspace(id="empty_gs", name="Empty", rows=2, plants_per_row=2)
         )
 

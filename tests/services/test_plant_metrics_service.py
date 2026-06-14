@@ -70,10 +70,10 @@ async def test_handle_update_harvest_metrics_success(
         )
 
     # Check that update_plant was called with the correct harvest metrics
-    mock_coordinator.plant_manager.update_plant.assert_called_once()
+    mock_coordinator._plant_manager.update_plant.assert_called_once()
 
     # Extract the harvest_metrics kwarg passed to update_plant
-    call_args = mock_coordinator.plant_manager.update_plant.call_args[1]
+    call_args = mock_coordinator._plant_manager.update_plant.call_args[1]
     assert "harvest_metrics" in call_args
     metrics: HarvestMetrics = call_args["harvest_metrics"]
 
@@ -116,9 +116,9 @@ async def test_handle_update_harvest_metrics_partial(
         )
 
     # Check that update_plant was called with the correct harvest metrics
-    mock_coordinator.plant_manager.update_plant.assert_called_once()
+    mock_coordinator._plant_manager.update_plant.assert_called_once()
 
-    call_args = mock_coordinator.plant_manager.update_plant.call_args[1]
+    call_args = mock_coordinator._plant_manager.update_plant.call_args[1]
     assert "harvest_metrics" in call_args
     metrics: HarvestMetrics = call_args["harvest_metrics"]
 

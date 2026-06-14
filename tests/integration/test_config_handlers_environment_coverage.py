@@ -16,7 +16,6 @@ from custom_components.growspace_manager.const import (
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_TEMP_SENSOR,
     DEHUMIDIFIER_STAGES,
-    FanRegulationMode,
 )
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
@@ -53,7 +52,7 @@ def handler():
     # 2. Setup Sub-Services/Repos
     service_mock = MagicMock()
     service_mock.save = AsyncMock()  # This was missing and causing TypeErrors
-    coordinator.data_repository = service_mock
+    coordinator._data_repository = service_mock
 
     # 3. Default Growspace setup to avoid asdict() errors
     default_gs = Growspace(id="gs1", name="GS1", environment_config=EnvironmentConfig())
@@ -897,153 +896,13 @@ def test_lst_offset_default_for_dry_and_cure_stages(
     assert lst_key.default() == -2.0
 
 
-@pytest.mark.asyncio
-async def test_fan_controller_aborts_on_missing_coordinator(handler) -> None:
-    """Test all fan configuration steps abort when coordinator or config_entry is missing."""
-    handler.config_entry = None
-
-    for step in [
-        handler.async_step_configure_fan_controller,
-        handler.async_step_configure_fan_vpd,
-        handler.async_step_configure_fan_humidity,
-        handler.async_step_configure_fan_temperature,
-        handler.async_step_configure_fan_wind,
-    ]:
-        result = await step()
-        assert result["type"] == FlowResultType.ABORT
-        assert result["reason"] == "setup_error"
-
-
-@pytest.mark.asyncio
-async def test_fan_steps_growspace_not_found(handler) -> None:
-    """Test all fan configuration steps abort when growspace is not found."""
-    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = (
-        None
-    )
-    handler.flow.selected_growspace_id = "missing"
-
-    for step in [
-        handler.async_step_configure_fan_controller,
-        handler.async_step_configure_fan_vpd,
-        handler.async_step_configure_fan_humidity,
-        handler.async_step_configure_fan_temperature,
-        handler.async_step_configure_fan_wind,
-    ]:
-        result = await step()
-        assert result["type"] == FlowResultType.ABORT
-        assert result["reason"] == "growspace_not_found"
-
-
-@pytest.mark.asyncio
-async def test_fan_controller_temperature_regulation_mode(handler) -> None:
-    """Test configure fan controller routing to temperature step."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-
-    user_input = {
-        "min_speed": 10,
-        "max_speed": 90,
-        "regulation_mode": FanRegulationMode.TEMPERATURE,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_fan_temperature", return_value={"type": "form"}
-    ) as mock_step:
-        result = await handler.async_step_configure_fan_controller(user_input)
-        mock_step.assert_called_once()
-        assert result == {"type": "form"}
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_temperature_show_form(handler) -> None:
-    """Test configure fan temperature step shows form."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-
-    result = await handler.async_step_configure_fan_temperature()
-    assert result["type"] == FlowResultType.FORM
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_temperature_submit_wind_disabled(
-    handler,
-) -> None:
-    """Test configure fan temperature step submission with wind disabled."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-    handler.flow.fan_config_step1 = {"wind_enabled": False}
-
-    user_input = {
-        "temperature_target": 24.5,
-        "temperature_tolerance": 1.5,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_sensor_placement", return_value={"type": "form"}
-    ) as mock_next:
-        result = await handler.async_step_configure_fan_temperature(user_input)
-        assert handler.flow.fan_config_step1["temperature_target"] == 24.5
-        assert handler.flow.fan_config_step1["temperature_tolerance"] == 1.5
-        mock_next.assert_called_once()
-        assert result == {"type": "form"}
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_vpd_wind_enabled(handler) -> None:
-    """Test configure fan VPD step with wind enabled."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-    handler.flow.fan_config_step1 = {"wind_enabled": True}
-
-    user_input = {
-        "vpd_target": 1.2,
-        "vpd_tolerance": 0.3,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_fan_wind", return_value={"type": "form"}
-    ) as mock_wind:
-        result = await handler.async_step_configure_fan_vpd(user_input)
-        assert handler.flow.fan_config_step1["vpd_target"] == 1.2
-        assert handler.flow.fan_config_step1["vpd_tolerance"] == 0.3
-        mock_wind.assert_called_once()
-        assert result == {"type": "form"}
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_temperature_submit_wind_enabled(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan temperature step submission with wind enabled."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-    handler.flow.fan_config_step1 = {"wind_enabled": True}
-
-    user_input = {
-        "temperature_target": 24.5,
-        "temperature_tolerance": 1.5,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_fan_wind", return_value={"type": "form"}
-    ) as mock_wind:
-        result = await handler.async_step_configure_fan_temperature(user_input)
-        assert handler.flow.fan_config_step1["temperature_target"] == 24.5
-        assert handler.flow.fan_config_step1["temperature_tolerance"] == 1.5
-        mock_wind.assert_called_once()
-        assert result == {"type": "form"}
 
 
 @pytest.mark.asyncio
 async def test_configure_fan_controller_branch(
     handler: EnvironmentConfigHandler,
 ) -> None:
-    """Test branching to fan controller config."""
+    """Test CONF_CONFIGURE_FAN_CONTROLLER branches to fan_controller_handler."""
     gs = Growspace(id="gs1", name="GS1")
     handler.config_entry.runtime_data.growspaces = {"gs1": gs}
     handler.flow.selected_growspace_id = "gs1"
@@ -1054,239 +913,15 @@ async def test_configure_fan_controller_branch(
         CONF_CONFIGURE_FAN_CONTROLLER: True,
     }
 
-    with patch.object(
-        handler, "async_step_configure_fan_controller", return_value={"type": "form"}
-    ) as mock_step:
-        await handler.async_step_configure_environment(user_input)
-        mock_step.assert_called_once()
+    mock_fan_handler = MagicMock()
+    mock_fan_handler.async_step_configure_fan_controller = AsyncMock(
+        return_value={"type": "form"}
+    )
+    handler.flow.fan_controller_handler = mock_fan_handler
 
-
-@pytest.mark.asyncio
-async def test_configure_fan_controller_invalid_speeds(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan controller returns error form if min_speed >= max_speed."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-
-    user_input = {
-        "min_speed": 50,
-        "max_speed": 50,
-        "enabled": True,
-        "regulation_mode": "vpd",
-        "wind_enabled": False,
-    }
-
-    result = await handler.async_step_configure_fan_controller(user_input)
-    assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {"base": "fan_speed_invalid"}
-
-
-@pytest.mark.asyncio
-async def test_configure_fan_controller_vpd_regulation_mode(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan controller routing to VPD step."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-
-    user_input = {
-        "min_speed": 10,
-        "max_speed": 90,
-        "regulation_mode": FanRegulationMode.VPD,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_fan_vpd", return_value={"type": "form"}
-    ) as mock_step:
-        result = await handler.async_step_configure_fan_controller(user_input)
-        mock_step.assert_called_once()
-        assert result == {"type": "form"}
-
-
-@pytest.mark.asyncio
-async def test_configure_fan_controller_humidity_regulation_mode(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan controller routing to humidity step."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-
-    user_input = {
-        "min_speed": 10,
-        "max_speed": 90,
-        "regulation_mode": FanRegulationMode.HUMIDITY,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_fan_humidity", return_value={"type": "form"}
-    ) as mock_step:
-        result = await handler.async_step_configure_fan_controller(user_input)
-        mock_step.assert_called_once()
-        assert result == {"type": "form"}
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_controller_show_form(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan controller step shows form."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-
-    result = await handler.async_step_configure_fan_controller()
-    assert result["type"] == FlowResultType.FORM
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_vpd_show_form(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan VPD step shows form."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-
-    result = await handler.async_step_configure_fan_vpd()
-    assert result["type"] == FlowResultType.FORM
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_vpd_submit_wind_disabled(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan VPD step submission with wind disabled."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-    handler.flow.fan_config_step1 = {"wind_enabled": False}
-
-    user_input = {
-        "vpd_target": 1.2,
-        "vpd_tolerance": 0.3,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_sensor_placement", return_value={"type": "form"}
-    ) as mock_next:
-        result = await handler.async_step_configure_fan_vpd(user_input)
-        assert handler.flow.fan_config_step1["vpd_target"] == 1.2
-        assert handler.flow.fan_config_step1["vpd_tolerance"] == 0.3
-        mock_next.assert_called_once()
-        assert result == {"type": "form"}
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_humidity_show_form(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan humidity step shows form."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-
-    result = await handler.async_step_configure_fan_humidity()
-    assert result["type"] == FlowResultType.FORM
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_humidity_submit_wind_disabled(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan humidity step submission with wind disabled."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-    handler.flow.fan_config_step1 = {"wind_enabled": False}
-
-    user_input = {
-        "humidity_target": 55.0,
-        "humidity_tolerance": 4.0,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_sensor_placement", return_value={"type": "form"}
-    ) as mock_next:
-        result = await handler.async_step_configure_fan_humidity(user_input)
-        assert handler.flow.fan_config_step1["humidity_target"] == 55.0
-        assert handler.flow.fan_config_step1["humidity_tolerance"] == 4.0
-        mock_next.assert_called_once()
-        assert result == {"type": "form"}
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_humidity_submit_wind_enabled(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan humidity step submission with wind enabled."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-    handler.flow.fan_config_step1 = {"wind_enabled": True}
-
-    user_input = {
-        "humidity_target": 55.0,
-        "humidity_tolerance": 4.0,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_fan_wind", return_value={"type": "form"}
-    ) as mock_wind:
-        result = await handler.async_step_configure_fan_humidity(user_input)
-        assert handler.flow.fan_config_step1["humidity_target"] == 55.0
-        assert handler.flow.fan_config_step1["humidity_tolerance"] == 4.0
-        mock_wind.assert_called_once()
-        assert result == {"type": "form"}
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_wind_show_form(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan wind step shows form."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-
-    result = await handler.async_step_configure_fan_wind()
-    assert result["type"] == FlowResultType.FORM
-
-
-@pytest.mark.asyncio
-async def test_async_step_configure_fan_wind_submit(
-    handler: EnvironmentConfigHandler,
-) -> None:
-    """Test configure fan wind step submission."""
-    gs = Growspace(id="gs1", name="GS1")
-    handler.config_entry.runtime_data.growspaces = {"gs1": gs}
-    handler.flow.selected_growspace_id = "gs1"
-    handler.flow.fan_config_step1 = {
-        "enabled": True,
-        "regulation_mode": "temperature",
-        "min_speed": 10,
-        "max_speed": 90,
-        "temperature_target": 24.5,
-        "temperature_tolerance": 1.5,
-        "wind_enabled": True,
-    }
-
-    user_input = {
-        "wind_period_seconds": 120,
-        "wind_amplitude_pct": 15,
-    }
-
-    with patch.object(
-        handler, "async_step_configure_sensor_placement", return_value={"type": "form"}
-    ) as mock_next:
-        result = await handler.async_step_configure_fan_wind(user_input)
-        assert handler.flow.fan_config_step1["wind_period_seconds"] == 120
-        assert handler.flow.fan_config_step1["wind_amplitude_pct"] == 15
-        mock_next.assert_called_once()
-        assert result == {"type": "form"}
+    result = await handler.async_step_configure_environment(user_input)
+    mock_fan_handler.async_step_configure_fan_controller.assert_called_once()
+    assert result == {"type": "form"}
 
 
 @pytest.mark.asyncio

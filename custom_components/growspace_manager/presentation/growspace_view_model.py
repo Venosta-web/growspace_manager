@@ -64,7 +64,7 @@ def _compute_tank_water_summaries(
             ts = datetime.fromisoformat(ts_str)
             if ts.tzinfo is None:
                 ts = ts.replace(tzinfo=dt_util.UTC)
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             continue
 
         local_ts = dt_util.as_local(ts)
@@ -179,6 +179,15 @@ class GrowspaceViewModelBuilder:
             else None
         )
 
+        # Volume Mode prerequisites (ADR-0011): the card uses this to unlock the
+        # Volume Mode toggle. True only when a substrate profile (positive liters
+        # per pot) and a positive pump flow rate are both configured.
+        volume_mode_capable = bool(
+            growspace.irrigation_strategy
+            and growspace.irrigation_strategy.substrate_profile.is_configured
+            and growspace.irrigation_config.pump_flow_rate_ml_per_sec > 0.0
+        )
+
         # Create grid representation with entity data
         grid = self._build_rich_plant_grid(growspace, plants)
 
@@ -198,7 +207,9 @@ class GrowspaceViewModelBuilder:
         overview_entity_id = self.entity_queries.lookup_overview_entity_id(growspace.id)
 
         # Build environment attributes, then extract sensor lookup data
-        env_attrs = self._get_environment_attributes(growspace, active_events=active_events)
+        env_attrs = self._get_environment_attributes(
+            growspace, active_events=active_events
+        )
         sensors = {
             "sensor_types": self._get_sensor_types(growspace),
             "sensor_coordinates": env_attrs.pop("sensor_coordinates", {}),
@@ -270,11 +281,14 @@ class GrowspaceViewModelBuilder:
             },
             "environment": env_attrs,
             "sensors": sensors,
+            "subareas": [asdict(s) for s in growspace.subareas],
             "irrigation": {
                 "irrigation_config": irrigation_options,
                 "irrigation_strategy": irrigation_strategy_dict,
+                "volume_mode_capable": volume_mode_capable,
                 "drain_config": drain_config,
                 "water_usage": water_usage,
+                "substrate": self._build_substrate_metrics(growspace),
             },
             "metrics": {
                 **(biological_metrics or {}),
@@ -290,6 +304,36 @@ class GrowspaceViewModelBuilder:
                 "air_exchange": air_exchange,
                 "energy_tracking": energy_tracking,
             },
+        }
+
+    def _build_substrate_metrics(self, growspace: Growspace) -> dict[str, Any]:
+        """Build measured substrate dryback metrics for the frontend payload.
+
+        Reads the persisted ``substrate_history`` directly via a stateless
+        SubstrateTracker view — no recorder access (see ADR-0010).
+        """
+        from custom_components.growspace_manager.substrate_tracker import (  # noqa: PLC0415
+            SubstrateTracker,
+        )
+
+        tracker = SubstrateTracker(growspace)
+        latest_overnight = tracker.get_latest_overnight_dryback()
+        avg = tracker.get_average_incycle_dryback_today()
+        ec_trend = tracker.get_ec_trend()
+        return {
+            "overnight_dryback": (
+                round(latest_overnight["dryback"], 1)
+                if latest_overnight is not None
+                else None
+            ),
+            "latest_overnight_event": latest_overnight,
+            "incycle_dryback_count": tracker.get_shot_count_today(),
+            "incycle_dryback_avg": round(avg, 1) if avg is not None else None,
+            # Measured daily pore-EC trend. None => no pore-EC sensors yet, so
+            # the card renders its unlock hint instead of a "stable" reading.
+            "ec_trend": ec_trend["trend"] if ec_trend is not None else None,
+            "ec_trend_available": ec_trend is not None,
+            "ec_trend_detail": ec_trend,
         }
 
     def _build_rich_plant_grid(

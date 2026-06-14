@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
+from .crop_steering import get_crop_steering_state
+from .domain.stage import StageDays
 from .models import Plant
 from .presentation import GrowspaceViewModelBuilder
 from .utils import calculate_days_since
@@ -122,18 +124,20 @@ class ViewModelBuilder:
         max_dry_days = max_days["max_dry_days"]
         max_cure_days = max_days["max_cure_days"]
 
-        # Calculate biological metrics via EnvironmentAnalyzer (View Model assembly)
+        stage_days = StageDays(
+            veg=max_days["max_veg_days"],
+            flower=max_days["max_flower_days"],
+            dry=max_days["max_dry_days"],
+            cure=max_days["max_cure_days"],
+            seedling=max_days["max_seedling_days"],
+            clone=max_days["max_clone_days"],
+            mother=max_days["max_mother_days"],
+        )
         biological_metrics = (
             self.coordinator.services.growspaces.calculate_biological_metrics(
                 growspace_id,
                 growspace,
-                max_days["max_veg_days"],
-                max_days["max_flower_days"],
-                max_days["max_dry_days"],
-                max_days["max_cure_days"],
-                max_days["max_seedling_days"],
-                max_days["max_clone_days"],
-                max_days["max_mother_days"],
+                stage_days,
             )
         )
 
@@ -185,6 +189,35 @@ class ViewModelBuilder:
         serialized["irrigation"]["projected_shot_window"] = projected_shot_window
         serialized["irrigation"]["cycles_today"] = cycles_today
         serialized["irrigation"]["volume_dispensed_today"] = volume_dispensed_today
+
+        # Surface the measured steering readout alongside the tracker-derived
+        # substrate metrics. The score, its Measured Classification, and the
+        # Intent Deviation live on the CropSteeringState (computed with the
+        # coordinator's live VWC) — not reachable from the presentation builder,
+        # which only has hass — so they are injected here next to the telemetry.
+        # None throughout when the strategy is disabled / no reading yet, so the
+        # card can lock the score panel rather than show a synthetic value.
+        steering_state = get_crop_steering_state(self.coordinator, growspace_id)
+        substrate = serialized["irrigation"]["substrate"]
+        substrate["score"] = (
+            round(steering_state.score, 2) if steering_state is not None else None
+        )
+        substrate["measured_classification"] = (
+            steering_state.measured_classification
+            if steering_state is not None
+            else None
+        )
+        substrate["intent_deviation"] = (
+            steering_state.intent_deviation if steering_state is not None else None
+        )
+
+        # Shot Size Composition is runtime state on the VWC coordinator (base ×
+        # VWC factor × EC modulation), absent on time-based irrigation.
+        substrate["shot_composition"] = (
+            irr_coord.shot_composition_payload()
+            if irr_coord is not None and hasattr(irr_coord, "shot_composition_payload")
+            else None
+        )
 
         # Top-level timestamp for efficient frontend equality checks (change detection)
         serialized["_ts"] = int(current_time * 1000)

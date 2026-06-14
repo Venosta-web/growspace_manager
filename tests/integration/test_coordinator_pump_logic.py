@@ -64,7 +64,7 @@ async def test_async_update_irrigation_config_normalizes_empty_strings(
         irrigation_config=IrrigationConfig(drain_pump_entity="switch.old"),
     )
 
-    coordinator.data_repository.add_growspace(growspace)
+    coordinator._data_repository.add_growspace(growspace)
 
     # Test Input: Empty String for drain_pump_entity
     user_input = {

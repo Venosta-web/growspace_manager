@@ -762,7 +762,7 @@ async def test_handle_configure_environment_no_fan_controller(
     mock_gs.name = "Test GS"
     mock_gs.environment_config = None
     mock_coordinator.growspaces = {growspace_id: mock_gs}
-    mock_coordinator.subsystem_manager.get_circulation_fan_controller.return_value = (
+    mock_coordinator._subsystem_manager.get_circulation_fan_controller.return_value = (
         None
     )
 
@@ -788,7 +788,7 @@ async def test_handle_configure_circulation_fan_no_fan_controller(
     mock_gs.name = "Test GS"
     mock_gs.environment_config = EnvironmentConfig()
     mock_coordinator.growspaces = {growspace_id: mock_gs}
-    mock_coordinator.subsystem_manager.get_circulation_fan_controller.return_value = (
+    mock_coordinator._subsystem_manager.get_circulation_fan_controller.return_value = (
         None
     )
 

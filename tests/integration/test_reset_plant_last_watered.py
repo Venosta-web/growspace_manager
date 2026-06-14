@@ -40,7 +40,7 @@ def _make_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
 def coordinator_with_plant(hass: HomeAssistant) -> GrowspaceCoordinator:
     """Coordinator pre-loaded with one watered plant."""
     coordinator = _make_coordinator(hass)
-    coordinator.data_repository.add_growspace(
+    coordinator._data_repository.add_growspace(
         Growspace(id="gs1", name="Tent 1", rows=3, plants_per_row=3)
     )
     plant = create_plant(
@@ -52,7 +52,7 @@ def coordinator_with_plant(hass: HomeAssistant) -> GrowspaceCoordinator:
         col=1,
     )
     plant.last_watered = "2026-05-20T10:00:00+00:00"
-    coordinator.data_repository.add_plant(plant)
+    coordinator._data_repository.add_plant(plant)
     return coordinator
 
 

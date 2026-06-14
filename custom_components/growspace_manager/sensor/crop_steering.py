@@ -53,17 +53,57 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         if not state:
             return {}
 
-        if state.score > 0.3:
-            mode = "generative"
-        elif state.score < -0.3:
-            mode = "vegetative"
-        else:
-            mode = "balanced"
-
-        return {
+        attributes: dict[str, Any] = {
             "dryback_percent": round(state.dryback_percent, 1),
             "peak_vwc": round(state.peak_vwc, 1),
             "trough_vwc": round(state.trough_vwc, 1),
-            "steering_mode": mode,
+            # Score-derived Measured Classification (a measurement). Renamed
+            # from the old ``steering_mode`` key, which now belongs to the
+            # declared-intent setting (ADR-0012). ``intent_deviation`` compares
+            # it to the declared mode (None when undeclared or no reading). The
+            # declared mode itself is read from the strategy payload's
+            # ``declared_steering_mode``, not mirrored here (one source of truth).
+            "measured_classification": state.measured_classification,
+            "intent_deviation": state.intent_deviation,
+            # ec_trend is None when no pore-EC sensors are configured (or no
+            # reading yet). ec_trend_available distinguishes that from a
+            # measured "stable" so the card can show its unlock hint.
             "ec_trend": state.ec_trend,
+            "ec_trend_available": state.ec_trend_available,
+            "ec_day_start": state.ec_day_start,
+            "ec_current": state.ec_current,
         }
+
+        # Measured substrate metrics from the SubstrateTracker (see ADR-0010).
+        tracker = self.coordinator.services.growspaces.get_substrate_tracker(
+            self._growspace_id
+        )
+        if tracker is not None:
+            latest_overnight = tracker.get_latest_overnight_dryback()
+            attributes["overnight_dryback"] = (
+                round(latest_overnight["dryback"], 1)
+                if latest_overnight is not None
+                else None
+            )
+            incycle = tracker.get_incycle_drybacks_today()
+            attributes["incycle_dryback_count"] = len(incycle)
+            avg = tracker.get_average_incycle_dryback_today()
+            attributes["incycle_dryback_avg"] = (
+                round(avg, 1) if avg is not None else None
+            )
+
+        # Shot Size Composition: base × VWC factor × EC modulation factor, with
+        # the configured pore-EC band and modulation capability. Surfaced here
+        # (not in the static strategy payload) because the factors are runtime
+        # state on the VWC coordinator. Absent on time-based irrigation.
+        irrigation_coord = (
+            self.coordinator.services.growspaces.get_irrigation_coordinator(
+                self._growspace_id
+            )
+        )
+        if irrigation_coord is not None and hasattr(
+            irrigation_coord, "shot_composition_payload"
+        ):
+            attributes["shot_composition"] = irrigation_coord.shot_composition_payload()
+
+        return attributes

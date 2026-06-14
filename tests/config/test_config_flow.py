@@ -36,6 +36,7 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     IrrigationConfig,
+    IrrigationStrategy,
 )
 from homeassistant.config_entries import HANDLERS
 from homeassistant.core import HomeAssistant
@@ -2276,6 +2277,7 @@ async def test_options_flow_select_growspace_for_irrigation_submit(
         name="Growspace 1",
         environment_config=EnvironmentConfig(),
         irrigation_config=IrrigationConfig(),
+        irrigation_strategy=IrrigationStrategy(),
     )
     # mock_gs.irrigation_config = {} # REMOVED: Must use dataclass
     mock_coordinator.growspaces = {"gs1": mock_gs}
@@ -2304,7 +2306,11 @@ async def test_options_flow_configure_irrigation_show_form(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(name="Growspace 1", irrigation_config=IrrigationConfig())
+    mock_growspace = Mock(
+        name="Growspace 1",
+        irrigation_config=IrrigationConfig(),
+        irrigation_strategy=IrrigationStrategy(),
+    )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -2326,7 +2332,11 @@ async def test_options_flow_configure_irrigation_submit(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(name="Growspace 1", irrigation_config=IrrigationConfig())
+    mock_growspace = Mock(
+        name="Growspace 1",
+        irrigation_config=IrrigationConfig(),
+        irrigation_strategy=IrrigationStrategy(),
+    )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
 
@@ -2345,7 +2355,7 @@ async def test_options_flow_configure_irrigation_submit(
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
     mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once_with(
-        "gs1", **user_input
+        "gs1", user_input
     )
 
 
@@ -2502,7 +2512,7 @@ async def test_options_flow_edit_strain_success(
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_strain_library"
-    # mock_coordinator.strain_library.update_strain.assert_called_once() # Not implemented in snippet
+    # mock_coordinator._strain_library.update_strain.assert_called_once() # Not implemented in snippet
 
 
 @pytest.mark.asyncio
@@ -2975,6 +2985,7 @@ async def test_options_flow_irrigation_save_clears_pumps(
     mock_gs = Mock(
         name="GS1",
         irrigation_config=mock_irrigation_config,
+        irrigation_strategy=IrrigationStrategy(),
         environment_config=EnvironmentConfig(),
     )
     mock_coordinator.growspaces = {"gs1": mock_gs}
@@ -3571,11 +3582,11 @@ async def test_delegated_fan_steps(
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
 
-    # Mock the environment config handler and its delegated method
-    mock_env_handler = MagicMock()
+    # Mock the fan controller handler and its delegated method
+    mock_fan_handler = MagicMock()
     mock_delegated = AsyncMock(return_value={"type": FlowResultType.FORM})
-    setattr(mock_env_handler, delegated_method_name, mock_delegated)
-    flow._env_handler = mock_env_handler  # noqa: SLF001
+    setattr(mock_fan_handler, delegated_method_name, mock_delegated)
+    flow._fan_controller_handler = mock_fan_handler  # noqa: SLF001
 
     user_input = {"some_key": "some_value"}
     method = getattr(flow, method_name)

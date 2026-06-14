@@ -112,7 +112,6 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
         attributes["days_since_last_watering"] = plant.get_days_since_watering()
 
         weight_log = plant.drying_data.weight_log
-        moisture_log = plant.drying_data.moisture_log
         current_weight = weight_log[-1].weight_grams if weight_log else None
         wet_weight = plant.harvest_metrics.wet_weight
         attributes["drying_weight"] = current_weight
@@ -122,11 +121,11 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
             else None
         )
         attributes["days_to_target"] = compute_days_to_target(wet_weight, weight_log)
-        attributes["drying_moisture"] = (
-            moisture_log[-1].moisture_percent if moisture_log else None
-        )
-        attributes["drying_ready_for_cure"] = is_cure_ready(moisture_log)
         attributes["visual_tag"] = plant.drying_data.visual_tag
+
+        moisture_log = plant.drying_data.moisture_log
+        attributes["drying_moisture"] = moisture_log[-1].moisture_percent if moisture_log else None
+        attributes["drying_ready_for_cure"] = is_cure_ready(moisture_log)
 
         if plant.phi_clearance_date:
             attributes["phi_clearance_date"] = plant.phi_clearance_date

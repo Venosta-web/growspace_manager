@@ -67,8 +67,8 @@ async def test_add_growspace_registers_device(mock_coordinator) -> None:
     gs.id = "gs1"
     gs.name = "Tent 1"
     gs.growspace_type = None
-    mock_coordinator.growspace_manager.add_growspace = AsyncMock(return_value=gs)
-    mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = (
+    mock_coordinator._growspace_manager.add_growspace = AsyncMock(return_value=gs)
+    mock_coordinator._subsystem_manager.async_setup_growspace_sub_coordinators = (
         AsyncMock()
     )
 
@@ -78,7 +78,7 @@ async def test_add_growspace_registers_device(mock_coordinator) -> None:
 
     assert result is gs
     mock_dr.async_get_or_create.assert_called_once()
-    mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators.assert_awaited_once_with(
+    mock_coordinator._subsystem_manager.async_setup_growspace_sub_coordinators.assert_awaited_once_with(
         "gs1", gs
     )
 
@@ -93,8 +93,8 @@ async def test_add_growspace_with_type(mock_coordinator) -> None:
     gs_type = MagicMock()
     gs_type.value = "veg_room"
     gs.growspace_type = gs_type
-    mock_coordinator.growspace_manager.add_growspace = AsyncMock(return_value=gs)
-    mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = (
+    mock_coordinator._growspace_manager.add_growspace = AsyncMock(return_value=gs)
+    mock_coordinator._subsystem_manager.async_setup_growspace_sub_coordinators = (
         AsyncMock()
     )
 
@@ -116,7 +116,7 @@ async def test_update_growspace_no_name_change(mock_coordinator) -> None:
     """update_growspace without name kwarg should not touch device registry."""
     facade = ServiceFacade(mock_coordinator)
     gs = MagicMock()
-    mock_coordinator.growspace_manager.update_growspace = AsyncMock(return_value=gs)
+    mock_coordinator._growspace_manager.update_growspace = AsyncMock(return_value=gs)
 
     mock_dr = MagicMock()
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
@@ -131,7 +131,7 @@ async def test_update_growspace_with_name_change(mock_coordinator) -> None:
     """update_growspace with name kwarg should update the device name."""
     facade = ServiceFacade(mock_coordinator)
     gs = MagicMock()
-    mock_coordinator.growspace_manager.update_growspace = AsyncMock(return_value=gs)
+    mock_coordinator._growspace_manager.update_growspace = AsyncMock(return_value=gs)
 
     mock_dr = MagicMock()
     mock_device = MagicMock()
@@ -157,7 +157,7 @@ async def test_add_plant_registers_device(mock_coordinator) -> None:
     plant.growspace_id = "gs1"
     plant.genetics = MagicMock()
     plant.genetics.strain_name = "OG Kush"
-    mock_coordinator.plant_manager.add_plant = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
 
     mock_dr = MagicMock()
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
@@ -175,7 +175,7 @@ async def test_add_plant_no_genetics(mock_coordinator) -> None:
     plant.plant_id = "p2"
     plant.growspace_id = "gs1"
     plant.genetics = None
-    mock_coordinator.plant_manager.add_plant = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
 
     mock_dr = MagicMock()
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
@@ -195,9 +195,9 @@ async def test_add_plant_no_genetics(mock_coordinator) -> None:
 async def test_add_subarea(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     sub = MagicMock()
-    mock_coordinator.growspace_manager.add_subarea = AsyncMock(return_value=sub)
+    mock_coordinator._growspace_manager.add_subarea = AsyncMock(return_value=sub)
     result = await facade.growspaces.add_subarea("gs1", "Zone A")
-    mock_coordinator.growspace_manager.add_subarea.assert_awaited_once_with(
+    mock_coordinator._growspace_manager.add_subarea.assert_awaited_once_with(
         "gs1", "Zone A"
     )
     assert result is sub
@@ -206,9 +206,9 @@ async def test_add_subarea(mock_coordinator) -> None:
 @pytest.mark.asyncio
 async def test_update_subarea(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.growspace_manager.update_subarea = AsyncMock(return_value=None)
+    mock_coordinator._growspace_manager.update_subarea = AsyncMock(return_value=None)
     await facade.growspaces.update_subarea("gs1", "sub1", {"temperature": 25})
-    mock_coordinator.growspace_manager.update_subarea.assert_awaited_once_with(
+    mock_coordinator._growspace_manager.update_subarea.assert_awaited_once_with(
         "gs1", "sub1", {"temperature": 25}
     )
 
@@ -216,16 +216,16 @@ async def test_update_subarea(mock_coordinator) -> None:
 @pytest.mark.asyncio
 async def test_remove_subarea(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.growspace_manager.remove_subarea = AsyncMock()
+    mock_coordinator._growspace_manager.remove_subarea = AsyncMock()
     await facade.growspaces.remove_subarea("gs1", "sub1")
-    mock_coordinator.growspace_manager.remove_subarea.assert_awaited_once_with(
+    mock_coordinator._growspace_manager.remove_subarea.assert_awaited_once_with(
         "gs1", "sub1"
     )
 
 
 def test_get_subareas(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.growspace_manager.get_subareas = MagicMock(return_value=["sub1"])
+    mock_coordinator._growspace_manager.get_subareas = MagicMock(return_value=["sub1"])
     result = facade.growspaces.get_subareas("gs1")
     assert result == ["sub1"]
 
@@ -238,13 +238,13 @@ def test_get_subareas(mock_coordinator) -> None:
 def test_get_growspace(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     gs = MagicMock()
-    mock_coordinator.data_repository.get_growspace = MagicMock(return_value=gs)
+    mock_coordinator._data_repository.get_growspace = MagicMock(return_value=gs)
     assert facade.growspaces.get_growspace("gs1") is gs
 
 
 def test_get_sorted_growspace_options(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.growspace_manager.get_sorted_growspace_options = MagicMock(
+    mock_coordinator._growspace_manager.get_sorted_growspace_options = MagicMock(
         return_value=[("gs1", "Tent")]
     )
     assert facade.growspaces.get_sorted_growspace_options() == [("gs1", "Tent")]
@@ -252,10 +252,14 @@ def test_get_sorted_growspace_options(mock_coordinator) -> None:
 
 def test_properties(mock_coordinator) -> None:
     """ServiceFacade should expose four domain sub-facades."""
-    from custom_components.growspace_manager.services.growspace_facade import GrowspaceFacade
+    from custom_components.growspace_manager.services.growspace_facade import (
+        GrowspaceFacade,
+    )
     from custom_components.growspace_manager.services.plant_facade import PlantFacade
     from custom_components.growspace_manager.services.config_facade import ConfigFacade
-    from custom_components.growspace_manager.services.notifications_facade import NotificationsFacade
+    from custom_components.growspace_manager.services.notifications_facade import (
+        NotificationsFacade,
+    )
 
     facade = ServiceFacade(mock_coordinator)
     assert isinstance(facade.growspaces, GrowspaceFacade)
@@ -265,19 +269,19 @@ def test_properties(mock_coordinator) -> None:
     # Domain facades delegate back through coordinator
     assert facade.growspaces.growspaces is mock_coordinator.growspaces
     assert facade.plants.plants is mock_coordinator.plants
-    assert facade.config.strain_library is mock_coordinator.strain_library
+    assert facade.config.strain_library is mock_coordinator._strain_library
 
 
 def test_get_growspace_grid(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     grid = [[None, None]]
-    mock_coordinator.data_repository.get_growspace_grid = MagicMock(return_value=grid)
+    mock_coordinator._data_repository.get_growspace_grid = MagicMock(return_value=grid)
     assert facade.growspaces.get_growspace_grid("gs1") is grid
 
 
 def test_get_canonical_special(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.growspace_manager.get_canonical_special = MagicMock(
+    mock_coordinator._growspace_manager.get_canonical_special = MagicMock(
         return_value=("veg", "Veg")
     )
     assert facade.growspaces.get_canonical_special("veg") == ("veg", "Veg")
@@ -438,7 +442,7 @@ def test_is_notifications_enabled(mock_coordinator) -> None:
 async def test_add_mother_plant(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     plant = MagicMock()
-    mock_coordinator.plant_manager.add_mother_plant = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.add_mother_plant = AsyncMock(return_value=plant)
     mock_coordinator.async_request_refresh = AsyncMock()
 
     result = await facade.plants.add_mother_plant(
@@ -516,6 +520,65 @@ async def test_update_irrigation_config_sets_fields(mock_coordinator) -> None:
     assert gs.irrigation_config.irrigation_pump_entity is None
 
 
+@pytest.mark.asyncio
+async def test_update_irrigation_config_sets_pore_ec_band(mock_coordinator) -> None:
+    """A valid pore-EC band and opt-in flag land on the strategy."""
+    facade = ServiceFacade(mock_coordinator)
+    gs = Growspace(id="gs1", name="GS1")
+    mock_coordinator.growspaces = {"gs1": gs}
+    mock_coordinator.async_commit = AsyncMock()
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.cache = MagicMock()
+
+    await facade.growspaces.update_irrigation_config(
+        "gs1",
+        {
+            "pore_ec_target_min": 2.0,
+            "pore_ec_target_max": 3.5,
+            "ec_modulation_enabled": True,
+        },
+    )
+    assert gs.irrigation_strategy.pore_ec_target_min == 2.0
+    assert gs.irrigation_strategy.pore_ec_target_max == 3.5
+    assert gs.irrigation_strategy.ec_modulation_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_update_irrigation_config_rejects_inverted_band(mock_coordinator) -> None:
+    """A pore-EC band with min >= max is rejected with a validation error."""
+    facade = ServiceFacade(mock_coordinator)
+    gs = Growspace(id="gs1", name="GS1")
+    mock_coordinator.growspaces = {"gs1": gs}
+    mock_coordinator.async_commit = AsyncMock()
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.cache = MagicMock()
+
+    with pytest.raises(ServiceValidationError, match="Pore EC target band"):
+        await facade.growspaces.update_irrigation_config(
+            "gs1",
+            {"pore_ec_target_min": 3.0, "pore_ec_target_max": 2.0},
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_irrigation_config_band_single_edge_vs_stored(
+    mock_coordinator,
+) -> None:
+    """Setting one edge is validated against the already-stored other edge."""
+    facade = ServiceFacade(mock_coordinator)
+    gs = Growspace(id="gs1", name="GS1")
+    gs.irrigation_strategy.pore_ec_target_max = 3.0
+    mock_coordinator.growspaces = {"gs1": gs}
+    mock_coordinator.async_commit = AsyncMock()
+    mock_coordinator.async_request_refresh = AsyncMock()
+    mock_coordinator.cache = MagicMock()
+
+    with pytest.raises(ServiceValidationError, match="Pore EC target band"):
+        await facade.growspaces.update_irrigation_config(
+            "gs1", {"pore_ec_target_min": 4.0}
+        )
+
+
 # ---------------------------------------------------------------------------
 # take_clones / promote_clone
 # ---------------------------------------------------------------------------
@@ -525,11 +588,11 @@ async def test_update_irrigation_config_sets_fields(mock_coordinator) -> None:
 async def test_take_clones(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     clones = [MagicMock(), MagicMock()]
-    mock_coordinator.plant_manager.take_clones = AsyncMock(return_value=clones)
+    mock_coordinator._plant_manager.take_clones = AsyncMock(return_value=clones)
 
     result = await facade.plants.take_clones("mother_1", 2)
     assert result is clones
-    mock_coordinator.plant_manager.take_clones.assert_awaited_once_with(
+    mock_coordinator._plant_manager.take_clones.assert_awaited_once_with(
         mother_plant_id="mother_1",
         num_clones=2,
         target_growspace_id=None,
@@ -541,9 +604,9 @@ async def test_take_clones(mock_coordinator) -> None:
 @pytest.mark.asyncio
 async def test_promote_clone(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.plant_manager.promote_clone = AsyncMock()
+    mock_coordinator._plant_manager.promote_clone = AsyncMock()
     await facade.plants.promote_clone("clone_1", "veg")
-    mock_coordinator.plant_manager.promote_clone.assert_awaited_once_with(
+    mock_coordinator._plant_manager.promote_clone.assert_awaited_once_with(
         clone_id="clone_1", target_growspace_id="veg", transition_date=None
     )
 
@@ -571,9 +634,11 @@ async def test_add_irrigation_schedule_item_with_duration(mock_coordinator) -> N
     facade = ServiceFacade(mock_coordinator)
     irr_coord = MagicMock()
     irr_coord.async_add_schedule_item = AsyncMock()
-    mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
+    mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
 
-    await facade.growspaces.add_irrigation_schedule_item("gs1", "irrigation_times", "08:00", 15)
+    await facade.growspaces.add_irrigation_schedule_item(
+        "gs1", "irrigation_times", "08:00", 15
+    )
     irr_coord.async_add_schedule_item.assert_awaited_once_with(
         "irrigation_times", "08:00", 15
     )
@@ -586,9 +651,11 @@ async def test_add_irrigation_schedule_item_default_duration(mock_coordinator) -
     irr_coord = MagicMock()
     irr_coord.get_default_duration = MagicMock(return_value=20)
     irr_coord.async_add_schedule_item = AsyncMock()
-    mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
+    mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
 
-    await facade.growspaces.add_irrigation_schedule_item("gs1", "irrigation_times", "09:00")
+    await facade.growspaces.add_irrigation_schedule_item(
+        "gs1", "irrigation_times", "09:00"
+    )
     irr_coord.get_default_duration.assert_called_once_with("irrigation")
     irr_coord.async_add_schedule_item.assert_awaited_once_with(
         "irrigation_times", "09:00", 20
@@ -600,9 +667,11 @@ async def test_remove_irrigation_schedule_item(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     irr_coord = MagicMock()
     irr_coord.async_remove_schedule_item = AsyncMock()
-    mock_coordinator.subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
+    mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
 
-    await facade.growspaces.remove_irrigation_schedule_item("gs1", "irrigation_times", "08:00")
+    await facade.growspaces.remove_irrigation_schedule_item(
+        "gs1", "irrigation_times", "08:00"
+    )
     irr_coord.async_remove_schedule_item.assert_awaited_once_with(
         "irrigation_times", "08:00"
     )
@@ -614,7 +683,7 @@ async def test_get_irrigation_coordinator_lazy_init(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     gs = MagicMock()
     mock_coordinator.growspaces = {"gs1": gs}
-    mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = (
+    mock_coordinator._subsystem_manager.async_setup_growspace_sub_coordinators = (
         AsyncMock()
     )
     irr_coord = MagicMock()
@@ -623,26 +692,28 @@ async def test_get_irrigation_coordinator_lazy_init(mock_coordinator) -> None:
 
     # After lazy init, the coordinator exists
     def _setup_side_effect(gs_id, gs_obj):
-        mock_coordinator.subsystem_manager.irrigation_coordinators[gs_id] = irr_coord
+        mock_coordinator._subsystem_manager.irrigation_coordinators[gs_id] = irr_coord
 
-    mock_coordinator.subsystem_manager.irrigation_coordinators = {}
-    mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators.side_effect = (
-        _setup_side_effect
+    mock_coordinator._subsystem_manager.irrigation_coordinators = {}
+    mock_coordinator._subsystem_manager.async_setup_growspace_sub_coordinators.side_effect = _setup_side_effect
+
+    await facade.growspaces.add_irrigation_schedule_item(
+        "gs1", "irrigation_times", "10:00"
     )
-
-    await facade.growspaces.add_irrigation_schedule_item("gs1", "irrigation_times", "10:00")
-    mock_coordinator.subsystem_manager.async_setup_growspace_sub_coordinators.assert_awaited_once()
+    mock_coordinator._subsystem_manager.async_setup_growspace_sub_coordinators.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_get_irrigation_coordinator_missing_raises(mock_coordinator) -> None:
     """_get_irrigation_coordinator raises if growspace not found."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.subsystem_manager.irrigation_coordinators = {}
+    mock_coordinator._subsystem_manager.irrigation_coordinators = {}
     mock_coordinator.growspaces = {}
 
     with pytest.raises(ServiceValidationError):
-        await facade.growspaces.add_irrigation_schedule_item("gs1", "irrigation_times", "08:00")
+        await facade.growspaces.add_irrigation_schedule_item(
+            "gs1", "irrigation_times", "08:00"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -653,25 +724,25 @@ async def test_get_irrigation_coordinator_missing_raises(mock_coordinator) -> No
 @pytest.mark.asyncio
 async def test_switch_plants(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.plant_manager.switch_plants = AsyncMock()
+    mock_coordinator._plant_manager.switch_plants = AsyncMock()
     await facade.plants.switch_plants("p1", "p2")
-    mock_coordinator.plant_manager.switch_plants.assert_awaited_once_with("p1", "p2")
+    mock_coordinator._plant_manager.switch_plants.assert_awaited_once_with("p1", "p2")
 
 
 @pytest.mark.asyncio
 async def test_move_plant(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.plant_manager.move_plant = AsyncMock()
+    mock_coordinator._plant_manager.move_plant = AsyncMock()
     await facade.plants.move_plant("p1", 1, 2)
-    mock_coordinator.plant_manager.move_plant.assert_awaited_once_with("p1", 1, 2)
+    mock_coordinator._plant_manager.move_plant.assert_awaited_once_with("p1", 1, 2)
 
 
 @pytest.mark.asyncio
 async def test_transition_plant_stage(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.plant_manager.transition_plant_stage = AsyncMock()
+    mock_coordinator._plant_manager.transition_plant_stage = AsyncMock()
     await facade.plants.transition_plant_stage("p1", PlantStage.FLOWER)
-    mock_coordinator.plant_manager.transition_plant_stage.assert_awaited_once_with(
+    mock_coordinator._plant_manager.transition_plant_stage.assert_awaited_once_with(
         "p1", PlantStage.FLOWER, None
     )
 
@@ -680,7 +751,7 @@ async def test_transition_plant_stage(mock_coordinator) -> None:
 async def test_harvest(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     plant = MagicMock()
-    mock_coordinator.plant_manager.harvest = AsyncMock(return_value=plant)
+    mock_coordinator._plant_manager.harvest = AsyncMock(return_value=plant)
     result = await facade.plants.harvest("p1")
     assert result is plant
 
@@ -688,9 +759,9 @@ async def test_harvest(mock_coordinator) -> None:
 @pytest.mark.asyncio
 async def test_transition_plant(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.plant_manager.transition_plant = AsyncMock()
+    mock_coordinator._plant_manager.transition_plant = AsyncMock()
     await facade.plants.transition_plant("p1", wet_weight=100.0)
-    mock_coordinator.plant_manager.transition_plant.assert_awaited_once()
+    mock_coordinator._plant_manager.transition_plant.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -722,19 +793,21 @@ async def test_water_growspace(mock_coordinator) -> None:
 async def test_save_nutrient_preset(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     preset = MagicMock()
-    mock_coordinator.nutrient_manager.async_save_nutrient_preset = AsyncMock(
+    mock_coordinator._nutrient_manager.async_save_nutrient_preset = AsyncMock(
         return_value=preset
     )
-    result = await facade.config.save_nutrient_preset("Bloom", [{"name": "N", "amount": 2.0}])
+    result = await facade.config.save_nutrient_preset(
+        "Bloom", [{"name": "N", "amount": 2.0}]
+    )
     assert result is preset
 
 
 @pytest.mark.asyncio
 async def test_remove_nutrient_preset(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.nutrient_manager.async_remove_nutrient_preset = AsyncMock()
+    mock_coordinator._nutrient_manager.async_remove_nutrient_preset = AsyncMock()
     await facade.config.remove_nutrient_preset("preset_1")
-    mock_coordinator.nutrient_manager.async_remove_nutrient_preset.assert_awaited_once_with(
+    mock_coordinator._nutrient_manager.async_remove_nutrient_preset.assert_awaited_once_with(
         "preset_1"
     )
 
@@ -742,7 +815,7 @@ async def test_remove_nutrient_preset(mock_coordinator) -> None:
 def test_get_applicable_presets(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     presets = [MagicMock()]
-    mock_coordinator.nutrient_manager.get_applicable_presets = MagicMock(
+    mock_coordinator._nutrient_manager.get_applicable_presets = MagicMock(
         return_value=presets
     )
     assert facade.plants.get_applicable_presets("p1") is presets
@@ -801,13 +874,13 @@ async def test_log_drain_reading_fires_alert(mock_coordinator) -> None:
     gs.drain_config.max_ec_delta = 0.3
     mock_coordinator.growspaces = {"gs1": gs}
     mock_coordinator.async_commit = AsyncMock()
-    mock_coordinator.notification_manager.async_send_notification = AsyncMock()
+    mock_coordinator._notification_manager.async_send_notification = AsyncMock()
 
     # drain_ec - feed_ec = 2.0 - 1.0 = 1.0 > 0.3
     await facade.growspaces.log_drain_reading("gs1", feed_ec=1.0, drain_ec=2.0)
 
-    mock_coordinator.notification_manager.async_send_notification.assert_awaited_once()
-    call_args = mock_coordinator.notification_manager.async_send_notification.call_args
+    mock_coordinator._notification_manager.async_send_notification.assert_awaited_once()
+    call_args = mock_coordinator._notification_manager.async_send_notification.call_args
     assert call_args[0][0] == "gs1"  # positional growspace_id arg
 
 
@@ -820,10 +893,10 @@ async def test_log_drain_reading_no_alert_when_disabled(mock_coordinator) -> Non
     gs.drain_config.max_ec_delta = 0.3
     mock_coordinator.growspaces = {"gs1": gs}
     mock_coordinator.async_commit = AsyncMock()
-    mock_coordinator.notification_manager.async_send_notification = AsyncMock()
+    mock_coordinator._notification_manager.async_send_notification = AsyncMock()
 
     await facade.growspaces.log_drain_reading("gs1", feed_ec=1.0, drain_ec=2.0)
-    mock_coordinator.notification_manager.async_send_notification.assert_not_awaited()
+    mock_coordinator._notification_manager.async_send_notification.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -891,10 +964,12 @@ async def test_configure_tank_updates_volume(mock_coordinator) -> None:
     tank = IrrigationTank(sensor_entity="sensor.tank_level", volume_liters=100.0)
     gs = Growspace(id="gs1", name="GS1")
     gs.environment_config.irrigation_tanks.append(tank)
-    mock_coordinator.data_repository.get_growspace = MagicMock(return_value=gs)
+    mock_coordinator._data_repository.get_growspace = MagicMock(return_value=gs)
     mock_coordinator.async_commit = AsyncMock()
 
-    await facade.growspaces.configure_tank("gs1", "sensor.tank_level", volume_liters=200.0)
+    await facade.growspaces.configure_tank(
+        "gs1", "sensor.tank_level", volume_liters=200.0
+    )
     assert tank.volume_liters == 200.0
     mock_coordinator.async_commit.assert_awaited_once()
 
@@ -903,9 +978,11 @@ async def test_configure_tank_updates_volume(mock_coordinator) -> None:
 async def test_configure_tank_unknown_growspace(mock_coordinator) -> None:
     """configure_tank should return early if growspace not found."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.data_repository.get_growspace = MagicMock(return_value=None)
+    mock_coordinator._data_repository.get_growspace = MagicMock(return_value=None)
     mock_coordinator.async_commit = AsyncMock()
-    await facade.growspaces.configure_tank("missing", "sensor.tank", volume_liters=100.0)
+    await facade.growspaces.configure_tank(
+        "missing", "sensor.tank", volume_liters=100.0
+    )
     mock_coordinator.async_commit.assert_not_awaited()
 
 
@@ -914,9 +991,11 @@ async def test_configure_tank_unknown_entity(mock_coordinator) -> None:
     """configure_tank should return early if tank entity not found."""
     facade = ServiceFacade(mock_coordinator)
     gs = Growspace(id="gs1", name="GS1")
-    mock_coordinator.data_repository.get_growspace = MagicMock(return_value=gs)
+    mock_coordinator._data_repository.get_growspace = MagicMock(return_value=gs)
     mock_coordinator.async_commit = AsyncMock()
-    await facade.growspaces.configure_tank("gs1", "sensor.unknown_tank", volume_liters=100.0)
+    await facade.growspaces.configure_tank(
+        "gs1", "sensor.unknown_tank", volume_liters=100.0
+    )
     mock_coordinator.async_commit.assert_not_awaited()
 
 
@@ -929,7 +1008,7 @@ async def test_configure_tank_unknown_entity(mock_coordinator) -> None:
 async def test_save_ec_ramp_curve(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     curve = MagicMock()
-    mock_coordinator.nutrient_manager.async_save_ec_ramp_curve = AsyncMock(
+    mock_coordinator._nutrient_manager.async_save_ec_ramp_curve = AsyncMock(
         return_value=curve
     )
     mock_coordinator.growspaces = {"gs1": MagicMock()}
@@ -945,7 +1024,7 @@ async def test_save_ec_ramp_curve_no_growspace_id_fallback(mock_coordinator) -> 
     """When growspace_id is None, use the first available growspace."""
     facade = ServiceFacade(mock_coordinator)
     curve = MagicMock()
-    mock_coordinator.nutrient_manager.async_save_ec_ramp_curve = AsyncMock(
+    mock_coordinator._nutrient_manager.async_save_ec_ramp_curve = AsyncMock(
         return_value=curve
     )
     mock_coordinator.growspaces = {"gs1": MagicMock()}
@@ -986,9 +1065,9 @@ async def test_save_ec_ramp_curve_missing_points_raises(mock_coordinator) -> Non
 @pytest.mark.asyncio
 async def test_remove_ec_ramp_curve(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.nutrient_manager.async_remove_ec_ramp_curve = AsyncMock()
+    mock_coordinator._nutrient_manager.async_remove_ec_ramp_curve = AsyncMock()
     await facade.config.remove_ec_ramp_curve("gs1", "curve_1")
-    mock_coordinator.nutrient_manager.async_remove_ec_ramp_curve.assert_awaited_once_with(
+    mock_coordinator._nutrient_manager.async_remove_ec_ramp_curve.assert_awaited_once_with(
         "curve_1"
     )
 
@@ -1063,8 +1142,8 @@ async def test_add_timeline_note_with_images(mock_coordinator) -> None:
 
     image_manager = MagicMock()
     image_manager.save_timeline_image = AsyncMock(return_value="/path/img.jpg")
-    mock_coordinator.strain_library = MagicMock()
-    mock_coordinator.strain_library.image_manager = image_manager
+    mock_coordinator._strain_library = MagicMock()
+    mock_coordinator._strain_library.image_manager = image_manager
 
     await facade.add_timeline_note("p1", "Test", images_base64=["base64data"])
     image_manager.save_timeline_image.assert_awaited_once()
@@ -1081,14 +1160,14 @@ async def test_score_plant(mock_coordinator) -> None:
     plant = MagicMock()
     plant.phenotype_score = PhenotypeScore()
     mock_coordinator.plants = {"p1": plant}
-    mock_coordinator.plant_manager.update_plant = AsyncMock()
+    mock_coordinator._plant_manager.update_plant = AsyncMock()
 
     await facade.plants.score_plant("p1", vigor=8, structure=7, aroma=9, resin=6)
     assert plant.phenotype_score.vigor == 8
     assert plant.phenotype_score.internodal_spacing == 7
     assert plant.phenotype_score.terpene_intensity == 9
     assert plant.phenotype_score.resin == 6
-    mock_coordinator.plant_manager.update_plant.assert_awaited_once()
+    mock_coordinator._plant_manager.update_plant.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1110,7 +1189,7 @@ async def test_update_harvest_metrics(mock_coordinator) -> None:
     plant = MagicMock()
     plant.harvest_metrics = HarvestMetrics()
     mock_coordinator.plants = {"p1": plant}
-    mock_coordinator.plant_manager.update_plant = AsyncMock()
+    mock_coordinator._plant_manager.update_plant = AsyncMock()
 
     await facade.plants.update_harvest_metrics(
         "p1",
@@ -1123,7 +1202,7 @@ async def test_update_harvest_metrics(mock_coordinator) -> None:
     assert plant.harvest_metrics.dry_weight == 100.0
     assert plant.harvest_metrics.thc_percentage == 22.5
     assert plant.harvest_metrics.terpene_profile == "citrus"
-    mock_coordinator.plant_manager.update_plant.assert_awaited_once()
+    mock_coordinator._plant_manager.update_plant.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -1133,10 +1212,10 @@ async def test_update_harvest_metrics_no_updates(mock_coordinator) -> None:
     plant = MagicMock()
     plant.harvest_metrics = HarvestMetrics()
     mock_coordinator.plants = {"p1": plant}
-    mock_coordinator.plant_manager.update_plant = AsyncMock()
+    mock_coordinator._plant_manager.update_plant = AsyncMock()
 
     await facade.plants.update_harvest_metrics("p1")
-    mock_coordinator.plant_manager.update_plant.assert_not_awaited()
+    mock_coordinator._plant_manager.update_plant.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1156,14 +1235,14 @@ def test_get_strain_options_with_library(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     library = MagicMock()
     library.get_all = MagicMock(return_value={"OG Kush": {}, "Blue Dream": {}})
-    mock_coordinator.strain_library = library
+    mock_coordinator._strain_library = library
     result = facade.config.get_strain_options()
     assert result == ["Blue Dream", "OG Kush"]
 
 
 def test_get_strain_options_no_library(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.strain_library = None
+    mock_coordinator._strain_library = None
     assert facade.config.get_strain_options() == []
 
 
@@ -1171,7 +1250,7 @@ def test_export_strain_library(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     library = MagicMock()
     library.get_all = MagicMock(return_value={"OG Kush": {}})
-    mock_coordinator.strain_library = library
+    mock_coordinator._strain_library = library
     assert facade.config.export_strain_library() == ["OG Kush"]
 
 
@@ -1180,7 +1259,7 @@ async def test_clear_strains(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     library = MagicMock()
     library.clear = AsyncMock(return_value=5)
-    mock_coordinator.strain_library = library
+    mock_coordinator._strain_library = library
     result = await facade.config.clear_strains()
     assert result == 5
 
@@ -1188,7 +1267,7 @@ async def test_clear_strains(mock_coordinator) -> None:
 @pytest.mark.asyncio
 async def test_clear_strains_no_library(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.strain_library = None
+    mock_coordinator._strain_library = None
     assert await facade.config.clear_strains() == 0
 
 
@@ -1200,7 +1279,7 @@ async def test_clear_strains_no_library(mock_coordinator) -> None:
 def test_get_growspace_plants(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     plants = [MagicMock()]
-    mock_coordinator.data_repository.get_growspace_plants = MagicMock(
+    mock_coordinator._data_repository.get_growspace_plants = MagicMock(
         return_value=plants
     )
     assert facade.growspaces.get_growspace_plants("gs1") is plants
@@ -1209,7 +1288,7 @@ def test_get_growspace_plants(mock_coordinator) -> None:
 def test_get_plant(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     plant = MagicMock()
-    mock_coordinator.data_repository.get_plant = MagicMock(return_value=plant)
+    mock_coordinator._data_repository.get_plant = MagicMock(return_value=plant)
     assert facade.plants.get_plant("p1") is plant
 
 
@@ -1220,14 +1299,14 @@ def test_get_plant(mock_coordinator) -> None:
 
 def test_get_tank_tracker_no_growspace(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.data_repository.get_growspace = MagicMock(return_value=None)
+    mock_coordinator._data_repository.get_growspace = MagicMock(return_value=None)
     assert facade.growspaces.get_tank_tracker("gs1", "sensor.tank") is None
 
 
 def test_get_tank_tracker_no_tank(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     gs = Growspace(id="gs1", name="GS1")
-    mock_coordinator.data_repository.get_growspace = MagicMock(return_value=gs)
+    mock_coordinator._data_repository.get_growspace = MagicMock(return_value=gs)
     assert facade.growspaces.get_tank_tracker("gs1", "sensor.nonexistent") is None
 
 
@@ -1236,7 +1315,7 @@ def test_get_tank_tracker_no_volume(mock_coordinator) -> None:
     tank = IrrigationTank(sensor_entity="sensor.tank", volume_liters=None)
     gs = Growspace(id="gs1", name="GS1")
     gs.environment_config.irrigation_tanks.append(tank)
-    mock_coordinator.data_repository.get_growspace = MagicMock(return_value=gs)
+    mock_coordinator._data_repository.get_growspace = MagicMock(return_value=gs)
     assert facade.growspaces.get_tank_tracker("gs1", "sensor.tank") is None
 
 
@@ -1246,7 +1325,7 @@ def test_get_tank_tracker_creates_tracker(mock_coordinator) -> None:
     tank = IrrigationTank(sensor_entity="sensor.tank", volume_liters=100.0)
     gs = Growspace(id="gs1", name="GS1")
     gs.environment_config.irrigation_tanks.append(tank)
-    mock_coordinator.data_repository.get_growspace = MagicMock(return_value=gs)
+    mock_coordinator._data_repository.get_growspace = MagicMock(return_value=gs)
 
     tracker1 = facade.growspaces.get_tank_tracker("gs1", "sensor.tank")
     tracker2 = facade.growspaces.get_tank_tracker("gs1", "sensor.tank")
@@ -1330,7 +1409,7 @@ def test_guess_overview_entity_id_fallback_slug(mock_coordinator) -> None:
     mock_er.async_get_entity_id = MagicMock(return_value=None)
     gs = MagicMock()
     gs.name = "My Tent"
-    mock_coordinator.data_repository.get_growspace = MagicMock(return_value=gs)
+    mock_coordinator._data_repository.get_growspace = MagicMock(return_value=gs)
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er):
         result = facade.growspaces.guess_overview_entity_id("custom_gs")
     assert result.startswith("sensor.")
@@ -1432,7 +1511,7 @@ def test_handle_position_update_force_skips_occupancy(mock_coordinator) -> None:
 def test_validate_plants_after_growspace_resize(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     mock_coordinator.config_entry = MagicMock()
-    mock_coordinator.growspace_manager._validate_plants_after_growspace_resize = (
+    mock_coordinator._growspace_manager._validate_plants_after_growspace_resize = (
         MagicMock(return_value=MagicMock())
     )
     facade.growspaces.validate_plants_after_growspace_resize("gs1", 5, 5)
@@ -1466,7 +1545,9 @@ async def test_save_ipm_preset_items_in_kwargs(mock_coordinator) -> None:
     preset = MagicMock()
     mock_coordinator.ipm_service.async_save_ipm_preset = AsyncMock(return_value=preset)
     # Pass items via kwargs, not as the named parameter
-    result = await facade.config.save_ipm_preset("Test", preset_type="Foliar", items=[{"name": "Neem"}])
+    result = await facade.config.save_ipm_preset(
+        "Test", preset_type="Foliar", items=[{"name": "Neem"}]
+    )
     assert result is preset
 
 
@@ -1475,7 +1556,7 @@ async def test_save_ec_ramp_curve_points_name_in_kwargs(mock_coordinator) -> Non
     """save_ec_ramp_curve should pick points/name from **kwargs if provided there."""
     facade = ServiceFacade(mock_coordinator)
     curve = MagicMock()
-    mock_coordinator.nutrient_manager.async_save_ec_ramp_curve = AsyncMock(
+    mock_coordinator._nutrient_manager.async_save_ec_ramp_curve = AsyncMock(
         return_value=curve
     )
     mock_coordinator.growspaces = {"gs1": MagicMock()}
@@ -1491,7 +1572,7 @@ async def test_ec_ramp_curves_property(mock_coordinator: MagicMock) -> None:
     """Test the ec_ramp_curves property of ConfigFacade."""
     facade = ServiceFacade(mock_coordinator)
     expected_curves = {"curve_1": {"name": "Veg Ramp"}}
-    mock_coordinator.nutrient_manager.ec_ramp_curves = expected_curves
+    mock_coordinator._nutrient_manager.ec_ramp_curves = expected_curves
     assert facade.config.ec_ramp_curves == expected_curves
 
 
@@ -1501,7 +1582,9 @@ async def test_remove_ipm_preset(mock_coordinator: MagicMock) -> None:
     facade = ServiceFacade(mock_coordinator)
     mock_coordinator.ipm_service.async_remove_ipm_preset = AsyncMock()
     await facade.config.remove_ipm_preset("preset_123")
-    mock_coordinator.ipm_service.async_remove_ipm_preset.assert_awaited_once_with("preset_123")
+    mock_coordinator.ipm_service.async_remove_ipm_preset.assert_awaited_once_with(
+        "preset_123"
+    )
 
 
 @pytest.mark.asyncio
@@ -1541,8 +1624,8 @@ async def test_add_timeline_note_image_save_error(mock_coordinator) -> None:
 
     image_manager = MagicMock()
     image_manager.save_timeline_image = AsyncMock(side_effect=OSError("disk error"))
-    mock_coordinator.strain_library = MagicMock()
-    mock_coordinator.strain_library.image_manager = image_manager
+    mock_coordinator._strain_library = MagicMock()
+    mock_coordinator._strain_library.image_manager = image_manager
 
     # Should not raise even though image save fails
     await facade.add_timeline_note("p1", "Test", images_base64=["base64data"])
@@ -1556,7 +1639,7 @@ async def test_score_plant_pest_resistance(mock_coordinator) -> None:
     plant = MagicMock()
     plant.phenotype_score = PhenotypeScore()
     mock_coordinator.plants = {"p1": plant}
-    mock_coordinator.plant_manager.update_plant = AsyncMock()
+    mock_coordinator._plant_manager.update_plant = AsyncMock()
 
     await facade.plants.score_plant("p1", pest_resistance=9)
     assert plant.phenotype_score.mold_resistance == 9
@@ -1569,7 +1652,7 @@ async def test_update_harvest_metrics_trim_and_cbd(mock_coordinator) -> None:
     plant = MagicMock()
     plant.harvest_metrics = HarvestMetrics()
     mock_coordinator.plants = {"p1": plant}
-    mock_coordinator.plant_manager.update_plant = AsyncMock()
+    mock_coordinator._plant_manager.update_plant = AsyncMock()
 
     await facade.plants.update_harvest_metrics(
         "p1", trim_weight=50.0, cbd_percentage=5.5
@@ -1649,7 +1732,7 @@ def test_notifications_facade_manager_property(mock_coordinator: MagicMock) -> N
     """Test that the manager property delegates to coordinator's notification_manager."""
     facade = ServiceFacade(mock_coordinator)
     mock_manager = MagicMock()
-    mock_coordinator.notification_manager = mock_manager
+    mock_coordinator._notification_manager = mock_manager
     assert facade.notifications.manager is mock_manager
 
 
@@ -1668,7 +1751,9 @@ async def test_async_add_timed_notification(mock_coordinator: MagicMock) -> None
     mock_coordinator.config_entry = MagicMock()
     mock_coordinator.config_entry.options = {}
 
-    await facade.notifications.async_add_timed_notification("Water time!", "day", 7, ["gs1"])
+    await facade.notifications.async_add_timed_notification(
+        "Water time!", "day", 7, ["gs1"]
+    )
     mock_coordinator.notification_settings.create_timed_notification.assert_called_once_with(
         "Water time!", "day", 7, ["gs1"]
     )
@@ -1688,7 +1773,9 @@ async def test_async_update_timed_notification(mock_coordinator: MagicMock) -> N
     mock_coordinator.config_entry = MagicMock()
     mock_coordinator.config_entry.options = {}
 
-    await facade.notifications.async_update_timed_notification("n1", "Updated", "day", 7, ["gs1"])
+    await facade.notifications.async_update_timed_notification(
+        "n1", "Updated", "day", 7, ["gs1"]
+    )
     mock_coordinator.notification_settings.update_timed_notification_in_list.assert_called_once_with(
         [{"id": "n1"}], "n1", "Updated", "day", 7, ["gs1"]
     )
@@ -1718,21 +1805,21 @@ def test_config_get_applicable_presets(mock_coordinator: MagicMock) -> None:
     """Test that facade.config.get_applicable_presets delegates to coordinator."""
     facade = ServiceFacade(mock_coordinator)
     presets = [MagicMock()]
-    mock_coordinator.nutrient_manager.get_applicable_presets = MagicMock(
+    mock_coordinator._nutrient_manager.get_applicable_presets = MagicMock(
         return_value=presets
     )
     assert facade.config.get_applicable_presets("p1") is presets
-    mock_coordinator.nutrient_manager.get_applicable_presets.assert_called_once_with("p1")
+    mock_coordinator._nutrient_manager.get_applicable_presets.assert_called_once_with(
+        "p1"
+    )
 
 
 def test_config_get_nutrient_serialization_data(mock_coordinator: MagicMock) -> None:
     """Test that facade.config.get_nutrient_serialization_data delegates to coordinator."""
     facade = ServiceFacade(mock_coordinator)
     serial_data = {"presets": []}
-    mock_coordinator.nutrient_manager.get_serialization_data = MagicMock(
+    mock_coordinator._nutrient_manager.get_serialization_data = MagicMock(
         return_value=serial_data
     )
     assert facade.config.get_nutrient_serialization_data() == serial_data
-    mock_coordinator.nutrient_manager.get_serialization_data.assert_called_once()
-
-
+    mock_coordinator._nutrient_manager.get_serialization_data.assert_called_once()

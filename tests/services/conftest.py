@@ -28,12 +28,12 @@ def mock_coordinator(mock_plant, mock_growspace):
 
     # Initialize managers
     coordinator.storage_manager = MagicMock()
-    coordinator.data_repository = MagicMock()
-    coordinator.plant_manager = MagicMock()
-    coordinator.growspace_manager = MagicMock()
+    coordinator._data_repository = MagicMock()
+    coordinator._plant_manager = MagicMock()
+    coordinator._growspace_manager = MagicMock()
     coordinator.special_growspace_manager = MagicMock()
     coordinator.clone_manager = MagicMock()
-    coordinator.nutrient_manager = MagicMock()
+    coordinator._nutrient_manager = MagicMock()
     coordinator.training_manager = MagicMock()
     coordinator.harvest_manager = MagicMock()
     
@@ -41,45 +41,45 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator.watering_service = MagicMock()
     coordinator.ipm_service = MagicMock()
     coordinator.training_service = MagicMock()
-    coordinator.notification_manager = MagicMock()
-    coordinator.strain_library = MagicMock()
-    coordinator.subsystem_manager = MagicMock()
+    coordinator._notification_manager = MagicMock()
+    coordinator._strain_library = MagicMock()
+    coordinator._subsystem_manager = MagicMock()
     _fan_coord_mock = MagicMock()
     _fan_coord_mock.async_restart = AsyncMock()
-    coordinator.subsystem_manager.circulation_fan_coordinators.get = MagicMock(
+    coordinator._subsystem_manager.circulation_fan_coordinators.get = MagicMock(
         return_value=_fan_coord_mock
     )
 
     # Initialize plant_manager methods as AsyncMock
-    coordinator.plant_manager.add_plant = AsyncMock()
-    coordinator.plant_manager.update_plant = AsyncMock()
-    coordinator.plant_manager.remove_plant = AsyncMock()
-    coordinator.plant_manager.take_clones = AsyncMock()
-    coordinator.plant_manager.promote_clone = AsyncMock()
-    coordinator.plant_manager.switch_plants = AsyncMock()
-    coordinator.plant_manager.move_plant = AsyncMock()
-    coordinator.plant_manager.transition_plant = AsyncMock()
-    coordinator.plant_manager.archive_plant = AsyncMock()
-    coordinator.plant_manager.kill_plant = AsyncMock()
-    coordinator.plant_manager.transition_plant_stage = AsyncMock()
-    coordinator.plant_manager.log_growth_stage = AsyncMock()
-    coordinator.plant_manager.log_observation = AsyncMock()
-    coordinator.plant_manager.add_mother_plant = AsyncMock()
+    coordinator._plant_manager.add_plant = AsyncMock()
+    coordinator._plant_manager.update_plant = AsyncMock()
+    coordinator._plant_manager.remove_plant = AsyncMock()
+    coordinator._plant_manager.take_clones = AsyncMock()
+    coordinator._plant_manager.promote_clone = AsyncMock()
+    coordinator._plant_manager.switch_plants = AsyncMock()
+    coordinator._plant_manager.move_plant = AsyncMock()
+    coordinator._plant_manager.transition_plant = AsyncMock()
+    coordinator._plant_manager.archive_plant = AsyncMock()
+    coordinator._plant_manager.kill_plant = AsyncMock()
+    coordinator._plant_manager.transition_plant_stage = AsyncMock()
+    coordinator._plant_manager.log_growth_stage = AsyncMock()
+    coordinator._plant_manager.log_observation = AsyncMock()
+    coordinator._plant_manager.add_mother_plant = AsyncMock()
 
     # Initialize growspace_manager methods as AsyncMock
-    coordinator.growspace_manager.add_growspace = AsyncMock()
-    coordinator.growspace_manager.update_growspace = AsyncMock()
-    coordinator.growspace_manager.remove_growspace = AsyncMock()
-    coordinator.growspace_manager.add_subarea = AsyncMock()
-    coordinator.growspace_manager.update_subarea = AsyncMock()
-    coordinator.growspace_manager.remove_subarea = AsyncMock()
-    coordinator.growspace_manager.update_environment_config = AsyncMock()
+    coordinator._growspace_manager.add_growspace = AsyncMock()
+    coordinator._growspace_manager.update_growspace = AsyncMock()
+    coordinator._growspace_manager.remove_growspace = AsyncMock()
+    coordinator._growspace_manager.add_subarea = AsyncMock()
+    coordinator._growspace_manager.update_subarea = AsyncMock()
+    coordinator._growspace_manager.remove_subarea = AsyncMock()
+    coordinator._growspace_manager.update_environment_config = AsyncMock()
 
     # Initialize nutrient_manager methods as AsyncMock
-    coordinator.nutrient_manager.async_save_nutrient_preset = AsyncMock()
-    coordinator.nutrient_manager.async_remove_nutrient_preset = AsyncMock()
-    coordinator.nutrient_manager.async_save_ec_ramp_curve = AsyncMock()
-    coordinator.nutrient_manager.async_remove_ec_ramp_curve = AsyncMock()
+    coordinator._nutrient_manager.async_save_nutrient_preset = AsyncMock()
+    coordinator._nutrient_manager.async_remove_nutrient_preset = AsyncMock()
+    coordinator._nutrient_manager.async_save_ec_ramp_curve = AsyncMock()
+    coordinator._nutrient_manager.async_remove_ec_ramp_curve = AsyncMock()
 
     # Other async methods
     coordinator.async_commit = AsyncMock()
@@ -93,9 +93,9 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator.ipm_service.async_remove_ipm_preset = AsyncMock()
     coordinator.ipm_service.async_apply_ipm = AsyncMock()
     coordinator.training_service.async_log_training_event = AsyncMock()
-    coordinator.notification_manager.async_send_notification = AsyncMock()
-    coordinator.strain_library.clear = AsyncMock()
-    coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
+    coordinator._notification_manager.async_send_notification = AsyncMock()
+    coordinator._strain_library.clear = AsyncMock()
+    coordinator._subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
 
     # Link data_repository methods to local mocks so ServiceFacade sees them
     mock_get_growspace_plants = MagicMock(
@@ -112,10 +112,10 @@ def mock_coordinator(mock_plant, mock_growspace):
     )
     mock_get_subareas = MagicMock(name="get_subareas", return_value=[])
 
-    coordinator.data_repository.get_growspace_plants = mock_get_growspace_plants
-    coordinator.data_repository.get_plant = mock_get_plant
-    coordinator.data_repository.get_growspace = mock_get_growspace
-    coordinator.growspace_manager.get_subareas = mock_get_subareas
+    coordinator._data_repository.get_growspace_plants = mock_get_growspace_plants
+    coordinator._data_repository.get_plant = mock_get_plant
+    coordinator._data_repository.get_growspace = mock_get_growspace
+    coordinator._growspace_manager.get_subareas = mock_get_subareas
 
 
     # Initialize ServiceFacade, then wrap both the container and each sub-facade in
@@ -140,31 +140,31 @@ def mock_coordinator(mock_plant, mock_growspace):
         setattr(coordinator.services, name, AsyncMock(side_effect=attr))
 
     # Legacy Aliases and helper properties
-    type(coordinator).growspace_service = property(lambda self: self.growspace_manager)
-    type(coordinator).plant_service = property(lambda self: self.plant_manager)
+    type(coordinator).growspace_service = property(lambda self: self._growspace_manager)
+    type(coordinator).plant_service = property(lambda self: self._plant_manager)
 
     
-    coordinator.growspace_manager.async_add_growspace = coordinator.growspace_manager.add_growspace
-    coordinator.growspace_manager.async_update_growspace = coordinator.growspace_manager.update_growspace
-    coordinator.growspace_manager.async_remove_growspace = coordinator.growspace_manager.remove_growspace
-    coordinator.growspace_manager.async_update_environment_config = coordinator.growspace_manager.update_environment_config
+    coordinator._growspace_manager.async_add_growspace = coordinator._growspace_manager.add_growspace
+    coordinator._growspace_manager.async_update_growspace = coordinator._growspace_manager.update_growspace
+    coordinator._growspace_manager.async_remove_growspace = coordinator._growspace_manager.remove_growspace
+    coordinator._growspace_manager.async_update_environment_config = coordinator._growspace_manager.update_environment_config
     
-    coordinator.nutrient_manager.async_commit_preset = coordinator.nutrient_manager.async_save_nutrient_preset
-    coordinator.nutrient_manager.async_remove_preset = coordinator.nutrient_manager.async_remove_nutrient_preset
+    coordinator._nutrient_manager.async_commit_preset = coordinator._nutrient_manager.async_save_nutrient_preset
+    coordinator._nutrient_manager.async_remove_preset = coordinator._nutrient_manager.async_remove_nutrient_preset
     
     coordinator.training_manager.async_record_training = coordinator.training_service.async_log_training_event
 
-    coordinator.growspace_manager.ensure_special_growspace = MagicMock(return_value="special_gs")
-    coordinator.growspace_manager.get_sorted_growspace_options = MagicMock(return_value=[])
+    coordinator._growspace_manager.ensure_special_growspace = MagicMock(return_value="special_gs")
+    coordinator._growspace_manager.get_sorted_growspace_options = MagicMock(return_value=[])
 
     # Utility methods
     coordinator.calculate_days = MagicMock(side_effect=DateTimeHelper.calculate_days)
     coordinator.to_date = MagicMock(side_effect=DateTimeHelper.to_date)
 
     # Final defaults for common mocks on coordinator/data_repository
-    coordinator.data_repository.get_growspace_plants.return_value = []
-    coordinator.data_repository.get_plant.return_value = None
-    coordinator.data_repository.get_growspace.return_value = None
+    coordinator._data_repository.get_growspace_plants.return_value = []
+    coordinator._data_repository.get_plant.return_value = None
+    coordinator._data_repository.get_growspace.return_value = None
 
 
 

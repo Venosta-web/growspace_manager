@@ -15,7 +15,7 @@ def _make_coordinator() -> MagicMock:
     coordinator.alert_monitor.get_alerts = MagicMock(return_value=[])
     coordinator.alert_monitor.resolve_alert = AsyncMock(return_value=True)
     coordinator.alert_monitor.register_sensor = MagicMock()
-    coordinator.notification_manager = MagicMock()
+    coordinator._notification_manager = MagicMock()
     coordinator.notification_settings = MagicMock()
     coordinator.notification_state = MagicMock()
     coordinator.config_entry = MagicMock()

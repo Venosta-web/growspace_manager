@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -79,12 +79,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def growspaces(self) -> dict[str, Growspace]:
         """Return a snapshot dict of all growspaces keyed by ID."""
-        return {gs.id: gs for gs in self.data_repository.get_all_growspaces()}
+        return {gs.id: gs for gs in self._data_repository.get_all_growspaces()}
 
     @property
     def plants(self) -> dict[str, Plant]:
         """Return a snapshot dict of all plants keyed by plant_id."""
-        return {p.plant_id: p for p in self.data_repository.get_all_plants()}
+        return {p.plant_id: p for p in self._data_repository.get_all_plants()}
 
     @classmethod
     def build(
@@ -145,16 +145,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return ServiceCoordinatorLocator.get_any(hass)
 
 
-    @property
-    def growspace_manager(self) -> GrowspaceManager:
-        """Return the growspace manager."""
-        return self._growspace_manager
-
-    @property
-    def plant_manager(self) -> PlantManager:
-        """Return the plant manager."""
-        return self._plant_manager
-
     def __init__(
         self,
         hass: HomeAssistant,
@@ -188,12 +178,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self.config_entry = entry
         self.lock = lock
-        self.data_repository = data_repository
+        self._data_repository = data_repository
         self.notification_state = notification_state
         self.cache = cache
         self._date_time_helper = date_time_helper
         self._event_bus = event_bus
-        self.strain_library = strain_library
+        self._strain_library = strain_library
         self.seedfinder_scraper = seedfinder_scraper
         self._plant_view_builder = plant_view_builder
         self.import_export_manager = import_export_manager
@@ -228,8 +218,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Wire coordinator-self-dependent services. Called by CoordinatorBuilder after __init__."""
         self.view_model_builder = view_model_builder
-        self.nutrient_manager = nutrient_manager
-        self.genetics_manager = genetics_manager
+        self._nutrient_manager = nutrient_manager
+        self._genetics_manager = genetics_manager
         self.storage_manager = storage_manager
         self._growspace_manager = growspace_manager
         self._plant_manager = plant_manager
@@ -238,9 +228,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.ipm_service = ipm_service
         self.environment_analyzer = environment_analyzer
         self.environment_reporter = environment_reporter
-        self.notification_manager = notification_manager
+        self._notification_manager = notification_manager
         self.notification_settings = notification_settings
-        self.subsystem_manager = subsystem_manager
+        self._subsystem_manager = subsystem_manager
         self.services = services
         self.vision_scheduler = vision_scheduler
         self.briefing_scheduler = briefing_scheduler
@@ -259,13 +249,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Args:
             inventory: The loaded nutrient inventory.
         """
-        self.nutrient_manager.load_data(
-            self.nutrient_manager.nutrient_presets,
-            self.nutrient_manager.ipm_presets,
+        self._nutrient_manager.load_data(
+            self._nutrient_manager.nutrient_presets,
+            self._nutrient_manager.ipm_presets,
             inventory,
         )
         # Sync IPM presets with IPM service
-        self.ipm_service.ipm_presets = self.nutrient_manager.ipm_presets
+        self.ipm_service.ipm_presets = self._nutrient_manager.ipm_presets
 
     # =============================================================================
     # CACHING AND OPTIMIZATION HELPER
@@ -290,7 +280,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         """Initialize sub-coordinators for irrigation and dehumidifier."""
         await self.async_register_devices()  # Register devices first
-        await self.subsystem_manager.async_initialize_sub_coordinators(self.growspaces)
+        await self._subsystem_manager.async_initialize_sub_coordinators(self.growspaces)
 
     async def async_register_devices(self) -> None:
         """Register growspaces as devices."""
@@ -348,8 +338,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.cache.invalidate(None)
 
         self.data = self.view_model_builder.build_data_property()
-        await self.notification_manager.async_check_timed_notifications()
-        await self.notification_manager.async_check_pending_alerts()
+        await self._notification_manager.async_check_timed_notifications()
+        await self._notification_manager.async_check_pending_alerts()
         await self.environment_analyzer.async_update_air_exchange_recommendations()
 
         return self.data
@@ -405,8 +395,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
         # Update the repository with deserialized objects
-        self.data_repository.load_growspaces(growspaces)
-        self.data_repository.load_plants(plants)
+        self._data_repository.load_growspaces(growspaces)
+        self._data_repository.load_plants(plants)
         if notifications_sent := data.get("notifications_sent"):
             self.notification_state.sent = notifications_sent
         if notifications_enabled := data.get("notifications_enabled"):
@@ -432,10 +422,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._event_bus.fire_growspace_updated()
 
         for gs_id in self.growspaces:
-            if gs_id in self.subsystem_manager.irrigation_coordinators:
+            if gs_id in self._subsystem_manager.irrigation_coordinators:
                 self.config_entry.async_create_background_task(
                     self.hass,
-                    self.subsystem_manager.irrigation_coordinators[gs_id].async_request_refresh(),
+                    self._subsystem_manager.irrigation_coordinators[gs_id].async_request_refresh(),
                     f"irrigation_refresh_{gs_id}",
                 )
 
@@ -447,6 +437,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         await self.async_commit()
 
+    @callback
+    def async_cancel_subsystems(self) -> None:
+        """Cancel all sub-coordinator listeners.
+
+        Teardown helper so external unload code never reaches the private
+        subsystem manager directly. See CONTEXT.md "Seam Enforcement".
+        """
+        self._subsystem_manager.async_cancel_all()
+
     async def async_shutdown(self) -> None:
         """Perform graceful shutdown and ensure all data is persisted.
 
@@ -457,14 +456,14 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         This ensures clean shutdown and data persistence.
         """
         # Cancel all sub-coordinator listeners
-        self.subsystem_manager.async_cancel_all()
+        self.async_cancel_subsystems()
 
         # Unsubscribe all tank water trackers
         await self.services.growspaces.async_unsubscribe_all_trackers()
 
         if hasattr(self, "environment_reporter"):
             self.environment_reporter.unload()
-        self.notification_manager.shutdown()
+        self._notification_manager.shutdown()
         self.tank_monitor.async_stop()
         self.vision_scheduler.async_stop()
         self.briefing_scheduler.async_stop()
@@ -488,13 +487,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.
-        self.ipm_service.ipm_presets = self.nutrient_manager.ipm_presets
+        self.ipm_service.ipm_presets = self._nutrient_manager.ipm_presets
 
         # Ensure calculated sensors are configured
-        self.growspace_manager.ensure_calculated_sensors()
+        self._growspace_manager.ensure_calculated_sensors()
 
         # Ensure default special growspaces exist
-        await self.growspace_manager.ensure_default_growspaces()
+        await self._growspace_manager.ensure_default_growspaces()
         await self.async_commit()
 
         # Schedule vision checkups for all loaded growspaces

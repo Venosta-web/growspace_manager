@@ -27,6 +27,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .crop_steering import CropSteeringSensor
+from .drying import DryingMoistureSensor, DryingWeightSensor
 from .environment import AirExchangeSensor, DLISensor, ECTargetSensor
 from .overview import GrowspaceListSensor, GrowspaceOverviewSensor
 from .plant import PlantEntity
@@ -130,6 +131,7 @@ async def async_setup_entry(
 
     calculated_vpd_growspace_ids: set[str] = set()
     calculated_subarea_vpd_ids: set[str] = set()
+    initialized_drying_sensor_ids: set[str] = set()
 
     await _create_initial_entities(
         hass,
@@ -140,6 +142,7 @@ async def async_setup_entry(
         plant_entities,
         calculated_vpd_growspace_ids,
         calculated_subarea_vpd_ids,
+        initialized_drying_sensor_ids,
     )
 
     if initial_entities:
@@ -200,7 +203,7 @@ async def async_setup_entry(
                 calculated_subarea_vpd_ids,
             )
             await _update_plant_entities(
-                hass, coordinator, plant_entities, async_add_entities
+                hass, coordinator, plant_entities, async_add_entities, initialized_drying_sensor_ids
             )
 
     def _listener_callback() -> None:
@@ -221,6 +224,7 @@ async def _create_initial_entities(
     plant_entities: dict[str, PlantEntity],
     calculated_vpd_growspace_ids: set[str],
     calculated_subarea_vpd_ids: set[str],
+    initialized_drying_sensor_ids: set[str],
 ) -> None:
     """Create initial entities for the platform."""
     initial_entities.append(StrainLibrarySensor(coordinator))
@@ -341,6 +345,10 @@ async def _create_initial_entities(
             pe = PlantEntity(coordinator, plant)
             plant_entities[plant.plant_id] = pe
             initial_entities.append(pe)
+            if plant.dry_start is not None:
+                initial_entities.append(DryingWeightSensor(coordinator, plant))
+                initial_entities.append(DryingMoistureSensor(coordinator, plant))
+                initialized_drying_sensor_ids.add(plant.plant_id)
 
     initial_entities.append(GrowspaceListSensor(coordinator))
 
@@ -401,6 +409,7 @@ async def _update_plant_entities(
     coordinator: GrowspaceCoordinator,
     plant_entities: dict[str, PlantEntity],
     async_add_entities: AddEntitiesCallback,
+    initialized_drying_sensor_ids: set[str],
 ) -> None:
     """Update plant entities based on coordinator data."""
     new_entities = []
@@ -409,6 +418,10 @@ async def _update_plant_entities(
             pe = PlantEntity(coordinator, plant)
             plant_entities[plant_id] = pe
             new_entities.append(pe)
+        if plant.dry_start is not None and plant_id not in initialized_drying_sensor_ids:
+            new_entities.append(DryingWeightSensor(coordinator, plant))
+            new_entities.append(DryingMoistureSensor(coordinator, plant))
+            initialized_drying_sensor_ids.add(plant_id)
 
     if new_entities:
         async_add_entities(new_entities)

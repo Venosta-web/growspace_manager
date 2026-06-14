@@ -43,8 +43,8 @@ async def handle_take_clone(
     """Handle taking clones from a plant."""
     mother_plant_id = call.data[ATTR_MOTHER_PLANT_ID]
     transition_date_raw = call.data.get(ATTR_TRANSITION_DATE)
-    transition_datetime = parse_date_field(transition_date_raw) or dt_util.utcnow()
-    transition_date = transition_datetime.date()
+    # Keep the full datetime (no .date() truncation) — ADR-0013.
+    transition_date = parse_date_field(transition_date_raw) or dt_util.utcnow()
 
     target_growspace_id = call.data.get(ATTR_TARGET_GROWSPACE_ID)
 
@@ -100,8 +100,8 @@ async def handle_move_clone(
     target_growspace_id = call.data.get(ATTR_TARGET_GROWSPACE_ID)
 
     transition_date_str = call.data.get(ATTR_TRANSITION_DATE)
-    transition_datetime = parse_date_field(transition_date_str) or dt_util.utcnow()
-    transition_date = transition_datetime.date()
+    # Keep the full datetime (no .date() truncation) — ADR-0013.
+    transition_date = parse_date_field(transition_date_str) or dt_util.utcnow()
 
     if not plant_id or not target_growspace_id:
         _LOGGER.error(

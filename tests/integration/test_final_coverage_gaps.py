@@ -662,12 +662,12 @@ def test_coordinator_get_plant_delegates_to_repository() -> None:
 
     coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
     plant = MagicMock()
-    coordinator.data_repository = MagicMock()
-    coordinator.data_repository.get_plant.return_value = plant
+    coordinator._data_repository = MagicMock()
+    coordinator._data_repository.get_plant.return_value = plant
 
     result = coordinator.services.plants.get_plant("p1")
     assert result is plant
-    coordinator.data_repository.get_plant.assert_called_once_with("p1")
+    coordinator._data_repository.get_plant.assert_called_once_with("p1")
 
 
 def test_coordinator_get_growspace_delegates_to_repository() -> None:
@@ -681,9 +681,9 @@ def test_coordinator_get_growspace_delegates_to_repository() -> None:
 
     coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
     growspace = MagicMock()
-    coordinator.data_repository = MagicMock()
-    coordinator.data_repository.get_growspace.return_value = growspace
+    coordinator._data_repository = MagicMock()
+    coordinator._data_repository.get_growspace.return_value = growspace
 
     result = coordinator.services.growspaces.get_growspace("gs1")
     assert result is growspace
-    coordinator.data_repository.get_growspace.assert_called_once_with("gs1")
+    coordinator._data_repository.get_growspace.assert_called_once_with("gs1")

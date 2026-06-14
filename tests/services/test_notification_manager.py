@@ -3,7 +3,6 @@
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import (
@@ -15,22 +14,51 @@ from custom_components.growspace_manager.const import (
     NOTIFICATION_ICON,
     NotificationTier,
 )
-from custom_components.growspace_manager.models import (
-    EnvironmentConfig,
-    Growspace,
-    IrrigationTank,
-)
+from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.notification_manager import (
     NotificationManager,
     PendingAlert,
+)
+from custom_components.growspace_manager.notifications.evaluation_snapshot import (
+    EvaluationSnapshot,
 )
 from custom_components.growspace_manager.services.facade import ServiceFacade
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from .common import create_plant
+
 GROWSPACE_ID = "test_growspace"
 GROWSPACE_NAME = "Test Growspace"
 NOTIFICATION_TARGET = "notify.mobile_app_test"
+
+
+def make_snapshot(
+    sensor_type: str = "stress",
+    *,
+    is_on: bool = True,
+    probability: float = 0.75,
+    sensor_name: str = "Stress Sensor",
+    reasons: list[tuple[float, str]] | None = None,
+    sensor_states: dict | None = None,
+    notification_title: str | None = None,
+    notification_message: str | None = None,
+    growspace_id: str = GROWSPACE_ID,
+) -> EvaluationSnapshot:
+    """Build an EvaluationSnapshot for notification-manager tests."""
+    return EvaluationSnapshot(
+        growspace_id=growspace_id,
+        sensor_type=sensor_type,
+        sensor_name=sensor_name,
+        probability=probability,
+        threshold=0.7,
+        is_on=is_on,
+        reasons=reasons if reasons is not None else [],
+        sensor_states=sensor_states if sensor_states is not None else {},
+        lights_on=None,
+        notification_title=notification_title,
+        notification_message=notification_message,
+    )
 
 
 @pytest.fixture
@@ -331,15 +359,10 @@ async def test_async_schedule_notification_cancel(manager: NotificationManager) 
 async def test_async_send_batched_notification_sensor_name_fallback(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
-    """Test sensor name fallback to entity_id when name attribute is missing."""
-    sensor = MagicMock()
-    del sensor.name
-    sensor.entity_id = "sensor.no_name"
-    sensor.is_on = True
-    sensor.sensor_states = {}
-    sensor.reasons = []
-
-    manager.attach_sensor(GROWSPACE_ID, sensor)
+    """Test that the snapshot's sensor name appears in the single-sensor title."""
+    manager._latest_snapshots[(GROWSPACE_ID, "stress")] = make_snapshot(
+        sensor_name="sensor.no_name"
+    )
 
     with patch.object(
         manager, "async_send_notification", new_callable=AsyncMock
@@ -355,26 +378,18 @@ async def test_async_send_batched_notification_multiple_sensors(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
     """Test batched notification with multiple active sensors."""
-    s1 = MagicMock(entity_id="sensor.s1")
-    s1.name = "Sensor 1"
-    s1.is_on = True
-    s1.sensor_states = {}
-    s1.reasons = []
-
-    s2 = MagicMock(entity_id="sensor.s2")
-    s2.name = "Sensor 2"
-    s2.is_on = True
-    s2.sensor_states = {}
-    s2.reasons = []
-
-    manager.attach_sensor(GROWSPACE_ID, s1)
-    manager.attach_sensor(GROWSPACE_ID, s2)
+    manager._latest_snapshots[(GROWSPACE_ID, "stress")] = make_snapshot(
+        "stress", sensor_name="Sensor 1"
+    )
+    manager._latest_snapshots[(GROWSPACE_ID, "mold")] = make_snapshot(
+        "mold", sensor_name="Sensor 2"
+    )
 
     with patch.object(
         manager, "async_send_notification", new_callable=AsyncMock
     ) as mock_send:
         await manager._async_send_batched_notification(GROWSPACE_ID)
-        # Line 139-140 path
+        # Multiple-sensor path
         args = mock_send.call_args[0]
         assert "Multiple Critical" in args[1]
         assert "Sensor 1" in args[2]
@@ -384,24 +399,17 @@ async def test_async_send_batched_notification_multiple_sensors(
 async def test_async_send_batched_notification_specialized_title(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
-    """Test batched notification with specialized title from sensor."""
-    sensor = MagicMock()
-    sensor.name = "S1"
-    sensor.is_on = True
-    sensor.sensor_states = {}
-    sensor.reasons = []
-    sensor.get_notification_title_message.return_value = (
-        "Special Title",
-        "Special Base",
+    """Test batched notification with the snapshot's precomputed title/message."""
+    manager._latest_snapshots[(GROWSPACE_ID, "stress")] = make_snapshot(
+        notification_title="Special Title",
+        notification_message="Special Base",
     )
-
-    manager.attach_sensor(GROWSPACE_ID, sensor)
 
     with patch.object(
         manager, "async_send_notification", new_callable=AsyncMock
     ) as mock_send:
         await manager._async_send_batched_notification(GROWSPACE_ID)
-        # Line 134 path
+        # Single-sensor path uses the snapshot's precomputed title/message
         args = mock_send.call_args[0]
         assert args[1] == "Special Title"
         assert "Special Base" in args[2]
@@ -411,18 +419,12 @@ async def test_async_send_batched_notification_unique_reasons(
     manager: NotificationManager, mock_coordinator: MagicMock
 ) -> None:
     """Test aggregation of unique reasons in batched notification."""
-    s1 = MagicMock(entity_id="sensor.s1", is_on=True)
-    s1.name = "S1"
-    s1.sensor_states = {}
-    s1.reasons = [(0.9, "Reason 1"), (0.8, "Reason 2")]
-
-    s2 = MagicMock(entity_id="sensor.s2", is_on=True)
-    s2.name = "S2"
-    s2.sensor_states = {}
-    s2.reasons = [(0.7, "Reason 1")]  # Duplicate reason
-
-    manager.attach_sensor(GROWSPACE_ID, s1)
-    manager.attach_sensor(GROWSPACE_ID, s2)
+    manager._latest_snapshots[(GROWSPACE_ID, "stress")] = make_snapshot(
+        "stress", sensor_name="S1", reasons=[(0.9, "Reason 1"), (0.8, "Reason 2")]
+    )
+    manager._latest_snapshots[(GROWSPACE_ID, "mold")] = make_snapshot(
+        "mold", sensor_name="S2", reasons=[(0.7, "Reason 1")]  # Duplicate reason
+    )
 
     with patch.object(
         manager, "async_send_notification", new_callable=AsyncMock
@@ -568,15 +570,8 @@ async def test_tier_cooldown_warning(manager: NotificationManager) -> None:
 
 
 async def test_update_pending_alert_creates_entry(manager: NotificationManager) -> None:
-    """Test that update_pending_alert creates a new entry when sensor turns on."""
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.75
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
-    manager.update_pending_alert(GROWSPACE_ID, sensor)
+    """Test that report_evaluation creates a new entry when sensor turns on."""
+    manager.report_evaluation(make_snapshot(probability=0.75))
 
     alert_key = f"{GROWSPACE_ID}_stress"
     assert alert_key in manager._pending_alerts
@@ -601,14 +596,7 @@ async def test_update_pending_alert_updates_existing(
         sensor_name="Stress Sensor",
     )
 
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.85
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
-    manager.update_pending_alert(GROWSPACE_ID, sensor)
+    manager.report_evaluation(make_snapshot(probability=0.85))
 
     alert = manager._pending_alerts[alert_key]
     assert alert.last_probability == 0.85
@@ -629,14 +617,7 @@ async def test_update_pending_alert_removes_on_off(
         sensor_name="Stress Sensor",
     )
 
-    sensor = MagicMock()
-    sensor.is_on = False
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.3
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
-    manager.update_pending_alert(GROWSPACE_ID, sensor)
+    manager.report_evaluation(make_snapshot(is_on=False, probability=0.3))
 
     assert alert_key not in manager._pending_alerts
 
@@ -645,17 +626,11 @@ async def test_update_pending_alert_critical_schedules_delayed_timer(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
     """Test that critical probability schedules a delayed timer, not an immediate notification."""
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.95
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-    sensor.reasons = [(0.95, "Extreme heat")]
-    sensor.sensor_states = {"temp": 40.0}
-    sensor.get_notification_title_message.return_value = None
-
-    manager.attach_sensor(GROWSPACE_ID, sensor)
+    snapshot = make_snapshot(
+        probability=0.95,
+        reasons=[(0.95, "Extreme heat")],
+        sensor_states={"temp": 40.0},
+    )
 
     callback_fn = None
 
@@ -672,7 +647,7 @@ async def test_update_pending_alert_critical_schedules_delayed_timer(
         ),
         patch.object(manager, "async_schedule_notification") as mock_schedule,
     ):
-        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        manager.report_evaluation(snapshot)
         # Not scheduled immediately
         mock_schedule.assert_not_called()
 
@@ -695,33 +670,21 @@ async def test_update_pending_alert_timer_cancelled_on_resolve(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
     """Test that resolving stress before the min-duration timer cancels it without notifying."""
-    sensor_on = MagicMock()
-    sensor_on.is_on = True
-    sensor_on.name = "Stress Sensor"
-    sensor_on._probability = 0.95
-    sensor_on.entity_description = MagicMock()
-    sensor_on.entity_description.sensor_type = "stress"
-
     cancel_mock = MagicMock()
 
     with patch(
         "custom_components.growspace_manager.notification_manager.async_call_later",
         return_value=cancel_mock,
     ):
-        manager.update_pending_alert(GROWSPACE_ID, sensor_on)
+        manager.report_evaluation(make_snapshot(probability=0.95))
 
     alert_key = f"{GROWSPACE_ID}_stress"
     assert alert_key in manager._pending_alerts
     assert manager._pending_alerts[alert_key].notification_timer is cancel_mock
 
     # Now sensor turns off before 180s
-    sensor_off = MagicMock()
-    sensor_off.is_on = False
-    sensor_off.entity_description = MagicMock()
-    sensor_off.entity_description.sensor_type = "stress"
-
     with patch.object(manager, "_schedule_recovery") as mock_recovery:
-        manager.update_pending_alert(GROWSPACE_ID, sensor_off)
+        manager.report_evaluation(make_snapshot(is_on=False))
         # Timer should be cancelled
         cancel_mock.assert_called_once()
         # No recovery because notified_as_critical was never set
@@ -933,15 +896,8 @@ async def test_recovery_notification_on_critical_resolve(
         notified_as_critical=True,
     )
 
-    sensor = MagicMock()
-    sensor.is_on = False
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.3
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
     with patch.object(manager, "_schedule_recovery") as mock_recovery:
-        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        manager.report_evaluation(make_snapshot(is_on=False, probability=0.3))
         mock_recovery.assert_called_once()
 
     assert alert_key not in manager._pending_alerts
@@ -963,15 +919,8 @@ async def test_no_recovery_for_warning_resolve(
         notified_as_critical=False,
     )
 
-    sensor = MagicMock()
-    sensor.is_on = False
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.3
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
     with patch.object(manager, "_schedule_recovery") as mock_recovery:
-        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        manager.report_evaluation(make_snapshot(is_on=False, probability=0.3))
         mock_recovery.assert_not_called()
 
 
@@ -1051,22 +1000,15 @@ async def test_timer_not_rescheduled_while_active(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
     """Test that a second critical update does not schedule a second timer."""
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.95
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
     cancel_mock = MagicMock()
 
     with patch(
         "custom_components.growspace_manager.notification_manager.async_call_later",
         return_value=cancel_mock,
     ) as mock_later:
-        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        manager.report_evaluation(make_snapshot(probability=0.95))
         # Second update at same probability
-        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        manager.report_evaluation(make_snapshot(probability=0.95))
         # Timer should only be scheduled once
         assert mock_later.call_count == 1
 
@@ -1075,45 +1017,105 @@ async def test_timer_cancelled_when_probability_drops_below_threshold(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
     """Test that the pending timer is cancelled if probability drops below critical."""
-    sensor_high = MagicMock()
-    sensor_high.is_on = True
-    sensor_high.name = "Stress Sensor"
-    sensor_high._probability = 0.95
-    sensor_high.entity_description = MagicMock()
-    sensor_high.entity_description.sensor_type = "stress"
-
     cancel_mock = MagicMock()
 
     with patch(
         "custom_components.growspace_manager.notification_manager.async_call_later",
         return_value=cancel_mock,
     ):
-        manager.update_pending_alert(GROWSPACE_ID, sensor_high)
+        manager.report_evaluation(make_snapshot(probability=0.95))
 
     alert_key = f"{GROWSPACE_ID}_stress"
     assert manager._pending_alerts[alert_key].notification_timer is cancel_mock
 
     # Probability drops below threshold — timer should be cancelled
-    sensor_low = MagicMock()
-    sensor_low.is_on = True
-    sensor_low.name = "Stress Sensor"
-    sensor_low._probability = 0.70
-    sensor_low.entity_description = MagicMock()
-    sensor_low.entity_description.sensor_type = "stress"
-
-    manager.update_pending_alert(GROWSPACE_ID, sensor_low)
+    manager.report_evaluation(make_snapshot(probability=0.70))
     cancel_mock.assert_called_once()
     assert manager._pending_alerts[alert_key].notification_timer is None
 
 
-def test_detach_sensor(manager: NotificationManager) -> None:
-    """Test detaching a sensor."""
-    sensor = MagicMock()
-    manager.attach_sensor(GROWSPACE_ID, sensor)
-    assert sensor in manager._registered_sensors[GROWSPACE_ID]
+def test_report_evaluation_clears_snapshot_on_resolve(
+    manager: NotificationManager,
+) -> None:
+    """A resolved snapshot is removed from the latest-snapshot store."""
+    manager.report_evaluation(make_snapshot("optimal", is_on=True))
+    assert (GROWSPACE_ID, "optimal") in manager._latest_snapshots
 
-    manager.detach_sensor(GROWSPACE_ID, sensor)
-    assert sensor not in manager._registered_sensors[GROWSPACE_ID]
+    manager.report_evaluation(make_snapshot("optimal", is_on=False))
+    assert (GROWSPACE_ID, "optimal") not in manager._latest_snapshots
+
+
+def test_optimal_high_probability_creates_no_pending_alert(
+    manager: NotificationManager,
+) -> None:
+    """A triggered optimal snapshot is stored but never creates a pending alert."""
+    manager.report_evaluation(
+        make_snapshot("optimal", is_on=True, probability=0.99)
+    )
+
+    assert (GROWSPACE_ID, "optimal") in manager._latest_snapshots
+    assert manager._pending_alerts == {}
+
+
+# --- Step 4: light-flip cooldown migration ---
+
+
+def _snapshot_with_lights(sensor_type: str, lights_on: bool | None) -> EvaluationSnapshot:
+    """Build a resolved snapshot carrying the given light state."""
+    return EvaluationSnapshot(
+        growspace_id=GROWSPACE_ID,
+        sensor_type=sensor_type,
+        sensor_name=sensor_type,
+        probability=0.0,
+        threshold=0.7,
+        is_on=False,
+        reasons=[],
+        sensor_states={},
+        lights_on=lights_on,
+        notification_title=None,
+        notification_message=None,
+    )
+
+
+def test_light_flip_on_off_on_triggers_two_cooldowns(
+    manager: NotificationManager,
+) -> None:
+    """An on->off->on light sequence triggers the cooldown exactly twice."""
+    with patch.object(manager, "trigger_cooldown") as mock_cooldown:
+        manager.report_evaluation(_snapshot_with_lights("stress", True))
+        manager.report_evaluation(_snapshot_with_lights("stress", False))
+        manager.report_evaluation(_snapshot_with_lights("stress", True))
+
+    assert mock_cooldown.call_count == 2
+    mock_cooldown.assert_called_with(GROWSPACE_ID)
+
+
+def test_light_flip_deduped_across_sensor_types(
+    manager: NotificationManager,
+) -> None:
+    """Three same-wave snapshots (one physical flip) trigger one cooldown."""
+    # Establish the prior state (lights on) without a flip.
+    manager.report_evaluation(_snapshot_with_lights("stress", True))
+
+    with patch.object(manager, "trigger_cooldown") as mock_cooldown:
+        # All three sensor types observe the same off-transition.
+        manager.report_evaluation(_snapshot_with_lights("stress", False))
+        manager.report_evaluation(_snapshot_with_lights("mold", False))
+        manager.report_evaluation(_snapshot_with_lights("optimal", False))
+
+    mock_cooldown.assert_called_once_with(GROWSPACE_ID)
+
+
+def test_light_flip_none_reading_ignored(manager: NotificationManager) -> None:
+    """A None light reading neither triggers a cooldown nor clears prior state."""
+    manager.report_evaluation(_snapshot_with_lights("stress", True))
+
+    with patch.object(manager, "trigger_cooldown") as mock_cooldown:
+        manager.report_evaluation(_snapshot_with_lights("stress", None))
+        # Still considered "on"; a subsequent off then triggers exactly one.
+        manager.report_evaluation(_snapshot_with_lights("stress", False))
+
+    mock_cooldown.assert_called_once_with(GROWSPACE_ID)
 
 
 def test_trigger_cooldown(manager: NotificationManager) -> None:
@@ -1304,12 +1306,7 @@ def test_update_pending_alert_no_plants_cancels_timer(
         notification_timer=cancel_mock,
     )
 
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor._probability = 0.8
-    sensor.entity_description.sensor_type = "stress"
-
-    manager.update_pending_alert(GROWSPACE_ID, sensor)
+    manager.report_evaluation(make_snapshot(probability=0.8))
 
     cancel_mock.assert_called_once()
     assert alert_key not in manager._pending_alerts
@@ -1321,13 +1318,8 @@ def test_update_pending_alert_no_plants_no_existing_alert(
     """Test update_pending_alert when no plants and no pending alert (line 121)."""
     mock_coordinator.services.growspaces.get_growspace_plants.return_value = []
 
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor._probability = 0.5
-    sensor.entity_description.sensor_type = "stress"
-
     # Should not raise
-    manager.update_pending_alert(GROWSPACE_ID, sensor)
+    manager.report_evaluation(make_snapshot(probability=0.5))
     assert f"{GROWSPACE_ID}_stress" not in manager._pending_alerts
 
 
@@ -1335,12 +1327,6 @@ async def test_fire_critical_timer_alert_removed_before_firing(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
     """Test _fire_critical returns early if alert is removed before timer fires (line 168)."""
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.95
-    sensor.entity_description.sensor_type = "stress"
-
     callback_fn = None
 
     def capture_call_later(hass, delay, fn):
@@ -1352,7 +1338,7 @@ async def test_fire_critical_timer_alert_removed_before_firing(
         "custom_components.growspace_manager.notification_manager.async_call_later",
         side_effect=capture_call_later,
     ):
-        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        manager.report_evaluation(make_snapshot(probability=0.95))
 
     # Remove the alert before the timer fires
     manager._pending_alerts.clear()

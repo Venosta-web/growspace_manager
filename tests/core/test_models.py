@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import FanRegulationMode
@@ -18,6 +17,8 @@ from custom_components.growspace_manager.models import (
     VisionCheckupConfig,
     VisionCheckupResult,
 )
+
+from .common import create_plant
 
 # --------------------
 # Growspace Model Tests
@@ -437,7 +438,9 @@ def test_vision_checkup_result_creation():
         timestamp="2026-03-21T07:00:00",
         growspace_id="tent1",
         check_type="early",
-        snapshot_paths=["/local/growspace_manager/snapshots/tent1/20260321_070000_cam1.jpg"],
+        snapshot_paths=[
+            "/local/growspace_manager/snapshots/tent1/20260321_070000_cam1.jpg"
+        ],
         analysis="Plants look healthy, no issues detected.",
         issues_detected=[],
         severity="none",
@@ -629,6 +632,91 @@ def test_irrigation_strategy_legacy_deserialization() -> None:
     assert strategy.detected_lights_on_time is None
 
 
+def test_irrigation_strategy_volume_mode_defaults() -> None:
+    """Volume Mode fields default to Seconds Mode + an empty substrate profile."""
+    from custom_components.growspace_manager.const import ShotSizingMode
+
+    strategy = IrrigationStrategy()
+    assert strategy.shot_sizing_mode == ShotSizingMode.SECONDS
+    assert strategy.substrate_profile.is_configured is False
+    assert strategy.substrate_profile.liters_per_pot == 0.0
+    assert strategy.p1_shot_volume_percent == 4.0
+    assert strategy.p2_shot_volume_percent == 4.0
+
+
+def test_irrigation_strategy_legacy_load_defaults_seconds_mode() -> None:
+    """A config stored before Volume Mode deserializes to Seconds Mode, empty profile."""
+    from custom_components.growspace_manager.const import ShotSizingMode
+
+    legacy_data = {
+        "enabled": True,
+        "lights_on_time": "06:00:00",
+        "shot_duration_seconds": 10,
+        "shot_interval_minutes": 15,
+    }
+    strategy = IrrigationStrategy.from_dict(legacy_data)
+    assert strategy.shot_sizing_mode == ShotSizingMode.SECONDS
+    assert strategy.substrate_profile.is_configured is False
+
+
+def test_irrigation_strategy_declared_steering_mode_defaults_none() -> None:
+    """declared_steering_mode is None until a Steering Mode is stamped."""
+    strategy = IrrigationStrategy()
+    assert strategy.declared_steering_mode is None
+
+
+def test_irrigation_strategy_declared_steering_mode_round_trips() -> None:
+    """declared_steering_mode survives a serialize/deserialize round-trip."""
+    from custom_components.growspace_manager.const import SteeringMode
+
+    strategy = IrrigationStrategy(declared_steering_mode=SteeringMode.GENERATIVE)
+    restored = IrrigationStrategy.from_dict(strategy.to_dict())
+    assert restored.declared_steering_mode == SteeringMode.GENERATIVE
+
+
+def test_irrigation_strategy_legacy_load_has_no_declared_intent() -> None:
+    """A config stored before Steering Mode has a null declared intent."""
+    legacy_data = {
+        "enabled": True,
+        "shot_duration_seconds": 10,
+        "shot_interval_minutes": 15,
+    }
+    strategy = IrrigationStrategy.from_dict(legacy_data)
+    assert strategy.declared_steering_mode is None
+
+
+def test_substrate_profile_is_configured() -> None:
+    """is_configured tracks a positive per-pot volume."""
+    from custom_components.growspace_manager.models import SubstrateProfile
+
+    assert SubstrateProfile().is_configured is False
+    assert SubstrateProfile(liters_per_pot=6.0).is_configured is True
+
+
+def test_irrigation_strategy_volume_mode_roundtrip() -> None:
+    """Volume Mode fields survive a to_dict / from_dict round-trip."""
+    from custom_components.growspace_manager.const import (
+        ShotSizingMode,
+        SubstrateMediaType,
+    )
+    from custom_components.growspace_manager.models import SubstrateProfile
+
+    strategy = IrrigationStrategy(
+        shot_sizing_mode=ShotSizingMode.VOLUME,
+        substrate_profile=SubstrateProfile(
+            media_type=SubstrateMediaType.ROCKWOOL, liters_per_pot=6.0
+        ),
+        p1_shot_volume_percent=5.0,
+        p2_shot_volume_percent=3.0,
+    )
+    restored = IrrigationStrategy.from_dict(strategy.to_dict())
+    assert restored.shot_sizing_mode == ShotSizingMode.VOLUME
+    assert restored.substrate_profile.media_type == SubstrateMediaType.ROCKWOOL
+    assert restored.substrate_profile.liters_per_pot == 6.0
+    assert restored.p1_shot_volume_percent == 5.0
+    assert restored.p2_shot_volume_percent == 3.0
+
+
 def test_irrigation_strategy_roundtrip() -> None:
     """Both new fields survive a to_dict / from_dict round-trip."""
     strategy = IrrigationStrategy(
@@ -642,7 +730,9 @@ def test_irrigation_strategy_roundtrip() -> None:
 
 def test_irrigation_strategy_to_dict_includes_new_fields() -> None:
     """to_dict() output includes both new fields (WebSocket payload contract)."""
-    strategy = IrrigationStrategy(auto_light_tracking=True, detected_lights_on_time="07:00:00")
+    strategy = IrrigationStrategy(
+        auto_light_tracking=True, detected_lights_on_time="07:00:00"
+    )
     d = strategy.to_dict()
     assert "auto_light_tracking" in d
     assert d["auto_light_tracking"] is True
@@ -660,6 +750,117 @@ def test_growspace_irrigation_strategy_legacy_nested_load() -> None:
     gs = Growspace.from_dict(data)
     assert gs.irrigation_strategy.auto_light_tracking is False
     assert gs.irrigation_strategy.detected_lights_on_time is None
+
+
+# ---------------------------------------------------------------------------
+# IrrigationStrategy — per-phase shot duration/interval (issue 443)
+# ---------------------------------------------------------------------------
+
+
+def test_irrigation_strategy_per_phase_shot_defaults() -> None:
+    """The four per-phase shot fields default to the old shared defaults."""
+    strategy = IrrigationStrategy()
+    assert strategy.p1_shot_duration_seconds == 10
+    assert strategy.p1_shot_interval_minutes == 15
+    assert strategy.p2_shot_duration_seconds == 10
+    assert strategy.p2_shot_interval_minutes == 15
+
+
+def test_irrigation_strategy_legacy_shot_fields_seed_both_phases() -> None:
+    """Stored configs with only the legacy shared shot fields seed both phases."""
+    legacy_data = {
+        "enabled": True,
+        "shot_duration_seconds": 12,
+        "shot_interval_minutes": 20,
+    }
+    strategy = IrrigationStrategy.from_dict(legacy_data)
+    assert strategy.p1_shot_duration_seconds == 12
+    assert strategy.p2_shot_duration_seconds == 12
+    assert strategy.p1_shot_interval_minutes == 20
+    assert strategy.p2_shot_interval_minutes == 20
+
+
+def test_irrigation_strategy_per_phase_keys_win_over_legacy() -> None:
+    """Explicit per-phase values are never overwritten by the legacy keys."""
+    mixed_data = {
+        "shot_duration_seconds": 12,
+        "shot_interval_minutes": 20,
+        "p2_shot_duration_seconds": 30,
+        "p2_shot_interval_minutes": 45,
+    }
+    strategy = IrrigationStrategy.from_dict(mixed_data)
+    assert strategy.p1_shot_duration_seconds == 12
+    assert strategy.p1_shot_interval_minutes == 20
+    assert strategy.p2_shot_duration_seconds == 30
+    assert strategy.p2_shot_interval_minutes == 45
+
+
+def test_irrigation_strategy_per_phase_roundtrip() -> None:
+    """Distinct per-phase values survive a to_dict / from_dict round-trip."""
+    strategy = IrrigationStrategy(
+        p1_shot_duration_seconds=5,
+        p1_shot_interval_minutes=7,
+        p2_shot_duration_seconds=9,
+        p2_shot_interval_minutes=11,
+    )
+    restored = IrrigationStrategy.from_dict(strategy.to_dict())
+    assert restored.p1_shot_duration_seconds == 5
+    assert restored.p1_shot_interval_minutes == 7
+    assert restored.p2_shot_duration_seconds == 9
+    assert restored.p2_shot_interval_minutes == 11
+
+
+def test_irrigation_strategy_to_dict_includes_per_phase_and_legacy_mirror() -> None:
+    """to_dict() carries the per-phase fields and mirrors P1 onto the legacy keys."""
+    strategy = IrrigationStrategy(
+        p1_shot_duration_seconds=5,
+        p1_shot_interval_minutes=7,
+        p2_shot_duration_seconds=9,
+        p2_shot_interval_minutes=11,
+    )
+    d = strategy.to_dict()
+    assert d["p1_shot_duration_seconds"] == 5
+    assert d["p1_shot_interval_minutes"] == 7
+    assert d["p2_shot_duration_seconds"] == 9
+    assert d["p2_shot_interval_minutes"] == 11
+    assert d["shot_duration_seconds"] == 5
+    assert d["shot_interval_minutes"] == 7
+
+
+def test_irrigation_strategy_legacy_alias_setter_writes_both_phases() -> None:
+    """Setting the deprecated shared fields writes both phases; reads return P1."""
+    strategy = IrrigationStrategy(
+        p1_shot_duration_seconds=5,
+        p2_shot_duration_seconds=9,
+        p1_shot_interval_minutes=7,
+        p2_shot_interval_minutes=11,
+    )
+    strategy.shot_duration_seconds = 42
+    strategy.shot_interval_minutes = 33
+    assert strategy.p1_shot_duration_seconds == 42
+    assert strategy.p2_shot_duration_seconds == 42
+    assert strategy.p1_shot_interval_minutes == 33
+    assert strategy.p2_shot_interval_minutes == 33
+    assert strategy.shot_duration_seconds == 42
+    assert strategy.shot_interval_minutes == 33
+
+
+def test_growspace_legacy_shot_fields_migrate_through_nested_load() -> None:
+    """Growspace.from_dict migrates a legacy irrigation_strategy sub-dict losslessly."""
+    data = {
+        "id": "gs1",
+        "name": "Old Tent",
+        "irrigation_strategy": {
+            "enabled": True,
+            "shot_duration_seconds": 12,
+            "shot_interval_minutes": 20,
+        },
+    }
+    gs = Growspace.from_dict(data)
+    assert gs.irrigation_strategy.p1_shot_duration_seconds == 12
+    assert gs.irrigation_strategy.p2_shot_duration_seconds == 12
+    assert gs.irrigation_strategy.p1_shot_interval_minutes == 20
+    assert gs.irrigation_strategy.p2_shot_interval_minutes == 20
 
 
 # --------------------
@@ -718,7 +919,9 @@ def test_circulation_fan_config_roundtrip() -> None:
     assert restored.wind_amplitude_pct == 15
 
 
-def test_environment_config_missing_circulation_fan_config_deserialises_to_default() -> None:
+def test_environment_config_missing_circulation_fan_config_deserialises_to_default() -> (
+    None
+):
     """EnvironmentConfig stored without circulation_fan_config key deserialises to default."""
     data: dict = {}
     env = EnvironmentConfig.from_dict(data)
@@ -726,7 +929,9 @@ def test_environment_config_missing_circulation_fan_config_deserialises_to_defau
     assert env.circulation_fan_config.regulation_mode is FanRegulationMode.VPD
 
 
-def test_environment_config_null_circulation_fan_config_deserialises_to_default() -> None:
+def test_environment_config_null_circulation_fan_config_deserialises_to_default() -> (
+    None
+):
     """EnvironmentConfig with null circulation_fan_config in storage deserialises to default."""
     data = {"circulation_fan_config": None}
     env = EnvironmentConfig.from_dict(data)

@@ -56,6 +56,7 @@ from .const import (
     ATTR_SEED_BATCH_ID,
     ATTR_SEX,
     ATTR_STAGE,
+    ATTR_STEERING_MODE,
     ATTR_STRAIN,
     ATTR_STRAIN_NAME,
     ATTR_TAGS,
@@ -74,6 +75,7 @@ from .const import (
     ATTR_WEIGHT_GRAMS,
     ATTR_WET_WEIGHT,
     ATTR_YIELD_POTENTIAL,
+    CONF_BULK_EC_SENSORS,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -99,18 +101,20 @@ from .const import (
     CONF_LUNG_ROOM_TEMP_SENSORS,
     CONF_MOLD_THRESHOLD,
     CONF_PH_SENSORS,
+    CONF_PORE_EC_SENSORS,
     CONF_POWER_SENSORS,
     CONF_RUNOFF_EC_SENSORS,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
-    CONF_BULK_EC_SENSORS,
-    CONF_PORE_EC_SENSORS,
     CONF_SUBSTRATE_TEMP_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_VPD_SENSOR,
     DATE_FIELDS,
-    FanRegulationMode,
     PLANT_STAGES,
+    FanRegulationMode,
+    ShotSizingMode,
+    SteeringMode,
+    SubstrateMediaType,
 )
 from .validation import valid_date_or_none, valid_growspace_id
 
@@ -590,6 +594,19 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
         vol.Optional("maintenance_dryback_percent"): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=100.0)
         ),
+        vol.Optional("p1_shot_duration_seconds"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("p1_shot_interval_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("p2_shot_duration_seconds"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("p2_shot_interval_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        # Deprecated shared shot fields: still accepted, write both phases
         vol.Optional("shot_duration_seconds"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
         ),
@@ -597,6 +614,36 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
             vol.Coerce(int), vol.Range(min=0)
         ),
         vol.Optional("auto_light_tracking"): bool,
+        # Shot Sizing Mode + Substrate Profile (Volume Mode, ADR-0011).
+        vol.Optional("shot_sizing_mode"): vol.In(
+            [mode.value for mode in ShotSizingMode]
+        ),
+        vol.Optional("substrate_media_type"): vol.In(
+            [media.value for media in SubstrateMediaType]
+        ),
+        vol.Optional("substrate_liters_per_pot"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("p1_shot_volume_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional("p2_shot_volume_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        # Adaptive Shot Control (ADR-0014).
+        vol.Optional("dynamic_shot_enabled"): bool,
+        vol.Optional("dynamic_aggressiveness"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=5.0)
+        ),
+        vol.Optional("dynamic_recovery"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=1.0)
+        ),
+        vol.Optional("dynamic_shot_size_floor"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1, max=1.0)
+        ),
+        vol.Optional("dynamic_interval_ceiling"): vol.All(
+            vol.Coerce(float), vol.Range(min=1.0, max=5.0)
+        ),
     }
 )
 
@@ -680,18 +727,40 @@ CONFIGURE_CIRCULATION_FAN_SCHEMA = vol.Schema(
         vol.Required("regulation_mode"): vol.In([m.value for m in FanRegulationMode]),
         vol.Required("min_speed"): vol.All(vol.Coerce(int), vol.Range(min=0, max=99)),
         vol.Required("max_speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
-        vol.Required("vpd_target"): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=3.0)),
-        vol.Required("vpd_tolerance"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1.0)),
-        vol.Required("humidity_target"): vol.All(vol.Coerce(float), vol.Range(min=20, max=90)),
-        vol.Required("humidity_tolerance"): vol.All(vol.Coerce(float), vol.Range(min=1, max=20)),
-        vol.Required("temperature_target"): vol.All(vol.Coerce(float), vol.Range(min=15, max=35)),
-        vol.Required("temperature_tolerance"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=10)),
-        vol.Optional("critical_temp_low"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=10, max=40))),
-        vol.Optional("critical_temp_high"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=10, max=50))),
-        vol.Required("critical_temp_hysteresis"): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=5.0)),
+        vol.Required("vpd_target"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1, max=3.0)
+        ),
+        vol.Required("vpd_tolerance"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.01, max=1.0)
+        ),
+        vol.Required("humidity_target"): vol.All(
+            vol.Coerce(float), vol.Range(min=20, max=90)
+        ),
+        vol.Required("humidity_tolerance"): vol.All(
+            vol.Coerce(float), vol.Range(min=1, max=20)
+        ),
+        vol.Required("temperature_target"): vol.All(
+            vol.Coerce(float), vol.Range(min=15, max=35)
+        ),
+        vol.Required("temperature_tolerance"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.5, max=10)
+        ),
+        vol.Optional("critical_temp_low"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=10, max=40))
+        ),
+        vol.Optional("critical_temp_high"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=10, max=50))
+        ),
+        vol.Required("critical_temp_hysteresis"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1, max=5.0)
+        ),
         vol.Required("wind_enabled"): bool,
-        vol.Required("wind_period_seconds"): vol.All(vol.Coerce(int), vol.Range(min=10, max=600)),
-        vol.Required("wind_amplitude_pct"): vol.All(vol.Coerce(int), vol.Range(min=5, max=50)),
+        vol.Required("wind_period_seconds"): vol.All(
+            vol.Coerce(int), vol.Range(min=10, max=600)
+        ),
+        vol.Required("wind_amplitude_pct"): vol.All(
+            vol.Coerce(int), vol.Range(min=5, max=50)
+        ),
     }
 )
 
@@ -741,8 +810,12 @@ SAVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
         vol.Optional(ATTR_STAGE): vol.Any(vol.In(PLANT_STAGES), None),
         vol.Optional(ATTR_MIN_DAYS_IN_STAGE): vol.All(int, vol.Range(min=0)),
         vol.Optional("week", default=1): vol.All(int, vol.Range(min=1)),
-        vol.Optional("ec_target"): vol.Any(vol.All(vol.Coerce(float), vol.Range(min=0.0)), None),
-        vol.Optional("ph_target"): vol.Any(vol.All(vol.Coerce(float), vol.Range(min=0.0, max=14.0)), None),
+        vol.Optional("ec_target"): vol.Any(
+            vol.All(vol.Coerce(float), vol.Range(min=0.0)), None
+        ),
+        vol.Optional("ph_target"): vol.Any(
+            vol.All(vol.Coerce(float), vol.Range(min=0.0, max=14.0)), None
+        ),
     }
 )
 
@@ -892,6 +965,13 @@ SET_EC_TARGET_RANGE_SCHEMA = vol.Schema(
         vol.Required(ATTR_STAGE): vol.In(PLANT_STAGES),
         vol.Required(ATTR_FEED_EC_MIN): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Required(ATTR_FEED_EC_MAX): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+    }
+)
+
+APPLY_STEERING_MODE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_STEERING_MODE): vol.In([m.value for m in SteeringMode]),
     }
 )
 

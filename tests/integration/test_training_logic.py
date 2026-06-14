@@ -16,9 +16,6 @@ from custom_components.growspace_manager.const import (
     TrainingTechnique,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.services.training import (
-    handle_log_training_event,
-)
 from homeassistant.core import HomeAssistant, ServiceCall
 
 
@@ -54,7 +51,7 @@ def mock_coordinator(hass: HomeAssistant, mock_plants):
     coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
 
     # Set up plants
-    coordinator.data_repository.load_plants(mock_plants)
+    coordinator._data_repository.load_plants(mock_plants)
     coordinator.services.save = AsyncMock()  # type: ignore[method-assign]
     coordinator.training_service._ctx.save_callback = coordinator.services.save
     mock_add_event = MagicMock()
@@ -167,7 +164,7 @@ async def test_handle_log_training_event_service(
     with patch.object(
         mock_coordinator.services.plants, "log_training_event", new_callable=AsyncMock
     ) as mock_method:
-        await handle_log_training_event(hass, mock_coordinator, call)
+        await mock_coordinator.services.plants.log_training_event_from_call(hass, call)
 
         mock_method.assert_awaited_once_with(
             growspace_id="gs_1",
