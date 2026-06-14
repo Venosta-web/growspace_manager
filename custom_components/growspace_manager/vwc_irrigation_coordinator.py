@@ -20,6 +20,7 @@ from .const import (
     PlantStage,
     ShotSizingMode,
 )
+from .domain.ec_state import ECRecommendation, ECStateResolver
 from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
 
@@ -616,21 +617,26 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     ) -> tuple[float, bool]:
         """Return ``(factor, available)`` for EC modulation on a P2 shot.
 
-        ``available`` is the modulation *capability* flag: True only when the
-        feature is opted in, a valid band is configured, and a measured pore EC
-        exists. When unavailable the factor is exactly 1.0 — distinct in the
+        Reads the direction from the [[EC State]] seam (ADR-0015): the resolver
+        decides STACK/HOLD/FLUSH/UNAVAILABLE from pore-EC-vs-band, and this method
+        turns that into the existing ``(factor, available)`` contract. ``available``
+        is the modulation *capability* flag — True only when opted in, a valid band
+        is configured, and a measured pore EC exists (recommendation is not
+        UNAVAILABLE). When unavailable the factor is exactly 1.0 — distinct in the
         payload from a measured "within band → 1.0" (available True, factor 1.0).
         """
-        if not strategy.ec_modulation_enabled:
+        state = ECStateResolver(
+            strategy, lambda: self._average_pore_ec(growspace)
+        ).resolve()
+        if state.recommendation is ECRecommendation.UNAVAILABLE:
             return 1.0, False
-        band_min = strategy.pore_ec_target_min
-        band_max = strategy.pore_ec_target_max
-        if band_min is None or band_max is None or band_min >= band_max:
-            return 1.0, False
-        measured_ec = self._average_pore_ec(growspace)
-        if measured_ec is None:
-            return 1.0, False
-        factor = self._ec_modulation_factor_for_reading(measured_ec, band_min, band_max)
+        # Recommendation chooses direction; the pure helper computes the bounded
+        # magnitude. pore_ec and the band are guaranteed present/valid here.
+        factor = self._ec_modulation_factor_for_reading(
+            state.pore_ec,
+            strategy.pore_ec_target_min,
+            strategy.pore_ec_target_max,
+        )
         return factor, True
 
     def _record_substrate_shot(self, phase: str) -> None:
