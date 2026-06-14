@@ -17,6 +17,7 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
     PlantStage,
 )
+from custom_components.growspace_manager.domain.ec_state import record_drain_reading
 from custom_components.growspace_manager.events import (
     EVENT_GROWSPACE_ADDED,
     EVENT_GROWSPACE_REMOVED,
@@ -25,7 +26,6 @@ from custom_components.growspace_manager.events import (
 )
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import (
-    DrainReading,
     EnvironmentConfig,
     Growspace,
     GrowspaceType,
@@ -362,7 +362,9 @@ class GrowspaceManager(BaseService):
 
     def generate_unique_name(self, base_name: str) -> str:
         """Generate a unique growspace name."""
-        existing_names = {gs.name.lower() for gs in self.repository.get_all_growspaces()}
+        existing_names = {
+            gs.name.lower() for gs in self.repository.get_all_growspaces()
+        }
         name = base_name
         counter = 1
 
@@ -428,13 +430,15 @@ class GrowspaceManager(BaseService):
         growspace_type: GrowspaceType,
     ) -> None:
         """Create a new special growspace."""
-        self.repository.add_growspace(Growspace(
-            id=canonical_id,
-            name=canonical_name,
-            rows=rows,
-            plants_per_row=plants_per_row,
-            growspace_type=growspace_type,
-        ))
+        self.repository.add_growspace(
+            Growspace(
+                id=canonical_id,
+                name=canonical_name,
+                rows=rows,
+                plants_per_row=plants_per_row,
+                growspace_type=growspace_type,
+            )
+        )
         _LOGGER.info(
             "Created canonical growspace: %s with name '%s'",
             canonical_id,
@@ -619,45 +623,30 @@ class GrowspaceManager(BaseService):
         if not growspace:
             raise GrowspaceNotFoundError(growspace_id)
 
-        reading = DrainReading(
-            timestamp=dt_util.now().isoformat(),
-            feed_ec=feed_ec,
-            drain_ec=drain_ec,
-            drain_volume_ml=drain_volume_ml,
-            feed_volume_ml=feed_volume_ml,
-        )
-
         drain_config = growspace.drain_config
-        drain_config.readings.append(reading)
-
-        # Enforce rolling window
-        if len(drain_config.readings) > drain_config.max_readings:
-            drain_config.readings = drain_config.readings[-drain_config.max_readings :]
+        record = record_drain_reading(
+            drain_config, feed_ec, drain_ec, drain_volume_ml, feed_volume_ml
+        )
 
         await self._save()
 
-        # Fire alert if drain EC delta exceeds threshold
-        ec_delta = drain_ec - feed_ec
-        if drain_config.enabled and ec_delta > drain_config.max_ec_delta:
+        # Fire alert if drain EC delta exceeds threshold. GrowspaceManager has no
+        # notification manager, so it fires an event (its own transport).
+        if record.alert:
             _LOGGER.warning(
                 "Drain EC alert for %s: drain=%.2f, feed=%.2f, delta=%.2f exceeds threshold %.2f",
                 growspace_id,
                 drain_ec,
                 feed_ec,
-                ec_delta,
+                record.ec_delta,
                 drain_config.max_ec_delta,
             )
-            # Use notification manager if available on coordinator
-            # GrowspaceManager doesn't have direct access to notification manager,
-            # but it has hass. We'll use the coordinator via a weakref or just pass it in?
-            # Actually, coordinator is not in GrowspaceManager.
-            # But we can fire an event.
             self.hass.bus.async_fire(
                 "growspace_manager_drain_ec_alert",
                 {
                     "growspace_id": growspace_id,
                     "growspace_name": growspace.name,
-                    "ec_delta": ec_delta,
+                    "ec_delta": record.ec_delta,
                     "drain_ec": drain_ec,
                     "feed_ec": feed_ec,
                     "threshold": drain_config.max_ec_delta,

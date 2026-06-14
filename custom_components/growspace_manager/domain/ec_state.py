@@ -26,16 +26,18 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from custom_components.growspace_manager.models import IrrigationStrategy
+from custom_components.growspace_manager.models import DrainReading, IrrigationStrategy
 from custom_components.growspace_manager.utils import (
     calculate_plant_stage,
     days_to_week,
 )
+from homeassistant.util import dt as dt_util
 
 from .stage_calculator import calculate_days_in_stage
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.models import (
+        DrainConfig,
         ECRampCurve,
         ECRampPoint,
         ECTargetRange,
@@ -89,7 +91,9 @@ class ECState:
     # display/reconciliation only — it never moves the modulation recommendation.
     active_feed_ec: tuple[float, float] | None = None
     feed_ec_source: str = "none"
-    # Runoff fields populated by issue #465.
+    # Runoff measurements from the latest drain reading (#465): the drained EC
+    # and the feed→runoff EC delta (drain_ec − feed_ec). Both None when there are
+    # no readings. Carried for display/reconciliation; ADR-0016 makes them steer.
     runoff_ec: float | None = None
     feed_to_runoff_delta: float | None = None
 
@@ -182,6 +186,55 @@ def resolve_active_feed_ec(
     return None, "none"
 
 
+# ── Drain reading recording ──────────────────────────────────────────────────
+
+
+@dataclass(frozen=True, slots=True)
+class DrainRecord:
+    """Outcome of recording one drain reading behind the seam.
+
+    ``alert`` is the threshold decision (monitoring enabled AND the
+    [[Feed-to-Runoff EC Delta]] exceeds ``max_ec_delta``); callers act on it via
+    their own notification transport. ``ec_delta`` is exposed so the caller's
+    alert message and event payload need not recompute it.
+    """
+
+    reading: DrainReading
+    ec_delta: float
+    alert: bool
+
+
+def record_drain_reading(
+    drain_config: DrainConfig,
+    feed_ec: float,
+    drain_ec: float,
+    drain_volume_ml: float | None = None,
+    feed_volume_ml: float | None = None,
+) -> DrainRecord:
+    """Append a drain reading, enforce the rolling window, and decide the alert.
+
+    The one owner of drain-reading bookkeeping (ADR-0015): the build + append +
+    rolling-window trim + [[Feed-to-Runoff EC Delta]] + threshold decision that
+    used to be duplicated byte-for-byte across ``GrowspaceManager`` and the
+    service facade. Each caller keeps only its own save and notification
+    transport (event bus vs. notification manager).
+    """
+    reading = DrainReading(
+        timestamp=dt_util.now().isoformat(),
+        feed_ec=feed_ec,
+        drain_ec=drain_ec,
+        drain_volume_ml=drain_volume_ml,
+        feed_volume_ml=feed_volume_ml,
+    )
+    drain_config.readings.append(reading)
+    if len(drain_config.readings) > drain_config.max_readings:
+        drain_config.readings = drain_config.readings[-drain_config.max_readings :]
+
+    ec_delta = drain_ec - feed_ec
+    alert = drain_config.enabled and ec_delta > drain_config.max_ec_delta
+    return DrainRecord(reading=reading, ec_delta=ec_delta, alert=alert)
+
+
 class ECStateResolver:
     """Builds an :class:`ECState` snapshot for one growspace.
 
@@ -200,27 +253,44 @@ class ECStateResolver:
         read_pore_ec: Callable[[], float | None],
         read_feed_target: Callable[[], tuple[tuple[float, float] | None, str]]
         | None = None,
+        read_drain: Callable[[], DrainReading | None] | None = None,
     ) -> None:
         """Initialize with the strategy and injected EC readers."""
         self._strategy = strategy
         self._read_pore_ec = read_pore_ec
         self._read_feed_target = read_feed_target or (lambda: (None, "none"))
+        self._read_drain = read_drain or (lambda: None)
 
     def resolve(self) -> ECState:
         """Resolve the current :class:`ECState`.
 
-        The feed target is resolved independently of modulation state — it is
-        carried for display even when the recommendation is ``UNAVAILABLE`` (opt
-        out / no band / no reading), since feed EC never gates on the pore band.
+        The feed target and runoff measurements are resolved independently of
+        modulation state — they are carried for display even when the
+        recommendation is ``UNAVAILABLE`` (opt out / no band / no reading), since
+        neither gates on the pore band.
         """
         active_feed_ec, feed_ec_source = self._read_feed_target()
+        runoff_ec, feed_to_runoff_delta = self._resolve_runoff()
         recommendation, pore_ec = self._resolve_modulation()
         return ECState(
             pore_ec=pore_ec,
             recommendation=recommendation,
             active_feed_ec=active_feed_ec,
             feed_ec_source=feed_ec_source,
+            runoff_ec=runoff_ec,
+            feed_to_runoff_delta=feed_to_runoff_delta,
         )
+
+    def _resolve_runoff(self) -> tuple[float | None, float | None]:
+        """Return ``(runoff_ec, feed_to_runoff_delta)`` from the latest reading.
+
+        Both ``None`` when no drain reading exists — a graceful
+        [[Sensor-Gated Capability]] absence for growspaces without a runoff pen.
+        """
+        reading = self._read_drain()
+        if reading is None:
+            return None, None
+        return reading.drain_ec, reading.drain_ec - reading.feed_ec
 
     def _resolve_modulation(self) -> tuple[ECRecommendation, float | None]:
         """Resolve the modulation direction and the pore reading behind it.

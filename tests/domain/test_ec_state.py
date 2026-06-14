@@ -14,10 +14,13 @@ from custom_components.growspace_manager.domain.ec_state import (
     ECRecommendation,
     ECState,
     ECStateResolver,
+    record_drain_reading,
     resolve_active_feed_ec,
     resolve_feed_stage_week,
 )
 from custom_components.growspace_manager.models import (
+    DrainConfig,
+    DrainReading,
     ECRampCurve,
     ECRampPoint,
     ECTargetRange,
@@ -205,3 +208,59 @@ def test_resolver_carries_feed_target_even_when_modulation_unavailable() -> None
     assert state.recommendation is ECRecommendation.UNAVAILABLE
     assert state.active_feed_ec == (2.0, 3.0)
     assert state.feed_ec_source == "ramp_curve"
+
+
+# ── Runoff measurements + drain recording (#465) ─────────────────────────────
+
+
+def test_resolver_populates_runoff_from_latest_reading() -> None:
+    """runoff_ec and feed_to_runoff_delta come from the latest drain reading."""
+    reading = DrainReading(timestamp="t", feed_ec=1.5, drain_ec=2.7)
+    state = ECStateResolver(
+        _strategy(), lambda: 2.5, read_drain=lambda: reading
+    ).resolve()
+    assert state.runoff_ec == pytest.approx(2.7)
+    assert state.feed_to_runoff_delta == pytest.approx(1.2)
+
+
+def test_resolver_runoff_none_without_reading() -> None:
+    """No drain reading → runoff fields stay None (graceful absence)."""
+    state = ECStateResolver(_strategy(), lambda: 2.5).resolve()
+    assert state.runoff_ec is None
+    assert state.feed_to_runoff_delta is None
+
+
+def test_record_drain_reading_appends_and_flags_alert() -> None:
+    """A reading is recorded and the over-threshold alert is flagged."""
+    drain_config = DrainConfig(enabled=True, max_ec_delta=0.5)
+    record = record_drain_reading(drain_config, feed_ec=1.0, drain_ec=2.0)
+    assert len(drain_config.readings) == 1
+    assert drain_config.readings[-1].drain_ec == pytest.approx(2.0)
+    assert record.ec_delta == pytest.approx(1.0)
+    assert record.alert is True
+
+
+@pytest.mark.parametrize(
+    ("enabled", "max_ec_delta", "drain_ec"),
+    [
+        (False, 0.5, 2.0),  # monitoring disabled → no alert (still recorded)
+        (True, 1.0, 1.5),  # delta 0.5 below threshold 1.0 → no alert
+    ],
+)
+def test_record_drain_reading_no_alert(
+    enabled: bool, max_ec_delta: float, drain_ec: float
+) -> None:
+    """The reading is always recorded; alert only when enabled and over delta."""
+    drain_config = DrainConfig(enabled=enabled, max_ec_delta=max_ec_delta)
+    record = record_drain_reading(drain_config, feed_ec=1.0, drain_ec=drain_ec)
+    assert len(drain_config.readings) == 1
+    assert record.alert is False
+
+
+def test_record_drain_reading_enforces_rolling_window() -> None:
+    """The rolling window trims to max_readings, keeping the newest."""
+    drain_config = DrainConfig(max_readings=3)
+    for i in range(5):
+        record_drain_reading(drain_config, feed_ec=1.0, drain_ec=1.0 + i)
+    assert len(drain_config.readings) == 3
+    assert drain_config.readings[-1].drain_ec == pytest.approx(5.0)  # newest kept

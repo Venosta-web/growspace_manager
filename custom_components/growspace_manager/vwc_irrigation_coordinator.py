@@ -28,7 +28,7 @@ from .domain.ec_state import (
     resolve_feed_stage_week,
 )
 from .irrigation_coordinator import BaseIrrigationCoordinator
-from .models import Growspace, IrrigationStrategy
+from .models import DrainReading, Growspace, IrrigationStrategy
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -622,7 +622,14 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             growspace.irrigation_strategy,
             lambda: self._average_pore_ec(growspace),
             lambda: self._resolve_feed_target(growspace),
+            lambda: self._latest_drain_reading(growspace),
         ).resolve()
+
+    @staticmethod
+    def _latest_drain_reading(growspace: Growspace) -> DrainReading | None:
+        """Return the most recent drain reading for the growspace, or None."""
+        readings = growspace.drain_config.readings
+        return readings[-1] if readings else None
 
     def ec_state_payload(self) -> dict[str, Any]:
         """Return the frontend/diagnostics view of the current EC State."""
@@ -634,6 +641,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 list(state.active_feed_ec) if state.active_feed_ec is not None else None
             ),
             "feed_ec_source": state.feed_ec_source,
+            "runoff_ec": state.runoff_ec,
+            "feed_to_runoff_delta": state.feed_to_runoff_delta,
         }
 
     @staticmethod
