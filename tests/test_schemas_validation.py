@@ -143,6 +143,26 @@ def test_set_irrigation_strategy_schema_accepts_volume_mode_fields(
 @pytest.mark.parametrize(
     ("field_name", "value"),
     [
+        ("pore_ec_target_min", 2.5),
+        ("pore_ec_target_max", 4.0),
+        ("pore_ec_target_min", None),
+        ("pore_ec_target_max", None),
+        ("ec_modulation_enabled", True),
+        ("ec_modulation_enabled", False),
+    ],
+)
+def test_set_irrigation_strategy_schema_accepts_pore_ec_band_fields(
+    field_name: str, value
+) -> None:
+    """Pore EC Target Band fields the card sends on save are accepted."""
+    data = {"growspace_id": "gs1", field_name: value}
+    result = SET_IRRIGATION_STRATEGY_SCHEMA(data)
+    assert result[field_name] == value
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
         ("shot_sizing_mode", "bogus"),
         ("substrate_media_type", "gravel"),
         ("p1_shot_volume_percent", 150.0),
