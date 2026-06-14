@@ -644,6 +644,15 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
         vol.Optional("dynamic_interval_ceiling"): vol.All(
             vol.Coerce(float), vol.Range(min=1.0, max=5.0)
         ),
+        # Pore EC Target Band + EC Modulation. min/max are nullable to allow
+        # clearing the band; both edges share the non-negative float coercion.
+        vol.Optional("pore_ec_target_min"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
+        ),
+        vol.Optional("pore_ec_target_max"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
+        ),
+        vol.Optional("ec_modulation_enabled"): bool,
     }
 )
 
