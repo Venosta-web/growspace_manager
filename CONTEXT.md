@@ -114,10 +114,16 @@ An explicit min/max pore-EC range on the irrigation strategy that [[EC Modulatio
 The effective steering shot volume is `base × VWC feedback factor × EC modulation factor`, then subject to safety caps. The two factors are computed independently, may pull in opposite directions (partially cancelling — physically sensible), and are both exposed in diagnostics so any fired shot is explainable.
 
 **Dynamic VWC Steering Shot**
-An irrigation shot in the VWC crop-steering loop whose duration is dynamically adjusted (clamped between 50% and 100% of standard duration) based on the VWC feedback scale factor calculated from the substrate's response to the previous shot.
+An irrigation shot in the VWC crop-steering loop whose duration is dynamically adjusted (clamped between the configured size floor and 100% of standard duration) based on the [[VWC Feedback Scale Factor]] calculated from the substrate's response to the previous shot. Part of [[Adaptive Shot Control]].
 
 **VWC Feedback Scale Factor**
-The scalar multiplier applied to the next steering shot's duration, calculated by comparing the actual volumetric water content (VWC) increase from the last settled shot against the expected target increase. Resets to 1.0 at lights-on and during the P1-to-P2 phase transition.
+The scalar multiplier applied to the next steering shot's duration, calculated by comparing the actual volumetric water content (VWC) increase from the last settled shot against the expected target increase. Clamped `[dynamic_shot_size_floor, 1.0]` — it only ever shrinks a shot below nominal or recovers toward nominal, never enlarges. Resets to 1.0 at lights-on and during the P1-to-P2 phase transition.
+
+**Interval Feedback Scale Factor**
+The interval-domain sibling of the [[VWC Feedback Scale Factor]]: a scalar multiplier applied to the steering shot's minimum-cooldown floor (`p1/p2_shot_interval_minutes`), driven by the same overshoot ratio. Clamped `[1.0, dynamic_interval_ceiling]` — it only ever **lengthens** the cooldown or recovers toward nominal, never shortens below the configured interval. On overshoot the loop both shrinks the shot (size factor down) and lengthens the cooldown (this factor up); on undershoot both recover toward 1.0. Because P2 shots are already dryback-triggered, this factor only raises the floor — it never makes P2 fire faster than the substrate dries. Resets to 1.0 alongside the size factor. See ADR-0014.
+
+**Adaptive Shot Control**
+The full VWC feedback controller over both shot size ([[VWC Feedback Scale Factor]]) and shot spacing ([[Interval Feedback Scale Factor]]), gated by the single `dynamic_shot_enabled` master toggle. Its response is tunable via four shared/paired strategy fields: `dynamic_aggressiveness` (overshoot correction strength), `dynamic_recovery` (undershoot recovery rate), `dynamic_shot_size_floor` (lower clamp on the size factor), and `dynamic_interval_ceiling` (upper clamp on the interval factor). Size and interval share the aggressiveness/recovery pair so the loop has one consistent feel; only the bounds differ. Defaults on, preserving the previously always-on size feedback while making it disableable and adding interval adaptation. See ADR-0014.
 
 ## Drying Thresholds (Constants)
 

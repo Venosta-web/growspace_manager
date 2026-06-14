@@ -96,6 +96,19 @@ class IrrigationStrategy(BaseModel):
     p1_shot_volume_percent: float = 4.0
     p2_shot_volume_percent: float = 4.0
 
+    # ── Adaptive Shot Control (ADR-0014) ────────────────────────────────────
+    # Master toggle over the VWC feedback controller, which adapts both shot
+    # size (VWC Feedback Scale Factor) and shot spacing (Interval Feedback Scale
+    # Factor) from the substrate's response to the previous shot. Defaults True
+    # to preserve the previously always-on size feedback; disabling it is the
+    # new capability. Size and interval share the aggressiveness/recovery gains;
+    # only the bounds differ (size floor < 1.0, interval ceiling > 1.0).
+    dynamic_shot_enabled: bool = True
+    dynamic_aggressiveness: float = 1.0
+    dynamic_recovery: float = 0.1
+    dynamic_shot_size_floor: float = 0.5
+    dynamic_interval_ceiling: float = 1.5
+
     # ── Pore EC Target Band + EC Modulation ─────────────────────────────────
     # Explicit min/max pore-EC band (mS/cm) that EC Modulation steers toward.
     # DELIBERATELY DISTINCT from the per-stage *feed* EC ranges (ECTargetRange):
