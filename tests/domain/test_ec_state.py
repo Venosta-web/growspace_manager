@@ -6,6 +6,7 @@ Home Assistant.
 """
 
 from collections.abc import Callable
+from datetime import timedelta
 
 import pytest
 
@@ -13,8 +14,17 @@ from custom_components.growspace_manager.domain.ec_state import (
     ECRecommendation,
     ECState,
     ECStateResolver,
+    resolve_active_feed_ec,
+    resolve_feed_stage_week,
 )
-from custom_components.growspace_manager.models import IrrigationStrategy
+from custom_components.growspace_manager.models import (
+    ECRampCurve,
+    ECRampPoint,
+    ECTargetRange,
+    IrrigationStrategy,
+    Plant,
+)
+from homeassistant.util import dt as dt_util
 
 
 def _strategy(
@@ -84,10 +94,114 @@ def test_classification_against_band(
     assert state.pore_ec == pytest.approx(pore_ec)
 
 
-def test_forward_fields_default_absent() -> None:
-    """Feed-target and runoff fields (later slices) default to absent."""
+def test_runoff_fields_default_absent() -> None:
+    """Runoff fields (issue #465) default to absent."""
     state = _resolve(_strategy(), lambda: 2.5)
-    assert state.active_feed_ec is None
-    assert state.feed_ec_source == "none"
     assert state.runoff_ec is None
     assert state.feed_to_runoff_delta is None
+
+
+# ── Active Feed EC Target (#464) ─────────────────────────────────────────────
+
+
+def _plant(plant_id: str, **starts_days_ago: int) -> Plant:
+    """Build a plant with the given stage starts set ``N`` days in the past."""
+    fields = {
+        field: (dt_util.now() - timedelta(days=days)).isoformat()
+        for field, days in starts_days_ago.items()
+    }
+    return Plant(plant_id=plant_id, growspace_id="tent1", **fields)
+
+
+def test_feed_stage_week_picks_furthest_along_live_stage() -> None:
+    """A mixed veg+flower tent resolves to flower (the more advanced live stage)."""
+    plants = [
+        _plant("veg1", veg_start=10),
+        _plant("flwr1", veg_start=40, flower_start=8),
+    ]
+    stage, week = resolve_feed_stage_week(plants)
+    assert stage == "flower"
+    assert week == 2  # 8 days in flower → week 2
+
+
+def test_feed_stage_week_excludes_dry_and_cure() -> None:
+    """Dry/cure plants are off the irrigation line and never drive the target."""
+    plants = [
+        _plant("veg1", veg_start=10),
+        _plant("dry1", veg_start=60, flower_start=50, dry_start=3),
+    ]
+    stage, _ = resolve_feed_stage_week(plants)
+    assert stage == "veg"
+
+
+def test_feed_stage_week_no_live_plants_returns_none() -> None:
+    """No plants (or only dry/cure) → no stage to resolve a target for."""
+    assert resolve_feed_stage_week([]) == (None, 0)
+    assert resolve_feed_stage_week([_plant("cure1", cure_start=2)]) == (None, 0)
+
+
+def _curve(stage: str) -> ECRampCurve:
+    """Two-point ramp curve for a stage: week 1 = 2.0–2.5, week 2 = 2.5–3.0."""
+    return ECRampCurve(
+        id=f"c_{stage}",
+        stage=stage,
+        points=[
+            ECRampPoint(week=1, ec_min=2.0, ec_max=2.5),
+            ECRampPoint(week=2, ec_min=2.5, ec_max=3.0),
+        ],
+    )
+
+
+def test_active_feed_ec_ramp_curve_wins_over_range() -> None:
+    """A matching ramp curve is preferred over a per-stage range."""
+    ranges = [ECTargetRange(stage="flower", feed_ec_min=1.0, feed_ec_max=1.5)]
+    band, source = resolve_active_feed_ec(
+        "flower", 2, {"c_flower": _curve("flower")}, ranges
+    )
+    assert band == (2.5, 3.0)
+    assert source == "ramp_curve"
+
+
+def test_active_feed_ec_week_beyond_last_point_holds_last() -> None:
+    """Past the last defined ramp week, the final point holds."""
+    band, source = resolve_active_feed_ec(
+        "flower", 9, {"c_flower": _curve("flower")}, []
+    )
+    assert band == (2.5, 3.0)
+    assert source == "ramp_curve"
+
+
+def test_active_feed_ec_falls_back_to_stage_range() -> None:
+    """No ramp curve for the stage → the per-stage range supplies the target."""
+    ranges = [ECTargetRange(stage="veg", feed_ec_min=1.2, feed_ec_max=1.8)]
+    band, source = resolve_active_feed_ec("veg", 1, {}, ranges)
+    assert band == (1.2, 1.8)
+    assert source == "stage_range"
+
+
+@pytest.mark.parametrize(
+    ("stage", "curves", "ranges"),
+    [
+        (None, {}, []),  # no live stage
+        ("flower", {}, []),  # nothing configured for the stage
+    ],
+)
+def test_active_feed_ec_unresolved_is_none(
+    stage: str | None,
+    curves: dict[str, ECRampCurve],
+    ranges: list[ECTargetRange],
+) -> None:
+    """An unknown stage or no configured target → graceful (None, 'none')."""
+    assert resolve_active_feed_ec(stage, 1, curves, ranges) == (None, "none")
+
+
+def test_resolver_carries_feed_target_even_when_modulation_unavailable() -> None:
+    """Feed EC is display data: present even with modulation opted out."""
+    state = ECStateResolver(
+        _strategy(enabled=False),
+        lambda: 5.0,
+        lambda: ((2.0, 3.0), "ramp_curve"),
+    ).resolve()
+    assert state.recommendation is ECRecommendation.UNAVAILABLE
+    assert state.active_feed_ec == (2.0, 3.0)
+    assert state.feed_ec_source == "ramp_curve"

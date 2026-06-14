@@ -20,7 +20,13 @@ from .const import (
     PlantStage,
     ShotSizingMode,
 )
-from .domain.ec_state import ECRecommendation, ECStateResolver
+from .domain.ec_state import (
+    ECRecommendation,
+    ECState,
+    ECStateResolver,
+    resolve_active_feed_ec,
+    resolve_feed_stage_week,
+)
 from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
 
@@ -586,6 +592,48 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "current_interval_factor": round(self._interval_scale_factor, 3),
             "dynamic_shot_enabled": strategy.dynamic_shot_enabled,
             "last_shot": asdict(composition) if composition is not None else None,
+        }
+
+    def _resolve_feed_target(
+        self, growspace: Growspace
+    ) -> tuple[tuple[float, float] | None, str]:
+        """Resolve the growspace's Active Feed EC Target as ``(band, source)``.
+
+        Reads the growspace's plants (for the furthest-along live stage and its
+        week), the configured EC ramp curves, and the per-stage feed-EC ranges.
+        """
+        plants = self._main_coordinator.services.growspaces.get_growspace_plants(
+            self._growspace_id
+        )
+        stage, week = resolve_feed_stage_week(plants)
+        ramp_curves = self._main_coordinator.services.config.ec_ramp_curves
+        return resolve_active_feed_ec(
+            stage, week, ramp_curves, growspace.irrigation_config.ec_target_ranges
+        )
+
+    def ec_state(self) -> ECState:
+        """Build the reconciled :class:`ECState` for this growspace.
+
+        The one place EC is reasoned about (ADR-0015): the modulation direction
+        (pore-vs-band) and the Active Feed EC Target, behind a single seam.
+        """
+        growspace = self.growspace
+        return ECStateResolver(
+            growspace.irrigation_strategy,
+            lambda: self._average_pore_ec(growspace),
+            lambda: self._resolve_feed_target(growspace),
+        ).resolve()
+
+    def ec_state_payload(self) -> dict[str, Any]:
+        """Return the frontend/diagnostics view of the current EC State."""
+        state = self.ec_state()
+        return {
+            "pore_ec": state.pore_ec,
+            "recommendation": state.recommendation.value,
+            "active_feed_ec": (
+                list(state.active_feed_ec) if state.active_feed_ec is not None else None
+            ),
+            "feed_ec_source": state.feed_ec_source,
         }
 
     @staticmethod

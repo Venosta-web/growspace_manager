@@ -6,13 +6,12 @@ five scattered fields. It follows the ``StageEnvironmentalTargets`` precedent: a
 pure object built per call from injected callables, unit-testable with plain
 lambdas, with no coordinator dependency and no polling lifecycle.
 
-This is the foundational slice (issue #463): the resolver populates pore EC and
-the modulation-direction recommendation only. The [[Active Feed EC Target]]
-(``active_feed_ec`` / ``feed_ec_source``) and runoff fields (``runoff_ec`` /
-``feed_to_runoff_delta``) are part of the accepted ADR-0015 interface and default
-to absent here — later slices (#464, #465) populate them without changing this
-dataclass's shape. The runoff-percentage and ``halt_irrigation`` fields from
-ADR-0016 are added by issue #466.
+The resolver populates the pore-EC modulation-direction recommendation (#463)
+and the [[Active Feed EC Target]] (``active_feed_ec`` / ``feed_ec_source``, #464).
+The runoff fields (``runoff_ec`` / ``feed_to_runoff_delta``) are part of the
+accepted ADR-0015 interface and default to absent here — issue #465 populates
+them without changing this dataclass's shape. The runoff-percentage and
+``halt_irrigation`` fields from ADR-0016 are added by issue #466.
 
 The recommendation is decided from pore-EC-vs-band **only** — feed and runoff EC
 are carried for display and reconciliation but never move the modulation
@@ -25,8 +24,35 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.models import IrrigationStrategy
+from custom_components.growspace_manager.utils import (
+    calculate_plant_stage,
+    days_to_week,
+)
+
+from .stage_calculator import calculate_days_in_stage
+
+if TYPE_CHECKING:
+    from custom_components.growspace_manager.models import (
+        ECRampCurve,
+        ECRampPoint,
+        ECTargetRange,
+        Plant,
+    )
+
+# Stages whose plants sit on the irrigation line and are therefore fed. ``dry``
+# and ``cure`` are excluded — those plants are no longer irrigated, so they never
+# drive the feed target (CONTEXT.md "Active Feed EC Target"). Ordered by
+# progression so the **furthest-along** live stage wins when stages are mixed.
+_LIVE_STAGE_ORDER: dict[str, int] = {
+    "seedling": 10,
+    "clone": 20,
+    "mother": 30,
+    "veg": 40,
+    "flower": 50,
+}
 
 
 class ECRecommendation(StrEnum):
@@ -58,9 +84,12 @@ class ECState:
 
     pore_ec: float | None
     recommendation: ECRecommendation
-    # Accepted ADR-0015 interface fields populated by later slices (#464/#465).
+    # Active Feed EC Target (#464): the resolved feed-EC min/max and where it
+    # came from ("ramp_curve" / "stage_range" / "none"). Feed EC is carried for
+    # display/reconciliation only — it never moves the modulation recommendation.
     active_feed_ec: tuple[float, float] | None = None
     feed_ec_source: str = "none"
+    # Runoff fields populated by issue #465.
     runoff_ec: float | None = None
     feed_to_runoff_delta: float | None = None
 
@@ -81,45 +110,137 @@ def _classify_pore_ec(
     return ECRecommendation.HOLD
 
 
+def resolve_feed_stage_week(plants: list[Plant]) -> tuple[str | None, int]:
+    """Return ``(stage, week)`` for the furthest-along **live** stage.
+
+    A growspace has no single canonical stage, so feed-target resolution picks
+    the most advanced stage with live (irrigated) plants — never under-feeding
+    the most EC-demanding cohort (CONTEXT.md "Active Feed EC Target"). ``week`` is
+    ``days_to_week`` of the max days any plant has spent in that stage, reusing
+    the view model's per-stage day-count convention. Returns ``(None, 0)`` when
+    no live plants are present (empty, or all in dry/cure).
+    """
+    best_order = -1
+    best_stage: str | None = None
+    for plant in plants:
+        stage = calculate_plant_stage(plant)
+        order = _LIVE_STAGE_ORDER.get(stage)
+        if order is not None and order > best_order:
+            best_order = order
+            best_stage = stage
+
+    if best_stage is None:
+        return None, 0
+
+    max_days = max(
+        (calculate_days_in_stage(plant, best_stage) for plant in plants),
+        default=0,
+    )
+    return best_stage, days_to_week(max_days)
+
+
+def _band_for_week(points: list[ECRampPoint], week: int) -> tuple[float, float] | None:
+    """Return ``(ec_min, ec_max)`` for ``week`` on a ramp curve, or None.
+
+    Matches the existing ``ECTargetSensor`` resolution: an exact week wins; past
+    the last defined week the final point holds; before the first week, None.
+    """
+    for point in points:
+        if point.week == week:
+            return (point.ec_min, point.ec_max)
+    last = points[-1]
+    if week >= last.week:
+        return (last.ec_min, last.ec_max)
+    return None
+
+
+def resolve_active_feed_ec(
+    stage: str | None,
+    week: int,
+    ec_ramp_curves: dict[str, ECRampCurve],
+    ec_target_ranges: list[ECTargetRange],
+) -> tuple[tuple[float, float] | None, str]:
+    """Resolve the [[Active Feed EC Target]] as ``(band, source)``.
+
+    The weekly ``ECRampCurve`` for the stage wins; failing that, the per-stage
+    ``ECTargetRange`` (which has no week dimension). ``(None, "none")`` when the
+    stage is unknown or neither is configured — a graceful Sensor-Gated absence.
+    """
+    if stage is None:
+        return None, "none"
+
+    curve = next((c for c in ec_ramp_curves.values() if c.stage == stage), None)
+    if curve is not None and curve.points:
+        band = _band_for_week(curve.points, week)
+        if band is not None:
+            return band, "ramp_curve"
+
+    range_ = next((r for r in ec_target_ranges if r.stage == stage), None)
+    if range_ is not None:
+        return (range_.feed_ec_min, range_.feed_ec_max), "stage_range"
+
+    return None, "none"
+
+
 class ECStateResolver:
     """Builds an :class:`ECState` snapshot for one growspace.
 
-    ``read_pore_ec`` is injected (in production, the live coordinator's bound
-    ``_average_pore_ec``) so the pore-EC averaging semantics keep a single owner
-    and the resolver stays pure and lambda-testable.
+    Dependencies are injected as callables so the resolver stays pure and
+    lambda-testable. ``read_pore_ec`` is the live coordinator's bound
+    ``_average_pore_ec`` (the averaging semantics keep a single owner);
+    ``read_feed_target`` returns the resolved [[Active Feed EC Target]] and its
+    source. ``read_feed_target`` defaults to "no feed target", so a caller that
+    only needs the modulation recommendation (e.g. the P2-shot hot path) can omit
+    it and pay nothing for feed resolution.
     """
 
     def __init__(
         self,
         strategy: IrrigationStrategy,
         read_pore_ec: Callable[[], float | None],
+        read_feed_target: Callable[[], tuple[tuple[float, float] | None, str]]
+        | None = None,
     ) -> None:
-        """Initialize with the growspace's strategy and a pore-EC reader."""
+        """Initialize with the strategy and injected EC readers."""
         self._strategy = strategy
         self._read_pore_ec = read_pore_ec
+        self._read_feed_target = read_feed_target or (lambda: (None, "none"))
 
     def resolve(self) -> ECState:
         """Resolve the current :class:`ECState`.
 
-        Returns an ``UNAVAILABLE`` state (no pore reading carried) when modulation
-        is opted out, the [[Pore EC Target Band]] is absent or inverted, or no
-        pore-EC reading is available — each a graceful [[Sensor-Gated Capability]]
-        absence, never a raise. Otherwise carries the reading and its direction.
+        The feed target is resolved independently of modulation state — it is
+        carried for display even when the recommendation is ``UNAVAILABLE`` (opt
+        out / no band / no reading), since feed EC never gates on the pore band.
+        """
+        active_feed_ec, feed_ec_source = self._read_feed_target()
+        recommendation, pore_ec = self._resolve_modulation()
+        return ECState(
+            pore_ec=pore_ec,
+            recommendation=recommendation,
+            active_feed_ec=active_feed_ec,
+            feed_ec_source=feed_ec_source,
+        )
+
+    def _resolve_modulation(self) -> tuple[ECRecommendation, float | None]:
+        """Resolve the modulation direction and the pore reading behind it.
+
+        Returns ``(UNAVAILABLE, None)`` when modulation is opted out, the
+        [[Pore EC Target Band]] is absent or inverted, or no pore-EC reading is
+        available — each a graceful [[Sensor-Gated Capability]] absence, never a
+        raise.
         """
         strategy = self._strategy
         if not strategy.ec_modulation_enabled:
-            return ECState(pore_ec=None, recommendation=ECRecommendation.UNAVAILABLE)
+            return ECRecommendation.UNAVAILABLE, None
 
         band_min = strategy.pore_ec_target_min
         band_max = strategy.pore_ec_target_max
         if band_min is None or band_max is None or band_min >= band_max:
-            return ECState(pore_ec=None, recommendation=ECRecommendation.UNAVAILABLE)
+            return ECRecommendation.UNAVAILABLE, None
 
         pore_ec = self._read_pore_ec()
         if pore_ec is None:
-            return ECState(pore_ec=None, recommendation=ECRecommendation.UNAVAILABLE)
+            return ECRecommendation.UNAVAILABLE, None
 
-        return ECState(
-            pore_ec=pore_ec,
-            recommendation=_classify_pore_ec(pore_ec, band_min, band_max),
-        )
+        return _classify_pore_ec(pore_ec, band_min, band_max), pore_ec
