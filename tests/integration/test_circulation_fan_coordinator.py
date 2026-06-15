@@ -1092,7 +1092,7 @@ def test_get_stage_vpd_target_returns_correct_value(
     )
     plant = MagicMock()
     with patch(
-        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        "custom_components.growspace_manager.domain.fan_control.determine_coordinator_stage",
         return_value=stage,
     ):
         main_coord = _make_coordinator("gs1", env, plants=[plant])
@@ -1125,7 +1125,7 @@ async def test_stage_vpd_enabled_regulate_uses_stage_target(
 
     mock_hass.states.get.side_effect = _get_state
     with patch(
-        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        "custom_components.growspace_manager.domain.fan_control.determine_coordinator_stage",
         return_value=PlantStage.FLOWER_MID,
     ):
         main_coord = _make_coordinator("gs1", env, plants=[MagicMock()])
@@ -1212,7 +1212,7 @@ def test_get_stage_vpd_target_override_present_uses_override(
     )
     plant = MagicMock()
     with patch(
-        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        "custom_components.growspace_manager.domain.fan_control.determine_coordinator_stage",
         return_value=PlantStage.VEG,
     ):
         main_coord = _make_coordinator("gs1", env, plants=[plant])
@@ -1233,7 +1233,7 @@ def test_get_stage_vpd_target_override_absent_uses_default(
     )
     plant = MagicMock()
     with patch(
-        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        "custom_components.growspace_manager.domain.fan_control.determine_coordinator_stage",
         return_value=PlantStage.VEG,
     ):
         main_coord = _make_coordinator("gs1", env, plants=[plant])
@@ -1270,7 +1270,7 @@ def test_get_stage_vpd_target_unknown_stage_falls_back_to_vpd_target(
     mock_stage = MagicMock()
     mock_stage.value = "non_existent_stage"
     with patch(
-        "custom_components.growspace_manager.circulation_fan_coordinator.determine_coordinator_stage",
+        "custom_components.growspace_manager.domain.fan_control.determine_coordinator_stage",
         return_value=mock_stage,
     ):
         main_coord = _make_coordinator("gs1", env, plants=[plant])
