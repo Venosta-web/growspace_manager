@@ -625,6 +625,7 @@ def _make_water_sensor_tank_derived(
     env = Mock()
     env.irrigation_flow_sensors = []
     env.drain_volume_sensors = []
+    env.irrigation_tanks = [Mock(volume_liters=50.0)]
     growspace.environment_config = env
     coordinator.growspaces = {"gs1": growspace}
     coordinator.services.growspaces.get_growspace_plants = MagicMock(
@@ -645,6 +646,24 @@ def _make_water_sensor_tank_derived(
     sensor = WaterUsageSensor(coordinator, "gs1", "Tent 1")
     sensor.hass = MagicMock()
     return sensor, coordinator, growspace, trackers
+
+
+def test_water_sensor_native_value_tank_derived_adds_manual() -> None:
+    """Tank mode reports tank-derived + manual on top (ADR-0017)."""
+    sensor, _, growspace, _ = _make_water_sensor_tank_derived(
+        tracker_liters_since=42.0, tracker_liters_today=8.0
+    )
+    # Manual water lives in WaterUsageData; pump estimates are write-gated out
+    # of tank mode, so this adds manual only.
+    growspace.water_usage.total_liters = 10.0
+    growspace.water_usage.daily_readings = [
+        {"date": "2026-01-12", "liters": 3.0, "source": "manual"}
+    ]
+
+    assert sensor.native_value == 52.0  # 42 tank cycle + 10 manual cycle
+    attrs = sensor.extra_state_attributes
+    assert attrs["liters_today"] == 11.0  # 8 tank today + 3 manual today
+    assert attrs["liters_cycle"] == 52.0
 
 
 def test_water_sensor_native_value_tank_derived() -> None:
