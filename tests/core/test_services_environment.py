@@ -14,12 +14,14 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.models import (
     CirculationFanConfig,
     EnvironmentConfig,
+    ExhaustFanConfig,
     IrrigationTank,
     SensorGroup,
 )
 from custom_components.growspace_manager.services.environment import (
     handle_configure_circulation_fan,
     handle_configure_environment,
+    handle_configure_exhaust_fan,
     handle_remove_environment,
     handle_set_dehumidifier_control,
     handle_set_humidifier_control,
@@ -370,6 +372,66 @@ async def test_handle_configure_circulation_fan_gs_not_found(
         ServiceValidationError, match="Growspace 'non_existent' not found"
     ):
         await handle_configure_circulation_fan(mock_hass, mock_coordinator, mock_call)
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_exhaust_fan_success(
+    mock_hass: MagicMock, mock_coordinator: MagicMock, mock_call: MagicMock
+) -> None:
+    """Test successful exhaust fan configuration writes config and persists."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "enabled": True,
+        "min_speed": 20,
+        "max_speed": 80,
+        "temperature_target": 24.0,
+        "temperature_tolerance": 1.5,
+        "humidity_target": 55.0,
+        "humidity_tolerance": 4.0,
+        "vpd_target": 1.1,
+        "vpd_tolerance": 0.18,
+        "stage_vpd_enabled": True,
+        "stage_vpd_overrides": {"flower_early": {"day": 1.1, "night": 0.9}},
+        "critical_temp_low": None,
+        "critical_temp_high": 32.0,
+        "critical_temp_hysteresis": 1.0,
+    }
+
+    await handle_configure_exhaust_fan(mock_hass, mock_coordinator, mock_call)
+
+    fan_cfg = mock_gs.environment_config.exhaust_fan_config
+    assert isinstance(fan_cfg, ExhaustFanConfig)
+    assert fan_cfg.enabled is True
+    assert fan_cfg.min_speed == 20
+    assert fan_cfg.max_speed == 80
+    assert fan_cfg.temperature_target == 24.0
+    assert fan_cfg.vpd_target == 1.1
+    assert fan_cfg.stage_vpd_enabled is True
+    assert fan_cfg.stage_vpd_overrides == {"flower_early": {"day": 1.1, "night": 0.9}}
+    assert fan_cfg.critical_temp_high == 32.0
+    assert fan_cfg.critical_temp_low is None
+    mock_coordinator.async_commit.assert_awaited_once()
+    mock_coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_exhaust_fan_gs_not_found(
+    mock_hass: MagicMock, mock_coordinator: MagicMock, mock_call: MagicMock
+) -> None:
+    """Test exhaust fan configuration with invalid growspace ID raises."""
+    mock_coordinator.growspaces = {}
+    mock_call.data = {"growspace_id": "non_existent"}
+
+    with pytest.raises(
+        ServiceValidationError, match="Growspace 'non_existent' not found"
+    ):
+        await handle_configure_exhaust_fan(mock_hass, mock_coordinator, mock_call)
 
 
 @pytest.mark.asyncio

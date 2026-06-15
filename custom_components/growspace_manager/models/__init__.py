@@ -15,6 +15,7 @@ from .growspace import (
     EnergyTracking,
     EnvironmentConfig,
     EnvironmentState,
+    ExhaustFanConfig,
     Growspace,
     GrowspaceEvent,
     GrowspaceType,
@@ -81,6 +82,7 @@ __all__ = [
     "EnergyTracking",
     "EnvironmentConfig",
     "EnvironmentState",
+    "ExhaustFanConfig",
     "Growspace",
     # contract
     "GrowspaceCoordinatorData",

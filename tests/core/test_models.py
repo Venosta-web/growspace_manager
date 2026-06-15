@@ -9,6 +9,7 @@ from custom_components.growspace_manager.models import (
     CirculationFanConfig,
     EnvironmentConfig,
     EnvironmentState,
+    ExhaustFanConfig,
     Growspace,
     GrowspaceEvent,
     IrrigationStrategy,
@@ -950,3 +951,88 @@ def test_growspace_circulation_fan_config_roundtrip() -> None:
     assert fan_cfg.enabled is True
     assert fan_cfg.regulation_mode is FanRegulationMode.TEMPERATURE
     assert fan_cfg.min_speed == 10
+
+
+# --------------------
+# ExhaustFanConfig Tests
+# --------------------
+
+
+def test_exhaust_fan_config_defaults() -> None:
+    """ExhaustFanConfig() with no args produces expected defaults."""
+    cfg = ExhaustFanConfig()
+    assert cfg.enabled is False
+    assert cfg.min_speed == 0
+    assert cfg.max_speed == 100
+    assert cfg.critical_temp_low is None
+    assert cfg.critical_temp_high is None
+    assert cfg.critical_temp_hysteresis == 1.0
+    assert cfg.stage_vpd_enabled is False
+    assert cfg.stage_vpd_overrides == {}
+    # Exhaust demand is always combined: no regulation_mode, no wind layer.
+    assert not hasattr(cfg, "regulation_mode")
+    assert not hasattr(cfg, "wind_enabled")
+
+
+def test_exhaust_fan_config_roundtrip() -> None:
+    """ExhaustFanConfig serialises and deserialises without data loss."""
+    cfg = ExhaustFanConfig(
+        enabled=True,
+        min_speed=20,
+        max_speed=80,
+        temperature_target=24.0,
+        temperature_tolerance=1.5,
+        humidity_target=55.0,
+        humidity_tolerance=3.0,
+        vpd_target=0.9,
+        vpd_tolerance=0.15,
+        stage_vpd_enabled=True,
+        stage_vpd_overrides={"flower_early": {"day": 1.1, "night": 0.9}},
+        critical_temp_low=18.0,
+        critical_temp_high=32.0,
+        critical_temp_hysteresis=2.0,
+    )
+    restored = ExhaustFanConfig.from_dict(cfg.to_dict())
+    assert restored.enabled is True
+    assert restored.min_speed == 20
+    assert restored.max_speed == 80
+    assert restored.temperature_target == 24.0
+    assert restored.temperature_tolerance == 1.5
+    assert restored.humidity_target == 55.0
+    assert restored.humidity_tolerance == 3.0
+    assert restored.vpd_target == 0.9
+    assert restored.vpd_tolerance == 0.15
+    assert restored.stage_vpd_enabled is True
+    assert restored.stage_vpd_overrides == {"flower_early": {"day": 1.1, "night": 0.9}}
+    assert restored.critical_temp_low == 18.0
+    assert restored.critical_temp_high == 32.0
+    assert restored.critical_temp_hysteresis == 2.0
+
+
+def test_environment_config_missing_exhaust_fan_config_deserialises_to_default() -> None:
+    """EnvironmentConfig stored without exhaust_fan_config key deserialises to default."""
+    data: dict = {}
+    env = EnvironmentConfig.from_dict(data)
+    assert env.exhaust_fan_config.enabled is False
+    assert env.exhaust_fan_config.max_speed == 100
+
+
+def test_environment_config_null_exhaust_fan_config_deserialises_to_default() -> None:
+    """EnvironmentConfig with null exhaust_fan_config in storage deserialises to default."""
+    data = {"exhaust_fan_config": None}
+    env = EnvironmentConfig.from_dict(data)
+    assert env.exhaust_fan_config.enabled is False
+    assert env.exhaust_fan_config.max_speed == 100
+
+
+def test_growspace_exhaust_fan_config_roundtrip() -> None:
+    """Growspace with exhaust_fan_config set round-trips through storage correctly."""
+    gs = Growspace(id="tent1", name="Test Tent")
+    gs.environment_config.exhaust_fan_config = ExhaustFanConfig(
+        enabled=True, min_speed=10, max_speed=90
+    )
+    restored = Growspace.from_dict(gs.to_dict())
+    fan_cfg = restored.environment_config.exhaust_fan_config
+    assert fan_cfg.enabled is True
+    assert fan_cfg.min_speed == 10
+    assert fan_cfg.max_speed == 90
