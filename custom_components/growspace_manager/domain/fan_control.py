@@ -21,15 +21,15 @@ if TYPE_CHECKING:
 # Per-stage VPD targets (day / night) for dynamic VPD mode.
 # Values are midpoints of the tightest Bayesian optimal range for each stage.
 FAN_VPD_STAGE_DEFAULTS: dict[PlantStage, dict[str, float]] = {
-    PlantStage.SEEDLING:      {"day": 0.60, "night": 0.60},
-    PlantStage.CLONE:         {"day": 0.50, "night": 0.50},
-    PlantStage.MOTHER:        {"day": 0.70, "night": 0.60},
-    PlantStage.VEG:           {"day": 0.70, "night": 0.60},
-    PlantStage.FLOWER_EARLY:  {"day": 1.15, "night": 1.00},
-    PlantStage.FLOWER_MID:    {"day": 1.20, "night": 1.00},
-    PlantStage.FLOWER_LATE:   {"day": 1.25, "night": 1.05},
-    PlantStage.DRY:           {"day": 0.95, "night": 0.95},
-    PlantStage.CURE:          {"day": 0.75, "night": 0.75},
+    PlantStage.SEEDLING: {"day": 0.60, "night": 0.60},
+    PlantStage.CLONE: {"day": 0.50, "night": 0.50},
+    PlantStage.MOTHER: {"day": 0.70, "night": 0.60},
+    PlantStage.VEG: {"day": 0.70, "night": 0.60},
+    PlantStage.FLOWER_EARLY: {"day": 1.15, "night": 1.00},
+    PlantStage.FLOWER_MID: {"day": 1.20, "night": 1.00},
+    PlantStage.FLOWER_LATE: {"day": 1.25, "night": 1.05},
+    PlantStage.DRY: {"day": 0.95, "night": 0.95},
+    PlantStage.CURE: {"day": 0.75, "night": 0.75},
 }
 
 
@@ -60,7 +60,10 @@ def evaluate_temp_override(
         return vpd_speed, False, None
 
     if override_direction == "high":
-        if critical_temp_high is not None and current_temp <= critical_temp_high - hysteresis:
+        if (
+            critical_temp_high is not None
+            and current_temp <= critical_temp_high - hysteresis
+        ):
             return vpd_speed, False, None
         return max_speed, True, "high"
 
@@ -100,6 +103,81 @@ def compute_fan_speed(
         return max_speed
     t = (value - lower) / (upper - lower)
     return round(min_speed + t * (max_speed - min_speed))
+
+
+def compute_inverted_fan_speed(
+    value: float,
+    target: float,
+    tolerance: float,
+    min_speed: int,
+    max_speed: int,
+) -> int:
+    """Compute an inverted fan speed: a lower value maps to a higher speed.
+
+    Used for the VPD exhaust term, where a VPD *below* target means the tent is
+    too humid and exhaust should ramp up:
+
+    Below (target - tolerance): max_speed
+    Above (target + tolerance): min_speed
+    Inside the band: linearly interpolated from max_speed down to min_speed
+    """
+    return compute_fan_speed(value, target, tolerance, max_speed, min_speed)
+
+
+def compute_exhaust_demand(
+    temperature: float | None,
+    humidity: float | None,
+    vpd: float | None,
+    *,
+    temperature_target: float,
+    temperature_tolerance: float,
+    humidity_target: float,
+    humidity_tolerance: float,
+    vpd_target: float,
+    vpd_tolerance: float,
+    min_speed: int,
+    max_speed: int,
+) -> int | None:
+    """Combine the temperature, humidity and inverted-VPD terms into one speed.
+
+    Each available reading is mapped to a demand term and the controller drives
+    the fan to the highest of them:
+
+    - temperature: hotter tent → more exhaust (direct mapping)
+    - humidity: more humid tent → more exhaust (direct mapping)
+    - VPD: inverted — more exhaust when VPD is *below* target (too humid)
+
+    A ``None`` reading drops that term from the maximum. Returns ``None`` when no
+    reading is available. The result is clamped to ``[min_speed, max_speed]``.
+    """
+    terms: list[int] = []
+    if temperature is not None:
+        terms.append(
+            compute_fan_speed(
+                temperature,
+                temperature_target,
+                temperature_tolerance,
+                min_speed,
+                max_speed,
+            )
+        )
+    if humidity is not None:
+        terms.append(
+            compute_fan_speed(
+                humidity, humidity_target, humidity_tolerance, min_speed, max_speed
+            )
+        )
+    if vpd is not None:
+        terms.append(
+            compute_inverted_fan_speed(
+                vpd, vpd_target, vpd_tolerance, min_speed, max_speed
+            )
+        )
+
+    if not terms:
+        return None
+
+    return max(min_speed, min(max_speed, max(terms)))
 
 
 def resolve_stage_vpd_target(

@@ -7,6 +7,9 @@ import pytest
 from custom_components.growspace_manager.circulation_fan_coordinator import (
     CirculationFanCoordinator,
 )
+from custom_components.growspace_manager.exhaust_fan_coordinator import (
+    ExhaustFanCoordinator,
+)
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
@@ -225,6 +228,7 @@ async def test_circulation_fan_coordinators_setup_and_cancel(
         ("get_dehumidifier_controller", DehumidifierCoordinator),
         ("get_humidifier_controller", HumidifierCoordinator),
         ("get_circulation_fan_controller", CirculationFanCoordinator),
+        ("get_exhaust_fan_controller", ExhaustFanCoordinator),
     ],
 )
 def test_get_controller_returns_matching_instance(
@@ -247,6 +251,7 @@ def test_get_controller_returns_matching_instance(
         "get_dehumidifier_controller",
         "get_humidifier_controller",
         "get_circulation_fan_controller",
+        "get_exhaust_fan_controller",
     ],
 )
 def test_get_controller_returns_none_when_absent(
