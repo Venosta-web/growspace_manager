@@ -223,6 +223,13 @@ async def test_run_vision_analysis_calls_ai_task(mock_hass, mock_coordinator):
     assert call_kwargs["task_name"] == "growspace_vision_checkup"
     assert len(call_kwargs["attachments"]) == 1
     assert "camera.tent1_cam" in call_kwargs["attachments"][0]["media_content_id"]
+    # Without a structure schema, ai_task returns .data as raw text (not a dict),
+    # which breaks the data.get(...) parsing below. Lock the schema in.
+    from custom_components.growspace_manager.vision_checkup_scheduler import (
+        VISION_RESULT_SCHEMA,
+    )
+
+    assert call_kwargs["structure"] is VISION_RESULT_SCHEMA
 
 
 @pytest.mark.asyncio
@@ -652,6 +659,8 @@ def hass_with_executor(mock_hass, tmp_path):
     # MagicMock(spec=HomeAssistant) blocks instance-only attrs; set config explicitly.
     mock_hass.config = MagicMock()
     mock_hass.config.path.side_effect = lambda *parts: str(tmp_path.joinpath(*parts))
+    # HA core always populates media_dirs; the local source resolves snapshots here.
+    mock_hass.config.media_dirs = {"local": str(tmp_path / "media")}
 
     async def fake_executor(func, *args):
         return func(*args)
@@ -697,6 +706,63 @@ async def test_process_camera_images_returns_media_source_uris(
     assert uri.endswith(".jpg")
     assert coverage == 42.5
     assert len(temp_paths) == 1
+
+
+@pytest.mark.asyncio
+async def test_process_camera_images_saves_under_media_source_root(
+    mock_hass, mock_coordinator, tmp_path
+):
+    """Snapshots are written to the dir the local media-source resolves to.
+
+    In a Docker/HA-OS env config.path("media") (<config>/media) differs from
+    hass.config.media_dirs["local"] (/media). Writing to the former while
+    referencing media-source://media_source/local/... made the AI task fail
+    with "does not exist". The write dir and the URI source must agree.
+    """
+    config_media = tmp_path / "config" / "media"
+    local_media_root = tmp_path / "media"  # what media_dirs["local"] points to
+
+    mock_hass.config = MagicMock()
+    mock_hass.config.path.side_effect = lambda *parts: str(
+        (tmp_path / "config").joinpath(*parts)
+    )
+    mock_hass.config.media_dirs = {"local": str(local_media_root)}
+
+    async def fake_executor(func, *args):
+        return func(*args)
+
+    mock_hass.async_add_executor_job = fake_executor
+
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    mock_image = MagicMock()
+    mock_image.content = b"\xff\xd8\xff\xe0fake"
+
+    with (
+        patch(
+            "homeassistant.components.camera.async_get_image",
+            new_callable=AsyncMock,
+            return_value=mock_image,
+        ),
+        patch(
+            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
+            return_value=(b"\xff\xd8\xff\xe0processed", 42.5),
+        ),
+    ):
+        attachments, _, temp_paths = await scheduler._process_camera_images(
+            "tent1", ["camera.tent1_cam"]
+        )
+
+    assert len(temp_paths) == 1
+    saved = temp_paths[0]
+    # The file must live under the local media-source root, not <config>/media.
+    assert saved.is_relative_to(local_media_root)
+    assert not saved.is_relative_to(config_media)
+    assert saved.exists()
+    # The URI source id must match where the bytes were actually written.
+    assert attachments[0]["media_content_id"].startswith(
+        "media-source://media_source/local/growspace_vision/"
+    )
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,8 @@ from pathlib import Path
 import shutil
 from typing import TYPE_CHECKING, Any
 
+import voluptuous as vol
+
 from homeassistant.components.ai_task import async_generate_data
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.event import async_track_point_in_utc_time
@@ -28,6 +30,21 @@ if TYPE_CHECKING:
     from .models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
+
+# Structured-output schema for the AI vision analysis. Passing this as the
+# ``structure`` argument to ``async_generate_data`` makes the AI task return a
+# parsed dict; without it the result ``.data`` is raw text and the dict access
+# in ``run_vision_analysis`` raises ``AttributeError``.
+VISION_RESULT_SCHEMA = vol.Schema(
+    {
+        vol.Required("analysis"): str,
+        vol.Required("issues_detected"): [str],
+        vol.Required("severity"): vol.In(
+            ["none", "low", "medium", "high", "critical"]
+        ),
+        vol.Required("recommendations"): [str],
+    }
+)
 
 
 def calculate_checkup_times(
@@ -210,7 +227,20 @@ class VisionCheckupScheduler:
         processor = GrowspaceImageProcessor()
         timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
 
-        media_dir = Path(self.hass.config.path("media", "growspace_vision"))
+        # The attachment URI below resolves via the local media source, whose
+        # on-disk root is hass.config.media_dirs[source_dir_id] — NOT
+        # config.path("media"). In a Docker/HA-OS install those differ
+        # (/media vs <config>/media), so we must write where the media source
+        # will look, or the AI task fails with "<path> does not exist".
+        media_dirs = self.hass.config.media_dirs
+        source_dir_id = "local" if "local" in media_dirs else next(iter(media_dirs), None)
+        if source_dir_id is None:
+            _LOGGER.warning(
+                "No media directories configured; cannot save vision snapshots"
+            )
+            return [], None, []
+
+        media_dir = Path(media_dirs[source_dir_id]) / "growspace_vision"
         try:
             await self.hass.async_add_executor_job(
                 lambda: media_dir.mkdir(parents=True, exist_ok=True)
@@ -258,7 +288,8 @@ class VisionCheckupScheduler:
             attachments.append(
                 {
                     "media_content_id": (
-                        f"media-source://media_source/local/growspace_vision/{filename}"
+                        f"media-source://media_source/{source_dir_id}"
+                        f"/growspace_vision/{filename}"
                     )
                 }
             )
@@ -497,6 +528,7 @@ class VisionCheckupScheduler:
                 task_name="growspace_vision_checkup",
                 entity_id=entity_id,
                 instructions=prompt,
+                structure=VISION_RESULT_SCHEMA,
                 attachments=attachments,
             )
         except Exception as err:
