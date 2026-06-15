@@ -13,6 +13,7 @@ from homeassistant.util import dt as dt_util
 
 from .crop_steering import get_crop_steering_state
 from .domain.stage import StageDays
+from .domain.water_aggregation import compute_growspace_water
 from .models import Plant
 from .presentation import GrowspaceViewModelBuilder
 from .utils import calculate_days_since
@@ -161,18 +162,13 @@ class ViewModelBuilder:
             cycles_today = irr_coord.cycles_today
             volume_dispensed_today = irr_coord.volume_dispensed_today
 
-        # Compute liters_today for Tank-Derived Water Mode
-        liters_today: float | None = None
-        env = growspace.environment_config
-        if env and not env.irrigation_flow_sensors and not env.drain_volume_sensors:
-            trackers = (
-                self.coordinator.services.growspaces.get_all_trackers_for_growspace(
-                    growspace_id
-                )
-            )
-            liters_today = round(
-                sum(t.get_total_liters_today() for t in trackers.values()), 2
-            )
+        # Canonical [[Aggregate Water Use]] for today (ADR-0017): manual +
+        # (tank-derived in tank mode, else pump-estimate). The shared helper owns
+        # all source selection, so this path no longer branches on sensor config.
+        trackers = self.coordinator.services.growspaces.get_all_trackers_for_growspace(
+            growspace_id
+        )
+        liters_today = compute_growspace_water(growspace, trackers.values()).today
 
         # Use presentation layer to build rich growspace payload
         serialized = self._growspace_builder.build(
