@@ -240,6 +240,20 @@ A sparse dict stored on `CirculationFanConfig` as `stage_vpd_overrides`. Keyed b
 **Fan Speed Composition**
 `final_speed = clamp(regulation_speed + wind_offset, min_speed, max_speed)` where `regulation_speed` is the output of the active regulation mode (or the safety override when active), and `wind_offset` is the sine term (zero when `wind_enabled=False`).
 
+## Exhaust Fan Controller
+
+**ExhaustFanController**
+An optional per-growspace subsystem that evacuates air by driving all `exhaust_fan_entities` on the same fixed 10 s tick as the [[Circulation Fan Controller]], registered in the `SubsystemManager` as an `EnvironmentController` with a `get_exhaust_fan_controller` accessor. Unlike the circulation fan there is **no single regulation mode and no dynamic wind layer**: exhaust output is always the combined **Exhaust Demand**. The controller is a no-op when `enabled=False` or no `exhaust_fan_entities` are configured, and it restarts cleanly when `configure_exhaust_fan` rewrites the config. See [ADR-0018](./docs/adr/0018-exhaust-fan-combined-demand.md).
+
+**Exhaust Demand**
+Each tick computes three demand terms from the shared `domain/fan_control.py` helpers and drives the fan to the highest: a **temperature term** (`compute_fan_speed` — hotter tent → more exhaust), a **humidity term** (`compute_fan_speed` — more humid → more exhaust), and an **inverted VPD term** (`compute_inverted_fan_speed` — more exhaust when VPD is *below* target, i.e. the air is too saturated). The result is `final = clamp(max(temperature, humidity, vpd_inverted), min_speed, max_speed)`. A sensor that is missing or unavailable drops its term from the maximum; if none of the three read, the tick is a no-op. When `stage_vpd_enabled` is set, the VPD target is resolved per stage and day/night via the shared `resolve_stage_vpd_target` (and `stage_vpd_overrides`), exactly like the circulation fan. The source-air gate and the critical-temperature override are separate slices and do not participate in this demand calculation.
+
+**Exhaust Speed Dispatch**
+The final demand is dispatched per entity domain: a `fan` entity receives it as a percentage (`fan.set_percentage`); a `switch` or `input_boolean` exhaust device is turned **on** when the demand exceeds `min_speed` and **off** otherwise.
+
+**ExhaustFanConfig**
+The dataclass stored on `EnvironmentConfig` that holds the exhaust controller settings: `enabled`, `min_speed`, `max_speed`, per-term `temperature_target`/`temperature_tolerance`, `humidity_target`/`humidity_tolerance`, `vpd_target`/`vpd_tolerance`, `stage_vpd_enabled`, `stage_vpd_overrides`, and (consumed by separate slices) `critical_temp_low`, `critical_temp_high`, `critical_temp_hysteresis`. There is no `regulation_mode` and no wind field. Absent or `enabled=False` means no exhaust control. Source-air gating reuses the existing `minimum_source_air_temperature` and lung-room sensors on `EnvironmentConfig` rather than adding fields here.
+
 **VPD Optimal Overrides**
 A per-growspace sparse dict stored on `EnvironmentConfig` as `vpd_optimal_overrides`. Keyed by user-facing stage name (`"seedling"`, `"clone"`, `"mother"`, `"veg"`, `"flower_early"`, `"flower_mid"`, `"flower_late"`, `"dry"`, `"cure"`); each entry is `{"day": {"low": float, "high": float}, "night": {"low": float, "high": float}}`. Only stages the user has explicitly edited are present — absent stages fall back to `VPD_OPTIMAL_THRESHOLDS`. Applies to the **standard sub-stage only**: the acclimation phases for `seedling` and `clone` (`BayesianStage.SEEDLING`, `BayesianStage.CLONE`) always use hardcoded defaults regardless of any override. Drives the "not optimal" chip and the optimal conditions binary sensor. Distinct from `stage_vpd_overrides` on `CirculationFanConfig`, which controls the fan regulation target, not Bayesian evaluation. Validation rules: `0.1 ≤ low < high ≤ 3.0` kPa; unknown stage keys are rejected; each entry must contain both `"day"` and `"night"` with both `"low"` and `"high"` — a partial entry is invalid. Configurable per-growspace via the **VPD Targets** tab in the config dialog.
 

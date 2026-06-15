@@ -468,9 +468,10 @@ async def handle_configure_exhaust_fan(
 ) -> None:
     """Handle the configure_exhaust_fan service call.
 
-    Persists the exhaust fan configuration onto the target growspace. Exhaust
+    Persists the exhaust fan configuration onto the target growspace and
+    restarts the exhaust controller so the new settings take effect. Exhaust
     demand is always combined (temperature/humidity/VPD), so there is no
-    regulation mode or wind layer. No controller is started here.
+    regulation mode or wind layer.
     """
     growspace_id = call.data.get("growspace_id")
 
@@ -504,6 +505,12 @@ async def handle_configure_exhaust_fan(
 
     await coordinator.services.save()
     await coordinator.services.request_refresh()
+
+    fan_coord = coordinator._subsystem_manager.get_exhaust_fan_controller(
+        growspace_id
+    )
+    if fan_coord:
+        await fan_coord.async_restart()
 
     _LOGGER.info("Exhaust fan controller configured for '%s'", growspace.name)
 

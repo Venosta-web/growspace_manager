@@ -1,6 +1,6 @@
 """Tests for the environment service handlers."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -384,6 +384,7 @@ async def test_handle_configure_exhaust_fan_success(
     mock_gs.name = "Test GS"
     mock_gs.environment_config = EnvironmentConfig()
     mock_coordinator.growspaces = {growspace_id: mock_gs}
+    mock_coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = None
 
     mock_call.data = {
         "growspace_id": growspace_id,
@@ -418,6 +419,46 @@ async def test_handle_configure_exhaust_fan_success(
     assert fan_cfg.critical_temp_low is None
     mock_coordinator.async_commit.assert_awaited_once()
     mock_coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_exhaust_fan_restarts_controller(
+    mock_hass: MagicMock, mock_coordinator: MagicMock, mock_call: MagicMock
+) -> None:
+    """Configuring the exhaust fan restarts a running controller."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+    fan_coord = MagicMock()
+    fan_coord.async_restart = AsyncMock()
+    mock_coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = (
+        fan_coord
+    )
+
+    mock_call.data = {"growspace_id": growspace_id, "enabled": True}
+
+    await handle_configure_exhaust_fan(mock_hass, mock_coordinator, mock_call)
+    fan_coord.async_restart.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_exhaust_fan_no_fan_controller(
+    mock_hass: MagicMock, mock_coordinator: MagicMock, mock_call: MagicMock
+) -> None:
+    """Configuring the exhaust fan is a no-op for restart when no controller exists."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+    mock_coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = None
+
+    mock_call.data = {"growspace_id": growspace_id, "enabled": True}
+
+    await handle_configure_exhaust_fan(mock_hass, mock_coordinator, mock_call)
+    assert mock_gs.environment_config.exhaust_fan_config.enabled is True
 
 
 @pytest.mark.asyncio

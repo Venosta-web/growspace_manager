@@ -16,6 +16,9 @@ from custom_components.growspace_manager.circulation_fan_coordinator import (
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
+from custom_components.growspace_manager.exhaust_fan_coordinator import (
+    ExhaustFanCoordinator,
+)
 from custom_components.growspace_manager.humidifier_coordinator import (
     HumidifierCoordinator,
 )
@@ -72,7 +75,7 @@ class SubsystemManager:
         ] = {}
         self.light_cycle_trackers: dict[str, LightCycleTracker] = {}
         # All VPD/temperature/humidity controllers keyed by growspace_id.
-        # Each list is ordered: [DehumidifierCoordinator, HumidifierCoordinator, CirculationFanCoordinator, ...]
+        # Each list is ordered: [DehumidifierCoordinator, HumidifierCoordinator, CirculationFanCoordinator, ExhaustFanCoordinator, ...]
         self.environment_controllers: dict[str, list[EnvironmentController]] = {}
 
     async def async_initialize_sub_coordinators(
@@ -125,6 +128,7 @@ class SubsystemManager:
             DehumidifierCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
             HumidifierCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
             CirculationFanCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
+            ExhaustFanCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
         ]
         for controller in controllers:
             await controller.async_setup()
@@ -150,6 +154,15 @@ class SubsystemManager:
         """Return the circulation fan coordinator for a growspace, or None."""
         for c in self.environment_controllers.get(growspace_id, []):
             if isinstance(c, CirculationFanCoordinator):
+                return c
+        return None
+
+    def get_exhaust_fan_controller(
+        self, growspace_id: str
+    ) -> ExhaustFanCoordinator | None:
+        """Return the exhaust fan coordinator for a growspace, or None."""
+        for c in self.environment_controllers.get(growspace_id, []):
+            if isinstance(c, ExhaustFanCoordinator):
                 return c
         return None
 
