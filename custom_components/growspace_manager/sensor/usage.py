@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING, Any, override
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
+from custom_components.growspace_manager.domain.water_aggregation import (
+    WaterUseFigures,
+    compute_growspace_water,
+)
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -14,7 +17,6 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.models import Growspace
@@ -165,59 +167,36 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             manufacturer="Growspace Manager",
         )
 
-    def _get_tank_derived_trackers(self, growspace: Growspace) -> list[TankWaterTracker]:
-        """Return qualifying TankWaterTracker instances for tank-derived mode.
+    def _compute_water(self, growspace: Growspace) -> WaterUseFigures:
+        """Aggregate canonical water use via the shared helper (ADR-0017).
 
-        Returns an empty list when flow or drain sensors are configured, meaning
-        the direct-measurement path should be used instead.
+        Delegates all source selection (manual + tank-derived-or-pump) to
+        ``compute_growspace_water``; the sensor no longer branches itself.
         """
-        env = growspace.environment_config
-        if env.irrigation_flow_sensors or env.drain_volume_sensors:
-            return []
-        return list(
-            self.coordinator.services.growspaces.get_all_trackers_for_growspace(
-                self._growspace_id
-            ).values()
-        )
+        trackers = self.coordinator.services.growspaces.get_all_trackers_for_growspace(
+            self._growspace_id
+        ).values()
+        return compute_growspace_water(growspace, trackers)
 
     @property
     @override  # type: ignore[misc]
     def native_value(self) -> float | None:
-        """Return total liters used in current cycle."""
+        """Return total liters used in current cycle (since cycle_start_date)."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
         if not growspace:
             return None
-        trackers = self._get_tank_derived_trackers(growspace)
-        if trackers:
-            cycle_start = growspace.water_usage.cycle_start_date or None
-            return round(
-                sum(t.get_total_liters_since(cycle_start) for t in trackers), 2
-            )
-        return round(growspace.water_usage.total_liters, 2)
+        return self._compute_water(growspace).cycle
 
     @property
     @override  # type: ignore[misc]
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return water usage details."""
+        """Return water usage details, exposing both today and cycle figures."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
         if not growspace:
             return {}
 
         usage = growspace.water_usage
-        trackers = self._get_tank_derived_trackers(growspace)
-
-        if trackers:
-            cycle_start = usage.cycle_start_date or None
-            total_liters = sum(t.get_total_liters_since(cycle_start) for t in trackers)
-            liters_today = sum(t.get_total_liters_today() for t in trackers)
-        else:
-            total_liters = usage.total_liters
-            today_str = dt_util.now().date().isoformat()
-            liters_today = 0.0
-            for reading in usage.daily_readings:
-                if reading.get("date") == today_str:
-                    liters_today = reading.get("liters", 0.0)
-                    break
+        figures = self._compute_water(growspace)
 
         plant_count = len(
             self.coordinator.services.growspaces.get_growspace_plants(
@@ -235,11 +214,12 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
                 pass
 
         liters_per_plant = (
-            round(total_liters / plant_count / days, 2) if plant_count > 0 else 0.0
+            round(figures.cycle / plant_count / days, 2) if plant_count > 0 else 0.0
         )
 
         return {
             "liters_per_plant_per_day": liters_per_plant,
-            "liters_today": round(liters_today, 2),
+            "liters_today": round(figures.today, 2),
+            "liters_cycle": round(figures.cycle, 2),
             "cycle_start_date": usage.cycle_start_date or None,
         }
