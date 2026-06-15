@@ -773,6 +773,44 @@ CONFIGURE_CIRCULATION_FAN_SCHEMA = vol.Schema(
     }
 )
 
+CONFIGURE_EXHAUST_FAN_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Required("enabled"): bool,
+        vol.Required("min_speed"): vol.All(vol.Coerce(int), vol.Range(min=0, max=99)),
+        vol.Required("max_speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+        vol.Required("temperature_target"): vol.All(
+            vol.Coerce(float), vol.Range(min=15, max=35)
+        ),
+        vol.Required("temperature_tolerance"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.5, max=10)
+        ),
+        vol.Required("humidity_target"): vol.All(
+            vol.Coerce(float), vol.Range(min=20, max=90)
+        ),
+        vol.Required("humidity_tolerance"): vol.All(
+            vol.Coerce(float), vol.Range(min=1, max=20)
+        ),
+        vol.Required("vpd_target"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1, max=3.0)
+        ),
+        vol.Required("vpd_tolerance"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.01, max=1.0)
+        ),
+        vol.Optional("stage_vpd_enabled"): bool,
+        vol.Optional("stage_vpd_overrides"): dict,
+        vol.Optional("critical_temp_low"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=10, max=40))
+        ),
+        vol.Optional("critical_temp_high"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=10, max=50))
+        ),
+        vol.Required("critical_temp_hysteresis"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.1, max=5.0)
+        ),
+    }
+)
+
 # --- Manual Watering Service Schemas ---
 
 WATER_PLANT_SCHEMA = vol.Schema(

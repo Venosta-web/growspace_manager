@@ -46,6 +46,7 @@ __all__ = [
     "EnergyTracking",
     "EnvironmentConfig",
     "EnvironmentState",
+    "ExhaustFanConfig",
     "Growspace",
     "GrowspaceEvent",
     "GrowspaceType",
@@ -132,6 +133,32 @@ class CirculationFanConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class ExhaustFanConfig(BaseModel):
+    """Configuration for the exhaust fan controller.
+
+    Unlike the circulation fan, exhaust demand is always the combined result of
+    the temperature, humidity and VPD terms — there is no single regulation mode
+    and no dynamic wind layer. Source-air gating reuses the existing
+    ``minimum_source_air_temperature`` and lung-room sensors on EnvironmentConfig.
+    """
+
+    enabled: bool = False
+    min_speed: int = 0
+    max_speed: int = 100
+    temperature_target: float = 25.0
+    temperature_tolerance: float = 2.0
+    humidity_target: float = 60.0
+    humidity_tolerance: float = 5.0
+    vpd_target: float = 1.0
+    vpd_tolerance: float = 0.2
+    stage_vpd_enabled: bool = False
+    stage_vpd_overrides: dict[str, dict[str, float]] = field(default_factory=dict)
+    critical_temp_low: float | None = None
+    critical_temp_high: float | None = None
+    critical_temp_hysteresis: float = 1.0
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -190,6 +217,7 @@ class EnvironmentConfig(BaseModel):
     circulation_fan_config: CirculationFanConfig = field(
         default_factory=CirculationFanConfig
     )
+    exhaust_fan_config: ExhaustFanConfig = field(default_factory=ExhaustFanConfig)
     vpd_optimal_overrides: dict[str, dict[str, dict[str, float]]] = field(
         default_factory=dict
     )
@@ -275,6 +303,9 @@ class EnvironmentConfig(BaseModel):
 
         if data.get("circulation_fan_config") is None:
             data["circulation_fan_config"] = {}
+
+        if data.get("exhaust_fan_config") is None:
+            data["exhaust_fan_config"] = {}
 
         # Migration: singular -> plural list
         migrations = {

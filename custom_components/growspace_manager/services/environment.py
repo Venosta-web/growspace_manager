@@ -50,12 +50,14 @@ from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import (
     CirculationFanConfig,
     EnvironmentConfig,
+    ExhaustFanConfig,
     IrrigationTank,
     SensorGroup,
 )
 from custom_components.growspace_manager.schemas import (
     CONFIGURE_CIRCULATION_FAN_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
+    CONFIGURE_EXHAUST_FAN_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_HUMIDIFIER_CONTROL_SCHEMA,
@@ -459,6 +461,53 @@ async def handle_configure_circulation_fan(
     _LOGGER.info("Circulation fan controller configured for '%s'", growspace.name)
 
 
+async def handle_configure_exhaust_fan(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Handle the configure_exhaust_fan service call.
+
+    Persists the exhaust fan configuration onto the target growspace. Exhaust
+    demand is always combined (temperature/humidity/VPD), so there is no
+    regulation mode or wind layer. No controller is started here.
+    """
+    growspace_id = call.data.get("growspace_id")
+
+    if growspace_id not in coordinator.growspaces:
+        error_msg = f"Growspace '{growspace_id}' not found"
+        _LOGGER.error(error_msg)
+        raise ServiceValidationError(error_msg)
+
+    growspace = coordinator.growspaces[growspace_id]
+
+    fan_cfg = ExhaustFanConfig(
+        enabled=bool(call.data.get("enabled", False)),
+        min_speed=int(call.data.get("min_speed", 0)),
+        max_speed=int(call.data.get("max_speed", 100)),
+        temperature_target=float(call.data.get("temperature_target", 25.0)),
+        temperature_tolerance=float(call.data.get("temperature_tolerance", 2.0)),
+        humidity_target=float(call.data.get("humidity_target", 60.0)),
+        humidity_tolerance=float(call.data.get("humidity_tolerance", 5.0)),
+        vpd_target=float(call.data.get("vpd_target", 1.0)),
+        vpd_tolerance=float(call.data.get("vpd_tolerance", 0.2)),
+        stage_vpd_enabled=bool(call.data.get("stage_vpd_enabled", False)),
+        stage_vpd_overrides=_validate_stage_vpd_overrides(
+            call.data.get("stage_vpd_overrides", {})
+        ),
+        critical_temp_low=call.data.get("critical_temp_low"),
+        critical_temp_high=call.data.get("critical_temp_high"),
+        critical_temp_hysteresis=float(call.data.get("critical_temp_hysteresis", 1.0)),
+    )
+
+    growspace.environment_config.exhaust_fan_config = fan_cfg
+
+    await coordinator.services.save()
+    await coordinator.services.request_refresh()
+
+    _LOGGER.info("Exhaust fan controller configured for '%s'", growspace.name)
+
+
 SERVICES = [
     ServiceDefinition(
         GrowspaceService.CONFIGURE_ENVIRONMENT,
@@ -484,5 +533,10 @@ SERVICES = [
         GrowspaceService.CONFIGURE_CIRCULATION_FAN,
         handle_configure_circulation_fan,
         CONFIGURE_CIRCULATION_FAN_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.CONFIGURE_EXHAUST_FAN,
+        handle_configure_exhaust_fan,
+        CONFIGURE_EXHAUST_FAN_SCHEMA,
     ),
 ]
