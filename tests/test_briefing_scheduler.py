@@ -9,7 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 
 from custom_components.growspace_manager.briefing_scheduler import BriefingScheduler
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    WaterUsageData,
+)
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 
 # ---------------------------------------------------------------------------
@@ -596,10 +602,10 @@ def test_collect_kpis_includes_avg_vpd_from_growspace_env_state(
     mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:
     """_collect_kpis reads VPD via read_environment_vpd and adds Avg VPD KPI."""
-    growspace = MagicMock()
-    growspace.water_usage = None
+    growspace = Growspace(id="tent1", name="Tent 1")
     mock_coordinator.growspaces = {"tent1": growspace}
     mock_coordinator.alert_monitor.get_alerts.return_value = []
+    mock_coordinator.services.growspaces.get_all_trackers_for_growspace.return_value = {}
 
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
 
@@ -618,14 +624,28 @@ def test_collect_kpis_includes_avg_vpd_from_growspace_env_state(
 def test_collect_kpis_includes_water_use_when_nonzero(
     mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:
-    """_collect_kpis reads total_water_l from water_usage and always adds Water Use KPI."""
-    water_usage = MagicMock()
-    water_usage.total_water_l = 42.5
+    """_collect_kpis aggregates today's water across sources (ADR-0017).
 
-    growspace = MagicMock()
-    growspace.water_usage = water_usage
+    Non-tank growspace: WaterUsageData.daily_readings holds today's manual +
+    pump-estimate liters, summed into the Water Use KPI.
+    """
+    today = dt_util.now().date().isoformat()
+    growspace = Growspace(
+        id="tent1",
+        name="Tent 1",
+        environment_config=EnvironmentConfig(),
+        water_usage=WaterUsageData(
+            total_liters=100.0,
+            cycle_start_date="2026-06-01",
+            daily_readings=[
+                {"date": today, "liters": 40.0, "source": "manual"},
+                {"date": today, "liters": 2.5, "source": "pump_estimate"},
+            ],
+        ),
+    )
     mock_coordinator.growspaces = {"tent1": growspace}
     mock_coordinator.alert_monitor.get_alerts.return_value = []
+    mock_coordinator.services.growspaces.get_all_trackers_for_growspace.return_value = {}
 
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
 
