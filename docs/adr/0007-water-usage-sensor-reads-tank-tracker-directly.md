@@ -1,6 +1,14 @@
 # ADR 0007 — WaterUsageSensor Reads TankWaterTracker Directly in Tank-Derived Mode
 
-**Status:** Accepted
+**Status:** Accepted — superseded in part by [ADR-0017](./0017-aggregate-water-use-across-three-sources.md)
+
+> **Amendment (ADR-0017):** The tank path stays **read-through** as decided here. Two
+> consequences below are superseded: (1) tank-derived mode no longer shows tank-derived
+> *alone* — manual watering is now added on top (accepting a deliberate double-count when a
+> grower hand-waters from the monitored tank); (2) write-through is no longer rejected
+> wholesale — the **pump-cycle** path writes through into `WaterUsageData` with a `source`
+> tag (the "flag to distinguish them" this ADR found missing), while tank-derived remains
+> read-through.
 
 ## Context
 

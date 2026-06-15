@@ -38,6 +38,7 @@ from .const import (
     STORAGE_KEY_AI_BRIEFING,
     STORAGE_VERSION,
 )
+from .domain.water_aggregation import compute_growspace_water
 from .utils import read_environment_vpd, strip_markdown_fence
 
 if TYPE_CHECKING:
@@ -283,9 +284,13 @@ class BriefingScheduler:
                 if vpd is not None:
                     vpd_readings.append(float(vpd))
 
-            water_usage = getattr(growspace, "water_usage", None)
-            if water_usage is not None:
-                water_use_l += float(getattr(water_usage, "total_water_l", 0.0))
+            # Aggregate today's water across all sources — manual, tank-derived,
+            # and pump-cycle (ADR-0017). Previously read a nonexistent field and
+            # was always 0.0.
+            trackers = self.coordinator.services.growspaces.get_all_trackers_for_growspace(
+                growspace.id
+            ).values()
+            water_use_l += compute_growspace_water(growspace, trackers).today
 
         avg_vpd = (
             round(sum(vpd_readings) / len(vpd_readings), 2) if vpd_readings else None

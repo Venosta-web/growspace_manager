@@ -25,6 +25,11 @@ from .const import (
     EVENT_GROWSPACE_LOG_ENTRY,
     SENSOR_SETTLING_DELAY_CAP_SECONDS,
 )
+from .domain.water_aggregation import (
+    WATER_SOURCE_PUMP_ESTIMATE,
+    is_tank_derived_mode,
+    record_daily_water,
+)
 from .exceptions import GrowspaceError
 from .models import Growspace, GrowspaceEvent
 from .utils import any_light_sensor_on
@@ -386,6 +391,22 @@ class BaseIrrigationCoordinator:
             return 0.0
         return duration * flow_rate / 1000.0
 
+    async def _async_record_pump_water(self, liters: float) -> None:
+        """Persist an estimated pump-cycle volume into WaterUsageData (ADR-0017).
+
+        Skipped in Tank-Derived Water Mode, where the reservoir already measures
+        this water — writing a pump estimate too would double-count. Commits
+        through the main coordinator so the figure survives a restart (the
+        in-memory daily-cap counter does not).
+        """
+        if liters <= 0:
+            return
+        growspace = self.growspace
+        if is_tank_derived_mode(growspace):
+            return
+        record_daily_water(growspace, liters, source=WATER_SOURCE_PUMP_ESTIMATE)
+        await self._main_coordinator.async_commit()
+
     def _is_lights_dark(self) -> bool:
         """Return True when no configured light sensor reports lights on.
 
@@ -623,6 +644,7 @@ class BaseIrrigationCoordinator:
                         self._cycles_today += 1
                         cycle_volume = self._compute_cycle_volume_liters(duration)
                         self._volume_dispensed_today += cycle_volume
+                        await self._async_record_pump_water(cycle_volume)
 
                     self._async_spawn_settling_report(
                         event_type=event_type,
