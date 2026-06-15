@@ -20,6 +20,7 @@ from custom_components.growspace_manager.presentation.growspace_view_model impor
 )
 from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 
 @pytest.fixture
@@ -616,10 +617,36 @@ def test_view_model_builder_passes_liters_today_from_trackers(
     assert water_usage["liters_today"] == pytest.approx(7.5)
 
 
-def test_view_model_builder_liters_today_absent_with_flow_sensors(
+def test_view_model_builder_liters_today_additive_tank_plus_manual(
     hass: HomeAssistant,
 ) -> None:
-    """ViewModelBuilder omits liters_today when irrigation flow sensors are configured."""
+    """In tank mode liters_today is tank-derived + manual, via the shared helper."""
+    today = dt_util.now().date().isoformat()
+    env = EnvironmentConfig(
+        irrigation_tanks=[
+            IrrigationTank(
+                sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0
+            )
+        ],
+    )
+    usage = WaterUsageData()
+    usage.daily_readings = [{"date": today, "liters": 2.0, "source": "manual"}]
+    gs = Growspace(id="gs1", name="GS1", environment_config=env, water_usage=usage)
+
+    mock_tracker = MagicMock()
+    mock_tracker.get_total_liters_today.return_value = 7.5
+    coordinator = _make_mock_coordinator(hass, gs, {"sensor.tank1": mock_tracker})
+
+    result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    water_usage = result["irrigation"]["water_usage"]
+    assert water_usage["liters_today"] == pytest.approx(9.5)
+
+
+def test_view_model_builder_liters_today_measured_with_flow_sensors(
+    hass: HomeAssistant,
+) -> None:
+    """Flow sensors no longer gate liters_today; it reports the measured figure (ADR-0017)."""
     env = EnvironmentConfig(
         irrigation_flow_sensors=["sensor.flow1"],
         irrigation_tanks=[
@@ -636,13 +663,14 @@ def test_view_model_builder_liters_today_absent_with_flow_sensors(
     result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
 
     water_usage = result["irrigation"]["water_usage"]
-    assert "liters_today" not in water_usage
+    assert water_usage["liters_today"] == pytest.approx(0.0)
 
 
-def test_view_model_builder_liters_today_absent_with_drain_volume_sensors(
+def test_view_model_builder_liters_today_measured_with_drain_volume_sensors(
     hass: HomeAssistant,
 ) -> None:
-    """ViewModelBuilder omits liters_today when drain volume sensors are configured."""
+    """Drain volume sensors no longer gate liters_today; it reports the measured figure (ADR-0017)."""
+    today = dt_util.now().date().isoformat()
     env = EnvironmentConfig(
         drain_volume_sensors=["sensor.drain1"],
         irrigation_tanks=[
@@ -651,15 +679,18 @@ def test_view_model_builder_liters_today_absent_with_drain_volume_sensors(
             )
         ],
     )
-    gs = Growspace(
-        id="gs1", name="GS1", environment_config=env, water_usage=WaterUsageData()
-    )
+    usage = WaterUsageData()
+    usage.daily_readings = [
+        {"date": today, "liters": 3.0, "source": "manual"},
+        {"date": today, "liters": 1.5, "source": "pump_estimate"},
+    ]
+    gs = Growspace(id="gs1", name="GS1", environment_config=env, water_usage=usage)
     coordinator = _make_mock_coordinator(hass, gs, {})
 
     result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
 
     water_usage = result["irrigation"]["water_usage"]
-    assert "liters_today" not in water_usage
+    assert water_usage["liters_today"] == pytest.approx(4.5)
 
 
 def test_vpd_optimal_overrides_round_trips_in_environment_attributes(
