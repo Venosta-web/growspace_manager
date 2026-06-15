@@ -7,6 +7,7 @@ import pytest
 from custom_components.growspace_manager.const import CONF_AI_ENABLED, CONF_ASSISTANT_ID
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
 from custom_components.growspace_manager.services.ai_assistant import (
     handle_ask_grow_advice,
 )
@@ -232,14 +233,17 @@ async def test_handle_ask_grow_advice_success(
         "ai_settings": {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "test_agent"},
     }
     mock_call.data = {"growspace_id": "gs1", "user_query": "How are things?"}
-    # Mock growspace with environment config
-    mock_gs = MagicMock()
-    mock_gs.environment_config = {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": None,
-        "vpd_sensor": None,
-        "co2_sensor": None,
-    }
+    # Real growspace: env_config is always an EnvironmentConfig dataclass at
+    # runtime (storage deserializes it), which the water aggregation helper reads.
+    mock_gs = Growspace(
+        id="gs1",
+        name="Test Growspace",
+        environment_config=EnvironmentConfig(temperature_sensor="sensor.temp"),
+    )
+    # Frozen to 2026-01-12 by the conftest freeze_time fixture.
+    mock_gs.water_usage.daily_readings = [
+        {"date": "2026-01-12", "liters": 6.5, "source": "manual"}
+    ]
     mock_coordinator.growspaces = {"gs1": mock_gs}
 
     # Mock environment sensors
@@ -274,6 +278,8 @@ async def test_handle_ask_grow_advice_success(
     assert "25 °C" in prompt
     assert "STRESS DETECTED" in prompt
     assert "Temp high" in prompt
+    # Aggregate water use reaches the LLM prompt end-to-end (issue #472)
+    assert "WATER USE TODAY: 6.5" in prompt
 
 
 @pytest.mark.asyncio
@@ -338,14 +344,13 @@ async def test_handle_ask_grow_advice_llm_failure(
         "ai_settings": {CONF_AI_ENABLED: True, CONF_ASSISTANT_ID: "test_agent"},
     }
     mock_call.data = {"growspace_id": "gs1"}
-    # Mock growspace with environment config
-    mock_gs = MagicMock()
-    mock_gs.environment_config = {
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": None,
-        "vpd_sensor": None,
-        "co2_sensor": None,
-    }
+    # Real growspace: env_config is always an EnvironmentConfig dataclass at
+    # runtime (storage deserializes it), which the water aggregation helper reads.
+    mock_gs = Growspace(
+        id="gs1",
+        name="Test Growspace",
+        environment_config=EnvironmentConfig(temperature_sensor="sensor.temp"),
+    )
     mock_coordinator.growspaces = {"gs1": mock_gs}
 
     # Mock LLM returns None or empty response
