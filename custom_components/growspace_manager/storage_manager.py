@@ -40,6 +40,28 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _preserve_tank_runtime_state(
+    previous: EnvironmentConfig | None, new: EnvironmentConfig
+) -> None:
+    """Carry tank runtime-accumulated state from ``previous`` into ``new``.
+
+    Tanks in the options snapshot only describe configuration; the runtime
+    water tracking (``water_history``, ``last_recorded_level``, ``peak_level``)
+    is accumulated on the persisted growspace and must survive the options
+    merge. Tanks are matched by ``sensor_entity``.
+    """
+    if previous is None:
+        return
+    previous_by_entity = {t.sensor_entity: t for t in previous.irrigation_tanks}
+    for tank in new.irrigation_tanks:
+        existing = previous_by_entity.get(tank.sensor_entity)
+        if existing is None:
+            continue
+        tank.water_history = existing.water_history
+        tank.last_recorded_level = existing.last_recorded_level
+        tank.peak_level = existing.peak_level
+
+
 def _migrate_preset_items(
     presets: dict[str, NutrientPreset],
     inventory: NutrientInventory,
@@ -336,7 +358,15 @@ class StorageManager:
             self.repository.load_growspaces({})
 
     def _apply_options_to_growspaces(self, options: dict[str, Any] | None) -> None:
-        """Apply configuration options to loaded growspaces."""
+        """Apply configuration options to loaded growspaces.
+
+        The config entry options are the source of truth for environment
+        *configuration* (sensor entities, thresholds, tank setup), but tanks
+        also carry runtime-accumulated state (water_history, last_recorded_level,
+        peak_level) that lives only in the persisted growspace, not in options.
+        Replacing environment_config wholesale would discard that runtime state
+        on every restart, so it is carried over from the loaded growspace.
+        """
         if not options:
             return
 
@@ -344,7 +374,10 @@ class StorageManager:
             if growspace.id in options:
                 opts = options[growspace.id]
                 if isinstance(opts, dict):
-                    growspace.environment_config = EnvironmentConfig.from_dict(opts)
+                    previous_config = growspace.environment_config
+                    new_config = EnvironmentConfig.from_dict(opts)
+                    _preserve_tank_runtime_state(previous_config, new_config)
+                    growspace.environment_config = new_config
                 else:
                     growspace.environment_config = opts
 
