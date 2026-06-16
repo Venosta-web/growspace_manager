@@ -51,6 +51,9 @@ def _make_env_config(
     max_speed: int = 90,
     stage_vpd_enabled: bool = False,
     stage_vpd_overrides: dict[str, dict[str, float]] | None = None,
+    critical_temp_low: float | None = None,
+    critical_temp_high: float | None = None,
+    critical_temp_hysteresis: float = 1.0,
 ) -> EnvironmentConfig:
     fan_cfg = ExhaustFanConfig(
         enabled=enabled,
@@ -64,6 +67,9 @@ def _make_env_config(
         vpd_tolerance=vpd_tolerance,
         stage_vpd_enabled=stage_vpd_enabled,
         stage_vpd_overrides=stage_vpd_overrides or {},
+        critical_temp_low=critical_temp_low,
+        critical_temp_high=critical_temp_high,
+        critical_temp_hysteresis=critical_temp_hysteresis,
     )
     return EnvironmentConfig(
         temperature_sensors=temperature_sensors
@@ -474,6 +480,186 @@ async def test_source_air_gate_suppresses_dehumidify_when_source_air_not_drier(
     mock_hass.services.async_call.assert_awaited_once_with(
         "switch",
         "turn_off",
+        {ATTR_ENTITY_ID: "switch.exhaust"},
+        blocking=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Critical-temperature safety override
+# ---------------------------------------------------------------------------
+
+
+async def test_high_temp_breach_forces_max_speed_bypassing_gate(
+    mock_hass: MagicMock,
+) -> None:
+    """A high-temp breach vents at max_speed even when the source-air gate
+    has suppressed the cooling demand.
+
+    Source air at tent temperature gates the temperature term (gated demand
+    floors at min_speed), but a breach of ``critical_temp_high`` overrides that
+    and forces the fan to max_speed — a heat emergency vents regardless of
+    whether incoming air is ideal.
+    """
+    env = _make_env_config(
+        exhaust_fan_entities=["fan.exhaust"],
+        critical_temp_high=30.0,
+    )
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": "35.0",  # breaches critical_temp_high (30)
+            "sensor.humidity": "50.0",
+            "sensor.vpd": "1.5",
+            "sensor.lung_temp": "35.0",  # not cooler → cooling term gated
+            "sensor.lung_hum": "50.0",
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass,
+        MagicMock(),
+        "gs1",
+        _make_coordinator("gs1", env, global_settings=_LUNG_GLOBAL_SETTINGS),
+    )
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.exhaust", "percentage": 90},  # max_speed
+        blocking=False,
+    )
+
+
+async def test_low_temp_breach_forces_min_speed_over_humidity_demand(
+    mock_hass: MagicMock,
+) -> None:
+    """A low-temp breach forces min_speed even against a high humidity demand.
+
+    Humid air would normally drive the fan to max_speed, but a breach of
+    ``critical_temp_low`` forces min_speed (switch off): cold air holds little
+    moisture and chill protection takes precedence over venting.
+    """
+    env = _make_env_config(
+        exhaust_fan_entities=["switch.exhaust"],
+        critical_temp_low=15.0,
+    )
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": "10.0",  # breaches critical_temp_low (15)
+            "sensor.humidity": "80.0",  # humid → demand would be max_speed
+            "sensor.vpd": "1.0",
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch",
+        "turn_off",  # forced to min_speed → off
+        {ATTR_ENTITY_ID: "switch.exhaust"},
+        blocking=False,
+    )
+
+
+async def test_high_temp_override_latches_until_hysteresis_release(
+    mock_hass: MagicMock,
+) -> None:
+    """The high-temp override latches at max_speed and releases per hysteresis.
+
+    Demand is parked at the floor (unreachable temperature target) so only the
+    latch holds the fan at max. With critical_temp_high=30 and hysteresis=2 the
+    override releases only once temperature drops to 28 (30 − 2).
+    """
+    env = _make_env_config(
+        exhaust_fan_entities=["fan.exhaust"],
+        temperature_target=100.0,  # park the temp term at the floor
+        temperature_tolerance=2.0,
+        critical_temp_high=30.0,
+        critical_temp_hysteresis=2.0,
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+
+    def _percentage_of_last_call() -> int:
+        return mock_hass.services.async_call.await_args[0][2]["percentage"]
+
+    # Tick 1: breach → latch at max_speed.
+    mock_hass.states.get.side_effect = _states_from(
+        {"sensor.temperature": "31.0", "sensor.humidity": "50.0", "sensor.vpd": "1.5"}
+    )
+    await coord._async_regulate()
+    assert _percentage_of_last_call() == 90
+
+    # Tick 2: temperature falls inside the hysteresis band → still latched.
+    mock_hass.states.get.side_effect = _states_from(
+        {"sensor.temperature": "29.0", "sensor.humidity": "50.0", "sensor.vpd": "1.5"}
+    )
+    await coord._async_regulate()
+    assert _percentage_of_last_call() == 90
+
+    # Tick 3: temperature reaches the release point (30 − 2) → demand floors.
+    mock_hass.states.get.side_effect = _states_from(
+        {"sensor.temperature": "28.0", "sensor.humidity": "50.0", "sensor.vpd": "1.5"}
+    )
+    await coord._async_regulate()
+    assert _percentage_of_last_call() == 10
+
+
+async def test_no_breach_passes_gated_demand_through(mock_hass: MagicMock) -> None:
+    """With critical temps configured but unbreached, the gated demand wins.
+
+    A hot tent (temp term = max_speed) within the critical bounds is dispatched
+    as-is — the override neither forces nor suppresses anything.
+    """
+    env = _make_env_config(
+        exhaust_fan_entities=["fan.exhaust"],
+        critical_temp_low=10.0,
+        critical_temp_high=40.0,
+    )
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": "35.0",  # hot → demand 90, but within [10, 40]
+            "sensor.humidity": "60.0",
+            "sensor.vpd": "1.0",
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.exhaust", "percentage": 90},
+        blocking=False,
+    )
+
+
+async def test_override_inert_when_temp_unavailable(mock_hass: MagicMock) -> None:
+    """Critical temps configured but the temp sensor is unavailable → no override.
+
+    The override cannot evaluate a breach without a reading, so the gated demand
+    (here humidity-driven) passes through unchanged rather than being forced.
+    """
+    env = _make_env_config(
+        exhaust_fan_entities=["switch.exhaust"],
+        critical_temp_high=30.0,
+    )
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": STATE_UNAVAILABLE,
+            "sensor.humidity": "80.0",  # humid → demand = max_speed
+            "sensor.vpd": "1.0",
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch",
+        "turn_on",
         {ATTR_ENTITY_ID: "switch.exhaust"},
         blocking=False,
     )
