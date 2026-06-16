@@ -30,7 +30,12 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .const import FanRegulationMode
 from .domain.day_night import DayNightTracker
-from .domain.fan_control import compute_exhaust_demand, resolve_stage_vpd_target
+from .domain.fan_control import (
+    compute_exhaust_demand,
+    evaluate_temp_override,
+    resolve_stage_vpd_target,
+)
+from .utils import VPDCalculator
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -61,6 +66,8 @@ class ExhaustFanCoordinator:
         self.main_coordinator = main_coordinator
         self._remove_tick: Callable[[], None] | None = None
         self._day_night = DayNightTracker(growspace_id)
+        self._temp_override_active: bool = False
+        self._temp_override_direction: str | None = None
 
     @property
     def _env_config(self) -> EnvironmentConfig | None:
@@ -105,8 +112,10 @@ class ExhaustFanCoordinator:
             return
 
         vpd_target = self._effective_vpd_target(cfg)
+        lung_room_temp, lung_room_vpd = self._read_lung_room_conditions()
+        temperature = self._read_sensor(FanRegulationMode.TEMPERATURE)
         speed = compute_exhaust_demand(
-            self._read_sensor(FanRegulationMode.TEMPERATURE),
+            temperature,
             self._read_sensor(FanRegulationMode.HUMIDITY),
             self._read_sensor(FanRegulationMode.VPD),
             temperature_target=cfg.temperature_target,
@@ -117,12 +126,51 @@ class ExhaustFanCoordinator:
             vpd_tolerance=cfg.vpd_tolerance,
             min_speed=cfg.min_speed,
             max_speed=cfg.max_speed,
+            lung_room_temperature=lung_room_temp,
+            lung_room_vpd=lung_room_vpd,
+            minimum_source_air_temperature=(
+                self._env_config.minimum_source_air_temperature
+            ),
         )
+        speed = self._apply_critical_temp_override(cfg, temperature, speed)
         if speed is None:
             return
 
         for entity_id in self._env_config.exhaust_fan_entities:
             await self._dispatch(entity_id, speed, cfg.min_speed)
+
+    def _apply_critical_temp_override(
+        self, cfg: ExhaustFanConfig, temperature: float | None, speed: int | None
+    ) -> int | None:
+        """Compose the critical-temperature safety override on the gated demand.
+
+        A ``critical_temp_high`` breach forces ``max_speed`` — bypassing the
+        source-air gate, since a heat emergency must vent regardless of whether
+        incoming air is ideal — while a ``critical_temp_low`` breach forces
+        ``min_speed``. The override latches until temperature returns within
+        bounds plus ``critical_temp_hysteresis``. With no critical temps
+        configured, or no temperature reading, the gated demand passes through.
+        """
+        if cfg.critical_temp_low is None and cfg.critical_temp_high is None:
+            return speed
+        if temperature is None:
+            return speed
+
+        base_speed = speed if speed is not None else cfg.min_speed
+        speed, self._temp_override_active, self._temp_override_direction = (
+            evaluate_temp_override(
+                temperature,
+                cfg.critical_temp_low,
+                cfg.critical_temp_high,
+                cfg.critical_temp_hysteresis,
+                self._temp_override_active,
+                self._temp_override_direction,
+                base_speed,
+                cfg.min_speed,
+                cfg.max_speed,
+            )
+        )
+        return speed
 
     def _effective_vpd_target(self, cfg: ExhaustFanConfig) -> float:
         """Resolve the VPD target, honoring stage-aware overrides when enabled."""
@@ -184,10 +232,13 @@ class ExhaustFanCoordinator:
         else:
             return None
 
-        if not sensors:
-            return None
+        return self._read_entity_value(sensors[0]) if sensors else None
 
-        state = self.hass.states.get(sensors[0])
+    def _read_entity_value(self, entity_id: str | None) -> float | None:
+        """Read a single entity's numeric state, or None when unavailable."""
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
         if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
             return None
         try:
@@ -195,9 +246,33 @@ class ExhaustFanCoordinator:
         except ValueError:
             return None
 
+    def _read_lung_room_conditions(self) -> tuple[float | None, float | None]:
+        """Read the source-air (lung-room) temperature and VPD for the gate.
+
+        The lung-room sensors live in the install-wide ``global_settings`` (the
+        same source the air-exchange recommendations use). Returns ``(None,
+        None)`` when no lung-room sensor is configured, which leaves the
+        source-air gate inert.
+        """
+        global_settings = self.main_coordinator.options.get("global_settings", {})
+        lung_room_temp = self._read_entity_value(
+            global_settings.get("lung_room_temp_sensor")
+        )
+        lung_room_humidity = self._read_entity_value(
+            global_settings.get("lung_room_humidity_sensor")
+        )
+        lung_room_vpd = (
+            VPDCalculator.calculate_vpd(lung_room_temp, lung_room_humidity)
+            if lung_room_temp is not None and lung_room_humidity is not None
+            else None
+        )
+        return lung_room_temp, lung_room_vpd
+
     async def async_restart(self) -> None:
         """Restart the polling tick after a config change."""
         self.unload()
+        self._temp_override_active = False
+        self._temp_override_direction = None
         await self.async_setup()
 
     def unload(self) -> None:

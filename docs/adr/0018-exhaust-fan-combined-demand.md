@@ -84,6 +84,34 @@ for them:
 - the **critical-temperature override** (`critical_temp_low` /
   `critical_temp_high` / `critical_temp_hysteresis`).
 
+### Source-Air Gate (follow-up slice [#476])
+
+The source-air gate has since been implemented as a per-term filter inside
+`compute_exhaust_demand`: before the `max()`, each term is dropped when the air
+the fan would draw in cannot improve conditions. The **temperature** term is
+suppressed when the source air is not cooler than the tent or is below
+`minimum_source_air_temperature`; the **humidity** and **inverted-VPD** terms are
+suppressed when the source air is not drier than the tent, reusing the
+closeness-to-target VPD comparison the `EnvironmentAnalyzer` already performs for
+air-exchange recommendations. Source-air readings come from the install-wide
+lung-room sensors in `global_settings`; the gate is inert (demand ungated) when
+no lung-room sensor is configured. The critical-temperature override bypasses
+this gate on a high-temp breach. See
+[CONTEXT.md "Source-Air Gate"](../../CONTEXT.md).
+
+### Critical-Temp Override (follow-up slice [#477])
+
+The critical-temperature override has since been composed on top of the gated
+demand via the shared `evaluate_temp_override` helper. A `critical_temp_high`
+breach forces `max_speed`, **bypassing the source-air gate** (a heat emergency
+vents regardless of incoming-air quality); a `critical_temp_low` breach forces
+`min_speed` to avoid over-chilling. The override latches until temperature
+returns within bounds plus `critical_temp_hysteresis`, with the latch held on
+the controller and cleared on `async_restart`. Accepted edge case: a low-temp
+breach forcing `min_speed` can override a simultaneous high humidity demand —
+chill protection takes precedence. See
+[CONTEXT.md "Exhaust Critical-Temp Override"](../../CONTEXT.md).
+
 ## Consequences
 
 - One implementation of the fan band math, shared by circulation and exhaust;
@@ -108,3 +136,5 @@ for them:
   combined-demand contract.
 
 [#473]: https://github.com/Venosta-web/growspace_manager/issues/473
+[#476]: https://github.com/Venosta-web/growspace_manager/issues/476
+[#477]: https://github.com/Venosta-web/growspace_manager/issues/477
