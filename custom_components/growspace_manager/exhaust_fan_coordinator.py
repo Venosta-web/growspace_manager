@@ -31,6 +31,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from .const import FanRegulationMode
 from .domain.day_night import DayNightTracker
 from .domain.fan_control import compute_exhaust_demand, resolve_stage_vpd_target
+from .utils import VPDCalculator
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -105,6 +106,7 @@ class ExhaustFanCoordinator:
             return
 
         vpd_target = self._effective_vpd_target(cfg)
+        lung_room_temp, lung_room_vpd = self._read_lung_room_conditions()
         speed = compute_exhaust_demand(
             self._read_sensor(FanRegulationMode.TEMPERATURE),
             self._read_sensor(FanRegulationMode.HUMIDITY),
@@ -117,6 +119,11 @@ class ExhaustFanCoordinator:
             vpd_tolerance=cfg.vpd_tolerance,
             min_speed=cfg.min_speed,
             max_speed=cfg.max_speed,
+            lung_room_temperature=lung_room_temp,
+            lung_room_vpd=lung_room_vpd,
+            minimum_source_air_temperature=(
+                self._env_config.minimum_source_air_temperature
+            ),
         )
         if speed is None:
             return
@@ -184,16 +191,41 @@ class ExhaustFanCoordinator:
         else:
             return None
 
-        if not sensors:
-            return None
+        return self._read_entity_value(sensors[0]) if sensors else None
 
-        state = self.hass.states.get(sensors[0])
+    def _read_entity_value(self, entity_id: str | None) -> float | None:
+        """Read a single entity's numeric state, or None when unavailable."""
+        if not entity_id:
+            return None
+        state = self.hass.states.get(entity_id)
         if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
             return None
         try:
             return float(state.state)
         except ValueError:
             return None
+
+    def _read_lung_room_conditions(self) -> tuple[float | None, float | None]:
+        """Read the source-air (lung-room) temperature and VPD for the gate.
+
+        The lung-room sensors live in the install-wide ``global_settings`` (the
+        same source the air-exchange recommendations use). Returns ``(None,
+        None)`` when no lung-room sensor is configured, which leaves the
+        source-air gate inert.
+        """
+        global_settings = self.main_coordinator.options.get("global_settings", {})
+        lung_room_temp = self._read_entity_value(
+            global_settings.get("lung_room_temp_sensor")
+        )
+        lung_room_humidity = self._read_entity_value(
+            global_settings.get("lung_room_humidity_sensor")
+        )
+        lung_room_vpd = (
+            VPDCalculator.calculate_vpd(lung_room_temp, lung_room_humidity)
+            if lung_room_temp is not None and lung_room_humidity is not None
+            else None
+        )
+        return lung_room_temp, lung_room_vpd
 
     async def async_restart(self) -> None:
         """Restart the polling tick after a config change."""
