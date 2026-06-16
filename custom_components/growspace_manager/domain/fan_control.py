@@ -124,6 +124,44 @@ def compute_inverted_fan_speed(
     return compute_fan_speed(value, target, tolerance, max_speed, min_speed)
 
 
+def _source_air_blocks_cooling(
+    tent_temperature: float,
+    lung_room_temperature: float | None,
+    minimum_source_air_temperature: float | None,
+) -> bool:
+    """Return True when incoming source air cannot cool the tent.
+
+    Cooling is blocked when the source air is not cooler than the tent, or when
+    it is below ``minimum_source_air_temperature``. With no source-air reading
+    the gate is inert (returns False).
+    """
+    if lung_room_temperature is None:
+        return False
+    if (
+        minimum_source_air_temperature is not None
+        and lung_room_temperature < minimum_source_air_temperature
+    ):
+        return True
+    return lung_room_temperature >= tent_temperature
+
+
+def _source_air_blocks_moisture(
+    current_vpd: float | None,
+    lung_room_vpd: float | None,
+    vpd_target: float,
+) -> bool:
+    """Return True when incoming source air would not dry the tent.
+
+    Mirrors the air-exchange comparison the EnvironmentAnalyzer performs: source
+    air helps only when its VPD is *closer* to target than the tent's current
+    VPD. With no source-air reading — or no current tent VPD to compare against —
+    the gate is inert (returns False).
+    """
+    if lung_room_vpd is None or current_vpd is None:
+        return False
+    return abs(lung_room_vpd - vpd_target) >= abs(current_vpd - vpd_target)
+
+
 def compute_exhaust_demand(
     temperature: float | None,
     humidity: float | None,
@@ -137,6 +175,9 @@ def compute_exhaust_demand(
     vpd_tolerance: float,
     min_speed: int,
     max_speed: int,
+    lung_room_temperature: float | None = None,
+    lung_room_vpd: float | None = None,
+    minimum_source_air_temperature: float | None = None,
 ) -> int | None:
     """Combine the temperature, humidity and inverted-VPD terms into one speed.
 
@@ -147,11 +188,23 @@ def compute_exhaust_demand(
     - humidity: more humid tent → more exhaust (direct mapping)
     - VPD: inverted — more exhaust when VPD is *below* target (too humid)
 
-    A ``None`` reading drops that term from the maximum. Returns ``None`` when no
-    reading is available. The result is clamped to ``[min_speed, max_speed]``.
+    A ``None`` reading drops that term from the maximum. Returns ``None`` only
+    when no reading is available at all; when readings exist but every term is
+    gated, the result floors at ``min_speed``. The result is clamped to
+    ``[min_speed, max_speed]``.
+
+    The **source-air gate** suppresses a term when the air the fan would draw in
+    cannot improve conditions (ADR 0018): the temperature term is dropped when
+    the lung-room/source air is not cooler than the tent, or is below
+    ``minimum_source_air_temperature``; the humidity and inverted-VPD terms are
+    dropped when the source air is not drier than the tent (its VPD is no closer
+    to ``vpd_target``). The gate is inert (every term ungated) when the
+    corresponding lung-room reading is not supplied.
     """
     terms: list[int] = []
-    if temperature is not None:
+    if temperature is not None and not _source_air_blocks_cooling(
+        temperature, lung_room_temperature, minimum_source_air_temperature
+    ):
         terms.append(
             compute_fan_speed(
                 temperature,
@@ -161,13 +214,14 @@ def compute_exhaust_demand(
                 max_speed,
             )
         )
-    if humidity is not None:
+    moisture_blocked = _source_air_blocks_moisture(vpd, lung_room_vpd, vpd_target)
+    if humidity is not None and not moisture_blocked:
         terms.append(
             compute_fan_speed(
                 humidity, humidity_target, humidity_tolerance, min_speed, max_speed
             )
         )
-    if vpd is not None:
+    if vpd is not None and not moisture_blocked:
         terms.append(
             compute_inverted_fan_speed(
                 vpd, vpd_target, vpd_tolerance, min_speed, max_speed
@@ -175,7 +229,12 @@ def compute_exhaust_demand(
         )
 
     if not terms:
-        return None
+        if temperature is None and humidity is None and vpd is None:
+            return None
+        # Readings exist but every term was gated by the source-air filter:
+        # this is a decision that exhaust won't help, so drive the fan down
+        # rather than leaving a running device on.
+        return min_speed
 
     return max(min_speed, min(max_speed, max(terms)))
 

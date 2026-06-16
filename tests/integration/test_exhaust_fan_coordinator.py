@@ -85,12 +85,14 @@ def _make_coordinator(
     growspace_id: str,
     env_config: EnvironmentConfig,
     plants: list | None = None,
+    global_settings: dict | None = None,
 ) -> MagicMock:
     coord = MagicMock()
     gs = MagicMock()
     gs.environment_config = env_config
     coord.growspaces = {growspace_id: gs}
     coord.services.growspaces.get_growspace_plants.return_value = plants or []
+    coord.options = {"global_settings": global_settings or {}}
     return coord
 
 
@@ -364,5 +366,114 @@ async def test_stage_vpd_enabled_uses_stage_target(mock_hass: MagicMock) -> None
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.exhaust", "percentage": 50},
+        blocking=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Source-air gate
+# ---------------------------------------------------------------------------
+
+_LUNG_GLOBAL_SETTINGS = {
+    "lung_room_temp_sensor": "sensor.lung_temp",
+    "lung_room_humidity_sensor": "sensor.lung_hum",
+}
+
+
+async def test_source_air_gate_suppresses_cooling_when_source_air_too_warm(
+    mock_hass: MagicMock,
+) -> None:
+    """A hot tent stays off when the lung-room air is no cooler than the tent.
+
+    The temperature term would drive the switch on, but source air at tent
+    temperature cannot cool, so that term is dropped. Humidity/VPD sit at the
+    floor (and the source air is dry enough not to gate them), leaving demand at
+    min_speed → the device is turned off.
+    """
+    env = _make_env_config(exhaust_fan_entities=["switch.exhaust"])
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": "30.0",  # hot tent → temp term = max_speed
+            "sensor.humidity": "50.0",  # dry → floor
+            "sensor.vpd": "1.5",  # above band → inverted floor
+            "sensor.lung_temp": "30.0",  # source air not cooler than tent
+            "sensor.lung_hum": "76.0",  # source VPD ~1.02 → moisture NOT gated
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass,
+        MagicMock(),
+        "gs1",
+        _make_coordinator("gs1", env, global_settings=_LUNG_GLOBAL_SETTINGS),
+    )
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch",
+        "turn_off",
+        {ATTR_ENTITY_ID: "switch.exhaust"},
+        blocking=False,
+    )
+
+
+async def test_source_air_gate_inert_with_no_lung_room_sensor(
+    mock_hass: MagicMock,
+) -> None:
+    """With no lung-room sensor configured the demand is ungated (current behavior)."""
+    env = _make_env_config(exhaust_fan_entities=["switch.exhaust"])
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": "30.0",  # hot tent → temp term = max_speed
+            "sensor.humidity": "50.0",
+            "sensor.vpd": "1.5",
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass,
+        MagicMock(),
+        "gs1",
+        _make_coordinator("gs1", env, global_settings={}),
+    )
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch",
+        "turn_on",
+        {ATTR_ENTITY_ID: "switch.exhaust"},
+        blocking=False,
+    )
+
+
+async def test_source_air_gate_suppresses_dehumidify_when_source_air_not_drier(
+    mock_hass: MagicMock,
+) -> None:
+    """A humid tent is turned off when the lung-room air is not drier than it.
+
+    Only humidity/VPD would drive the fan (no temperature sensor), but the
+    source air is wetter (its VPD is further from target), so both moisture
+    terms are dropped. Readings exist, so suppressed demand drives the switch
+    to min_speed (off) rather than leaving it running.
+    """
+    env = _make_env_config(
+        temperature_sensors=[],  # isolate the moisture terms
+        exhaust_fan_entities=["switch.exhaust"],
+    )
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.humidity": "70.0",  # humid → humidity term = max_speed
+            "sensor.vpd": "0.5",  # too humid → inverted term = max_speed
+            "sensor.lung_temp": "25.0",
+            "sensor.lung_hum": "95.0",  # source VPD ~0.16 → not drier than tent
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass,
+        MagicMock(),
+        "gs1",
+        _make_coordinator("gs1", env, global_settings=_LUNG_GLOBAL_SETTINGS),
+    )
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch",
+        "turn_off",
+        {ATTR_ENTITY_ID: "switch.exhaust"},
         blocking=False,
     )
