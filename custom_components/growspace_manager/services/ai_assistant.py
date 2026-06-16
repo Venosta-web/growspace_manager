@@ -16,6 +16,9 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.domain import calculate_days_in_stage
+from custom_components.growspace_manager.domain.water_aggregation import (
+    compute_growspace_water,
+)
 from custom_components.growspace_manager.schemas import (
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
@@ -118,12 +121,25 @@ class GrowAssistant:
         # Strain analytics
         strain_analytics = self._get_strain_analytics(plants)
 
+        # Canonical [[Aggregate Water Use]] — manual + tank-derived-or-pump
+        # (ADR-0017). Same helper and facade the briefing Water Use KPI uses, so
+        # the AI context and the briefing report the same number.
+        trackers = self.coordinator.services.growspaces.get_all_trackers_for_growspace(
+            growspace_id
+        ).values()
+        water = compute_growspace_water(growspace, trackers)
+
         return {
             "growspace": {
                 "id": growspace_id,
                 "name": growspace.name,
                 "size": f"{growspace.rows}x{growspace.plants_per_row}",
                 "total_plants": len(plants),
+            },
+            "water": {
+                "today_liters": water.today,
+                "cycle_liters": water.cycle,
+                "source": water.source,
             },
             "environment": {
                 "sensors": sensor_data,
@@ -348,6 +364,17 @@ class GrowAssistant:
         lines.extend(self._format_sensor_data(data["environment"]["sensors"]))
         lines.append("")
 
+        # Aggregate water use today (manual + tank-derived-or-pump, ADR-0017).
+        # Optional like the other sections: callers that assemble a partial
+        # context (e.g. the vision checkup seam) may omit it.
+        water = data.get("water")
+        if water:
+            lines.append(
+                f"WATER USE TODAY: {water['today_liters']} L "
+                f"(cycle {water['cycle_liters']} L)"
+            )
+            lines.append("")
+
         # Add Bayesian analysis
         lines.extend(self._format_analysis_data(data["analysis"]))
 
@@ -356,7 +383,9 @@ class GrowAssistant:
 
         # Add strain-specific context (breeder notes, preferences)
         if data["plants"]["count"] > 0:
-            plants = self.coordinator._data_repository.get_growspace_plants(data["growspace"]["id"])
+            plants = self.coordinator._data_repository.get_growspace_plants(
+                data["growspace"]["id"]
+            )
             strain_context = self._get_strain_specific_context(plants)
             if strain_context:
                 lines.append("STRAIN-SPECIFIC GUIDANCE:")
@@ -495,7 +524,12 @@ class GrowAssistant:
             _LOGGER.error("Error getting AI advice: %s", err)
             if any(
                 m in str(err)
-                for m in ("429", "Too Many Requests", "RESOURCE_EXHAUSTED", "resource_exhausted")
+                for m in (
+                    "429",
+                    "Too Many Requests",
+                    "RESOURCE_EXHAUSTED",
+                    "resource_exhausted",
+                )
             ):
                 raise ServiceValidationError("rate_limited") from err
             # Fallback to context if AI fails
@@ -544,7 +578,12 @@ class GrowAssistant:
             err_code = getattr(result.response, "error_code", "") or ""
             if any(
                 m in speech_text or m.lower() in err_code.lower()
-                for m in ("429", "Too Many Requests", "RESOURCE_EXHAUSTED", "resource_exhausted")
+                for m in (
+                    "429",
+                    "Too Many Requests",
+                    "RESOURCE_EXHAUSTED",
+                    "resource_exhausted",
+                )
             ):
                 raise ServiceValidationError("rate_limited")
 
@@ -552,7 +591,9 @@ class GrowAssistant:
                 response = speech_text
                 if max_length and len(response) > max_length:
                     response = response[:max_length].rsplit(" ", 1)[0] + "..."
-                _LOGGER.info("AI assistant provided advice for growspace %s", growspace_id)
+                _LOGGER.info(
+                    "AI assistant provided advice for growspace %s", growspace_id
+                )
                 return response
 
         raise ServiceValidationError("AI assistant returned an empty response")
@@ -606,12 +647,14 @@ async def handle_analyze_all_growspaces(
     all_data = []
     issues_found = []
 
-    for growspace_id in (gs.id for gs in coordinator._data_repository.get_all_growspaces()):
+    for growspace_id in (
+        gs.id for gs in coordinator._data_repository.get_all_growspaces()
+    ):
         try:
             data = assistant.gather_growspace_data(growspace_id)
             all_data.append(data)
             issues_found.extend(_analyze_growspace_issues(data))
-        except Exception as err :  # noqa: BLE001
+        except Exception as err:  # noqa: BLE001
             _LOGGER.warning("Error analyzing growspace %s: %s", growspace_id, err)
 
     # Build comprehensive summary
@@ -669,7 +712,7 @@ async def handle_analyze_all_growspaces(
                 "growspaces_analyzed": len(all_data),
             }
 
-    except Exception as err :  # noqa: BLE001
+    except Exception as err:  # noqa: BLE001
         _LOGGER.error("Error analyzing all growspaces: %s", err)
         # Fallback to summary
         return {
@@ -769,7 +812,7 @@ async def handle_strain_recommendation(
         try:
             gs_data = assistant.gather_growspace_data(growspace_id)
             growspace_context = f"\nTARGET GROWSPACE: {gs_data['growspace']['name']} ({gs_data['growspace']['size']})"
-        except Exception as e :  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             _LOGGER.warning(
                 "Failed to gather growspace data for strain recommendation for growspace %s: %s",
                 growspace_id,
@@ -815,7 +858,7 @@ async def handle_strain_recommendation(
                 "strains_analyzed": len(all_strains),
             }
 
-    except Exception as err :  # noqa: BLE001
+    except Exception as err:  # noqa: BLE001
         _LOGGER.error("Error getting strain recommendation: %s", err)
         return {
             "response": f"Error getting strain recommendation: {err}\n\nStrain Data:\n\n{context}",

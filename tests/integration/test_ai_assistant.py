@@ -5,7 +5,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import CONF_AI_ENABLED, CONF_ASSISTANT_ID
-from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from custom_components.growspace_manager.domain.water_aggregation import (
+    compute_growspace_water,
+)
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    IrrigationTank,
+)
 from custom_components.growspace_manager.services.ai_assistant import (
     GrowAssistant,
     _analyze_growspace_issues,
@@ -18,6 +25,7 @@ from custom_components.growspace_manager.services.ai_assistant import (
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util import dt as dt_util
 
 GROWSPACE_ID = "test_growspace"
 GROWSPACE_NAME = "Test Growspace"
@@ -58,6 +66,10 @@ def mock_coordinator() -> MagicMock:
     # 4. Attach repositories to coordinator facade
     coordinator._data_repository = data_repo
     coordinator.plants = plant_repo
+
+    # Water aggregation reads tank trackers via the growspaces facade; default to
+    # no trackers (measured mode) so compute_growspace_water has an iterable.
+    coordinator.services.growspaces.get_all_trackers_for_growspace.return_value = {}
 
     coordinator.options = {
         "ai_settings": {
@@ -217,6 +229,120 @@ def testgather_growspace_data_missing(
         assistant.gather_growspace_data("missing_id")
 
 
+def test_gather_growspace_data_includes_aggregate_water(
+    assistant: GrowAssistant, mock_coordinator: MagicMock
+) -> None:
+    """gather_growspace_data carries today's aggregate water from the shared helper."""
+    growspace = mock_coordinator._data_repository.get_growspace(GROWSPACE_ID)
+    today = dt_util.now().date().isoformat()
+    growspace.water_usage.daily_readings = [
+        {"date": today, "liters": 3.5, "source": "manual"}
+    ]
+
+    data = assistant.gather_growspace_data(GROWSPACE_ID)
+
+    trackers = mock_coordinator.services.growspaces.get_all_trackers_for_growspace(
+        GROWSPACE_ID
+    ).values()
+    expected = compute_growspace_water(growspace, trackers).today
+    assert expected == 3.5
+    assert data["water"]["today_liters"] == expected
+
+
+def test_format_context_data_renders_water_use(
+    assistant: GrowAssistant, mock_coordinator: MagicMock
+) -> None:
+    """_format_context_data renders the aggregate water figure into the context."""
+    growspace = mock_coordinator._data_repository.get_growspace(GROWSPACE_ID)
+    today = dt_util.now().date().isoformat()
+    growspace.water_usage.daily_readings = [
+        {"date": today, "liters": 4.2, "source": "manual"}
+    ]
+
+    data = assistant.gather_growspace_data(GROWSPACE_ID)
+    context = assistant._format_context_data(data)
+
+    assert "WATER USE TODAY: 4.2" in context
+
+
+def _tank_tracker(today_liters: float) -> MagicMock:
+    """Build a TankWaterTracker stand-in returning fixed liter figures."""
+    tracker = MagicMock()
+    tracker.get_total_liters_today.return_value = today_liters
+    tracker.get_total_liters_since.return_value = today_liters
+    return tracker
+
+
+@pytest.mark.parametrize(
+    ("environment_config", "daily_readings", "trackers"),
+    [
+        # manual-only: explicit watering event, measured branch
+        (
+            EnvironmentConfig(),
+            [
+                {
+                    "date": dt_util.now().date().isoformat(),
+                    "liters": 2.0,
+                    "source": "manual",
+                }
+            ],
+            {},
+        ),
+        # pump-only: pump-cycle estimate written through, measured branch
+        (
+            EnvironmentConfig(),
+            [
+                {
+                    "date": dt_util.now().date().isoformat(),
+                    "liters": 7.5,
+                    "source": "pump_estimate",
+                }
+            ],
+            {},
+        ),
+        # tank-derived: reservoir-level inference adds onto manual
+        (
+            EnvironmentConfig(
+                irrigation_tanks=[
+                    IrrigationTank(sensor_entity="sensor.tank", volume_liters=50.0)
+                ]
+            ),
+            [
+                {
+                    "date": dt_util.now().date().isoformat(),
+                    "liters": 1.0,
+                    "source": "manual",
+                }
+            ],
+            {"sensor.tank": _tank_tracker(5.0)},
+        ),
+    ],
+    ids=["manual_only", "pump_only", "tank_derived"],
+)
+def test_aggregate_water_context_across_modes(
+    assistant: GrowAssistant,
+    mock_coordinator: MagicMock,
+    environment_config: EnvironmentConfig,
+    daily_readings: list[dict[str, object]],
+    trackers: dict[str, MagicMock],
+) -> None:
+    """The AI water context matches the helper across all three water modes."""
+    growspace = mock_coordinator._data_repository.get_growspace(GROWSPACE_ID)
+    growspace.environment_config = environment_config
+    growspace.water_usage.daily_readings = daily_readings
+    mock_coordinator.services.growspaces.get_all_trackers_for_growspace.return_value = (
+        trackers
+    )
+
+    expected = compute_growspace_water(growspace, trackers.values()).today
+
+    data = assistant.gather_growspace_data(GROWSPACE_ID)
+    context = assistant._format_context_data(data)
+
+    assert data["water"]["today_liters"] == expected
+    assert f"WATER USE TODAY: {expected}" in context
+
+
 async def testgather_growspace_data_with_plants(
     assistant: GrowAssistant,
     mock_coordinator: MagicMock,
@@ -238,12 +364,19 @@ async def testgather_growspace_data_with_plants(
 async def test_gather_growspace_data_legacy_dict(
     assistant: GrowAssistant, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
-    """Test gathering data with legacy dict environment config."""
+    """Test gathering data with legacy dict-sourced environment config.
+
+    Storage deserializes a stored options dict into an EnvironmentConfig via
+    ``EnvironmentConfig.from_dict`` (storage_manager.py:347), so the growspace
+    always carries the dataclass at runtime — mirror that here.
+    """
     gs = mock_coordinator._data_repository.get_growspace(GROWSPACE_ID)
-    gs.environment_config = {
-        "temperature_sensor": "sensor.legacy_temp",
-        "humidity_sensor": "sensor.legacy_humidity",
-    }
+    gs.environment_config = EnvironmentConfig.from_dict(
+        {
+            "temperature_sensor": "sensor.legacy_temp",
+            "humidity_sensor": "sensor.legacy_humidity",
+        }
+    )
 
     def side_effect(entity_id):
         if entity_id == "sensor.legacy_temp":
