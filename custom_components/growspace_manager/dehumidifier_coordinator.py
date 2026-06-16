@@ -50,10 +50,13 @@ DEFAULT_THRESHOLDS = {
 
 
 class DehumidifierCoordinator(VpdOnOffController):
-    """Controls a dehumidifier (and optional exhaust fans) based on VPD and growth stage.
+    """Controls a dehumidifier based on VPD and growth stage.
 
     Turns ON when VPD falls below the threshold (air is too humid).
     Turns OFF when VPD rises above the off threshold (humidity acceptable).
+
+    Exhaust fans are owned solely by the ``ExhaustFanController`` (ADR-0019);
+    this coordinator controls only ``dehumidifier_entities``.
     """
 
     _CONTROL_FLAG_ATTR = "control_dehumidifier"
@@ -70,6 +73,4 @@ class DehumidifierCoordinator(VpdOnOffController):
         if not self.growspace or not self.growspace.environment_config:
             return []
         env = self.growspace.environment_config
-        dehum = list(env.dehumidifier_entities or [])
-        exhaust = list(getattr(env, "exhaust_fan_entities", []) or [])
-        return dehum + exhaust
+        return list(env.dehumidifier_entities or [])

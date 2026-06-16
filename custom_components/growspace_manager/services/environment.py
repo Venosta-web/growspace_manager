@@ -47,6 +47,9 @@ from custom_components.growspace_manager.const import (
     GrowspaceService,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exhaust_migration import (
+    evaluate_exhaust_migration_issues,
+)
 from custom_components.growspace_manager.models import (
     CirculationFanConfig,
     EnvironmentConfig,
@@ -299,6 +302,14 @@ async def handle_configure_environment(
             call.data.get("circulation_fan_config"),
             growspace.environment_config,
         ),
+        # configure_environment carries no exhaust_fan_config payload; preserve the
+        # existing controller settings so an environment edit doesn't silently reset
+        # the exhaust controller to enabled=False (ADR-0019).
+        exhaust_fan_config=(
+            growspace.environment_config.exhaust_fan_config
+            if growspace.environment_config
+            else ExhaustFanConfig()
+        ),
         vpd_optimal_overrides=_validate_vpd_optimal_overrides(
             call.data.get("vpd_optimal_overrides")
         ),
@@ -318,6 +329,11 @@ async def handle_configure_environment(
     )
     if fan_coord:
         await fan_coord.async_restart()
+
+    # Re-evaluate the exhaust-migration repair (ADR-0019): this rebuilds the
+    # environment config (control_dehumidifier, exhaust_fan_entities) without a
+    # full reload, so the repair must be re-checked here too.
+    evaluate_exhaust_migration_issues(hass, coordinator)
 
     success_msg = f"Environment monitoring configured for '{growspace.name}'"
     _LOGGER.info("%s: %s", success_msg, env_config)
@@ -375,6 +391,11 @@ async def handle_set_dehumidifier_control(
 
     # Trigger coordinator update
     await coordinator.services.request_refresh()
+
+    # Re-evaluate the exhaust-migration repair (ADR-0019): this service mutates
+    # config via async_restart, not a full reload, so the setup-time check won't
+    # re-run on its own.
+    evaluate_exhaust_migration_issues(hass, coordinator)
 
     status = "enabled" if enabled else "disabled"
     _LOGGER.info("Dehumidifier control %s for '%s'", status, growspace.name)
@@ -506,11 +527,13 @@ async def handle_configure_exhaust_fan(
     await coordinator.services.save()
     await coordinator.services.request_refresh()
 
-    fan_coord = coordinator._subsystem_manager.get_exhaust_fan_controller(
-        growspace_id
-    )
+    fan_coord = coordinator._subsystem_manager.get_exhaust_fan_controller(growspace_id)
     if fan_coord:
         await fan_coord.async_restart()
+
+    # Re-evaluate the exhaust-migration repair (ADR-0019): enabling the new
+    # controller here should clear the repair without waiting for a reload.
+    evaluate_exhaust_migration_issues(hass, coordinator)
 
     _LOGGER.info("Exhaust fan controller configured for '%s'", growspace.name)
 

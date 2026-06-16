@@ -1,6 +1,6 @@
 """Tests for environment configuration service."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -42,6 +42,16 @@ def mock_call():
     call = MagicMock(spec=ServiceCall)
     call.context = Context()
     return call
+
+
+@pytest.fixture(autouse=True)
+def mock_exhaust_migration():
+    """Patch the migration repair helper (it needs a real issue registry)."""
+    with patch(
+        "custom_components.growspace_manager.services.environment"
+        ".evaluate_exhaust_migration_issues"
+    ) as mock_eval:
+        yield mock_eval
 
 
 @pytest.mark.asyncio

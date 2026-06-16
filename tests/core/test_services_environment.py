@@ -1,6 +1,6 @@
 """Tests for the environment service handlers."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -42,6 +42,16 @@ def mock_hass():
 def mock_call():
     """Fixture for a mock ServiceCall instance."""
     return MagicMock(spec=ServiceCall)
+
+
+@pytest.fixture(autouse=True)
+def mock_exhaust_migration():
+    """Patch the migration repair helper (it needs a real issue registry)."""
+    with patch(
+        "custom_components.growspace_manager.services.environment"
+        ".evaluate_exhaust_migration_issues"
+    ) as mock_eval:
+        yield mock_eval
 
 
 @pytest.mark.asyncio
@@ -86,6 +96,27 @@ async def test_handle_configure_environment_success(
     assert mock_gs.environment_config.dehumidifier_thresholds == {"day": 50.0}
     mock_coordinator.async_commit.assert_awaited_once()
     mock_coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_preserves_exhaust_fan_config(
+    mock_hass, mock_coordinator, mock_call, mock_exhaust_migration
+) -> None:
+    """Editing environment config must not reset the exhaust controller (ADR-0019)."""
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig(
+        exhaust_fan_config=ExhaustFanConfig(enabled=True, max_speed=70),
+    )
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    mock_call.data = {"growspace_id": "gs1", CONF_TEMP_SENSOR: "sensor.temp"}
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    preserved = mock_gs.environment_config.exhaust_fan_config
+    assert preserved.enabled is True
+    assert preserved.max_speed == 70
+    mock_exhaust_migration.assert_called_once_with(mock_hass, mock_coordinator)
 
 
 @pytest.mark.asyncio
@@ -213,6 +244,22 @@ async def test_handle_set_dehumidifier_control_success(
     assert mock_gs.environment_config.control_dehumidifier is True
     mock_coordinator.async_commit.assert_awaited_once()
     mock_coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_set_dehumidifier_control_reevaluates_migration(
+    mock_hass, mock_coordinator, mock_call, mock_exhaust_migration
+) -> None:
+    """Toggling dehumidifier control re-evaluates the exhaust migration repair."""
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    mock_call.data = {"growspace_id": "gs1", "enabled": True}
+
+    await handle_set_dehumidifier_control(mock_hass, mock_coordinator, mock_call)
+
+    mock_exhaust_migration.assert_called_once_with(mock_hass, mock_coordinator)
 
 
 @pytest.mark.asyncio
@@ -419,6 +466,26 @@ async def test_handle_configure_exhaust_fan_success(
     assert fan_cfg.critical_temp_low is None
     mock_coordinator.async_commit.assert_awaited_once()
     mock_coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_exhaust_fan_reevaluates_migration(
+    mock_hass: MagicMock,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+    mock_exhaust_migration: MagicMock,
+) -> None:
+    """Configuring the exhaust fan re-evaluates the migration repair so it can clear."""
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    mock_coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = None
+    mock_call.data = {"growspace_id": "gs1", "enabled": True}
+
+    await handle_configure_exhaust_fan(mock_hass, mock_coordinator, mock_call)
+
+    mock_exhaust_migration.assert_called_once_with(mock_hass, mock_coordinator)
 
 
 @pytest.mark.asyncio
