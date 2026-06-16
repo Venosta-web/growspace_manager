@@ -212,6 +212,10 @@
     "pending_growspace_fail": {
       "title": "Failed to create pending growspace",
       "description": "The system failed to create the pending growspace {name}. Error: {error}. Please check the logs for more details."
+    },
+    "exhaust_fan_migration": {
+      "title": "Exhaust fans need to be re-enabled for {growspace}",
+      "description": "Exhaust fans are now controlled by the dedicated exhaust fan controller instead of the dehumidifier. Because of this change, the exhaust fans in {growspace} are no longer being cycled automatically. Open the Exhaust panel for {growspace} and enable the exhaust fan controller to restore automatic control. This was not migrated automatically because the old on/off humidity thresholds do not map onto the new speed-based settings."
     }
   },
   "exceptions": {

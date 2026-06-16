@@ -768,19 +768,33 @@ async def test_determine_is_day_prolonged_unavailability_logs_warning(
     assert any("unavailable" in r.message.lower() for r in caplog.records)
 
 
-async def test_determine_is_device_on_exhaust_fans(coordinator, mock_hass) -> None:
-    """Test _is_device_on checks exhaust fans."""
+async def test_exhaust_fans_not_controlled(coordinator, mock_hass) -> None:
+    """Exhaust fans are owned by the ExhaustFanController, not the dehumidifier.
+
+    Per ADR-0019 the dehumidifier coordinator controls only
+    ``dehumidifier_entities``; an exhaust fan is never part of its controlled set
+    and never influences ``_is_device_on``.
+    """
     coordinator.growspace.environment_config.dehumidifier_entities = []
     coordinator.growspace.environment_config.exhaust_fan_entities = ["fan.exhaust"]
+
+    assert coordinator._get_all_controlled_entities() == []
 
     mock_hass.states.get.side_effect = lambda entity_id: {
         "fan.exhaust": MagicMock(state=STATE_ON),
     }.get(entity_id)
 
-    assert coordinator._is_device_on() is True
-
-    mock_hass.states.get.side_effect = lambda entity_id: {
-        "fan.exhaust": MagicMock(state=STATE_OFF),
-    }.get(entity_id)
-
+    # An exhaust fan running does not register as the dehumidifier being on.
     assert coordinator._is_device_on() is False
+
+
+async def test_controlled_set_excludes_exhaust_when_both_configured(
+    coordinator,
+) -> None:
+    """Only dehumidifier entities are returned even when exhaust fans are set."""
+    coordinator.growspace.environment_config.dehumidifier_entities = [
+        "switch.dehumidifier"
+    ]
+    coordinator.growspace.environment_config.exhaust_fan_entities = ["fan.exhaust"]
+
+    assert coordinator._get_all_controlled_entities() == ["switch.dehumidifier"]

@@ -22,6 +22,7 @@ from . import service_registration
 from .const import CONF_SHOW_SIDEBAR, DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
 from .coordinator import GrowspaceCoordinator
 from .coordinator_builder import CoordinatorBuilder
+from .exhaust_migration import evaluate_exhaust_migration_issues
 from .intent import async_setup_intents
 from .services.seedfinder_scraper import SeedfinderScraper
 from .strain_library import StrainLibrary
@@ -159,6 +160,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
     # Perform the first refresh to populate data
     await coordinator.async_config_entry_first_refresh()
+
+    # Raise/clear the exhaust-fan sole-ownership migration repair (ADR-0019)
+    evaluate_exhaust_migration_issues(hass, coordinator)
 
     entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
 
