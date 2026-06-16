@@ -76,6 +76,33 @@ async def test_growspace_view_model_includes_temp_hum(hass) -> None:
 
 
 @pytest.mark.asyncio
+async def test_growspace_view_model_includes_lung_room_temp_sensors(hass) -> None:
+    """Lung-room temp sensors must round-trip to the frontend config dialog.
+
+    Regression: the field was saved into EnvironmentConfig but never serialized
+    into the overview attributes, so the config dialog re-opened empty.
+    """
+    builder = GrowspaceViewModelBuilder(hass)
+
+    mock_env = MagicMock()
+    mock_env.lung_room_temp_sensors = ["sensor.lung_room_temp"]
+    mock_env.irrigation_tanks = []
+    mock_env.bulk_ec_sensors = []
+    mock_env.pore_ec_sensors = []
+    mock_env.circulation_fan_config = CirculationFanConfig()
+    mock_env.exhaust_fan_config = ExhaustFanConfig()
+    mock_env.vision_checkup_config = VisionCheckupConfig()
+
+    mock_growspace = MagicMock()
+    mock_growspace.environment_config = mock_env
+    mock_growspace.irrigation_config = None
+
+    attributes = builder._get_environment_attributes(mock_growspace)
+
+    assert attributes["lung_room_temp_sensors"] == ["sensor.lung_room_temp"]
+
+
+@pytest.mark.asyncio
 async def test_growspace_overview_sensor_exposes_temp_hum(hass) -> None:
     """Test that GrowspaceOverviewSensor exposes temperature and humidity attributes."""
     mock_coordinator = MagicMock()

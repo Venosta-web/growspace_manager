@@ -80,6 +80,8 @@
       ]),
       'light_sensors': list([
       ]),
+      'lung_room_temp_sensors': list([
+      ]),
       'ph_sensors': list([
       ]),
       'pore_ec_sensors': list([

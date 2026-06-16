@@ -582,6 +582,7 @@ class GrowspaceViewModelBuilder:
         attributes["energy_sensors"] = env_config.energy_sensors
         attributes["electricity_cost_per_kwh"] = env_config.electricity_cost_per_kwh
         attributes["camera_entities"] = env_config.camera_entities
+        attributes["lung_room_temp_sensors"] = env_config.lung_room_temp_sensors
 
         # EC / pH / flow sensors (used by frontend for capability detection)
         attributes["ph_sensors"] = env_config.ph_sensors
