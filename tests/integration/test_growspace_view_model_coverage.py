@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -6,6 +7,7 @@ import pytest
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
+    ExhaustFanConfig,
     Growspace,
     IrrigationConfig,
     IrrigationTank,
@@ -710,6 +712,22 @@ def test_vpd_optimal_overrides_round_trips_in_environment_attributes(
 
     assert attrs["vpd_optimal_overrides"] == overrides
     assert attrs["vpd_optimal_overrides"]["flower_mid"]["day"]["low"] == 0.5
+
+
+def test_exhaust_fan_config_round_trips_in_environment_attributes(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """exhaust_fan_config must be returned by _get_environment_attributes so the dialog re-opens with saved values."""
+    env_config = EnvironmentConfig(
+        exhaust_fan_config=ExhaustFanConfig(enabled=True, max_speed=70)
+    )
+    gs = Growspace(id="gs1", name="GS1", environment_config=env_config)
+
+    attrs = builder._get_environment_attributes(gs)
+
+    assert attrs["exhaust_fan_config"] == asdict(env_config.exhaust_fan_config)
+    assert attrs["exhaust_fan_config"]["enabled"] is True
+    assert attrs["exhaust_fan_config"]["max_speed"] == 70
 
 
 def test_build_includes_subareas(
