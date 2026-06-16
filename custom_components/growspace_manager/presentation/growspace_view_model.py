@@ -679,6 +679,7 @@ class GrowspaceViewModelBuilder:
         # Circulation fan controller config — must be included so the frontend
         # dialog re-opens with the persisted enabled state (not the default False).
         attributes["circulation_fan_config"] = asdict(env_config.circulation_fan_config)
+        attributes["exhaust_fan_config"] = asdict(env_config.exhaust_fan_config)
 
         # Vision checkup config — same reason: persisted enabled state must round-trip.
         attributes["vision_checkup_config"] = asdict(env_config.vision_checkup_config)
