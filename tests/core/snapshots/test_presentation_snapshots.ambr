@@ -80,6 +80,7 @@
       ]),
       'light_sensors': list([
       ]),
+      'lst_offset': -2.0,
       'lung_room_temp_sensors': list([
       ]),
       'ph_sensors': list([

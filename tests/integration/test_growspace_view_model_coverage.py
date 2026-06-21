@@ -878,3 +878,27 @@ def test_substrate_payload_shot_composition_null_without_irrigation_coordinator(
         result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
 
     assert result["irrigation"]["substrate"]["shot_composition"] is None
+
+
+def test_get_environment_attributes_includes_lst_offset(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """Test that _get_environment_attributes includes lst_offset from config."""
+    env_config = EnvironmentConfig(lst_offset=-3.5)
+    growspace = Growspace(id="gs1", name="Test", environment_config=env_config)
+
+    attrs = builder._get_environment_attributes(growspace)
+
+    assert attrs["lst_offset"] == -3.5
+
+
+def test_get_environment_attributes_includes_default_lst_offset(
+    hass: HomeAssistant, builder: GrowspaceViewModelBuilder
+) -> None:
+    """Test that _get_environment_attributes includes default lst_offset."""
+    env_config = EnvironmentConfig()
+    growspace = Growspace(id="gs1", name="Test", environment_config=env_config)
+
+    attrs = builder._get_environment_attributes(growspace)
+
+    assert attrs["lst_offset"] == -2.0
