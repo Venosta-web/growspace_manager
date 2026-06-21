@@ -13,6 +13,11 @@ from custom_components.growspace_manager.domain.plant_metrics import (
     format_plant_position,
     get_formatted_dates,
 )
+from custom_components.growspace_manager.drying_calculator import (
+    compute_days_to_target,
+    compute_weight_lost_pct,
+    is_cure_ready,
+)
 from custom_components.growspace_manager.utils import calculate_plant_stage
 
 from .entity_queries import EntityQueries
@@ -64,6 +69,14 @@ class PlantViewModelBuilder:
             "cure_days": calculate_days_in_stage(plant, "cure"),
         }
 
+        # Drying-stage observations. These mirror the top-level attributes
+        # exposed by the plant sensor (sensor/plant.py) because the frontend
+        # drying tab reads them from this view model, not the sensor entity.
+        weight_log = plant.drying_data.weight_log
+        current_weight = weight_log[-1].weight_grams if weight_log else None
+        wet_weight = plant.harvest_metrics.wet_weight
+        moisture_log = plant.drying_data.moisture_log
+
         # Build complete payload
         return {
             "plant_id": plant.plant_id,
@@ -84,6 +97,19 @@ class PlantViewModelBuilder:
             "last_training_technique": plant.last_training_technique,
             "last_ipm_type": plant.last_ipm_type,
             "days_since_last_watering": get_days_since_watering(plant),
+            # Drying data — read by the plant overview dialog's drying tab
+            "drying_weight": current_weight,
+            "weight_lost_pct": (
+                compute_weight_lost_pct(wet_weight, current_weight)
+                if current_weight is not None and wet_weight
+                else None
+            ),
+            "days_to_target": compute_days_to_target(wet_weight, weight_log),
+            "visual_tag": plant.drying_data.visual_tag,
+            "drying_moisture": (
+                moisture_log[-1].moisture_percent if moisture_log else None
+            ),
+            "drying_ready_for_cure": is_cure_ready(moisture_log),
             # Harvest data — included so the frontend plant overview dialog can read them
             "harvest_metrics": {
                 "wet_weight": plant.harvest_metrics.wet_weight,
