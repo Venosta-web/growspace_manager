@@ -2,7 +2,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.models import (
+    DryingData,
+    HarvestMetrics,
+    MoistureEntry,
+    Plant,
+    WeightEntry,
+)
 from custom_components.growspace_manager.presentation.plant_view_model import (
     PlantViewModelBuilder,
 )
@@ -27,6 +33,8 @@ def mock_plant() -> Plant:
     plant.col = 1
     plant.last_training_technique = "LST"
     plant.last_ipm_type = "Neem"
+    plant.harvest_metrics = HarvestMetrics()
+    plant.drying_data = DryingData()
     return plant
 
 
@@ -127,3 +135,49 @@ def test_build_provided_entity_id(
 
     assert result["entity_id"] == "sensor.custom_plant"
     builder.entity_queries.lookup_plant_entity_id.assert_not_called()
+
+
+def test_build_includes_drying_data(builder, mock_plant: Plant):
+    """Drying-stage fields must be in the frontend payload.
+
+    The plant overview dialog reads ``visual_tag`` and the drying stats from
+    this view model (not the sensor entity), so a saved visual tag only
+    round-trips back to the card if these top-level fields are present.
+    """
+    builder.entity_queries = MagicMock()
+    builder.entity_queries.lookup_plant_entity_id.return_value = "sensor.plant_1"
+    mock_plant.harvest_metrics = HarvestMetrics(wet_weight=100.0)
+    mock_plant.drying_data = DryingData(
+        weight_log=[
+            WeightEntry(date="2024-01-01", weight_grams=100.0),
+            WeightEntry(date="2024-01-02", weight_grams=80.0),
+        ],
+        moisture_log=[MoistureEntry(date="2024-01-02", moisture_percent=11.0)],
+        visual_tag="Red Velcro",
+    )
+
+    result = builder.build(mock_plant)
+
+    assert result["visual_tag"] == "Red Velcro"
+    assert result["drying_weight"] == 80.0
+    assert result["weight_lost_pct"] == 20.0
+    assert result["days_to_target"] is not None
+    assert result["drying_moisture"] == 11.0
+    assert result["drying_ready_for_cure"] is True
+
+
+def test_build_drying_data_empty_logs(builder, mock_plant: Plant):
+    """With no drying observations the fields default to None/False, not errors."""
+    builder.entity_queries = MagicMock()
+    builder.entity_queries.lookup_plant_entity_id.return_value = "sensor.plant_1"
+    mock_plant.harvest_metrics = HarvestMetrics()
+    mock_plant.drying_data = DryingData()
+
+    result = builder.build(mock_plant)
+
+    assert result["visual_tag"] is None
+    assert result["drying_weight"] is None
+    assert result["weight_lost_pct"] is None
+    assert result["days_to_target"] is None
+    assert result["drying_moisture"] is None
+    assert result["drying_ready_for_cure"] is False
