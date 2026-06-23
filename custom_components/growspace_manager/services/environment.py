@@ -298,6 +298,7 @@ async def handle_configure_environment(
         power_sensors=call.data.get(CONF_POWER_SENSORS, []),
         energy_sensors=call.data.get(CONF_ENERGY_SENSORS, []),
         electricity_cost_per_kwh=call.data.get(CONF_ELECTRICITY_COST),
+        lst_offset=call.data.get("lst_offset", -2.0),
         circulation_fan_config=_parse_fan_config(
             call.data.get("circulation_fan_config"),
             growspace.environment_config,
