@@ -98,6 +98,7 @@ from .const import (
     CONF_IRRIGATION_FLOW_SENSORS,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
+    CONF_LST_OFFSET,
     CONF_LUNG_ROOM_TEMP_SENSORS,
     CONF_MOLD_THRESHOLD,
     CONF_PH_SENSORS,
@@ -539,6 +540,9 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_ELECTRICITY_COST): vol.Coerce(float),
         vol.Optional("circulation_fan_config"): dict,
         vol.Optional("vpd_optimal_overrides"): dict,
+        vol.Optional(CONF_LST_OFFSET): vol.All(
+            vol.Coerce(float), vol.Range(min=-10.0, max=10.0)
+        ),
     }
 )
 
