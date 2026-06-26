@@ -629,6 +629,41 @@ def test_view_model_builder_notification_settings_default_when_absent(
     assert result["ai_auto_alerts"] is True
 
 
+def test_view_model_builder_includes_timed_notifications(
+    hass: HomeAssistant,
+) -> None:
+    """Serialized payload carries timed notifications so the card can round-trip."""
+    gs = Growspace(id="gs1", name="GS1", water_usage=WaterUsageData())
+    coordinator = _make_mock_coordinator(hass, gs, {})
+    timed = [
+        {
+            "id": "n1",
+            "message": "Feed me",
+            "trigger_type": "veg_start",
+            "day": 3,
+            "growspace_ids": ["gs1"],
+        }
+    ]
+    coordinator.config_entry.options = {"timed_notifications": timed}
+
+    result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    assert result["timed_notifications"] == timed
+
+
+def test_view_model_builder_timed_notifications_default_empty(
+    hass: HomeAssistant,
+) -> None:
+    """Absent timed_notifications option yields an empty list."""
+    gs = Growspace(id="gs1", name="GS1", water_usage=WaterUsageData())
+    coordinator = _make_mock_coordinator(hass, gs, {})
+    coordinator.config_entry.options = {}
+
+    result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
+
+    assert result["timed_notifications"] == []
+
+
 def test_view_model_builder_passes_liters_today_from_trackers(
     hass: HomeAssistant,
 ) -> None:

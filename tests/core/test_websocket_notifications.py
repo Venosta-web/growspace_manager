@@ -66,6 +66,78 @@ async def test_save_notification_settings_writes_settings_and_ai_auto_alerts(
 
 
 @pytest.mark.asyncio
+async def test_save_notification_settings_persists_timed_notifications(
+    mock_connection: MagicMock,
+) -> None:
+    """A timed_notifications list in the message is persisted into options."""
+    from custom_components.growspace_manager.websocket.notifications import (
+        websocket_save_notification_settings,
+    )
+
+    coordinator = MagicMock()
+    coordinator.config_entry.options = {"timed_notifications": [{"id": "old"}]}
+    coordinator.async_commit = AsyncMock()
+
+    timed = [
+        {
+            "id": "n1",
+            "message": "Feed me",
+            "trigger_type": "veg_start",
+            "day": 3,
+            "growspace_ids": ["gs1"],
+        }
+    ]
+
+    mock_hass = MagicMock()
+    with patch(
+        "custom_components.growspace_manager.websocket.notifications._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 2,
+            "type": "growspace_manager/save_notification_settings",
+            "notification_settings": {},
+            "ai_auto_alerts": True,
+            "timed_notifications": timed,
+        }
+        await websocket_save_notification_settings(mock_hass, mock_connection, msg)
+
+    saved_options = mock_hass.config_entries.async_update_entry.call_args[1]["options"]
+    assert saved_options["timed_notifications"] == timed
+
+
+@pytest.mark.asyncio
+async def test_save_notification_settings_leaves_timed_notifications_untouched_when_absent(
+    mock_connection: MagicMock,
+) -> None:
+    """Omitting timed_notifications preserves the existing stored list."""
+    from custom_components.growspace_manager.websocket.notifications import (
+        websocket_save_notification_settings,
+    )
+
+    coordinator = MagicMock()
+    existing = [{"id": "keep"}]
+    coordinator.config_entry.options = {"timed_notifications": existing}
+    coordinator.async_commit = AsyncMock()
+
+    mock_hass = MagicMock()
+    with patch(
+        "custom_components.growspace_manager.websocket.notifications._get_coordinator",
+        return_value=coordinator,
+    ):
+        msg = {
+            "id": 3,
+            "type": "growspace_manager/save_notification_settings",
+            "notification_settings": {},
+            "ai_auto_alerts": True,
+        }
+        await websocket_save_notification_settings(mock_hass, mock_connection, msg)
+
+    saved_options = mock_hass.config_entries.async_update_entry.call_args[1]["options"]
+    assert saved_options["timed_notifications"] == existing
+
+
+@pytest.mark.asyncio
 async def test_save_notification_settings_sends_error_when_no_coordinator(
     mock_connection: MagicMock,
 ) -> None:

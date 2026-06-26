@@ -239,6 +239,7 @@ class ViewModelBuilder:
         serialized["ai_auto_alerts"] = options.get("ai_settings", {}).get(
             "ai_auto_alerts", True
         )
+        serialized["timed_notifications"] = options.get("timed_notifications", [])
 
         # Top-level timestamp for efficient frontend equality checks (change detection)
         serialized["_ts"] = int(current_time * 1000)

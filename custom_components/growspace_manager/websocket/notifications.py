@@ -32,6 +32,7 @@ SCHEMA_WS_SAVE_NOTIFICATION_SETTINGS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA
         vol.Required("type"): WS_TYPE_SAVE_NOTIFICATION_SETTINGS,
         vol.Required("notification_settings"): dict,
         vol.Required("ai_auto_alerts"): bool,
+        vol.Optional("timed_notifications"): list,
     }
 )
 
@@ -55,6 +56,11 @@ async def websocket_save_notification_settings(
     ai_settings: dict[str, Any] = dict(new_options.get("ai_settings", {}))
     ai_settings["ai_auto_alerts"] = msg["ai_auto_alerts"]
     new_options["ai_settings"] = ai_settings
+
+    # Timed notifications are optional: persist them only when the card sends the
+    # list, otherwise leave the stored list untouched.
+    if "timed_notifications" in msg:
+        new_options["timed_notifications"] = msg["timed_notifications"]
 
     if hasattr(coordinator, "options"):
         coordinator.options = new_options
