@@ -13,6 +13,33 @@ from custom_components.growspace_manager.domain.stage_calculator import (
 from custom_components.growspace_manager.models import Plant
 
 
+@freeze_time("2024-01-11T12:00:00")
+def test_calculate_days_in_stage_card_trigger_vocabulary() -> None:
+    """The card's timed-notification trigger must be a bare stage to ever fire.
+
+    Regression guard for the cross-repo vocabulary bug: the card used to send
+    '*_start' values (e.g. 'veg_start'), which resolve to no plant start field
+    and so always return 0 days — the notification never reached its threshold.
+    The bare stage 'veg' resolves to the veg_start field and counts correctly.
+    """
+    from custom_components.growspace_manager.domain import (  # noqa: PLC0415
+        calculate_days_in_stage as domain_calc,
+    )
+
+    plant = MagicMock(spec=Plant)
+    plant.seedling_start = None
+    plant.clone_start = None
+    plant.veg_start = "2024-01-01T12:00:00"  # 10 days before frozen now
+    plant.flower_start = None
+    plant.dry_start = None
+    plant.cure_start = None
+
+    # Bare stage (what the card now sends) resolves and counts.
+    assert domain_calc(plant, "veg") == 10
+    # Legacy '*_start' value (the bug) resolves to nothing → never fires.
+    assert domain_calc(plant, "veg_start") == 0
+
+
 def test_calculate_days_in_stage_no_start() -> None:
     """Test when the stage has not started yet."""
     plant = MagicMock(spec=Plant)

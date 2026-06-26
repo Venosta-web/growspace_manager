@@ -230,6 +230,17 @@ class ViewModelBuilder:
             else None
         )
 
+        # Global notification settings ride every growspace payload so the card's
+        # Config Dialog (which seeds from the device payload) can round-trip saved
+        # values. They are global, not per-growspace, but mirror notifications_enabled
+        # in being duplicated across payloads.
+        options = self.coordinator.config_entry.options
+        serialized["notification_settings"] = options.get("notification_settings", {})
+        serialized["ai_auto_alerts"] = options.get("ai_settings", {}).get(
+            "ai_auto_alerts", True
+        )
+        serialized["timed_notifications"] = options.get("timed_notifications", [])
+
         # Top-level timestamp for efficient frontend equality checks (change detection)
         serialized["_ts"] = int(current_time * 1000)
 
