@@ -23,6 +23,7 @@ from custom_components.growspace_manager.models import (
     Plant,
 )
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.util import dt as dt_util
 
 
 @dataclass
@@ -312,7 +313,10 @@ def _plant(**starts: str) -> Plant:
 
 def test_stage_days_max_across_plants() -> None:
     """Stage days take the maximum days-since across plants with that start."""
-    today = date.today()
+    # Anchor to the same clock production uses (UTC via HA's dt util); using the
+    # system-local date.today() makes the day count off-by-one near the UTC
+    # midnight boundary.
+    today = dt_util.now().date()
     veg = (today - timedelta(days=10)).isoformat()
     veg_older = (today - timedelta(days=25)).isoformat()
     config = EnvironmentConfig()
