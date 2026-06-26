@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.growspace_manager.const import (
     CONF_BULK_EC_SENSORS,
+    CONF_CONTROL_HUMIDIFIER,
     CONF_DEHUMIDIFIER_THRESHOLDS,
     CONF_HUMIDITY_SENSOR,
     CONF_PORE_EC_SENSORS,
@@ -564,6 +565,28 @@ async def test_configure_environment_accepts_bulk_and_pore_ec_sensors(
     env: EnvironmentConfig = mock_gs.environment_config
     assert env.bulk_ec_sensors == ["sensor.bulk_ec_1"]
     assert env.pore_ec_sensors == ["sensor.pore_ec_1"]
+
+
+@pytest.mark.asyncio
+async def test_configure_environment_persists_control_humidifier(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """configure_environment writes control_humidifier so it survives a save+reload."""
+    growspace_id = "gs1"
+    mock_gs = MagicMock()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        CONF_CONTROL_HUMIDIFIER: True,
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    env: EnvironmentConfig = mock_gs.environment_config
+    assert env.control_humidifier is True
 
 
 @pytest.mark.asyncio
