@@ -9,15 +9,15 @@ Verifies that:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager import DOMAIN
 from custom_components.growspace_manager.alert_monitor import AlertMonitor
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry
 
 
 @pytest.mark.asyncio

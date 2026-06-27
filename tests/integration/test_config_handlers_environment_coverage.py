@@ -257,7 +257,7 @@ async def test_save_and_finish(handler) -> None:
     env_config = {"temperature_sensors": ["sensor.t1"]}
 
     # Code calls await coordinator.async_commit()
-    result = await handler._async_save_and_finish(gs, env_config)  # noqa: SLF001
+    result = await handler._async_save_and_finish(gs, env_config)
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
     handler.config_entry.runtime_data.services.save.assert_awaited_once()
@@ -495,7 +495,7 @@ async def test_add_lst_offset_to_schema(handler) -> None:
 
     opts = {CONF_TEMP_SENSOR: "s1", CONF_HUMIDITY_SENSOR: "s2"}
     # Line 652 path
-    handler._add_lst_offset_to_schema(schema_dict, opts)  # noqa: SLF001
+    handler._add_lst_offset_to_schema(schema_dict, opts)
     assert any("lst_offset" in str(k) for k in schema_dict)
 
 
@@ -800,7 +800,7 @@ def test_process_irrigation_tanks_comprehensive(
         "irrigation_tank_volume": 120.0,
     }
 
-    result = handler._process_irrigation_tanks(  # noqa: SLF001
+    result = handler._process_irrigation_tanks(
         env_config, existing_tanks=existing_tanks
     )
 
@@ -850,7 +850,7 @@ def test_process_irrigation_tanks_empty(
     env_config = {
         "irrigation_tank_sensors": [],
     }
-    result = handler._process_irrigation_tanks(env_config)  # noqa: SLF001
+    result = handler._process_irrigation_tanks(env_config)
     assert result["irrigation_tanks"] == []
 
 
@@ -864,7 +864,7 @@ def test_lst_offset_default_for_dry_and_cure_stages(
         "temperature_sensors": ["sensor.temp"],
         "humidity_sensors": ["sensor.humid"],
     }
-    handler._add_lst_offset_to_schema(schema_dict, growspace_options, stage="dry")  # noqa: SLF001
+    handler._add_lst_offset_to_schema(schema_dict, growspace_options, stage="dry")
     lst_key = None
     for k in schema_dict:
         if k.schema == "lst_offset":
@@ -875,7 +875,7 @@ def test_lst_offset_default_for_dry_and_cure_stages(
 
     # Test for "cure" stage
     schema_dict = {}
-    handler._add_lst_offset_to_schema(schema_dict, growspace_options, stage="cure")  # noqa: SLF001
+    handler._add_lst_offset_to_schema(schema_dict, growspace_options, stage="cure")
     lst_key = None
     for k in schema_dict:
         if k.schema == "lst_offset":
@@ -886,7 +886,7 @@ def test_lst_offset_default_for_dry_and_cure_stages(
 
     # Test for other stage e.g. "veg" (should default to -2.0)
     schema_dict = {}
-    handler._add_lst_offset_to_schema(schema_dict, growspace_options, stage="veg")  # noqa: SLF001
+    handler._add_lst_offset_to_schema(schema_dict, growspace_options, stage="veg")
     lst_key = None
     for k in schema_dict:
         if k.schema == "lst_offset":
@@ -1013,7 +1013,7 @@ async def test_process_irrigation_tanks_edge_cases(
         "irrigation_tank_volume": 120.0,
     }
 
-    result = handler._process_irrigation_tanks(  # noqa: SLF001
+    result = handler._process_irrigation_tanks(
         env_config, existing_tanks=existing_tanks
     )
 

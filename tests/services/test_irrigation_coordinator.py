@@ -231,7 +231,7 @@ async def test_async_wait_for_switch_state_timeout(
     async def mock_wait_for(fut, timeout=None):
         if hasattr(fut, "close"):
             fut.close()
-        raise asyncio.TimeoutError()
+        raise TimeoutError
 
     with patch("asyncio.wait_for", new=mock_wait_for):
         result = await coordinator._async_wait_for_switch_state(

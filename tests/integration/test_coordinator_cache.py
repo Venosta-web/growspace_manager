@@ -1,13 +1,14 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from .common import create_plant
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry
+
+from .common import create_plant
 
 
 def create_test_coordinator(

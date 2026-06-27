@@ -22,7 +22,7 @@ def test_calculate_days_in_stage_card_trigger_vocabulary() -> None:
     and so always return 0 days — the notification never reached its threshold.
     The bare stage 'veg' resolves to the veg_start field and counts correctly.
     """
-    from custom_components.growspace_manager.domain import (  # noqa: PLC0415
+    from custom_components.growspace_manager.domain import (
         calculate_days_in_stage as domain_calc,
     )
 

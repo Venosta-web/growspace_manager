@@ -910,14 +910,42 @@ split-on-trailing-comma = false
 "homeassistant/scripts/*" = ["T201"]
 "script/*" = ["T20"]
 
-# Allow relative imports within auth and within components
+# Allow relative imports within auth and within components. This integration is
+# itself a component, so relative imports within it are the sanctioned pattern
+# (the same allowance HA core grants `homeassistant/components/*/*/*`).
 "homeassistant/auth/*/*" = ["TID252"]
 "homeassistant/components/*/*/*" = ["TID252"]
 "tests/components/*/*/*" = ["TID252"]
+"custom_components/growspace_manager/*" = ["TID252"]
 
 # Temporary
 "homeassistant/**" = ["PTH"]
-"tests/**" = ["PTH"]
+
+# This integration's tests are written more loosely than HA core's own suite:
+# they reach into internals, omit per-function docstrings and package markers,
+# and use local imports. Relax those convention rules for tests rather than
+# retrofit the whole suite. Production code under custom_components/ stays strict.
+# Correctness rules (F-codes, etc.) are deliberately NOT ignored here.
+"tests/**" = [
+  "PTH",      # pathlib not required in tests
+  "D",        # docstrings not required on test functions/modules
+  "SLF001",   # tests legitimately access private members
+  "PLC0415",  # local imports are fine in tests
+  "INP001",   # test dirs need no __init__.py
+  "TID251",   # banned-api (e.g. datetime.now) acceptable in tests
+  "S108",     # hardcoded /tmp paths are fine in tests
+  "RUF059",   # unused unpacked variables in tests
+  "E402",     # module-level import position relaxed in tests
+  "SIM117",   # nested with-statements are fine in test setup
+  "SIM118",   # key in dict.keys() acceptable in tests
+  "RET503",   # implicit return in tests
+  "RET504",   # assign-before-return is readable in tests
+  "PT006",    # parametrize name style not enforced in tests
+  "C416",     # comprehension style not enforced in tests
+  "TRY002",   # raising vanilla Exception is fine in tests
+  "B017",     # blind pytest.raises(Exception) tolerated in tests
+  "PGH003",   # blanket type: ignore tolerated in tests
+]
 
 # The service facade layer is the sanctioned reader of coordinator internals
 # (see custom_components/growspace_manager/CONTEXT.md "Seam Enforcement"), so

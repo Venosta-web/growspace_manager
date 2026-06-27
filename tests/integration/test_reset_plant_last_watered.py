@@ -9,8 +9,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -18,6 +16,8 @@ from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.services.irrigation_watering import (
     handle_reset_plant_last_watered,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from tests.common import MockConfigEntry
 
 from .common import create_plant

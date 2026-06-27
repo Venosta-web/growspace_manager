@@ -80,7 +80,7 @@ async def fire_state_change(
         "old_state": MagicMock(state=old_state),
         "new_state": MagicMock(state=new_state, domain="binary_sensor"),
     }
-    await tracker._on_sensor_change(event)  # noqa: SLF001
+    await tracker._on_sensor_change(event)
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +168,7 @@ async def test_numeric_sensor_above_zero_is_on(
         "custom_components.growspace_manager.light_cycle_tracker.dt_util.now",
         return_value=MagicMock(time=lambda: fixed_time),
     ):
-        await tracker._on_sensor_change(event)  # noqa: SLF001
+        await tracker._on_sensor_change(event)
 
     assert gs.irrigation_strategy.detected_lights_on_time == "07:00:00"
 
@@ -190,7 +190,7 @@ async def test_numeric_sensor_zero_is_off_no_write(
         "old_state": MagicMock(state="500", domain="sensor"),
         "new_state": MagicMock(state="0", domain="sensor"),
     }
-    await tracker._on_sensor_change(event)  # noqa: SLF001
+    await tracker._on_sensor_change(event)
 
     assert gs.irrigation_strategy.detected_lights_on_time is None
     mock_main_coordinator.async_commit.assert_not_awaited()
@@ -234,7 +234,7 @@ async def test_listeners_removed_on_unload(
     tracker.unload()
 
     remove_fn.assert_called_once()
-    assert tracker._remove_listeners == []  # noqa: SLF001
+    assert tracker._remove_listeners == []
 
 
 async def test_no_write_when_irrigation_disabled(
@@ -261,7 +261,7 @@ async def test_is_active_no_growspace(
     """Test _is_active returns False when the growspace is missing from coordinator."""
     mock_main_coordinator.growspaces = {}
     tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
-    assert tracker._is_active() is False  # noqa: SLF001
+    assert tracker._is_active() is False
 
 
 async def test_is_active_no_irrigation_strategy(
@@ -273,7 +273,7 @@ async def test_is_active_no_irrigation_strategy(
     growspace.irrigation_strategy = None
     mock_main_coordinator.growspaces = {"gs1": growspace}
     tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
-    assert tracker._is_active() is False  # noqa: SLF001
+    assert tracker._is_active() is False
 
 
 async def test_light_sensors_no_growspace(
@@ -283,7 +283,7 @@ async def test_light_sensors_no_growspace(
     """Test _light_sensors returns empty list when the growspace is missing."""
     mock_main_coordinator.growspaces = {}
     tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
-    assert tracker._light_sensors() == []  # noqa: SLF001
+    assert tracker._light_sensors() == []
 
 
 @pytest.mark.parametrize("state", [STATE_UNAVAILABLE, STATE_UNKNOWN])
@@ -294,7 +294,7 @@ async def test_is_sensor_on_unavailable_or_unknown(
 ) -> None:
     """Test _is_sensor_on returns None when sensor state is unavailable or unknown."""
     tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
-    assert tracker._is_sensor_on("sensor.light1", state, "sensor") is None  # noqa: SLF001
+    assert tracker._is_sensor_on("sensor.light1", state, "sensor") is None
 
 
 async def test_is_sensor_on_non_numeric_sensor_value(
@@ -303,7 +303,7 @@ async def test_is_sensor_on_non_numeric_sensor_value(
 ) -> None:
     """Test _is_sensor_on returns None when sensor value cannot be converted to float."""
     tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
-    assert tracker._is_sensor_on("sensor.light1", "not-a-number", "sensor") is None  # noqa: SLF001
+    assert tracker._is_sensor_on("sensor.light1", "not-a-number", "sensor") is None
 
 
 async def test_record_lights_on_no_growspace(
@@ -313,7 +313,7 @@ async def test_record_lights_on_no_growspace(
     """Test _record_lights_on exits early when the growspace is missing from coordinator."""
     mock_main_coordinator.growspaces = {}
     tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
-    await tracker._record_lights_on()  # noqa: SLF001
+    await tracker._record_lights_on()
     mock_main_coordinator.async_commit.assert_not_awaited()
 
 
@@ -326,5 +326,5 @@ async def test_record_lights_on_no_irrigation_strategy(
     growspace.irrigation_strategy = None
     mock_main_coordinator.growspaces = {"gs1": growspace}
     tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
-    await tracker._record_lights_on()  # noqa: SLF001
+    await tracker._record_lights_on()
     mock_main_coordinator.async_commit.assert_not_awaited()

@@ -1,11 +1,16 @@
 """Tests for post-harvest strategies."""
 
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from custom_components.growspace_manager.models import EnvironmentState, GrowspaceType
-from custom_components.growspace_manager.strategies.drying import DryingEvaluatorStrategy
-from custom_components.growspace_manager.strategies.curing import CuringEvaluatorStrategy
+from custom_components.growspace_manager.strategies.curing import (
+    CuringEvaluatorStrategy,
+)
+from custom_components.growspace_manager.strategies.drying import (
+    DryingEvaluatorStrategy,
+)
 
 
 @pytest.fixture

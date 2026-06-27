@@ -3,12 +3,12 @@
 from unittest.mock import MagicMock
 
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Growspace, Plant, PlantGenetics
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry
 
 
 @pytest.mark.asyncio

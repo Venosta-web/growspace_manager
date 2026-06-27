@@ -14,7 +14,6 @@ from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
 )
 from custom_components.growspace_manager.managers.plant import PlantManager
-from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import (
     Growspace,
     IPMPreset,
@@ -26,6 +25,7 @@ from custom_components.growspace_manager.models import (
 from custom_components.growspace_manager.service_coordinator_locator import (
     ServiceCoordinatorLocator,
 )
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.services.ipm_service import IPMService
 from custom_components.growspace_manager.services.watering_service import (
     WateringService,

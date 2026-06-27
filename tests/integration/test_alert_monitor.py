@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 import uuid
 
 import pytest
 
-from custom_components.growspace_manager.const import (
-    ATTR_PROBABILITY,
-    ATTR_REASONS,
-    DOMAIN,
-)
+from custom_components.growspace_manager.const import ATTR_PROBABILITY, ATTR_REASONS
 
 GROWSPACE_ID = "tent1"
 STRESS_REASONS = ["High VPD: 1.8 kPa", "Fan off"]

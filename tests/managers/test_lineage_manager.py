@@ -1,7 +1,5 @@
-import pytest
 
 from custom_components.growspace_manager.managers.lineage import StrainLineageManager
-
 
 STRAINS = {
     "Gelato": {

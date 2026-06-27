@@ -1,7 +1,5 @@
 """Tests for Growspace Manager events."""
 
-from .common import create_plant
-
 from custom_components.growspace_manager.events import (
     EVENT_CLONES_TAKEN,
     EVENT_GROWSPACE_UPDATED,
@@ -12,6 +10,8 @@ from custom_components.growspace_manager.events import (
 )
 from custom_components.growspace_manager.models import Growspace
 from homeassistant.core import HomeAssistant, callback
+
+from .common import create_plant
 
 
 async def test_async_fire_growspace_event(hass: HomeAssistant) -> None:

@@ -25,14 +25,13 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.domain.environment_state_assembler import (
-    AssembledEnvironment,
-)
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
+from custom_components.growspace_manager.domain.environment_state_assembler import (
+    AssembledEnvironment,
+)
 from custom_components.growspace_manager.managers.plant import PlantManager
-from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import (
     BaseModel,
     EnvironmentConfig,
@@ -41,6 +40,7 @@ from custom_components.growspace_manager.models import (
     NutrientInventory,
     Plant,
 )
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from custom_components.growspace_manager.storage_manager import StorageManager
 from custom_components.growspace_manager.strategies.mold import (
@@ -169,7 +169,7 @@ async def test_mold_risk_stage_branches_coverage(hass: HomeAssistant) -> None:
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
-    description = GrowspaceBinarySensorDescription(
+    _description = GrowspaceBinarySensorDescription(
         key="mold_risk",
         sensor_type="mold_risk",
         name="Mold Risk",
@@ -238,7 +238,7 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
     validator = MagicMock()
     gs_service = MagicMock()
     strain_library = MagicMock()
-    serializer = MagicMock()
+    _serializer = MagicMock()
     save_callback = AsyncMock()
     lock = MagicMock()
     lock.__aenter__ = AsyncMock(return_value=None)
@@ -822,7 +822,7 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
     validator = MagicMock()
     gs_service = MagicMock()
     strain_library = MagicMock()
-    serializer = MagicMock()
+    _serializer = MagicMock()
     save_callback = AsyncMock()
     lock = MagicMock()
     lock.__aenter__ = AsyncMock(return_value=None)

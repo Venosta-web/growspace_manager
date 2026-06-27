@@ -29,7 +29,9 @@ def save_callback() -> AsyncMock:
 @pytest.fixture
 def manager_empty(save_callback: AsyncMock) -> GeneticsManager:
     """GeneticsManager with a plant but no pollination events."""
-    from custom_components.growspace_manager.data_access.growspace_repository import GrowspaceRepository  # noqa: PLC0415
+    from custom_components.growspace_manager.data_access.growspace_repository import (
+        GrowspaceRepository,
+    )
     repo = GrowspaceRepository()
     repo.add_plant(Plant(
         plant_id="plant-1",
@@ -43,7 +45,9 @@ def manager_empty(save_callback: AsyncMock) -> GeneticsManager:
 @pytest.fixture
 def manager_with_pollination(save_callback: AsyncMock) -> GeneticsManager:
     """GeneticsManager with a plant that has a pollination event."""
-    from custom_components.growspace_manager.data_access.growspace_repository import GrowspaceRepository  # noqa: PLC0415
+    from custom_components.growspace_manager.data_access.growspace_repository import (
+        GrowspaceRepository,
+    )
     repo = GrowspaceRepository()
     repo.add_plant(Plant(
         plant_id="plant-donor",

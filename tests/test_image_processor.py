@@ -5,18 +5,16 @@ from __future__ import annotations
 import io
 
 import numpy as np
-import pytest
 from PIL import Image
+import pytest
 
 from custom_components.growspace_manager.image_processor import (
-    GrowspaceImageProcessor,
     _GREEN_LOWER,
     _GREEN_UPPER,
-    _GRID_COLS,
     _GRID_ROWS,
+    GrowspaceImageProcessor,
     _rgb_to_hsv_ocv,
 )
-
 
 # ---------------------------------------------------------------------------
 # Image helpers

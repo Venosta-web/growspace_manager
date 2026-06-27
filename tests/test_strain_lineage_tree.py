@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
 
 @pytest.mark.asyncio
 async def test_update_strain_lineage_tree_stores_parents_and_derives_flat_lineage():
@@ -190,8 +192,9 @@ async def test_async_update_strain_generation_noop_when_db_none():
 @pytest.mark.asyncio
 async def test_async_update_strain_generation_updates_in_memory_cache():
     """async_update_strain_generation also updates the in-memory strains cache."""
-    from custom_components.growspace_manager.strain_library import StrainLibrary
     from unittest.mock import AsyncMock, MagicMock
+
+    from custom_components.growspace_manager.strain_library import StrainLibrary
 
     hass = MagicMock()
     hass.config.path.return_value = "/tmp/test_strain_lib.db"
@@ -211,8 +214,8 @@ async def test_async_update_strain_generation_updates_in_memory_cache():
 @pytest.mark.asyncio
 async def test_async_import_seedfinder_lineage_tree_creates_stubs_and_stores_lineage():
     """Full multi-level seedfinder tree creates ancestor stubs and wires each node's parents."""
+
     from custom_components.growspace_manager.strain_library import StrainLibrary
-    import json
 
     hass = MagicMock()
     hass.config.path.return_value = "/tmp/test_strain_lib.db"

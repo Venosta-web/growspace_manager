@@ -1,15 +1,13 @@
 """Tests for lineage_classifier — pure functions, no HA dependencies."""
 from __future__ import annotations
 
-import pytest
 from typing import Any
 
 from custom_components.growspace_manager.managers.lineage_classifier import (
-    classify_lineage,
     _is_ancestor,
     _parse_generation,
+    classify_lineage,
 )
-
 
 # ---------------------------------------------------------------------------
 # _parse_generation

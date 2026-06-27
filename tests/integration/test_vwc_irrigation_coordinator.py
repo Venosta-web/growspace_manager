@@ -940,7 +940,7 @@ async def test_halt_on_runoff_ec_threshold_exceeded_halts_watering(
         ),
         patch(
             "custom_components.growspace_manager.vwc_irrigation_coordinator._LOGGER"
-        ) as mock_logger,
+        ),
     ):
         mock_hass.states.get.return_value = MagicMock(state="40.0")
         await vwc_coordinator._update_loop(now_dt)

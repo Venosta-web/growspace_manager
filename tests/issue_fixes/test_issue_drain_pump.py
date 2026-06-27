@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.config_flow import OptionsFlowHandler
 from custom_components.growspace_manager.const import DOMAIN
@@ -12,6 +11,7 @@ from custom_components.growspace_manager.models import (
     IrrigationStrategy,
 )
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ async def test_irrigation_config_optional_drain_pump(
 
     mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once()
     call_args = mock_coordinator.services.growspaces.update_irrigation_config.call_args
-    
+
     assert len(call_args.args) >= 1, "Expected growspace_id as positional arg"
     growspace_id = call_args.args[0]
     data = call_args.args[1]
@@ -197,7 +197,7 @@ async def test_irrigation_config_empty_string_drain_pump(
 
     mock_coordinator.services.growspaces.update_irrigation_config.assert_called_once()
     call_args = mock_coordinator.services.growspaces.update_irrigation_config.call_args
-    data = call_args.args[1]
+    _data = call_args.args[1]
 
     # This assumes the coordinator normalization logic works on the input dictionary inplace
     # OR that the arguments passed to it are what we check.

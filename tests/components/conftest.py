@@ -1,5 +1,5 @@
 import sys
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest

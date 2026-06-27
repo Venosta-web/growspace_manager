@@ -42,7 +42,7 @@ from homeassistant.config_entries import HANDLERS
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import selector
-from tests.common import MockConfigEntry  # noqa: TID251
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture
@@ -561,7 +561,7 @@ async def test_options_flow_manage_growspaces_back(
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
 
-    flow._get_main_menu_schema = lambda: vol.Schema({vol.Required("action"): str})  # noqa: SLF001
+    flow._get_main_menu_schema = lambda: vol.Schema({vol.Required("action"): str})
     # Provide a **real schema**, not a Mock
 
     # Now call the step
@@ -2994,7 +2994,7 @@ async def test_options_flow_irrigation_save_clears_pumps(
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
     flow.selected_growspace_id = "gs1"
-    flow._current_options = {}  # noqa: SLF001
+    flow._current_options = {}
 
     # User input with NO pump entities (simulating clearing them)
     user_input = {
@@ -3059,7 +3059,7 @@ async def test_options_flow_manage_plants_back(
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._get_main_menu_schema = Mock(return_value=vol.Schema({}))  # noqa: SLF001
+    flow._get_main_menu_schema = Mock(return_value=vol.Schema({}))
 
     result = await flow.async_step_manage_plants(user_input={"action": "back"})
     assert result["type"] == FlowResultType.FORM
@@ -3386,7 +3386,7 @@ async def test_options_flow_manage_strain_library_back(
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
-    flow._get_main_menu_schema = Mock(return_value=vol.Schema({}))  # noqa: SLF001
+    flow._get_main_menu_schema = Mock(return_value=vol.Schema({}))
 
     result = await flow.async_step_manage_strain_library(user_input={"action": "back"})
     assert result["type"] == FlowResultType.FORM
@@ -3485,7 +3485,7 @@ async def test_options_flow_strain_library_delete_success(
     mock_coordinator.services.config.strain_library.remove_strain = AsyncMock(
         return_value=None
     )
-    flow._get_strain_library_menu_schema = Mock(return_value=vol.Schema({}))  # noqa: SLF001
+    flow._get_strain_library_menu_schema = Mock(return_value=vol.Schema({}))
 
     result = await flow.async_step_manage_strain_library(
         user_input={"action": "delete_strain", "strain_id": "s1"}
@@ -3586,7 +3586,7 @@ async def test_delegated_fan_steps(
     mock_fan_handler = MagicMock()
     mock_delegated = AsyncMock(return_value={"type": FlowResultType.FORM})
     setattr(mock_fan_handler, delegated_method_name, mock_delegated)
-    flow._fan_controller_handler = mock_fan_handler  # noqa: SLF001
+    flow._fan_controller_handler = mock_fan_handler
 
     user_input = {"some_key": "some_value"}
     method = getattr(flow, method_name)
@@ -3611,7 +3611,7 @@ async def test_async_step_manage_breeder_blacklist(
     mock_strain_handler = MagicMock()
     mock_delegated = AsyncMock(return_value={"type": FlowResultType.FORM})
     mock_strain_handler.async_step_manage_breeder_blacklist = mock_delegated
-    flow._strain_handler = mock_strain_handler  # noqa: SLF001
+    flow._strain_handler = mock_strain_handler
 
     user_input = {"blacklist": ["Breeder A"]}
     result = await flow.async_step_manage_breeder_blacklist(user_input)
@@ -3636,7 +3636,7 @@ async def test_async_step_save_and_finish_abort_flow(
     mock_sensors_handler.get_coordinator = MagicMock(
         side_effect=AbortFlow(reason="test_abort_reason")
     )
-    flow._env_sensors_handler = mock_sensors_handler  # noqa: SLF001
+    flow._env_sensors_handler = mock_sensors_handler
 
     result = await flow.async_step_save_and_finish()
 
@@ -3686,8 +3686,8 @@ async def test_async_step_save_and_finish_success(
     mock_sensors_handler = MagicMock()
     mock_sensors_handler.get_coordinator = MagicMock(return_value=mock_coordinator)
     mock_save_and_finish = AsyncMock(return_value={"type": FlowResultType.CREATE_ENTRY})
-    mock_sensors_handler._async_save_and_finish = mock_save_and_finish  # noqa: SLF001
-    flow._env_sensors_handler = mock_sensors_handler  # noqa: SLF001
+    mock_sensors_handler._async_save_and_finish = mock_save_and_finish
+    flow._env_sensors_handler = mock_sensors_handler
 
     result = await flow.async_step_save_and_finish()
 

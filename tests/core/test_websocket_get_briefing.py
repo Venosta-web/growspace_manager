@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.websocket.ai_assistant import (
     SCHEMA_WS_GET_BRIEFING,
     WS_TYPE_GET_BRIEFING,

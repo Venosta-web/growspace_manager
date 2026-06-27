@@ -4,13 +4,13 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture

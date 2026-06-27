@@ -1,11 +1,12 @@
 """Shared test fixtures and utilities for growspace_manager tests."""
 
 from __future__ import annotations
-import sys
-from unittest.mock import MagicMock
 
 # Inject Session into builtins to resolve Python 3.14 NameError when evaluating type annotations at runtime
 import builtins
+import sys
+from unittest.mock import MagicMock
+
 try:
     from sqlalchemy.orm import Session
     builtins.Session = Session
@@ -37,8 +38,6 @@ if _is_ha_core:
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
-from syrupy.assertion import SnapshotAssertion
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
@@ -68,7 +67,7 @@ def patched_set_default_time_zone(time_zone):
 
 dt_util.set_default_time_zone = patched_set_default_time_zone
 
-import pytest  # noqa: E402
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -88,12 +87,12 @@ def snapshot(snapshot: Any) -> Any:
     if isinstance(snapshot, MagicMock) or snapshot == Any:
         return snapshot
     try:
-        from pytest_homeassistant_custom_component.syrupy import (  # noqa: PLC0415
+        from pytest_homeassistant_custom_component.syrupy import (
             HomeAssistantSnapshotExtension,
         )
     except ImportError:
         try:
-            from tests.syrupy import HomeAssistantSnapshotExtension  # noqa: PLC0415
+            from tests.syrupy import HomeAssistantSnapshotExtension
         except ImportError:
             return snapshot
     return snapshot.use_extension(HomeAssistantSnapshotExtension)
@@ -112,8 +111,8 @@ def mock_recorder_before_hass(async_test_recorder) -> None:
 @pytest.fixture
 def mock_config_entry():
     """Return a standard MockConfigEntry for the integration."""
-    from custom_components.growspace_manager.const import DOMAIN  # noqa: PLC0415
-    from tests.common import MockConfigEntry  # noqa: PLC0415
+    from custom_components.growspace_manager.const import DOMAIN
+    from tests.common import MockConfigEntry
 
     return MockConfigEntry(
         domain=DOMAIN,
@@ -167,7 +166,7 @@ def create_test_sensor(
     env_config: Any | None = None,
 ) -> Any:
     """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
-    from custom_components.growspace_manager.binary_sensor import (  # noqa: PLC0415
+    from custom_components.growspace_manager.binary_sensor import (
         SENSOR_TYPES,
         BayesianEnvironmentSensor,
     )
@@ -209,7 +208,7 @@ def _cancel_debouncer(obj: Any) -> None:
     """Helper to safely cancel a debouncer."""
     import contextlib
     from unittest.mock import Mock
-    if hasattr(obj, "_debounced_refresh") and (debouncer := getattr(obj, "_debounced_refresh")):
+    if hasattr(obj, "_debounced_refresh") and (debouncer := obj._debounced_refresh):
         if isinstance(debouncer, Mock):
             return
         if isinstance(getattr(debouncer, "async_cancel", None), Mock):
@@ -239,6 +238,7 @@ def cleanup_coordinators(request):
     """Track and automatically clean up all GrowspaceCoordinator instances and their unawaited mock coroutines."""
     import asyncio
     import contextlib
+
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
     coordinators = []
@@ -307,7 +307,7 @@ def cleanup_coordinators(request):
 
     loop = asyncio.get_event_loop()
     if loop.is_running():
-        loop.create_task(shutdown_all())
+        loop.create_task(shutdown_all())  # noqa: RUF006  # fire-and-forget at teardown
     else:
         with contextlib.suppress(Exception):
             loop.run_until_complete(shutdown_all())

@@ -1,9 +1,8 @@
 """Integration tests for CirculationFanCoordinator."""
 
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import time as time_module
 
 from custom_components.growspace_manager.circulation_fan_coordinator import (
     FAN_VPD_STAGE_DEFAULTS,
@@ -12,7 +11,7 @@ from custom_components.growspace_manager.circulation_fan_coordinator import (
 from custom_components.growspace_manager.const import FanRegulationMode, PlantStage
 from custom_components.growspace_manager.models import EnvironmentConfig
 from custom_components.growspace_manager.models.growspace import CirculationFanConfig
-from homeassistant.const import ATTR_ENTITY_ID, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 
 
@@ -915,7 +914,6 @@ async def test_on_tick_creates_background_task(
     coord._on_tick(object())
 
     config_entry.async_create_background_task.assert_called_once()
-    _, kwargs = config_entry.async_create_background_task.call_args_list[0][0], config_entry.async_create_background_task.call_args_list[0][1]
     call_args = config_entry.async_create_background_task.call_args
     assert call_args[0][0] is mock_hass
     assert call_args[0][2] == "circulation_fan_regulate"
@@ -1041,7 +1039,9 @@ def test_read_sensor_unknown_mode_returns_none(
 
 def test_fan_vpd_stage_defaults_covers_all_coordinator_stages() -> None:
     """FAN_VPD_STAGE_DEFAULTS has entries for every stage determine_coordinator_stage can return."""
-    from custom_components.growspace_manager.circulation_fan_coordinator import FAN_VPD_STAGE_DEFAULTS
+    from custom_components.growspace_manager.circulation_fan_coordinator import (
+        FAN_VPD_STAGE_DEFAULTS,
+    )
     from custom_components.growspace_manager.const import PlantStage
 
     coordinator_stages = {
@@ -1308,7 +1308,9 @@ def test_stage_vpd_overrides_validation(
     match: str,
 ) -> None:
     """_validate_stage_vpd_overrides rejects out-of-range values, unknown keys, and incomplete entries."""
-    from custom_components.growspace_manager.services.environment import _validate_stage_vpd_overrides
+    from custom_components.growspace_manager.services.environment import (
+        _validate_stage_vpd_overrides,
+    )
     from homeassistant.exceptions import ServiceValidationError
 
     with pytest.raises(ServiceValidationError, match=match):

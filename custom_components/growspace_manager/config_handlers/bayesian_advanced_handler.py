@@ -9,12 +9,14 @@ from typing import Any
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import (
+    CONF_BULK_EC_SENSORS,
     CONF_CAMERA_ENTITIES,
     CONF_DRAIN_VOLUME_SENSORS,
     CONF_ENERGY_SENSORS,
     CONF_FEED_EC_SENSORS,
     CONF_IRRIGATION_FLOW_SENSORS,
     CONF_PH_SENSORS,
+    CONF_PORE_EC_SENSORS,
     CONF_POWER_SENSORS,
     CONF_PROB_HUMIDITY_HIGH_FLOWER,
     CONF_PROB_HUMIDITY_HIGH_VEG_EARLY,
@@ -42,8 +44,6 @@ from custom_components.growspace_manager.const import (
     CONF_PROB_VPD_STRESS_FLOWER_LATE,
     CONF_PROB_VPD_STRESS_VEG_EARLY,
     CONF_PROB_VPD_STRESS_VEG_LATE,
-    CONF_BULK_EC_SENSORS,
-    CONF_PORE_EC_SENSORS,
     CONF_RUNOFF_EC_SENSORS,
 )
 from homeassistant.config_entries import ConfigFlowResult

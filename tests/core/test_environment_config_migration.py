@@ -1,6 +1,5 @@
 """Tests for EnvironmentConfig field rename: substrate_ec_sensors → bulk_ec_sensors."""
 
-import pytest
 
 from custom_components.growspace_manager.models import EnvironmentConfig
 

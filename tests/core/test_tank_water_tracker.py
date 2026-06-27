@@ -494,8 +494,8 @@ def test_get_total_liters_today_timezone() -> None:
     In US/Eastern (UTC-4/5), an event at 03:30:00 UTC on 2026-03-22 is 23:30:00 on 2026-03-21 local.
     An event at 04:30:00 UTC on 2026-03-22 is 00:30:00 on 2026-03-22 local.
     """
-    from homeassistant.util import dt as dt_util  # noqa: PLC0415
-    from tests.conftest import _orig_set_default_time_zone  # noqa: PLC0415, TID251
+    from homeassistant.util import dt as dt_util
+    from tests.conftest import _orig_set_default_time_zone
 
     tz = dt_util.get_time_zone("US/Eastern")
     assert tz is not None
@@ -525,8 +525,8 @@ def test_get_total_liters_today_timezone() -> None:
 
 def test_get_total_liters_7d_timezone() -> None:
     """Test get_total_liters_7d handles local timezone boundaries correctly."""
-    from homeassistant.util import dt as dt_util  # noqa: PLC0415
-    from tests.conftest import _orig_set_default_time_zone  # noqa: PLC0415, TID251
+    from homeassistant.util import dt as dt_util
+    from tests.conftest import _orig_set_default_time_zone
 
     tz = dt_util.get_time_zone("US/Eastern")
     assert tz is not None

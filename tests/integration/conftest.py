@@ -7,16 +7,15 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 sys.modules["homeassistant.components.ai_task"] = MagicMock()
 
 # Inject Recorder dummy to satisfy Python 3.14 lazy annotation evaluation in recorder.migration
-import homeassistant.components.recorder.migration as migration
+from homeassistant.components.recorder import migration
+
 if not hasattr(migration, "Recorder"):
     migration.Recorder = MagicMock()
 
-from freezegun.api import FrozenDateTimeFactory
+import freezegun
 import pytest
 
 from custom_components.growspace_manager.date_time_helper import DateTimeHelper
-
-import freezegun
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +32,8 @@ def freeze_time() -> None:
 @pytest.fixture
 def mock_coordinator():
     """Create a comprehensive mock coordinator with all services mocked."""
-    from unittest.mock import MagicMock, AsyncMock
+    from unittest.mock import AsyncMock, MagicMock
+
     from custom_components.growspace_manager.services.facade import ServiceFacade
 
     coordinator = MagicMock()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from homeassistant.components import conversation
 from homeassistant.core import Context, HomeAssistant
@@ -12,10 +12,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import intent
 from homeassistant.util.dt import utcnow
 
-from .const import (
-    CONF_ASSISTANT_ID,
-    CONF_NOTIFICATION_PERSONALITY,
-)
+from .const import CONF_ASSISTANT_ID, CONF_NOTIFICATION_PERSONALITY
 from .exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)

@@ -62,6 +62,7 @@ class VpdOnOffController:
         growspace_id: str,
         main_coordinator: GrowspaceCoordinator,
     ) -> None:
+        """Initialize the VPD on/off controller for a growspace."""
         self.hass = hass
         self.config_entry = config_entry
         self.growspace_id = growspace_id

@@ -1,20 +1,16 @@
 """Test plant services coverage."""
 
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.const import (
-    ATTR_NOTES,
-    ATTR_PLANT_ID,
-)
+from custom_components.growspace_manager.const import ATTR_NOTES, ATTR_PLANT_ID
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from custom_components.growspace_manager.services.plant_lifecycle import (
     handle_harvest_plant,
 )
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
 
@@ -28,7 +24,7 @@ async def test_handle_add_timeline_note_service_call() -> None:
 
     mock_call = MagicMock(spec=ServiceCall)
     mock_call.data = {
-        ATTR_PLANT_ID: "plant1", 
+        ATTR_PLANT_ID: "plant1",
         ATTR_NOTES: "Service call note"
     }
 
@@ -41,7 +37,7 @@ async def test_handle_add_timeline_note_service_call() -> None:
         await PlantFacade(coordinator).add_timeline_note_from_call(
             hass, strain_library, mock_call
         )
-        
+
     coordinator.services.add_timeline_note.assert_awaited_once_with(
         plant_id="plant1",
         notes="Service call note",

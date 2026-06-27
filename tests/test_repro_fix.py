@@ -6,7 +6,6 @@ from custom_components.growspace_manager.models import (
 
 
 def test_environment_config_none_fix():
-    print("Testing EnvironmentConfig None fix...")
     data = {
         "electricity_cost_per_kwh": None,
         "dli_target_veg": None,
@@ -22,7 +21,6 @@ def test_environment_config_none_fix():
 
 
 def test_growspace_none_fix():
-    print("Testing Growspace None fix...")
     data = {
         "id": "test-gs",
         "name": "Test Growspace",

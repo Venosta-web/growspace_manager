@@ -14,8 +14,8 @@ from custom_components.growspace_manager.bayesian_evaluator import (
 )
 from custom_components.growspace_manager.domain.stage import (
     BayesianStage,
-    StageDays,
     StageClassification,
+    StageDays,
     classify_stages,
 )
 from custom_components.growspace_manager.utils import interpolate_value

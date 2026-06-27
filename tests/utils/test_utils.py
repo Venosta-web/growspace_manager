@@ -10,18 +10,19 @@ from datetime import date, datetime
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.models import (
-    EnvironmentConfig,
-    Growspace,
-    GrowspaceType,
-)
 from custom_components.growspace_manager.domain.stage import (
     BayesianStage,
     StageDays,
     classify_stages,
 )
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    GrowspaceType,
+)
 from custom_components.growspace_manager.utils import (
     VPDCalculator,
+    any_light_sensor_on,
     calculate_days_since,
     calculate_plant_stage,
     days_to_week,
@@ -32,12 +33,11 @@ from custom_components.growspace_manager.utils import (
     generate_subarea_vpd_sensor_unique_id,
     generate_vpd_sensor_unique_id,
     interpolate_value,
+    is_light_sensor_on,
     parse_date_field,
     parse_date_field_v2,
     read_aggregated_sensor_value,
     read_environment_vpd,
-    any_light_sensor_on,
-    is_light_sensor_on,
     read_sensor_value,
     strip_markdown_fence,
 )

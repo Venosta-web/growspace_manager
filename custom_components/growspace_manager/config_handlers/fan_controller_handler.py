@@ -9,9 +9,7 @@ from typing import Any
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import FanRegulationMode
-from custom_components.growspace_manager.models import (
-    CirculationFanConfig,
-)
+from custom_components.growspace_manager.models import CirculationFanConfig
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 

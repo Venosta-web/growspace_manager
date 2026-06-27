@@ -1,6 +1,7 @@
 """Tests for the NotificationSettingsManager."""
 
 from unittest.mock import MagicMock
+
 import pytest
 
 from custom_components.growspace_manager.notifications.notification_settings_manager import (

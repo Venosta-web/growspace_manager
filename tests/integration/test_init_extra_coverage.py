@@ -2,8 +2,6 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from tests.common import MockConfigEntry
-
 from custom_components.growspace_manager import (
     _async_remove_dynamic_entities,
     async_register_sidebar_panel,
@@ -12,6 +10,7 @@ from custom_components.growspace_manager import (
 )
 from custom_components.growspace_manager.const import CONF_SHOW_SIDEBAR, DOMAIN
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry
 
 
 async def test_async_setup_entry_pending_growspace_success(hass: HomeAssistant) -> None:

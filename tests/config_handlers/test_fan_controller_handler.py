@@ -139,7 +139,7 @@ async def test_save_fan_config_persists_to_env_config_and_advances() -> None:
     growspace = Growspace(id="gs1", name="Tent", environment_config=EnvironmentConfig())
     handler = FanControllerHandler(flow)
 
-    result = await handler._async_save_fan_config_and_continue(growspace)  # noqa: SLF001
+    result = await handler._async_save_fan_config_and_continue(growspace)
 
     assert "circulation_fan_config" in flow.env_config_step1
     flow.async_step_configure_sensor_placement.assert_awaited_once()
@@ -328,7 +328,7 @@ async def test_save_fan_config_uses_defaults() -> None:
     growspace = Growspace(id="gs1", name="Tent", environment_config=EnvironmentConfig())
     handler = FanControllerHandler(flow)
 
-    await handler._async_save_fan_config_and_continue(growspace)  # noqa: SLF001
+    await handler._async_save_fan_config_and_continue(growspace)
 
     saved_cfg = flow.env_config_step1["circulation_fan_config"]
     assert saved_cfg["enabled"] is False

@@ -8,7 +8,7 @@ from custom_components.growspace_manager.strain_library import StrainLibrary
 @pytest.fixture
 def mock_hass():
     hass = MagicMock()
-    hass.config.path.return_value = "/tmp/test_db.sqlite"  # noqa: S108
+    hass.config.path.return_value = "/tmp/test_db.sqlite"
     return hass
 
 

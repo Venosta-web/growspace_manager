@@ -1,8 +1,8 @@
 """Tests for Websocket coverage (exceptions and edge cases)."""
 
+import asyncio
 from dataclasses import dataclass
 import json
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -587,7 +587,9 @@ def test_websocket_get_genetics_data_error(
 @pytest.mark.asyncio
 async def test_websocket_get_strain_lineage_tree_success(mock_hass: MagicMock) -> None:
     """Test get_strain_lineage_tree returns resolved tree."""
-    from custom_components.growspace_manager.websocket import websocket_get_strain_lineage_tree
+    from custom_components.growspace_manager.websocket import (
+        websocket_get_strain_lineage_tree,
+    )
 
     strain_library = MagicMock()
     strain_library.get_strain_lineage_tree.return_value = {
@@ -616,7 +618,9 @@ async def test_websocket_get_strain_lineage_tree_success(mock_hass: MagicMock) -
 @pytest.mark.asyncio
 async def test_websocket_get_strain_lineage_tree_not_loaded(mock_hass: MagicMock) -> None:
     """Test get_strain_lineage_tree when strain library not loaded."""
-    from custom_components.growspace_manager.websocket import websocket_get_strain_lineage_tree
+    from custom_components.growspace_manager.websocket import (
+        websocket_get_strain_lineage_tree,
+    )
 
     mock_hass.data = {}
     connection = MagicMock()

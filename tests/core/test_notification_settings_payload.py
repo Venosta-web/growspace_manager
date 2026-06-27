@@ -10,7 +10,7 @@ import pytest
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.core import HomeAssistant
-from tests.common import MockConfigEntry  # noqa: TID251
+from tests.common import MockConfigEntry
 
 
 def create_coordinator(hass: HomeAssistant, options: dict[str, Any]) -> GrowspaceCoordinator:

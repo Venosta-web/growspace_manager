@@ -5,7 +5,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import DEFAULT_FLOWER_EARLY_DAYS
-from custom_components.growspace_manager.domain.stage import BayesianStage, StageDays, classify_stages
+from custom_components.growspace_manager.domain.stage import (
+    BayesianStage,
+    StageDays,
+    classify_stages,
+)
 from custom_components.growspace_manager.environment_analyzer import EnvironmentAnalyzer
 from custom_components.growspace_manager.models import EnvironmentConfig
 from homeassistant.const import STATE_ON

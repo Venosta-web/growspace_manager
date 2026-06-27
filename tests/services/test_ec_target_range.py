@@ -4,10 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.const import (
-    ATTR_GROWSPACE_ID,
-    ATTR_STAGE,
-)
+from custom_components.growspace_manager.const import ATTR_GROWSPACE_ID, ATTR_STAGE
 from custom_components.growspace_manager.services.irrigation import (
     handle_set_ec_target_range,
 )

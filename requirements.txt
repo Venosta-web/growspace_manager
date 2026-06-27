@@ -1,5 +1,8 @@
 # Home Assistant Core (Minimal)
-homeassistant==2026.4.0
+# Kept in lockstep with pytest-homeassistant-custom-component (which pins an exact
+# homeassistant version) and home-assistant-intents below; a fresh CI install
+# otherwise floated intents to a version missing FuzzyConfig and broke collection.
+homeassistant==2026.5.4
 aiosqlite
 Pillow
 python-dateutil
@@ -20,7 +23,7 @@ pydantic
 pylint
 pipdeptree
 pytest-asyncio
-pytest-homeassistant-custom-component>=0.13.80
+pytest-homeassistant-custom-component==0.13.333
 pytest-cov
 pytest
 PyTurboJPEG
@@ -30,5 +33,5 @@ pytest-xdist
 freezegun
 requests-mock
 hassil
-home-assistant-intents
+home-assistant-intents==2026.5.5
 syrupy>=5.0.0

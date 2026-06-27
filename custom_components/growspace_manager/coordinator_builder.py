@@ -28,7 +28,6 @@ from .managers.plant import PlantManager
 from .managers.subsystem import SubsystemManager
 from .notification_manager import NotificationManager
 from .notification_rewriter import AINotificationRewriter
-from .tank_monitor import TankLevelMonitor
 from .notifications import NotificationSettingsManager
 from .photoperiod_flip_checker import PhotoperiodFlipChecker
 from .presentation import PlantViewModelBuilder
@@ -41,6 +40,7 @@ from .services.training_service import TrainingService
 from .services.watering_service import WateringService
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
+from .tank_monitor import TankLevelMonitor
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
 
