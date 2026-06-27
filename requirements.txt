@@ -2,7 +2,7 @@
 # Kept in lockstep with pytest-homeassistant-custom-component (which pins an exact
 # homeassistant version) and home-assistant-intents below; a fresh CI install
 # otherwise floated intents to a version missing FuzzyConfig and broke collection.
-homeassistant==2026.5.1
+homeassistant==2026.5.4
 aiosqlite
 Pillow
 python-dateutil
