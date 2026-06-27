@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,7 +15,7 @@ from custom_components.growspace_manager.photoperiod_flip_checker import (
 from homeassistant.core import HomeAssistant
 
 TODAY = date(2026, 5, 24)
-TODAY_DT = datetime(2026, 5, 24, 8, 0, 0, tzinfo=timezone.utc)
+TODAY_DT = datetime(2026, 5, 24, 8, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def mock_coordinator(mock_hass: MagicMock) -> MagicMock:
     coordinator.hass = mock_hass
     coordinator.growspaces = {}
     coordinator.services.notifications.manager.async_send_notification = AsyncMock()
-    
+
     created_coroutines = []
 
     def async_create_background_task(hass: HomeAssistant, coro: object, name: str) -> MagicMock:
@@ -40,7 +40,7 @@ def mock_coordinator(mock_hass: MagicMock) -> MagicMock:
         side_effect=async_create_background_task
     )
     coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[])
-    
+
     yield coordinator
 
     for coro in created_coroutines:
@@ -222,7 +222,9 @@ def test_photoperiod_flip_tier_registered_with_23h_cooldown() -> None:
     """NotificationManager._TIER_COOLDOWNS has a 23-hour entry for PHOTOPERIOD_FLIP."""
     from datetime import timedelta
 
-    from custom_components.growspace_manager.notification_manager import NotificationManager
+    from custom_components.growspace_manager.notification_manager import (
+        NotificationManager,
+    )
 
     cooldown = NotificationManager._TIER_COOLDOWNS[NotificationTier.PHOTOPERIOD_FLIP]
     assert cooldown == timedelta(hours=23)

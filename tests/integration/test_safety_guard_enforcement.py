@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
-    CATEGORY_ALERT,
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
 )

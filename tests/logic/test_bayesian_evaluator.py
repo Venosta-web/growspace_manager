@@ -27,7 +27,7 @@ from custom_components.growspace_manager.models import EnvironmentState
 @pytest.mark.asyncio
 async def test_async_evaluate_fallback_mold_trend_analysis_rising() -> None:
     """Test fallback mold trend analysis for rising humidity."""
-    sensor_instance = MagicMock()
+    _sensor_instance = MagicMock()
     env_config: dict[str, Any] = {
         "humidity_sensor": "sensor.humidity",
         "humidity_trend_sensitivity": 0.5,

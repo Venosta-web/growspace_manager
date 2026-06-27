@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from .const import (
     CATEGORY_HUMIDIFIER,
     DEFAULT_HUMIDIFIER_MIN_OFFTIME,
@@ -11,9 +9,6 @@ from .const import (
     PlantStage,
 )
 from .vpd_on_off_controller import VpdOnOffController
-
-if TYPE_CHECKING:
-    from .coordinator import GrowspaceCoordinator
 
 # Default thresholds — humidifier turns ON when VPD exceeds `on`, OFF when it drops below `off`.
 # High VPD = low humidity = needs humidification.

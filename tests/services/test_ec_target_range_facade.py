@@ -1,6 +1,6 @@
 """Tests for ECTargetRange upsert behavior in GrowspaceFacade and view model round-trip."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

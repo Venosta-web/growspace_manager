@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.services.strain_library import handle_print_label
+from custom_components.growspace_manager.services.strain_library import (
+    handle_print_label,
+)
 from homeassistant.core import HomeAssistant, ServiceCall
 
 

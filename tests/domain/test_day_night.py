@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.growspace_manager.domain.day_night import DayNightTracker
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 
 
 @pytest.fixture

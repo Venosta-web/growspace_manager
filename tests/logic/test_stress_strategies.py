@@ -1,10 +1,13 @@
 """Tests for stress strategies."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from custom_components.growspace_manager.models import EnvironmentState
-from custom_components.growspace_manager.strategies.stress import StressEvaluatorStrategy
+from custom_components.growspace_manager.strategies.stress import (
+    StressEvaluatorStrategy,
+)
 
 
 @pytest.fixture
@@ -36,7 +39,7 @@ def test_stress_notification(mock_sensor: MagicMock) -> None:
     # new_state_on is True -> should return notification
     title_msg = strategy.get_notification_title_message(True, [])
     assert title_msg is not None
-    assert "Plant Stress Alert: FloweringTent" == title_msg[0]
+    assert title_msg[0] == "Plant Stress Alert: FloweringTent"
 
     # Test when growspace is None
     strategy_no_growspace = StressEvaluatorStrategy(
@@ -48,7 +51,7 @@ def test_stress_notification(mock_sensor: MagicMock) -> None:
     )
     title_msg_fallback = strategy_no_growspace.get_notification_title_message(True, [])
     assert title_msg_fallback is not None
-    assert "Plant Stress Alert: Unknown" == title_msg_fallback[0]
+    assert title_msg_fallback[0] == "Plant Stress Alert: Unknown"
 
 
 @pytest.mark.asyncio

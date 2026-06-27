@@ -1,9 +1,10 @@
 """Tests for DryingWeightSensor, DryingMoistureSensor, DryingReadyForCureSensor."""
 
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.binary_sensor import DryingReadyForCureSensor
 from custom_components.growspace_manager.models import (
     DryingData,
     HarvestMetrics,
@@ -15,7 +16,6 @@ from custom_components.growspace_manager.sensor import (
     DryingMoistureSensor,
     DryingWeightSensor,
 )
-from custom_components.growspace_manager.binary_sensor import DryingReadyForCureSensor
 
 
 def _make_plant(

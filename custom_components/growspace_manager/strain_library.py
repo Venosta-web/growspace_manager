@@ -15,11 +15,9 @@ from typing import Any
 import aiosqlite
 
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util, slugify
 
 from .const import DB_FILE_STRAIN_LIBRARY
-from .exceptions import GrowspaceError
 from .image_manager import ImageManager
 from .import_export_manager import ImportExportManager
 from .managers.lineage import StrainLineageManager
@@ -140,14 +138,18 @@ class StrainLibrary:
 
     @property
     def strains(self) -> dict[str, dict[str, Any]]:
+        """Return the strain catalogue keyed by strain name."""
         return self._strains
 
+    # The setters below intentionally push state into the composed analytics and
+    # lineage sub-managers so all three stay in sync; SLF001 on those collaborators
+    # is the sanctioned coordination path, not a smell.
     @strains.setter
     def strains(self, value: dict[str, dict[str, Any]]) -> None:
         self._strains = value
-        self._analytics._strains = value
+        self._analytics._strains = value  # noqa: SLF001
         self._analytics.invalidate()
-        self._lineage_manager._strains = value
+        self._lineage_manager._strains = value  # noqa: SLF001
         self._lineage_manager.invalidate_cache()
 
     @property
@@ -157,15 +159,15 @@ class StrainLibrary:
     @_db.setter
     def _db(self, value: aiosqlite.Connection | None) -> None:
         self.__db = value
-        self._lineage_manager._db = value
+        self._lineage_manager._db = value  # noqa: SLF001
 
     @property
     def _lineage_cache(self) -> dict[str, dict[str, Any]]:
-        return self._lineage_manager._lineage_cache
+        return self._lineage_manager._lineage_cache  # noqa: SLF001
 
     @_lineage_cache.setter
     def _lineage_cache(self, value: dict[str, dict[str, Any]]) -> None:
-        self._lineage_manager._lineage_cache = value
+        self._lineage_manager._lineage_cache = value  # noqa: SLF001
 
     async def async_setup(self) -> bool:
         """Set up the database connection and schema.
@@ -997,11 +999,12 @@ class StrainLibrary:
         )
 
     async def _rebuild_strain_ancestry(self, strain_name: str) -> None:
-        await self._lineage_manager._rebuild_strain_ancestry(strain_name)
+        await self._lineage_manager._rebuild_strain_ancestry(strain_name)  # noqa: SLF001
 
     async def update_strain_lineage_tree(
         self, strain_name: str, parents: StoredParents
     ) -> str:
+        """Replace a strain's recorded parents and rebuild its lineage tree."""
         return await self._lineage_manager.update_strain_lineage_tree(strain_name, parents)
 
     async def async_import_seedfinder_lineage_tree(
@@ -1010,6 +1013,7 @@ class StrainLibrary:
         tree: dict[str, Any],
         scraper: Any | None = None,
     ) -> None:
+        """Import a SeedFinder-sourced lineage tree rooted at the given strain."""
         await self._lineage_manager.async_import_seedfinder_lineage_tree(
             root_strain_name, tree, scraper
         )
@@ -1017,6 +1021,7 @@ class StrainLibrary:
     async def async_update_strain_generation(
         self, strain_name: str, generation: str
     ) -> None:
+        """Update the recorded generation label for a strain."""
         await self._lineage_manager.async_update_strain_generation(strain_name, generation)
 
     def get_strain_lineage_tree(
@@ -1025,16 +1030,19 @@ class StrainLibrary:
         _seen: frozenset[str] | None = None,
         _depth: int = 0,
     ) -> LineageNode:
+        """Return the lineage tree for a strain (recursion guarded by _seen/_depth)."""
         return self._lineage_manager.get_strain_lineage_tree(strain_name, _seen, _depth)
 
     async def async_get_strains_by_ancestor(
         self, ancestor_name: str
     ) -> list[dict[str, Any]]:
+        """Return strains descended from the named ancestor."""
         return await self._lineage_manager.async_get_strains_by_ancestor(ancestor_name)
 
     async def async_get_shared_ancestors(
         self, strain_ids: list[int]
     ) -> list[dict[str, Any]]:
+        """Return ancestors common to all of the given strains."""
         return await self._lineage_manager.async_get_shared_ancestors(strain_ids)
 
     def get_strain_names(self) -> list[str]:

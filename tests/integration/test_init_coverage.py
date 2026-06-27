@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from aiohttp import web
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
     async_reload_entry,
@@ -32,6 +31,7 @@ from custom_components.growspace_manager.websocket import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from tests.common import MockConfigEntry
 
 # --- Websocket Tests ---
 

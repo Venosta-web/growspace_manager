@@ -2,7 +2,6 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.models import Plant
@@ -18,6 +17,8 @@ from custom_components.growspace_manager.services.debug import (
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.core import HomeAssistant, ServiceCall
+
+from .common import create_plant
 
 
 @pytest.fixture

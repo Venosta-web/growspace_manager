@@ -17,12 +17,7 @@ from .domain.date_logic import (
     parse_date_field,
     to_lifecycle_timestamp as to_lifecycle_timestamp_logic,
 )
-from .domain.stage import (
-    SPECIAL_GROWSPACE_STAGES,
-    STAGES_ORDERED,
-    BayesianStage,
-    PlantStage,
-)
+from .domain.stage import SPECIAL_GROWSPACE_STAGES, STAGES_ORDERED, PlantStage
 from .integration_types import DateInput
 
 if TYPE_CHECKING:

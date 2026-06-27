@@ -1,26 +1,19 @@
 """Comprehensive tests for ServiceFacade to increase coverage."""
 
-from datetime import date
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.const import DOMAIN, PlantStage
+from custom_components.growspace_manager.const import PlantStage
+from custom_components.growspace_manager.data_access.notification_state import (
+    NotificationState,
+)
 from custom_components.growspace_manager.models import (
-    DrainConfig,
-    ECRampCurve,
-    EnvironmentConfig,
     Growspace,
     HarvestMetrics,
     IrrigationConfig,
     IrrigationTank,
     PhenotypeScore,
-    Plant,
-    PlantGenetics,
-    WaterUsageData,
-)
-from custom_components.growspace_manager.data_access.notification_state import (
-    NotificationState,
 )
 from custom_components.growspace_manager.services.facade import ServiceFacade
 from homeassistant.exceptions import ServiceValidationError
@@ -252,14 +245,14 @@ def test_get_sorted_growspace_options(mock_coordinator) -> None:
 
 def test_properties(mock_coordinator) -> None:
     """ServiceFacade should expose four domain sub-facades."""
+    from custom_components.growspace_manager.services.config_facade import ConfigFacade
     from custom_components.growspace_manager.services.growspace_facade import (
         GrowspaceFacade,
     )
-    from custom_components.growspace_manager.services.plant_facade import PlantFacade
-    from custom_components.growspace_manager.services.config_facade import ConfigFacade
     from custom_components.growspace_manager.services.notifications_facade import (
         NotificationsFacade,
     )
+    from custom_components.growspace_manager.services.plant_facade import PlantFacade
 
     facade = ServiceFacade(mock_coordinator)
     assert isinstance(facade.growspaces, GrowspaceFacade)
@@ -318,7 +311,6 @@ async def test_set_lighting_schedule_alias(mock_coordinator) -> None:
 @pytest.mark.asyncio
 async def test_set_lighting_schedule_no_dli(mock_coordinator) -> None:
     """async_set_lighting_schedule without dli_veg should not set dli_target_veg."""
-    from custom_components.growspace_manager.models import EnvironmentConfig
 
     facade = ServiceFacade(mock_coordinator)
     gs = Growspace(id="gs1", name="GS1")

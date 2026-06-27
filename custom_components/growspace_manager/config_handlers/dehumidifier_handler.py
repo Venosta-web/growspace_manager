@@ -8,7 +8,6 @@ from typing import Any
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import (
-    CONF_CONFIGURE_ADVANCED,
     CONF_CONFIGURE_DEHUMIDIFIER,
     CONF_CONFIGURE_FAN_CONTROLLER,
     CONF_CONFIGURE_HUMIDIFIER,

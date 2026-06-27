@@ -1,12 +1,13 @@
 """Additional tests for GrowspaceCoordinator to reach 100% coverage."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
-from .test_coordinator import create_test_coordinator
 
 from homeassistant.core import HomeAssistant
+
+from .test_coordinator import create_test_coordinator
 
 
 @pytest.mark.asyncio

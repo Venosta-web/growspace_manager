@@ -4,12 +4,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.config_flow import OptionsFlowHandler
 from custom_components.growspace_manager.const import DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     """Create a mock coordinator with import/export manager and ServiceFacade support."""
     coordinator = MagicMock()
     coordinator.hass = hass
-    
+
     coordinator.import_export_manager = AsyncMock()
 
     # Strain library in config sub-facade
@@ -38,7 +38,7 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     facade.plants = MagicMock()
     facade.notifications = MagicMock()
     coordinator.services = facade
-    
+
     return coordinator
 
 

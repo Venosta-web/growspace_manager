@@ -20,6 +20,7 @@ from homeassistant.helpers import selector
 import homeassistant.helpers.config_validation as cv
 
 from .config_handlers import (
+    AbortFlow,
     AIConfigHandler,
     BayesianAdvancedHandler,
     DehumidifierHandler,
@@ -490,7 +491,6 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Retrieve growspace from flow state and persist env config."""
-        from .config_handlers import AbortFlow
         try:
             coordinator = self.env_sensors_handler.get_coordinator()
         except AbortFlow as e:
@@ -501,7 +501,11 @@ class OptionsFlowHandler(OptionsFlow):
         if not growspace:
             return self.async_abort(reason="growspace_not_found")
         env_config = dict(self.env_config_step1 or {})
-        return await self.env_sensors_handler._async_save_and_finish(growspace, env_config)
+        # The flow orchestrates its own sensors handler; calling its save helper is
+        # the intended seam, not external private access.
+        return await self.env_sensors_handler._async_save_and_finish(  # noqa: SLF001
+            growspace, env_config
+        )
 
     async def async_step_manage_plants(
         self, user_input: dict[str, Any] | None = None

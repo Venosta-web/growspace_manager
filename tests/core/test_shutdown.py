@@ -1,11 +1,11 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager import DOMAIN, async_unload_entry
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry
 
 
 @pytest.mark.asyncio

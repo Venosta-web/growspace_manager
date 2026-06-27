@@ -12,7 +12,9 @@ from custom_components.growspace_manager.models import (
     PlantGenetics,
 )
 from custom_components.growspace_manager.schemas import SCORE_PLANT_SCHEMA
-from custom_components.growspace_manager.services.plant_scoring import handle_score_plant
+from custom_components.growspace_manager.services.plant_scoring import (
+    handle_score_plant,
+)
 from homeassistant.exceptions import ServiceValidationError
 
 

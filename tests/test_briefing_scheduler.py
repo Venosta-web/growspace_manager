@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -16,7 +16,6 @@ from custom_components.growspace_manager.models import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

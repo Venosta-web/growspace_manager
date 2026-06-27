@@ -21,6 +21,7 @@ class DayNightTracker:
     """
 
     def __init__(self, growspace_id: str) -> None:
+        """Initialize the day/night resolver for a single growspace."""
         self._growspace_id = growspace_id
         self._last_known_is_day: bool | None = None
         self._sensors_unavailable_since: float | None = None

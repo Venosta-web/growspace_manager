@@ -8,7 +8,6 @@ import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
 
-
 GROWSPACE_ID = "tent1"
 
 

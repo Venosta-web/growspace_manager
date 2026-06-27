@@ -1,17 +1,24 @@
+"""Per-strain and per-phenotype harvest analytics for the strain library."""
+
 from __future__ import annotations
 
 from typing import Any
 
 
 class StrainAnalyticsManager:
+    """Computes and caches harvest analytics derived from the strain catalogue."""
+
     def __init__(self, strains: dict[str, Any]) -> None:
+        """Initialize the manager with a reference to the strains catalogue."""
         self._strains = strains
         self._cache: dict[str, Any] | None = None
 
     def invalidate(self) -> None:
+        """Drop the cached analytics so the next compute() recalculates."""
         self._cache = None
 
     def compute(self) -> dict[str, Any]:
+        """Return per-strain/per-phenotype harvest analytics, caching the result."""
         if self._cache is not None:
             return self._cache
 

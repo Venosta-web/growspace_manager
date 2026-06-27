@@ -2,7 +2,6 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -12,6 +11,8 @@ from custom_components.growspace_manager.models import (
     NutrientStock,
 )
 from homeassistant.core import HomeAssistant
+
+from .common import create_plant
 
 
 @pytest.fixture

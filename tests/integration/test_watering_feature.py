@@ -8,12 +8,7 @@ sensor attribute integration.
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-from .common import create_plant
 import pytest
-from tests.common import (
-    MockConfigEntry,
-    async_capture_events,
-)
 
 from custom_components.growspace_manager.const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -28,6 +23,9 @@ from custom_components.growspace_manager.services.irrigation_watering import (
     handle_water_plant,
 )
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry, async_capture_events
+
+from .common import create_plant
 
 
 def create_test_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:

@@ -1173,10 +1173,10 @@ async def test_send_message_injects_context_when_coordinator_available(
 
 def test_build_context_message_skips_empty_entity_ids() -> None:
     """_build_context_message ignores None or empty string entity IDs in specs."""
+    from custom_components.growspace_manager.models import EnvironmentConfig
     from custom_components.growspace_manager.websocket.ai_assistant import (
         _build_context_message,
     )
-    from custom_components.growspace_manager.models import EnvironmentConfig
 
     coordinator = _make_coordinator_with_growspace(
         vpd_sensor=None,

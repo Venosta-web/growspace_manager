@@ -14,7 +14,12 @@ import pytest
 
 from custom_components.growspace_manager import sensor as sensor_module
 from custom_components.growspace_manager.const import DOMAIN
-from custom_components.growspace_manager.models import DryingData, EnvironmentConfig, HarvestMetrics, IrrigationTank
+from custom_components.growspace_manager.models import (
+    DryingData,
+    EnvironmentConfig,
+    HarvestMetrics,
+    IrrigationTank,
+)
 from custom_components.growspace_manager.sensor import (
     AirExchangeSensor,
     CalculatedVpdSensor,

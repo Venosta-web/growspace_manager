@@ -7,7 +7,6 @@ import pytest
 from custom_components.growspace_manager.const import (
     ATTR_NEW_STAGE,
     ATTR_PLANT_ID,
-    ATTR_TARGET_GROWSPACE_ID,
     ATTR_WET_WEIGHT,
 )
 from custom_components.growspace_manager.services.plant_lifecycle import (

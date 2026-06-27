@@ -8,7 +8,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from tests.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -17,7 +16,6 @@ from custom_components.growspace_manager.models import (
     Growspace,
     GrowspaceType,
     NutrientInventory,
-    NutrientPreset,
     Plant,
     PlantGenetics,
 )
@@ -30,6 +28,7 @@ from custom_components.growspace_manager.utils import (
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+from tests.common import MockConfigEntry
 
 
 def create_test_coordinator(
@@ -746,7 +745,7 @@ async def test_async_save_ec_ramp_curve(hass: HomeAssistant) -> None:
 
     coordinator.services.config.save_ec_ramp_curve = AsyncMock(return_value=mock_preset)
 
-    result = await coordinator.services.config.save_ec_ramp_curve(
+    await coordinator.services.config.save_ec_ramp_curve(
         name="Bloom Ramp", points=[{"day": 1, "ec": 1.8}]
     )
 

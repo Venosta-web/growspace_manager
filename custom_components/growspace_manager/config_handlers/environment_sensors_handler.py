@@ -11,6 +11,7 @@ import voluptuous as vol
 from custom_components.growspace_manager.const import (
     CANONICAL_ID_CURE,
     CANONICAL_ID_DRY,
+    CONF_BULK_EC_SENSORS,
     CONF_CAMERA_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITIES,
     CONF_CIRCULATION_FAN_ENTITY,
@@ -39,19 +40,16 @@ from custom_components.growspace_manager.const import (
     CONF_LIGHT_SENSORS,
     CONF_LST_OFFSET,
     CONF_PH_SENSORS,
+    CONF_PORE_EC_SENSORS,
     CONF_POWER_SENSORS,
     CONF_RUNOFF_EC_SENSORS,
     CONF_SOIL_MOISTURE_SENSOR,
-    CONF_BULK_EC_SENSORS,
-    CONF_PORE_EC_SENSORS,
     CONF_TEMP_SENSOR,
     CONF_TEMP_SENSORS,
     CONF_VPD_SENSOR,
     CONF_VPD_SENSORS,
 )
-from custom_components.growspace_manager.models import (
-    EnvironmentConfig,
-)
+from custom_components.growspace_manager.models import EnvironmentConfig
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
@@ -691,7 +689,7 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
         self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
     ) -> None:
         """Add environmental thresholds, trend analysis, and photoperiod to the schema."""
-        from custom_components.growspace_manager.const import (
+        from custom_components.growspace_manager.const import (  # noqa: PLC0415
             CONF_FLOWER_EARLY_DAY_HOURS,
             CONF_FLOWER_LATE_DAY_HOURS,
             CONF_FLOWER_MID_DAY_HOURS,

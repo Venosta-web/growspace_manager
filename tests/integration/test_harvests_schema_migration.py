@@ -14,7 +14,6 @@ import pytest
 
 from custom_components.growspace_manager.strain_library import StrainLibrary
 
-
 _OLD_HARVESTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS strains (
     strain_id INTEGER PRIMARY KEY,

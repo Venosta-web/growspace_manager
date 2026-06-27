@@ -1,6 +1,5 @@
-import asyncio
 import inspect
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 from freezegun import freeze_time as fg_freeze_time
 import pytest
@@ -36,7 +35,7 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator._nutrient_manager = MagicMock()
     coordinator.training_manager = MagicMock()
     coordinator.harvest_manager = MagicMock()
-    
+
     # Other services
     coordinator.watering_service = MagicMock()
     coordinator.ipm_service = MagicMock()
@@ -143,15 +142,15 @@ def mock_coordinator(mock_plant, mock_growspace):
     type(coordinator).growspace_service = property(lambda self: self._growspace_manager)
     type(coordinator).plant_service = property(lambda self: self._plant_manager)
 
-    
+
     coordinator._growspace_manager.async_add_growspace = coordinator._growspace_manager.add_growspace
     coordinator._growspace_manager.async_update_growspace = coordinator._growspace_manager.update_growspace
     coordinator._growspace_manager.async_remove_growspace = coordinator._growspace_manager.remove_growspace
     coordinator._growspace_manager.async_update_environment_config = coordinator._growspace_manager.update_environment_config
-    
+
     coordinator._nutrient_manager.async_commit_preset = coordinator._nutrient_manager.async_save_nutrient_preset
     coordinator._nutrient_manager.async_remove_preset = coordinator._nutrient_manager.async_remove_nutrient_preset
-    
+
     coordinator.training_manager.async_record_training = coordinator.training_service.async_log_training_event
 
     coordinator._growspace_manager.ensure_special_growspace = MagicMock(return_value="special_gs")

@@ -4,8 +4,6 @@ from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tests.common import async_capture_events
-from tests.core.test_coordinator import create_test_coordinator
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -16,6 +14,8 @@ from custom_components.growspace_manager.models import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from tests.common import async_capture_events
+from tests.core.test_coordinator import create_test_coordinator
 
 
 @pytest.fixture

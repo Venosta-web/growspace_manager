@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.const import DOMAIN, NotificationTier, PlantStage, VERSION
-from custom_components.growspace_manager.models import (
-    HarvestMetrics,
-    PhenotypeScore,
-    Plant,
-    PlantGenetics,
+from custom_components.growspace_manager.const import (
+    DOMAIN,
+    VERSION,
+    NotificationTier,
+    PlantStage,
 )
+from custom_components.growspace_manager.models import Plant, PlantGenetics
 from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from homeassistant.exceptions import ServiceValidationError
 
@@ -51,13 +51,13 @@ async def test_add_plant_success(mock_coordinator: MagicMock) -> None:
     plant = Plant(plant_id="plant_1", growspace_id="gs1")
     plant.genetics = PlantGenetics(strain_name="OG Kush", phenotype_name="Pheno 1")
     mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
-    
+
     mock_dr = MagicMock()
     mock_dr.async_get_or_create = MagicMock()
-    
+
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         result = await facade.add_plant(strain="OG Kush")
-        
+
     assert result == plant
     mock_dr.async_get_or_create.assert_called_once_with(
         config_entry_id=mock_coordinator.config_entry.entry_id,
@@ -77,13 +77,13 @@ async def test_add_plant_success_no_genetics(mock_coordinator: MagicMock) -> Non
     plant = Plant(plant_id="plant_1", growspace_id="gs1")
     plant.genetics = None
     mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
-    
+
     mock_dr = MagicMock()
     mock_dr.async_get_or_create = MagicMock()
-    
+
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         result = await facade.add_plant()
-        
+
     assert result == plant
     mock_dr.async_get_or_create.assert_called_once_with(
         config_entry_id=mock_coordinator.config_entry.entry_id,
@@ -181,20 +181,20 @@ async def test_remove_plant_entities(mock_coordinator: MagicMock) -> None:
     """Test remove_plant_entities removes correct HA entities."""
     facade = PlantFacade(mock_coordinator)
     mock_er = MagicMock()
-    
+
     entry1 = MagicMock()
     entry1.unique_id = "plant_123_sensor"
     entry2 = MagicMock()
     entry2.unique_id = "plant_456_sensor"
-    
+
     mock_er.entities = {
         "sensor.plant_123_sensor": entry1,
         "sensor.plant_456_sensor": entry2,
     }
-    
+
     with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er):
         await facade.remove_plant_entities("plant_123")
-        
+
     mock_er.async_remove.assert_called_once_with("sensor.plant_123_sensor")
 
 
@@ -341,12 +341,12 @@ async def test_async_harvest_plant(mock_coordinator: MagicMock) -> None:
 async def test_async_auto_harvest(mock_coordinator: MagicMock) -> None:
     """Test _async_auto_harvest auto-harvests eligible flowering plants only."""
     facade = PlantFacade(mock_coordinator)
-    
+
     plant1 = Plant(plant_id="plant1", growspace_id="gs1")
     plant1.genetics = PlantGenetics(strain_name="OG Kush")
     plant1.transition_date = "2026-01-10"  # before frozen "2026-01-12"
     plant1.stage = PlantStage.FLOWER
-    
+
     plant2 = Plant(plant_id="plant2", growspace_id="gs1")
     plant2.genetics = PlantGenetics(strain_name="LSD")
     plant2.transition_date = "2026-01-15"  # after frozen

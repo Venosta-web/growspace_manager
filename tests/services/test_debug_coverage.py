@@ -1,6 +1,7 @@
 """Coverage tests for debug.py."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from custom_components.growspace_manager.models import Plant

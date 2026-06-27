@@ -1,8 +1,10 @@
+"""Lineage tree construction and ancestry queries for the strain library."""
+
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import json
 import logging
-from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiosqlite
@@ -40,12 +42,14 @@ class StrainLineageManager:
         db: aiosqlite.Connection | None,
         load_callback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
+        """Initialize with the strains catalogue, DB handle and optional loader."""
         self._strains = strains
         self._db = db
         self._load_callback = load_callback
         self._lineage_cache: dict[str, LineageNode] = {}
 
     def invalidate_cache(self) -> None:
+        """Clear the cached lineage trees."""
         self._lineage_cache.clear()
 
     def get_strain_lineage_tree(

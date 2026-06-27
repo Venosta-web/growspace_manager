@@ -1,8 +1,6 @@
 """Tests for GrowspaceValidator."""
 
-from unittest.mock import MagicMock
 
-from .common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage
@@ -16,6 +14,8 @@ from custom_components.growspace_manager.exceptions import (
 )
 from custom_components.growspace_manager.growspace_validator import GrowspaceValidator
 from custom_components.growspace_manager.models import Growspace
+
+from .common import create_plant
 
 
 @pytest.fixture

@@ -337,14 +337,14 @@ def test_ec_target_sensor_week_out_of_range(
     mock_curve.stage = "flower"
     mock_curve.name = "Standard"
 
-    sensor._get_active_curve = MagicMock(return_value=mock_curve)  # noqa: SLF001
+    sensor._get_active_curve = MagicMock(return_value=mock_curve)
 
     # Test week less than last point's week, should return None (Line 1836)
-    sensor._get_current_week = MagicMock(return_value=1)  # noqa: SLF001
+    sensor._get_current_week = MagicMock(return_value=1)
     assert sensor.native_value is None
 
     # Verify the week >= last.week check returns midpoint
-    sensor._get_current_week = MagicMock(return_value=4)  # noqa: SLF001
+    sensor._get_current_week = MagicMock(return_value=4)
     assert sensor.native_value == 1.5
 
 

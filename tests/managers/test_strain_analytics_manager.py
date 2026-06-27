@@ -1,9 +1,7 @@
-import pytest
 
 from custom_components.growspace_manager.managers.strain_analytics import (
     StrainAnalyticsManager,
 )
-
 
 STRAINS_WITH_HARVESTS = {
     "OG Kush": {

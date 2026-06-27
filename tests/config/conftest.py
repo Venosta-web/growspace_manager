@@ -5,8 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 from freezegun.api import FrozenDateTimeFactory
 import pytest
 
-from custom_components.growspace_manager.date_time_helper import DateTimeHelper
-
 # pytest_plugins = "pytest_homeassistant_custom_component"
 
 

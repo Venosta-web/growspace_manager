@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from custom_components.growspace_manager.services.config_facade import ConfigFacade
 
 

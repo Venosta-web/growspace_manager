@@ -20,45 +20,33 @@ from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
-from .dehumidifier_coordinator import DehumidifierCoordinator
 from .environment_analyzer import EnvironmentAnalyzer
 from .event_bus_pkg import GrowspaceEventBus
 from .growspace_validator import GrowspaceValidator
-from .humidifier_coordinator import HumidifierCoordinator
 from .import_export_manager import ImportExportManager
 from .integration_types import DateInput
-from .irrigation_coordinator import IrrigationCoordinator
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
 from .managers.subsystem import SubsystemManager
-from .models import (
-    Growspace,
-    GrowspaceEvent,
-    IPMPreset,
-    NutrientInventory,
-    NutrientPreset,
-    Plant,
-)
+from .models import Growspace, GrowspaceEvent, NutrientInventory, Plant
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
-from .tank_monitor import TankLevelMonitor
 from .photoperiod_flip_checker import PhotoperiodFlipChecker
 from .presentation import PlantViewModelBuilder
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
 from .services.facade import ServiceFacade
 from .services.ipm_service import IPMService
-from .services.nutrient_inventory import NutrientInventoryService
 from .services.seedfinder_scraper import SeedfinderScraper
 from .services.training_service import TrainingService
 from .services.watering_service import WateringService
 from .storage_manager import StorageManager
 from .strain_library import StrainLibrary
+from .tank_monitor import TankLevelMonitor
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
-from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -34,7 +34,6 @@ from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util.dt import now
-
 from tests.common import MockConfigEntry, async_capture_events
 
 from .common import create_plant
@@ -2410,9 +2409,7 @@ async def test_notifications_logic_full(coordinator: GrowspaceCoordinator) -> No
     assert coordinator.notification_state.enabled[gs.id] is True
 
     # Non-existent GS
-    with patch(
-        "custom_components.growspace_manager.coordinator._LOGGER"
-    ) as mock_logger:
+    with patch("custom_components.growspace_manager.coordinator._LOGGER"):
         await coordinator.services.notifications.set_notifications_enabled(
             "missing", False
         )
@@ -2843,9 +2840,6 @@ async def test_async_refresh_growspace_data(coordinator: GrowspaceCoordinator) -
     # Pre-populate the cache with old data
     old_cached_data = {"cached": "old_data", "version": 1}
     coordinator.cache.set(gs.id, old_cached_data)
-
-    # Track if update_data_property was called
-    update_called = False
 
     with patch.object(
         coordinator.view_model_builder, "build_data_property"

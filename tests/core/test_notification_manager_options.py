@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
-
-from datetime import datetime
 
 from custom_components.growspace_manager.const import (
     CRITICAL_COOLDOWN_MINUTES,
@@ -112,34 +110,32 @@ def test_get_tier_cooldown_falls_back_to_const_when_absent(
 
 def test_is_on_cooldown_respects_option_override() -> None:
     """_is_on_cooldown uses the option-driven cooldown, not the class-level constant."""
-    from datetime import timezone
 
     manager = _make_manager({"critical_cooldown_minutes": 1})
     growspace_id = "gs1"
     tier = NotificationTier.CRITICAL
 
     # Record cooldown 30 seconds ago
-    thirty_seconds_ago = datetime.now(tz=timezone.utc) - timedelta(seconds=30)
+    thirty_seconds_ago = datetime.now(tz=UTC) - timedelta(seconds=30)
     manager._cooldowns[growspace_id] = {tier: thirty_seconds_ago}
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     # 30s < 1 min — should be on cooldown
     assert manager._is_on_cooldown(growspace_id, tier, now) is True
 
 
 def test_is_on_cooldown_expired_with_option_override() -> None:
     """_is_on_cooldown returns False when the option-driven cooldown has passed."""
-    from datetime import timezone
 
     manager = _make_manager({"critical_cooldown_minutes": 1})
     growspace_id = "gs1"
     tier = NotificationTier.CRITICAL
 
     # Record cooldown 90 seconds ago
-    ninety_seconds_ago = datetime.now(tz=timezone.utc) - timedelta(seconds=90)
+    ninety_seconds_ago = datetime.now(tz=UTC) - timedelta(seconds=90)
     manager._cooldowns[growspace_id] = {tier: ninety_seconds_ago}
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     # 90s > 1 min — should NOT be on cooldown
     assert manager._is_on_cooldown(growspace_id, tier, now) is False
 

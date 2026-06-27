@@ -1,7 +1,7 @@
 """Test the Growspace Manager WebSocket API."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1517,7 +1517,7 @@ async def test_dense_entity_uses_downsampler(
     with patch(
         "custom_components.growspace_manager.websocket.environment.get_instance"
     ) as mock_recorder:
-        base = datetime(2023, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        base = datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC)
         dense_states = [
             {
                 "last_updated": (base + timedelta(minutes=i)).isoformat(),

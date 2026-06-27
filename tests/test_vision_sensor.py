@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from custom_components.growspace_manager.models import VisionCheckupResult
 from custom_components.growspace_manager.sensor import VisionCheckupSensor
 

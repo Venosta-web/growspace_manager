@@ -6,7 +6,6 @@ import pytest
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.models import DrainConfig, Growspace
 from custom_components.growspace_manager.services.facade import ServiceFacade
-from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
 

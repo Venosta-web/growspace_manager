@@ -7,11 +7,11 @@ import pytest
 from custom_components.growspace_manager.circulation_fan_coordinator import (
     CirculationFanCoordinator,
 )
-from custom_components.growspace_manager.exhaust_fan_coordinator import (
-    ExhaustFanCoordinator,
-)
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
+)
+from custom_components.growspace_manager.exhaust_fan_coordinator import (
+    ExhaustFanCoordinator,
 )
 from custom_components.growspace_manager.humidifier_coordinator import (
     HumidifierCoordinator,

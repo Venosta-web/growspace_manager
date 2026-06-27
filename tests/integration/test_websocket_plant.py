@@ -1,7 +1,7 @@
 """Tests for websocket/plant.py handlers."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -30,8 +30,8 @@ from homeassistant.exceptions import ServiceValidationError
 
 _PATCH = "custom_components.growspace_manager.websocket.plant"
 _GET_COORD = f"{_PATCH}.GrowspaceCoordinator.get_for_service_call"
-_FIXED_NOW = datetime(2026, 1, 12, 12, 0, 0, tzinfo=timezone.utc)
-_FIXED_DT = datetime(2026, 1, 10, 12, 0, 0, tzinfo=timezone.utc)
+_FIXED_NOW = datetime(2026, 1, 12, 12, 0, 0, tzinfo=UTC)
+_FIXED_DT = datetime(2026, 1, 10, 12, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture

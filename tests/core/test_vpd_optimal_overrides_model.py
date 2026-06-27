@@ -1,6 +1,5 @@
 """Tests for vpd_optimal_overrides field on EnvironmentConfig."""
 
-import pytest
 
 from custom_components.growspace_manager.models import EnvironmentConfig
 

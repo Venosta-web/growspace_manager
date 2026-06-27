@@ -2,10 +2,10 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from custom_components.growspace_manager.domain.stage import StageDays
-from custom_components.growspace_manager.services.growspace_facade import GrowspaceFacade
+from custom_components.growspace_manager.services.growspace_facade import (
+    GrowspaceFacade,
+)
 
 
 def _make_coordinator() -> MagicMock:

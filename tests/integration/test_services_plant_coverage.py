@@ -1,14 +1,13 @@
 """Coverage-focused tests for PlantService."""
 
-from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.managers.plant import PlantManager
-from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.models import Plant, PlantGenetics
+from custom_components.growspace_manager.services.context import ServiceContext
 from homeassistant.core import HomeAssistant
 
 

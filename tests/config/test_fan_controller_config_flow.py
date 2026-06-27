@@ -4,9 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.config_handlers.environment_config_handler import (
-    EnvironmentConfigHandler,
-)
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
 from homeassistant.core import HomeAssistant

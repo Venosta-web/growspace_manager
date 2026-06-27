@@ -19,10 +19,10 @@ from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
 from custom_components.growspace_manager.domain.day_night import DayNightTracker
-from custom_components.growspace_manager.vpd_on_off_controller import VpdOnOffController
 
 # Direct imports of the functions we want to test
 from custom_components.growspace_manager.services.plant_facade import PlantFacade
+from custom_components.growspace_manager.vpd_on_off_controller import VpdOnOffController
 from custom_components.growspace_manager.websocket import _merge_logbook_event
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant

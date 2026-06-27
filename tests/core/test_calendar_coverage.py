@@ -1,12 +1,10 @@
 """Coverage tests for calendar.py."""
 
-from datetime import timedelta
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 from custom_components.growspace_manager.calendar import GrowspaceCalendar
-from homeassistant.util import dt as dt_util
 
 
 @pytest.fixture

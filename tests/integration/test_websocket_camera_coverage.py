@@ -144,7 +144,7 @@ async def test_capture_snapshot_camera_service_fails(
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            raise Exception("Camera error")  # noqa: TRY002
+            raise Exception("Camera error")
 
     with (
         patch(

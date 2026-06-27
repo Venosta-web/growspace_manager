@@ -2,7 +2,11 @@
 
 import pytest
 
-from custom_components.growspace_manager.models import NutrientInventory, NutrientPreset, NutrientStock
+from custom_components.growspace_manager.models import (
+    NutrientInventory,
+    NutrientPreset,
+    NutrientStock,
+)
 from custom_components.growspace_manager.storage_manager import _migrate_preset_items
 
 

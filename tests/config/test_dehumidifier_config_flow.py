@@ -38,7 +38,7 @@ async def test_configure_dehumidifier_thresholds(
     # Mock Coordinator
     mock_coordinator = MagicMock()
     mock_coordinator.services = MagicMock()
-    
+
     mock_growspace = Growspace(
         id="gs1",
         name="Test GS",

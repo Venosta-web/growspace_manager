@@ -7,9 +7,9 @@ SEEDLING_STANDARD default day: [(0.4, 0.8), (0.3, 0.9)]
 
 from unittest.mock import MagicMock
 
-import pytest
-
-from custom_components.growspace_manager.bayesian_data import PROB_VPD_STRESS_OUT_OF_RANGE
+from custom_components.growspace_manager.bayesian_data import (
+    PROB_VPD_STRESS_OUT_OF_RANGE,
+)
 from custom_components.growspace_manager.bayesian_evaluator import evaluate_optimal_vpd
 from custom_components.growspace_manager.models import EnvironmentState
 

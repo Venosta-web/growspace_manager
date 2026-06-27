@@ -1,11 +1,9 @@
 """Tests for EnvironmentSensorsHandler — schema fields and routing."""
 
-from dataclasses import asdict
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.config_handlers import AbortFlow
 from custom_components.growspace_manager.config_handlers.environment_sensors_handler import (
     EnvironmentSensorsHandler,
 )
@@ -15,7 +13,6 @@ from custom_components.growspace_manager.const import (
     CONF_BULK_EC_SENSORS,
     CONF_FEED_EC_SENSORS,
     CONF_HUMIDITY_SENSOR,
-    CONF_HUMIDITY_SENSORS,
     CONF_IRRIGATION_TANK_SENSORS,
     CONF_IRRIGATION_TANK_WARNING_LEVEL,
     CONF_PORE_EC_SENSORS,
@@ -543,7 +540,6 @@ def test_clean_input_plural_to_singular_maps_none_for_empty_list() -> None:
 @pytest.mark.asyncio
 async def test_configure_environment_loads_volume_liters_from_existing_tank() -> None:
     """volume_liters from existing tank is propagated to growspace_options."""
-    from custom_components.growspace_manager.const import CONF_IRRIGATION_TANK_VOLUME
 
     flow = _make_flow()
     tank = IrrigationTank(
