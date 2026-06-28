@@ -466,6 +466,46 @@ def test_compute_tank_water_summaries_recent_refills_capped_at_20() -> None:
     assert len(result["recent_refills"]) == 20
 
 
+def test_compute_tank_water_summaries_buckets_24h_not_truncated() -> None:
+    """buckets_24h must reflect ALL 24h consumption, not just the last 20 events.
+
+    Regression: the Water Analytics tab bucketed only the raw ``events[-20:]``
+    slice sent in attributes, so consumption from earlier in the day vanished
+    from the 24h chart while the headline "consumed today" (from ``daily_7d``,
+    full data) stayed correct. ``buckets_24h`` is a compact, full-data 15-min
+    summary so the chart no longer relies on the truncated raw events.
+    """
+    now = datetime.now(tz=UTC)
+    # 40 consumption events, one every 20 minutes (~13h back), all within 24h.
+    events = [
+        {
+            "timestamp": (now - timedelta(minutes=20 * i)).isoformat(),
+            "event_type": "consumption",
+            "liters": 1.0,
+        }
+        for i in range(40)
+    ]
+    result = _compute_tank_water_summaries(events)
+    buckets = result["buckets_24h"]
+
+    # Every event is within the 24h window, so the full 40 L must be present.
+    # Truncation to the last 20 events would yield only 20 L.
+    total = sum(b["liters"] for b in buckets)
+    assert total == pytest.approx(40.0)
+
+    # Earlier history must be present: the oldest bucket must predate the 20
+    # most-recent events (i.e. cover more than the last ~6 hours).
+    oldest_bucket_start = min(datetime.fromisoformat(b["ts"]) for b in buckets)
+    twentieth_event_ts = datetime.fromisoformat(events[19]["timestamp"])
+    assert oldest_bucket_start < twentieth_event_ts
+
+
+def test_compute_tank_water_summaries_buckets_24h_empty() -> None:
+    """Empty event list yields an empty buckets_24h list."""
+    result = _compute_tank_water_summaries([])
+    assert result["buckets_24h"] == []
+
+
 def test_compute_tank_water_summaries_invalid_event_skipped() -> None:
     """Events with missing or invalid timestamps must be skipped gracefully."""
     good_ts = datetime.now(tz=UTC).isoformat()

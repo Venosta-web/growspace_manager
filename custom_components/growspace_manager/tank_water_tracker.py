@@ -86,7 +86,10 @@ def _fill_buckets(
     last_end = last_start + bucket_size
 
     for ev in events:
-        ev_dt = _parse_ts(ev["timestamp"])
+        try:
+            ev_dt = _parse_ts(ev["timestamp"])
+        except (KeyError, ValueError, TypeError):
+            continue  # skip events with missing/invalid timestamps
         if ev_dt < first_start or ev_dt >= last_end:
             continue
         # Find the bucket index
@@ -97,6 +100,25 @@ def _fill_buckets(
             buckets[idx]["liters_consumed"] += ev["liters"]
         else:
             buckets[idx]["liters_refilled"] += ev["liters"]
+
+
+def consumption_buckets_24h(
+    events: list[dict[str, Any]],
+    reference_ts: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return compact non-zero 15-min consumption buckets for the last 24h.
+
+    Suitable for entity attributes: a list of ``{"ts": iso, "liters": float}``
+    for buckets with non-zero consumption only. Reuses the same bucketing as
+    :meth:`TankWaterTracker.get_history_24h` so there is a single bucketer.
+    """
+    buckets = _build_buckets(reference_ts, 96, _BUCKET_15MIN)
+    _fill_buckets(buckets, events, _BUCKET_15MIN)
+    return [
+        {"ts": b["bucket_start"], "liters": round(b["liters_consumed"], 4)}
+        for b in buckets
+        if b["liters_consumed"] > 0
+    ]
 
 
 class TankWaterTracker:
