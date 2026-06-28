@@ -28,6 +28,9 @@ from custom_components.growspace_manager.const import (
     CONF_VPD_SENSORS,
     DOMAIN,
 )
+from custom_components.growspace_manager.tank_water_tracker import (
+    consumption_buckets_24h,
+)
 from custom_components.growspace_manager.utils import days_to_week
 from homeassistant.util import dt as dt_util
 
@@ -48,9 +51,11 @@ def _compute_tank_water_summaries(
 ) -> dict[str, Any]:
     """Compute compact 7-day water summaries from the full event list.
 
-    Returns two compact structures suitable for entity attributes:
+    Returns compact structures suitable for entity attributes:
     - ``recent_refills``: up to 20 refill events within the last 7 days.
     - ``daily_7d``: per-day consumed/refilled totals for the last 7 days.
+    - ``buckets_24h``: non-zero 15-min consumption buckets for the last 24h,
+      so the 24h chart has full-data granularity without shipping raw events.
     """
     now = dt_util.now()
     window_start = now - _7_DAYS
@@ -94,6 +99,7 @@ def _compute_tank_water_summaries(
             }
             for k, v in sorted(daily.items())
         ],
+        "buckets_24h": consumption_buckets_24h(events),
     }
 
 
@@ -657,11 +663,12 @@ class GrowspaceViewModelBuilder:
                         "hours_remaining": hours_remaining,
                         "depletion_status": depletion_status,
                         "water_history": {
-                            # Raw snapshots and events are limited to stay
-                            # within HA's 16 384-byte entity-attribute limit.
-                            # Compact pre-computed summaries cover the full 7d.
-                            "snapshots": tank.water_history.snapshots[-24:],
-                            "events": tank.water_history.events[-20:],
+                            # Only compact, pre-computed summaries are shipped to
+                            # stay within HA's 16 384-byte entity-attribute limit:
+                            # daily_7d (7d totals), recent_refills, and buckets_24h
+                            # (full-data 15-min consumption). Raw snapshots/events
+                            # are intentionally NOT included — the frontend renders
+                            # exclusively from these summaries.
                             **_compute_tank_water_summaries(tank.water_history.events),
                         },
                     }
