@@ -29,6 +29,7 @@ from .domain.ec_state import (
     resolve_feed_stage_week,
     runoff_halt,
 )
+from .domain.shot_composer import FeedbackTuning, ShotComposer
 from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
 
@@ -54,28 +55,6 @@ class SteeringPhaseBoundaries:
     lights_off: datetime
 
 
-@dataclass(frozen=True, slots=True)
-class ShotComposition:
-    """Fully-explained composition of the most recent fired steering shot.
-
-    Surfaced in diagnostics/payload so any shot is explainable end to end:
-    ``effective = base × vwc_factor × ec_factor``, then safety caps clamp the
-    delivered duration (``capped`` is True when a cap actually reduced it).
-    ``ec_modulation_available`` distinguishes "modulation off / no pore-EC
-    sensor / no reading → factor 1.0" from "within band → factor 1.0".
-    """
-
-    phase: str
-    base_seconds: int
-    vwc_factor: float
-    ec_factor: float
-    ec_modulation_available: bool
-    composed_seconds: int
-    effective_seconds: int
-    capped: bool
-    timestamp: str
-
-
 class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     """Manages VWC-based crop steering irrigation for a growspace."""
 
@@ -94,15 +73,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._current_phase = "P3"  # Start in safe state
         self._target_reached_today = False
         self._last_reset_date: str | None = None
-        self._shot_scale_factor = 1.0
-        # Interval-domain sibling of the size factor (ADR-0014): scales the
-        # minimum-cooldown floor. Clamped [1.0, dynamic_interval_ceiling] — only
-        # ever lengthens spacing or recovers to nominal, never shortens.
-        self._interval_scale_factor = 1.0
-        # Last fired shot's full composition, exposed for diagnostics so any
-        # shot is explainable (base × VWC × EC, then caps). None until a shot
-        # has fired this session.
-        self._last_shot_composition: ShotComposition | None = None
+        # Owns the Adaptive Shot Control factors and the Shot Size Composition
+        # (domain/shot_composer.py). The coordinator's phase machine triggers its
+        # reset() at lights-on / P1→P2; it never reaches back into the coordinator.
+        self._composer = ShotComposer()
 
         # Last computed Volume Mode shot volume (ml) and the live plant count it
         # was derived from, so a count-driven volume change can be detected
@@ -148,8 +122,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """Reset crop-steering target tracking at local midnight."""
         self._target_reached_today = False
         self._last_reset_date = None
-        self._shot_scale_factor = 1.0
-        self._interval_scale_factor = 1.0
+        self._composer.reset()
         self._last_shot_volume_ml = None
         self._last_live_plant_count = None
 
@@ -443,7 +416,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         last_shot = self._last_shot_dt()
         if last_shot:
             elapsed = (now_dt - last_shot).total_seconds() / 60.0
-            if elapsed < interval_minutes * self._interval_scale_factor:
+            if elapsed < interval_minutes * self._composer.interval_factor:
                 return
 
         pump_entity = self._get_pump_entity()
@@ -464,32 +437,19 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             duration = seconds_duration
 
         # Shot Size Composition: effective = base × VWC factor × EC factor.
-        # The two factors are computed independently (they may pull opposite
-        # ways and partially cancel — physically sensible). EC modulation
-        # applies to P2 maintenance shots only (the issue's actuation point);
-        # P1 ramp-up keeps a neutral EC factor of 1.0. Safety caps are applied
-        # LAST, downstream in _run_pump_cycle, against this composed duration.
-        if phase == "P2":
-            ec_factor, ec_available = self._compute_ec_modulation(strategy, growspace)
-        else:
-            ec_factor, ec_available = 1.0, False
-        composed_factor = self._shot_scale_factor * ec_factor
-        scaled_duration = max(1, int(round(duration * composed_factor)))
-
-        # Caps are evaluated last and never exceeded: record whether they would
-        # block this composed shot so a fired (or skipped) shot is explainable.
-        capped = self._check_safety_guards(scaled_duration) is not None
-        self._last_shot_composition = ShotComposition(
-            phase=phase,
-            base_seconds=duration,
-            vwc_factor=round(self._shot_scale_factor, 3),
-            ec_factor=round(ec_factor, 3),
-            ec_modulation_available=ec_available,
-            composed_seconds=scaled_duration,
-            effective_seconds=0 if capped else scaled_duration,
-            capped=capped,
-            timestamp=now_dt.isoformat(),
+        # The ShotComposer owns the multiply, the VWC feedback factor, and the
+        # cap-aware ShotComposition record. EC modulation (P2 only) and the
+        # safety-cap check are injected so the EC State seam and downstream
+        # _run_pump_cycle enforcement stay where they are; caps are still applied
+        # LAST, downstream, against this composed duration.
+        composition = self._composer.compose(
+            phase,
+            duration,
+            lambda: self._compute_ec_modulation(strategy, growspace),
+            lambda secs: self._check_safety_guards(secs) is not None,
+            now_dt.isoformat(),
         )
+        scaled_duration = composition.composed_seconds
 
         _LOGGER.info(
             "Firing %s shot for growspace %s. Duration: %ss "
@@ -498,8 +458,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             self._growspace_id,
             scaled_duration,
             duration,
-            self._shot_scale_factor,
-            ec_factor,
+            composition.vwc_factor,
+            composition.ec_factor,
         )
 
         existing_task = self._running_tasks.get("irrigation")
@@ -584,14 +544,14 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         growspace = self.growspace
         strategy = growspace.irrigation_strategy
         _, ec_available = self._compute_ec_modulation(strategy, growspace)
-        composition = self._last_shot_composition
+        composition = self._composer.last_composition
         return {
             "ec_modulation_enabled": strategy.ec_modulation_enabled,
             "ec_modulation_available": ec_available,
             "pore_ec_target_min": strategy.pore_ec_target_min,
             "pore_ec_target_max": strategy.pore_ec_target_max,
-            "current_vwc_factor": round(self._shot_scale_factor, 3),
-            "current_interval_factor": round(self._interval_scale_factor, 3),
+            "current_vwc_factor": round(self._composer.size_factor, 3),
+            "current_interval_factor": round(self._composer.interval_factor, 3),
             "dynamic_shot_enabled": strategy.dynamic_shot_enabled,
             "last_shot": asdict(composition) if composition is not None else None,
         }
@@ -845,7 +805,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         earliest = current_dt
         last_shot = self._last_shot_dt()
         if last_shot:
-            effective_interval = interval_minutes * self._interval_scale_factor
+            effective_interval = interval_minutes * self._composer.interval_factor
             cooldown_end = last_shot + timedelta(minutes=effective_interval)
             if cooldown_end > current_dt:
                 earliest = cooldown_end
@@ -896,8 +856,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 "Growspace %s transitioned from P1 to P2. Resetting feedback scale factors",
                 self._growspace_id,
             )
-            self._shot_scale_factor = 1.0
-            self._interval_scale_factor = 1.0
+            self._composer.reset()
 
         if self.growspace.irrigation_config.log_to_logbook:
             self._fire_logbook_event(
@@ -932,71 +891,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             sensor_entity = self.growspace.environment_config.soil_moisture_sensor
             if sensor_entity:
                 moisture_after = self._get_sensor_value(sensor_entity)
-                self._update_shot_feedback(moisture_before, moisture_after)
-
-    def _update_shot_feedback(
-        self, moisture_before: float | None, moisture_after: float | None
-    ) -> None:
-        """Evaluate the shot's effect on soil moisture and adjust the feedback factors.
-
-        Drives both the size factor (shot volume/duration) and the interval
-        factor (minimum-cooldown spacing) from the same overshoot ratio: on
-        overshoot the shot shrinks and the interval lengthens; on undershoot
-        both recover toward nominal (1.0). Inert when Adaptive Shot Control is
-        disabled (ADR-0014).
-        """
-        strategy = self.growspace.irrigation_strategy
-        if not strategy.dynamic_shot_enabled:
-            return
-        if moisture_before is None or moisture_after is None:
-            return
-
-        target = strategy.target_vwc_percent
-        d_target = target - moisture_before
-        d_actual = moisture_after - moisture_before
-
-        # Guard against division by very small numbers or non-positive actual delta
-        if d_target <= 0.5 or d_actual <= 0:
-            return
-
-        aggressiveness = strategy.dynamic_aggressiveness
-        recovery = strategy.dynamic_recovery
-        size_floor = strategy.dynamic_shot_size_floor
-        interval_ceiling = strategy.dynamic_interval_ceiling
-
-        ratio = d_actual / d_target
-        if ratio > 1.0:
-            # Overshot target: shrink the shot and lengthen the interval.
-            error = ratio - 1.0
-            self._shot_scale_factor = max(
-                size_floor,
-                min(1.0, self._shot_scale_factor - aggressiveness * error),
-            )
-            self._interval_scale_factor = min(
-                interval_ceiling,
-                max(1.0, self._interval_scale_factor + aggressiveness * error),
-            )
-            direction = "overshot VWC target"
-        else:
-            # Undershot or met target: recover both factors toward nominal.
-            error = 1.0 - ratio
-            self._shot_scale_factor = max(
-                size_floor,
-                min(1.0, self._shot_scale_factor + recovery * error),
-            )
-            self._interval_scale_factor = min(
-                interval_ceiling,
-                max(1.0, self._interval_scale_factor - recovery * error),
-            )
-            direction = "dynamic shot VWC feedback"
-
-        _LOGGER.debug(
-            "Growspace %s %s. Expected delta: %.2f%%, actual: %.2f%%. "
-            "Size factor: %.2f, interval factor: %.2f",
-            self._growspace_id,
-            direction,
-            d_target,
-            d_actual,
-            self._shot_scale_factor,
-            self._interval_scale_factor,
-        )
+                self._composer.observe(
+                    moisture_before,
+                    moisture_after,
+                    FeedbackTuning.from_strategy(self.growspace.irrigation_strategy),
+                )
