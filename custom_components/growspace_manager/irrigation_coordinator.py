@@ -25,13 +25,21 @@ from .const import (
     EVENT_GROWSPACE_LOG_ENTRY,
     SENSOR_SETTLING_DELAY_CAP_SECONDS,
 )
+from .domain.pump_cycle import (
+    CycleVerdict,
+    SkipReason,
+    TankReading,
+    cycle_volume_liters,
+    decide_cycle,
+    safety_cap_blocks,
+)
 from .domain.water_aggregation import (
     WATER_SOURCE_PUMP_ESTIMATE,
     is_tank_derived_mode,
     record_daily_water,
 )
 from .exceptions import GrowspaceError
-from .models import Growspace, GrowspaceEvent
+from .models import Growspace, GrowspaceEvent, IrrigationConfig
 from .utils import any_light_sensor_on
 
 _LOGGER = logging.getLogger(__name__)
@@ -381,15 +389,8 @@ class BaseIrrigationCoordinator:
             remove_listener()
 
     def _compute_cycle_volume_liters(self, duration: int) -> float:
-        """Return the estimated water volume for a cycle in litres.
-
-        Returns 0.0 when the flow rate is not configured, which disables the
-        volume-cap check for that cycle.
-        """
-        flow_rate = self.growspace.irrigation_config.pump_flow_rate_ml_per_sec
-        if not flow_rate:
-            return 0.0
-        return duration * flow_rate / 1000.0
+        """Return the estimated water volume for a cycle in litres."""
+        return cycle_volume_liters(self.growspace.irrigation_config, duration)
 
     async def _async_record_pump_water(self, liters: float) -> None:
         """Persist an estimated pump-cycle volume into WaterUsageData (ADR-0017).
@@ -420,16 +421,24 @@ class BaseIrrigationCoordinator:
             return False
         return any_light_sensor_on(self.hass, light_sensors) is not True
 
-    def _find_low_tank(self) -> tuple[str, float, float] | None:
-        """Return (name, current_level, warning_level) for the first below-warning tank.
+    def _resolve_tank_readings(self) -> list[TankReading]:
+        """Resolve configured irrigation tanks into readings for the Pump Cycle Gate.
 
-        Returns None when all tanks are above their warning levels or none are configured.
+        Tanks whose sensor is unavailable are omitted (matching the previous
+        behaviour of skipping unreadable tanks rather than treating them as low).
         """
+        readings: list[TankReading] = []
         for tank in self.growspace.environment_config.irrigation_tanks:
             level = self._get_sensor_value(tank.sensor_entity)
-            if level is not None and level < tank.warning_level:
-                return (tank.name, level, tank.warning_level)
-        return None
+            if level is not None:
+                readings.append(
+                    TankReading(
+                        name=tank.name,
+                        level=level,
+                        warning_level=tank.warning_level,
+                    )
+                )
+        return readings
 
     async def _async_fire_low_tank_notification(
         self, tank_name: str, level: float
@@ -452,31 +461,18 @@ class BaseIrrigationCoordinator:
             blocking=False,
         )
 
-    def _check_safety_guards(self, duration: int) -> str | None:
-        """Return a skip reason string if a safety guard blocks the cycle, else None.
+    def _check_safety_guards(self, duration: int) -> SkipReason | None:
+        """Return the cap/limit reason blocking an irrigation cycle, else None.
 
-        Only applies to irrigation cycles — drain cycles are never blocked.
+        Thin delegator to the Pump Cycle Gate's safety_cap_blocks (ADR-0021);
+        the Adaptive Shot Control loop probes this to set its capped diagnostic.
         """
-        config = self.growspace.irrigation_config
-
-        if config.max_cycles_per_day is not None and self._cycles_today >= config.max_cycles_per_day:
-            return (
-                f"Daily cycle limit reached ({self._cycles_today}/{config.max_cycles_per_day})"
-            )
-
-        cycle_volume = self._compute_cycle_volume_liters(duration)
-        if (
-            cycle_volume > 0
-            and config.daily_volume_cap_liters is not None
-            and self._volume_dispensed_today + cycle_volume > config.daily_volume_cap_liters
-        ):
-            return (
-                f"Daily volume cap would be exceeded "
-                f"({self._volume_dispensed_today:.3f}L + {cycle_volume:.3f}L "
-                f"> {config.daily_volume_cap_liters}L cap)"
-            )
-
-        return None
+        return safety_cap_blocks(
+            self.growspace.irrigation_config,
+            self._cycles_today,
+            self._volume_dispensed_today,
+            self._compute_cycle_volume_liters(duration),
+        )
 
     def _fire_logbook_event(self, message: str, category: str = CATEGORY_ALERT) -> None:
         """Fire a Home Assistant logbook event for this growspace."""
@@ -490,6 +486,22 @@ class BaseIrrigationCoordinator:
             },
         )
 
+    async def _apply_skip_verdict(
+        self, config: IrrigationConfig, verdict: CycleVerdict
+    ) -> None:
+        """Drive the effects for a skipped cycle from a Pump Cycle Gate verdict.
+
+        Low-tank additionally fires a persistent notification; every reason logs
+        to the logbook, except a dark-period skip which is gated on log_to_logbook.
+        """
+        _LOGGER.warning("%s (growspace %s)", verdict.message, self._growspace_id)
+        if verdict.reason is SkipReason.LOW_TANK and verdict.low_tank is not None:
+            await self._async_fire_low_tank_notification(
+                verdict.low_tank.name, verdict.low_tank.level
+            )
+        if verdict.reason is not SkipReason.DARK or config.log_to_logbook:
+            self._fire_logbook_event(verdict.message, CATEGORY_IRRIGATION_ERROR)
+
     async def _run_pump_cycle(
         self,
         event_type: str,
@@ -498,58 +510,23 @@ class BaseIrrigationCoordinator:
         event_data: Mapping[str, Any],
     ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
-        # Low tank check applies to ALL cycles (scheduled and manual).
+        # Ask the Pump Cycle Gate whether this cycle may fire (ADR-0021). The
+        # gate is a pure decision; this method owns the resulting effects.
         config = self.growspace.irrigation_config
-        if config.pause_on_low_tank:
-            low_tank = self._find_low_tank()
-            if low_tank:
-                tank_name, level, warn = low_tank
-                skip_reason = (
-                    f"tank '{tank_name}' is low ({level:.1f}% < {warn:.1f}%)"
-                )
-                _LOGGER.warning(
-                    "Skipping %s cycle for growspace %s: %s",
-                    event_type,
-                    self._growspace_id,
-                    skip_reason,
-                )
-                await self._async_fire_low_tank_notification(tank_name, level)
-                self._fire_logbook_event(
-                    f"{event_type.capitalize()} skipped — {skip_reason}",
-                    CATEGORY_IRRIGATION_ERROR,
-                )
-                return
-
-        # Safety guards and dark skip apply only to irrigation cycles.
-        if event_type == "irrigation":
-            skip_reason = self._check_safety_guards(duration)
-            if skip_reason:
-                _LOGGER.warning(
-                    "Skipping irrigation cycle for growspace %s: %s",
-                    self._growspace_id,
-                    skip_reason,
-                )
-                self._fire_logbook_event(
-                    f"Irrigation skipped — {skip_reason}",
-                    CATEGORY_IRRIGATION_ERROR,
-                )
-                return
-
-            # Dark skip: scheduled cycles only — manual runs bypass this check.
-            is_manual = event_data.get("manual", False)
-            if not is_manual and config.skip_during_dark and self._is_lights_dark():
-                skip_reason = "lights are currently off (dark period)"
-                _LOGGER.warning(
-                    "Skipping scheduled irrigation for growspace %s: %s",
-                    self._growspace_id,
-                    skip_reason,
-                )
-                if config.log_to_logbook:
-                    self._fire_logbook_event(
-                        f"Irrigation skipped — {skip_reason}",
-                        CATEGORY_IRRIGATION_ERROR,
-                    )
-                return
+        cycle_volume_l = self._compute_cycle_volume_liters(duration)
+        verdict = decide_cycle(
+            event_type=event_type,
+            is_manual=bool(event_data.get("manual", False)),
+            config=config,
+            tank_readings=self._resolve_tank_readings(),
+            lights_dark=self._is_lights_dark(),
+            cycles_today=self._cycles_today,
+            volume_today=self._volume_dispensed_today,
+            cycle_volume_l=cycle_volume_l,
+        )
+        if not verdict.fire:
+            await self._apply_skip_verdict(config, verdict)
+            return
 
         # Track active event for frontend animation
         self._active_events[event_type] = {
@@ -642,9 +619,8 @@ class BaseIrrigationCoordinator:
                     # accounting because asyncio.sleep duration is the driver.
                     if event_type == "irrigation":
                         self._cycles_today += 1
-                        cycle_volume = self._compute_cycle_volume_liters(duration)
-                        self._volume_dispensed_today += cycle_volume
-                        await self._async_record_pump_water(cycle_volume)
+                        self._volume_dispensed_today += cycle_volume_l
+                        await self._async_record_pump_water(cycle_volume_l)
 
                     self._async_spawn_settling_report(
                         event_type=event_type,
