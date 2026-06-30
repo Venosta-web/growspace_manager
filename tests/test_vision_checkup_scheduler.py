@@ -95,6 +95,7 @@ def test_vision_checkup_scheduler_initializes():
     assert scheduler.hass is hass
     assert scheduler.coordinator is coordinator
     assert scheduler._unsub_timers == {}
+    assert scheduler._latest_public_paths == {}
 
 
 @pytest.fixture
@@ -763,6 +764,15 @@ async def test_process_camera_images_saves_under_media_source_root(
     assert attachments[0]["media_content_id"].startswith(
         "media-source://media_source/local/growspace_vision/"
     )
+    # A permanent copy is also written under <config>/www for the frontend.
+    snapshot_dir = (
+        tmp_path / "config" / "www" / "growspace_manager" / "snapshots" / "tent1"
+    )
+    snapshots = list(snapshot_dir.glob("*_processed.jpg"))
+    assert len(snapshots) == 1
+    assert scheduler._latest_public_paths["tent1"] == [
+        f"/local/growspace_manager/snapshots/tent1/{snapshots[0].name}"
+    ]
 
 
 @pytest.mark.asyncio
@@ -1058,6 +1068,58 @@ async def test_run_vision_analysis_falls_back_to_raw_camera_uris_when_processing
     assert result is not None
     attachment_uri = mock_gen.call_args.kwargs["attachments"][0]["media_content_id"]
     assert "camera.tent1_cam" in attachment_uri
+
+
+@pytest.mark.asyncio
+async def test_run_vision_analysis_snapshot_paths_contain_public_uris(
+    hass_with_executor, mock_coordinator
+):
+    """snapshot_paths holds /local/... public URLs after real image processing."""
+    gs = _make_mock_growspace()
+    mock_coordinator.growspaces = {"tent1": gs}
+
+    mock_image = MagicMock()
+    mock_image.content = b"\xff\xd8\xff\xe0fake"
+
+    mock_ai_result = MagicMock()
+    mock_ai_result.data = {
+        "analysis": "OK",
+        "issues_detected": [],
+        "severity": "none",
+        "recommendations": [],
+    }
+
+    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
+
+    with (
+        patch(
+            "homeassistant.components.camera.async_get_image",
+            new_callable=AsyncMock,
+            return_value=mock_image,
+        ),
+        patch(
+            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
+            return_value=(b"\xff\xd8\xff\xe0processed", 55.0),
+        ),
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            new_callable=AsyncMock,
+            return_value=mock_ai_result,
+        ),
+        patch.object(
+            scheduler, "_gather_context_data", return_value=_minimal_context()
+        ),
+    ):
+        result = await scheduler.run_vision_analysis("tent1", "mid")
+
+    assert result is not None
+    assert len(result.snapshot_paths) == 1
+    assert result.snapshot_paths[0].startswith(
+        "/local/growspace_manager/snapshots/tent1/"
+    )
+    assert result.snapshot_paths[0].endswith("_processed.jpg")
+    # State is popped after use so it does not leak into the next run.
+    assert "tent1" not in scheduler._latest_public_paths
 
 
 @pytest.mark.asyncio
