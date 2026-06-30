@@ -12,14 +12,9 @@ from custom_components.growspace_manager.const import (
     CONF_CONFIGURE_FAN_CONTROLLER,
     CONF_CONFIGURE_HUMIDIFIER,
     CONF_CONTROL_DEHUMIDIFIER,
-    CONF_DAY,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
-    CONF_NIGHT,
-    CONF_OFF,
-    CONF_ON,
-    DEHUMIDIFIER_STAGES,
 )
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DEFAULT_THRESHOLDS,
@@ -28,6 +23,7 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
 from . import AbortFlow, BaseConfigHandler
+from .stage_thresholds import build_stage_threshold_schema, parse_stage_thresholds
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,17 +52,8 @@ class DehumidifierHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         if user_input is not None:
-            new_thresholds: dict[str, Any] = {}
-            for stage in DEHUMIDIFIER_STAGES:
-                new_thresholds[stage] = {}
-                for cycle in ["day", "night"]:
-                    new_thresholds[stage][cycle] = {
-                        "on": user_input[f"{stage}_{cycle}_on"],
-                        "off": user_input[f"{stage}_{cycle}_off"],
-                    }
-
             env_config = self.flow.env_config_step1.copy()
-            env_config["dehumidifier_thresholds"] = new_thresholds
+            env_config["dehumidifier_thresholds"] = parse_stage_thresholds(user_input)
 
             if env_config.get("configure_advanced"):
                 self.flow.env_config_step1 = env_config
@@ -84,42 +71,7 @@ class DehumidifierHandler(BaseConfigHandler[dict[str, Any]]):
 
     def get_dehumidifier_schema(self, current_thresholds: dict[str, Any]) -> vol.Schema:
         """Generate schema for dehumidifier settings."""
-        schema_dict = {}
-        for stage in DEHUMIDIFIER_STAGES:
-            for cycle in [CONF_DAY, CONF_NIGHT]:
-                defaults = current_thresholds.get(stage, {}).get(
-                    cycle, DEFAULT_THRESHOLDS[stage][cycle]
-                )
-
-                schema_dict[
-                    vol.Required(
-                        f"{stage}_{cycle}_{CONF_ON}", default=defaults[CONF_ON]
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=3.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="kPa",
-                    )
-                )
-
-                schema_dict[
-                    vol.Required(
-                        f"{stage}_{cycle}_{CONF_OFF}", default=defaults[CONF_OFF]
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=3.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="kPa",
-                    )
-                )
-
-        return vol.Schema(schema_dict)
+        return build_stage_threshold_schema(current_thresholds, DEFAULT_THRESHOLDS)
 
     def _add_dehumidifier_entity_selectors(
         self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]

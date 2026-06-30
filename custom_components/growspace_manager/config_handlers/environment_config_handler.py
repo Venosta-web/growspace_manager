@@ -22,7 +22,6 @@ from custom_components.growspace_manager.const import (
     CONF_CONFIGURE_FAN_CONTROLLER,
     CONF_CONFIGURE_HUMIDIFIER,
     CONF_CONTROL_DEHUMIDIFIER,
-    CONF_DAY,
     CONF_DEHUMIDIFIER_ENTITIES,
     CONF_DEHUMIDIFIER_ENTITY,
     CONF_DEHUMIDIFIER_THRESHOLDS,
@@ -46,9 +45,6 @@ from custom_components.growspace_manager.const import (
     CONF_LST_OFFSET,
     CONF_MIN_SOURCE_AIR_TEMP,
     CONF_MOLD_THRESHOLD,
-    CONF_NIGHT,
-    CONF_OFF,
-    CONF_ON,
     CONF_PH_SENSORS,
     CONF_PORE_EC_SENSORS,
     CONF_POWER_SENSORS,
@@ -94,7 +90,6 @@ from custom_components.growspace_manager.const import (
     CONF_VPD_SENSORS,
     DEFAULT_FLOWER_DAY_HOURS,
     DEFAULT_VEG_DAY_HOURS,
-    DEHUMIDIFIER_STAGES,
     PlantStage,
 )
 from custom_components.growspace_manager.dehumidifier_coordinator import (
@@ -108,6 +103,7 @@ from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
 from . import AbortFlow, BaseConfigHandler
+from .stage_thresholds import build_stage_threshold_schema, parse_stage_thresholds
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -374,17 +370,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         if user_input is not None:
-            new_thresholds: dict[str, Any] = {}
-            for stage in DEHUMIDIFIER_STAGES:
-                new_thresholds[stage] = {}
-                for cycle in ["day", "night"]:
-                    new_thresholds[stage][cycle] = {
-                        "on": user_input[f"{stage}_{cycle}_on"],
-                        "off": user_input[f"{stage}_{cycle}_off"],
-                    }
-
             env_config = self.flow.env_config_step1.copy()
-            env_config["humidifier_thresholds"] = new_thresholds
+            env_config["humidifier_thresholds"] = parse_stage_thresholds(user_input)
 
             if env_config.get("configure_advanced"):
                 self.flow.env_config_step1 = env_config
@@ -402,39 +389,9 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
     def get_humidifier_schema(self, current_thresholds: dict[str, Any]) -> vol.Schema:
         """Generate schema for humidifier threshold settings."""
-        schema_dict = {}
-        for stage in DEHUMIDIFIER_STAGES:
-            for cycle in [CONF_DAY, CONF_NIGHT]:
-                defaults = current_thresholds.get(stage, {}).get(
-                    cycle, HUMIDIFIER_DEFAULT_THRESHOLDS[stage][cycle]
-                )
-                schema_dict[
-                    vol.Required(
-                        f"{stage}_{cycle}_{CONF_ON}", default=defaults[CONF_ON]
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=3.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="kPa",
-                    )
-                )
-                schema_dict[
-                    vol.Required(
-                        f"{stage}_{cycle}_{CONF_OFF}", default=defaults[CONF_OFF]
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=3.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="kPa",
-                    )
-                )
-        return vol.Schema(schema_dict)
+        return build_stage_threshold_schema(
+            current_thresholds, HUMIDIFIER_DEFAULT_THRESHOLDS
+        )
 
     async def async_step_configure_dehumidifier(
         self, user_input: dict[str, Any] | None = None
@@ -458,19 +415,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         if user_input is not None:
-            # Process input back into nested structure
-            new_thresholds: dict[str, Any] = {}
-            for stage in DEHUMIDIFIER_STAGES:
-                new_thresholds[stage] = {}
-                for cycle in ["day", "night"]:
-                    new_thresholds[stage][cycle] = {
-                        "on": user_input[f"{stage}_{cycle}_on"],
-                        "off": user_input[f"{stage}_{cycle}_off"],
-                    }
-
-            # Update config
             env_config = self.flow.env_config_step1.copy()
-            env_config["dehumidifier_thresholds"] = new_thresholds
+            env_config["dehumidifier_thresholds"] = parse_stage_thresholds(user_input)
 
             if env_config.get("configure_advanced"):
                 # Update temporary config and move to next step
@@ -1321,44 +1267,7 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
     def get_dehumidifier_schema(self, current_thresholds: dict[str, Any]) -> vol.Schema:
         """Generate schema for dehumidifier settings."""
-        schema_dict = {}
-        for stage in DEHUMIDIFIER_STAGES:
-            for cycle in [CONF_DAY, CONF_NIGHT]:
-                defaults = current_thresholds.get(stage, {}).get(
-                    cycle, DEFAULT_THRESHOLDS[stage][cycle]
-                )
-
-                # ON Threshold
-                schema_dict[
-                    vol.Required(
-                        f"{stage}_{cycle}_{CONF_ON}", default=defaults[CONF_ON]
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=3.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="kPa",
-                    )
-                )
-
-                # OFF Threshold
-                schema_dict[
-                    vol.Required(
-                        f"{stage}_{cycle}_{CONF_OFF}", default=defaults[CONF_OFF]
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=3.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="kPa",
-                    )
-                )
-
-        return vol.Schema(schema_dict)
+        return build_stage_threshold_schema(current_thresholds, DEFAULT_THRESHOLDS)
 
     def get_advanced_bayesian_schema(self, options: dict[str, Any]) -> vol.Schema:
         """Build the schema for the advanced Bayesian settings form."""

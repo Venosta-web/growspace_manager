@@ -7,21 +7,14 @@ from typing import Any
 
 import voluptuous as vol
 
-from custom_components.growspace_manager.const import (
-    CONF_CONFIGURE_ADVANCED,
-    CONF_DAY,
-    CONF_NIGHT,
-    CONF_OFF,
-    CONF_ON,
-    DEHUMIDIFIER_STAGES,
-)
+from custom_components.growspace_manager.const import CONF_CONFIGURE_ADVANCED
 from custom_components.growspace_manager.humidifier_coordinator import (
     DEFAULT_THRESHOLDS,
 )
 from homeassistant.config_entries import ConfigFlowResult
-from homeassistant.helpers import selector
 
 from . import AbortFlow, BaseConfigHandler
+from .stage_thresholds import build_stage_threshold_schema, parse_stage_thresholds
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,17 +43,8 @@ class HumidifierHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         if user_input is not None:
-            new_thresholds: dict[str, Any] = {}
-            for stage in DEHUMIDIFIER_STAGES:
-                new_thresholds[stage] = {}
-                for cycle in ["day", "night"]:
-                    new_thresholds[stage][cycle] = {
-                        "on": user_input[f"{stage}_{cycle}_on"],
-                        "off": user_input[f"{stage}_{cycle}_off"],
-                    }
-
             env_config = self.flow.env_config_step1.copy()
-            env_config["humidifier_thresholds"] = new_thresholds
+            env_config["humidifier_thresholds"] = parse_stage_thresholds(user_input)
 
             if env_config.get(CONF_CONFIGURE_ADVANCED):
                 self.flow.env_config_step1 = env_config
@@ -78,39 +62,4 @@ class HumidifierHandler(BaseConfigHandler[dict[str, Any]]):
 
     def get_humidifier_schema(self, current_thresholds: dict[str, Any]) -> vol.Schema:
         """Generate schema for humidifier threshold settings."""
-        schema_dict = {}
-        for stage in DEHUMIDIFIER_STAGES:
-            for cycle in [CONF_DAY, CONF_NIGHT]:
-                defaults = current_thresholds.get(stage, {}).get(
-                    cycle, DEFAULT_THRESHOLDS[stage][cycle]
-                )
-
-                schema_dict[
-                    vol.Required(
-                        f"{stage}_{cycle}_{CONF_ON}", default=defaults[CONF_ON]
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=3.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="kPa",
-                    )
-                )
-
-                schema_dict[
-                    vol.Required(
-                        f"{stage}_{cycle}_{CONF_OFF}", default=defaults[CONF_OFF]
-                    )
-                ] = selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=3.0,
-                        step=0.01,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="kPa",
-                    )
-                )
-
-        return vol.Schema(schema_dict)
+        return build_stage_threshold_schema(current_thresholds, DEFAULT_THRESHOLDS)
