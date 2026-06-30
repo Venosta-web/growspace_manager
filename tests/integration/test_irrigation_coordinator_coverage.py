@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.domain.pump_cycle import SkipReason
 from custom_components.growspace_manager.irrigation_coordinator import (
     BaseIrrigationCoordinator,
     IrrigationCoordinator,
@@ -347,7 +348,7 @@ async def test_check_safety_guards_max_cycles_reached(
     coordinator._cycles_today = 2
 
     reason = coordinator._check_safety_guards(30)
-    assert reason == "Daily cycle limit reached (2/2)"
+    assert reason is SkipReason.CYCLE_LIMIT
 
 
 async def test_check_safety_guards_volume_cap_exceeded(
@@ -364,9 +365,7 @@ async def test_check_safety_guards_volume_cap_exceeded(
     coordinator._volume_dispensed_today = 0.0
 
     reason = coordinator._check_safety_guards(30)
-    assert reason is not None
-    assert "Daily volume cap would be exceeded" in reason
-    assert "0.000L + 3.000L > 1.0L cap" in reason
+    assert reason is SkipReason.VOLUME_CAP
 
 
 async def test_run_pump_cycle_safety_guard_blocks(
@@ -387,9 +386,9 @@ async def test_run_pump_cycle_safety_guard_blocks(
 
         # Verify skip warning is logged
         mock_logger.warning.assert_called_once_with(
-            "Skipping irrigation cycle for growspace %s: %s",
+            "%s (growspace %s)",
+            "Irrigation skipped — Daily cycle limit reached (2/2)",
             GROWSPACE_ID,
-            "Daily cycle limit reached (2/2)",
         )
 
         # Verify skipped event is added via Home Assistant bus
