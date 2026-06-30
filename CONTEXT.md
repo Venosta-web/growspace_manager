@@ -250,6 +250,9 @@ A sparse dict stored on `CirculationFanConfig` as `stage_vpd_overrides`. Keyed b
 **Fan Speed Composition**
 `final_speed = clamp(regulation_speed + wind_offset, min_speed, max_speed)` where `regulation_speed` is the output of the active regulation mode (or the safety override when active), and `wind_offset` is the sine term (zero when `wind_enabled=False`).
 
+**Stage Hysteresis Thresholds**
+The per-stage, day/night, **on/off** VPD band that drives a humidifier or dehumidifier: a nested `{stage: {cycle: {on, off}}}` table stored on `EnvironmentConfig` as `humidifier_thresholds` / `dehumidifier_thresholds`, ranged 0.1–3.0 kPa. The on/off pair is a hysteresis band (turn the appliance on at one VPD, off at another, to avoid short-cycling); the *direction* differs by appliance — a humidifier's `on > off` (run when the air is too dry), a dehumidifier's `on < off` — but that lives entirely in the per-appliance default table, not in the structure. Its config-flow round-trip (the flat `{stage}_{cycle}_on`/`_off` form fields ↔ the nested table, plus the form schema) is owned by one module, `config_handlers/stage_thresholds.py` (`parse_stage_thresholds` + `build_stage_threshold_schema`), so the schema a step renders and the parse a step reads share **one field-name encoding** and cannot drift — even though, for `configure_humidifier`/`configure_dehumidifier`, `EnvironmentConfigHandler` renders the form while the dedicated humidifier/dehumidifier handler parses the submission. Parameterised only by the appliance defaults table; the calling handler picks which config key the parsed table lands under. Distinct in *shape* from [[Stage VPD Overrides]] and `vpd_optimal_overrides` (sparse `{day,night}` / `{low,high}` override dicts keyed by stage): Stage Hysteresis Thresholds are a **full** stage×cycle table of on/off pairs, not a sparse override.
+
 ## Exhaust Fan Controller
 
 **ExhaustFanController**
