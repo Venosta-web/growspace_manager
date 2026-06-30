@@ -33,6 +33,10 @@ _LOGGER = logging.getLogger(__name__)
 # On/off domains driven via turn_on/turn_off rather than by percentage.
 _SWITCH_DOMAINS = ("switch", "input_boolean")
 
+# Domains a binary on/off controller drives via their own turn_on/turn_off
+# service; any other domain falls back to the generic ``homeassistant`` service.
+_ON_OFF_NATIVE_DOMAINS = ("switch", "humidifier", "fan", "input_boolean")
+
 # AC Infinity Active Mode options (hardcoded English in the ac_infinity integration).
 _AC_INFINITY_MODE_ON = "On"
 _AC_INFINITY_MODE_OFF = "Off"
@@ -280,6 +284,83 @@ def resolve_actuator_drivers(
         )
         if driver is not None:
             drivers.append(driver)
+    drivers.extend(
+        ACInfinityDriver(
+            hass,
+            mode_entity=device.mode_entity,
+            speed_entity=device.speed_entity,
+            on_speed=device.on_speed,
+        )
+        for device in ac_infinity_devices
+    )
+    return drivers
+
+
+class GenericOnOffDriver:
+    """Binary on/off driver for the VPD controllers (humidifier/dehumidifier).
+
+    Drives ``switch``/``humidifier``/``fan``/``input_boolean`` via their own
+    ``turn_on``/``turn_off`` service and any other domain via the generic
+    ``homeassistant`` service — mirroring the controller's historical dispatch so
+    a humidifier entity or a climate/remote device is still driven. ``set_speed``
+    collapses to on (above ``off_threshold``) or off.
+    """
+
+    def __init__(
+        self, hass: HomeAssistant, entity_id: str, *, off_threshold: int = 0
+    ) -> None:
+        """Initialize the driver, resolving the service domain for ``entity_id``."""
+        self._hass = hass
+        self._entity_id = entity_id
+        domain = entity_id.split(".", 1)[0]
+        self._domain = domain if domain in _ON_OFF_NATIVE_DOMAINS else "homeassistant"
+        self._off_threshold = off_threshold
+
+    async def set_speed(self, pct: int) -> None:
+        """Turn on when ``pct`` exceeds the off threshold, otherwise off."""
+        if pct > self._off_threshold:
+            await self.turn_on()
+        else:
+            await self.turn_off()
+
+    async def turn_on(self) -> None:
+        """Turn the device on via its resolved service domain."""
+        await _safe_service_call(
+            self._hass,
+            self._domain,
+            SERVICE_TURN_ON,
+            {ATTR_ENTITY_ID: self._entity_id},
+        )
+
+    async def turn_off(self) -> None:
+        """Turn the device off via its resolved service domain."""
+        await _safe_service_call(
+            self._hass,
+            self._domain,
+            SERVICE_TURN_OFF,
+            {ATTR_ENTITY_ID: self._entity_id},
+        )
+
+    def is_on(self) -> bool:
+        """Return whether the entity reports the ``on`` state."""
+        state = self._hass.states.get(self._entity_id)
+        return state is not None and state.state == STATE_ON
+
+
+def resolve_on_off_drivers(
+    hass: HomeAssistant,
+    entities: Iterable[str],
+    ac_infinity_devices: Iterable[ACInfinityDeviceConfig] = (),
+) -> list[ActuatorDriver]:
+    """Resolve binary on/off actuators (plain entities + AC Infinity bundles).
+
+    Used by the VPD on/off controllers. Every plain entity becomes a
+    ``GenericOnOffDriver`` (preserving the controller's own-domain/homeassistant
+    dispatch); each AC Infinity bundle becomes an ``ACInfinityDriver``.
+    """
+    drivers: list[ActuatorDriver] = [
+        GenericOnOffDriver(hass, entity_id) for entity_id in entities
+    ]
     drivers.extend(
         ACInfinityDriver(
             hass,

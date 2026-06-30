@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from .const import (
     CATEGORY_DEHUMIDIFIER,
     DEFAULT_DEHUMIDIFIER_MIN_OFFTIME,
@@ -9,6 +11,9 @@ from .const import (
     PlantStage,
 )
 from .vpd_on_off_controller import VpdOnOffController
+
+if TYPE_CHECKING:
+    from .models import ACInfinityDevice
 
 # Default thresholds — dehumidifier turns ON when VPD falls below `on`, OFF when it rises above `off`.
 # Low VPD = high humidity = needs dehumidification.
@@ -74,3 +79,9 @@ class DehumidifierCoordinator(VpdOnOffController):
             return []
         env = self.growspace.environment_config
         return list(env.dehumidifier_entities or [])
+
+    def _get_ac_infinity_devices(self) -> list[ACInfinityDevice]:
+        if not self.growspace or not self.growspace.environment_config:
+            return []
+        env = self.growspace.environment_config
+        return list(env.dehumidifier_ac_infinity_devices or [])
