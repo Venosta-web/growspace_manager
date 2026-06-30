@@ -700,6 +700,8 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         env_config.pop("configure_advanced", None)
         env_config.pop("configure_dehumidifier", None)
 
+        self.preserve_ac_infinity_devices(growspace, env_config)
+
         growspace.environment_config = EnvironmentConfig.from_dict(env_config)
         await coordinator.services.save()
         await coordinator.async_refresh()

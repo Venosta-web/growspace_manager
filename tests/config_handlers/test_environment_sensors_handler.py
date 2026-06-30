@@ -20,13 +20,19 @@ from custom_components.growspace_manager.const import (
     CONF_TEMP_SENSOR,
     CONF_TEMP_SENSORS,
 )
-from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from custom_components.growspace_manager.models import (
+    ACInfinityDevice,
+    EnvironmentConfig,
+    Growspace,
+)
 from custom_components.growspace_manager.models.irrigation import IrrigationTank
 
 
-def _make_flow(configure_dehumidifier: bool = False,
-               configure_fan_controller: bool = False,
-               configure_advanced: bool = False) -> MagicMock:
+def _make_flow(
+    configure_dehumidifier: bool = False,
+    configure_fan_controller: bool = False,
+    configure_advanced: bool = False,
+) -> MagicMock:
     """Build a minimal flow stub with a growspace and async step mocks."""
     growspace = Growspace(
         id="gs1",
@@ -63,8 +69,12 @@ def _make_flow(configure_dehumidifier: bool = False,
     flow.async_step_configure_sensor_placement = AsyncMock(
         return_value={"type": "form", "step_id": "configure_sensor_placement"}
     )
-    flow.async_show_form = MagicMock(side_effect=lambda **kw: {"type": "form", "step_id": kw.get("step_id")})
-    flow.async_abort = MagicMock(side_effect=lambda reason: {"type": "abort", "reason": reason})
+    flow.async_show_form = MagicMock(
+        side_effect=lambda **kw: {"type": "form", "step_id": kw.get("step_id")}
+    )
+    flow.async_abort = MagicMock(
+        side_effect=lambda reason: {"type": "abort", "reason": reason}
+    )
 
     return flow
 
@@ -229,7 +239,9 @@ async def test_select_growspace_for_env_sets_id_and_advances_on_input() -> None:
     )
     handler = EnvironmentSensorsHandler(flow)
 
-    await handler.async_step_select_growspace_for_env(user_input={"growspace_id": "gs1"})
+    await handler.async_step_select_growspace_for_env(
+        user_input={"growspace_id": "gs1"}
+    )
 
     assert flow.selected_growspace_id == "gs1"
     flow.async_step_configure_environment.assert_awaited_once()
@@ -299,11 +311,15 @@ async def test_configure_environment_processes_user_input_and_advances() -> None
 async def test_configure_environment_loads_existing_irrigation_tanks() -> None:
     """Step reads irrigation_tanks from existing environment_config."""
     flow = _make_flow()
-    tank = IrrigationTank(sensor_entity="sensor.tank1", name="Tank 1", warning_level=25.0)
-    flow.config_entry.runtime_data.services.growspaces.get_growspace.return_value = Growspace(
-        id="gs1",
-        name="Test Tent",
-        environment_config=EnvironmentConfig(irrigation_tanks=[tank]),
+    tank = IrrigationTank(
+        sensor_entity="sensor.tank1", name="Tank 1", warning_level=25.0
+    )
+    flow.config_entry.runtime_data.services.growspaces.get_growspace.return_value = (
+        Growspace(
+            id="gs1",
+            name="Test Tent",
+            environment_config=EnvironmentConfig(irrigation_tanks=[tank]),
+        )
     )
     handler = EnvironmentSensorsHandler(flow)
 
@@ -321,7 +337,9 @@ async def test_configure_environment_no_existing_config_uses_empty_options() -> 
     flow = _make_flow()
     growspace = Growspace(id="gs1", name="Test Tent")
     growspace.environment_config = None  # type: ignore[assignment]
-    flow.config_entry.runtime_data.services.growspaces.get_growspace.return_value = growspace
+    flow.config_entry.runtime_data.services.growspaces.get_growspace.return_value = (
+        growspace
+    )
     handler = EnvironmentSensorsHandler(flow)
 
     result = await handler.async_step_configure_environment(user_input=None)
@@ -374,7 +392,10 @@ def test_process_irrigation_tanks_uses_friendly_name_from_state() -> None:
     handler = EnvironmentSensorsHandler(flow)
 
     result = handler._process_irrigation_tanks(
-        {CONF_IRRIGATION_TANK_SENSORS: ["sensor.tank1"], CONF_IRRIGATION_TANK_WARNING_LEVEL: 20.0}
+        {
+            CONF_IRRIGATION_TANK_SENSORS: ["sensor.tank1"],
+            CONF_IRRIGATION_TANK_WARNING_LEVEL: 20.0,
+        }
     )
 
     assert result["irrigation_tanks"][0]["name"] == "Main Reservoir"
@@ -393,7 +414,10 @@ def test_process_irrigation_tanks_preserves_existing_dataclass_tank_data() -> No
         peak_level=90.0,
     )
     result = handler._process_irrigation_tanks(
-        {CONF_IRRIGATION_TANK_SENSORS: ["sensor.tank1"], CONF_IRRIGATION_TANK_WARNING_LEVEL: 30.0},
+        {
+            CONF_IRRIGATION_TANK_SENSORS: ["sensor.tank1"],
+            CONF_IRRIGATION_TANK_WARNING_LEVEL: 30.0,
+        },
         existing_tanks=[existing_tank],
     )
 
@@ -416,7 +440,10 @@ def test_process_irrigation_tanks_preserves_existing_dict_tank_data() -> None:
         "water_history": {"some": "data"},
     }
     result = handler._process_irrigation_tanks(
-        {CONF_IRRIGATION_TANK_SENSORS: ["sensor.tank1"], CONF_IRRIGATION_TANK_WARNING_LEVEL: 30.0},
+        {
+            CONF_IRRIGATION_TANK_SENSORS: ["sensor.tank1"],
+            CONF_IRRIGATION_TANK_WARNING_LEVEL: 30.0,
+        },
         existing_tanks=[existing_tank_dict],  # type: ignore[list-item]
     )
 
@@ -449,6 +476,28 @@ async def test_async_save_and_finish_saves_env_config_and_returns_entry() -> Non
     assert growspace.environment_config is not None
     flow.config_entry.runtime_data.services.save.assert_awaited_once()
     flow.config_entry.runtime_data.async_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_save_and_finish_preserves_ac_infinity_devices() -> None:
+    """Saving env config via the flow must not wipe AC Infinity bundles (ADR-0022)."""
+    flow = _make_flow()
+    flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+    handler = EnvironmentSensorsHandler(flow)
+
+    device = ACInfinityDevice(
+        mode_entity="select.m", speed_entity="number.s", on_speed=7
+    )
+    growspace = Growspace(
+        id="gs1",
+        name="Test Tent",
+        environment_config=EnvironmentConfig(humidifier_ac_infinity_devices=[device]),
+    )
+    env_config = {"temp_sensor": "sensor.temp"}
+
+    await handler._async_save_and_finish(growspace, env_config)
+
+    assert growspace.environment_config.humidifier_ac_infinity_devices == [device]
 
 
 # ---------------------------------------------------------------------------
@@ -548,10 +597,12 @@ async def test_configure_environment_loads_volume_liters_from_existing_tank() ->
         warning_level=25.0,
         volume_liters=20.0,
     )
-    flow.config_entry.runtime_data.services.growspaces.get_growspace.return_value = Growspace(
-        id="gs1",
-        name="Test Tent",
-        environment_config=EnvironmentConfig(irrigation_tanks=[tank]),
+    flow.config_entry.runtime_data.services.growspaces.get_growspace.return_value = (
+        Growspace(
+            id="gs1",
+            name="Test Tent",
+            environment_config=EnvironmentConfig(irrigation_tanks=[tank]),
+        )
     )
     handler = EnvironmentSensorsHandler(flow)
 
@@ -639,8 +690,18 @@ def test_advanced_sensors_schema_order_is_feed_bulk_pore_runoff() -> None:
     options: dict = {}
     schema = handler.get_environment_schema_step1(options)
 
-    ec_sensor_keys = (CONF_FEED_EC_SENSORS, CONF_BULK_EC_SENSORS, CONF_PORE_EC_SENSORS, CONF_RUNOFF_EC_SENSORS)
+    ec_sensor_keys = (
+        CONF_FEED_EC_SENSORS,
+        CONF_BULK_EC_SENSORS,
+        CONF_PORE_EC_SENSORS,
+        CONF_RUNOFF_EC_SENSORS,
+    )
     keys = [k.schema if hasattr(k, "schema") else str(k) for k in schema.schema]
     ec_keys = [k for k in keys if k in ec_sensor_keys]
 
-    assert ec_keys == [CONF_FEED_EC_SENSORS, CONF_BULK_EC_SENSORS, CONF_PORE_EC_SENSORS, CONF_RUNOFF_EC_SENSORS]
+    assert ec_keys == [
+        CONF_FEED_EC_SENSORS,
+        CONF_BULK_EC_SENSORS,
+        CONF_PORE_EC_SENSORS,
+        CONF_RUNOFF_EC_SENSORS,
+    ]

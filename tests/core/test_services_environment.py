@@ -13,6 +13,7 @@ from custom_components.growspace_manager.const import (
     CONF_TEMP_SENSOR,
 )
 from custom_components.growspace_manager.models import (
+    ACInfinityDevice,
     CirculationFanConfig,
     EnvironmentConfig,
     ExhaustFanConfig,
@@ -992,3 +993,81 @@ async def test_handle_configure_circulation_fan_no_fan_controller(
 
     await handle_configure_circulation_fan(mock_hass, mock_coordinator, mock_call)
     assert mock_gs.environment_config.circulation_fan_config.enabled is True
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_accepts_ac_infinity_devices(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """An AC Infinity bundle list in the payload is parsed and persisted."""
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = None
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    mock_call.data = {
+        "growspace_id": "gs1",
+        "exhaust_fan_ac_infinity_devices": [
+            {
+                "mode_entity": "select.tent_port1_mode",
+                "speed_entity": "number.tent_port1_on_speed",
+                "on_speed": 8,
+            }
+        ],
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    devices = mock_gs.environment_config.exhaust_fan_ac_infinity_devices
+    assert devices == [
+        ACInfinityDevice(
+            mode_entity="select.tent_port1_mode",
+            speed_entity="number.tent_port1_on_speed",
+            on_speed=8,
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_preserves_ac_infinity_when_omitted(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """A full-replace edit that omits the bundle list must not wipe it (ADR-0022)."""
+    existing = ACInfinityDevice(
+        mode_entity="select.hum_mode", speed_entity="number.hum_speed", on_speed=6
+    )
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig(
+        humidifier_ac_infinity_devices=[existing],
+    )
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    mock_call.data = {"growspace_id": "gs1", CONF_TEMP_SENSOR: "sensor.temp"}
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert mock_gs.environment_config.humidifier_ac_infinity_devices == [existing]
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_empty_ac_infinity_clears(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """An explicitly empty bundle list is honored as a deliberate clear."""
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig(
+        dehumidifier_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.dehum_mode", speed_entity="number.dehum_speed"
+            )
+        ],
+    )
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    mock_call.data = {
+        "growspace_id": "gs1",
+        "dehumidifier_ac_infinity_devices": [],
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert mock_gs.environment_config.dehumidifier_ac_infinity_devices == []
