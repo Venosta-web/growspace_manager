@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.growspace_manager.const import FanRegulationMode
 from custom_components.growspace_manager.models import (
+    ACInfinityDevice,
     CirculationFanConfig,
     EnvironmentConfig,
     EnvironmentState,
@@ -1009,7 +1010,9 @@ def test_exhaust_fan_config_roundtrip() -> None:
     assert restored.critical_temp_hysteresis == 2.0
 
 
-def test_environment_config_missing_exhaust_fan_config_deserialises_to_default() -> None:
+def test_environment_config_missing_exhaust_fan_config_deserialises_to_default() -> (
+    None
+):
     """EnvironmentConfig stored without exhaust_fan_config key deserialises to default."""
     data: dict = {}
     env = EnvironmentConfig.from_dict(data)
@@ -1036,3 +1039,31 @@ def test_growspace_exhaust_fan_config_roundtrip() -> None:
     assert fan_cfg.enabled is True
     assert fan_cfg.min_speed == 10
     assert fan_cfg.max_speed == 90
+
+
+def test_environment_config_ac_infinity_devices_round_trip() -> None:
+    """AC Infinity exhaust bundles survive a to_dict/from_dict round trip."""
+    config = EnvironmentConfig(
+        exhaust_fan_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port1_mode",
+                speed_entity="number.tent_port1_on_speed",
+                on_speed=7,
+            )
+        ],
+    )
+    restored = EnvironmentConfig.from_dict(config.to_dict())
+    assert restored.exhaust_fan_ac_infinity_devices == [
+        ACInfinityDevice(
+            mode_entity="select.tent_port1_mode",
+            speed_entity="number.tent_port1_on_speed",
+            on_speed=7,
+        )
+    ]
+
+
+def test_environment_config_ac_infinity_devices_default_empty() -> None:
+    """The AC Infinity bundle list defaults to empty and tolerates a null payload."""
+    assert EnvironmentConfig().exhaust_fan_ac_infinity_devices == []
+    restored = EnvironmentConfig.from_dict({"exhaust_fan_ac_infinity_devices": None})
+    assert restored.exhaust_fan_ac_infinity_devices == []

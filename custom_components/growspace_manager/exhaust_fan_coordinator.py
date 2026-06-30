@@ -21,7 +21,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 
-from .actuator_driver import resolve_actuator_driver
+from .actuator_driver import resolve_actuator_drivers
 from .const import FanRegulationMode
 from .domain.day_night import DayNightTracker
 from .domain.fan_control import (
@@ -65,6 +65,14 @@ class ExhaustFanCoordinator:
         gs = self.main_coordinator.growspaces.get(self.growspace_id)
         return gs.environment_config if gs else None
 
+    @property
+    def _has_exhaust_actuators(self) -> bool:
+        """Whether any exhaust actuator — plain entity or AC Infinity — is configured."""
+        env = self._env_config
+        return bool(
+            env and (env.exhaust_fan_entities or env.exhaust_fan_ac_infinity_devices)
+        )
+
     async def async_setup(self) -> None:
         """Start the polling tick when enabled and exhaust entities are configured."""
         if self._env_config is None:
@@ -75,7 +83,7 @@ class ExhaustFanCoordinator:
             _LOGGER.debug("ExhaustFanCoordinator disabled for %s", self.growspace_id)
             return
 
-        if not self._env_config.exhaust_fan_entities:
+        if not self._has_exhaust_actuators:
             _LOGGER.debug(
                 "ExhaustFanCoordinator: no exhaust entities for %s", self.growspace_id
             )
@@ -99,7 +107,7 @@ class ExhaustFanCoordinator:
             return
 
         cfg = self._env_config.exhaust_fan_config
-        if not cfg.enabled or not self._env_config.exhaust_fan_entities:
+        if not cfg.enabled or not self._has_exhaust_actuators:
             return
 
         vpd_target = self._effective_vpd_target(cfg)
@@ -127,8 +135,14 @@ class ExhaustFanCoordinator:
         if speed is None:
             return
 
-        for entity_id in self._env_config.exhaust_fan_entities:
-            await self._dispatch(entity_id, speed, cfg.min_speed)
+        drivers = resolve_actuator_drivers(
+            self.hass,
+            self._env_config.exhaust_fan_entities,
+            self._env_config.exhaust_fan_ac_infinity_devices,
+            switch_off_threshold=cfg.min_speed,
+        )
+        for driver in drivers:
+            await driver.set_speed(speed)
 
     def _apply_critical_temp_override(
         self, cfg: ExhaustFanConfig, temperature: float | None, speed: int | None
@@ -176,19 +190,6 @@ class ExhaustFanCoordinator:
         return resolve_stage_vpd_target(
             plants, cfg.stage_vpd_overrides, cfg.vpd_target, is_day
         )
-
-    async def _dispatch(self, entity_id: str, speed: int, min_speed: int) -> None:
-        """Drive a single exhaust device through its resolved actuator driver.
-
-        ``fan`` entities receive the speed as a percentage; ``switch`` and
-        ``input_boolean`` devices are turned on when the demand exceeds
-        ``min_speed`` and off otherwise. Unsupported domains are skipped.
-        """
-        driver = resolve_actuator_driver(
-            self.hass, entity_id, switch_off_threshold=min_speed
-        )
-        if driver is not None:
-            await driver.set_speed(speed)
 
     def _read_sensor(self, mode: FanRegulationMode) -> float | None:
         """Read the first available sensor value for the given measurement."""

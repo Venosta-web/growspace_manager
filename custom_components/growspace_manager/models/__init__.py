@@ -10,6 +10,7 @@ from .base import BaseModel, BasePreset, _sanitize_numeric_fields
 from .contract import GrowspaceCoordinatorData
 from .genetics import PollinationEvent, SeedBatch
 from .growspace import (
+    ACInfinityDevice,
     CirculationFanConfig,
     DLIState,
     EnergyTracking,
@@ -66,6 +67,7 @@ from .types import (
 
 # Explicit __all__ list for documentation and IDE support
 __all__ = [
+    "ACInfinityDevice",
     # base
     "BaseModel",
     "BasePreset",

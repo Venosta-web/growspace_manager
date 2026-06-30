@@ -84,6 +84,21 @@ class SensorGroup(BaseModel):
 
 
 @dataclass(slots=True)
+class ACInfinityDevice(BaseModel):
+    """A single AC Infinity port driven as one actuator (ADR-0022).
+
+    An AC Infinity port exposes no ``fan`` entity; it is a bundle of a mode
+    ``select`` (Active Mode) and a speed ``number`` (intensity 0–10). GSM seizes
+    the port by setting the mode to ``On`` and writing the number; ``on_speed`` is
+    the intensity used for the binary on path.
+    """
+
+    mode_entity: str
+    speed_entity: str
+    on_speed: int = 10
+
+
+@dataclass(slots=True)
 class VisionCheckupResult(BaseModel):
     """Result of an AI vision checkup analysis."""
 
@@ -179,6 +194,11 @@ class EnvironmentConfig(BaseModel):
     circulation_fan_entities: list[str] = field(default_factory=list)
     humidifier_entities: list[str] = field(default_factory=list)
     dehumidifier_entities: list[str] = field(default_factory=list)
+
+    # AC Infinity actuator bundles, parallel to the plain *_entities lists above.
+    exhaust_fan_ac_infinity_devices: list[ACInfinityDevice] = field(
+        default_factory=list
+    )
 
     # 3D Sensor Configuration
     sensor_coordinates: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -282,6 +302,7 @@ class EnvironmentConfig(BaseModel):
             "circulation_fan_entities",
             "humidifier_entities",
             "dehumidifier_entities",
+            "exhaust_fan_ac_infinity_devices",
             "sensor_groups",
             "substrate_temperature_sensors",
             "camera_entities",
