@@ -20,6 +20,7 @@ from custom_components.growspace_manager.models import (
     IrrigationTank,
     SensorGroup,
 )
+from custom_components.growspace_manager.schemas import CONFIGURE_ENVIRONMENT_SCHEMA
 from custom_components.growspace_manager.services.environment import (
     handle_configure_circulation_fan,
     handle_configure_environment,
@@ -1071,3 +1072,35 @@ async def test_handle_configure_environment_empty_ac_infinity_clears(
     await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
 
     assert mock_gs.environment_config.dehumidifier_ac_infinity_devices == []
+
+
+@pytest.mark.asyncio
+async def test_schema_validated_payload_omitting_bundles_preserves(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """Regression guard: the schema must not inject default bundle keys.
+
+    A payload validated through CONFIGURE_ENVIRONMENT_SCHEMA that omits the bundle
+    lists must still reach the handler without those keys, so preserve-on-omit
+    fires. If a future default=[] were added to the schema keys, this would flip
+    silently to wipe-on-save — and every other test would still pass.
+    """
+    existing = ACInfinityDevice(
+        mode_entity="select.m", speed_entity="number.s", on_speed=6
+    )
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig(
+        humidifier_ac_infinity_devices=[existing]
+    )
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+
+    validated = CONFIGURE_ENVIRONMENT_SCHEMA(
+        {"growspace_id": "gs1", CONF_TEMP_SENSOR: "sensor.temp"}
+    )
+    assert "humidifier_ac_infinity_devices" not in validated
+    mock_call.data = validated
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert mock_gs.environment_config.humidifier_ac_infinity_devices == [existing]

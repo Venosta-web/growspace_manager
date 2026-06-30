@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import (
+    ACInfinityDevice,
     EnvironmentConfig,
     ExhaustFanConfig,
     Growspace,
@@ -203,6 +204,36 @@ def test_get_environment_attributes(hass: HomeAssistant, builder):
         assert len(attrs["irrigation_tanks"]) == 1
         assert attrs["irrigation_tanks"][0]["is_warning"] is True
         assert attrs["sensor_groups"][0]["id"] == "g1"
+
+
+def test_get_environment_attributes_exposes_ac_infinity_devices(
+    hass: HomeAssistant, builder
+):
+    """AC Infinity bundles are serialized into the environment payload (ADR-0022)."""
+    env_config = EnvironmentConfig(
+        exhaust_fan_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port1_mode",
+                speed_entity="number.tent_port1_on_speed",
+                on_speed=8,
+            )
+        ],
+    )
+    growspace = Growspace(id="gs1", name="Test", environment_config=env_config)
+
+    attrs = builder._get_environment_attributes(growspace)
+
+    assert attrs["exhaust_fan_ac_infinity_devices"] == [
+        {
+            "mode_entity": "select.tent_port1_mode",
+            "speed_entity": "number.tent_port1_on_speed",
+            "on_speed": 8,
+        }
+    ]
+    # Unconfigured roles serialize as empty lists, not omitted
+    assert attrs["circulation_fan_ac_infinity_devices"] == []
+    assert attrs["humidifier_ac_infinity_devices"] == []
+    assert attrs["dehumidifier_ac_infinity_devices"] == []
 
 
 def test_build_special_growspace_types(builder):
