@@ -9,11 +9,11 @@ import time
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 
+from .actuator_driver import resolve_actuator_drivers
 from .const import FanRegulationMode
 from .domain.day_night import DayNightTracker
 from .domain.fan_control import (
@@ -68,6 +68,18 @@ class CirculationFanCoordinator:
         gs = self.main_coordinator.growspaces.get(self.growspace_id)
         return gs.environment_config if gs else None
 
+    @property
+    def _has_circulation_actuators(self) -> bool:
+        """Whether any circulation actuator — plain or AC Infinity — is configured."""
+        env = self._env_config
+        return bool(
+            env
+            and (
+                env.circulation_fan_entities
+                or env.circulation_fan_ac_infinity_devices
+            )
+        )
+
     async def async_setup(self) -> None:
         """Start the 10-second polling tick."""
         if self._env_config is None:
@@ -80,7 +92,7 @@ class CirculationFanCoordinator:
             )
             return
 
-        if not self._env_config.circulation_fan_entities:
+        if not self._has_circulation_actuators:
             _LOGGER.debug(
                 "CirculationFanCoordinator: no fan entities for %s", self.growspace_id
             )
@@ -170,18 +182,14 @@ class CirculationFanCoordinator:
             )
             speed = max(cfg.min_speed, min(cfg.max_speed, round(speed + wind_offset)))
 
-        for entity_id in self._env_config.circulation_fan_entities:
-            try:
-                await self.hass.services.async_call(
-                    "fan",
-                    "set_percentage",
-                    {ATTR_ENTITY_ID: entity_id, "percentage": speed},
-                    blocking=False,
-                )
-            except (HomeAssistantError, TimeoutError):
-                _LOGGER.warning(
-                    "Failed to set percentage on %s", entity_id, exc_info=True
-                )
+        drivers = resolve_actuator_drivers(
+            self.hass,
+            self._env_config.circulation_fan_entities,
+            self._env_config.circulation_fan_ac_infinity_devices,
+            switch_off_threshold=cfg.min_speed,
+        )
+        for driver in drivers:
+            await driver.set_speed(speed)
 
     def _get_stage_vpd_target(self, cfg: CirculationFanConfig, is_day: bool) -> float:
         """Resolve the effective VPD target from stage defaults.

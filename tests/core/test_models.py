@@ -1042,13 +1042,19 @@ def test_growspace_exhaust_fan_config_roundtrip() -> None:
 
 
 def test_environment_config_ac_infinity_devices_round_trip() -> None:
-    """AC Infinity exhaust bundles survive a to_dict/from_dict round trip."""
+    """AC Infinity exhaust and circulation bundles survive a to_dict/from_dict trip."""
     config = EnvironmentConfig(
         exhaust_fan_ac_infinity_devices=[
             ACInfinityDevice(
                 mode_entity="select.tent_port1_mode",
                 speed_entity="number.tent_port1_on_speed",
                 on_speed=7,
+            )
+        ],
+        circulation_fan_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port2_mode",
+                speed_entity="number.tent_port2_on_speed",
             )
         ],
     )
@@ -1060,10 +1066,23 @@ def test_environment_config_ac_infinity_devices_round_trip() -> None:
             on_speed=7,
         )
     ]
+    assert restored.circulation_fan_ac_infinity_devices == [
+        ACInfinityDevice(
+            mode_entity="select.tent_port2_mode",
+            speed_entity="number.tent_port2_on_speed",
+        )
+    ]
 
 
 def test_environment_config_ac_infinity_devices_default_empty() -> None:
-    """The AC Infinity bundle list defaults to empty and tolerates a null payload."""
+    """The AC Infinity bundle lists default to empty and tolerate a null payload."""
     assert EnvironmentConfig().exhaust_fan_ac_infinity_devices == []
-    restored = EnvironmentConfig.from_dict({"exhaust_fan_ac_infinity_devices": None})
+    assert EnvironmentConfig().circulation_fan_ac_infinity_devices == []
+    restored = EnvironmentConfig.from_dict(
+        {
+            "exhaust_fan_ac_infinity_devices": None,
+            "circulation_fan_ac_infinity_devices": None,
+        }
+    )
     assert restored.exhaust_fan_ac_infinity_devices == []
+    assert restored.circulation_fan_ac_infinity_devices == []
