@@ -36,6 +36,18 @@ The canonical output of `classify_stages(StageDays)`, defined in `domain/stage.p
 
 The set of HA sensor entity IDs linked to a growspace. Covers: temperature, humidity, VPD, CO₂, substrate temperature, soil moisture, feed EC, bulk EC, pore EC, runoff EC, pH, drain volume, irrigation flow, power, energy, irrigation tanks, lights, fans, humidifier, dehumidifier. All sensor types can be linked to any growspace regardless of its `GrowspaceType`.
 
+## Actuator
+
+A device GSM *writes to* in order to change the environment — an exhaust fan, circulation fan, humidifier, or dehumidifier. Distinct from a sensor, which GSM only reads. Historically an actuator was a single HA `entity_id` string (a `fan.*` driven by percentage, or a `switch.*`/`input_boolean.*` driven on/off), inferred at each dispatch site by sniffing the entity's domain. The four actuator roles are stored on `EnvironmentConfig` as `exhaust_fan_entities`, `circulation_fan_entities`, `humidifier_entities`, `dehumidifier_entities`.
+
+## Actuator Driver
+
+The control abstraction that hides *how* an actuator is commanded behind a uniform interface — `set_speed(pct)`, `turn_on()`, `turn_off()`, `is_on()`. One driver implementation exists per actuator kind (plain `fan`, plain `switch`/on-off, AC Infinity device). The exhaust-fan, circulation-fan, and VPD on/off coordinators resolve a driver per configured actuator and command it through this interface, instead of branching on the entity domain themselves. Speed is always expressed to the driver as a 0–100 percentage; each driver maps it to its device's native control surface.
+
+## AC Infinity Device
+
+An actuator backed by the AC Infinity HACS integration (`ac_infinity`). Unlike a plain actuator it is **not** one entity but a *bundle* of two HA entities on one AC Infinity port: a mode `select` (Active Mode — `Off`/`On`/`Auto`/…) and a speed `number` (integer intensity 0–10). GSM seizes the port by setting the mode `select` to `On` (and, for binary on/off use, writing a configured on-speed to the number); it releases by setting the mode to `Off`. `is_on()` is read from the mode `select` (on = anything other than `Off`/`unavailable`/`unknown`) — `ac_infinity` is cloud-polled with no optimistic write-back, so the `select` and any power sensor lag equally; the `select` is preferred because its `Off` state is deterministic where a port's current-power reading is firmware-dependent. When GSM stops controlling, it leaves the port in its last commanded state. AC Infinity bundles are configured in fields parallel to the plain `*_entities` lists and merged by the driver resolver.
+
 ## Bulk EC
 
 Electrical conductivity measured by a TDR or capacitance probe that reads the combined water-and-media mixture at the roots. Stored as `bulk_ec_sensors` on `EnvironmentConfig`. Replaces the former `substrate_ec_sensors` field (silent migration on load).

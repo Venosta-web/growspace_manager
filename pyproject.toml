@@ -653,6 +653,8 @@ exclude_lines = [
   # TYPE_CHECKING and @overload blocks are never executed during pytest run
   "if TYPE_CHECKING:",
   "@overload",
+  # Protocol / abstract method stub bodies (a bare ``...``) never execute
+  "^\\s*\\.\\.\\.$",
 ]
 
 [tool.ruff]
