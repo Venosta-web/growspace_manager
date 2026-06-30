@@ -71,6 +71,8 @@
       'electricity_cost_per_kwh': 0.0,
       'energy_sensors': list([
       ]),
+      'exhaust_fan_ac_infinity_devices': list([
+      ]),
       'exhaust_fan_config': dict({
         'critical_temp_high': None,
         'critical_temp_hysteresis': 1.0,

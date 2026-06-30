@@ -7,7 +7,10 @@ import pytest
 from custom_components.growspace_manager.exhaust_fan_coordinator import (
     ExhaustFanCoordinator,
 )
-from custom_components.growspace_manager.models import EnvironmentConfig
+from custom_components.growspace_manager.models import (
+    ACInfinityDevice,
+    EnvironmentConfig,
+)
 from custom_components.growspace_manager.models.growspace import ExhaustFanConfig
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
@@ -41,6 +44,7 @@ def _make_env_config(
     vpd_sensors: list[str] | None = None,
     light_sensors: list[str] | None = None,
     exhaust_fan_entities: list[str] | None = None,
+    exhaust_fan_ac_infinity_devices: list[ACInfinityDevice] | None = None,
     temperature_target: float = 25.0,
     temperature_tolerance: float = 2.0,
     humidity_target: float = 60.0,
@@ -83,6 +87,7 @@ def _make_env_config(
         exhaust_fan_entities=exhaust_fan_entities
         if exhaust_fan_entities is not None
         else ["fan.exhaust"],
+        exhaust_fan_ac_infinity_devices=exhaust_fan_ac_infinity_devices or [],
         exhaust_fan_config=fan_cfg,
     )
 
@@ -663,3 +668,96 @@ async def test_override_inert_when_temp_unavailable(mock_hass: MagicMock) -> Non
         {ATTR_ENTITY_ID: "switch.exhaust"},
         blocking=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# AC Infinity exhaust devices (ADR-0022)
+# ---------------------------------------------------------------------------
+
+
+async def test_ac_infinity_device_driven_by_mode_and_intensity(
+    mock_hass: MagicMock,
+) -> None:
+    """An AC Infinity exhaust port is driven via its mode select and speed number."""
+    env = _make_env_config(
+        exhaust_fan_entities=[],
+        exhaust_fan_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port1_mode",
+                speed_entity="number.tent_port1_on_speed",
+            )
+        ],
+    )
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": "30.0",  # hot → demand = max_speed (90)
+            "sensor.humidity": "60.0",
+            "sensor.vpd": "1.0",
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_any_await(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.tent_port1_mode", "option": "On"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.tent_port1_on_speed", "value": 9},
+        blocking=False,
+    )
+    assert mock_hass.services.async_call.await_count == 2
+
+
+async def test_ac_infinity_and_plain_entities_both_dispatched(
+    mock_hass: MagicMock,
+) -> None:
+    """Plain entities and AC Infinity bundles for the exhaust role are all driven."""
+    env = _make_env_config(
+        exhaust_fan_entities=["fan.exhaust"],
+        exhaust_fan_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port1_mode",
+                speed_entity="number.tent_port1_on_speed",
+            )
+        ],
+    )
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": "30.0",
+            "sensor.humidity": "60.0",
+            "sensor.vpd": "1.0",
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    await coord._async_regulate()
+    domains = {call[0][0] for call in mock_hass.services.async_call.await_args_list}
+    assert domains == {"fan", "select", "number"}
+
+
+async def test_async_setup_starts_tick_for_ac_infinity_only(
+    mock_hass: MagicMock, mock_track_time_interval: MagicMock
+) -> None:
+    """A growspace with only AC Infinity exhaust devices still starts the tick."""
+    env = _make_env_config(
+        enabled=True,
+        exhaust_fan_entities=[],
+        exhaust_fan_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port1_mode",
+                speed_entity="number.tent_port1_on_speed",
+            )
+        ],
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    await coord.async_setup()
+    mock_track_time_interval.assert_called_once()

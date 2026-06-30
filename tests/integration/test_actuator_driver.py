@@ -5,11 +5,20 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.growspace_manager.actuator_driver import (
+    ACInfinityDriver,
     FanDriver,
     SwitchDriver,
     resolve_actuator_driver,
+    resolve_actuator_drivers,
 )
-from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
+from custom_components.growspace_manager.models import ACInfinityDevice
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -150,3 +159,141 @@ async def test_safe_service_call_swallows_device_errors(
     mock_hass.services.async_call.side_effect = error
     await FanDriver(mock_hass, "fan.exhaust").set_speed(50)
     mock_hass.services.async_call.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# ACInfinityDriver
+# ---------------------------------------------------------------------------
+
+
+def _ac_driver(mock_hass: MagicMock, on_speed: int = 10) -> ACInfinityDriver:
+    """Build an ACInfinityDriver over a standard mode+speed bundle."""
+    return ACInfinityDriver(
+        mock_hass,
+        mode_entity="select.port_mode",
+        speed_entity="number.port_speed",
+        on_speed=on_speed,
+    )
+
+
+async def test_ac_infinity_set_speed_drives_mode_and_intensity(
+    mock_hass: MagicMock,
+) -> None:
+    """A positive demand sets mode On and writes the scaled 1-10 intensity."""
+    await _ac_driver(mock_hass).set_speed(60)
+    mock_hass.services.async_call.assert_any_await(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.port_mode", "option": "On"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.port_speed", "value": 6},
+        blocking=False,
+    )
+    assert mock_hass.services.async_call.await_count == 2
+
+
+@pytest.mark.parametrize(
+    ("pct", "intensity"),
+    [(5, 1), (60, 6), (95, 10), (100, 10)],
+)
+async def test_ac_infinity_intensity_scaling(
+    mock_hass: MagicMock, pct: int, intensity: int
+) -> None:
+    """0-100 demand maps onto the clamped 1-10 intensity scale."""
+    await _ac_driver(mock_hass).set_speed(pct)
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.port_speed", "value": intensity},
+        blocking=False,
+    )
+
+
+async def test_ac_infinity_set_speed_zero_turns_off(mock_hass: MagicMock) -> None:
+    """Zero demand sets mode Off and never touches the intensity number."""
+    await _ac_driver(mock_hass).set_speed(0)
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.port_mode", "option": "Off"},
+        blocking=False,
+    )
+
+
+async def test_ac_infinity_turn_on_uses_on_speed(mock_hass: MagicMock) -> None:
+    """turn_on sets mode On and writes the configured on-speed."""
+    await _ac_driver(mock_hass, on_speed=7).turn_on()
+    mock_hass.services.async_call.assert_any_await(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.port_mode", "option": "On"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.port_speed", "value": 7},
+        blocking=False,
+    )
+
+
+async def test_ac_infinity_turn_off_sets_mode_off(mock_hass: MagicMock) -> None:
+    """turn_off sets the mode select to Off."""
+    await _ac_driver(mock_hass).turn_off()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.port_mode", "option": "Off"},
+        blocking=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        ("On", True),
+        ("Auto", True),
+        ("VPD", True),
+        ("Off", False),
+        (STATE_UNAVAILABLE, False),
+        (STATE_UNKNOWN, False),
+    ],
+)
+async def test_ac_infinity_is_on_reads_mode_select(
+    mock_hass: MagicMock, mode: str, expected: bool
+) -> None:
+    """is_on is True whenever the mode select is anything other than Off."""
+    mock_hass.states.get.return_value = _state(mode)
+    assert _ac_driver(mock_hass).is_on() is expected
+
+
+async def test_ac_infinity_is_on_missing_state(mock_hass: MagicMock) -> None:
+    """is_on is False when the mode select has no state."""
+    mock_hass.states.get.return_value = None
+    assert _ac_driver(mock_hass).is_on() is False
+
+
+# ---------------------------------------------------------------------------
+# resolve_actuator_drivers (plain + AC Infinity merge)
+# ---------------------------------------------------------------------------
+
+
+async def test_resolve_actuator_drivers_merges_and_skips_unsupported(
+    mock_hass: MagicMock,
+) -> None:
+    """The aggregator yields a driver per plain entity and AC Infinity bundle."""
+    drivers = resolve_actuator_drivers(
+        mock_hass,
+        ["fan.exhaust", "switch.damper", "light.unsupported"],
+        [ACInfinityDevice(mode_entity="select.m", speed_entity="number.s")],
+    )
+    assert [type(d) for d in drivers] == [FanDriver, SwitchDriver, ACInfinityDriver]
+
+
+async def test_resolve_actuator_drivers_empty(mock_hass: MagicMock) -> None:
+    """No configured actuators yields no drivers."""
+    assert resolve_actuator_drivers(mock_hass, [], []) == []

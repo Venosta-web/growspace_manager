@@ -13,6 +13,7 @@ to its device's native control surface.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import logging
 from typing import Protocol
 
@@ -21,6 +22,8 @@ from homeassistant.const import (
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
     STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -29,6 +32,13 @@ _LOGGER = logging.getLogger(__name__)
 
 # On/off domains driven via turn_on/turn_off rather than by percentage.
 _SWITCH_DOMAINS = ("switch", "input_boolean")
+
+# AC Infinity Active Mode options (hardcoded English in the ac_infinity integration).
+_AC_INFINITY_MODE_ON = "On"
+_AC_INFINITY_MODE_OFF = "Off"
+# AC Infinity ports take an integer intensity in this range, not a 0–100 percentage.
+_AC_INFINITY_SPEED_MIN = 1
+_AC_INFINITY_SPEED_MAX = 10
 
 
 async def _safe_service_call(
@@ -168,3 +178,115 @@ def resolve_actuator_driver(
     if domain in _SWITCH_DOMAINS:
         return SwitchDriver(hass, entity_id, off_threshold=switch_off_threshold)
     return None
+
+
+def _scale_percentage_to_intensity(pct: int) -> int:
+    """Map a 0–100 percentage to the AC Infinity 1–10 intensity scale."""
+    return max(_AC_INFINITY_SPEED_MIN, min(_AC_INFINITY_SPEED_MAX, round(pct / 10)))
+
+
+class ACInfinityDriver:
+    """Drives an AC Infinity port (mode ``select`` + speed ``number`` bundle).
+
+    The ``ac_infinity`` integration exposes no ``fan`` entity, so GSM seizes a
+    port by setting its Active Mode ``select`` to ``On`` and writing the speed
+    ``number`` (mapping the 0–100 demand onto the device's 1–10 intensity), or to
+    ``Off`` to release it. ``is_on`` reads the mode ``select`` — under cloud
+    polling both the select and any power sensor lag equally, but the select's
+    ``Off`` state is deterministic where a port's current-power is not (ADR-0022).
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        *,
+        mode_entity: str,
+        speed_entity: str,
+        on_speed: int = _AC_INFINITY_SPEED_MAX,
+    ) -> None:
+        """Initialize the driver for one AC Infinity port bundle."""
+        self._hass = hass
+        self._mode_entity = mode_entity
+        self._speed_entity = speed_entity
+        self._on_speed = on_speed
+
+    async def set_speed(self, pct: int) -> None:
+        """Turn the port off at zero demand, otherwise drive mode On + intensity."""
+        if pct <= 0:
+            await self._select_mode(_AC_INFINITY_MODE_OFF)
+        else:
+            await self._select_mode(_AC_INFINITY_MODE_ON)
+            await self._set_intensity(_scale_percentage_to_intensity(pct))
+
+    async def turn_on(self) -> None:
+        """Set the port to On at the configured on-speed."""
+        await self._select_mode(_AC_INFINITY_MODE_ON)
+        await self._set_intensity(self._on_speed)
+
+    async def turn_off(self) -> None:
+        """Set the port's mode to Off."""
+        await self._select_mode(_AC_INFINITY_MODE_OFF)
+
+    def is_on(self) -> bool:
+        """Return whether the port's mode is anything other than Off."""
+        state = self._hass.states.get(self._mode_entity)
+        return state is not None and state.state not in (
+            _AC_INFINITY_MODE_OFF,
+            STATE_UNAVAILABLE,
+            STATE_UNKNOWN,
+        )
+
+    async def _select_mode(self, option: str) -> None:
+        await _safe_service_call(
+            self._hass,
+            "select",
+            "select_option",
+            {ATTR_ENTITY_ID: self._mode_entity, "option": option},
+        )
+
+    async def _set_intensity(self, value: int) -> None:
+        await _safe_service_call(
+            self._hass,
+            "number",
+            "set_value",
+            {ATTR_ENTITY_ID: self._speed_entity, "value": value},
+        )
+
+
+class ACInfinityDeviceConfig(Protocol):
+    """Structural type for a stored AC Infinity bundle (``models.ACInfinityDevice``)."""
+
+    mode_entity: str
+    speed_entity: str
+    on_speed: int
+
+
+def resolve_actuator_drivers(
+    hass: HomeAssistant,
+    entities: Iterable[str],
+    ac_infinity_devices: Iterable[ACInfinityDeviceConfig] = (),
+    *,
+    switch_off_threshold: int = 0,
+) -> list[ActuatorDriver]:
+    """Resolve every configured actuator for one role into drivers.
+
+    Merges the plain ``*_entities`` list (resolved by domain) with the parallel
+    AC Infinity bundle list; unsupported plain domains are skipped.
+    """
+    drivers: list[ActuatorDriver] = []
+    for entity_id in entities:
+        driver = resolve_actuator_driver(
+            hass, entity_id, switch_off_threshold=switch_off_threshold
+        )
+        if driver is not None:
+            drivers.append(driver)
+    drivers.extend(
+        ACInfinityDriver(
+            hass,
+            mode_entity=device.mode_entity,
+            speed_entity=device.speed_entity,
+            on_speed=device.on_speed,
+        )
+        for device in ac_infinity_devices
+    )
+    return drivers
