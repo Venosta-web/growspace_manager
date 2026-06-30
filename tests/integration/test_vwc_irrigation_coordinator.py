@@ -6,6 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.irrigation_coordinator import (
+    BaseIrrigationCoordinator,
+)
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -1216,157 +1219,68 @@ async def test_projected_shot_window_none_when_steering_disabled(
         assert vwc_coordinator.projected_shot_window is None
 
 
-async def test_dynamic_shot_scaling_overshoot(
+# The Adaptive Shot Control feedback math now lives in the ShotComposer and is
+# unit-tested in tests/domain/test_shot_composer.py. The cases below verify the
+# coordinator *wires* the composer correctly: triggering reset() on the phase
+# events it owns, and feeding settled cycles into observe().
+
+
+async def test_phase_transition_resets_composer_factors(
     vwc_coordinator: VWCIrrigationCoordinator,
 ) -> None:
-    """Test that when a shot overshoots the target, the scale factor is reduced."""
-    # Target is 50.0% (from mock_growspace).
-    # moisture_before = 40.0%, moisture_after = 55.0%
-    # Target delta = 10.0%, Actual delta = 15.0%, Ratio = 1.5
-    # Overshoot ratio = 1.5 > 1.0 -> factor decreases by 0.5
-    vwc_coordinator._shot_scale_factor = 1.0
-    vwc_coordinator._update_shot_feedback(40.0, 55.0)
-    assert vwc_coordinator._shot_scale_factor == 0.5
-
-    # Test clamping to min_scale of 0.5
-    vwc_coordinator._update_shot_feedback(40.0, 55.0)
-    assert vwc_coordinator._shot_scale_factor == 0.5
-
-
-async def test_dynamic_shot_scaling_recovery(
-    vwc_coordinator: VWCIrrigationCoordinator,
-) -> None:
-    """Test that when a shot undershoots/meets target, the scale factor recovers."""
-    # Target is 50.0% (from mock_growspace).
-    # moisture_before = 40.0%, moisture_after = 45.0%
-    # Target delta = 10.0%, Actual delta = 5.0%, Ratio = 0.5
-    # Ratio <= 1.0 -> recovers by beta * (1 - ratio) = 0.1 * 0.5 = 0.05
-    vwc_coordinator._shot_scale_factor = 0.6
-    vwc_coordinator._update_shot_feedback(40.0, 45.0)
-    assert abs(vwc_coordinator._shot_scale_factor - 0.65) < 1e-6
-
-    # Test recovery clamping to 1.0
-    vwc_coordinator._shot_scale_factor = 0.98
-    vwc_coordinator._update_shot_feedback(40.0, 45.0)
-    assert vwc_coordinator._shot_scale_factor == 1.0
-
-
-async def test_dynamic_shot_scaling_guards(
-    vwc_coordinator: VWCIrrigationCoordinator,
-) -> None:
-    """Test dynamic shot scaling guards for tiny deltas and invalid data."""
-    vwc_coordinator._shot_scale_factor = 0.7
-
-    # Case 1: Tiny expected delta (<= 0.5%) -> should not update scale factor
-    # Target = 50.0, moisture_before = 49.6 -> Expected delta = 0.4%
-    vwc_coordinator._update_shot_feedback(49.6, 52.0)
-    assert vwc_coordinator._shot_scale_factor == 0.7
-
-    # Case 2: Negative/zero actual delta -> should not update scale factor
-    vwc_coordinator._update_shot_feedback(40.0, 39.0)
-    assert vwc_coordinator._shot_scale_factor == 0.7
-
-    # Case 3: None inputs -> should not update scale factor
-    vwc_coordinator._update_shot_feedback(None, 45.0)
-    assert vwc_coordinator._shot_scale_factor == 0.7
-    vwc_coordinator._update_shot_feedback(40.0, None)
-    assert vwc_coordinator._shot_scale_factor == 0.7
-
-
-async def test_dynamic_shot_scaling_phase_transition_reset(
-    vwc_coordinator: VWCIrrigationCoordinator,
-) -> None:
-    """Test that scale factor is reset to 1.0 when transitioning from P1 to P2."""
-    vwc_coordinator._shot_scale_factor = 0.6
+    """The P1->P2 transition resets both composer factors to 1.0."""
+    vwc_coordinator._composer.size_factor = 0.6
+    vwc_coordinator._composer.interval_factor = 1.4
     vwc_coordinator._current_phase = "P1 - Ramp Up"
 
-    # Transition to P2 - Maintenance
     vwc_coordinator._set_phase("P2 - Maintenance")
-    assert vwc_coordinator._shot_scale_factor == 1.0
+
+    assert vwc_coordinator._composer.size_factor == 1.0
+    assert vwc_coordinator._composer.interval_factor == 1.0
 
 
-async def test_dynamic_shot_scaling_daily_reset(
+async def test_daily_reset_resets_composer_factors(
     vwc_coordinator: VWCIrrigationCoordinator,
 ) -> None:
-    """Test that midnight daily state reset sets scale factor back to 1.0."""
-    vwc_coordinator._shot_scale_factor = 0.6
-    vwc_coordinator._interval_scale_factor = 1.4
+    """The midnight daily-state reset returns both composer factors to 1.0."""
+    vwc_coordinator._composer.size_factor = 0.6
+    vwc_coordinator._composer.interval_factor = 1.4
+
     vwc_coordinator._reset_extra_daily_state()
-    assert vwc_coordinator._shot_scale_factor == 1.0
-    assert vwc_coordinator._interval_scale_factor == 1.0
+
+    assert vwc_coordinator._composer.size_factor == 1.0
+    assert vwc_coordinator._composer.interval_factor == 1.0
 
 
-async def test_dynamic_interval_lengthens_on_overshoot(
+async def test_cycle_completion_feeds_composer(
     vwc_coordinator: VWCIrrigationCoordinator,
 ) -> None:
-    """Overshoot lengthens the interval factor (ADR-0014), clamped to the ceiling."""
-    # Target 50.0, before 40.0, after 55.0 -> ratio 1.5, error 0.5.
-    # Default aggressiveness 1.0: interval factor 1.0 + 0.5 = 1.5 (== default ceiling).
-    vwc_coordinator._interval_scale_factor = 1.0
-    vwc_coordinator._update_shot_feedback(40.0, 55.0)
-    assert vwc_coordinator._interval_scale_factor == 1.5
+    """A settled irrigation cycle feeds the moisture delta to the ShotComposer.
 
-    # A further overshoot is clamped at the ceiling, never beyond.
-    vwc_coordinator._update_shot_feedback(40.0, 55.0)
-    assert vwc_coordinator._interval_scale_factor == 1.5
+    Target 50.0, before 40.0, settled after 55.0 -> ratio 1.5 -> size factor 0.5.
+    The base completion behaviour is stubbed so only the wiring is exercised.
+    """
+    now_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
+    with (
+        patch.object(
+            BaseIrrigationCoordinator,
+            "_async_report_cycle_completion",
+            new_callable=AsyncMock,
+        ),
+        patch.object(vwc_coordinator, "_get_sensor_value", return_value=55.0),
+    ):
+        await vwc_coordinator._async_report_cycle_completion(
+            event_type="irrigation",
+            start_dt=now_dt,
+            end_dt=now_dt,
+            duration_sec=1.0,
+            moisture_before=40.0,
+            volume_dispensed_today=0.0,
+            wait_seconds=0.0,
+        )
 
-
-async def test_dynamic_interval_recovers_on_undershoot(
-    vwc_coordinator: VWCIrrigationCoordinator,
-) -> None:
-    """Undershoot recovers the interval factor toward nominal 1.0."""
-    # Target 50.0, before 40.0, after 45.0 -> ratio 0.5, error 0.5.
-    # Default recovery 0.1: interval factor 1.4 - 0.05 = 1.35.
-    vwc_coordinator._interval_scale_factor = 1.4
-    vwc_coordinator._update_shot_feedback(40.0, 45.0)
-    assert abs(vwc_coordinator._interval_scale_factor - 1.35) < 1e-6
-
-    # Recovery clamps at nominal 1.0, never below.
-    vwc_coordinator._interval_scale_factor = 1.02
-    vwc_coordinator._update_shot_feedback(40.0, 45.0)
-    assert vwc_coordinator._interval_scale_factor == 1.0
-
-
-async def test_dynamic_shot_disabled_is_inert(
-    vwc_coordinator: VWCIrrigationCoordinator,
-) -> None:
-    """When Adaptive Shot Control is disabled, neither factor moves."""
-    vwc_coordinator.growspace.irrigation_strategy.dynamic_shot_enabled = False
-    vwc_coordinator._shot_scale_factor = 0.7
-    vwc_coordinator._interval_scale_factor = 1.2
-
-    vwc_coordinator._update_shot_feedback(40.0, 55.0)  # would overshoot
-    vwc_coordinator._update_shot_feedback(40.0, 45.0)  # would undershoot
-    assert vwc_coordinator._shot_scale_factor == 0.7
-    assert vwc_coordinator._interval_scale_factor == 1.2
-
-
-async def test_dynamic_tunables_respected(
-    vwc_coordinator: VWCIrrigationCoordinator,
-) -> None:
-    """Custom aggressiveness/recovery/floor/ceiling drive the factors and clamps."""
-    strategy = vwc_coordinator.growspace.irrigation_strategy
-    strategy.dynamic_aggressiveness = 2.0
-    strategy.dynamic_shot_size_floor = 0.2
-    strategy.dynamic_interval_ceiling = 3.0
-
-    # Overshoot ratio 1.5, error 0.5: size 1.0 - 2.0*0.5 = 0.0 -> floor 0.2;
-    # interval 1.0 + 2.0*0.5 = 2.0 (below the 3.0 ceiling).
-    vwc_coordinator._shot_scale_factor = 1.0
-    vwc_coordinator._interval_scale_factor = 1.0
-    vwc_coordinator._update_shot_feedback(40.0, 55.0)
-    assert vwc_coordinator._shot_scale_factor == 0.2
-    assert vwc_coordinator._interval_scale_factor == 2.0
-
-
-async def test_interval_factor_phase_transition_reset(
-    vwc_coordinator: VWCIrrigationCoordinator,
-) -> None:
-    """Interval factor resets to 1.0 on the P1->P2 transition, alongside size."""
-    vwc_coordinator._interval_scale_factor = 1.4
-    vwc_coordinator._current_phase = "P1 - Ramp Up"
-    vwc_coordinator._set_phase("P2 - Maintenance")
-    assert vwc_coordinator._interval_scale_factor == 1.0
+    assert vwc_coordinator._composer.size_factor == 0.5
+    assert vwc_coordinator._composer.interval_factor == 1.5
 
 
 @pytest.mark.parametrize(
@@ -1385,7 +1299,7 @@ async def test_dynamic_shot_scaled_duration_applied(
     strategy = mock_growspace.irrigation_strategy
     strategy.p1_shot_duration_seconds = 10
     strategy.p2_shot_duration_seconds = 20
-    vwc_coordinator._shot_scale_factor = 0.6
+    vwc_coordinator._composer.size_factor = 0.6
 
     vwc_coordinator._last_cycle_timestamp = None
     now_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
@@ -1731,7 +1645,7 @@ async def test_ec_modulation_only_applies_to_p2(
     vwc_coordinator._handle_watering(strategy, "P1")
     await await_pump_task()
 
-    comp = vwc_coordinator._last_shot_composition
+    comp = vwc_coordinator._composer.last_composition
     assert comp.ec_factor == 1.0
     assert comp.ec_modulation_available is False
     mock_sleep.assert_any_call(20)
@@ -1747,13 +1661,13 @@ async def test_shot_composition_multiplies_vwc_and_ec(
     strategy = mock_growspace.irrigation_strategy
     strategy.p2_shot_duration_seconds = 100
     # VWC feedback factor pulls down while EC pulls up: 100 × 0.85 × 1.25 = 106.
-    vwc_coordinator._shot_scale_factor = 0.85
+    vwc_coordinator._composer.size_factor = 0.85
     vwc_coordinator._last_cycle_timestamp = None
 
     vwc_coordinator._handle_watering(strategy, "P2")
     await await_pump_task()
 
-    comp = vwc_coordinator._last_shot_composition
+    comp = vwc_coordinator._composer.last_composition
     assert comp.base_seconds == 100
     assert comp.vwc_factor == pytest.approx(0.85)
     assert comp.ec_factor == pytest.approx(1.25)
@@ -1777,7 +1691,7 @@ async def test_shot_composition_below_band_stacks_down(
     vwc_coordinator._handle_watering(strategy, "P2")
     await await_pump_task()
 
-    comp = vwc_coordinator._last_shot_composition
+    comp = vwc_coordinator._composer.last_composition
     assert comp.ec_factor == pytest.approx(0.75)
     assert comp.effective_seconds == 75
     mock_sleep.assert_any_call(75)
@@ -1803,7 +1717,7 @@ async def test_composed_shot_blocked_by_volume_cap_never_exceeds(
     vwc_coordinator._handle_watering(strategy, "P2")
     await await_pump_task()
 
-    comp = vwc_coordinator._last_shot_composition
+    comp = vwc_coordinator._composer.last_composition
     assert comp.composed_seconds == 125  # base 100 × EC 1.25
     assert comp.capped is True
     assert comp.effective_seconds == 0

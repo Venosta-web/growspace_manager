@@ -359,7 +359,7 @@ async def test_volume_mode_applies_scale_factor_after_base(
     """The VWC feedback scale factor multiplies the Volume Mode base duration."""
     plants = _make_plants([PlantStage.FLOWER_MID.value] * 10)
     coord = make_coordinator(volume_growspace, plants)
-    coord._shot_scale_factor = 0.5
+    coord._composer.size_factor = 0.5
     captured: dict[str, int] = {}
 
     async def _fake_cycle(event_type, pump_entity, duration, event_data):
