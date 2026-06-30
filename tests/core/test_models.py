@@ -1057,6 +1057,18 @@ def test_environment_config_ac_infinity_devices_round_trip() -> None:
                 speed_entity="number.tent_port2_on_speed",
             )
         ],
+        humidifier_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port3_mode",
+                speed_entity="number.tent_port3_on_speed",
+            )
+        ],
+        dehumidifier_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port4_mode",
+                speed_entity="number.tent_port4_on_speed",
+            )
+        ],
     )
     restored = EnvironmentConfig.from_dict(config.to_dict())
     assert restored.exhaust_fan_ac_infinity_devices == [
@@ -1072,17 +1084,35 @@ def test_environment_config_ac_infinity_devices_round_trip() -> None:
             speed_entity="number.tent_port2_on_speed",
         )
     ]
+    assert restored.humidifier_ac_infinity_devices == [
+        ACInfinityDevice(
+            mode_entity="select.tent_port3_mode",
+            speed_entity="number.tent_port3_on_speed",
+        )
+    ]
+    assert restored.dehumidifier_ac_infinity_devices == [
+        ACInfinityDevice(
+            mode_entity="select.tent_port4_mode",
+            speed_entity="number.tent_port4_on_speed",
+        )
+    ]
 
 
 def test_environment_config_ac_infinity_devices_default_empty() -> None:
     """The AC Infinity bundle lists default to empty and tolerate a null payload."""
     assert EnvironmentConfig().exhaust_fan_ac_infinity_devices == []
     assert EnvironmentConfig().circulation_fan_ac_infinity_devices == []
+    assert EnvironmentConfig().humidifier_ac_infinity_devices == []
+    assert EnvironmentConfig().dehumidifier_ac_infinity_devices == []
     restored = EnvironmentConfig.from_dict(
         {
             "exhaust_fan_ac_infinity_devices": None,
             "circulation_fan_ac_infinity_devices": None,
+            "humidifier_ac_infinity_devices": None,
+            "dehumidifier_ac_infinity_devices": None,
         }
     )
     assert restored.exhaust_fan_ac_infinity_devices == []
     assert restored.circulation_fan_ac_infinity_devices == []
+    assert restored.humidifier_ac_infinity_devices == []
+    assert restored.dehumidifier_ac_infinity_devices == []

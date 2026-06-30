@@ -182,8 +182,12 @@ async def test_dehumidifier_coordinator_control_exceptions(hass: HomeAssistant) 
     coordinator.hass = hass
     coordinator._last_turn_on_time = 0.0
     coordinator._last_turn_off_time = 0.0
-    # Bind the base-class method so self works
+    coordinator._get_ac_infinity_devices = MagicMock(return_value=[])
+    # Bind the base-class methods so self works (control delegates to _resolve_drivers)
     coordinator._control_devices = VpdOnOffController._control_devices.__get__(
+        coordinator, DehumidifierCoordinator
+    )
+    coordinator._resolve_drivers = VpdOnOffController._resolve_drivers.__get__(
         coordinator, DehumidifierCoordinator
     )
 
@@ -205,7 +209,8 @@ async def test_dehumidifier_coordinator_control_exceptions(hass: HomeAssistant) 
     # Test 2: Exception handling
     coordinator._get_all_controlled_entities = MagicMock(return_value=["switch.valid"])
     with patch(
-        "homeassistant.core.ServiceRegistry.async_call", side_effect=HomeAssistantError("Boom")
+        "homeassistant.core.ServiceRegistry.async_call",
+        side_effect=HomeAssistantError("Boom"),
     ):
         # Should not raise
         await coordinator._control_devices(True)
@@ -252,3 +257,8 @@ def test_dehumidifier_coordinator_is_day_logic(hass: HomeAssistant) -> None:
     # Test 4: String value "off"
     hass.states.async_set("sensor.light", "off")
     assert tracker.determine(hass, ["sensor.light"]) is False
+
+
+def test_vpd_controller_base_get_ac_infinity_devices_default() -> None:
+    """The base VpdOnOffController defaults to no AC Infinity devices."""
+    assert VpdOnOffController._get_ac_infinity_devices(Mock()) == []

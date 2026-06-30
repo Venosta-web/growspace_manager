@@ -62,6 +62,8 @@
       'co2_sensor': None,
       'control_dehumidifier': False,
       'control_humidifier': False,
+      'dehumidifier_ac_infinity_devices': list([
+      ]),
       'dehumidifier_entities': list([
       ]),
       'dehumidifier_thresholds': dict({
@@ -97,6 +99,8 @@
       'feed_ec_sensors': list([
       ]),
       'flower_day_hours': 12,
+      'humidifier_ac_infinity_devices': list([
+      ]),
       'humidifier_entities': list([
       ]),
       'humidifier_thresholds': dict({

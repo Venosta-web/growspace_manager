@@ -7,26 +7,21 @@ import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    ATTR_ENTITY_ID,
-    SERVICE_TURN_OFF,
-    SERVICE_TURN_ON,
-    STATE_ON,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-)
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
+from .actuator_driver import resolve_on_off_drivers
 from .const import PlantStage
 from .domain.day_night import DayNightTracker
 from .domain.stage_calculator import determine_coordinator_stage
 from .models import GrowspaceEvent
 
 if TYPE_CHECKING:
+    from .actuator_driver import ActuatorDriver
     from .coordinator import GrowspaceCoordinator
+    from .models import ACInfinityDevice
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,10 +90,23 @@ class VpdOnOffController:
         """Return all entity IDs managed by this controller. Subclasses implement."""
         raise NotImplementedError
 
+    def _get_ac_infinity_devices(self) -> list[ACInfinityDevice]:
+        """Return AC Infinity bundles managed by this controller (none by default)."""
+        return []
+
+    def _resolve_drivers(self) -> list[ActuatorDriver]:
+        """Resolve every controlled actuator — plain entities and AC Infinity."""
+        return resolve_on_off_drivers(
+            self.hass,
+            self._get_all_controlled_entities(),
+            self._get_ac_infinity_devices(),
+        )
+
     async def async_setup(self) -> None:
         """Set up state-change listeners and run an initial check."""
         entities = self._get_all_controlled_entities()
-        if self.vpd_sensor and entities and self.control_enabled:
+        has_actuators = bool(entities or self._get_ac_infinity_devices())
+        if self.vpd_sensor and has_actuators and self.control_enabled:
             self._setup_listeners()
             await self.async_check_and_control()
             _LOGGER.info(
@@ -106,7 +114,7 @@ class VpdOnOffController:
                 type(self).__name__,
                 self.growspace.name,
                 self.vpd_sensor,
-                len(entities),
+                len(entities) + len(self._get_ac_infinity_devices()),
             )
         elif not self.control_enabled:
             _LOGGER.info(
@@ -258,21 +266,12 @@ class VpdOnOffController:
         )[day_key]
 
     async def _control_devices(self, turn_on: bool) -> None:
-        """Call turn_on or turn_off on every controlled entity."""
-        service = SERVICE_TURN_ON if turn_on else SERVICE_TURN_OFF
-        for entity_id in self._get_all_controlled_entities():
-            domain = entity_id.split(".")[0]
-            if domain not in ("switch", "humidifier", "fan", "input_boolean"):
-                domain = "homeassistant"
-            try:
-                await self.hass.services.async_call(
-                    domain,
-                    service,
-                    {ATTR_ENTITY_ID: entity_id},
-                    blocking=False,
-                )
-            except (HomeAssistantError, TimeoutError):
-                _LOGGER.warning("Failed to control device %s", entity_id, exc_info=True)
+        """Turn on or off every controlled actuator through its driver."""
+        for driver in self._resolve_drivers():
+            if turn_on:
+                await driver.turn_on()
+            else:
+                await driver.turn_off()
         if turn_on:
             self._last_turn_on_time = time.monotonic()
         else:
@@ -321,10 +320,7 @@ class VpdOnOffController:
             return None
 
     def _is_device_on(self) -> bool:
-        return any(
-            (s := self.hass.states.get(e)) is not None and s.state == STATE_ON
-            for e in self._get_all_controlled_entities()
-        )
+        return any(driver.is_on() for driver in self._resolve_drivers())
 
     def unload(self) -> None:
         """Stop listeners and cancel any pending retry."""

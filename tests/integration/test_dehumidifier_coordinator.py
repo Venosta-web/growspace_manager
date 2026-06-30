@@ -10,7 +10,7 @@ from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
-from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.models import ACInfinityDevice, Plant
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -229,7 +229,10 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
     """Test correct growth stage detection based on plant days."""
     plant1 = MagicMock(spec=Plant)
     plant2 = MagicMock(spec=Plant)
-    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [plant1, plant2]
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        plant1,
+        plant2,
+    ]
 
     # Case 1: Veg
     with patch(
@@ -543,7 +546,9 @@ async def test_growth_stage_detection_cure_dry_seedling(
 ) -> None:
     """Test detection of cure, dry, and seedling stages."""
     plant = MagicMock(spec=Plant)
-    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        plant
+    ]
 
     # Test Cure
     with patch(
@@ -606,7 +611,7 @@ async def test_control_device_exception(
     with caplog.at_level(logging.WARNING):
         await coordinator._control_devices(True)
 
-    assert "Failed to control device" in caplog.text
+    assert "Failed to call" in caplog.text
 
 
 async def test_get_current_vpd_missing_sensor(
@@ -798,3 +803,63 @@ async def test_controlled_set_excludes_exhaust_when_both_configured(
     coordinator.growspace.environment_config.exhaust_fan_entities = ["fan.exhaust"]
 
     assert coordinator._get_all_controlled_entities() == ["switch.dehumidifier"]
+
+
+# ---------------------------------------------------------------------------
+# AC Infinity dehumidifier devices (ADR-0022)
+# ---------------------------------------------------------------------------
+
+
+async def test_ac_infinity_dehumidifier_turn_on(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """The dehumidifier override drives its AC Infinity port mode On + on-speed."""
+    growspace = MagicMock()
+    growspace.id = "gs1"
+    growspace.name = "Test Growspace"
+    env_config = MagicMock()
+    env_config.vpd_sensor = "sensor.vpd"
+    env_config.light_sensors = []
+    env_config.dehumidifier_entities = []
+    env_config.exhaust_fan_entities = []
+    env_config.dehumidifier_ac_infinity_devices = [
+        ACInfinityDevice(
+            mode_entity="select.dehum_mode",
+            speed_entity="number.dehum_speed",
+            on_speed=9,
+        )
+    ]
+    env_config.control_dehumidifier = True
+    env_config.dehumidifier_thresholds = {}
+    growspace.environment_config = env_config
+    growspace.dehumidifier_config = {}
+    mock_main_coordinator.growspaces = {"gs1": growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    mock_hass.services.async_call.reset_mock()
+    await coord._control_devices(True)
+    mock_hass.services.async_call.assert_any_await(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.dehum_mode", "option": "On"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.dehum_speed", "value": 9},
+        blocking=False,
+    )
+
+
+async def test_get_ac_infinity_devices_no_growspace(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """With no growspace, the AC Infinity bundle accessor returns an empty list."""
+    mock_main_coordinator.growspaces = {}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "missing", mock_main_coordinator
+    )
+    assert coord._get_ac_infinity_devices() == []
+    assert coord._get_all_controlled_entities() == []

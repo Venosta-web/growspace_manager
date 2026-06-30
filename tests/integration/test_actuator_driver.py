@@ -7,9 +7,11 @@ import pytest
 from custom_components.growspace_manager.actuator_driver import (
     ACInfinityDriver,
     FanDriver,
+    GenericOnOffDriver,
     SwitchDriver,
     resolve_actuator_driver,
     resolve_actuator_drivers,
+    resolve_on_off_drivers,
 )
 from custom_components.growspace_manager.models import ACInfinityDevice
 from homeassistant.const import (
@@ -297,3 +299,84 @@ async def test_resolve_actuator_drivers_merges_and_skips_unsupported(
 async def test_resolve_actuator_drivers_empty(mock_hass: MagicMock) -> None:
     """No configured actuators yields no drivers."""
     assert resolve_actuator_drivers(mock_hass, [], []) == []
+
+
+# ---------------------------------------------------------------------------
+# GenericOnOffDriver (binary on/off controllers)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("entity_id", "domain"),
+    [
+        ("switch.humidifier", "switch"),
+        ("humidifier.unit", "humidifier"),
+        ("fan.inline", "fan"),
+        ("input_boolean.mister", "input_boolean"),
+        ("climate.tent", "homeassistant"),
+        ("remote.plug", "homeassistant"),
+    ],
+)
+async def test_generic_on_off_driver_domain_routing(
+    mock_hass: MagicMock, entity_id: str, domain: str
+) -> None:
+    """Native domains drive themselves; everything else falls back to homeassistant."""
+    await GenericOnOffDriver(mock_hass, entity_id).turn_on()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        domain, "turn_on", {ATTR_ENTITY_ID: entity_id}, blocking=False
+    )
+
+
+async def test_generic_on_off_driver_turn_off(mock_hass: MagicMock) -> None:
+    """turn_off issues the off service on the resolved domain."""
+    await GenericOnOffDriver(mock_hass, "climate.tent").turn_off()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "homeassistant", "turn_off", {ATTR_ENTITY_ID: "climate.tent"}, blocking=False
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(STATE_ON, True), (STATE_OFF, False)],
+)
+async def test_generic_on_off_driver_is_on(
+    mock_hass: MagicMock, value: str, expected: bool
+) -> None:
+    """is_on reflects the entity state."""
+    mock_hass.states.get.return_value = _state(value)
+    assert GenericOnOffDriver(mock_hass, "switch.x").is_on() is expected
+
+
+async def test_resolve_on_off_drivers_merges_entities_and_bundles(
+    mock_hass: MagicMock,
+) -> None:
+    """Every plain entity becomes a GenericOnOffDriver; bundles become AC Infinity."""
+    drivers = resolve_on_off_drivers(
+        mock_hass,
+        ["switch.humidifier", "climate.tent"],
+        [ACInfinityDevice(mode_entity="select.m", speed_entity="number.s")],
+    )
+    assert [type(d) for d in drivers] == [
+        GenericOnOffDriver,
+        GenericOnOffDriver,
+        ACInfinityDriver,
+    ]
+
+
+async def test_resolve_on_off_drivers_empty(mock_hass: MagicMock) -> None:
+    """No configured actuators yields no drivers."""
+    assert resolve_on_off_drivers(mock_hass, []) == []
+
+
+@pytest.mark.parametrize(
+    ("pct", "service"),
+    [(1, "turn_on"), (0, "turn_off")],
+)
+async def test_generic_on_off_driver_set_speed(
+    mock_hass: MagicMock, pct: int, service: str
+) -> None:
+    """GenericOnOffDriver.set_speed collapses demand to on (>0) or off."""
+    await GenericOnOffDriver(mock_hass, "switch.x").set_speed(pct)
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch", service, {ATTR_ENTITY_ID: "switch.x"}, blocking=False
+    )

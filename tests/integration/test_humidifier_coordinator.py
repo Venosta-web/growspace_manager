@@ -10,7 +10,7 @@ from custom_components.growspace_manager.domain.stage import PlantStage
 from custom_components.growspace_manager.humidifier_coordinator import (
     HumidifierCoordinator,
 )
-from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.models import ACInfinityDevice, Plant
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -434,7 +434,7 @@ async def test_control_device_exception(
     with caplog.at_level(logging.WARNING):
         await coordinator._control_devices(True)
 
-    assert "Failed to control device" in caplog.text
+    assert "Failed to call" in caplog.text
 
 
 async def test_on_sensor_change(coordinator) -> None:
@@ -450,3 +450,101 @@ async def test_check_and_control_missing_vpd_sensor(coordinator) -> None:
     """Test async_check_and_control exits early with no VPD sensor."""
     coordinator.vpd_sensor = None
     await coordinator.async_check_and_control()
+
+
+# ---------------------------------------------------------------------------
+# AC Infinity humidifier devices (ADR-0022)
+# ---------------------------------------------------------------------------
+
+
+def _ac_infinity_humidifier(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> HumidifierCoordinator:
+    """Build a HumidifierCoordinator controlling one AC Infinity port (no plain entity)."""
+    growspace = MagicMock()
+    growspace.id = "gs1"
+    growspace.name = "Test Growspace"
+    env_config = MagicMock()
+    env_config.vpd_sensor = "sensor.vpd"
+    env_config.light_sensors = []
+    env_config.humidifier_entities = []
+    env_config.humidifier_ac_infinity_devices = [
+        ACInfinityDevice(
+            mode_entity="select.hum_mode",
+            speed_entity="number.hum_speed",
+            on_speed=8,
+        )
+    ]
+    env_config.control_humidifier = True
+    env_config.humidifier_thresholds = {}
+    growspace.environment_config = env_config
+    growspace.humidifier_config = {}
+    mock_main_coordinator.growspaces = {"gs1": growspace}
+    return HumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+
+
+async def test_ac_infinity_humidifier_turn_on(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """Turning the humidifier on drives the port mode On at its configured on-speed."""
+    coord = _ac_infinity_humidifier(
+        mock_hass, mock_main_coordinator, mock_track_state_change_event
+    )
+    mock_hass.services.async_call.reset_mock()
+    await coord._control_devices(True)
+    mock_hass.services.async_call.assert_any_await(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.hum_mode", "option": "On"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.hum_speed", "value": 8},
+        blocking=False,
+    )
+
+
+async def test_ac_infinity_humidifier_turn_off(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """Turning the humidifier off sets the port mode to Off."""
+    coord = _ac_infinity_humidifier(
+        mock_hass, mock_main_coordinator, mock_track_state_change_event
+    )
+    mock_hass.services.async_call.reset_mock()
+    await coord._control_devices(False)
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.hum_mode", "option": "Off"},
+        blocking=False,
+    )
+
+
+async def test_ac_infinity_humidifier_is_on_reads_mode_select(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """is_on reads the AC Infinity mode select, not a plain entity state."""
+    coord = _ac_infinity_humidifier(
+        mock_hass, mock_main_coordinator, mock_track_state_change_event
+    )
+    mock_hass.states.get.return_value = MagicMock(state="On")
+    assert coord._is_device_on() is True
+    mock_hass.states.get.return_value = MagicMock(state="Off")
+    assert coord._is_device_on() is False
+
+
+async def test_get_ac_infinity_devices_no_growspace(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """With no growspace, the AC Infinity bundle accessor returns an empty list."""
+    mock_main_coordinator.growspaces = {}
+    coord = HumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "missing", mock_main_coordinator
+    )
+    assert coord._get_ac_infinity_devices() == []
+    assert coord._get_all_controlled_entities() == []
