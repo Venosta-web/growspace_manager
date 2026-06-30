@@ -17,17 +17,11 @@ import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    ATTR_ENTITY_ID,
-    SERVICE_TURN_OFF,
-    SERVICE_TURN_ON,
-    STATE_UNAVAILABLE,
-    STATE_UNKNOWN,
-)
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 
+from .actuator_driver import resolve_actuator_driver
 from .const import FanRegulationMode
 from .domain.day_night import DayNightTracker
 from .domain.fan_control import (
@@ -44,9 +38,6 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _TICK_INTERVAL = timedelta(seconds=10)
-
-# Entity domains driven on/off rather than by percentage.
-_SWITCH_DOMAINS = ("switch", "input_boolean")
 
 
 class ExhaustFanCoordinator:
@@ -187,37 +178,17 @@ class ExhaustFanCoordinator:
         )
 
     async def _dispatch(self, entity_id: str, speed: int, min_speed: int) -> None:
-        """Drive a single exhaust device by domain.
+        """Drive a single exhaust device through its resolved actuator driver.
 
         ``fan`` entities receive the speed as a percentage; ``switch`` and
         ``input_boolean`` devices are turned on when the demand exceeds
-        ``min_speed`` and off otherwise.
+        ``min_speed`` and off otherwise. Unsupported domains are skipped.
         """
-        domain = entity_id.split(".", 1)[0]
-        if domain == "fan":
-            await self._call_service(
-                "fan",
-                "set_percentage",
-                {ATTR_ENTITY_ID: entity_id, "percentage": speed},
-            )
-        elif domain in _SWITCH_DOMAINS:
-            service = SERVICE_TURN_ON if speed > min_speed else SERVICE_TURN_OFF
-            await self._call_service(domain, service, {ATTR_ENTITY_ID: entity_id})
-
-    async def _call_service(
-        self, domain: str, service: str, data: dict[str, object]
-    ) -> None:
-        """Call a Home Assistant service, logging device failures without raising."""
-        try:
-            await self.hass.services.async_call(domain, service, data, blocking=False)
-        except HomeAssistantError, TimeoutError:
-            _LOGGER.warning(
-                "Failed to call %s.%s on %s",
-                domain,
-                service,
-                data.get(ATTR_ENTITY_ID),
-                exc_info=True,
-            )
+        driver = resolve_actuator_driver(
+            self.hass, entity_id, switch_off_threshold=min_speed
+        )
+        if driver is not None:
+            await driver.set_speed(speed)
 
     def _read_sensor(self, mode: FanRegulationMode) -> float | None:
         """Read the first available sensor value for the given measurement."""
