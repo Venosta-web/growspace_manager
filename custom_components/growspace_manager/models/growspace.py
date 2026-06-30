@@ -199,6 +199,9 @@ class EnvironmentConfig(BaseModel):
     exhaust_fan_ac_infinity_devices: list[ACInfinityDevice] = field(
         default_factory=list
     )
+    circulation_fan_ac_infinity_devices: list[ACInfinityDevice] = field(
+        default_factory=list
+    )
 
     # 3D Sensor Configuration
     sensor_coordinates: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -303,6 +306,7 @@ class EnvironmentConfig(BaseModel):
             "humidifier_entities",
             "dehumidifier_entities",
             "exhaust_fan_ac_infinity_devices",
+            "circulation_fan_ac_infinity_devices",
             "sensor_groups",
             "substrate_temperature_sensors",
             "camera_entities",

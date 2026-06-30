@@ -9,7 +9,10 @@ from custom_components.growspace_manager.circulation_fan_coordinator import (
     CirculationFanCoordinator,
 )
 from custom_components.growspace_manager.const import FanRegulationMode, PlantStage
-from custom_components.growspace_manager.models import EnvironmentConfig
+from custom_components.growspace_manager.models import (
+    ACInfinityDevice,
+    EnvironmentConfig,
+)
 from custom_components.growspace_manager.models.growspace import CirculationFanConfig
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -51,6 +54,7 @@ def _make_env_config(
     vpd_sensors: list[str] | None = None,
     light_sensors: list[str] | None = None,
     circulation_fan_entities: list[str] | None = None,
+    circulation_fan_ac_infinity_devices: list[ACInfinityDevice] | None = None,
     humidity_target: float = 60.0,
     humidity_tolerance: float = 5.0,
     temperature_target: float = 25.0,
@@ -89,11 +93,18 @@ def _make_env_config(
         stage_vpd_overrides=stage_vpd_overrides or {},
     )
     return EnvironmentConfig(
-        humidity_sensors=humidity_sensors if humidity_sensors is not None else ["sensor.humidity"],
-        temperature_sensors=temperature_sensors if temperature_sensors is not None else ["sensor.temperature"],
+        humidity_sensors=humidity_sensors
+        if humidity_sensors is not None
+        else ["sensor.humidity"],
+        temperature_sensors=temperature_sensors
+        if temperature_sensors is not None
+        else ["sensor.temperature"],
         vpd_sensors=vpd_sensors if vpd_sensors is not None else ["sensor.vpd"],
         light_sensors=light_sensors if light_sensors is not None else [],
-        circulation_fan_entities=circulation_fan_entities if circulation_fan_entities is not None else ["fan.circ"],
+        circulation_fan_entities=circulation_fan_entities
+        if circulation_fan_entities is not None
+        else ["fan.circ"],
+        circulation_fan_ac_infinity_devices=circulation_fan_ac_infinity_devices or [],
         circulation_fan_config=fan_cfg,
     )
 
@@ -373,9 +384,7 @@ async def test_no_sensor_entities_skips_fan_call(
     mock_hass: MagicMock,
 ) -> None:
     """No humidity_sensors configured → no fan.set_percentage call."""
-    env = _make_env_config(
-        mode=FanRegulationMode.HUMIDITY, humidity_sensors=[]
-    )
+    env = _make_env_config(mode=FanRegulationMode.HUMIDITY, humidity_sensors=[])
     main_coord = _make_coordinator("gs1", env)
     coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
 
@@ -748,7 +757,9 @@ async def test_wind_enabled_applies_offset_at_quarter_period(
     coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
     coord._start_time = 0.0
 
-    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.time"
+    ) as mock_time:
         mock_time.monotonic.return_value = 15.0  # quarter period
         await coord._async_regulate()
 
@@ -775,12 +786,16 @@ async def test_wind_output_clamped_to_max_speed(
         wind_period_seconds=60,
         wind_amplitude_pct=20,
     )
-    mock_hass.states.get.return_value = MagicMock(state="70.0")  # above band → max_speed=90
+    mock_hass.states.get.return_value = MagicMock(
+        state="70.0"
+    )  # above band → max_speed=90
     main_coord = _make_coordinator("gs1", env)
     coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
     coord._start_time = 0.0
 
-    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.time"
+    ) as mock_time:
         mock_time.monotonic.return_value = 15.0  # quarter period → sin=1.0
         await coord._async_regulate()
 
@@ -807,12 +822,16 @@ async def test_wind_output_clamped_to_min_speed(
         wind_period_seconds=60,
         wind_amplitude_pct=20,
     )
-    mock_hass.states.get.return_value = MagicMock(state="50.0")  # below band → min_speed=10
+    mock_hass.states.get.return_value = MagicMock(
+        state="50.0"
+    )  # below band → min_speed=10
     main_coord = _make_coordinator("gs1", env)
     coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
     coord._start_time = 0.0
 
-    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.time"
+    ) as mock_time:
         mock_time.monotonic.return_value = 45.0  # 3/4 period → sin=-1.0
         await coord._async_regulate()
 
@@ -842,7 +861,9 @@ async def test_wind_disabled_produces_stable_speed(
     coord._start_time = 0.0
 
     # At quarter period — if wind were enabled speed would be 60, not 50
-    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.time"
+    ) as mock_time:
         mock_time.monotonic.return_value = 15.0
         await coord._async_regulate()
 
@@ -875,14 +896,18 @@ async def test_wind_applies_on_top_of_temp_override_speed(
     def _get_state(entity_id: str) -> MagicMock:
         if "temperature" in entity_id:
             return MagicMock(state="32.0")  # above threshold → override to max_speed=90
-        return MagicMock(state="0.5")  # VPD below band → would be min_speed without override
+        return MagicMock(
+            state="0.5"
+        )  # VPD below band → would be min_speed without override
 
     mock_hass.states.get.side_effect = _get_state
     main_coord = _make_coordinator("gs1", env)
     coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
     coord._start_time = 0.0
 
-    with patch("custom_components.growspace_manager.circulation_fan_coordinator.time") as mock_time:
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.time"
+    ) as mock_time:
         mock_time.monotonic.return_value = 15.0  # quarter period → wind_offset = +5
         await coord._async_regulate()
 
@@ -1066,18 +1091,37 @@ def test_fan_vpd_stage_defaults_covers_all_coordinator_stages() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("stage,is_day,expected_target", [
-    (PlantStage.VEG, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["day"]),
-    (PlantStage.VEG, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["night"]),
-    (PlantStage.FLOWER_EARLY, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_EARLY]["day"]),
-    (PlantStage.FLOWER_MID, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_MID]["night"]),
-    (PlantStage.FLOWER_LATE, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_LATE]["day"]),
-    (PlantStage.DRY, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.DRY]["night"]),
-    (PlantStage.CURE, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.CURE]["day"]),
-    (PlantStage.SEEDLING, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.SEEDLING]["night"]),
-    (PlantStage.CLONE, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.CLONE]["day"]),
-    (PlantStage.MOTHER, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.MOTHER]["day"]),
-])
+@pytest.mark.parametrize(
+    "stage,is_day,expected_target",
+    [
+        (PlantStage.VEG, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["day"]),
+        (PlantStage.VEG, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["night"]),
+        (
+            PlantStage.FLOWER_EARLY,
+            True,
+            FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_EARLY]["day"],
+        ),
+        (
+            PlantStage.FLOWER_MID,
+            False,
+            FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_MID]["night"],
+        ),
+        (
+            PlantStage.FLOWER_LATE,
+            True,
+            FAN_VPD_STAGE_DEFAULTS[PlantStage.FLOWER_LATE]["day"],
+        ),
+        (PlantStage.DRY, False, FAN_VPD_STAGE_DEFAULTS[PlantStage.DRY]["night"]),
+        (PlantStage.CURE, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.CURE]["day"]),
+        (
+            PlantStage.SEEDLING,
+            False,
+            FAN_VPD_STAGE_DEFAULTS[PlantStage.SEEDLING]["night"],
+        ),
+        (PlantStage.CLONE, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.CLONE]["day"]),
+        (PlantStage.MOTHER, True, FAN_VPD_STAGE_DEFAULTS[PlantStage.MOTHER]["day"]),
+    ],
+)
 def test_get_stage_vpd_target_returns_correct_value(
     mock_hass: MagicMock,
     stage: PlantStage,
@@ -1217,8 +1261,14 @@ def test_get_stage_vpd_target_override_present_uses_override(
     ):
         main_coord = _make_coordinator("gs1", env, plants=[plant])
         coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-        assert coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True) == override_day
-        assert coord._get_stage_vpd_target(env.circulation_fan_config, is_day=False) == override_night
+        assert (
+            coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True)
+            == override_day
+        )
+        assert (
+            coord._get_stage_vpd_target(env.circulation_fan_config, is_day=False)
+            == override_night
+        )
 
 
 def test_get_stage_vpd_target_override_absent_uses_default(
@@ -1238,7 +1288,10 @@ def test_get_stage_vpd_target_override_absent_uses_default(
     ):
         main_coord = _make_coordinator("gs1", env, plants=[plant])
         coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-        assert coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True) == FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["day"]
+        assert (
+            coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True)
+            == FAN_VPD_STAGE_DEFAULTS[PlantStage.VEG]["day"]
+        )
 
 
 def test_get_stage_vpd_target_no_plants_falls_back_to_vpd_target(
@@ -1254,7 +1307,10 @@ def test_get_stage_vpd_target_no_plants_falls_back_to_vpd_target(
     )
     main_coord = _make_coordinator("gs1", env, plants=[])
     coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
-    assert coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True) == static_target
+    assert (
+        coord._get_stage_vpd_target(env.circulation_fan_config, is_day=True)
+        == static_target
+    )
 
 
 def test_get_stage_vpd_target_unknown_stage_falls_back_to_vpd_target(
@@ -1285,24 +1341,27 @@ def test_get_stage_vpd_target_unknown_stage_falls_back_to_vpd_target(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("bad_overrides,match", [
-    (
-        {"veg": {"day": 0.0, "night": 0.7}},
-        "out of range",
-    ),
-    (
-        {"veg": {"day": 3.1, "night": 0.7}},
-        "out of range",
-    ),
-    (
-        {"not_a_stage": {"day": 0.8, "night": 0.7}},
-        "Unknown stage key",
-    ),
-    (
-        {"veg": {"day": 0.8}},
-        "both 'day' and 'night'",
-    ),
-])
+@pytest.mark.parametrize(
+    "bad_overrides,match",
+    [
+        (
+            {"veg": {"day": 0.0, "night": 0.7}},
+            "out of range",
+        ),
+        (
+            {"veg": {"day": 3.1, "night": 0.7}},
+            "out of range",
+        ),
+        (
+            {"not_a_stage": {"day": 0.8, "night": 0.7}},
+            "Unknown stage key",
+        ),
+        (
+            {"veg": {"day": 0.8}},
+            "both 'day' and 'night'",
+        ),
+    ],
+)
 def test_stage_vpd_overrides_validation(
     bad_overrides: dict,
     match: str,
@@ -1359,3 +1418,93 @@ async def test_async_restart_resets_state_and_restarts_tick(
     # Verify async_setup re-registered tick
     mock_track_time_interval.assert_called_once()
 
+
+# ---------------------------------------------------------------------------
+# AC Infinity circulation devices (ADR-0022)
+# ---------------------------------------------------------------------------
+
+
+async def test_ac_infinity_circulation_driven_by_mode_and_intensity(
+    mock_hass: MagicMock,
+) -> None:
+    """An AC Infinity circulation port is driven via its mode select and number."""
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        humidity_target=60.0,
+        humidity_tolerance=5.0,
+        min_speed=10,
+        max_speed=90,
+        circulation_fan_entities=[],
+        circulation_fan_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port2_mode",
+                speed_entity="number.tent_port2_on_speed",
+            )
+        ],
+    )
+    mock_hass.states.get.return_value = MagicMock(state="50.0")  # → min_speed (10)
+    coord = CirculationFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_any_await(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.tent_port2_mode", "option": "On"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.tent_port2_on_speed", "value": 1},
+        blocking=False,
+    )
+    assert mock_hass.services.async_call.await_count == 2
+
+
+async def test_ac_infinity_and_plain_circulation_both_dispatched(
+    mock_hass: MagicMock,
+) -> None:
+    """Plain fans and AC Infinity bundles for the circulation role are all driven."""
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        circulation_fan_entities=["fan.circ"],
+        circulation_fan_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port2_mode",
+                speed_entity="number.tent_port2_on_speed",
+            )
+        ],
+    )
+    mock_hass.states.get.return_value = MagicMock(state="50.0")
+    coord = CirculationFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    await coord._async_regulate()
+    domains = {call[0][0] for call in mock_hass.services.async_call.await_args_list}
+    assert domains == {"fan", "select", "number"}
+
+
+async def test_async_setup_starts_tick_for_ac_infinity_only(
+    mock_hass: MagicMock,
+) -> None:
+    """A growspace with only AC Infinity circulation devices still starts the tick."""
+    env = _make_env_config(
+        enabled=True,
+        circulation_fan_entities=[],
+        circulation_fan_ac_infinity_devices=[
+            ACInfinityDevice(
+                mode_entity="select.tent_port2_mode",
+                speed_entity="number.tent_port2_on_speed",
+            )
+        ],
+    )
+    coord = CirculationFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.async_track_time_interval"
+    ) as mock_tick:
+        mock_tick.return_value = MagicMock()
+        await coord.async_setup()
+    mock_tick.assert_called_once()

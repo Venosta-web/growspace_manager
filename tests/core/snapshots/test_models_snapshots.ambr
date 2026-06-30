@@ -46,6 +46,8 @@
     ]),
     'camera_entities': list([
     ]),
+    'circulation_fan_ac_infinity_devices': list([
+    ]),
     'circulation_fan_config': dict({
       'critical_temp_high': None,
       'critical_temp_hysteresis': 1.0,
@@ -197,6 +199,8 @@
       'bulk_ec_sensors': list([
       ]),
       'camera_entities': list([
+      ]),
+      'circulation_fan_ac_infinity_devices': list([
       ]),
       'circulation_fan_config': dict({
         'critical_temp_high': None,
