@@ -11,6 +11,8 @@
       ]),
       'camera_entities': list([
       ]),
+      'circulation_fan_ac_infinity_devices': list([
+      ]),
       'circulation_fan_config': dict({
         'critical_temp_high': None,
         'critical_temp_hysteresis': 1.0,
@@ -34,6 +36,8 @@
       }),
       'circulation_fan_entities': list([
       ]),
+      'dehumidifier_ac_infinity_devices': list([
+      ]),
       'dehumidifier_entities': list([
       ]),
       'drain_pump_state': None,
@@ -41,6 +45,8 @@
       ]),
       'electricity_cost_per_kwh': 0.0,
       'energy_sensors': list([
+      ]),
+      'exhaust_fan_ac_infinity_devices': list([
       ]),
       'exhaust_fan_config': dict({
         'critical_temp_high': None,
@@ -62,6 +68,8 @@
       'exhaust_fan_entities': list([
       ]),
       'feed_ec_sensors': list([
+      ]),
+      'humidifier_ac_infinity_devices': list([
       ]),
       'humidifier_control_enabled': False,
       'humidifier_entities': list([

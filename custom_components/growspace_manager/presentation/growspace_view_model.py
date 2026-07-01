@@ -478,6 +478,16 @@ class GrowspaceViewModelBuilder:
 
         env_config = growspace.environment_config
 
+        # AC Infinity actuator bundles, surfaced so the card's config editor can
+        # read and round-trip them alongside the plain *_entities lists (ADR-0022).
+        for _ac_key in (
+            "exhaust_fan_ac_infinity_devices",
+            "circulation_fan_ac_infinity_devices",
+            "humidifier_ac_infinity_devices",
+            "dehumidifier_ac_infinity_devices",
+        ):
+            attributes[_ac_key] = [d.to_dict() for d in getattr(env_config, _ac_key)]
+
         # Dehumidifier
         dehumidifier_entity = env_config.dehumidifier_entity
         attributes[CONF_DEHUMIDIFIER_ENTITIES] = env_config.dehumidifier_entities

@@ -683,6 +683,38 @@ configure_environment:
       required: false
       selector:
         object:
+    exhaust_fan_ac_infinity_devices:
+      name: Exhaust Fan AC Infinity Devices
+      description: >-
+        AC Infinity exhaust-fan ports as {mode_entity, speed_entity, on_speed}
+        bundles. Omit to preserve existing devices.
+      required: false
+      selector:
+        object:
+    circulation_fan_ac_infinity_devices:
+      name: Circulation Fan AC Infinity Devices
+      description: >-
+        AC Infinity circulation-fan ports as {mode_entity, speed_entity,
+        on_speed} bundles. Omit to preserve existing devices.
+      required: false
+      selector:
+        object:
+    humidifier_ac_infinity_devices:
+      name: Humidifier AC Infinity Devices
+      description: >-
+        AC Infinity humidifier ports as {mode_entity, speed_entity, on_speed}
+        bundles. Omit to preserve existing devices.
+      required: false
+      selector:
+        object:
+    dehumidifier_ac_infinity_devices:
+      name: Dehumidifier AC Infinity Devices
+      description: >-
+        AC Infinity dehumidifier ports as {mode_entity, speed_entity, on_speed}
+        bundles. Omit to preserve existing devices.
+      required: false
+      selector:
+        object:
 
 remove_environment:
   description: Remove environment configuration for a growspace

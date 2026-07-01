@@ -52,6 +52,7 @@ from custom_components.growspace_manager.exhaust_migration import (
     evaluate_exhaust_migration_issues,
 )
 from custom_components.growspace_manager.models import (
+    ACInfinityDevice,
     CirculationFanConfig,
     EnvironmentConfig,
     ExhaustFanConfig,
@@ -212,6 +213,20 @@ async def handle_configure_environment(
             return cast(list[str], [val] if isinstance(val, str) else val)
         return []
 
+    existing_env = growspace.environment_config
+
+    def _get_ac_infinity_devices(key: str) -> list[ACInfinityDevice]:
+        """Parse the AC Infinity bundle list, preserving existing when omitted.
+
+        ``configure_environment`` is a full replace, so a caller that does not
+        send a bundle list must not have its configured AC Infinity devices wiped
+        (mirrors the ``exhaust_fan_config`` preservation). An explicitly sent list
+        — including an empty one — is honored as a deliberate change.
+        """
+        if key not in call.data:
+            return list(getattr(existing_env, key, []) or []) if existing_env else []
+        return [ACInfinityDevice.from_dict(d) for d in call.data[key]]
+
     # Process Sensor Groups
     sensor_groups_data = call.data.get("sensor_groups", [])
     sensor_groups = []
@@ -271,6 +286,18 @@ async def handle_configure_environment(
         humidifier_entities=_get_list(CONF_HUMIDIFIER_ENTITY, CONF_HUMIDIFIER_ENTITIES),
         dehumidifier_entities=_get_list(
             CONF_DEHUMIDIFIER_ENTITY, CONF_DEHUMIDIFIER_ENTITIES
+        ),
+        exhaust_fan_ac_infinity_devices=_get_ac_infinity_devices(
+            "exhaust_fan_ac_infinity_devices"
+        ),
+        circulation_fan_ac_infinity_devices=_get_ac_infinity_devices(
+            "circulation_fan_ac_infinity_devices"
+        ),
+        humidifier_ac_infinity_devices=_get_ac_infinity_devices(
+            "humidifier_ac_infinity_devices"
+        ),
+        dehumidifier_ac_infinity_devices=_get_ac_infinity_devices(
+            "dehumidifier_ac_infinity_devices"
         ),
         soil_moisture_sensor=call.data.get(CONF_SOIL_MOISTURE_SENSOR),
         control_dehumidifier=call.data.get(CONF_CONTROL_DEHUMIDIFIER, False),

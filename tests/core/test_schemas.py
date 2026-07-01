@@ -48,7 +48,10 @@ def test_configure_environment_schema_accepts_vpd_optimal_overrides() -> None:
         CONF_TEMP_SENSOR: "sensor.temp",
         CONF_HUMIDITY_SENSOR: "sensor.humidity",
         "vpd_optimal_overrides": {
-            "flower_mid": {"day": {"low": 0.5, "high": 1.45}, "night": {"low": 0.6, "high": 1.0}},
+            "flower_mid": {
+                "day": {"low": 0.5, "high": 1.45},
+                "night": {"low": 0.6, "high": 1.0},
+            },
         },
     }
     try:
@@ -74,3 +77,51 @@ def test_configure_environment_schema_supports_single_entities() -> None:
         CONFIGURE_ENVIRONMENT_SCHEMA(payload)
     except vol.Error as e:
         pytest.fail(f"Schema validation failed for minimal payload: {e}")
+
+
+def test_configure_environment_schema_accepts_ac_infinity_devices() -> None:
+    """CONFIGURE_ENVIRONMENT_SCHEMA validates AC Infinity bundle lists (ADR-0022)."""
+    payload = {
+        "growspace_id": "test_growspace_id",
+        "exhaust_fan_ac_infinity_devices": [
+            {
+                "mode_entity": "select.tent_port1_mode",
+                "speed_entity": "number.tent_port1_on_speed",
+                "on_speed": 8,
+            }
+        ],
+        "humidifier_ac_infinity_devices": [
+            {"mode_entity": "select.hum_mode", "speed_entity": "number.hum_speed"}
+        ],
+    }
+    validated = CONFIGURE_ENVIRONMENT_SCHEMA(payload)
+
+    assert validated["exhaust_fan_ac_infinity_devices"][0]["on_speed"] == 8
+    # on_speed defaults to 10 when omitted
+    assert validated["humidifier_ac_infinity_devices"][0]["on_speed"] == 10
+
+
+def test_configure_environment_schema_rejects_incomplete_ac_infinity_device() -> None:
+    """An AC Infinity bundle missing required entities is rejected."""
+    payload = {
+        "growspace_id": "test_growspace_id",
+        "exhaust_fan_ac_infinity_devices": [{"mode_entity": "select.only_mode"}],
+    }
+    with pytest.raises(vol.Error):
+        CONFIGURE_ENVIRONMENT_SCHEMA(payload)
+
+
+def test_configure_environment_schema_rejects_out_of_range_on_speed() -> None:
+    """on_speed outside the 1-10 AC Infinity intensity range is rejected."""
+    payload = {
+        "growspace_id": "test_growspace_id",
+        "exhaust_fan_ac_infinity_devices": [
+            {
+                "mode_entity": "select.m",
+                "speed_entity": "number.s",
+                "on_speed": 11,
+            }
+        ],
+    }
+    with pytest.raises(vol.Error):
+        CONFIGURE_ENVIRONMENT_SCHEMA(payload)

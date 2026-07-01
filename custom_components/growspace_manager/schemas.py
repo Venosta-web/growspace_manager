@@ -488,6 +488,18 @@ DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA = vol.Schema(
 
 DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA = vol.Schema({})  # No parameters
 
+# An AC Infinity actuator bundle: a mode `select` + speed `number` entity, plus
+# the intensity used for the binary on path (ADR-0022).
+AC_INFINITY_DEVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required("mode_entity"): str,
+        vol.Required("speed_entity"): str,
+        vol.Optional("on_speed", default=10): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=10)
+        ),
+    }
+)
+
 CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): str,
@@ -540,6 +552,13 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_ELECTRICITY_COST): vol.Coerce(float),
         vol.Optional("circulation_fan_config"): dict,
         vol.Optional("vpd_optimal_overrides"): dict,
+        # AC Infinity actuator bundles, parallel to the plain *_entities lists.
+        vol.Optional("exhaust_fan_ac_infinity_devices"): [AC_INFINITY_DEVICE_SCHEMA],
+        vol.Optional("circulation_fan_ac_infinity_devices"): [
+            AC_INFINITY_DEVICE_SCHEMA
+        ],
+        vol.Optional("humidifier_ac_infinity_devices"): [AC_INFINITY_DEVICE_SCHEMA],
+        vol.Optional("dehumidifier_ac_infinity_devices"): [AC_INFINITY_DEVICE_SCHEMA],
         vol.Optional(CONF_LST_OFFSET): vol.All(
             vol.Coerce(float), vol.Range(min=-10.0, max=10.0)
         ),
