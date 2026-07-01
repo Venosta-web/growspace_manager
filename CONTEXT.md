@@ -296,3 +296,10 @@ A dict of six timing/cooldown parameters stored in `config_entry.options["notifi
 
 **Timed Notification**
 A user-configured reminder that fires on a specific day of a plant's lifecycle stage. Stored as a list in `config_entry.options["timed_notifications"]`. Each entry has `id` (UUID), `message`, `trigger_type`, `day`, and `growspace_ids`. Managed by `NotificationSettingsManager`. Exposed as a top-level key in the global coordinator data payload alongside Notification Settings.
+
+**Camera Snapshot**
+A point-in-time image captured from a growspace camera. Can be triggered manually by the grower via the camera snapshots dialog or automatically as part of a scheduled [[Vision Checkup]]. Saved to the public directory `www/growspace_manager/snapshots/{growspace_id}/` as a JPEG file named with a local timestamp prefix for display in the frontend.
+
+**Vision Checkup**
+An AI-powered diagnostic task performed on one or more [[Camera Snapshot]]s from a growspace, scheduled at three key times in the light cycle (early, mid, late) or triggered manually. The snapshots are processed with a 4x4 grid overlay and canopy green-pixel coverage analysis before being sent to the AI model. The analysis results (severity, detected issues, recommendations) are stored as a `VisionCheckupResult` in the growspace's vision history.
+

@@ -39,9 +39,7 @@ VISION_RESULT_SCHEMA = vol.Schema(
     {
         vol.Required("analysis"): str,
         vol.Required("issues_detected"): [str],
-        vol.Required("severity"): vol.In(
-            ["none", "low", "medium", "high", "critical"]
-        ),
+        vol.Required("severity"): vol.In(["none", "low", "medium", "high", "critical"]),
         vol.Required("recommendations"): [str],
     }
 )
@@ -93,6 +91,7 @@ class VisionCheckupScheduler:
         self.hass = hass
         self.coordinator = coordinator
         self._unsub_timers: dict[str, list[CALLBACK_TYPE]] = {}
+        self._latest_public_paths: dict[str, list[str]] = {}
 
     def _get_ai_task_entity_id(self) -> str | None:
         """Get the configured AI task entity ID from coordinator options."""
@@ -224,6 +223,7 @@ class VisionCheckupScheduler:
         """
         from homeassistant.components.camera import async_get_image  # noqa: PLC0415
 
+        self._latest_public_paths[growspace_id] = []
         processor = GrowspaceImageProcessor()
         timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
 
@@ -233,7 +233,9 @@ class VisionCheckupScheduler:
         # (/media vs <config>/media), so we must write where the media source
         # will look, or the AI task fails with "<path> does not exist".
         media_dirs = self.hass.config.media_dirs
-        source_dir_id = "local" if "local" in media_dirs else next(iter(media_dirs), None)
+        source_dir_id = (
+            "local" if "local" in media_dirs else next(iter(media_dirs), None)
+        )
         if source_dir_id is None:
             _LOGGER.warning(
                 "No media directories configured; cannot save vision snapshots"
@@ -251,6 +253,22 @@ class VisionCheckupScheduler:
                 media_dir,
             )
             return [], None, []
+
+        snapshot_dir = (
+            Path(self.hass.config.path("www"))
+            / "growspace_manager"
+            / "snapshots"
+            / growspace_id
+        )
+        try:
+            await self.hass.async_add_executor_job(
+                lambda: snapshot_dir.mkdir(parents=True, exist_ok=True)
+            )
+        except OSError:
+            _LOGGER.exception(
+                "Failed to create snapshots directory %s, permanent copies will not be saved",
+                snapshot_dir,
+            )
 
         attachments: list[dict[str, str]] = []
         coverages: list[float] = []
@@ -279,12 +297,35 @@ class VisionCheckupScheduler:
             file_path = media_dir / filename
 
             try:
-                await self.hass.async_add_executor_job(file_path.write_bytes, processed_bytes)
+                await self.hass.async_add_executor_job(
+                    file_path.write_bytes, processed_bytes
+                )
             except OSError:
                 _LOGGER.exception("Failed to save processed image to %s", file_path)
                 continue
 
             temp_paths.append(file_path)
+
+            # Save a permanent copy to the www snapshots directory
+            try:
+                from homeassistant.util import dt as dt_util  # noqa: PLC0415
+
+                local_timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
+                safe_name = cam_entity.replace(".", "_").replace(" ", "_")
+                snapshot_filename = f"{local_timestamp}_{safe_name}_processed.jpg"
+                snapshot_file_path = snapshot_dir / snapshot_filename
+
+                await self.hass.async_add_executor_job(
+                    snapshot_file_path.write_bytes, processed_bytes
+                )
+
+                public_path = f"/local/growspace_manager/snapshots/{growspace_id}/{snapshot_filename}"
+                self._latest_public_paths[growspace_id].append(public_path)
+            except Exception:
+                _LOGGER.exception(
+                    "Failed to save processed snapshot copy for %s", cam_entity
+                )
+
             attachments.append(
                 {
                     "media_content_id": (
@@ -416,10 +457,10 @@ class VisionCheckupScheduler:
         if not growspace or not growspace.notification_target:
             return
 
-        issues_str = ", ".join(result.issues_detected) if result.issues_detected else "unknown"
-        recommendations_str = "\n".join(
-            f"- {r}" for r in result.recommendations[:3]
+        issues_str = (
+            ", ".join(result.issues_detected) if result.issues_detected else "unknown"
         )
+        recommendations_str = "\n".join(f"- {r}" for r in result.recommendations[:3])
 
         message = (
             f"Vision checkup ({result.check_type}) for {growspace.name}:\n"
@@ -463,11 +504,15 @@ class VisionCheckupScheduler:
             _LOGGER.debug(
                 "No cameras configured for %s, skipping vision checkup", growspace_id
             )
-            raise ServiceValidationError("No cameras configured for this growspace. Please add cameras in the environment settings.")
+            raise ServiceValidationError(
+                "No cameras configured for this growspace. Please add cameras in the environment settings."
+            )
 
         entity_id = self._get_ai_task_entity_id()
         if not entity_id:
-            raise ServiceValidationError("No AI task entity configured. Please set up an AI agent in the integration options.")
+            raise ServiceValidationError(
+                "No AI task entity configured. Please set up an AI agent in the integration options."
+            )
 
         # Gather growspace context for the AI prompt
         try:
@@ -561,11 +606,15 @@ class VisionCheckupScheduler:
 
         data = task_result.data or {}
 
+        public_paths = self._latest_public_paths.pop(growspace_id, [])
+        if not public_paths:
+            public_paths = [f"media-source://camera/{c}" for c in camera_entities]
+
         result = VisionCheckupResult(
             timestamp=utcnow().isoformat(),
             growspace_id=growspace_id,
             check_type=check_type,
-            snapshot_paths=[f"media-source://camera/{c}" for c in camera_entities],
+            snapshot_paths=public_paths,
             analysis=data.get("analysis", "Analysis unavailable"),
             issues_detected=data.get("issues_detected", []),
             severity=data.get("severity", "none"),
