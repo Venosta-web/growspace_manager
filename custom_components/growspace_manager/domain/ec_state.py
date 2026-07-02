@@ -32,6 +32,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from custom_components.growspace_manager.const import (
+    EC_MODULATION_FULL_SCALE_DELTA,
+    EC_MODULATION_MAX_FACTOR,
+    EC_MODULATION_MIN_FACTOR,
+)
 from custom_components.growspace_manager.models import DrainReading, IrrigationStrategy
 from custom_components.growspace_manager.utils import (
     calculate_plant_stage,
@@ -117,7 +122,7 @@ def _classify_pore_ec(
 ) -> ECRecommendation:
     """Map a pore-EC reading against its band to a modulation direction.
 
-    Uses the same strict comparisons as ``_ec_modulation_factor_for_reading`` so
+    Uses the same strict comparisons as ``ec_modulation_factor_for_reading`` so
     the chosen *direction* and the computed *magnitude* never disagree: above the
     band → ``FLUSH``, below → ``STACK``, exactly at an edge or within → ``HOLD``.
     """
@@ -126,6 +131,30 @@ def _classify_pore_ec(
     if pore_ec < band_min:
         return ECRecommendation.STACK
     return ECRecommendation.HOLD
+
+
+def ec_modulation_factor_for_reading(
+    measured_ec: float, band_min: float, band_max: float
+) -> float:
+    """Map a measured pore EC against the band to a bounded shot factor.
+
+    The magnitude half of the [[EC Recommendation]]: above the band → factor
+    > 1.0 (flush), below → < 1.0 (stack), within → exactly 1.0. The response is
+    proportional to the excursion past the nearest band edge, normalised so an
+    excursion of ``EC_MODULATION_FULL_SCALE_DELTA`` saturates at the bound, then
+    clamped to ``[EC_MODULATION_MIN_FACTOR, EC_MODULATION_MAX_FACTOR]``.
+    """
+    if measured_ec > band_max:
+        excursion = measured_ec - band_max
+        span = EC_MODULATION_MAX_FACTOR - 1.0
+        factor = 1.0 + span * (excursion / EC_MODULATION_FULL_SCALE_DELTA)
+        return min(EC_MODULATION_MAX_FACTOR, factor)
+    if measured_ec < band_min:
+        excursion = band_min - measured_ec
+        span = 1.0 - EC_MODULATION_MIN_FACTOR
+        factor = 1.0 - span * (excursion / EC_MODULATION_FULL_SCALE_DELTA)
+        return max(EC_MODULATION_MIN_FACTOR, factor)
+    return 1.0
 
 
 def resolve_feed_stage_week(plants: list[Plant]) -> tuple[str | None, int]:

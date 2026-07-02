@@ -197,9 +197,9 @@ async def test_vwc_fired_shot_records_pump_estimate(
 ) -> None:
     """A real crop-steering shot writes through the pump-cycle path (AC #2).
 
-    Drives the actual shot-firing path (``_handle_watering``) rather than calling
-    ``_run_pump_cycle`` directly, so the test exercises the ``event_type`` the VWC
-    coordinator really passes — the value the write-through gate keys on. A weaker
+    Drives the actual shot-firing path (machine shot evaluation + ``_fire_shot``)
+    rather than calling ``_run_pump_cycle`` directly, so the test exercises the
+    ``event_type`` the VWC coordinator really passes — the value the write-through gate keys on. A weaker
     test that called the inherited method directly would only prove subclassing.
     """
     growspace = _pump_growspace(tank_mode=False)
@@ -227,7 +227,14 @@ async def test_vwc_fired_shot_records_pump_estimate(
             return_value=True,
         ),
     ):
-        coordinator._handle_watering(growspace.irrigation_strategy, "P1")
+        inputs = coordinator._tick_inputs(
+            40.0, growspace.irrigation_strategy, growspace
+        )
+        fire, _note = coordinator._machine._evaluate_shot(
+            inputs, "P1", reset_pending=False
+        )
+        assert fire is not None
+        coordinator._fire_shot(growspace.irrigation_strategy, fire)
         await _drain_tasks()
 
     # 20s × 100 ml/s = 2000 ml = 2.0 L

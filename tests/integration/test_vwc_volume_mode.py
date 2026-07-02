@@ -1,9 +1,12 @@
-"""Tests for Volume Mode shot sizing in the VWC Irrigation Coordinator (ADR-0011).
+"""Tests for Volume Mode shot sizing wiring in the VWC Irrigation Coordinator (ADR-0011).
 
 Volume Mode expresses per-phase shot size as a percentage of total substrate
 volume (liters_per_pot x live_plant_count) and converts that to pump seconds via
-the configured pump flow rate. These tests drive the coordinator directly from
-constructed strategies and plant lists — no recorder fixtures.
+the configured pump flow rate. The conversion math, mode gating, and the
+volume-change note now live in the Steering Phase Machine and are unit-tested in
+``tests/domain/test_steering_phase.py``; these tests verify the *wiring*: the
+coordinator feeds real plant lists into the machine's inputs and executes the
+verdict's effects (pump cycle, logbook note, idle phase).
 """
 
 import asyncio
@@ -13,6 +16,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage, ShotSizingMode
+from custom_components.growspace_manager.domain.steering_phase import (
+    ShotRequest,
+    SteeringTickInputs,
+    SteeringTickVerdict,
+)
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -60,7 +68,7 @@ def mock_hass():
 
 
 async def _drain_tasks() -> None:
-    """Await any background tasks spawned by _handle_watering."""
+    """Await any background tasks spawned by the fire path."""
     await asyncio.sleep(0)
     pending = [
         task
@@ -77,6 +85,33 @@ def _make_plants(stages: list[str]) -> list[Plant]:
         Plant(plant_id=f"p{i}", growspace_id="gs1", stage=stage)
         for i, stage in enumerate(stages)
     ]
+
+
+def _tick_inputs(
+    coord: VWCIrrigationCoordinator, growspace: Growspace
+) -> SteeringTickInputs:
+    """Assemble tick inputs through the coordinator's real wiring."""
+    return coord._tick_inputs(40.0, growspace.irrigation_strategy, growspace)
+
+
+def _base_duration(
+    coord: VWCIrrigationCoordinator, growspace: Growspace, phase: str
+) -> tuple[int | None, str | None]:
+    """Evaluate the machine's Volume Mode base duration with coordinator-fed inputs."""
+    return coord._machine._volume_mode_base_duration(
+        _tick_inputs(coord, growspace), phase
+    )
+
+
+def _drive_watering(
+    coord: VWCIrrigationCoordinator, growspace: Growspace, phase: str
+) -> None:
+    """Drive the machine's shot evaluation plus the shell's fire path."""
+    fire, _note = coord._machine._evaluate_shot(
+        _tick_inputs(coord, growspace), phase, reset_pending=False
+    )
+    if fire is not None:
+        coord._fire_shot(growspace.irrigation_strategy, fire)
 
 
 @pytest.fixture
@@ -132,7 +167,9 @@ def make_coordinator(mock_hass):
 
 
 # ---------------------------------------------------------------------------
-# Conversion math: percent -> ml -> seconds, scaling with live plant count
+# Conversion math: percent -> ml -> seconds, scaling with live plant count.
+# The math itself is domain-tested; here real plant lists flow through the
+# coordinator's _live_plant_count into the machine's inputs.
 # ---------------------------------------------------------------------------
 
 
@@ -165,9 +202,7 @@ def test_volume_conversion_scales_with_live_count(
     plants = _make_plants([PlantStage.FLOWER_MID.value] * live_count)
     coord = make_coordinator(volume_growspace, plants)
 
-    duration = coord._volume_mode_base_duration(
-        volume_growspace.irrigation_strategy, "P1"
-    )
+    duration, _note = _base_duration(coord, volume_growspace, "P1")
 
     assert duration == expected_seconds
 
@@ -178,12 +213,11 @@ def test_volume_uses_per_phase_percent(make_coordinator, volume_growspace) -> No
     volume_growspace.irrigation_strategy.p2_shot_volume_percent = 2.0
     plants = _make_plants([PlantStage.FLOWER_MID.value] * 10)
     coord = make_coordinator(volume_growspace, plants)
-    strategy = volume_growspace.irrigation_strategy
 
     # P1: 4% of 6L * 10 = 2400 ml / 20 = 120 s
-    assert coord._volume_mode_base_duration(strategy, "P1") == 120
+    assert _base_duration(coord, volume_growspace, "P1")[0] == 120
     # P2: 2% of 6L * 10 = 1200 ml / 20 = 60 s
-    assert coord._volume_mode_base_duration(strategy, "P2") == 60
+    assert _base_duration(coord, volume_growspace, "P2")[0] == 60
 
 
 # ---------------------------------------------------------------------------
@@ -217,9 +251,7 @@ def test_zero_plants_suspends_shot(make_coordinator, volume_growspace) -> None:
     """Zero live plants returns None (suspend) rather than a floored 1 s shot."""
     coord = make_coordinator(volume_growspace, [])
 
-    duration = coord._volume_mode_base_duration(
-        volume_growspace.irrigation_strategy, "P1"
-    )
+    duration, _note = _base_duration(coord, volume_growspace, "P1")
 
     assert duration is None
 
@@ -238,13 +270,28 @@ async def test_zero_plants_reports_idle_phase_no_pump(
         mock_hass.states.get.return_value = MagicMock(state="40.0")
         await coord._update_loop(now)
 
-    assert coord._current_phase == "Idle (no plants)"
+    assert coord._machine.current_phase == "Idle (no plants)"
     mock_hass.services.async_call.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
-# Live-count change recomputes volume AND emits a logbook entry
+# Live-count change recomputes volume AND emits a logbook entry. The note text
+# is produced by the machine; the coordinator's _apply_verdict owns the
+# log_to_logbook gate and the actual bus event.
 # ---------------------------------------------------------------------------
+
+
+def _note_verdict(note: str | None) -> SteeringTickVerdict:
+    """A no-transition verdict carrying only a volume-change note."""
+    return SteeringTickVerdict(
+        phase="P1 - Ramp Up",
+        canonical="p1",
+        phase_changed=False,
+        transition_message=None,
+        reset_composer=False,
+        fire=None,
+        volume_change_note=note,
+    )
 
 
 def test_live_count_change_emits_logbook_entry(
@@ -258,14 +305,16 @@ def test_live_count_change_emits_logbook_entry(
     ]
     strategy = volume_growspace.irrigation_strategy
 
-    # First tick establishes the baseline (no logbook entry on first observation).
-    first = coord._volume_mode_base_duration(strategy, "P1")
+    # First tick establishes the baseline (no note on first observation).
+    first, first_note = _base_duration(coord, volume_growspace, "P1")
     assert first == 144
-    mock_hass.bus.async_fire.assert_not_called()
+    assert first_note is None
 
-    # Second tick: count 12 -> 6 halves the volume; a logbook entry fires.
-    second = coord._volume_mode_base_duration(strategy, "P1")
+    # Second tick: count 12 -> 6 halves the volume; the note fires via the shell.
+    second, second_note = _base_duration(coord, volume_growspace, "P1")
     assert second == 72
+    coord._apply_verdict(_note_verdict(second_note), strategy)
+
     mock_hass.bus.async_fire.assert_called_once()
     _event_type, payload = mock_hass.bus.async_fire.call_args[0]
     assert "2880" in payload["message"] and "1440" in payload["message"]
@@ -275,13 +324,15 @@ def test_live_count_change_emits_logbook_entry(
 def test_unchanged_count_no_logbook_entry(
     make_coordinator, volume_growspace, mock_hass
 ) -> None:
-    """An unchanged live count never spams the logbook."""
+    """An unchanged live count never produces a note or a logbook entry."""
     plants = _make_plants([PlantStage.FLOWER_MID.value] * 8)
     coord = make_coordinator(volume_growspace, plants)
     strategy = volume_growspace.irrigation_strategy
 
-    coord._volume_mode_base_duration(strategy, "P1")
-    coord._volume_mode_base_duration(strategy, "P1")
+    _, note_a = _base_duration(coord, volume_growspace, "P1")
+    _, note_b = _base_duration(coord, volume_growspace, "P1")
+    coord._apply_verdict(_note_verdict(note_a), strategy)
+    coord._apply_verdict(_note_verdict(note_b), strategy)
 
     mock_hass.bus.async_fire.assert_not_called()
 
@@ -298,54 +349,18 @@ def test_logbook_suppressed_when_disabled(
     ]
     strategy = volume_growspace.irrigation_strategy
 
-    coord._volume_mode_base_duration(strategy, "P1")
-    coord._volume_mode_base_duration(strategy, "P1")
+    _, note_a = _base_duration(coord, volume_growspace, "P1")
+    _, note_b = _base_duration(coord, volume_growspace, "P1")
+    assert note_b is not None  # the machine still reports the change
+    coord._apply_verdict(_note_verdict(note_a), strategy)
+    coord._apply_verdict(_note_verdict(note_b), strategy)
 
     mock_hass.bus.async_fire.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# Mode gating: prerequisites + active detection
-# ---------------------------------------------------------------------------
-
-
-def test_volume_mode_inactive_without_profile(
-    make_coordinator, volume_growspace
-) -> None:
-    """Volume Mode is not active when the substrate profile is unconfigured."""
-    volume_growspace.irrigation_strategy.substrate_profile = SubstrateProfile()
-    coord = make_coordinator(volume_growspace, [])
-
-    assert coord._volume_mode_active(volume_growspace.irrigation_strategy) is False
-
-
-def test_volume_mode_inactive_without_flow_rate(
-    make_coordinator, volume_growspace
-) -> None:
-    """Volume Mode is not active when the pump flow rate is zero."""
-    volume_growspace.irrigation_config.pump_flow_rate_ml_per_sec = 0.0
-    coord = make_coordinator(volume_growspace, [])
-
-    assert coord._volume_mode_active(volume_growspace.irrigation_strategy) is False
-
-
-def test_volume_mode_inactive_in_seconds_mode(
-    make_coordinator, volume_growspace
-) -> None:
-    """Selecting Seconds Mode keeps Volume Mode inactive despite prerequisites."""
-    volume_growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.SECONDS
-    coord = make_coordinator(volume_growspace, [])
-
-    assert coord._volume_mode_active(volume_growspace.irrigation_strategy) is False
-
-
-def test_volume_mode_active_when_selected_and_capable(
-    make_coordinator, volume_growspace
-) -> None:
-    """Volume Mode is active only when selected AND prerequisites are met."""
-    coord = make_coordinator(volume_growspace, [])
-
-    assert coord._volume_mode_active(volume_growspace.irrigation_strategy) is True
+# Mode gating (selected + profile + flow rate) is pure domain logic now,
+# unit-tested in tests/domain/test_steering_phase.py (the former
+# test_volume_mode_inactive_*/test_volume_mode_active_* cases).
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +385,7 @@ async def test_volume_mode_applies_scale_factor_after_base(
         patch.object(coord, "_record_substrate_shot"),
     ):
         # Base: 4% of 6L * 10 = 2400 ml / 20 = 120 s; * 0.5 scale = 60 s
-        coord._handle_watering(volume_growspace.irrigation_strategy, "P1")
+        _drive_watering(coord, volume_growspace, "P1")
         await _drain_tasks()
 
     assert captured["duration"] == 60
@@ -393,17 +408,17 @@ async def test_seconds_mode_duration_unchanged(
         patch.object(coord, "_run_pump_cycle", side_effect=_fake_cycle),
         patch.object(coord, "_record_substrate_shot"),
     ):
-        coord._handle_watering(volume_growspace.irrigation_strategy, "P1")
+        _drive_watering(coord, volume_growspace, "P1")
         await _drain_tasks()
 
     # Scale factor defaults to 1.0; configured 10 s passes through unchanged.
     assert captured["duration"] == 10
 
 
-async def test_zero_plants_volume_mode_fires_no_pump_in_handle_watering(
+async def test_zero_plants_volume_mode_fires_no_pump(
     make_coordinator, volume_growspace
 ) -> None:
-    """_handle_watering suspends (no pump cycle) when Volume Mode has zero plants."""
+    """The shot evaluation suspends (no pump cycle) when Volume Mode has zero plants."""
     coord = make_coordinator(volume_growspace, [])
     cycle = MagicMock()
 
@@ -411,7 +426,31 @@ async def test_zero_plants_volume_mode_fires_no_pump_in_handle_watering(
         patch.object(coord, "_run_pump_cycle", side_effect=cycle),
         patch.object(coord, "_record_substrate_shot"),
     ):
-        coord._handle_watering(volume_growspace.irrigation_strategy, "P1")
+        _drive_watering(coord, volume_growspace, "P1")
         await _drain_tasks()
 
     cycle.assert_not_called()
+
+
+async def test_fire_shot_uses_request_base_seconds(
+    make_coordinator, volume_growspace, mock_hass
+) -> None:
+    """_fire_shot composes from the verdict's base seconds, not any config field."""
+    plants = _make_plants([PlantStage.FLOWER_MID.value] * 10)
+    coord = make_coordinator(volume_growspace, plants)
+
+    async def _fake_cycle(event_type, pump_entity, duration, event_data):
+        return None
+
+    with (
+        patch.object(coord, "_run_pump_cycle", side_effect=_fake_cycle),
+        patch.object(coord, "_record_substrate_shot"),
+    ):
+        coord._fire_shot(
+            volume_growspace.irrigation_strategy,
+            ShotRequest(phase="P1", base_seconds=77),
+        )
+        await _drain_tasks()
+
+    comp = coord._composer.last_composition
+    assert comp.base_seconds == 77
