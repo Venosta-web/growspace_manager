@@ -103,6 +103,8 @@ The event when any plant in a growspace transitions from veg to flower stage (i.
 
 If `auto_light_tracking` is enabled the system will auto-adapt its derived lights-off time from the sensor once the hardware schedule is changed, but the notification and chip still fire to prompt the user to verify their hardware.
 
+**The message is controller-dependent.** When the growspace has a **Grow Light Controller**, GSM *itself* applies the shorter 12h schedule at the flip (the AC Infinity path re-pushes its onboard schedule — see **Photoperiod Flip Transition (Grow Light)** and ADR-0025; the plain path simply derives the new `cycle_end`). The flip notification must not then *instruct* the user to change a timer GSM already changed: it becomes a **confirmation to verify** ("light day shortened to 12h — verify your hardware") rather than a to-do. Without a controller, the flip stays an instruction as above. The FlowerFlipChip still surfaces the event in both cases.
+
 ## FlowerFlipChip
 
 A pulsing growspace chip (same component as other header chips) that appears on the day `flower_start` is reached for any plant in the growspace. Persists until explicitly dismissed by the user; dismiss state is keyed to `growspaceId + flower_start` so it auto-resets if the transition date is changed. Clicking it opens the Irrigation Dialog on the Steering tab and scrolls `lights_on_time` into focus.
