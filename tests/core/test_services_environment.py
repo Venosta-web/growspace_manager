@@ -16,6 +16,7 @@ from custom_components.growspace_manager.models import (
     CirculationFanConfig,
     EnvironmentConfig,
     ExhaustFanConfig,
+    GrowLightConfig,
     IrrigationTank,
     SensorGroup,
 )
@@ -118,6 +119,53 @@ async def test_handle_configure_environment_preserves_exhaust_fan_config(
     assert preserved.enabled is True
     assert preserved.max_speed == 70
     mock_exhaust_migration.assert_called_once_with(mock_hass, mock_coordinator)
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_preserves_growlight(
+    mock_hass, mock_coordinator, mock_call, mock_exhaust_migration
+) -> None:
+    """Editing environment config must not reset the grow light controller."""
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig(
+        growlight_entities=["switch.grow"],
+        growlight_config=GrowLightConfig(enabled=True, power=80),
+    )
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    mock_call.data = {"growspace_id": "gs1", CONF_TEMP_SENSOR: "sensor.temp"}
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    preserved = mock_gs.environment_config
+    assert preserved.growlight_entities == ["switch.grow"]
+    assert preserved.growlight_config == GrowLightConfig(enabled=True, power=80)
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_restarts_growlight_controller(
+    mock_hass, mock_coordinator, mock_call, mock_exhaust_migration
+) -> None:
+    """Editing environment config restarts a running grow light controller.
+
+    configure_environment applies via targeted async_restart, not a full reload,
+    so the controller must be restarted or an enable does nothing until an HA
+    restart.
+    """
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    growlight_coord = MagicMock()
+    growlight_coord.async_restart = AsyncMock()
+    mock_coordinator._subsystem_manager.get_growlight_controller.return_value = (
+        growlight_coord
+    )
+    mock_call.data = {"growspace_id": "gs1", CONF_TEMP_SENSOR: "sensor.temp"}
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    growlight_coord.async_restart.assert_awaited_once()
 
 
 @pytest.mark.asyncio

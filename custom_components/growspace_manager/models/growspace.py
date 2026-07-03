@@ -47,6 +47,7 @@ __all__ = [
     "EnvironmentConfig",
     "EnvironmentState",
     "ExhaustFanConfig",
+    "GrowLightConfig",
     "Growspace",
     "GrowspaceEvent",
     "GrowspaceType",
@@ -174,6 +175,20 @@ class ExhaustFanConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class GrowLightConfig(BaseModel):
+    """Configuration for the schedule-driven grow light controller.
+
+    Unlike the fan/humidifier controllers this is not sensor-regulated: the
+    light holds ``power`` during the photoperiod (cycle start = the growspace's
+    ``lights_on_time``, end derived from veg/flower day hours) and is off
+    outside it.
+    """
+
+    enabled: bool = False
+    power: int = 100
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -194,6 +209,7 @@ class EnvironmentConfig(BaseModel):
     circulation_fan_entities: list[str] = field(default_factory=list)
     humidifier_entities: list[str] = field(default_factory=list)
     dehumidifier_entities: list[str] = field(default_factory=list)
+    growlight_entities: list[str] = field(default_factory=list)
 
     # AC Infinity actuator bundles, parallel to the plain *_entities lists above.
     exhaust_fan_ac_infinity_devices: list[ACInfinityDevice] = field(
@@ -247,6 +263,7 @@ class EnvironmentConfig(BaseModel):
         default_factory=CirculationFanConfig
     )
     exhaust_fan_config: ExhaustFanConfig = field(default_factory=ExhaustFanConfig)
+    growlight_config: GrowLightConfig = field(default_factory=GrowLightConfig)
     vpd_optimal_overrides: dict[str, dict[str, dict[str, float]]] = field(
         default_factory=dict
     )
@@ -311,6 +328,7 @@ class EnvironmentConfig(BaseModel):
             "circulation_fan_entities",
             "humidifier_entities",
             "dehumidifier_entities",
+            "growlight_entities",
             "exhaust_fan_ac_infinity_devices",
             "circulation_fan_ac_infinity_devices",
             "humidifier_ac_infinity_devices",
@@ -339,6 +357,9 @@ class EnvironmentConfig(BaseModel):
 
         if data.get("exhaust_fan_config") is None:
             data["exhaust_fan_config"] = {}
+
+        if data.get("growlight_config") is None:
+            data["growlight_config"] = {}
 
         # Migration: singular -> plural list
         migrations = {

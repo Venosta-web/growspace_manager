@@ -19,6 +19,9 @@ from custom_components.growspace_manager.dehumidifier_coordinator import (
 from custom_components.growspace_manager.exhaust_fan_coordinator import (
     ExhaustFanCoordinator,
 )
+from custom_components.growspace_manager.grow_light_coordinator import (
+    GrowLightCoordinator,
+)
 from custom_components.growspace_manager.humidifier_coordinator import (
     HumidifierCoordinator,
 )
@@ -129,6 +132,7 @@ class SubsystemManager:
             HumidifierCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
             CirculationFanCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
             ExhaustFanCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
+            GrowLightCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
         ]
         for controller in controllers:
             await controller.async_setup()
@@ -163,6 +167,15 @@ class SubsystemManager:
         """Return the exhaust fan coordinator for a growspace, or None."""
         for c in self.environment_controllers.get(growspace_id, []):
             if isinstance(c, ExhaustFanCoordinator):
+                return c
+        return None
+
+    def get_growlight_controller(
+        self, growspace_id: str
+    ) -> GrowLightCoordinator | None:
+        """Return the grow light coordinator for a growspace, or None."""
+        for c in self.environment_controllers.get(growspace_id, []):
+            if isinstance(c, GrowLightCoordinator):
                 return c
         return None
 

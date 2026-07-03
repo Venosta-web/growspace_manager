@@ -8,6 +8,7 @@ from custom_components.growspace_manager.actuator_driver import (
     ACInfinityDriver,
     FanDriver,
     GenericOnOffDriver,
+    LightDriver,
     SwitchDriver,
     resolve_actuator_driver,
     resolve_actuator_drivers,
@@ -139,7 +140,7 @@ async def test_resolve_actuator_driver_supported(
 
 async def test_resolve_actuator_driver_unsupported(mock_hass: MagicMock) -> None:
     """The resolver returns None for unsupported domains."""
-    assert resolve_actuator_driver(mock_hass, "light.grow") is None
+    assert resolve_actuator_driver(mock_hass, "climate.hvac") is None
 
 
 async def test_resolve_passes_switch_off_threshold(mock_hass: MagicMock) -> None:
@@ -290,7 +291,7 @@ async def test_resolve_actuator_drivers_merges_and_skips_unsupported(
     """The aggregator yields a driver per plain entity and AC Infinity bundle."""
     drivers = resolve_actuator_drivers(
         mock_hass,
-        ["fan.exhaust", "switch.damper", "light.unsupported"],
+        ["fan.exhaust", "switch.damper", "climate.unsupported"],
         [ACInfinityDevice(mode_entity="select.m", speed_entity="number.s")],
     )
     assert [type(d) for d in drivers] == [FanDriver, SwitchDriver, ACInfinityDriver]
@@ -380,3 +381,30 @@ async def test_generic_on_off_driver_set_speed(
     mock_hass.services.async_call.assert_awaited_once_with(
         "switch", service, {ATTR_ENTITY_ID: "switch.x"}, blocking=False
     )
+
+
+async def test_light_driver_set_speed_sets_brightness(mock_hass: MagicMock) -> None:
+    """LightDriver.set_speed drives brightness_pct for a non-zero demand."""
+    await LightDriver(mock_hass, "light.bar").set_speed(60)
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "light",
+        "turn_on",
+        {ATTR_ENTITY_ID: "light.bar", "brightness_pct": 60},
+        blocking=False,
+    )
+
+
+async def test_light_driver_set_speed_zero_turns_off(mock_hass: MagicMock) -> None:
+    """LightDriver.set_speed(0) turns the light off."""
+    await LightDriver(mock_hass, "light.bar").set_speed(0)
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "light",
+        "turn_off",
+        {ATTR_ENTITY_ID: "light.bar"},
+        blocking=False,
+    )
+
+
+def test_resolve_actuator_driver_returns_light_driver(mock_hass: MagicMock) -> None:
+    """A light.* entity resolves to a LightDriver."""
+    assert isinstance(resolve_actuator_driver(mock_hass, "light.bar"), LightDriver)

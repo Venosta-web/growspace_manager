@@ -55,6 +55,7 @@ from custom_components.growspace_manager.models import (
     CirculationFanConfig,
     EnvironmentConfig,
     ExhaustFanConfig,
+    GrowLightConfig,
     IrrigationTank,
     SensorGroup,
 )
@@ -313,6 +314,22 @@ async def handle_configure_environment(
             if growspace.environment_config
             else ExhaustFanConfig()
         ),
+        # Like the exhaust config, configure_environment carries no grow-light
+        # payload today; preserve the existing entities and controller settings
+        # so an unrelated environment edit doesn't reset the grow light.
+        growlight_entities=(
+            _get_list("growlight_entity", "growlight_entities")
+            or (
+                growspace.environment_config.growlight_entities
+                if growspace.environment_config
+                else []
+            )
+        ),
+        growlight_config=(
+            growspace.environment_config.growlight_config
+            if growspace.environment_config
+            else GrowLightConfig()
+        ),
         vpd_optimal_overrides=_validate_vpd_optimal_overrides(
             call.data.get("vpd_optimal_overrides")
         ),
@@ -332,6 +349,14 @@ async def handle_configure_environment(
     )
     if fan_coord:
         await fan_coord.async_restart()
+
+    # configure_environment applies via targeted restart, not a full reload, so
+    # the grow light controller must be restarted to pick up an enable/disable.
+    growlight_coord = coordinator._subsystem_manager.get_growlight_controller(
+        growspace_id
+    )
+    if growlight_coord:
+        await growlight_coord.async_restart()
 
     # Re-evaluate the exhaust-migration repair (ADR-0019): this rebuilds the
     # environment config (control_dehumidifier, exhaust_fan_entities) without a

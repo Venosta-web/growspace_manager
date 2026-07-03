@@ -111,6 +111,12 @@
     'feed_ec_sensors': list([
     ]),
     'flower_day_hours': 12,
+    'growlight_config': dict({
+      'enabled': False,
+      'power': 100,
+    }),
+    'growlight_entities': list([
+    ]),
     'humidifier_ac_infinity_devices': list([
     ]),
     'humidifier_entities': list([
@@ -269,6 +275,12 @@
       'feed_ec_sensors': list([
       ]),
       'flower_day_hours': 12,
+      'growlight_config': dict({
+        'enabled': False,
+        'power': 100,
+      }),
+      'growlight_entities': list([
+      ]),
       'humidifier_ac_infinity_devices': list([
       ]),
       'humidifier_entities': list([
