@@ -180,6 +180,16 @@ def mock_track_interval():
         yield mock
 
 
+@pytest.fixture(autouse=True)
+def mock_track_point():
+    """Patch the midnight reconcile scheduler for every test in this module."""
+    with patch(
+        "custom_components.growspace_manager.grow_light_coordinator.async_track_point_in_utc_time"
+    ) as mock:
+        mock.return_value = MagicMock()
+        yield mock
+
+
 async def test_setup_starts_tick_when_enabled(
     mock_hass: MagicMock, mock_track_interval: MagicMock
 ) -> None:
@@ -293,3 +303,105 @@ async def test_regulate_ignores_ac_infinity_devices(mock_hass: MagicMock) -> Non
         await coord._async_regulate()
 
     mock_hass.services.async_call.assert_not_awaited()
+
+
+def _wire_states(mock_hass: MagicMock, states: dict[str, str]) -> None:
+    """Make mock_hass.states.get return states for the given entity ids."""
+
+    def _get(entity_id: str) -> MagicMock | None:
+        if entity_id not in states:
+            return None
+        st = MagicMock()
+        st.state = states[entity_id]
+        return st
+
+    mock_hass.states.get.side_effect = _get
+
+
+async def test_setup_skips_push_when_schedule_already_matches(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """An AC Infinity device already holding the schedule is not re-pushed."""
+    device = _ac_device()
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[device], power=100)
+    # lights on 06:00, veg 18h -> off 00:00, power 100 -> intensity 10
+    _wire_states(
+        mock_hass,
+        {
+            "select.port_mode": "Schedule",
+            "time.port_on": "06:00:00",
+            "time.port_off": "00:00:00",
+            "number.port_power": "10",
+        },
+    )
+    coord = GrowLightCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator(env, lights_on_time="06:00:00")
+    )
+
+    with _patch_push() as mock_push:
+        await coord.async_setup()
+
+    mock_push.assert_not_awaited()
+
+
+async def test_setup_schedules_midnight_reconcile(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """An AC Infinity grow light arms a self-rescheduling midnight reconcile."""
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[_ac_device()])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    with _patch_push():
+        await coord.async_setup()
+
+    mock_track_point.assert_called_once()
+
+
+async def test_unload_cancels_midnight_reconcile(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """Unload cancels the midnight reconcile timer."""
+    cancel = MagicMock()
+    mock_track_point.return_value = cancel
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[_ac_device()])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    with _patch_push():
+        await coord.async_setup()
+        coord.unload()
+
+    cancel.assert_called_once()
+
+
+async def test_midnight_reconcile_repushes_shortened_flip_schedule(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """At the flip midnight, the reconcile re-pushes the 12h off-time (ADR-0025)."""
+    device = _ac_device()
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(
+        growlight_entities=[],
+        ac_infinity_devices=[device],
+        power=100,
+        veg_day_hours=18,
+        flower_day_hours=12,
+    )
+    coord = GrowLightCoordinator(
+        mock_hass,
+        MagicMock(),
+        "gs1",
+        _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering]),
+    )
+
+    with _at(datetime(2026, 7, 4, 0, 0, 0)), _patch_push() as mock_push:
+        await coord.async_setup()
+        midnight_cb = mock_track_point.call_args[0][1]
+        mock_push.reset_mock()
+        await midnight_cb(datetime(2026, 7, 4, 0, 0, 0))
+
+    # A plant has entered flower -> 12h from 06:00 -> lights off at 18:00.
+    mock_push.assert_awaited_once_with(
+        mock_hass, device, on_time="06:00:00", off_time="18:00:00", power=100
+    )
+    # The timer re-arms itself (startup call + reschedule after the callback).
+    assert mock_track_point.call_count == 2

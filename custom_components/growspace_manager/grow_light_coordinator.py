@@ -17,7 +17,10 @@ from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.event import (
+    async_track_point_in_utc_time,
+    async_track_time_interval,
+)
 from homeassistant.util import dt as dt_util
 
 from .actuator_driver import resolve_actuator_drivers
@@ -26,9 +29,14 @@ from .domain.light_schedule import (
     resolve_cycle_end_time,
     resolve_photoperiod_hours,
 )
-from .grow_light_ac_infinity import push_ac_infinity_schedule
+from .grow_light_ac_infinity import (
+    ac_infinity_schedule_matches,
+    push_ac_infinity_schedule,
+)
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from .coordinator import GrowspaceCoordinator
     from .models import EnvironmentConfig, Growspace
 
@@ -53,6 +61,7 @@ class GrowLightCoordinator:
         self.growspace_id = growspace_id
         self.main_coordinator = main_coordinator
         self._remove_tick: Callable[[], None] | None = None
+        self._remove_reconcile: Callable[[], None] | None = None
 
     @property
     def _growspace(self) -> Growspace | None:
@@ -85,9 +94,12 @@ class GrowLightCoordinator:
                 self.hass, self._on_tick, _TICK_INTERVAL
             )
 
-        # AC Infinity lights are configured once and then run autonomously.
+        # AC Infinity lights run their onboard schedule autonomously; GSM writes
+        # it (startup pass) and re-derives it at each local midnight so the
+        # veg->flower flip re-pushes the shortened photoperiod (ADR-0025).
         if env.growlight_ac_infinity_devices:
-            await self._push_ac_infinity_schedules(env)
+            await self._reconcile_ac_infinity_schedules(env)
+            self._schedule_next_reconcile()
 
         _LOGGER.info("GrowLightCoordinator started for %s", self.growspace_id)
 
@@ -130,28 +142,69 @@ class GrowLightCoordinator:
             plants, env.veg_day_hours, env.flower_day_hours, dt_util.now().date()
         )
 
-    async def _push_ac_infinity_schedules(self, env: EnvironmentConfig) -> None:
-        """Write the derived schedule to every configured AC Infinity grow light."""
+    async def _reconcile_ac_infinity_schedules(self, env: EnvironmentConfig) -> None:
+        """Re-push the derived schedule to any AC Infinity light that has drifted.
+
+        Idempotent: a device already holding the desired schedule is left alone,
+        so the steady-state midnight pass is a cheap comparison, not a write.
+        """
         gs = self._growspace
         assert gs is not None  # guarded by callers via _env_config
         on_time = gs.irrigation_strategy.lights_on_time
         off_time = resolve_cycle_end_time(on_time, self._photoperiod_hours(env))
+        power = env.growlight_config.power
         for device in env.growlight_ac_infinity_devices:
-            await push_ac_infinity_schedule(
-                self.hass,
-                device,
-                on_time=on_time,
-                off_time=off_time,
-                power=env.growlight_config.power,
+            if not ac_infinity_schedule_matches(
+                self.hass, device, on_time=on_time, off_time=off_time, power=power
+            ):
+                await push_ac_infinity_schedule(
+                    self.hass,
+                    device,
+                    on_time=on_time,
+                    off_time=off_time,
+                    power=power,
+                )
+
+    def _schedule_next_reconcile(self) -> None:
+        """Schedule the next local-midnight re-derivation (self-rescheduling)."""
+        self._cancel_reconcile_timer()
+        now = dt_util.now()
+        next_midnight = now.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) + timedelta(days=1)
+        self._remove_reconcile = async_track_point_in_utc_time(
+            self.hass, self._on_midnight_reconcile, next_midnight
+        )
+
+    async def _on_midnight_reconcile(self, _now: datetime) -> None:
+        """Re-derive and re-push at midnight (catches the veg->flower flip)."""
+        try:
+            env = self._env_config
+            if (
+                env is not None
+                and env.growlight_config.enabled
+                and env.growlight_ac_infinity_devices
+            ):
+                await self._reconcile_ac_infinity_schedules(env)
+        except Exception:
+            _LOGGER.exception(
+                "Error reconciling grow light schedule for %s", self.growspace_id
             )
+        self._schedule_next_reconcile()
+
+    def _cancel_reconcile_timer(self) -> None:
+        if self._remove_reconcile is not None:
+            self._remove_reconcile()
+            self._remove_reconcile = None
 
     async def async_restart(self) -> None:
-        """Restart the reconcile tick after a config change."""
+        """Restart the controller after a config change."""
         self.unload()
         await self.async_setup()
 
     def unload(self) -> None:
-        """Stop the reconcile tick."""
+        """Stop the live tick and the midnight reconcile timer."""
         if self._remove_tick is not None:
             self._remove_tick()
             self._remove_tick = None
+        self._cancel_reconcile_timer()

@@ -52,6 +52,41 @@ async def _safe_call(
         )
 
 
+def ac_infinity_schedule_matches(
+    hass: HomeAssistant,
+    device: ACInfinityGrowLight,
+    *,
+    on_time: str,
+    off_time: str,
+    power: int,
+) -> bool:
+    """Return whether the port already holds the desired schedule.
+
+    Lets the caller skip an unnecessary re-push. A missing or unparseable
+    reading counts as a mismatch (push and converge) — ``ac_infinity`` is
+    cloud-polled, so a just-written value that has not read back yet may cause a
+    harmless extra push rather than a silently stale schedule.
+    """
+    expected = {
+        device.mode_entity: _SCHEDULE_MODE,
+        device.on_time_entity: on_time,
+        device.off_time_entity: off_time,
+    }
+    for entity_id, want in expected.items():
+        state = hass.states.get(entity_id)
+        if state is None or state.state != want:
+            return False
+
+    power_state = hass.states.get(device.power_entity)
+    if power_state is None:
+        return False
+    try:
+        current = round(float(power_state.state))
+    except TypeError, ValueError:
+        return False
+    return current == _scale_power_to_intensity(power)
+
+
 async def push_ac_infinity_schedule(
     hass: HomeAssistant,
     device: ACInfinityGrowLight,
