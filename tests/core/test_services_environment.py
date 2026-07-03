@@ -13,6 +13,7 @@ from custom_components.growspace_manager.const import (
     CONF_TEMP_SENSOR,
 )
 from custom_components.growspace_manager.models import (
+    ACInfinityGrowLight,
     CirculationFanConfig,
     EnvironmentConfig,
     ExhaustFanConfig,
@@ -140,6 +141,30 @@ async def test_handle_configure_environment_preserves_growlight(
     preserved = mock_gs.environment_config
     assert preserved.growlight_entities == ["switch.grow"]
     assert preserved.growlight_config == GrowLightConfig(enabled=True, power=80)
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_preserves_growlight_ac_infinity(
+    mock_hass, mock_coordinator, mock_call, mock_exhaust_migration
+) -> None:
+    """An unrelated environment edit must not drop AC Infinity grow light bundles."""
+    device = ACInfinityGrowLight(
+        mode_entity="select.m",
+        on_time_entity="time.on",
+        off_time_entity="time.off",
+        power_entity="number.p",
+    )
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig(
+        growlight_ac_infinity_devices=[device],
+    )
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    mock_call.data = {"growspace_id": "gs1", CONF_TEMP_SENSOR: "sensor.temp"}
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert mock_gs.environment_config.growlight_ac_infinity_devices == [device]
 
 
 @pytest.mark.asyncio

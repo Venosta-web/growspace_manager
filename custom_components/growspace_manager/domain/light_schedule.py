@@ -60,3 +60,10 @@ def desired_grow_light_power(
     if offset < window_minutes:
         return power
     return 0
+
+
+def resolve_cycle_end_time(lights_on_time: str, photoperiod_hours: float) -> str:
+    """Return the lights-off wall-clock time as ``HH:MM:SS``, wrapping midnight."""
+    start = _minutes_since_midnight(lights_on_time)
+    end = (start + round(photoperiod_hours * 60)) % (24 * 60)
+    return f"{end // 60:02d}:{end % 60:02d}:00"

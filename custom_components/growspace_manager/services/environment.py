@@ -330,6 +330,11 @@ async def handle_configure_environment(
             if growspace.environment_config
             else GrowLightConfig()
         ),
+        growlight_ac_infinity_devices=(
+            growspace.environment_config.growlight_ac_infinity_devices
+            if growspace.environment_config
+            else []
+        ),
         vpd_optimal_overrides=_validate_vpd_optimal_overrides(
             call.data.get("vpd_optimal_overrides")
         ),

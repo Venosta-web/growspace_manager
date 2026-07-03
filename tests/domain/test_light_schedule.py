@@ -7,6 +7,7 @@ import pytest
 
 from custom_components.growspace_manager.domain.light_schedule import (
     desired_grow_light_power,
+    resolve_cycle_end_time,
     resolve_photoperiod_hours,
 )
 
@@ -55,3 +56,17 @@ def test_photoperiod_hours_follow_entered_flower(
 ) -> None:
     """Day length drops to flower hours once any plant has entered flower."""
     assert resolve_photoperiod_hours(plants, 18, 12, _TODAY) == expected
+
+
+@pytest.mark.parametrize(
+    ("lights_on", "hours", "expected_end"),
+    [
+        ("06:00:00", 12, "18:00:00"),
+        ("06:00:00", 18, "00:00:00"),  # ends exactly at midnight
+        ("20:00:00", 18, "14:00:00"),  # wraps past midnight
+        ("06:30:00", 11.5, "18:00:00"),  # fractional hours
+    ],
+)
+def test_resolve_cycle_end_time(lights_on: str, hours: float, expected_end: str) -> None:
+    """Cycle end is lights-on plus the photoperiod, wrapping across midnight."""
+    assert resolve_cycle_end_time(lights_on, hours) == expected_end

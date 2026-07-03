@@ -1,6 +1,7 @@
 """Tests for the Grow Light Controller config on EnvironmentConfig."""
 
 from custom_components.growspace_manager.models import (
+    ACInfinityGrowLight,
     EnvironmentConfig,
     GrowLightConfig,
 )
@@ -33,3 +34,28 @@ def test_growlight_fields_coerce_null_stored_values() -> None:
     )
     assert config.growlight_entities == []
     assert config.growlight_config == GrowLightConfig()
+
+
+def test_ac_infinity_growlight_defaults_to_empty_list() -> None:
+    """The AC Infinity grow light bundle list defaults to empty when absent."""
+    config = EnvironmentConfig.from_dict({})
+    assert config.growlight_ac_infinity_devices == []
+
+
+def test_ac_infinity_growlight_round_trips() -> None:
+    """An AC Infinity grow light bundle serializes and deserializes unchanged."""
+    device = ACInfinityGrowLight(
+        mode_entity="select.port_mode",
+        on_time_entity="time.port_on",
+        off_time_entity="time.port_off",
+        power_entity="number.port_power",
+    )
+    config = EnvironmentConfig(growlight_ac_infinity_devices=[device])
+    restored = EnvironmentConfig.from_dict(config.to_dict())
+    assert restored.growlight_ac_infinity_devices == [device]
+
+
+def test_ac_infinity_growlight_coerces_null_stored_value() -> None:
+    """A null stored bundle list coerces to an empty list."""
+    config = EnvironmentConfig.from_dict({"growlight_ac_infinity_devices": None})
+    assert config.growlight_ac_infinity_devices == []

@@ -111,6 +111,8 @@
     'feed_ec_sensors': list([
     ]),
     'flower_day_hours': 12,
+    'growlight_ac_infinity_devices': list([
+    ]),
     'growlight_config': dict({
       'enabled': False,
       'power': 100,
@@ -275,6 +277,8 @@
       'feed_ec_sensors': list([
       ]),
       'flower_day_hours': 12,
+      'growlight_ac_infinity_devices': list([
+      ]),
       'growlight_config': dict({
         'enabled': False,
         'power': 100,

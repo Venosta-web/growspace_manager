@@ -11,6 +11,7 @@ from .contract import GrowspaceCoordinatorData
 from .genetics import PollinationEvent, SeedBatch
 from .growspace import (
     ACInfinityDevice,
+    ACInfinityGrowLight,
     CirculationFanConfig,
     DLIState,
     EnergyTracking,
@@ -69,6 +70,7 @@ from .types import (
 # Explicit __all__ list for documentation and IDE support
 __all__ = [
     "ACInfinityDevice",
+    "ACInfinityGrowLight",
     # base
     "BaseModel",
     "BasePreset",

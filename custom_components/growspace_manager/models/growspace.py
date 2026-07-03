@@ -100,6 +100,23 @@ class ACInfinityDevice(BaseModel):
 
 
 @dataclass(slots=True)
+class ACInfinityGrowLight(BaseModel):
+    """An AC Infinity port driven as a grow light configurator (ADR-0023/0024).
+
+    Unlike ``ACInfinityDevice`` (driven via the ``On``/``Off`` mode select), a
+    grow light is configured into the device's onboard ``Schedule`` mode and then
+    runs autonomously. The bundle captures each entity ID verbatim: the
+    ``active_mode`` select, the on/off ``time`` entities, and the ``on_power``
+    number. (Sunrise entities are added by a later slice.)
+    """
+
+    mode_entity: str
+    on_time_entity: str
+    off_time_entity: str
+    power_entity: str
+
+
+@dataclass(slots=True)
 class VisionCheckupResult(BaseModel):
     """Result of an AI vision checkup analysis."""
 
@@ -224,6 +241,9 @@ class EnvironmentConfig(BaseModel):
     dehumidifier_ac_infinity_devices: list[ACInfinityDevice] = field(
         default_factory=list
     )
+    growlight_ac_infinity_devices: list[ACInfinityGrowLight] = field(
+        default_factory=list
+    )
 
     # 3D Sensor Configuration
     sensor_coordinates: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -333,6 +353,7 @@ class EnvironmentConfig(BaseModel):
             "circulation_fan_ac_infinity_devices",
             "humidifier_ac_infinity_devices",
             "dehumidifier_ac_infinity_devices",
+            "growlight_ac_infinity_devices",
             "sensor_groups",
             "substrate_temperature_sensors",
             "camera_entities",
