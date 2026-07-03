@@ -150,19 +150,27 @@ class GrowLightCoordinator:
         """
         gs = self._growspace
         assert gs is not None  # guarded by callers via _env_config
+        cfg = env.growlight_config
         on_time = gs.irrigation_strategy.lights_on_time
         off_time = resolve_cycle_end_time(on_time, self._photoperiod_hours(env))
-        power = env.growlight_config.power
         for device in env.growlight_ac_infinity_devices:
             if not ac_infinity_schedule_matches(
-                self.hass, device, on_time=on_time, off_time=off_time, power=power
+                self.hass,
+                device,
+                on_time=on_time,
+                off_time=off_time,
+                power=cfg.power,
+                sunrise_enabled=cfg.sunrise_enabled,
+                sunrise_minutes=cfg.sunrise_minutes,
             ):
                 await push_ac_infinity_schedule(
                     self.hass,
                     device,
                     on_time=on_time,
                     off_time=off_time,
-                    power=power,
+                    power=cfg.power,
+                    sunrise_enabled=cfg.sunrise_enabled,
+                    sunrise_minutes=cfg.sunrise_minutes,
                 )
 
     def _schedule_next_reconcile(self) -> None:

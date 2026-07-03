@@ -150,3 +150,158 @@ async def test_schedule_mismatch_requires_push(
         )
         is False
     )
+
+
+def _sunrise_device() -> ACInfinityGrowLight:
+    return ACInfinityGrowLight(
+        mode_entity="select.port_mode",
+        on_time_entity="time.port_on",
+        off_time_entity="time.port_off",
+        power_entity="number.port_power",
+        sunrise_switch_entity="switch.port_sunrise",
+        sunrise_duration_entity="number.port_sunrise_minutes",
+    )
+
+
+async def test_push_enables_sunrise_switch_and_duration(mock_hass: MagicMock) -> None:
+    """With sunrise on, the configurator enables the switch and writes the ramp."""
+    await push_ac_infinity_schedule(
+        mock_hass,
+        _sunrise_device(),
+        on_time="06:00:00",
+        off_time="18:00:00",
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=15,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "switch",
+        "turn_on",
+        {ATTR_ENTITY_ID: "switch.port_sunrise"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.port_sunrise_minutes", "value": 15},
+        blocking=False,
+    )
+    assert mock_hass.services.async_call.await_count == 6
+
+
+async def test_push_disables_sunrise_switch(mock_hass: MagicMock) -> None:
+    """With sunrise off, the configurator turns the switch off and skips the ramp."""
+    await push_ac_infinity_schedule(
+        mock_hass,
+        _sunrise_device(),
+        on_time="06:00:00",
+        off_time="18:00:00",
+        power=100,
+        sunrise_enabled=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "switch",
+        "turn_off",
+        {ATTR_ENTITY_ID: "switch.port_sunrise"},
+        blocking=False,
+    )
+    assert mock_hass.services.async_call.await_count == 5
+
+
+async def test_push_skips_sunrise_when_device_has_no_sunrise_entities(
+    mock_hass: MagicMock,
+) -> None:
+    """A device without sunrise entities gets only the base schedule writes."""
+    await push_ac_infinity_schedule(
+        mock_hass,
+        _device(),
+        on_time="06:00:00",
+        off_time="18:00:00",
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=15,
+    )
+    assert mock_hass.services.async_call.await_count == 4
+
+
+def _sunrise_matching_states() -> dict[str, str]:
+    return _matching_states() | {
+        "switch.port_sunrise": "on",
+        "number.port_sunrise_minutes": "15",
+    }
+
+
+async def test_schedule_matches_includes_sunrise(mock_hass: MagicMock) -> None:
+    """A device already holding the sunrise settings needs no re-push."""
+    from custom_components.growspace_manager.grow_light_ac_infinity import (
+        ac_infinity_schedule_matches,
+    )
+
+    _hass_with_states(mock_hass, _sunrise_matching_states())
+    assert (
+        ac_infinity_schedule_matches(
+            mock_hass,
+            _sunrise_device(),
+            on_time="06:00:00",
+            off_time="18:00:00",
+            power=100,
+            sunrise_enabled=True,
+            sunrise_minutes=15,
+        )
+        is True
+    )
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"switch.port_sunrise": "off"},  # sunrise should be on
+        {"number.port_sunrise_minutes": "10"},  # ramp duration drifted
+        {"switch.port_sunrise": None},  # sunrise switch unavailable
+    ],
+)
+async def test_schedule_mismatch_on_sunrise_drift(
+    mock_hass: MagicMock, override: dict[str, str | None]
+) -> None:
+    """Sunrise drift from the desired settings requires a re-push."""
+    from custom_components.growspace_manager.grow_light_ac_infinity import (
+        ac_infinity_schedule_matches,
+    )
+
+    _hass_with_states(mock_hass, _sunrise_matching_states() | override)
+    assert (
+        ac_infinity_schedule_matches(
+            mock_hass,
+            _sunrise_device(),
+            on_time="06:00:00",
+            off_time="18:00:00",
+            power=100,
+            sunrise_enabled=True,
+            sunrise_minutes=15,
+        )
+        is False
+    )
+
+
+async def test_schedule_matches_when_sunrise_disabled_and_switch_off(
+    mock_hass: MagicMock,
+) -> None:
+    """With sunrise disabled, a device holding the switch off matches."""
+    from custom_components.growspace_manager.grow_light_ac_infinity import (
+        ac_infinity_schedule_matches,
+    )
+
+    _hass_with_states(
+        mock_hass, _matching_states() | {"switch.port_sunrise": "off"}
+    )
+    assert (
+        ac_infinity_schedule_matches(
+            mock_hass,
+            _sunrise_device(),
+            on_time="06:00:00",
+            off_time="18:00:00",
+            power=100,
+            sunrise_enabled=False,
+        )
+        is True
+    )

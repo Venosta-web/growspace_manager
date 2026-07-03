@@ -12,7 +12,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    SERVICE_TURN_OFF,
+    SERVICE_TURN_ON,
+    STATE_ON,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -24,9 +29,16 @@ _LOGGER = logging.getLogger(__name__)
 # The AC Infinity Active Mode option that runs the onboard schedule autonomously.
 _SCHEDULE_MODE = "Schedule"
 # The on_power number takes an integer intensity in this range, not a percentage.
-# This 1-10 scale mirrors the shipped ACInfinityDriver speed number (ADR-0022);
-# the schedule-mode on_power range is unverified on real hardware — confirm the
-# number entity's min/max/step before trusting it in production (see #517/#428).
+# This 1-10 scale mirrors the shipped ACInfinityDriver speed number (ADR-0022).
+#
+# Device-contract assumptions unverified on real hardware — confirm before
+# trusting in production (see #517/#428). A mismatch degrades gracefully: the
+# write format is independent of the read-back format, so the schedule is still
+# correct; only the idempotency check silently fails, causing a redundant daily
+# re-push, not a corrupt schedule.
+#   - on_power number's min/max/step (the 1-10 scale above);
+#   - sunrise onTimeSwitch is a switch.* reading back "on"/"off";
+#   - sunrise onTime ramp is a number.* written in raw minutes (unscaled).
 _INTENSITY_MIN = 1
 _INTENSITY_MAX = 10
 
@@ -59,6 +71,8 @@ def ac_infinity_schedule_matches(
     on_time: str,
     off_time: str,
     power: int,
+    sunrise_enabled: bool = False,
+    sunrise_minutes: int = 0,
 ) -> bool:
     """Return whether the port already holds the desired schedule.
 
@@ -84,7 +98,38 @@ def ac_infinity_schedule_matches(
         current = round(float(power_state.state))
     except TypeError, ValueError:
         return False
-    return current == _scale_power_to_intensity(power)
+    if current != _scale_power_to_intensity(power):
+        return False
+
+    return _sunrise_matches(hass, device, sunrise_enabled, sunrise_minutes)
+
+
+def _sunrise_matches(
+    hass: HomeAssistant,
+    device: ACInfinityGrowLight,
+    sunrise_enabled: bool,
+    sunrise_minutes: int,
+) -> bool:
+    """Return whether the port's sunrise setting matches the desired one."""
+    if not device.sunrise_switch_entity:
+        return True
+
+    switch_state = hass.states.get(device.sunrise_switch_entity)
+    if switch_state is None:
+        return False
+    if (switch_state.state == STATE_ON) != sunrise_enabled:
+        return False
+
+    if not sunrise_enabled or not device.sunrise_duration_entity:
+        return True
+
+    duration_state = hass.states.get(device.sunrise_duration_entity)
+    if duration_state is None:
+        return False
+    try:
+        return round(float(duration_state.state)) == sunrise_minutes
+    except TypeError, ValueError:
+        return False
 
 
 async def push_ac_infinity_schedule(
@@ -94,8 +139,10 @@ async def push_ac_infinity_schedule(
     on_time: str,
     off_time: str,
     power: int,
+    sunrise_enabled: bool = False,
+    sunrise_minutes: int = 0,
 ) -> None:
-    """Write the onboard schedule to one AC Infinity grow-light port."""
+    """Write the onboard schedule (and native sunrise ramp) to one port."""
     await _safe_call(
         hass,
         "select",
@@ -123,3 +170,36 @@ async def push_ac_infinity_schedule(
             "value": _scale_power_to_intensity(power),
         },
     )
+    await _push_sunrise(hass, device, sunrise_enabled, sunrise_minutes)
+
+
+async def _push_sunrise(
+    hass: HomeAssistant,
+    device: ACInfinityGrowLight,
+    sunrise_enabled: bool,
+    sunrise_minutes: int,
+) -> None:
+    """Configure the native sunrise ramp, if the port exposes it."""
+    if not device.sunrise_switch_entity:
+        return
+    if not sunrise_enabled:
+        await _safe_call(
+            hass,
+            "switch",
+            SERVICE_TURN_OFF,
+            {ATTR_ENTITY_ID: device.sunrise_switch_entity},
+        )
+        return
+    await _safe_call(
+        hass,
+        "switch",
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: device.sunrise_switch_entity},
+    )
+    if device.sunrise_duration_entity:
+        await _safe_call(
+            hass,
+            "number",
+            "set_value",
+            {ATTR_ENTITY_ID: device.sunrise_duration_entity, "value": sunrise_minutes},
+        )

@@ -114,6 +114,8 @@ class ACInfinityGrowLight(BaseModel):
     on_time_entity: str
     off_time_entity: str
     power_entity: str
+    sunrise_switch_entity: str = ""
+    sunrise_duration_entity: str = ""
 
 
 @dataclass(slots=True)
@@ -203,6 +205,8 @@ class GrowLightConfig(BaseModel):
 
     enabled: bool = False
     power: int = 100
+    sunrise_enabled: bool = False
+    sunrise_minutes: int = 0
 
 
 @dataclass(slots=True)

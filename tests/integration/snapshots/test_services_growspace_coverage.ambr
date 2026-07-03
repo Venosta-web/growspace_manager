@@ -104,6 +104,8 @@
       'growlight_config': dict({
         'enabled': False,
         'power': 100,
+        'sunrise_enabled': False,
+        'sunrise_minutes': 0,
       }),
       'growlight_entities': list([
       ]),

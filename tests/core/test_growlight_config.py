@@ -59,3 +59,38 @@ def test_ac_infinity_growlight_coerces_null_stored_value() -> None:
     """A null stored bundle list coerces to an empty list."""
     config = EnvironmentConfig.from_dict({"growlight_ac_infinity_devices": None})
     assert config.growlight_ac_infinity_devices == []
+
+
+def test_growlight_config_sunrise_defaults() -> None:
+    """Sunrise is off by default with a zero ramp."""
+    cfg = GrowLightConfig()
+    assert cfg.sunrise_enabled is False
+    assert cfg.sunrise_minutes == 0
+
+
+def test_growlight_config_sunrise_round_trips() -> None:
+    """Sunrise settings serialize and deserialize unchanged."""
+    config = EnvironmentConfig(
+        growlight_config=GrowLightConfig(
+            enabled=True, power=90, sunrise_enabled=True, sunrise_minutes=15
+        )
+    )
+    restored = EnvironmentConfig.from_dict(config.to_dict())
+    assert restored.growlight_config == GrowLightConfig(
+        enabled=True, power=90, sunrise_enabled=True, sunrise_minutes=15
+    )
+
+
+def test_ac_infinity_growlight_sunrise_entities_round_trip() -> None:
+    """The AC Infinity bundle carries its sunrise switch and duration entities."""
+    device = ACInfinityGrowLight(
+        mode_entity="select.port_mode",
+        on_time_entity="time.port_on",
+        off_time_entity="time.port_off",
+        power_entity="number.port_power",
+        sunrise_switch_entity="switch.port_sunrise",
+        sunrise_duration_entity="number.port_sunrise_minutes",
+    )
+    config = EnvironmentConfig(growlight_ac_infinity_devices=[device])
+    restored = EnvironmentConfig.from_dict(config.to_dict())
+    assert restored.growlight_ac_infinity_devices == [device]

@@ -33,6 +33,8 @@ def _make_env(
     power: int = 100,
     growlight_entities: list[str] | None = None,
     ac_infinity_devices: list[ACInfinityGrowLight] | None = None,
+    sunrise_enabled: bool = False,
+    sunrise_minutes: int = 0,
     veg_day_hours: int = 18,
     flower_day_hours: int = 12,
 ) -> EnvironmentConfig:
@@ -41,7 +43,12 @@ def _make_env(
     return EnvironmentConfig(
         growlight_entities=growlight_entities,
         growlight_ac_infinity_devices=ac_infinity_devices or [],
-        growlight_config=GrowLightConfig(enabled=enabled, power=power),
+        growlight_config=GrowLightConfig(
+            enabled=enabled,
+            power=power,
+            sunrise_enabled=sunrise_enabled,
+            sunrise_minutes=sunrise_minutes,
+        ),
         veg_day_hours=veg_day_hours,
         flower_day_hours=flower_day_hours,
     )
@@ -246,7 +253,13 @@ async def test_setup_pushes_ac_infinity_schedule(
         await coord.async_setup()
 
     mock_push.assert_awaited_once_with(
-        mock_hass, device, on_time="06:00:00", off_time="00:00:00", power=80
+        mock_hass,
+        device,
+        on_time="06:00:00",
+        off_time="00:00:00",
+        power=80,
+        sunrise_enabled=False,
+        sunrise_minutes=0,
     )
 
 
@@ -401,7 +414,93 @@ async def test_midnight_reconcile_repushes_shortened_flip_schedule(
 
     # A plant has entered flower -> 12h from 06:00 -> lights off at 18:00.
     mock_push.assert_awaited_once_with(
-        mock_hass, device, on_time="06:00:00", off_time="18:00:00", power=100
+        mock_hass,
+        device,
+        on_time="06:00:00",
+        off_time="18:00:00",
+        power=100,
+        sunrise_enabled=False,
+        sunrise_minutes=0,
     )
     # The timer re-arms itself (startup call + reschedule after the callback).
     assert mock_track_point.call_count == 2
+
+
+def _sunrise_ac_device() -> ACInfinityGrowLight:
+    return ACInfinityGrowLight(
+        mode_entity="select.port_mode",
+        on_time_entity="time.port_on",
+        off_time_entity="time.port_off",
+        power_entity="number.port_power",
+        sunrise_switch_entity="switch.port_sunrise",
+        sunrise_duration_entity="number.port_sunrise_minutes",
+    )
+
+
+async def test_setup_pushes_sunrise_config(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """The reconcile threads the growspace's sunrise settings into the push."""
+    device = _sunrise_ac_device()
+    env = _make_env(
+        growlight_entities=[],
+        ac_infinity_devices=[device],
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=20,
+    )
+    coord = GrowLightCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator(env, lights_on_time="06:00:00")
+    )
+
+    with _patch_push() as mock_push:
+        await coord.async_setup()
+
+    mock_push.assert_awaited_once_with(
+        mock_hass,
+        device,
+        on_time="06:00:00",
+        off_time="00:00:00",
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=20,
+    )
+
+
+async def test_midnight_reconcile_repushes_sunrise_on_flip(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """The flip re-push carries the sunrise settings, not just the shortened times."""
+    device = _sunrise_ac_device()
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(
+        growlight_entities=[],
+        ac_infinity_devices=[device],
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=20,
+        veg_day_hours=18,
+        flower_day_hours=12,
+    )
+    coord = GrowLightCoordinator(
+        mock_hass,
+        MagicMock(),
+        "gs1",
+        _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering]),
+    )
+
+    with _at(datetime(2026, 7, 4, 0, 0, 0)), _patch_push() as mock_push:
+        await coord.async_setup()
+        midnight_cb = mock_track_point.call_args[0][1]
+        mock_push.reset_mock()
+        await midnight_cb(datetime(2026, 7, 4, 0, 0, 0))
+
+    mock_push.assert_awaited_once_with(
+        mock_hass,
+        device,
+        on_time="06:00:00",
+        off_time="18:00:00",
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=20,
+    )
