@@ -70,12 +70,18 @@ def _make_coordinator(
     plants: list | None = None,
 ) -> MagicMock:
     gs = MagicMock()
+    gs.name = "Test Tent"
     gs.environment_config = env
     gs.irrigation_strategy.lights_on_time = lights_on_time
     coord = MagicMock()
     coord.growspaces = {"gs1": gs}
     coord.services.growspaces.get_growspace_plants.return_value = plants or []
+    coord.services.notifications.manager.async_send_notification = AsyncMock()
     return coord
+
+
+def _notify(main_coord: MagicMock) -> AsyncMock:
+    return main_coord.services.notifications.manager.async_send_notification
 
 
 def _at(now: datetime):
@@ -504,3 +510,106 @@ async def test_midnight_reconcile_repushes_sunrise_on_flip(
         sunrise_enabled=True,
         sunrise_minutes=20,
     )
+
+
+async def test_startup_warns_when_plain_light_on_during_dark_period(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """A stale-on plain grow light in the dark period warns at startup (#519)."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "on"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    # 20:00 is past the 12h flower off-time (18:00): the light should be off.
+    with _at(datetime(2026, 7, 3, 20, 0, 0)):
+        await coord.async_setup()
+
+    _notify(main_coord).assert_awaited_once()
+    _title, message = _notify(main_coord).call_args.args[1:3]
+    assert "verify" in message.lower()
+
+
+async def test_startup_warns_when_ac_infinity_held_window_still_lit(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """A stale AC Infinity onboard schedule that is still lit warns at startup."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    device = _ac_device()
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[device])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    # Device still holds the veg schedule (off at 00:00) -> lit at 20:00.
+    _wire_states(
+        mock_hass,
+        {"time.port_on": "06:00:00", "time.port_off": "00:00:00"},
+    )
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 20, 0, 0)), _patch_push():
+        await coord.async_setup()
+
+    _notify(main_coord).assert_awaited_once()
+
+
+async def test_startup_no_warn_when_light_should_be_on(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """No warning when now is inside the photoperiod (light legitimately on)."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "on"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 12, 0, 0)):  # inside 06:00-18:00
+        await coord.async_setup()
+
+    _notify(main_coord).assert_not_awaited()
+
+
+async def test_startup_no_warn_when_light_off_in_dark_period(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """No warning when the light is correctly off during the dark period."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "off"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 20, 0, 0)):
+        await coord.async_setup()
+
+    _notify(main_coord).assert_not_awaited()
+
+
+async def test_steady_state_tick_does_not_warn(mock_hass: MagicMock) -> None:
+    """A routine tick through the off-boundary must never warn (regression)."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "on"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 18, 0, 0)):  # exactly at flower off-boundary
+        await coord._async_regulate()
+
+    _notify(main_coord).assert_not_awaited()
+
+
+async def test_startup_warns_only_once_per_day(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """Repeated setups on the same day warn only once."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "on"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 20, 0, 0)):
+        await coord.async_setup()
+        await coord.async_setup()
+
+    _notify(main_coord).assert_awaited_once()

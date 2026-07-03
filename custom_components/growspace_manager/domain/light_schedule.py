@@ -67,3 +67,12 @@ def resolve_cycle_end_time(lights_on_time: str, photoperiod_hours: float) -> str
     start = _minutes_since_midnight(lights_on_time)
     end = (start + round(photoperiod_hours * 60)) % (24 * 60)
     return f"{end // 60:02d}:{end % 60:02d}:00"
+
+
+def is_within_window(now: datetime, on_time: str, off_time: str) -> bool:
+    """Return whether ``now`` falls inside the ``[on, off)`` window (wraps midnight)."""
+    start = _minutes_since_midnight(on_time)
+    end = _minutes_since_midnight(off_time)
+    duration = (end - start) % (24 * 60) or (24 * 60)
+    now_min = now.hour * 60 + now.minute
+    return (now_min - start) % (24 * 60) < duration

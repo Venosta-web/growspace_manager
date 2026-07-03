@@ -24,8 +24,10 @@ from homeassistant.helpers.event import (
 from homeassistant.util import dt as dt_util
 
 from .actuator_driver import resolve_actuator_drivers
+from .const import NotificationTier
 from .domain.light_schedule import (
     desired_grow_light_power,
+    is_within_window,
     resolve_cycle_end_time,
     resolve_photoperiod_hours,
 )
@@ -35,7 +37,7 @@ from .grow_light_ac_infinity import (
 )
 
 if TYPE_CHECKING:
-    from datetime import datetime
+    from datetime import date, datetime
 
     from .coordinator import GrowspaceCoordinator
     from .models import EnvironmentConfig, Growspace
@@ -43,6 +45,17 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _TICK_INTERVAL = timedelta(seconds=10)
+
+# Sent when the controller starts up and finds a grow light still lit during
+# what is now the dark period — e.g. the veg->flower flip shortened the day
+# while GSM was down, so the light ran past its new off-time (ADR "Photoperiod
+# Flip Transition"). The dark period is what matters biologically, so this warns
+# rather than silently cutting the light.
+_DARK_PERIOD_MESSAGE = (
+    "Grow light was still on during the dark period; switching it off now. "
+    "The light day may have shortened while Home Assistant was offline — verify "
+    "your plants did not get light leak."
+)
 
 
 class GrowLightCoordinator:
@@ -62,6 +75,7 @@ class GrowLightCoordinator:
         self.main_coordinator = main_coordinator
         self._remove_tick: Callable[[], None] | None = None
         self._remove_reconcile: Callable[[], None] | None = None
+        self._last_dark_warn: date | None = None
 
     @property
     def _growspace(self) -> Growspace | None:
@@ -87,6 +101,10 @@ class GrowLightCoordinator:
             return
         if not self._has_growlight_actuators:
             return
+
+        # Detect a stale-on light from downtime BEFORE we act on it below (the
+        # AC Infinity re-push would otherwise overwrite the evidence).
+        await self._maybe_warn_dark_period_on(env)
 
         # Plain lights have no onboard schedule, so GSM ticks them live.
         if env.growlight_entities:
@@ -172,6 +190,54 @@ class GrowLightCoordinator:
                     sunrise_enabled=cfg.sunrise_enabled,
                     sunrise_minutes=cfg.sunrise_minutes,
                 )
+
+    async def _maybe_warn_dark_period_on(self, env: EnvironmentConfig) -> None:
+        """Warn once if a grow light is still lit now that it should be dark.
+
+        Only meaningful at startup/reconcile: during steady-state ticking the
+        light is turned off exactly at cycle_end, so a light found lit in the
+        dark period means it ran past its (possibly just-shortened) off-time
+        while GSM was not driving it.
+        """
+        now = dt_util.now()
+        if self._desired_power(env) != 0:
+            return  # inside the photoperiod — the light is meant to be on
+        if self._last_dark_warn == now.date():
+            return
+        if not self._growlight_lit_now(env, now):
+            return
+
+        self._last_dark_warn = now.date()
+        gs = self._growspace
+        name = gs.name if gs else self.growspace_id
+        await self.main_coordinator.services.notifications.manager.async_send_notification(
+            self.growspace_id,
+            f"⚠️ Grow Light: {name}",
+            _DARK_PERIOD_MESSAGE,
+            tier=NotificationTier.WARNING,
+        )
+
+    def _growlight_lit_now(self, env: EnvironmentConfig, now: datetime) -> bool:
+        """Whether any configured grow light is currently on.
+
+        Plain lights are read from their entity state; an autonomous AC Infinity
+        port is inferred from the on/off ``time`` entities it currently holds.
+        """
+        drivers = resolve_actuator_drivers(self.hass, env.growlight_entities)
+        if any(driver.is_on() for driver in drivers):
+            return True
+        for device in env.growlight_ac_infinity_devices:
+            on_state = self.hass.states.get(device.on_time_entity)
+            off_state = self.hass.states.get(device.off_time_entity)
+            if on_state is None or off_state is None:
+                continue
+            try:
+                if is_within_window(now, on_state.state, off_state.state):
+                    return True
+            except ValueError, TypeError:
+                # unavailable/unknown time entity — cannot determine, skip
+                continue
+        return False
 
     def _schedule_next_reconcile(self) -> None:
         """Schedule the next local-midnight re-derivation (self-rescheduling)."""

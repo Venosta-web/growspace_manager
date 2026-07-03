@@ -70,3 +70,25 @@ def test_photoperiod_hours_follow_entered_flower(
 def test_resolve_cycle_end_time(lights_on: str, hours: float, expected_end: str) -> None:
     """Cycle end is lights-on plus the photoperiod, wrapping across midnight."""
     assert resolve_cycle_end_time(lights_on, hours) == expected_end
+
+
+@pytest.mark.parametrize(
+    ("on_time", "off_time", "now", "expected"),
+    [
+        ("06:00:00", "18:00:00", datetime(2026, 7, 3, 12, 0), True),  # midday lit
+        ("06:00:00", "18:00:00", datetime(2026, 7, 3, 20, 0), False),  # post-cutoff
+        ("06:00:00", "18:00:00", datetime(2026, 7, 3, 3, 0), False),  # pre-dawn
+        ("20:00:00", "14:00:00", datetime(2026, 7, 3, 22, 0), True),  # wrap, after on
+        ("20:00:00", "14:00:00", datetime(2026, 7, 4, 2, 0), True),  # wrap, after midnight
+        ("20:00:00", "14:00:00", datetime(2026, 7, 3, 16, 0), False),  # wrap, in gap
+    ],
+)
+def test_is_within_window(
+    on_time: str, off_time: str, now: datetime, expected: bool
+) -> None:
+    """A held on/off schedule reports whether the light is lit at ``now``."""
+    from custom_components.growspace_manager.domain.light_schedule import (
+        is_within_window,
+    )
+
+    assert is_within_window(now, on_time, off_time) is expected
