@@ -500,6 +500,20 @@ AC_INFINITY_DEVICE_SCHEMA = vol.Schema(
     }
 )
 
+# The grow-light AC Infinity bundle is a configurator (ADR-0024): a different
+# entity set from the fan bundle above (mode select + on/off time + on_power +
+# native sunrise switch/duration).
+AC_INFINITY_GROWLIGHT_SCHEMA = vol.Schema(
+    {
+        vol.Required("mode_entity"): str,
+        vol.Required("on_time_entity"): str,
+        vol.Required("off_time_entity"): str,
+        vol.Required("power_entity"): str,
+        vol.Optional("sunrise_switch_entity", default=""): str,
+        vol.Optional("sunrise_duration_entity", default=""): str,
+    }
+)
+
 CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): str,
@@ -559,6 +573,9 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         ],
         vol.Optional("humidifier_ac_infinity_devices"): [AC_INFINITY_DEVICE_SCHEMA],
         vol.Optional("dehumidifier_ac_infinity_devices"): [AC_INFINITY_DEVICE_SCHEMA],
+        vol.Optional("growlight_entities"): cv.ensure_list,
+        vol.Optional("growlight_config"): dict,
+        vol.Optional("growlight_ac_infinity_devices"): [AC_INFINITY_GROWLIGHT_SCHEMA],
         vol.Optional(CONF_LST_OFFSET): vol.All(
             vol.Coerce(float), vol.Range(min=-10.0, max=10.0)
         ),

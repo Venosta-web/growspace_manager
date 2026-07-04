@@ -1177,3 +1177,51 @@ async def test_schema_validated_payload_omitting_bundles_preserves(
     await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
 
     assert mock_gs.environment_config.humidifier_ac_infinity_devices == [existing]
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_parses_growlight_config_and_bundle(
+    mock_hass, mock_coordinator, mock_call, mock_exhaust_migration
+) -> None:
+    """configure_environment persists grow-light config + AC Infinity bundle from the call."""
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    mock_call.data = {
+        "growspace_id": "gs1",
+        CONF_TEMP_SENSOR: "sensor.temp",
+        "growlight_config": {
+            "enabled": True,
+            "power": 80,
+            "sunrise_enabled": True,
+            "sunrise_minutes": 15,
+        },
+        "growlight_ac_infinity_devices": [
+            {
+                "mode_entity": "select.m",
+                "on_time_entity": "time.on",
+                "off_time_entity": "time.off",
+                "power_entity": "number.p",
+                "sunrise_switch_entity": "switch.s",
+                "sunrise_duration_entity": "number.d",
+            }
+        ],
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    env = mock_gs.environment_config
+    assert env.growlight_config == GrowLightConfig(
+        enabled=True, power=80, sunrise_enabled=True, sunrise_minutes=15
+    )
+    assert env.growlight_ac_infinity_devices == [
+        ACInfinityGrowLight(
+            mode_entity="select.m",
+            on_time_entity="time.on",
+            off_time_entity="time.off",
+            power_entity="number.p",
+            sunrise_switch_entity="switch.s",
+            sunrise_duration_entity="number.d",
+        )
+    ]
