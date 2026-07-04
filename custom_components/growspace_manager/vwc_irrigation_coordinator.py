@@ -1,10 +1,17 @@
-"""Coordinator for VWC-based crop steering irrigation."""
+"""Coordinator for VWC-based crop steering irrigation.
+
+The per-minute steering *decision* lives in the [[Steering Phase Machine]]
+(``domain/steering_phase.py``, ADR-0023); this coordinator is the effects
+shell: it reads sensors, feeds the SubstrateTracker, and executes whatever the
+[[Steering Tick Verdict]] names — phase writes, logbook events, the composer
+reset, and the pump cycle.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta
+from dataclasses import asdict
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any, override
 
@@ -13,23 +20,26 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util.dt import now, parse_datetime
 
-from .const import (
-    EC_MODULATION_FULL_SCALE_DELTA,
-    EC_MODULATION_MAX_FACTOR,
-    EC_MODULATION_MIN_FACTOR,
-    PlantStage,
-    ShotSizingMode,
-)
+from .const import PlantStage
 from .domain.ec_state import (
     ECRecommendation,
     ECState,
     ECStateResolver,
     RunoffInputs,
+    ec_modulation_factor_for_reading,
     resolve_active_feed_ec,
     resolve_feed_stage_week,
     runoff_halt,
 )
 from .domain.shot_composer import FeedbackTuning, ShotComposer
+from .domain.steering_phase import (
+    ShotRequest,
+    SteeringPhaseMachine,
+    SteeringTickInputs,
+    SteeringTickVerdict,
+    phase_boundary_times,
+    resolve_day_hours,
+)
 from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
 
@@ -43,16 +53,6 @@ _LOGGER = logging.getLogger(__name__)
 _NON_LIVE_STAGES: frozenset[str] = frozenset(
     {PlantStage.DRY.value, PlantStage.CURE.value}
 )
-
-
-@dataclass(frozen=True, slots=True)
-class SteeringPhaseBoundaries:
-    """Datetimes anchored on a reference date marking crop-steering phase transitions."""
-
-    lights_on: datetime
-    p0_end: datetime
-    p2_stop: datetime
-    lights_off: datetime
 
 
 class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
@@ -69,20 +69,16 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         super().__init__(hass, config_entry, growspace_id, main_coordinator)
         self._remove_update_listener: Callable[[], None] | None = None
 
-        # State tracking
-        self._current_phase = "P3"  # Start in safe state
-        self._target_reached_today = False
-        self._last_reset_date: str | None = None
+        # Owns the phase state and the per-tick steering decision
+        # (domain/steering_phase.py, ADR-0023). The machine owns the rules
+        # (daily reset guard, P1→P2 detection); this shell owns the triggers
+        # and executes every effect the verdict names.
+        self._machine = SteeringPhaseMachine(growspace_id)
         # Owns the Adaptive Shot Control factors and the Shot Size Composition
-        # (domain/shot_composer.py). The coordinator's phase machine triggers its
-        # reset() at lights-on / P1→P2; it never reaches back into the coordinator.
+        # (domain/shot_composer.py). The steering phase machine names its
+        # reset() triggers (lights-on / P1→P2); it never reaches back into
+        # the coordinator.
         self._composer = ShotComposer()
-
-        # Last computed Volume Mode shot volume (ml) and the live plant count it
-        # was derived from, so a count-driven volume change can be detected
-        # across loop ticks and written to the logbook (ADR-0011).
-        self._last_shot_volume_ml: float | None = None
-        self._last_live_plant_count: int | None = None
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
         self._sensor_warning_logged = False
@@ -120,11 +116,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     @override
     def _reset_extra_daily_state(self) -> None:
         """Reset crop-steering target tracking at local midnight."""
-        self._target_reached_today = False
-        self._last_reset_date = None
+        self._machine.reset()
         self._composer.reset()
-        self._last_shot_volume_ml = None
-        self._last_live_plant_count = None
 
     async def _update_loop(self, _now: datetime) -> None:
         """Main update loop triggered every minute."""
@@ -145,7 +138,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                         self._growspace_id,
                     )
                     self._sensor_warning_logged = True
-                self._set_phase("Disabled (No Sensor)")
+                self._apply_verdict(self._machine.mark_no_sensor(), strategy)
                 return
 
             # Reset warning flag if sensor is now present
@@ -164,17 +157,17 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             if self._is_halted_by_runoff_ec(growspace):
                 return
 
-            phase_before = self._current_phase
-            period = self._determine_time_period(strategy, growspace)
-
             # Feed the SubstrateTracker before executing phase logic so the
             # reading reflects the substrate state going into this tick's
             # decision (and any shot it fires is recorded against this VWC).
-            self._feed_substrate_reading(current_vwc, period, growspace)
+            self._feed_substrate_reading(current_vwc, growspace)
 
-            self._execute_phase_logic(period, current_vwc, strategy)
+            verdict = self._machine.tick(
+                self._tick_inputs(current_vwc, strategy, growspace)
+            )
+            self._apply_verdict(verdict, strategy)
 
-            if self._current_phase != phase_before:
+            if verdict.phase_changed:
                 self._main_coordinator.async_set_updated_data(
                     self._main_coordinator.data
                 )
@@ -185,100 +178,118 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 self._growspace_id,
             )
 
-    def _determine_time_period(
-        self, strategy: IrrigationStrategy, growspace: Growspace
-    ) -> str:
-        """Determine the current steering phase based on time of day."""
-        current_dt = now()
-        boundaries = self._phase_boundary_times(strategy, growspace, current_dt.date())
+    def _tick_inputs(
+        self, current_vwc: float, strategy: IrrigationStrategy, growspace: Growspace
+    ) -> SteeringTickInputs:
+        """Assemble the plain-value inputs for one steering tick."""
+        config = growspace.irrigation_config
+        return SteeringTickInputs(
+            now=now(),
+            vwc=current_vwc,
+            strategy=strategy,
+            auto_advance_p2_to_p3=config.auto_advance_p2_to_p3,
+            soil_trigger_percent=config.soil_trigger_percent,
+            pump_flow_rate_ml_per_sec=config.pump_flow_rate_ml_per_sec,
+            pump_configured=bool(self._get_pump_entity()),
+            day_hours=resolve_day_hours(growspace.environment_config),
+            live_plant_count=self._live_plant_count(),
+            last_shot=self._last_shot_dt(),
+            interval_factor=self._composer.interval_factor,
+        )
 
-        if current_dt < boundaries.lights_on:
-            # Before lights on -> P3 (Dry Back) from yesterday
-            return "P3"
-
-        if current_dt < boundaries.p0_end:
-            return "P0"
-
-        if current_dt < boundaries.p2_stop:
-            return "WINDOW"
-
-        if current_dt < boundaries.lights_off:
-            # Only enter early P3 when the flag is explicitly enabled.
-            if growspace.irrigation_config.auto_advance_p2_to_p3:
-                return "P3"
-            return "WINDOW"
-
-        return "P3"
-
-    def _execute_phase_logic(
-        self, period: str, current_vwc: float, strategy: IrrigationStrategy
+    def _apply_verdict(
+        self, verdict: SteeringTickVerdict, strategy: IrrigationStrategy
     ) -> None:
-        """Execute the logic for the current phase."""
+        """Execute the effects a Steering Tick Verdict names.
 
-        # Reset daily target flag at lights-on, regardless of whether P0 is observed.
-        # Using a date guard prevents the flag from getting stuck if P0 is shorter than
-        # the update interval or if the loop misses the P0 window entirely.
-        today_str = now().date().isoformat()
-        if today_str != self._last_reset_date and period in ("P0", "WINDOW"):
-            self._target_reached_today = False
-            self._last_reset_date = today_str
+        The verdict records the decision; every effect happens here: the
+        canonical phase write, the P1→P2 composer reset (before any shot
+        composes), logbook events, and the pump cycle.
+        """
+        config = self.growspace.irrigation_config
 
-        # Zero-plant suspend (ADR-0011): in active Volume Mode a growspace with no
-        # live plants has no irrigation demand. Keep the loop alive but report an
-        # idle phase and fire no shots — never a 0 ml no-op or a seconds fallback.
-        if (
-            period in ("P0", "WINDOW")
-            and self._volume_mode_active(strategy)
-            and self._live_plant_count() == 0
-        ):
-            self._set_phase("Idle (no plants)")
-            return
+        if verdict.phase_changed:
+            if verdict.canonical is not None:
+                config.active_steering_phase = verdict.canonical
+                if verdict.canonical == "p3":
+                    config.phase_changed_at = now().isoformat()
 
-        if period == "P3":
-            self._set_phase("P3 - Dry Back")
-            return
-
-        if period == "P0":
-            self._set_phase("P0 - Activation")
-            return
-
-        # P1 / P2 WINDOW
-        target = strategy.target_vwc_percent
-
-        if not self._target_reached_today:
-            # We are in P1: Ramp Up
-            self._set_phase("P1 - Ramp Up")
-
-            if current_vwc >= target:
+            if verdict.reset_composer:
                 _LOGGER.info(
-                    "Growspace %s reached target VWC %.1f%%. Switching to P2",
+                    "Growspace %s transitioned from P1 to P2. Resetting feedback scale factors",
                     self._growspace_id,
-                    target,
                 )
-                self._target_reached_today = True
-                # No watering this tick, just switch state
-            else:
-                self._handle_watering(strategy, "P1")
+                self._composer.reset()
 
-        else:
-            # We are in P2: Maintenance
-            self._set_phase("P2 - Maintenance")
-
-            # Dynamic trigger: soil_trigger_percent overrides the calculated threshold
-            # when set, enabling VWC-sensor-driven phase transitions.
-            config = self.growspace.irrigation_config
-            if config.soil_trigger_percent is not None:
-                trigger = config.soil_trigger_percent
-            else:
-                trigger = target - strategy.maintenance_dryback_percent
-            if current_vwc < trigger:
-                _LOGGER.info(
-                    "Growspace %s VWC (%.1f%%) dropped below maintenance trigger (%.1f%%). Pulse watering",
-                    self._growspace_id,
-                    current_vwc,
-                    trigger,
+            if config.log_to_logbook and verdict.transition_message:
+                self._fire_logbook_event(
+                    verdict.transition_message, category="irrigation"
                 )
-                self._handle_watering(strategy, "P2")
+
+        if verdict.volume_change_note and config.log_to_logbook:
+            self._fire_logbook_event(verdict.volume_change_note, category="irrigation")
+
+        if verdict.fire is not None:
+            self._fire_shot(strategy, verdict.fire)
+
+    def _fire_shot(self, strategy: IrrigationStrategy, request: ShotRequest) -> None:
+        """Compose and fire a steering shot the tick verdict requested."""
+        pump_entity = self._get_pump_entity()
+        if not pump_entity:
+            return
+        growspace = self.growspace
+
+        # Shot Size Composition: effective = base × VWC factor × EC factor.
+        # The ShotComposer owns the multiply, the VWC feedback factor, and the
+        # cap-aware ShotComposition record. EC modulation (P2 only) and the
+        # safety-cap check are injected so the EC State seam and downstream
+        # _run_pump_cycle enforcement stay where they are; caps are still applied
+        # LAST, downstream, against this composed duration.
+        composition = self._composer.compose(
+            request.phase,
+            request.base_seconds,
+            lambda: self._compute_ec_modulation(strategy, growspace),
+            lambda secs: self._check_safety_guards(secs) is not None,
+            now().isoformat(),
+        )
+        scaled_duration = composition.composed_seconds
+
+        _LOGGER.info(
+            "Firing %s shot for growspace %s. Duration: %ss "
+            "(base %ss × VWC %.2f × EC %.2f)",
+            request.phase,
+            self._growspace_id,
+            scaled_duration,
+            request.base_seconds,
+            composition.vwc_factor,
+            composition.ec_factor,
+        )
+
+        existing_task = self._running_tasks.get("irrigation")
+        if existing_task and not existing_task.done():
+            _LOGGER.warning(
+                "Cancelling lingering irrigation task for %s before firing new %s shot",
+                self._growspace_id,
+                request.phase,
+            )
+            existing_task.cancel()
+
+        # Delegate to base _run_pump_cycle — inherits all safety guards:
+        # pause_on_low_tank, max_cycles_per_day, daily_volume_cap_liters,
+        # skip_during_dark, and log_to_logbook.
+        task = self._config_entry.async_create_background_task(
+            self.hass,
+            self._run_pump_cycle(
+                "irrigation", pump_entity, scaled_duration, {"phase": request.phase}
+            ),
+            f"irrigation_pump_{self._growspace_id}_irrigation",
+        )
+        self._running_tasks["irrigation"] = task
+
+        # Bound substrate dryback windows on the shot. The pre-shot VWC is the
+        # trough for the just-closed in-cycle window; the tracker re-arms the
+        # post-shot peak from the readings that follow.
+        self._record_substrate_shot(request.phase)
 
     def _last_shot_dt(self) -> datetime | None:
         """Return the last confirmed pump-cycle start time, or None.
@@ -290,25 +301,6 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         if not self._last_cycle_timestamp:
             return None
         return parse_datetime(self._last_cycle_timestamp)
-
-    @staticmethod
-    def _shot_params_for_phase(
-        strategy: IrrigationStrategy, phase: str
-    ) -> tuple[int, int]:
-        """Return the (duration_seconds, interval_minutes) pair for a steering phase.
-
-        P2 maintenance shots use the P2 pair; everything else (P1 ramp-up, and
-        P0 which collapses into P1) uses the P1 pair.
-        """
-        if phase == "P2":
-            return (
-                strategy.p2_shot_duration_seconds,
-                strategy.p2_shot_interval_minutes,
-            )
-        return (
-            strategy.p1_shot_duration_seconds,
-            strategy.p1_shot_interval_minutes,
-        )
 
     def _live_plant_count(self) -> int:
         """Return the number of live plants on the growspace's irrigation line.
@@ -323,174 +315,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             1 for p in plants if str(getattr(p, "stage", "")) not in _NON_LIVE_STAGES
         )
 
-    @staticmethod
-    def _volume_prerequisites_met(
-        strategy: IrrigationStrategy, growspace: Growspace
-    ) -> bool:
-        """Return True when Volume Mode's prerequisites (profile + flow rate) are present."""
-        return (
-            strategy.substrate_profile.is_configured
-            and growspace.irrigation_config.pump_flow_rate_ml_per_sec > 0.0
-        )
-
-    def _volume_mode_active(self, strategy: IrrigationStrategy) -> bool:
-        """Return True when Volume Mode is selected AND its prerequisites hold.
-
-        Volume Mode never auto-activates on prerequisites alone — the mode must
-        be explicitly selected. If it is selected but prerequisites have lapsed,
-        this returns False (fail safe): the growspace is treated as not-capable
-        and no Volume Mode shots fire (callers suspend rather than guess seconds).
-        """
-        return (
-            strategy.shot_sizing_mode == ShotSizingMode.VOLUME
-            and self._volume_prerequisites_met(strategy, self.growspace)
-        )
-
-    def _volume_mode_base_duration(
-        self, strategy: IrrigationStrategy, phase: str
-    ) -> int | None:
-        """Return the base pump-seconds for a Volume Mode shot, or None to suspend.
-
-        Converts the per-phase percent-of-substrate-volume size to milliliters
-        (``percent/100 × liters_per_pot × live_count × 1000``) and then to pump
-        seconds via the flow rate (``ml / flow_rate_ml_per_sec``). Returns None
-        when the live plant count is zero so the caller suspends the shot rather
-        than firing a 1 s floor. Also writes a logbook entry when a live-count
-        change alters the computed shot volume (ADR-0011).
-        """
-        live_count = self._live_plant_count()
-        percent = (
-            strategy.p2_shot_volume_percent
-            if phase == "P2"
-            else strategy.p1_shot_volume_percent
-        )
-        profile = strategy.substrate_profile
-        flow_rate = self.growspace.irrigation_config.pump_flow_rate_ml_per_sec
-
-        shot_volume_ml = (
-            (percent / 100.0) * profile.liters_per_pot * live_count * 1000.0
-        )
-        self._maybe_log_volume_change(shot_volume_ml, live_count)
-
-        if live_count == 0 or shot_volume_ml <= 0.0:
-            return None
-        return max(1, int(round(shot_volume_ml / flow_rate)))
-
-    def _maybe_log_volume_change(self, shot_volume_ml: float, live_count: int) -> None:
-        """Write a logbook entry when a live-count change alters the shot volume.
-
-        Only fires in active Volume Mode when the computed volume actually
-        changed versus the previous tick, so Seconds Mode and unchanged ticks
-        never spam the logbook (ADR-0011).
-        """
-        prev_volume = self._last_shot_volume_ml
-        prev_count = self._last_live_plant_count
-        self._last_shot_volume_ml = shot_volume_ml
-        self._last_live_plant_count = live_count
-
-        if (
-            prev_volume is None
-            or prev_count is None
-            or round(prev_volume) == round(shot_volume_ml)
-            or prev_count == live_count
-        ):
-            return
-
-        if not self.growspace.irrigation_config.log_to_logbook:
-            return
-
-        self._fire_logbook_event(
-            f"shot volume {round(prev_volume)}→{round(shot_volume_ml)} ml: "
-            f"plant count {prev_count}→{live_count}",
-            category="irrigation",
-        )
-
-    def _handle_watering(self, strategy: IrrigationStrategy, phase: str) -> None:
-        """Handle execution of a shot if the phase's interval permits."""
-        now_dt = now()
-        growspace = self.growspace
-        seconds_duration, interval_minutes = self._shot_params_for_phase(
-            strategy, phase
-        )
-
-        last_shot = self._last_shot_dt()
-        if last_shot:
-            elapsed = (now_dt - last_shot).total_seconds() / 60.0
-            if elapsed < interval_minutes * self._composer.interval_factor:
-                return
-
-        pump_entity = self._get_pump_entity()
-        if not pump_entity:
-            return
-
-        # Derive the BASE per-shot duration. Volume Mode converts the per-phase
-        # percent-of-substrate-volume size to pump seconds via the live plant
-        # count and flow rate; Seconds Mode keeps the configured seconds exactly.
-        # The base is computed BEFORE the VWC feedback and EC modulation factors
-        # (and any downstream safety caps).
-        if self._volume_mode_active(strategy):
-            duration = self._volume_mode_base_duration(strategy, phase)
-            if duration is None:
-                # Zero live plants: suspend rather than firing a floored shot.
-                return
-        else:
-            duration = seconds_duration
-
-        # Shot Size Composition: effective = base × VWC factor × EC factor.
-        # The ShotComposer owns the multiply, the VWC feedback factor, and the
-        # cap-aware ShotComposition record. EC modulation (P2 only) and the
-        # safety-cap check are injected so the EC State seam and downstream
-        # _run_pump_cycle enforcement stay where they are; caps are still applied
-        # LAST, downstream, against this composed duration.
-        composition = self._composer.compose(
-            phase,
-            duration,
-            lambda: self._compute_ec_modulation(strategy, growspace),
-            lambda secs: self._check_safety_guards(secs) is not None,
-            now_dt.isoformat(),
-        )
-        scaled_duration = composition.composed_seconds
-
-        _LOGGER.info(
-            "Firing %s shot for growspace %s. Duration: %ss "
-            "(base %ss × VWC %.2f × EC %.2f)",
-            phase,
-            self._growspace_id,
-            scaled_duration,
-            duration,
-            composition.vwc_factor,
-            composition.ec_factor,
-        )
-
-        existing_task = self._running_tasks.get("irrigation")
-        if existing_task and not existing_task.done():
-            _LOGGER.warning(
-                "Cancelling lingering irrigation task for %s before firing new %s shot",
-                self._growspace_id,
-                phase,
-            )
-            existing_task.cancel()
-
-        # Delegate to base _run_pump_cycle — inherits all safety guards:
-        # pause_on_low_tank, max_cycles_per_day, daily_volume_cap_liters,
-        # skip_during_dark, and log_to_logbook.
-        task = self._config_entry.async_create_background_task(
-            self.hass,
-            self._run_pump_cycle(
-                "irrigation", pump_entity, scaled_duration, {"phase": phase}
-            ),
-            f"irrigation_pump_{self._growspace_id}_irrigation",
-        )
-        self._running_tasks["irrigation"] = task
-
-        # Bound substrate dryback windows on the shot. The pre-shot VWC is the
-        # trough for the just-closed in-cycle window; the tracker re-arms the
-        # post-shot peak from the readings that follow.
-        self._record_substrate_shot(phase)
-
-    def _feed_substrate_reading(
-        self, current_vwc: float, period: str, growspace: Growspace
-    ) -> None:
+    def _feed_substrate_reading(self, current_vwc: float, growspace: Growspace) -> None:
         """Feed the current VWC reading to the growspace's SubstrateTracker.
 
         ``lit`` marks whether the lit period is active (lights-on to lights-off),
@@ -502,8 +327,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         if tracker is None:
             return
         current_dt = now()
-        boundaries = self._phase_boundary_times(
-            growspace.irrigation_strategy, growspace, current_dt.date()
+        boundaries = phase_boundary_times(
+            growspace.irrigation_strategy,
+            resolve_day_hours(growspace.environment_config),
+            current_dt.date(),
+            current_dt.tzinfo,
         )
         lit = boundaries.lights_on <= current_dt < boundaries.lights_off
         tracker.record_reading(current_vwc, current_dt.isoformat(), lit=lit)
@@ -615,30 +443,6 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "halt_irrigation": state.halt_irrigation,
         }
 
-    @staticmethod
-    def _ec_modulation_factor_for_reading(
-        measured_ec: float, band_min: float, band_max: float
-    ) -> float:
-        """Map a measured pore EC against the band to a bounded shot factor.
-
-        Pure helper: above the band → factor > 1.0 (flush), below → < 1.0
-        (stack), within → exactly 1.0. The response is proportional to the
-        excursion past the nearest band edge, normalised so an excursion of
-        ``EC_MODULATION_FULL_SCALE_DELTA`` saturates at the bound, then clamped
-        to ``[EC_MODULATION_MIN_FACTOR, EC_MODULATION_MAX_FACTOR]``.
-        """
-        if measured_ec > band_max:
-            excursion = measured_ec - band_max
-            span = EC_MODULATION_MAX_FACTOR - 1.0
-            factor = 1.0 + span * (excursion / EC_MODULATION_FULL_SCALE_DELTA)
-            return min(EC_MODULATION_MAX_FACTOR, factor)
-        if measured_ec < band_min:
-            excursion = band_min - measured_ec
-            span = 1.0 - EC_MODULATION_MIN_FACTOR
-            factor = 1.0 - span * (excursion / EC_MODULATION_FULL_SCALE_DELTA)
-            return max(EC_MODULATION_MIN_FACTOR, factor)
-        return 1.0
-
     def _compute_ec_modulation(
         self, strategy: IrrigationStrategy, growspace: Growspace
     ) -> tuple[float, bool]:
@@ -678,7 +482,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             and state.runoff_ec is not None
         ):
             driver_ec = state.runoff_ec
-        factor = self._ec_modulation_factor_for_reading(driver_ec, band_min, band_max)
+        factor = ec_modulation_factor_for_reading(driver_ec, band_min, band_max)
         return factor, True
 
     def _record_substrate_shot(self, phase: str) -> None:
@@ -721,149 +525,23 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # Ensure we return a string or None, explicitly cast if needed or rely on typed access
         return growspace.irrigation_config.irrigation_pump_entity or None
 
-    # Maps internal phase display strings to the canonical p1/p2/p3 values stored on
-    # IrrigationConfig and read by the frontend.  Phases without an entry (e.g.
-    # "Disabled (No Sensor)") leave active_steering_phase unchanged.
-    _CANONICAL_PHASE: dict[str, str] = {
-        "P0 - Activation": "p1",
-        "P1 - Ramp Up": "p1",
-        "P2 - Maintenance": "p2",
-        "P3 - Dry Back": "p3",
-        "P3": "p3",
-    }
-
-    def _phase_boundary_times(
-        self, strategy: IrrigationStrategy, growspace: Growspace, reference_date: date
-    ) -> SteeringPhaseBoundaries:
-        """Return the crop-steering phase boundary datetimes anchored on reference_date."""
-        lights_on_source = strategy.detected_lights_on_time or strategy.lights_on_time
-        try:
-            lights_on = datetime.strptime(lights_on_source, "%H:%M:%S").time()
-        except ValueError:
-            lights_on = datetime.strptime(lights_on_source, "%H:%M").time()
-
-        # Default to 12 hours when the growspace has no day-length config.
-        # Prefer flower hours, as crop steering is typically flower-focused.
-        day_hours = 12
-        if growspace.environment_config:
-            day_hours = getattr(
-                growspace.environment_config,
-                "flower_day_hours",
-                getattr(growspace.environment_config, "veg_day_hours", 12),
-            )
-
-        lights_on_dt = datetime.combine(reference_date, lights_on, tzinfo=now().tzinfo)
-        p0_end_dt = lights_on_dt + timedelta(minutes=strategy.p0_duration_minutes)
-        lights_off_dt = lights_on_dt + timedelta(hours=day_hours)
-        p2_stop_dt = lights_off_dt - timedelta(
-            minutes=strategy.p2_stop_before_lights_off_minutes
-        )
-        return SteeringPhaseBoundaries(
-            lights_on=lights_on_dt,
-            p0_end=p0_end_dt,
-            p2_stop=p2_stop_dt,
-            lights_off=lights_off_dt,
-        )
-
     @property
     @override
     def projected_shot_window(self) -> dict[str, str] | None:
         """Return the {start, end} ISO range for the next projected crop-steering shot.
 
-        Bounded by operational guardrails (shot cooldown, phase-window timing) rather
-        than a statistical confidence interval, so it's meaningful from day one without
-        any VWC sensor history. See ADR-0011 (lovelace-growspace-manager-card) for the
-        reasoning behind a guardrail-bound range over a depletion-rate model.
+        Thin adapter: the projection lives on the Steering Phase Machine so it
+        reads the same boundaries and phase the tick uses and the two can never
+        disagree about windows.
         """
         growspace = self.growspace
-        strategy = growspace.irrigation_strategy
-        if not strategy or not strategy.enabled:
-            return None
-
-        # Cooldown anchors on the active phase's interval: P2 maintenance uses
-        # the P2 pair, everything else the P1 pair.
-        active_phase = "P2" if self._current_phase == "P2 - Maintenance" else "P1"
-        _, interval_minutes = self._shot_params_for_phase(strategy, active_phase)
-        if not strategy.lights_on_time or interval_minutes is None:
-            return None
-
-        current_dt = now()
-        today = current_dt.date()
-        boundaries = self._phase_boundary_times(strategy, growspace, today)
-
-        # Match on the display string directly — the canonical p1/p2/p3 mapping
-        # collapses P0 into "p1" for the frontend's active_steering_phase, but P0
-        # has its own time-bound window distinct from P1's threshold-driven one.
-        if self._current_phase == "P0 - Activation":
-            latest = boundaries.p0_end
-        elif self._current_phase in ("P1 - Ramp Up", "P2 - Maintenance"):
-            latest = boundaries.p2_stop
-        else:
-            # P3 (or unknown/disabled) — no shots fire today; roll forward to tomorrow
-            return self._tomorrows_shot_window(strategy, growspace, today)
-
-        earliest = current_dt
-        last_shot = self._last_shot_dt()
-        if last_shot:
-            effective_interval = interval_minutes * self._composer.interval_factor
-            cooldown_end = last_shot + timedelta(minutes=effective_interval)
-            if cooldown_end > current_dt:
-                earliest = cooldown_end
-
-        if earliest >= latest:
-            # Today's active window has effectively closed — roll forward to tomorrow
-            return self._tomorrows_shot_window(strategy, growspace, today)
-
-        return {"start": earliest.isoformat(), "end": latest.isoformat()}
-
-    def _tomorrows_shot_window(
-        self, strategy: IrrigationStrategy, growspace: Growspace, today: date
-    ) -> dict[str, str]:
-        """Return tomorrow's {start, end} projected shot window (P1 start to P2 stop)."""
-        tomorrow = today + timedelta(days=1)
-        boundaries = self._phase_boundary_times(strategy, growspace, tomorrow)
-        return {
-            "start": boundaries.p0_end.isoformat(),
-            "end": boundaries.p2_stop.isoformat(),
-        }
-
-    def _set_phase(self, phase: str) -> bool:
-        """Update phase state; log the transition to the HA logbook when enabled.
-
-        Returns True when the phase actually changed so the caller can decide
-        whether to push a coordinator update to subscribers.
-        """
-        if self._current_phase == phase:
-            return False
-
-        old_phase = self._current_phase
-        _LOGGER.debug(
-            "Growspace %s VWC Steering Phase changed: %s -> %s",
-            self._growspace_id,
-            old_phase,
-            phase,
+        return self._machine.projected_shot_window(
+            growspace.irrigation_strategy,
+            resolve_day_hours(growspace.environment_config),
+            self._last_shot_dt(),
+            self._composer.interval_factor,
+            now(),
         )
-        self._current_phase = phase
-
-        canonical = self._CANONICAL_PHASE.get(phase)
-        if canonical is not None:
-            self.growspace.irrigation_config.active_steering_phase = canonical
-            if canonical == "p3":
-                self.growspace.irrigation_config.phase_changed_at = now().isoformat()
-
-        if old_phase == "P1 - Ramp Up" and phase == "P2 - Maintenance":
-            _LOGGER.info(
-                "Growspace %s transitioned from P1 to P2. Resetting feedback scale factors",
-                self._growspace_id,
-            )
-            self._composer.reset()
-
-        if self.growspace.irrigation_config.log_to_logbook:
-            self._fire_logbook_event(
-                f"VWC phase transition: {old_phase} → {phase}",
-                category="irrigation",
-            )
-        return True
 
     @override
     async def _async_report_cycle_completion(
