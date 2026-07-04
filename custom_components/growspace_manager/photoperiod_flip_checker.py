@@ -25,6 +25,22 @@ _AUTO_TRACKING_MESSAGE = (
     "Verify your hardware timer is set to 12h."
 )
 _MANUAL_MESSAGE = "Plants entering flower — update your lights-on time to 12h."
+# Used when a Grow Light Controller owns the schedule: GSM applies the 12h day
+# itself, so the message confirms and asks the user to verify rather than to act.
+_CONTROLLER_MESSAGE = (
+    "Plants entering flower — GSM shortened the light day to 12h. Verify your hardware."
+)
+
+
+def _growlight_controls(growspace: object) -> bool:
+    """Whether a Grow Light Controller owns this growspace's photoperiod."""
+    env = getattr(growspace, "environment_config", None)
+    if env is None:
+        return False
+    cfg = env.growlight_config
+    return bool(
+        cfg.enabled and (env.growlight_entities or env.growlight_ac_infinity_devices)
+    )
 
 
 class PhotoperiodFlipChecker:
@@ -54,7 +70,9 @@ class PhotoperiodFlipChecker:
         self._cancel_timer(growspace_id)
 
         now = ha_now()
-        next_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        next_midnight = now.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) + timedelta(days=1)
 
         self._unsub_timers[growspace_id] = async_track_point_in_utc_time(
             self.hass,
@@ -116,8 +134,12 @@ class PhotoperiodFlipChecker:
         if not flipped:
             return
 
-        auto_tracking = growspace.irrigation_strategy.auto_light_tracking
-        message = _AUTO_TRACKING_MESSAGE if auto_tracking else _MANUAL_MESSAGE
+        if _growlight_controls(growspace):
+            message = _CONTROLLER_MESSAGE
+        elif growspace.irrigation_strategy.auto_light_tracking:
+            message = _AUTO_TRACKING_MESSAGE
+        else:
+            message = _MANUAL_MESSAGE
         title = f"🌸 Photoperiod Flip: {growspace.name}"
 
         await self.coordinator.services.notifications.manager.async_send_notification(

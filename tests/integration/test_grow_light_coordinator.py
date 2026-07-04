@@ -1,0 +1,615 @@
+"""Integration tests for GrowLightCoordinator (plain switch/light path)."""
+
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from custom_components.growspace_manager.grow_light_coordinator import (
+    GrowLightCoordinator,
+)
+from custom_components.growspace_manager.models import (
+    ACInfinityGrowLight,
+    EnvironmentConfig,
+    GrowLightConfig,
+)
+from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.core import HomeAssistant
+
+
+@pytest.fixture
+def mock_hass() -> MagicMock:
+    """Return mock HomeAssistant with an async service caller."""
+    hass = MagicMock(spec=HomeAssistant)
+    hass.states = MagicMock()
+    hass.services = MagicMock()
+    hass.services.async_call = AsyncMock()
+    return hass
+
+
+def _make_env(
+    *,
+    enabled: bool = True,
+    power: int = 100,
+    growlight_entities: list[str] | None = None,
+    ac_infinity_devices: list[ACInfinityGrowLight] | None = None,
+    sunrise_enabled: bool = False,
+    sunrise_minutes: int = 0,
+    veg_day_hours: int = 18,
+    flower_day_hours: int = 12,
+) -> EnvironmentConfig:
+    if growlight_entities is None:
+        growlight_entities = ["switch.grow"]
+    return EnvironmentConfig(
+        growlight_entities=growlight_entities,
+        growlight_ac_infinity_devices=ac_infinity_devices or [],
+        growlight_config=GrowLightConfig(
+            enabled=enabled,
+            power=power,
+            sunrise_enabled=sunrise_enabled,
+            sunrise_minutes=sunrise_minutes,
+        ),
+        veg_day_hours=veg_day_hours,
+        flower_day_hours=flower_day_hours,
+    )
+
+
+def _ac_device() -> ACInfinityGrowLight:
+    return ACInfinityGrowLight(
+        mode_entity="select.port_mode",
+        on_time_entity="time.port_on",
+        off_time_entity="time.port_off",
+        power_entity="number.port_power",
+    )
+
+
+def _make_coordinator(
+    env: EnvironmentConfig,
+    *,
+    lights_on_time: str = "06:00:00",
+    plants: list | None = None,
+) -> MagicMock:
+    gs = MagicMock()
+    gs.name = "Test Tent"
+    gs.environment_config = env
+    gs.irrigation_strategy.lights_on_time = lights_on_time
+    coord = MagicMock()
+    coord.growspaces = {"gs1": gs}
+    coord.services.growspaces.get_growspace_plants.return_value = plants or []
+    coord.services.notifications.manager.async_send_notification = AsyncMock()
+    return coord
+
+
+def _notify(main_coord: MagicMock) -> AsyncMock:
+    return main_coord.services.notifications.manager.async_send_notification
+
+
+def _at(now: datetime):
+    """Patch the coordinator's clock to a fixed ``now``."""
+    return patch(
+        "custom_components.growspace_manager.grow_light_coordinator.dt_util.now",
+        return_value=now,
+    )
+
+
+async def test_light_on_at_power_inside_window(mock_hass: MagicMock) -> None:
+    """Inside the photoperiod, an enabled plain grow light is turned on."""
+    env = _make_env(growlight_entities=["switch.grow"], power=100)
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00")
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 12, 0, 0)):
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch", "turn_on", {ATTR_ENTITY_ID: "switch.grow"}, blocking=False
+    )
+
+
+async def test_light_off_outside_window(mock_hass: MagicMock) -> None:
+    """Outside the photoperiod, the grow light is turned off."""
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00")
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 2, 0, 0)):
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=False
+    )
+
+
+async def test_dimmable_light_holds_power_inside_window(mock_hass: MagicMock) -> None:
+    """A light.* grow light holds its configured brightness inside the window."""
+    env = _make_env(growlight_entities=["light.bar"], power=70)
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00")
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 12, 0, 0)):
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "light",
+        "turn_on",
+        {ATTR_ENTITY_ID: "light.bar", "brightness_pct": 70},
+        blocking=False,
+    )
+
+
+async def test_flowering_growspace_uses_flower_photoperiod(
+    mock_hass: MagicMock,
+) -> None:
+    """Once a plant has entered flower, the shorter 12h window governs off-time."""
+    env = _make_env(
+        growlight_entities=["switch.grow"], veg_day_hours=18, flower_day_hours=12
+    )
+    flowering = MagicMock(flower_start="2026-07-01")
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    # 19:00 is inside the 18h veg window (06:00-24:00) but outside the 12h
+    # flower window (06:00-18:00) -> flower schedule turns it off.
+    with _at(datetime(2026, 7, 3, 19, 0, 0)):
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=False
+    )
+
+
+async def test_reconcile_is_level_based_not_edge(mock_hass: MagicMock) -> None:
+    """Each tick re-asserts state (level-based), so control self-heals."""
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00")
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 12, 0, 0)):
+        await coord._async_regulate()
+        await coord._async_regulate()
+
+    assert mock_hass.services.async_call.await_count == 2
+
+
+async def test_disabled_controller_issues_no_writes(mock_hass: MagicMock) -> None:
+    """A disabled grow light controller never commands the device."""
+    env = _make_env(enabled=False, growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env)
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 12, 0, 0)):
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_not_awaited()
+
+
+@pytest.fixture
+def mock_track_interval():
+    """Patch async_track_time_interval in the coordinator module."""
+    with patch(
+        "custom_components.growspace_manager.grow_light_coordinator.async_track_time_interval"
+    ) as mock:
+        mock.return_value = MagicMock()
+        yield mock
+
+
+@pytest.fixture(autouse=True)
+def mock_track_point():
+    """Patch the midnight reconcile scheduler for every test in this module."""
+    with patch(
+        "custom_components.growspace_manager.grow_light_coordinator.async_track_point_in_utc_time"
+    ) as mock:
+        mock.return_value = MagicMock()
+        yield mock
+
+
+async def test_setup_starts_tick_when_enabled(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """Setup registers a 10-second tick when enabled with grow lights."""
+    env = _make_env(enabled=True, growlight_entities=["switch.grow"])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    await coord.async_setup()
+
+    mock_track_interval.assert_called_once()
+    assert mock_track_interval.call_args[0][2] == timedelta(seconds=10)
+
+
+@pytest.mark.parametrize(
+    ("enabled", "entities"),
+    [(False, ["switch.grow"]), (True, [])],
+)
+async def test_setup_skips_when_disabled_or_unconfigured(
+    mock_hass: MagicMock,
+    mock_track_interval: MagicMock,
+    enabled: bool,
+    entities: list[str],
+) -> None:
+    """No tick is registered when disabled or when no grow light is configured."""
+    env = _make_env(enabled=enabled, growlight_entities=entities)
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    await coord.async_setup()
+
+    mock_track_interval.assert_not_called()
+
+
+def _patch_push():
+    """Patch the AC Infinity configurator used by the coordinator."""
+    return patch(
+        "custom_components.growspace_manager.grow_light_coordinator.push_ac_infinity_schedule",
+        new=AsyncMock(),
+    )
+
+
+async def test_setup_pushes_ac_infinity_schedule(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """Setup configures the onboard schedule on an AC Infinity grow light."""
+    device = _ac_device()
+    env = _make_env(
+        growlight_entities=[], ac_infinity_devices=[device], power=80
+    )  # veg 18h, lights on 06:00 -> off at 00:00
+    coord = GrowLightCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator(env, lights_on_time="06:00:00")
+    )
+
+    with _patch_push() as mock_push:
+        await coord.async_setup()
+
+    mock_push.assert_awaited_once_with(
+        mock_hass,
+        device,
+        on_time="06:00:00",
+        off_time="00:00:00",
+        power=80,
+        sunrise_enabled=False,
+        sunrise_minutes=0,
+    )
+
+
+async def test_ac_infinity_only_starts_no_tick(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """An AC Infinity-only grow light is configured, not live-ticked."""
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[_ac_device()])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    with _patch_push():
+        await coord.async_setup()
+
+    mock_track_interval.assert_not_called()
+
+
+async def test_mixed_plain_and_ac_infinity_both_activate(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """A growspace with both kinds ticks the plain light and configures AC Infinity."""
+    env = _make_env(
+        growlight_entities=["switch.grow"], ac_infinity_devices=[_ac_device()]
+    )
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    with _patch_push() as mock_push:
+        await coord.async_setup()
+
+    mock_track_interval.assert_called_once()
+    mock_push.assert_awaited_once()
+
+
+async def test_disabled_does_not_push_ac_infinity(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """A disabled controller configures nothing on the AC Infinity device."""
+    env = _make_env(
+        enabled=False, growlight_entities=[], ac_infinity_devices=[_ac_device()]
+    )
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    with _patch_push() as mock_push:
+        await coord.async_setup()
+
+    mock_push.assert_not_awaited()
+
+
+async def test_regulate_ignores_ac_infinity_devices(mock_hass: MagicMock) -> None:
+    """The live tick never commands AC Infinity devices (they run autonomously)."""
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[_ac_device()])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    with _at(datetime(2026, 7, 3, 12, 0, 0)):
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_not_awaited()
+
+
+def _wire_states(mock_hass: MagicMock, states: dict[str, str]) -> None:
+    """Make mock_hass.states.get return states for the given entity ids."""
+
+    def _get(entity_id: str) -> MagicMock | None:
+        if entity_id not in states:
+            return None
+        st = MagicMock()
+        st.state = states[entity_id]
+        return st
+
+    mock_hass.states.get.side_effect = _get
+
+
+async def test_setup_skips_push_when_schedule_already_matches(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """An AC Infinity device already holding the schedule is not re-pushed."""
+    device = _ac_device()
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[device], power=100)
+    # lights on 06:00, veg 18h -> off 00:00, power 100 -> intensity 10
+    _wire_states(
+        mock_hass,
+        {
+            "select.port_mode": "Schedule",
+            "time.port_on": "06:00:00",
+            "time.port_off": "00:00:00",
+            "number.port_power": "10",
+        },
+    )
+    coord = GrowLightCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator(env, lights_on_time="06:00:00")
+    )
+
+    with _patch_push() as mock_push:
+        await coord.async_setup()
+
+    mock_push.assert_not_awaited()
+
+
+async def test_setup_schedules_midnight_reconcile(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """An AC Infinity grow light arms a self-rescheduling midnight reconcile."""
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[_ac_device()])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    with _patch_push():
+        await coord.async_setup()
+
+    mock_track_point.assert_called_once()
+
+
+async def test_unload_cancels_midnight_reconcile(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """Unload cancels the midnight reconcile timer."""
+    cancel = MagicMock()
+    mock_track_point.return_value = cancel
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[_ac_device()])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    with _patch_push():
+        await coord.async_setup()
+        coord.unload()
+
+    cancel.assert_called_once()
+
+
+async def test_midnight_reconcile_repushes_shortened_flip_schedule(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """At the flip midnight, the reconcile re-pushes the 12h off-time (ADR-0025)."""
+    device = _ac_device()
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(
+        growlight_entities=[],
+        ac_infinity_devices=[device],
+        power=100,
+        veg_day_hours=18,
+        flower_day_hours=12,
+    )
+    coord = GrowLightCoordinator(
+        mock_hass,
+        MagicMock(),
+        "gs1",
+        _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering]),
+    )
+
+    with _at(datetime(2026, 7, 4, 0, 0, 0)), _patch_push() as mock_push:
+        await coord.async_setup()
+        midnight_cb = mock_track_point.call_args[0][1]
+        mock_push.reset_mock()
+        await midnight_cb(datetime(2026, 7, 4, 0, 0, 0))
+
+    # A plant has entered flower -> 12h from 06:00 -> lights off at 18:00.
+    mock_push.assert_awaited_once_with(
+        mock_hass,
+        device,
+        on_time="06:00:00",
+        off_time="18:00:00",
+        power=100,
+        sunrise_enabled=False,
+        sunrise_minutes=0,
+    )
+    # The timer re-arms itself (startup call + reschedule after the callback).
+    assert mock_track_point.call_count == 2
+
+
+def _sunrise_ac_device() -> ACInfinityGrowLight:
+    return ACInfinityGrowLight(
+        mode_entity="select.port_mode",
+        on_time_entity="time.port_on",
+        off_time_entity="time.port_off",
+        power_entity="number.port_power",
+        sunrise_switch_entity="switch.port_sunrise",
+        sunrise_duration_entity="number.port_sunrise_minutes",
+    )
+
+
+async def test_setup_pushes_sunrise_config(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """The reconcile threads the growspace's sunrise settings into the push."""
+    device = _sunrise_ac_device()
+    env = _make_env(
+        growlight_entities=[],
+        ac_infinity_devices=[device],
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=20,
+    )
+    coord = GrowLightCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator(env, lights_on_time="06:00:00")
+    )
+
+    with _patch_push() as mock_push:
+        await coord.async_setup()
+
+    mock_push.assert_awaited_once_with(
+        mock_hass,
+        device,
+        on_time="06:00:00",
+        off_time="00:00:00",
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=20,
+    )
+
+
+async def test_midnight_reconcile_repushes_sunrise_on_flip(
+    mock_hass: MagicMock, mock_track_interval: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """The flip re-push carries the sunrise settings, not just the shortened times."""
+    device = _sunrise_ac_device()
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(
+        growlight_entities=[],
+        ac_infinity_devices=[device],
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=20,
+        veg_day_hours=18,
+        flower_day_hours=12,
+    )
+    coord = GrowLightCoordinator(
+        mock_hass,
+        MagicMock(),
+        "gs1",
+        _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering]),
+    )
+
+    with _at(datetime(2026, 7, 4, 0, 0, 0)), _patch_push() as mock_push:
+        await coord.async_setup()
+        midnight_cb = mock_track_point.call_args[0][1]
+        mock_push.reset_mock()
+        await midnight_cb(datetime(2026, 7, 4, 0, 0, 0))
+
+    mock_push.assert_awaited_once_with(
+        mock_hass,
+        device,
+        on_time="06:00:00",
+        off_time="18:00:00",
+        power=100,
+        sunrise_enabled=True,
+        sunrise_minutes=20,
+    )
+
+
+async def test_startup_warns_when_plain_light_on_during_dark_period(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """A stale-on plain grow light in the dark period warns at startup (#519)."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "on"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    # 20:00 is past the 12h flower off-time (18:00): the light should be off.
+    with _at(datetime(2026, 7, 3, 20, 0, 0)):
+        await coord.async_setup()
+
+    _notify(main_coord).assert_awaited_once()
+    _title, message = _notify(main_coord).call_args.args[1:3]
+    assert "verify" in message.lower()
+
+
+async def test_startup_warns_when_ac_infinity_held_window_still_lit(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """A stale AC Infinity onboard schedule that is still lit warns at startup."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    device = _ac_device()
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[device])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    # Device still holds the veg schedule (off at 00:00) -> lit at 20:00.
+    _wire_states(
+        mock_hass,
+        {"time.port_on": "06:00:00", "time.port_off": "00:00:00"},
+    )
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 20, 0, 0)), _patch_push():
+        await coord.async_setup()
+
+    _notify(main_coord).assert_awaited_once()
+
+
+async def test_startup_no_warn_when_light_should_be_on(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """No warning when now is inside the photoperiod (light legitimately on)."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "on"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 12, 0, 0)):  # inside 06:00-18:00
+        await coord.async_setup()
+
+    _notify(main_coord).assert_not_awaited()
+
+
+async def test_startup_no_warn_when_light_off_in_dark_period(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """No warning when the light is correctly off during the dark period."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "off"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 20, 0, 0)):
+        await coord.async_setup()
+
+    _notify(main_coord).assert_not_awaited()
+
+
+async def test_steady_state_tick_does_not_warn(mock_hass: MagicMock) -> None:
+    """A routine tick through the off-boundary must never warn (regression)."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "on"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 18, 0, 0)):  # exactly at flower off-boundary
+        await coord._async_regulate()
+
+    _notify(main_coord).assert_not_awaited()
+
+
+async def test_startup_warns_only_once_per_day(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """Repeated setups on the same day warn only once."""
+    flowering = MagicMock(flower_start="2026-07-01")
+    env = _make_env(growlight_entities=["switch.grow"])
+    main_coord = _make_coordinator(env, lights_on_time="06:00:00", plants=[flowering])
+    _wire_states(mock_hass, {"switch.grow": "on"})
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    with _at(datetime(2026, 7, 3, 20, 0, 0)):
+        await coord.async_setup()
+        await coord.async_setup()
+
+    _notify(main_coord).assert_awaited_once()

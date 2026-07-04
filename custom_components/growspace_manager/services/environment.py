@@ -53,9 +53,11 @@ from custom_components.growspace_manager.exhaust_migration import (
 )
 from custom_components.growspace_manager.models import (
     ACInfinityDevice,
+    ACInfinityGrowLight,
     CirculationFanConfig,
     EnvironmentConfig,
     ExhaustFanConfig,
+    GrowLightConfig,
     IrrigationTank,
     SensorGroup,
 )
@@ -227,6 +229,19 @@ async def handle_configure_environment(
             return list(getattr(existing_env, key, []) or []) if existing_env else []
         return [ACInfinityDevice.from_dict(d) for d in call.data[key]]
 
+    def _get_growlight_ac_infinity(key: str) -> list[ACInfinityGrowLight]:
+        """Parse the grow-light AC Infinity bundle, preserving existing when omitted."""
+        if key not in call.data:
+            return list(getattr(existing_env, key, []) or []) if existing_env else []
+        return [ACInfinityGrowLight.from_dict(d) for d in call.data[key]]
+
+    def _get_growlight_config() -> GrowLightConfig:
+        """Parse growlight_config from the call, preserving existing when omitted."""
+        raw = call.data.get("growlight_config")
+        if raw is not None:
+            return GrowLightConfig.from_dict(raw)
+        return existing_env.growlight_config if existing_env else GrowLightConfig()
+
     # Process Sensor Groups
     sensor_groups_data = call.data.get("sensor_groups", [])
     sensor_groups = []
@@ -340,6 +355,21 @@ async def handle_configure_environment(
             if growspace.environment_config
             else ExhaustFanConfig()
         ),
+        # Like the exhaust config, configure_environment carries no grow-light
+        # from the call when present, else preserve the existing settings so an
+        # unrelated environment edit doesn't reset the grow light.
+        growlight_entities=(
+            _get_list("growlight_entity", "growlight_entities")
+            or (
+                growspace.environment_config.growlight_entities
+                if growspace.environment_config
+                else []
+            )
+        ),
+        growlight_config=_get_growlight_config(),
+        growlight_ac_infinity_devices=_get_growlight_ac_infinity(
+            "growlight_ac_infinity_devices"
+        ),
         vpd_optimal_overrides=_validate_vpd_optimal_overrides(
             call.data.get("vpd_optimal_overrides")
         ),
@@ -359,6 +389,14 @@ async def handle_configure_environment(
     )
     if fan_coord:
         await fan_coord.async_restart()
+
+    # configure_environment applies via targeted restart, not a full reload, so
+    # the grow light controller must be restarted to pick up an enable/disable.
+    growlight_coord = coordinator._subsystem_manager.get_growlight_controller(
+        growspace_id
+    )
+    if growlight_coord:
+        await growlight_coord.async_restart()
 
     # Re-evaluate the exhaust-migration repair (ADR-0019): this rebuilds the
     # environment config (control_dehumidifier, exhaust_fan_entities) without a

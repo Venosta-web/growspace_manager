@@ -168,6 +168,48 @@ class SwitchDriver:
         return state is not None and state.state == STATE_ON
 
 
+class LightDriver:
+    """Drives a ``light.*`` entity by brightness percentage.
+
+    ``set_speed`` maps the 0–100 demand onto ``light.turn_on``'s ``brightness_pct``
+    so a dimmable grow light holds a set level; a zero demand turns it off.
+    """
+
+    def __init__(self, hass: HomeAssistant, entity_id: str) -> None:
+        """Initialize the driver for a single ``light.*`` entity."""
+        self._hass = hass
+        self._entity_id = entity_id
+
+    async def set_speed(self, pct: int) -> None:
+        """Set brightness to ``pct`` percent, or turn off at zero demand."""
+        if pct <= 0:
+            await self.turn_off()
+        else:
+            await _safe_service_call(
+                self._hass,
+                "light",
+                SERVICE_TURN_ON,
+                {ATTR_ENTITY_ID: self._entity_id, "brightness_pct": pct},
+            )
+
+    async def turn_on(self) -> None:
+        """Turn the light on."""
+        await _safe_service_call(
+            self._hass, "light", SERVICE_TURN_ON, {ATTR_ENTITY_ID: self._entity_id}
+        )
+
+    async def turn_off(self) -> None:
+        """Turn the light off."""
+        await _safe_service_call(
+            self._hass, "light", SERVICE_TURN_OFF, {ATTR_ENTITY_ID: self._entity_id}
+        )
+
+    def is_on(self) -> bool:
+        """Return whether the light entity reports the ``on`` state."""
+        state = self._hass.states.get(self._entity_id)
+        return state is not None and state.state == STATE_ON
+
+
 def resolve_actuator_driver(
     hass: HomeAssistant, entity_id: str, *, switch_off_threshold: int = 0
 ) -> ActuatorDriver | None:
@@ -179,6 +221,8 @@ def resolve_actuator_driver(
     domain = entity_id.split(".", 1)[0]
     if domain == "fan":
         return FanDriver(hass, entity_id)
+    if domain == "light":
+        return LightDriver(hass, entity_id)
     if domain in _SWITCH_DOMAINS:
         return SwitchDriver(hass, entity_id, off_threshold=switch_off_threshold)
     return None

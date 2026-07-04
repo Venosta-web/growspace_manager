@@ -96,6 +96,11 @@ def mock_coordinator():
     coordinator._subsystem_manager.get_circulation_fan_controller = MagicMock(
         return_value=_fan_coord_mock
     )
+    _growlight_coord_mock = MagicMock()
+    _growlight_coord_mock.async_restart = AsyncMock()
+    coordinator._subsystem_manager.get_growlight_controller = MagicMock(
+        return_value=_growlight_coord_mock
+    )
 
     # Initialize ServiceFacade AFTER all async mocks are set so the facade's
     # internal _coordinator reference sees the correct AsyncMock attributes.

@@ -53,12 +53,16 @@ def _make_growspace(
     name: str = "Test Tent",
     auto_light_tracking: bool = False,
     notification_target: str = "notify.mobile",
+    growlight_active: bool = False,
 ) -> MagicMock:
     gs = MagicMock()
     gs.id = growspace_id
     gs.name = name
     gs.notification_target = notification_target
     gs.irrigation_strategy.auto_light_tracking = auto_light_tracking
+    gs.environment_config.growlight_config.enabled = growlight_active
+    gs.environment_config.growlight_entities = ["switch.grow"] if growlight_active else []
+    gs.environment_config.growlight_ac_infinity_devices = []
     return gs
 
 
@@ -444,3 +448,64 @@ async def test_midnight_callback_handles_exception(
                 "Error during photoperiod flip check for %s", "tent1"
             )
             assert "tent1" in checker._unsub_timers
+
+
+@pytest.mark.asyncio
+async def test_controller_active_uses_confirmation_message(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """With an active grow light controller, the flip message is a verify prompt."""
+    gs = _make_growspace(auto_light_tracking=True, growlight_active=True)
+    mock_coordinator.growspaces = {"tent1": gs}
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        _make_plant(TODAY.isoformat())
+    ]
+
+    checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
+    with (
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time"
+        ),
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
+            return_value=TODAY_DT,
+        ),
+    ):
+        checker.schedule_growspace("tent1")
+        await _run_immediate_check(mock_coordinator)
+
+    call = mock_coordinator.services.notifications.manager.async_send_notification.call_args
+    _growspace_id, _title, message = call.args[:3]
+    # GSM applied the schedule itself; the message must not tell the user to do it.
+    assert "verify" in message.lower()
+    assert "update your lights-on time" not in message.lower()
+    assert "auto-adapt from sensor" not in message.lower()
+
+
+@pytest.mark.asyncio
+async def test_no_controller_keeps_manual_message(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """Without a grow light controller, the manual instruction message stands."""
+    gs = _make_growspace(auto_light_tracking=False, growlight_active=False)
+    mock_coordinator.growspaces = {"tent1": gs}
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        _make_plant(TODAY.isoformat())
+    ]
+
+    checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
+    with (
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time"
+        ),
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
+            return_value=TODAY_DT,
+        ),
+    ):
+        checker.schedule_growspace("tent1")
+        await _run_immediate_check(mock_coordinator)
+
+    call = mock_coordinator.services.notifications.manager.async_send_notification.call_args
+    _growspace_id, _title, message = call.args[:3]
+    assert "update your lights-on time" in message.lower()

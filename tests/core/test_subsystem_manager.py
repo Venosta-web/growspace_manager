@@ -91,12 +91,17 @@ async def test_async_initialize_sub_coordinators(
             "custom_components.growspace_manager.managers.subsystem.LightCycleTracker",
             autospec=True,
         ) as mock_tracker,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.GrowLightCoordinator",
+            autospec=True,
+        ) as mock_growlight,
     ):
         mock_irrigation.return_value.async_setup = AsyncMock()
         mock_vwc.return_value.async_setup = AsyncMock()
         mock_dehum.return_value.async_setup = AsyncMock()
         mock_hum.return_value.async_setup = AsyncMock()
         mock_tracker.return_value.async_setup = AsyncMock()
+        mock_growlight.return_value.async_setup = AsyncMock()
 
         await subsystem_manager.async_initialize_sub_coordinators(growspaces)
 
@@ -200,12 +205,17 @@ async def test_circulation_fan_coordinators_setup_and_cancel(
             "custom_components.growspace_manager.managers.subsystem.CirculationFanCoordinator",
             autospec=True,
         ) as mock_fan,
+        patch(
+            "custom_components.growspace_manager.managers.subsystem.GrowLightCoordinator",
+            autospec=True,
+        ) as mock_growlight,
     ):
         mock_irrigation.return_value.async_setup = AsyncMock()
         mock_dehum.return_value.async_setup = AsyncMock()
         mock_hum.return_value.async_setup = AsyncMock()
         mock_tracker.return_value.async_setup = AsyncMock()
         mock_fan.return_value.async_setup = AsyncMock()
+        mock_growlight.return_value.async_setup = AsyncMock()
 
         await subsystem_manager.async_initialize_sub_coordinators(growspaces)
 

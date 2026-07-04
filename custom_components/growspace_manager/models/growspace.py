@@ -47,6 +47,7 @@ __all__ = [
     "EnvironmentConfig",
     "EnvironmentState",
     "ExhaustFanConfig",
+    "GrowLightConfig",
     "Growspace",
     "GrowspaceEvent",
     "GrowspaceType",
@@ -96,6 +97,25 @@ class ACInfinityDevice(BaseModel):
     mode_entity: str
     speed_entity: str
     on_speed: int = 10
+
+
+@dataclass(slots=True)
+class ACInfinityGrowLight(BaseModel):
+    """An AC Infinity port driven as a grow light configurator (ADR-0023/0024).
+
+    Unlike ``ACInfinityDevice`` (driven via the ``On``/``Off`` mode select), a
+    grow light is configured into the device's onboard ``Schedule`` mode and then
+    runs autonomously. The bundle captures each entity ID verbatim: the
+    ``active_mode`` select, the on/off ``time`` entities, and the ``on_power``
+    number. (Sunrise entities are added by a later slice.)
+    """
+
+    mode_entity: str
+    on_time_entity: str
+    off_time_entity: str
+    power_entity: str
+    sunrise_switch_entity: str = ""
+    sunrise_duration_entity: str = ""
 
 
 @dataclass(slots=True)
@@ -174,6 +194,22 @@ class ExhaustFanConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class GrowLightConfig(BaseModel):
+    """Configuration for the schedule-driven grow light controller.
+
+    Unlike the fan/humidifier controllers this is not sensor-regulated: the
+    light holds ``power`` during the photoperiod (cycle start = the growspace's
+    ``lights_on_time``, end derived from veg/flower day hours) and is off
+    outside it.
+    """
+
+    enabled: bool = False
+    power: int = 100
+    sunrise_enabled: bool = False
+    sunrise_minutes: int = 0
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -194,6 +230,7 @@ class EnvironmentConfig(BaseModel):
     circulation_fan_entities: list[str] = field(default_factory=list)
     humidifier_entities: list[str] = field(default_factory=list)
     dehumidifier_entities: list[str] = field(default_factory=list)
+    growlight_entities: list[str] = field(default_factory=list)
 
     # AC Infinity actuator bundles, parallel to the plain *_entities lists above.
     exhaust_fan_ac_infinity_devices: list[ACInfinityDevice] = field(
@@ -206,6 +243,9 @@ class EnvironmentConfig(BaseModel):
         default_factory=list
     )
     dehumidifier_ac_infinity_devices: list[ACInfinityDevice] = field(
+        default_factory=list
+    )
+    growlight_ac_infinity_devices: list[ACInfinityGrowLight] = field(
         default_factory=list
     )
 
@@ -247,6 +287,7 @@ class EnvironmentConfig(BaseModel):
         default_factory=CirculationFanConfig
     )
     exhaust_fan_config: ExhaustFanConfig = field(default_factory=ExhaustFanConfig)
+    growlight_config: GrowLightConfig = field(default_factory=GrowLightConfig)
     vpd_optimal_overrides: dict[str, dict[str, dict[str, float]]] = field(
         default_factory=dict
     )
@@ -311,10 +352,12 @@ class EnvironmentConfig(BaseModel):
             "circulation_fan_entities",
             "humidifier_entities",
             "dehumidifier_entities",
+            "growlight_entities",
             "exhaust_fan_ac_infinity_devices",
             "circulation_fan_ac_infinity_devices",
             "humidifier_ac_infinity_devices",
             "dehumidifier_ac_infinity_devices",
+            "growlight_ac_infinity_devices",
             "sensor_groups",
             "substrate_temperature_sensors",
             "camera_entities",
@@ -339,6 +382,9 @@ class EnvironmentConfig(BaseModel):
 
         if data.get("exhaust_fan_config") is None:
             data["exhaust_fan_config"] = {}
+
+        if data.get("growlight_config") is None:
+            data["growlight_config"] = {}
 
         # Migration: singular -> plural list
         migrations = {
