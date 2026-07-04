@@ -13,8 +13,8 @@ from custom_components.growspace_manager.const import (
     CONF_TEMP_SENSOR,
 )
 from custom_components.growspace_manager.models import (
-    ACInfinityGrowLight,
     ACInfinityDevice,
+    ACInfinityGrowLight,
     CirculationFanConfig,
     EnvironmentConfig,
     ExhaustFanConfig,
