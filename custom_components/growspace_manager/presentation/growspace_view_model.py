@@ -485,8 +485,15 @@ class GrowspaceViewModelBuilder:
             "circulation_fan_ac_infinity_devices",
             "humidifier_ac_infinity_devices",
             "dehumidifier_ac_infinity_devices",
+            "growlight_ac_infinity_devices",
         ):
             attributes[_ac_key] = [d.to_dict() for d in getattr(env_config, _ac_key)]
+
+        # Grow lights — surfaced so the card's Growlights tab can read and
+        # round-trip the configured entities and controller config on reopen,
+        # and so the grow-light chip can render (parallels the fan handling).
+        attributes["growlight_entities"] = env_config.growlight_entities
+        attributes["growlight_config"] = env_config.growlight_config.to_dict()
 
         # Dehumidifier
         dehumidifier_entity = env_config.dehumidifier_entity

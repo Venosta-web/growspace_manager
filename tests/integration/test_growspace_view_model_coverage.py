@@ -7,8 +7,10 @@ import pytest
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import (
     ACInfinityDevice,
+    ACInfinityGrowLight,
     EnvironmentConfig,
     ExhaustFanConfig,
+    GrowLightConfig,
     Growspace,
     IrrigationConfig,
     IrrigationTank,
@@ -234,6 +236,36 @@ def test_get_environment_attributes_exposes_ac_infinity_devices(
     assert attrs["circulation_fan_ac_infinity_devices"] == []
     assert attrs["humidifier_ac_infinity_devices"] == []
     assert attrs["dehumidifier_ac_infinity_devices"] == []
+
+
+def test_get_environment_attributes_exposes_growlight(hass: HomeAssistant, builder):
+    """Grow light entities + controller config round-trip to the card on reopen.
+
+    Without this the Growlights tab reads back empty and the grow-light chip
+    never renders, even though configure_environment persisted the config.
+    """
+    env_config = EnvironmentConfig(
+        growlight_entities=["light.sim_flower_grow_light"],
+        growlight_config=GrowLightConfig(enabled=True, power=80),
+        growlight_ac_infinity_devices=[
+            ACInfinityGrowLight(
+                mode_entity="select.tent_light_mode",
+                on_time_entity="time.tent_light_on",
+                off_time_entity="time.tent_light_off",
+                power_entity="number.tent_light_power",
+            )
+        ],
+    )
+    growspace = Growspace(id="gs1", name="Test", environment_config=env_config)
+
+    attrs = builder._get_environment_attributes(growspace)
+
+    assert attrs["growlight_entities"] == ["light.sim_flower_grow_light"]
+    assert attrs["growlight_config"]["enabled"] is True
+    assert attrs["growlight_config"]["power"] == 80
+    assert attrs["growlight_ac_infinity_devices"][0]["mode_entity"] == (
+        "select.tent_light_mode"
+    )
 
 
 def test_build_special_growspace_types(builder):
