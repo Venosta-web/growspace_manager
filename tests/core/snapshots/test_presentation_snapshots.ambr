@@ -69,6 +69,16 @@
       ]),
       'feed_ec_sensors': list([
       ]),
+      'growlight_ac_infinity_devices': list([
+      ]),
+      'growlight_config': dict({
+        'enabled': False,
+        'power': 100,
+        'sunrise_enabled': False,
+        'sunrise_minutes': 0,
+      }),
+      'growlight_entities': list([
+      ]),
       'humidifier_ac_infinity_devices': list([
       ]),
       'humidifier_control_enabled': False,
