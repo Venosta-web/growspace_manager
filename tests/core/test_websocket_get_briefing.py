@@ -96,45 +96,24 @@ async def test_get_briefing_returns_briefing(mock_connection: MagicMock) -> None
     coordinator = _make_coordinator(stub_briefing)
     msg = {"id": 1, "type": WS_TYPE_GET_BRIEFING, "growspace_id": "tent1"}
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: coordinator,
-        )
-        await websocket_get_briefing(MagicMock(), mock_connection, msg)
+    result = await websocket_get_briefing(MagicMock(), coordinator, msg)
 
-    mock_connection.send_result.assert_called_once_with(1, stub_briefing)
+    assert result == stub_briefing
 
 
 @pytest.mark.asyncio
 async def test_get_briefing_passes_force_refresh(mock_connection: MagicMock) -> None:
     """Handler passes force_refresh=True to the scheduler."""
     coordinator = _make_coordinator({"summary": "Fresh"})
-    msg = {"id": 2, "type": WS_TYPE_GET_BRIEFING, "growspace_id": "", "force_refresh": True}
+    msg = {
+        "id": 2,
+        "type": WS_TYPE_GET_BRIEFING,
+        "growspace_id": "",
+        "force_refresh": True,
+    }
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: coordinator,
-        )
-        await websocket_get_briefing(MagicMock(), mock_connection, msg)
+    await websocket_get_briefing(MagicMock(), coordinator, msg)
 
-    coordinator.briefing_scheduler.async_get_briefing.assert_called_once_with(force_refresh=True)
-
-
-@pytest.mark.asyncio
-async def test_get_briefing_sends_error_when_coordinator_missing(
-    mock_connection: MagicMock,
-) -> None:
-    """Handler sends not_found when the coordinator is unavailable."""
-    msg = {"id": 3, "type": WS_TYPE_GET_BRIEFING}
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: None,
-        )
-        await websocket_get_briefing(MagicMock(), mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once()
-    assert mock_connection.send_error.call_args[0][1] == "not_found"
+    coordinator.briefing_scheduler.async_get_briefing.assert_called_once_with(
+        force_refresh=True
+    )

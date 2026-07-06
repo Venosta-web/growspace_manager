@@ -46,14 +46,18 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceError,
+    GrowspaceNotFoundError,
+    PlantNotFoundError,
+)
 from custom_components.growspace_manager.utils import parse_date_field
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
-from ._common import handle_ws_errors
+from ._common import WSCommand
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -274,35 +278,30 @@ def _parse_date_kwargs(msg: dict[str, Any]) -> dict[str, Any]:
     return {f: parse_date_field(msg[f]) for f in add_date_fields if f in msg}
 
 
-@handle_ws_errors()
 async def websocket_water_plant(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Water a plant."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     await coordinator.services.plants.water_plant(
         plant_id=msg[ATTR_PLANT_ID],
         amount=msg[ATTR_AMOUNT],
         nutrients=msg.get(ATTR_NUTRIENTS),
         preset_id=msg.get(ATTR_PRESET_ID),
     )
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_add_plant(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Add a single plant to a growspace."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     growspace_id: str = msg[ATTR_GROWSPACE_ID]
 
     if growspace_id not in coordinator.growspaces:
-        raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+        raise GrowspaceNotFoundError(f"Growspace '{growspace_id}' not found")
 
     parsed_dates = _parse_date_kwargs(msg)
     if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get("mother_start"):
@@ -326,23 +325,19 @@ async def websocket_add_plant(
         **parsed_dates,
     )
 
-    connection.send_result(msg["id"])
 
-
-@handle_ws_errors()
 async def websocket_add_plants(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Batch-add plants to a growspace."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     growspace_id: str = msg[ATTR_GROWSPACE_ID]
     strain: str = msg[ATTR_STRAIN]
     amount: int = msg[ATTR_AMOUNT]
 
     if growspace_id not in coordinator.growspaces:
-        raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+        raise GrowspaceNotFoundError(f"Growspace '{growspace_id}' not found")
 
     free_row, free_col = coordinator.validator.find_first_available_position(
         growspace_id
@@ -396,17 +391,15 @@ async def websocket_add_plants(
             _LOGGER.error("Batch add stopped at plant %d: %s", i + 1, err)
             break
 
-    connection.send_result(msg["id"], {"plants_added": plants_added})
+    return {"plants_added": plants_added}
 
 
-@handle_ws_errors()
 async def websocket_update_plant(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Update attributes on a plant."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     plant_id: str = msg[ATTR_PLANT_ID]
     coordinator.validator.validate_plant_exists(plant_id)
 
@@ -425,38 +418,31 @@ async def websocket_update_plant(
     if update_data:
         await coordinator.services.plants.update_plant(plant_id, **update_data)
 
-    connection.send_result(msg["id"])
 
-
-@handle_ws_errors()
 async def websocket_remove_plant(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Remove a plant from its growspace."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     plant_id: str = msg[ATTR_PLANT_ID]
 
     if plant_id not in coordinator.plants:
-        raise ServiceValidationError(f"Plant '{plant_id}' not found")
+        raise PlantNotFoundError(f"Plant '{plant_id}' not found")
 
     await coordinator.services.plants.remove_plant(plant_id)
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_harvest_plant(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Harvest a plant, optionally with yield metrics."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     plant_id: str = msg[ATTR_PLANT_ID]
 
     if plant_id not in coordinator.plants:
-        raise ServiceValidationError(f"Plant '{plant_id}' not found")
+        raise PlantNotFoundError(f"Plant '{plant_id}' not found")
 
     transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
     transition_date: str | None = None
@@ -481,22 +467,19 @@ async def websocket_harvest_plant(
         cbd_percentage=msg.get(ATTR_CBD_PERCENTAGE),
         terpene_profile=msg.get(ATTR_TERPENE_PROFILE),
     )
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_move_plant(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Transplant a non-clone plant to a different growspace."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     plant_id: str = msg[ATTR_PLANT_ID]
     target_growspace_id: str = msg[ATTR_TARGET_GROWSPACE_ID]
 
     if plant_id not in coordinator.plants:
-        raise ServiceValidationError(f"Plant '{plant_id}' not found")
+        raise PlantNotFoundError(f"Plant '{plant_id}' not found")
 
     transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
     transition_date: str | None = None
@@ -511,17 +494,14 @@ async def websocket_move_plant(
         target_growspace_name=None,
         transition_date=transition_date,
     )
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_move_clone(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Promote a clone to the next growth stage in a target growspace."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     plant_id: str = msg[ATTR_PLANT_ID]
     target_growspace_id: str = msg[ATTR_TARGET_GROWSPACE_ID]
 
@@ -539,41 +519,35 @@ async def websocket_move_clone(
         target_growspace_id=target_growspace_id,
         transition_date=transition_date,
     )
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_switch_plants(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Swap the grid positions of two plants."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     plant1_id: str = msg[ATTR_PLANT1_ID]
     plant2_id: str = msg[ATTR_PLANT2_ID]
 
     if plant1_id not in coordinator.plants:
-        raise ServiceValidationError(f"Plant '{plant1_id}' not found")
+        raise PlantNotFoundError(f"Plant '{plant1_id}' not found")
     if plant2_id not in coordinator.plants:
-        raise ServiceValidationError(f"Plant '{plant2_id}' not found")
+        raise PlantNotFoundError(f"Plant '{plant2_id}' not found")
 
     await coordinator.services.plants.switch_plants(plant1_id, plant2_id)
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_take_clone(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Take clones from a mother plant."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     mother_plant_id: str = msg[ATTR_MOTHER_PLANT_ID]
 
     if mother_plant_id not in coordinator.plants:
-        raise ServiceValidationError(f"Mother plant '{mother_plant_id}' not found")
+        raise PlantNotFoundError(f"Mother plant '{mother_plant_id}' not found")
 
     transition_date_str: str | None = msg.get(ATTR_TRANSITION_DATE)
     # Keep the full datetime (no .date() truncation): the manager's Lifecycle
@@ -591,21 +565,17 @@ async def websocket_take_clone(
         transition_date=transition_date,
     )
 
-    connection.send_result(msg["id"])
 
-
-@handle_ws_errors()
 async def websocket_score_plant(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Score phenotype traits on a plant."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     plant_id: str = msg[ATTR_PLANT_ID]
 
     if plant_id not in coordinator.plants:
-        raise ServiceValidationError(f"Plant '{plant_id}' not found")
+        raise PlantNotFoundError(f"Plant '{plant_id}' not found")
 
     await coordinator.services.plants.score_plant(
         plant_id=plant_id,
@@ -621,64 +591,52 @@ async def websocket_score_plant(
         keeper=msg.get(ATTR_KEEPER),
         notes=msg.get("notes"),
     )
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_log_drying_weight(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Log a drying weight reading for a plant."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     await coordinator.services.plants.log_drying_weight(
         plant_id=msg[ATTR_PLANT_ID],
         weight_grams=msg["weight_grams"],
         date=msg.get("date"),
     )
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_log_moisture_reading(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Log a substrate moisture reading for a plant."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     await coordinator.services.plants.log_moisture_reading(
         plant_id=msg[ATTR_PLANT_ID],
         moisture_percent=msg["moisture_percent"],
         date=msg.get("date"),
     )
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_set_visual_tag(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Attach or clear a visual tag on a plant."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     await coordinator.services.plants.set_visual_tag(
         plant_id=msg[ATTR_PLANT_ID],
         visual_tag=msg["visual_tag"],
     )
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_update_harvest_metrics(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Persist harvest yield metrics on a plant."""
-    coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
     await coordinator.services.plants.update_harvest_metrics(
         plant_id=msg[ATTR_PLANT_ID],
         wet_weight=msg.get(ATTR_WET_WEIGHT),
@@ -688,52 +646,50 @@ async def websocket_update_harvest_metrics(
         cbd_percentage=msg.get(ATTR_CBD_PERCENTAGE),
         terpene_profile=msg.get(ATTR_TERPENE_PROFILE),
     )
-    connection.send_result(msg["id"])
 
 
-@handle_ws_errors()
 async def websocket_print_label(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
+    coordinator: GrowspaceCoordinator,
     msg: dict[str, Any],
-) -> None:
+) -> Any:
     """Print a label for a plant or strain via the Niimbot service."""
     skip_keys = {"id", "type"}
     service_data = {k: v for k, v in msg.items() if k not in skip_keys}
     await hass.services.async_call(DOMAIN, "print_label", service_data, blocking=True)
-    connection.send_result(msg["id"])
 
 
-COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (WS_TYPE_WATER_PLANT, websocket_water_plant, SCHEMA_WS_WATER_PLANT, False),
-    (WS_TYPE_ADD_PLANT, websocket_add_plant, SCHEMA_WS_ADD_PLANT, False),
-    (WS_TYPE_ADD_PLANTS, websocket_add_plants, SCHEMA_WS_ADD_PLANTS, False),
-    (WS_TYPE_UPDATE_PLANT, websocket_update_plant, SCHEMA_WS_UPDATE_PLANT, False),
-    (WS_TYPE_REMOVE_PLANT, websocket_remove_plant, SCHEMA_WS_REMOVE_PLANT, False),
-    (WS_TYPE_HARVEST_PLANT, websocket_harvest_plant, SCHEMA_WS_HARVEST_PLANT, False),
-    (WS_TYPE_MOVE_PLANT, websocket_move_plant, SCHEMA_WS_MOVE_PLANT, False),
-    (WS_TYPE_MOVE_CLONE, websocket_move_clone, SCHEMA_WS_MOVE_CLONE, False),
-    (WS_TYPE_SWITCH_PLANTS, websocket_switch_plants, SCHEMA_WS_SWITCH_PLANTS, False),
-    (WS_TYPE_TAKE_CLONE, websocket_take_clone, SCHEMA_WS_TAKE_CLONE, False),
-    (WS_TYPE_SCORE_PLANT, websocket_score_plant, SCHEMA_WS_SCORE_PLANT, False),
-    (
+COMMANDS: list[WSCommand] = [
+    WSCommand(WS_TYPE_WATER_PLANT, websocket_water_plant, SCHEMA_WS_WATER_PLANT),
+    WSCommand(WS_TYPE_ADD_PLANT, websocket_add_plant, SCHEMA_WS_ADD_PLANT),
+    WSCommand(WS_TYPE_ADD_PLANTS, websocket_add_plants, SCHEMA_WS_ADD_PLANTS),
+    WSCommand(WS_TYPE_UPDATE_PLANT, websocket_update_plant, SCHEMA_WS_UPDATE_PLANT),
+    WSCommand(WS_TYPE_REMOVE_PLANT, websocket_remove_plant, SCHEMA_WS_REMOVE_PLANT),
+    WSCommand(WS_TYPE_HARVEST_PLANT, websocket_harvest_plant, SCHEMA_WS_HARVEST_PLANT),
+    WSCommand(WS_TYPE_MOVE_PLANT, websocket_move_plant, SCHEMA_WS_MOVE_PLANT),
+    WSCommand(WS_TYPE_MOVE_CLONE, websocket_move_clone, SCHEMA_WS_MOVE_CLONE),
+    WSCommand(WS_TYPE_SWITCH_PLANTS, websocket_switch_plants, SCHEMA_WS_SWITCH_PLANTS),
+    WSCommand(WS_TYPE_TAKE_CLONE, websocket_take_clone, SCHEMA_WS_TAKE_CLONE),
+    WSCommand(WS_TYPE_SCORE_PLANT, websocket_score_plant, SCHEMA_WS_SCORE_PLANT),
+    WSCommand(
         WS_TYPE_LOG_DRYING_WEIGHT,
         websocket_log_drying_weight,
         SCHEMA_WS_LOG_DRYING_WEIGHT,
-        False,
     ),
-    (
+    WSCommand(
         WS_TYPE_LOG_MOISTURE_READING,
         websocket_log_moisture_reading,
         SCHEMA_WS_LOG_MOISTURE_READING,
-        False,
     ),
-    (WS_TYPE_SET_VISUAL_TAG, websocket_set_visual_tag, SCHEMA_WS_SET_VISUAL_TAG, False),
-    (
+    WSCommand(
+        WS_TYPE_SET_VISUAL_TAG, websocket_set_visual_tag, SCHEMA_WS_SET_VISUAL_TAG
+    ),
+    WSCommand(
         WS_TYPE_UPDATE_HARVEST_METRICS,
         websocket_update_harvest_metrics,
         SCHEMA_WS_UPDATE_HARVEST_METRICS,
-        False,
     ),
-    (WS_TYPE_PRINT_LABEL, websocket_print_label, SCHEMA_WS_PRINT_LABEL, False),
+    WSCommand(
+        WS_TYPE_PRINT_LABEL, websocket_print_label, SCHEMA_WS_PRINT_LABEL, resolve="any"
+    ),
 ]

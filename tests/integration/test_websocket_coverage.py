@@ -58,23 +58,24 @@ async def test_websocket_get_event_log_recorder_error(
         "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=ImportError("Recorder not found"),
     ):
-        await websocket_get_event_log(hass, mock_connection, mock_msg)
+        result = await websocket_get_event_log(hass, MagicMock(), mock_msg)
 
         # Sould return empty result, not error
-        mock_connection.send_result.assert_called_with(1, {"gs1": []})
+        assert result == {"gs1": []}
 
 
 async def test_websocket_get_event_log_generic_error(
     hass: HomeAssistant, mock_connection, mock_msg
 ) -> None:
     """Test get_event_log handles generic exceptions."""
-    with patch(
-        "custom_components.growspace_manager.websocket.logbook.get_instance",
-        side_effect=Exception("Boom"),
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
+            side_effect=Exception("Boom"),
+        ),
+        pytest.raises(Exception, match="Boom"),
     ):
-        await websocket_get_event_log(hass, mock_connection, mock_msg)
-
-        mock_connection.send_error.assert_called_with(1, "unknown_error", "Boom")
+        await websocket_get_event_log(hass, MagicMock(), mock_msg)
 
 
 async def test_websocket_get_alerts_no_event_type(
@@ -112,10 +113,10 @@ async def test_websocket_get_alerts_no_event_type(
 
         mock_recorder.async_add_executor_job.side_effect = run_job
 
-        await websocket_get_alerts(hass, mock_connection, mock_msg)
+        result = await websocket_get_alerts(hass, MagicMock(), mock_msg)
 
         # Should return empty dict/list structure
-        mock_connection.send_result.assert_called_with(1, {"gs1": []})
+        assert result == {"gs1": []}
 
 
 async def test_websocket_get_alerts_recorder_error(
@@ -126,20 +127,22 @@ async def test_websocket_get_alerts_recorder_error(
         "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=ImportError("Recorder fail"),
     ):
-        await websocket_get_alerts(hass, mock_connection, mock_msg)
-        mock_connection.send_result.assert_called_with(1, {"gs1": []})
+        result = await websocket_get_alerts(hass, MagicMock(), mock_msg)
+        assert result == {"gs1": []}
 
 
 async def test_websocket_get_alerts_generic_error(
     hass: HomeAssistant, mock_connection, mock_msg
 ) -> None:
     """Test get_alerts handles generic errors."""
-    with patch(
-        "custom_components.growspace_manager.websocket.logbook.get_instance",
-        side_effect=Exception("Boom Alerts"),
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
+            side_effect=Exception("Boom Alerts"),
+        ),
+        pytest.raises(Exception, match="Boom Alerts"),
     ):
-        await websocket_get_alerts(hass, mock_connection, mock_msg)
-        mock_connection.send_error.assert_called_with(1, "unknown_error", "Boom Alerts")
+        await websocket_get_alerts(hass, MagicMock(), mock_msg)
 
 
 async def test_websocket_nutrient_inventory_service_missing(
@@ -149,13 +152,9 @@ async def test_websocket_nutrient_inventory_service_missing(
     mock_coord = MagicMock()
     mock_coord.services.config.get_inventory.return_value = None
 
-    with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
-        return_value=mock_coord,
-    ):
-        # get_nutrient_inventory returns empty stocks when inventory is absent
-        websocket_get_nutrient_inventory(hass, mock_connection, mock_msg)
-        mock_connection.send_result.assert_called_with(1, {"stocks": {}})
+    # get_nutrient_inventory returns empty stocks when inventory is absent
+    result = websocket_get_nutrient_inventory(hass, mock_coord, mock_msg)
+    assert result == {"stocks": {}}
 
 
 async def test_websocket_nutrient_inventory_success(
@@ -171,10 +170,7 @@ async def test_websocket_nutrient_inventory_success(
     mock_coord.config_entry = mock_config_entry
     mock_coord.async_commit = AsyncMock()
 
-    with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
-        return_value=mock_coord,
-    ):
+    if True:
         # Update Stock Success
         msg_update = {
             "id": 1,
@@ -188,7 +184,7 @@ async def test_websocket_nutrient_inventory_success(
             "dose_ml_l": 0.0,
             "notes": "",
         }
-        websocket_update_nutrient_stock(hass, mock_connection, msg_update)
+        websocket_update_nutrient_stock(hass, mock_coord, msg_update)
         await asyncio.sleep(0)  # Yield to background tasks
 
         mock_coord.services.config.update_stock.assert_called_with(
@@ -202,7 +198,6 @@ async def test_websocket_nutrient_inventory_success(
             dose_ml_l=0.0,
             notes="",
         )
-        mock_connection.send_result.assert_called_with(1)
         mock_coord.async_commit.assert_awaited()
 
         # Reset
@@ -212,11 +207,10 @@ async def test_websocket_nutrient_inventory_success(
 
         # Remove Stock Success
         msg_remove = {"id": 2, "nutrient_id": "n1"}
-        websocket_remove_nutrient_stock(hass, mock_connection, msg_remove)
+        websocket_remove_nutrient_stock(hass, mock_coord, msg_remove)
         await asyncio.sleep(0)  # Yield to background tasks
 
         mock_coord.services.config.remove_stock.assert_called_with("n1")
-        mock_connection.send_result.assert_called_with(2)
         mock_coord.async_commit.assert_awaited()
 
 
@@ -240,11 +234,8 @@ async def test_websocket_add_timeline_note_validation_error(
         # We need mock strain library in hass.data
         hass.data[DOMAIN] = {"strain_library": MagicMock()}
 
-        await websocket_add_timeline_note(hass, mock_connection, msg)
-
-        mock_connection.send_error.assert_called_with(
-            1, "invalid_args", "Invalid Plant"
-        )
+        with pytest.raises(ServiceValidationError, match="Invalid Plant"):
+            await websocket_add_timeline_note(hass, mock_coord, msg)
 
 
 async def test_websocket_remove_timeline_event_error(
@@ -253,13 +244,14 @@ async def test_websocket_remove_timeline_event_error(
     """Test remove_timeline_event handles errors."""
     msg = {"id": 1, "event_id": 123}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.timeline.get_instance",
-        side_effect=Exception("DB Error"),
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.timeline.get_instance",
+            side_effect=Exception("DB Error"),
+        ),
+        pytest.raises(Exception, match="DB Error"),
     ):
-        await websocket_remove_timeline_event(hass, mock_connection, msg)
-
-        mock_connection.send_error.assert_called_with(1, "unknown_error", "DB Error")
+        await websocket_remove_timeline_event(hass, MagicMock(), msg)
 
 
 async def test_websocket_get_alerts_filtering(
@@ -292,20 +284,32 @@ async def test_websocket_get_alerts_filtering(
     row_valid_1 = (
         MagicMock(time_fired_ts=100),
         MagicMock(
-            shared_data=json.dumps({"growspace_id": "gs1", "category": "optimal", "sensor_type": "moisture"})
+            shared_data=json.dumps(
+                {
+                    "growspace_id": "gs1",
+                    "category": "optimal",
+                    "sensor_type": "moisture",
+                }
+            )
         ),
     )
 
     row_valid_2 = (
         MagicMock(time_fired_ts=101),
         MagicMock(
-            shared_data=json.dumps({"growspace_id": "gs1", "category": "stress", "sensor_type": "moisture"})
+            shared_data=json.dumps(
+                {"growspace_id": "gs1", "category": "stress", "sensor_type": "moisture"}
+            )
         ),
     )
 
     row_valid_3 = (
         MagicMock(time_fired_ts=102),
-        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold", "sensor_type": "moisture"})),
+        MagicMock(
+            shared_data=json.dumps(
+                {"growspace_id": "gs1", "category": "mold", "sensor_type": "moisture"}
+            )
+        ),
     )
 
     mock_recorder = AsyncMock()
@@ -335,11 +339,10 @@ async def test_websocket_get_alerts_filtering(
         # Execute plain function immediately
         mock_recorder.async_add_executor_job.side_effect = lambda f, *a: f(*a)
 
-        await websocket_get_alerts(hass, mock_connection, mock_msg)
+        result = await websocket_get_alerts(hass, MagicMock(), mock_msg)
 
         # Verify result contains only the 2 valid alerts allowed by limit
-        args, _ = mock_connection.send_result.call_args
-        res = args[1]["gs1"]
+        res = result["gs1"]
         assert len(res) == 2
         assert res[0]["category"] == "optimal"
         assert res[1]["category"] == "stress"
@@ -367,8 +370,8 @@ async def test_websocket_get_alerts_invalid_json(
         ),
     ):
         mock_recorder.async_add_executor_job.side_effect = lambda f, *a: f(*a)
-        await websocket_get_alerts(hass, mock_connection, mock_msg)
-        mock_connection.send_result.assert_called_with(1, {"gs1": []})
+        result = await websocket_get_alerts(hass, MagicMock(), mock_msg)
+        assert result == {"gs1": []}
 
 
 async def test_websocket_get_alerts_no_growspace_id(
@@ -379,7 +382,11 @@ async def test_websocket_get_alerts_no_growspace_id(
 
     row_valid = (
         MagicMock(time_fired_ts=100),
-        MagicMock(shared_data=json.dumps({"growspace_id": "gs1", "category": "mold", "sensor_type": "moisture"})),
+        MagicMock(
+            shared_data=json.dumps(
+                {"growspace_id": "gs1", "category": "mold", "sensor_type": "moisture"}
+            )
+        ),
     )
 
     mock_recorder = AsyncMock()
@@ -398,10 +405,8 @@ async def test_websocket_get_alerts_no_growspace_id(
         ),
     ):
         mock_recorder.async_add_executor_job.side_effect = lambda f, *a: f(*a)
-        await websocket_get_alerts(hass, mock_connection, mock_msg)
+        res = await websocket_get_alerts(hass, MagicMock(), mock_msg)
 
-        args, _ = mock_connection.send_result.call_args
-        res = args[1]
         assert "gs1" in res
         assert len(res["gs1"]) == 1
 
@@ -418,12 +423,8 @@ async def test_websocket_get_nutrient_inventory_success_get(
     mock_coord = MagicMock()
     mock_coord.services.config.get_inventory.return_value = MockInventory(stocks={})
 
-    with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator.get_any",
-        return_value=mock_coord,
-    ):
-        websocket_get_nutrient_inventory(hass, mock_connection, mock_msg)
-        mock_connection.send_result.assert_called()
+    result = websocket_get_nutrient_inventory(hass, mock_coord, mock_msg)
+    assert result == {"stocks": {}}
 
 
 async def test_websocket_get_history_stats_sub_hourly(
@@ -470,39 +471,6 @@ async def test_websocket_get_history_stats_empty(
         mock_fallback.assert_awaited()
 
 
-async def test_websocket_breeder_commands_strain_library_missing(
-    hass: HomeAssistant, mock_connection
-) -> None:
-    """Test breeder commands when strain library is not loaded."""
-    if DOMAIN in hass.data:
-        hass.data[DOMAIN].pop("strain_library", None)
-    else:
-        hass.data[DOMAIN] = {}
-
-    msg_update = {
-        "id": 12,
-        "type": f"{DOMAIN}/update_breeder",
-        "original_name": "O",
-        "new_name": "N",
-    }
-    await websocket_update_breeder(hass, mock_connection, msg_update)
-    mock_connection.send_error.assert_called_with(
-        12, "not_loaded", "Growspace Manager strain library not loaded"
-    )
-
-    mock_connection.reset_mock()
-
-    msg_delete = {
-        "id": 13,
-        "type": f"{DOMAIN}/delete_breeder",
-        "breeder_name": "B",
-    }
-    await websocket_delete_breeder(hass, mock_connection, msg_delete)
-    mock_connection.send_error.assert_called_with(
-        13, "not_loaded", "Growspace Manager strain library not loaded"
-    )
-
-
 async def test_websocket_breeder_commands_generic_error(
     hass: HomeAssistant, mock_connection
 ) -> None:
@@ -522,14 +490,8 @@ async def test_websocket_breeder_commands_generic_error(
         "original_name": "O",
         "new_name": "N",
     }
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_update_breeder(hass, mock_connection, msg_update)
-    mock_connection.send_error.assert_called_with(
-        14, "unknown_error", "Breeder Update Fail"
-    )
+    with pytest.raises(Exception, match="Breeder Update Fail"):
+        await websocket_update_breeder(hass, mock_coordinator, msg_update)
 
     mock_connection.reset_mock()
 
@@ -538,14 +500,8 @@ async def test_websocket_breeder_commands_generic_error(
         "type": f"{DOMAIN}/delete_breeder",
         "breeder_name": "B",
     }
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_delete_breeder(hass, mock_connection, msg_delete)
-    mock_connection.send_error.assert_called_with(
-        15, "unknown_error", "Breeder Delete Fail"
-    )
+    with pytest.raises(Exception, match="Breeder Delete Fail"):
+        await websocket_delete_breeder(hass, mock_coordinator, msg_delete)
 
 
 def test_websocket_get_genetics_data_success(
@@ -554,16 +510,13 @@ def test_websocket_get_genetics_data_success(
     """Test websocket_get_genetics_data sends result on success (websocket.py:596-603)."""
     hass = MagicMock()
     coordinator = MagicMock()
-    coordinator.services.genetics.get_serialization_data.return_value = {"seed_batches": {}}
+    coordinator.services.genetics.get_serialization_data.return_value = {
+        "seed_batches": {}
+    }
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
-        websocket_get_genetics_data(hass, mock_connection, mock_msg)
+    result = websocket_get_genetics_data(hass, coordinator, mock_msg)
 
-    mock_connection.send_result.assert_called_once_with(1, {"seed_batches": {}})
-    mock_connection.send_error.assert_not_called()
+    assert result == {"seed_batches": {}}
 
 
 def test_websocket_get_genetics_data_error(
@@ -572,16 +525,12 @@ def test_websocket_get_genetics_data_error(
     """Test websocket_get_genetics_data sends error on exception (websocket.py:604-606)."""
     hass = MagicMock()
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("Something went wrong"),
-    ):
-        websocket_get_genetics_data(hass, mock_connection, mock_msg)
-
-    mock_connection.send_error.assert_called_once_with(
-        1, "unknown_error", "Something went wrong"
+    coordinator = MagicMock()
+    coordinator.services.genetics.get_serialization_data.side_effect = Exception(
+        "Something went wrong"
     )
-    mock_connection.send_result.assert_not_called()
+    with pytest.raises(Exception, match="Something went wrong"):
+        websocket_get_genetics_data(hass, coordinator, mock_msg)
 
 
 @pytest.mark.asyncio
@@ -601,36 +550,23 @@ async def test_websocket_get_strain_lineage_tree_success(mock_hass: MagicMock) -
     mock_coordinator._strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
-    connection = MagicMock()
+    MagicMock()
 
-    msg = {"id": 1, "type": f"{DOMAIN}/get_strain_lineage_tree", "strain_name": "Gelato #41"}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_get_strain_lineage_tree(mock_hass, connection, msg)
+    msg = {
+        "id": 1,
+        "type": f"{DOMAIN}/get_strain_lineage_tree",
+        "strain_name": "Gelato #41",
+    }
+    result = await websocket_get_strain_lineage_tree(mock_hass, mock_coordinator, msg)
 
-    connection.send_result.assert_called_once_with(
-        1, {"name": "Gelato #41", "source": "library", "parents": []}
-    )
+    assert result == {"name": "Gelato #41", "source": "library", "parents": []}
 
 
 @pytest.mark.asyncio
-async def test_websocket_get_strain_lineage_tree_not_loaded(mock_hass: MagicMock) -> None:
-    """Test get_strain_lineage_tree when strain library not loaded."""
-    from custom_components.growspace_manager.websocket import (
-        websocket_get_strain_lineage_tree,
-    )
-
-    mock_hass.data = {}
-    connection = MagicMock()
-    msg = {"id": 1, "type": f"{DOMAIN}/get_strain_lineage_tree", "strain_name": "X"}
-    await websocket_get_strain_lineage_tree(mock_hass, connection, msg)
-    connection.send_error.assert_called_once()
-
-
 @pytest.mark.asyncio
-async def test_websocket_update_strain_lineage_tree_success(mock_hass: MagicMock) -> None:
+async def test_websocket_update_strain_lineage_tree_success(
+    mock_hass: MagicMock,
+) -> None:
     """Test update_strain_lineage_tree saves and returns flat lineage."""
     from custom_components.growspace_manager.websocket import (
         websocket_update_strain_lineage_tree,
@@ -642,7 +578,7 @@ async def test_websocket_update_strain_lineage_tree_success(mock_hass: MagicMock
     mock_coordinator._strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
     mock_coordinator.services.config.strain_library = strain_library
-    connection = MagicMock()
+    MagicMock()
 
     parents = [
         {"name": "OG Kush", "source": "library"},
@@ -654,32 +590,7 @@ async def test_websocket_update_strain_lineage_tree_success(mock_hass: MagicMock
         "strain_name": "Hybrid",
         "parents": parents,
     }
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_update_strain_lineage_tree(mock_hass, connection, msg)
-    connection.send_result.assert_called_once_with(
-        2, {"lineage": "OG Kush × Durban Poison"}
+    result = await websocket_update_strain_lineage_tree(
+        mock_hass, mock_coordinator, msg
     )
-
-
-@pytest.mark.asyncio
-async def test_websocket_update_strain_lineage_tree_not_loaded(
-    mock_hass: MagicMock,
-) -> None:
-    """Test update_strain_lineage_tree when strain library not loaded."""
-    from custom_components.growspace_manager.websocket import (
-        websocket_update_strain_lineage_tree,
-    )
-
-    mock_hass.data = {}
-    connection = MagicMock()
-    msg = {
-        "id": 3,
-        "type": f"{DOMAIN}/update_strain_lineage_tree",
-        "strain_name": "X",
-        "parents": [],
-    }
-    await websocket_update_strain_lineage_tree(mock_hass, connection, msg)
-    connection.send_error.assert_called_once()
+    assert result == {"lineage": "OG Kush × Durban Poison"}

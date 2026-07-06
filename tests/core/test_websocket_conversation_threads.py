@@ -109,14 +109,9 @@ async def test_get_conversation_threads_returns_threads(
     coordinator = _make_coordinator(_SAMPLE_THREADS)
     msg = {"id": 1, "type": WS_TYPE_GET_CONVERSATION_THREADS, "growspace_id": "gs1"}
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: coordinator,
-        )
-        await websocket_get_conversation_threads(MagicMock(), mock_connection, msg)
+    result = await websocket_get_conversation_threads(MagicMock(), coordinator, msg)
 
-    mock_connection.send_result.assert_called_once_with(1, _SAMPLE_THREADS)
+    assert result == _SAMPLE_THREADS
     coordinator.conversation_store.get_threads.assert_called_once_with("gs1")
 
 
@@ -128,39 +123,12 @@ async def test_get_conversation_threads_returns_empty_list_when_none(
     coordinator = _make_coordinator([])
     msg = {"id": 1, "type": WS_TYPE_GET_CONVERSATION_THREADS, "growspace_id": "new-gs"}
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: coordinator,
-        )
-        await websocket_get_conversation_threads(MagicMock(), mock_connection, msg)
+    result = await websocket_get_conversation_threads(MagicMock(), coordinator, msg)
 
-    mock_connection.send_result.assert_called_once_with(1, [])
+    assert result == []
 
 
 @pytest.mark.asyncio
-async def test_get_conversation_threads_sends_error_when_coordinator_missing(
-    mock_connection: MagicMock,
-) -> None:
-    """Handler sends not_found when coordinator is unavailable."""
-    msg = {"id": 1, "type": WS_TYPE_GET_CONVERSATION_THREADS, "growspace_id": "gs1"}
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: None,
-        )
-        await websocket_get_conversation_threads(MagicMock(), mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once()
-    assert mock_connection.send_error.call_args[0][1] == "not_found"
-
-
-# ---------------------------------------------------------------------------
-# save_conversation_threads handler
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_save_conversation_threads_persists_threads(
     mock_connection: MagicMock,
@@ -174,17 +142,12 @@ async def test_save_conversation_threads_persists_threads(
         "threads": _SAMPLE_THREADS,
     }
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: coordinator,
-        )
-        await websocket_save_conversation_threads(MagicMock(), mock_connection, msg)
+    result = await websocket_save_conversation_threads(MagicMock(), coordinator, msg)
 
     coordinator.conversation_store.save_threads.assert_awaited_once_with(
         "gs1", _SAMPLE_THREADS
     )
-    mock_connection.send_result.assert_called_once_with(2, {"success": True})
+    assert result == {"success": True}
 
 
 @pytest.mark.asyncio
@@ -200,35 +163,7 @@ async def test_save_conversation_threads_accepts_empty_list(
         "threads": [],
     }
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: coordinator,
-        )
-        await websocket_save_conversation_threads(MagicMock(), mock_connection, msg)
+    result = await websocket_save_conversation_threads(MagicMock(), coordinator, msg)
 
     coordinator.conversation_store.save_threads.assert_awaited_once_with("gs1", [])
-    mock_connection.send_result.assert_called_once_with(3, {"success": True})
-
-
-@pytest.mark.asyncio
-async def test_save_conversation_threads_sends_error_when_coordinator_missing(
-    mock_connection: MagicMock,
-) -> None:
-    """Handler sends not_found when coordinator is unavailable."""
-    msg = {
-        "id": 4,
-        "type": WS_TYPE_SAVE_CONVERSATION_THREADS,
-        "growspace_id": "gs1",
-        "threads": [],
-    }
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: None,
-        )
-        await websocket_save_conversation_threads(MagicMock(), mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once()
-    assert mock_connection.send_error.call_args[0][1] == "not_found"
+    assert result == {"success": True}

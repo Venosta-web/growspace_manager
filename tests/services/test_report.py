@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.exceptions import PlantNotFoundError
 from custom_components.growspace_manager.models import Growspace, Plant
 from custom_components.growspace_manager.services.report import (
     _aggregate_growspace_data,
@@ -17,7 +18,7 @@ from custom_components.growspace_manager.services.report import (
     handle_export_grow_report,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 
 @pytest.fixture
@@ -799,7 +800,7 @@ async def test_websocket_get_grow_report_plant(
     mock_coordinator._data_repository.get_plant.return_value = mock_plant
     mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
 
-    mock_connection = MagicMock()
+    MagicMock()
 
     msg = {
         "id": 1,
@@ -819,12 +820,9 @@ async def test_websocket_get_grow_report_plant(
     ):
         mock_aggregate.return_value = {"plant_info": {"id": "test_plant"}}
 
-        await async_websocket_get_grow_report(hass, mock_connection, msg)
+        result = await async_websocket_get_grow_report(hass, mock_coordinator, msg)
 
-        mock_connection.send_result.assert_called_once()
-        call_args = mock_connection.send_result.call_args
-        assert call_args[0][0] == 1  # Message ID
-        assert call_args[0][1]["plant_info"]["id"] == "test_plant"
+        assert result["plant_info"]["id"] == "test_plant"
 
 
 @pytest.mark.asyncio
@@ -837,7 +835,7 @@ async def test_websocket_get_grow_report_growspace(
     mock_coordinator._data_repository.get_growspace.return_value = mock_growspace
     mock_coordinator.plants = {}
 
-    mock_connection = MagicMock()
+    MagicMock()
 
     msg = {
         "id": 1,
@@ -860,11 +858,9 @@ async def test_websocket_get_grow_report_growspace(
             "summary": {"plant_count": 0},
         }
 
-        await async_websocket_get_grow_report(hass, mock_connection, msg)
+        result = await async_websocket_get_grow_report(hass, mock_coordinator, msg)
 
-        mock_connection.send_result.assert_called_once()
-        call_args = mock_connection.send_result.call_args
-        assert call_args[0][0] == 1
+        assert result["plant_info"]["id"] == "test_growspace"
 
 
 @pytest.mark.asyncio
@@ -876,7 +872,7 @@ async def test_websocket_get_grow_report_plant_not_found(
     mock_coordinator = MagicMock()
     mock_coordinator._data_repository.get_plant.return_value = None
 
-    mock_connection = MagicMock()
+    MagicMock()
 
     msg = {
         "id": 1,
@@ -884,16 +880,8 @@ async def test_websocket_get_grow_report_plant_not_found(
         "config_entry_id": "test_entry",
     }
 
-    with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
-    ) as mock_gs_class:
-        mock_gs_class.get_for_service_call.return_value = mock_coordinator
-        await async_websocket_get_grow_report(hass, mock_connection, msg)
-
-        mock_connection.send_error.assert_called_once()
-        call_args = mock_connection.send_error.call_args
-        assert call_args[0][0] == 1
-        assert "not_found" in call_args[0][1]
+    with pytest.raises(PlantNotFoundError, match="missing_plant"):
+        await async_websocket_get_grow_report(hass, mock_coordinator, msg)
 
 
 @pytest.mark.asyncio
@@ -903,23 +891,15 @@ async def test_websocket_get_grow_report_no_ids(
     """Test WebSocket report when neither plant_id nor growspace_id provided."""
 
     mock_coordinator = MagicMock()
-    mock_connection = MagicMock()
+    MagicMock()
 
     msg = {
         "id": 1,
         "config_entry_id": "test_entry",
     }
 
-    with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
-    ) as mock_gs_class:
-        mock_gs_class.get_for_service_call.return_value = mock_coordinator
-        await async_websocket_get_grow_report(hass, mock_connection, msg)
-
-        mock_connection.send_error.assert_called_once()
-        call_args = mock_connection.send_error.call_args
-        assert call_args[0][0] == 1
-        assert "invalid_request" in call_args[0][1]
+    with pytest.raises(ServiceValidationError, match="No plant_id or growspace_id"):
+        await async_websocket_get_grow_report(hass, mock_coordinator, msg)
 
 
 @pytest.mark.asyncio
@@ -931,7 +911,7 @@ async def test_websocket_get_grow_report_exception(
     mock_coordinator = MagicMock()
     mock_coordinator._data_repository.get_plant.side_effect = ValueError("DB Error")
 
-    mock_connection = MagicMock()
+    MagicMock()
 
     msg = {
         "id": 1,
@@ -939,16 +919,8 @@ async def test_websocket_get_grow_report_exception(
         "config_entry_id": "test_entry",
     }
 
-    with patch(
-        "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
-    ) as mock_gs_class:
-        mock_gs_class.get_for_service_call.return_value = mock_coordinator
-        await async_websocket_get_grow_report(hass, mock_connection, msg)
-
-        mock_connection.send_error.assert_called_once()
-        call_args = mock_connection.send_error.call_args
-        assert call_args[0][0] == 1
-        assert "unknown_error" in call_args[0][1]
+    with pytest.raises(ValueError, match="DB Error"):
+        await async_websocket_get_grow_report(hass, mock_coordinator, msg)
 
 
 @pytest.mark.asyncio
@@ -1276,4 +1248,3 @@ async def test_export_as_pdf_import_error(
             match="PDF export requires the 'fpdf2' package",
         ):
             await handle_export_grow_report(hass, mock_coordinator, call)
-

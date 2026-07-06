@@ -10,10 +10,13 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 import homeassistant.util.dt as dt_util
+
+from ._common import WSCommand
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,35 +62,26 @@ SCHEMA_WS_GET_SNAPSHOTS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 )
 
 
-async def websocket_capture_snapshot(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
-    """Handle manual snapshot capture for a growspace."""
-    growspace_id: str = msg["growspace_id"]
-
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "not_loaded", str(err))
-        return
-
+def _get_growspace(coordinator: GrowspaceCoordinator, growspace_id: str) -> Any:
+    """Resolve a growspace or raise the typed not-found error."""
     growspace = coordinator.growspaces.get(growspace_id)
     if not growspace:
-        connection.send_error(
-            msg["id"], "not_found", f"Growspace '{growspace_id}' not found"
-        )
-        return
+        raise GrowspaceNotFoundError(f"Growspace '{growspace_id}' not found")
+    return growspace
+
+
+async def websocket_capture_snapshot(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Handle manual snapshot capture for a growspace."""
+    growspace_id: str = msg["growspace_id"]
+    growspace = _get_growspace(coordinator, growspace_id)
 
     camera_entities = growspace.environment_config.camera_entities
     if not camera_entities:
-        connection.send_error(
-            msg["id"],
-            "no_cameras",
-            f"No cameras configured for growspace '{growspace_id}'",
+        raise ServiceValidationError(
+            f"No cameras configured for growspace '{growspace_id}'"
         )
-        return
 
     snapshot_dir = (
         Path(hass.config.path("www")) / "growspace_manager" / "snapshots" / growspace_id
@@ -113,26 +107,21 @@ async def websocket_capture_snapshot(
                 f"/local/growspace_manager/snapshots/{growspace_id}/{filename}"
             )
             captured_paths.append(public_path)
-        except (AttributeError, KeyError, ValueError, HomeAssistantError, Exception):
+        except AttributeError, KeyError, ValueError, HomeAssistantError, Exception:
             _LOGGER.exception(
                 "Failed to capture snapshot from camera %s", camera_entity_id
             )
 
-    connection.send_result(
-        msg["id"],
-        {
-            "growspace_id": growspace_id,
-            "timestamp": timestamp,
-            "snapshots": captured_paths,
-        },
-    )
+    return {
+        "growspace_id": growspace_id,
+        "timestamp": timestamp,
+        "snapshots": captured_paths,
+    }
 
 
 async def websocket_get_snapshots(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Handle listing snapshots for a growspace."""
     growspace_id: str = msg["growspace_id"]
     limit: int = msg.get("limit", 50)
@@ -142,58 +131,35 @@ async def websocket_get_snapshots(
         Path(hass.config.path("www")) / "growspace_manager" / "snapshots" / growspace_id
     )
 
-    try:
-        if not snapshot_dir.exists():
-            connection.send_result(msg["id"], {"snapshots": [], "total": 0})
-            return
+    if not snapshot_dir.exists():
+        return {"snapshots": [], "total": 0}
 
-        all_files = sorted(
-            snapshot_dir.glob("*.jpg"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        total = len(all_files)
-        paged_files = all_files[offset : offset + limit]
+    all_files = sorted(
+        snapshot_dir.glob("*.jpg"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    total = len(all_files)
+    paged_files = all_files[offset : offset + limit]
 
-        snapshots = [
-            {
-                "path": f"/local/growspace_manager/snapshots/{growspace_id}/{f.name}",
-                "filename": f.name,
-                "timestamp": f.name[:15],
-            }
-            for f in paged_files
-        ]
+    snapshots = [
+        {
+            "path": f"/local/growspace_manager/snapshots/{growspace_id}/{f.name}",
+            "filename": f.name,
+            "timestamp": f.name[:15],
+        }
+        for f in paged_files
+    ]
 
-        connection.send_result(
-            msg["id"],
-            {"growspace_id": growspace_id, "snapshots": snapshots, "total": total},
-        )
-    except Exception as err:
-        _LOGGER.exception("Error listing snapshots for %s", growspace_id)
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    return {"growspace_id": growspace_id, "snapshots": snapshots, "total": total}
 
 
 async def websocket_get_vision_history(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Return vision checkup history for a growspace."""
-    growspace_id: str = msg["growspace_id"]
+    growspace = _get_growspace(coordinator, msg["growspace_id"])
     limit: int = msg.get("limit", 10)
-
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "not_loaded", str(err))
-        return
-
-    growspace = coordinator.growspaces.get(growspace_id)
-    if not growspace:
-        connection.send_error(
-            msg["id"], "not_found", f"Growspace {growspace_id} not found"
-        )
-        return
 
     history = [
         {
@@ -208,40 +174,19 @@ async def websocket_get_vision_history(
         for r in growspace.vision_checkup_history[:limit]
     ]
 
-    connection.send_result(
-        msg["id"],
-        {"history": history, "total": len(growspace.vision_checkup_history)},
-    )
+    return {"history": history, "total": len(growspace.vision_checkup_history)}
 
 
 async def websocket_update_vision_checkup_config(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Update vision checkup configuration for a growspace."""
-    growspace_id: str = msg["growspace_id"]
-
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "not_loaded", str(err))
-        return
-
-    growspace = coordinator.growspaces.get(growspace_id)
-    if not growspace:
-        connection.send_error(
-            msg["id"], "not_found", f"Growspace {growspace_id!r} not found"
-        )
-        return
+    growspace = _get_growspace(coordinator, msg["growspace_id"])
 
     if not growspace.environment_config:
-        connection.send_error(
-            msg["id"],
-            "no_environment",
-            f"No environment config for growspace {growspace_id!r}",
+        raise ServiceValidationError(
+            f"No environment config for growspace {msg['growspace_id']!r}"
         )
-        return
 
     vision_config = growspace.environment_config.vision_checkup_config
     if "enabled" in msg:
@@ -256,12 +201,22 @@ async def websocket_update_vision_checkup_config(
     await coordinator.async_commit()
     coordinator.vision_scheduler.schedule_all_growspaces()
 
-    connection.send_result(msg["id"], {"success": True})
+    return {"success": True}
 
 
-COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (WS_TYPE_CAPTURE_SNAPSHOT, websocket_capture_snapshot, SCHEMA_WS_CAPTURE_SNAPSHOT, False),
-    (WS_TYPE_GET_SNAPSHOTS, websocket_get_snapshots, SCHEMA_WS_GET_SNAPSHOTS, False),
-    (WS_TYPE_GET_VISION_HISTORY, websocket_get_vision_history, SCHEMA_WS_GET_VISION_HISTORY, False),
-    (WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG, websocket_update_vision_checkup_config, SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG, False),
+COMMANDS: list[WSCommand] = [
+    WSCommand(
+        WS_TYPE_CAPTURE_SNAPSHOT, websocket_capture_snapshot, SCHEMA_WS_CAPTURE_SNAPSHOT
+    ),
+    WSCommand(WS_TYPE_GET_SNAPSHOTS, websocket_get_snapshots, SCHEMA_WS_GET_SNAPSHOTS),
+    WSCommand(
+        WS_TYPE_GET_VISION_HISTORY,
+        websocket_get_vision_history,
+        SCHEMA_WS_GET_VISION_HISTORY,
+    ),
+    WSCommand(
+        WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG,
+        websocket_update_vision_checkup_config,
+        SCHEMA_WS_UPDATE_VISION_CHECKUP_CONFIG,
+    ),
 ]

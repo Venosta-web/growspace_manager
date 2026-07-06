@@ -56,11 +56,9 @@ async def test_websocket_history_datetime_strings(hass: HomeAssistant):
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Verify success - should parse ISO strings and not crash
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result
         stats = result["sensor.test"]
         assert len(stats) >= 1

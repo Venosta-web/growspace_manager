@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.websocket import (
     websocket_capture_snapshot,
     websocket_get_snapshots,
@@ -37,7 +38,9 @@ def _make_growspace(camera_entities: list[str] | None = None) -> MagicMock:
     return gs
 
 
-def _make_coordinator(growspace: MagicMock | None = None, gs_id: str = "gs1") -> MagicMock:
+def _make_coordinator(
+    growspace: MagicMock | None = None, gs_id: str = "gs1"
+) -> MagicMock:
     """Create a mock coordinator with an optional growspace."""
     coord = MagicMock()
     coord.growspaces = {gs_id: growspace} if growspace else {}
@@ -49,22 +52,6 @@ def _make_coordinator(growspace: MagicMock | None = None, gs_id: str = "gs1") ->
 # =============================================================================
 
 
-async def test_capture_snapshot_coordinator_not_found(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Test capture_snapshot sends error when coordinator not found (lines 1002-1006)."""
-    msg = {"id": 1, "growspace_id": "gs1"}
-
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("Not loaded"),
-    ):
-        await websocket_capture_snapshot(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(1, "not_loaded", "Not loaded")
-    mock_connection.send_result.assert_not_called()
-
-
 async def test_capture_snapshot_growspace_not_found(
     hass: HomeAssistant, mock_connection: MagicMock
 ) -> None:
@@ -72,15 +59,8 @@ async def test_capture_snapshot_growspace_not_found(
     msg = {"id": 1, "growspace_id": "nonexistent"}
     coord = _make_coordinator()  # no growspaces
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_capture_snapshot(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(
-        1, "not_found", "Growspace 'nonexistent' not found"
-    )
+    with pytest.raises(GrowspaceNotFoundError, match="'nonexistent' not found"):
+        await websocket_capture_snapshot(hass, coord, msg)
 
 
 async def test_capture_snapshot_no_cameras(
@@ -91,15 +71,8 @@ async def test_capture_snapshot_no_cameras(
     gs = _make_growspace(camera_entities=[])  # no cameras
     coord = _make_coordinator(growspace=gs)
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_capture_snapshot(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(
-        1, "no_cameras", "No cameras configured for growspace 'gs1'"
-    )
+    with pytest.raises(ServiceValidationError, match="No cameras configured"):
+        await websocket_capture_snapshot(hass, coord, msg)
 
 
 async def test_capture_snapshot_success(
@@ -111,20 +84,14 @@ async def test_capture_snapshot_success(
     coord = _make_coordinator(growspace=gs)
 
     with (
-        patch(
-            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-            return_value=coord,
-        ),
         patch.object(hass.config, "path", return_value=str(tmp_path)),
         patch(
             "homeassistant.core.ServiceRegistry.async_call",
             new_callable=AsyncMock,
         ),
     ):
-        await websocket_capture_snapshot(hass, mock_connection, msg)
+        result = await websocket_capture_snapshot(hass, coord, msg)
 
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     assert result["growspace_id"] == "gs1"
     assert len(result["snapshots"]) == 1
     assert result["snapshots"][0].startswith("/local/growspace_manager/snapshots/gs1/")
@@ -147,20 +114,14 @@ async def test_capture_snapshot_camera_service_fails(
             raise Exception("Camera error")
 
     with (
-        patch(
-            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-            return_value=coord,
-        ),
         patch.object(hass.config, "path", return_value=str(tmp_path)),
         patch(
             "homeassistant.core.ServiceRegistry.async_call",
             side_effect=_side_effect,
         ),
     ):
-        await websocket_capture_snapshot(hass, mock_connection, msg)
+        result = await websocket_capture_snapshot(hass, coord, msg)
 
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     # Only the successful camera contributes a path
     assert len(result["snapshots"]) == 1
     assert "camera_ok" in result["snapshots"][0]
@@ -175,19 +136,14 @@ async def test_capture_snapshot_multiple_cameras(
     coord = _make_coordinator(growspace=gs)
 
     with (
-        patch(
-            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-            return_value=coord,
-        ),
         patch.object(hass.config, "path", return_value=str(tmp_path)),
         patch(
             "homeassistant.core.ServiceRegistry.async_call",
             new_callable=AsyncMock,
         ),
     ):
-        await websocket_capture_snapshot(hass, mock_connection, msg)
+        result = await websocket_capture_snapshot(hass, coord, msg)
 
-    result = mock_connection.send_result.call_args[0][1]
     assert len(result["snapshots"]) == 2
 
 
@@ -203,11 +159,9 @@ async def test_get_snapshots_directory_not_exists(
     msg = {"id": 1, "growspace_id": "gs_no_dir"}
 
     with patch.object(hass.config, "path", return_value=str(tmp_path)):
-        await websocket_get_snapshots(hass, mock_connection, msg)
+        result = await websocket_get_snapshots(hass, MagicMock(), msg)
 
-    mock_connection.send_result.assert_called_once_with(
-        1, {"snapshots": [], "total": 0}
-    )
+    assert result == {"snapshots": [], "total": 0}
 
 
 async def test_get_snapshots_with_files(
@@ -224,14 +178,15 @@ async def test_get_snapshots_with_files(
     (snap_dir / "20260112_120100_camera_cam.jpg").write_bytes(b"fake_jpg")
 
     with patch.object(hass.config, "path", return_value=str(tmp_path / "www")):
-        await websocket_get_snapshots(hass, mock_connection, msg)
+        result = await websocket_get_snapshots(hass, MagicMock(), msg)
 
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     assert result["growspace_id"] == gs_id
     assert result["total"] == 2
     assert len(result["snapshots"]) == 2
-    assert all(s["path"].startswith("/local/growspace_manager/snapshots/gs1/") for s in result["snapshots"])
+    assert all(
+        s["path"].startswith("/local/growspace_manager/snapshots/gs1/")
+        for s in result["snapshots"]
+    )
 
 
 async def test_get_snapshots_pagination(
@@ -247,9 +202,8 @@ async def test_get_snapshots_pagination(
         (snap_dir / f"2026011{i}_120000_cam.jpg").write_bytes(b"x")
 
     with patch.object(hass.config, "path", return_value=str(tmp_path / "www")):
-        await websocket_get_snapshots(hass, mock_connection, msg)
+        result = await websocket_get_snapshots(hass, MagicMock(), msg)
 
-    result = mock_connection.send_result.call_args[0][1]
     assert result["total"] == 3
     assert len(result["snapshots"]) == 1  # limited to 1
 
@@ -268,10 +222,6 @@ async def test_get_snapshots_exception(
     with (
         patch.object(hass.config, "path", return_value=str(tmp_path / "www")),
         patch("pathlib.Path.glob", side_effect=PermissionError("Access denied")),
+        pytest.raises(PermissionError, match="Access denied"),
     ):
-        await websocket_get_snapshots(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once()
-    error_args = mock_connection.send_error.call_args[0]
-    assert error_args[0] == 1
-    assert error_args[1] == "unknown_error"
+        await websocket_get_snapshots(hass, MagicMock(), msg)

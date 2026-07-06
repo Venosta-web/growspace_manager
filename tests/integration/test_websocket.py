@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.exceptions import CoordinatorNotReadyError
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.websocket import (
     _EPOCH_SENTINEL,
@@ -36,6 +37,16 @@ from homeassistant.exceptions import ServiceValidationError
 from tests.common import MockConfigEntry
 
 WebSocketGenerator = Any
+
+
+@pytest.fixture(autouse=True)
+def _any_coordinator_available():
+    """resolve="any" commands need a loaded coordinator under the lifecycle."""
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator.get_any",
+        return_value=MagicMock(),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -91,14 +102,18 @@ async def test_websocket_get_strain_library(
     async_register_websocket_api(hass)
     client = await hass_ws_client(hass)
 
-    await client.send_json(
-        {
-            "id": 1,
-            "type": WS_TYPE_GET_STRAIN_LIBRARY,
-        }
-    )
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator.get_any",
+        return_value=mock_coord,
+    ):
+        await client.send_json(
+            {
+                "id": 1,
+                "type": WS_TYPE_GET_STRAIN_LIBRARY,
+            }
+        )
 
-    response = await client.receive_json()
+        response = await client.receive_json()
     assert response["success"]
     assert len(response["result"]["strains"]) == 2
     assert "Strain A" in response["result"]["strain_list"]
@@ -108,23 +123,25 @@ async def test_websocket_get_strain_library_not_loaded(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator
 ) -> None:
     """Test getting strain library when not loaded."""
-    # Ensure no config entries exist for DOMAIN
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        await hass.config_entries.async_remove(entry.entry_id)
-
     async_register_websocket_api(hass)
     client = await hass_ws_client(hass)
 
-    await client.send_json(
-        {
-            "id": 1,
-            "type": WS_TYPE_GET_STRAIN_LIBRARY,
-        }
-    )
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator.get_any",
+        side_effect=CoordinatorNotReadyError(
+            "No Growspace Manager instance is currently loaded."
+        ),
+    ):
+        await client.send_json(
+            {
+                "id": 1,
+                "type": WS_TYPE_GET_STRAIN_LIBRARY,
+            }
+        )
 
-    response = await client.receive_json()
+        response = await client.receive_json()
     assert not response["success"]
-    assert response["error"]["code"] == "not_loaded"
+    assert response["error"]["code"] == "coordinator_not_ready"
 
 
 async def test_websocket_get_growspace_data(
@@ -836,7 +853,7 @@ async def test_websocket_get_growspace_data_validation_error(
 
         response = await client.receive_json()
         assert not response["success"]
-        assert response["error"]["code"] == "coordinator_not_ready"
+        assert response["error"]["code"] == "validation_failed"
 
 
 async def test_websocket_get_vision_history_validation_error(
@@ -861,7 +878,7 @@ async def test_websocket_get_vision_history_validation_error(
 
         response = await client.receive_json()
         assert not response["success"]
-        assert response["error"]["code"] == "not_loaded"
+        assert response["error"]["code"] == "validation_failed"
 
 
 async def test_websocket_get_event_log_internals_no_type(
@@ -1250,7 +1267,7 @@ async def test_websocket_exceptions(
             await client.send_json(cmd)
             resp = await client.receive_json()
             assert not resp["success"]
-            assert resp["error"]["code"] == "unknown_error"
+            assert resp["error"]["code"] == "internal_error"
 
         # get_data uses typed error codes
         await client.send_json(
@@ -1276,7 +1293,7 @@ async def test_websocket_exceptions(
         await client.send_json({"id": 8, "type": WS_TYPE_GET_STRAIN_LIBRARY})
         resp = await client.receive_json()
         assert not resp["success"]
-        assert resp["error"]["code"] == "unknown_error"
+        assert resp["error"]["code"] == "internal_error"
 
     # History Stats exception
     with patch(
@@ -1294,7 +1311,7 @@ async def test_websocket_exceptions(
         )
         resp = await client.receive_json()
         assert not resp["success"]
-        assert resp["error"]["code"] == "unknown_error"
+        assert resp["error"]["code"] == "internal_error"
 
 
 async def test_websocket_history_stats_missing_start(
@@ -1316,7 +1333,7 @@ async def test_websocket_history_stats_missing_start(
     )
     resp = await client.receive_json()
     assert not resp["success"]
-    assert resp["error"]["code"] == "invalid_args"
+    assert resp["error"]["code"] == "validation_failed"
 
 
 async def test_websocket_statistics_edge_cases(

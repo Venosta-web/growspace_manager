@@ -13,7 +13,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.const import DOMAIN, GrowspaceService
-from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceError,
+    PlantNotFoundError,
+)
 from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.schemas import EXPORT_GROW_REPORT_SCHEMA
 from homeassistant.components.persistent_notification import (
@@ -107,7 +110,13 @@ async def handle_export_grow_report(
             title="Grow Report Export",
         )
 
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.exception("Failed to export grow report")
         create_notification(
             hass,
@@ -205,7 +214,13 @@ async def _get_plant_timeline_events(
 
     except HomeAssistantError:
         raise
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.warning("Could not fetch logbook events for report: %s", err)
         return []
 
@@ -282,7 +297,13 @@ async def _get_plant_environmental_stats(
 
     except HomeAssistantError:
         raise
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.warning("Could not fetch statistics for the report: %s", err)
 
     return averages
@@ -394,7 +415,13 @@ async def _aggregate_growspace_data(
                             data["environment"]["vpd_avg"] = round(
                                 sum(pts) / len(pts), 2
                             )
-            except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
+            except (
+                AttributeError,
+                KeyError,
+                ValueError,
+                ServiceValidationError,
+                GrowspaceError,
+            ) as err:
                 _LOGGER.warning(
                     "Could not fetch env stats for growspace report: %s", err
                 )
@@ -404,43 +431,21 @@ async def _aggregate_growspace_data(
 
 async def async_websocket_get_grow_report(
     hass: HomeAssistant,
-    connection: Any,
+    coordinator: Any,
     msg: dict[str, Any],
-) -> None:
-    """Handle WebSocket grow report request."""
+) -> dict[str, Any]:
+    """Build the grow report payload (WS Command Lifecycle handler, ADR-0027)."""
+    plant_id = msg.get("plant_id")
+    growspace_id = msg.get("growspace_id")
 
-    from custom_components.growspace_manager.coordinator import (  # noqa: PLC0415
-        GrowspaceCoordinator,
-    )
-
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        plant_id = msg.get("plant_id")
-        growspace_id = msg.get("growspace_id")
-
-        if plant_id:
-            plant = coordinator._data_repository.get_plant(plant_id)
-            if not plant:
-                connection.send_error(
-                    msg["id"], "not_found", f"Plant {plant_id} not found"
-                )
-                return
-            report_data = await _aggregate_plant_data(hass, coordinator, plant)
-        elif growspace_id:
-            report_data = await _aggregate_growspace_data(
-                hass, coordinator, growspace_id
-            )
-        else:
-            connection.send_error(
-                msg["id"], "invalid_request", "No plant_id or growspace_id"
-            )
-            return
-
-        connection.send_result(msg["id"], report_data)
-
-    except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError) as err:
-        _LOGGER.exception("Error generating grow report for WebSocket")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    if plant_id:
+        plant = coordinator._data_repository.get_plant(plant_id)
+        if not plant:
+            raise PlantNotFoundError(f"Plant {plant_id} not found")
+        return await _aggregate_plant_data(hass, coordinator, plant)
+    if growspace_id:
+        return await _aggregate_growspace_data(hass, coordinator, growspace_id)
+    raise ServiceValidationError("No plant_id or growspace_id")
 
 
 def _export_as_json(data: dict[str, Any], file_path: str) -> None:
@@ -455,6 +460,7 @@ def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
         from fpdf import FPDF  # noqa: PLC0415
     except ImportError as err:
         from homeassistant.exceptions import HomeAssistantError  # noqa: PLC0415
+
         raise HomeAssistantError(
             "PDF export requires the 'fpdf2' package. Install it with: pip install fpdf2>=2.7.9"
         ) from err

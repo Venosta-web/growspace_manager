@@ -32,10 +32,7 @@ from custom_components.growspace_manager.services.watering_service import (
 )
 from custom_components.growspace_manager.storage_manager import StorageManager
 from custom_components.growspace_manager.strain_library import StrainLibrary
-from custom_components.growspace_manager.websocket import (
-    websocket_get_ec_ramp_curves,
-    websocket_get_event_log,
-)
+from custom_components.growspace_manager.websocket import websocket_get_event_log
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -488,7 +485,7 @@ async def test_event_log_skips_event_with_different_plant_id(
     hass: HomeAssistant,
 ) -> None:
     """Test events with a different plant_id are skipped when filtering by plant_id."""
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 1, "plant_id": "plant_target", "limit": 10}
 
     session_mock = MagicMock()
@@ -532,11 +529,9 @@ async def test_event_log_skips_event_with_different_plant_id(
 
         instance.async_add_executor_job.side_effect = fake_executor
 
-        await websocket_get_event_log(hass, connection, msg)
+        result = await websocket_get_event_log(hass, MagicMock(), msg)
 
-    connection.send_result.assert_called_once()
     # The filtered event should produce an empty list for all growspaces
-    result = connection.send_result.call_args[0][1]
     all_events = [evt for evts in result.values() for evt in evts]
     assert all_events == []
 
@@ -546,7 +541,7 @@ async def test_event_log_skips_shared_event_with_different_growspace(
     hass: HomeAssistant,
 ) -> None:
     """Test shared events (no plant_id) from a different growspace are skipped."""
-    connection = MagicMock()
+    MagicMock()
     msg = {
         "id": 1,
         "plant_id": "plant_target",
@@ -594,41 +589,14 @@ async def test_event_log_skips_shared_event_with_different_growspace(
 
         instance.async_add_executor_job.side_effect = fake_executor
 
-        await websocket_get_event_log(hass, connection, msg)
+        result = await websocket_get_event_log(hass, MagicMock(), msg)
 
-    connection.send_result.assert_called_once()
-    result = connection.send_result.call_args[0][1]
     all_events = [evt for evts in result.values() for evt in evts]
     assert all_events == []
 
 
 # ---------------------------------------------------------------------------
 # websocket_get_ec_ramp_curves – exception path (lines 573-575)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_websocket_get_ec_ramp_curves_exception(
-    hass: HomeAssistant,
-) -> None:
-    """Test that exceptions in websocket_get_ec_ramp_curves are reported via send_error."""
-    connection = MagicMock()
-    msg = {"id": 42}
-
-    with patch(
-        "custom_components.growspace_manager.websocket.nutrients.GrowspaceCoordinator"
-    ) as mock_coord_cls:
-        mock_coord_cls.get_for_service_call.side_effect = Exception("DB error")
-
-        websocket_get_ec_ramp_curves(hass, connection, msg)
-
-    connection.send_error.assert_called_once_with(42, "unknown_error", "DB error")
-    connection.send_result.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# GrowspaceCoordinator.get_any / ServiceCoordinatorLocator.get_any success
-# (coordinator.py:147, service_coordinator_locator.py:99)
 # ---------------------------------------------------------------------------
 
 
@@ -660,7 +628,9 @@ def test_coordinator_get_plant_delegates_to_repository() -> None:
     entry.data = {}
     entry.options = {}
 
-    coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
+    coordinator = GrowspaceCoordinator.build(
+        hass, entry, data={}, strain_library=MagicMock()
+    )
     plant = MagicMock()
     coordinator._data_repository = MagicMock()
     coordinator._data_repository.get_plant.return_value = plant
@@ -679,7 +649,9 @@ def test_coordinator_get_growspace_delegates_to_repository() -> None:
     entry.data = {}
     entry.options = {}
 
-    coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
+    coordinator = GrowspaceCoordinator.build(
+        hass, entry, data={}, strain_library=MagicMock()
+    )
     growspace = MagicMock()
     coordinator._data_repository = MagicMock()
     coordinator._data_repository.get_growspace.return_value = growspace

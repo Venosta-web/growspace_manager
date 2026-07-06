@@ -15,6 +15,7 @@ from custom_components.growspace_manager.const import (
     EVENT_GROWSPACE_LOG_ENTRY,
     EVENT_LOG_LOOKBACK_DAYS,
 )
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.components import websocket_api
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.db_schema import EventData, Events, EventTypes
@@ -22,7 +23,7 @@ from homeassistant.components.recorder.util import session_scope
 from homeassistant.core import HomeAssistant
 import homeassistant.util.dt as dt_util
 
-from ._common import _merge_logbook_event
+from ._common import WSCommand, _merge_logbook_event
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -133,110 +134,89 @@ def _query_logbook_events_impl(
                     d["event_id"] = e_row.event_id
                     formatted.append(d)
 
-            except (json.JSONDecodeError, AttributeError):
+            except json.JSONDecodeError, AttributeError:
                 continue
     return formatted
 
 
+async def _query_grouped_events(
+    hass: HomeAssistant,
+    msg: dict[str, Any],
+    lookback_days: int,
+    default_limit: int,
+    exclude_categories: set[str] | None,
+    include_categories: set[str] | None,
+    limit_multiplier: int,
+) -> dict[str, Any]:
+    """Run the recorder query and group results by plant/growspace key."""
+    growspace_id = msg.get("growspace_id")
+    plant_id = msg.get("plant_id")
+    limit = msg.get("limit", default_limit)
+    response_key = plant_id or growspace_id
+
+    try:
+        recorder = get_instance(hass)
+    except (ImportError, KeyError) as err:
+        # Recorder unavailable is a graceful empty result, not an error.
+        _LOGGER.warning("Recorder not available: %s", err)
+        return {response_key: []} if response_key else {}
+
+    end_time = dt_util.utcnow()
+    start_time = end_time - timedelta(days=lookback_days)
+
+    evts = await recorder.async_add_executor_job(
+        _query_logbook_events_impl,
+        hass,
+        start_time,
+        end_time,
+        limit,
+        growspace_id,
+        plant_id,
+        exclude_categories,
+        include_categories,
+        limit_multiplier,
+    )
+    res: dict[str, Any] = {}
+    if response_key:
+        res[response_key] = evts
+    else:
+        for v in evts:
+            gid = v.get("growspace_id", "global")
+            res.setdefault(gid, []).append(v)
+    return res
+
+
 async def websocket_get_event_log(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Handle get event log command via Recorder.
 
     Excludes high-frequency environmental alerts (optimal, stress, mold).
     """
-    growspace_id = msg.get("growspace_id")
-    plant_id = msg.get("plant_id")
-    limit = msg.get("limit", 50)
     spam_cats = {"optimal", "stress", "mold", "alert", "environment"}
-
-    try:
-        recorder = get_instance(hass)
-        end_time = dt_util.utcnow()
-        start_time = end_time - timedelta(days=EVENT_LOG_LOOKBACK_DAYS)
-
-        evts = await recorder.async_add_executor_job(
-            _query_logbook_events_impl,
-            hass,
-            start_time,
-            end_time,
-            limit,
-            growspace_id,
-            plant_id,
-            spam_cats,
-            None,
-            2,
-        )
-        res = {}
-        response_key = plant_id or growspace_id
-        if response_key:
-            res[response_key] = evts
-        else:
-            for v in evts:
-                gid = v.get("growspace_id", "global")
-                res.setdefault(gid, []).append(v)
-
-        connection.send_result(msg["id"], res)
-
-    except (ImportError, KeyError) as err:
-        _LOGGER.warning("Recorder not available: %s", err)
-        response_key = plant_id or growspace_id
-        connection.send_result(msg["id"], {response_key: []} if response_key else {})
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_get_event_log")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    return await _query_grouped_events(
+        hass, msg, EVENT_LOG_LOOKBACK_DAYS, 50, spam_cats, None, 2
+    )
 
 
 async def websocket_get_alerts(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Handle get alerts command via Recorder.
 
     ONLY includes high-frequency environmental alerts (optimal, stress, mold).
     """
-    growspace_id = msg.get("growspace_id")
-    plant_id = msg.get("plant_id")
-    limit = msg.get("limit", 200)
     alert_cats = {"optimal", "stress", "mold", "alert", "environment"}
-
-    try:
-        recorder = get_instance(hass)
-        end_time = dt_util.utcnow()
-        start_time = end_time - timedelta(days=ALERT_LOG_LOOKBACK_DAYS)
-
-        evts = await recorder.async_add_executor_job(
-            _query_logbook_events_impl,
-            hass,
-            start_time,
-            end_time,
-            limit,
-            growspace_id,
-            plant_id,
-            None,
-            alert_cats,
-            5,
-        )
-        res = {}
-        response_key = plant_id or growspace_id
-        if response_key:
-            res[response_key] = evts
-        else:
-            for v in evts:
-                gid = v.get("growspace_id", "global")
-                res.setdefault(gid, []).append(v)
-
-        connection.send_result(msg["id"], res)
-
-    except (ImportError, KeyError) as err:
-        _LOGGER.warning("Recorder not available: %s", err)
-        response_key = plant_id or growspace_id
-        connection.send_result(msg["id"], {response_key: []} if response_key else {})
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_get_alerts")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    return await _query_grouped_events(
+        hass, msg, ALERT_LOG_LOOKBACK_DAYS, 200, None, alert_cats, 5
+    )
 
 
-COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG, False),
-    (WS_TYPE_GET_ALERTS, websocket_get_alerts, SCHEMA_WS_GET_ALERTS, False),
+COMMANDS: list[WSCommand] = [
+    WSCommand(
+        WS_TYPE_GET_LOG, websocket_get_event_log, SCHEMA_WS_GET_LOG, resolve="any"
+    ),
+    WSCommand(
+        WS_TYPE_GET_ALERTS, websocket_get_alerts, SCHEMA_WS_GET_ALERTS, resolve="any"
+    ),
 ]

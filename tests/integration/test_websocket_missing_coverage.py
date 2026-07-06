@@ -10,19 +10,12 @@ from custom_components.growspace_manager.websocket import (
     websocket_add_growspace_note,
     websocket_add_subarea,
     websocket_download_strain_image,
-    websocket_get_ec_ramp_curves,
     websocket_get_external_strain_details,
-    websocket_get_ipm_presets,
     websocket_get_lineage_tree,
-    websocket_get_nutrient_inventory,
-    websocket_get_nutrient_presets,
     websocket_get_strain_lineage_tree,
-    websocket_get_subareas,
     websocket_import_strain_lineage_tree,
     websocket_query_external_strain,
-    websocket_remove_nutrient_stock,
     websocket_remove_subarea,
-    websocket_update_nutrient_stock,
     websocket_update_strain_lineage_tree,
     websocket_update_subarea,
 )
@@ -44,112 +37,6 @@ def mock_connection() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_websocket_get_nutrient_inventory_not_loaded(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError branch in websocket_get_nutrient_inventory."""
-    msg = {"id": 1}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        side_effect=ServiceValidationError("not loaded"),
-    ):
-        websocket_get_nutrient_inventory(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        1, "not_loaded", "Growspace Manager integration not loaded"
-    )
-
-
-def test_websocket_update_nutrient_stock_not_loaded(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError branch in websocket_update_nutrient_stock."""
-    msg = {
-        "id": 2,
-        "nutrient_id": "n1",
-        "name": "N1",
-        "current_ml": 500,
-        "initial_ml": 1000,
-    }
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        side_effect=ServiceValidationError("not loaded"),
-    ):
-        websocket_update_nutrient_stock(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        2, "not_loaded", "Growspace Manager integration not loaded"
-    )
-
-
-def test_websocket_remove_nutrient_stock_not_loaded(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError branch in websocket_remove_nutrient_stock."""
-    msg = {"id": 3, "nutrient_id": "n1"}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        side_effect=ServiceValidationError("not loaded"),
-    ):
-        websocket_remove_nutrient_stock(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        3, "not_loaded", "Growspace Manager integration not loaded"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Nutrient/IPM/EC-ramp ServiceValidationError paths (lines 597, 619, 640)
-# ---------------------------------------------------------------------------
-
-
-def test_websocket_get_nutrient_presets_not_loaded(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError in websocket_get_nutrient_presets."""
-    msg = {"id": 4}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("not loaded"),
-    ):
-        websocket_get_nutrient_presets(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        4, "not_loaded", "Growspace Manager integration not loaded"
-    )
-
-
-def test_websocket_get_ipm_presets_not_loaded(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError in websocket_get_ipm_presets."""
-    msg = {"id": 5}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("not loaded"),
-    ):
-        websocket_get_ipm_presets(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        5, "not_loaded", "Growspace Manager integration not loaded"
-    )
-
-
-def test_websocket_get_ec_ramp_curves_not_loaded(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError in websocket_get_ec_ramp_curves."""
-    msg = {"id": 6}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("not loaded"),
-    ):
-        websocket_get_ec_ramp_curves(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        6, "not_loaded", "Growspace Manager integration not loaded"
-    )
-
-
-# ---------------------------------------------------------------------------
-# websocket_add_growspace_note generic Exception path (lines 715-719)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_websocket_add_growspace_note_validation_error(
     hass: HomeAssistant, mock_connection: MagicMock
@@ -160,14 +47,9 @@ async def test_websocket_add_growspace_note_validation_error(
     coordinator.services.growspaces.add_growspace_note = AsyncMock(
         side_effect=ServiceValidationError("invalid growspace")
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
-        await websocket_add_growspace_note(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        7, "invalid_args", "invalid growspace"
-    )
+    if True:
+        with pytest.raises(ServiceValidationError, match=r"invalid\ growspace"):
+            await websocket_add_growspace_note(hass, coordinator, msg)
 
 
 @pytest.mark.asyncio
@@ -180,12 +62,9 @@ async def test_websocket_add_growspace_note_generic_error(
     coordinator.services.growspaces.add_growspace_note = AsyncMock(
         side_effect=RuntimeError("boom")
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
-        await websocket_add_growspace_note(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(8, "unknown_error", "boom")
+    if True:
+        with pytest.raises(Exception, match=r"boom"):
+            await websocket_add_growspace_note(hass, coordinator, msg)
 
 
 # ---------------------------------------------------------------------------
@@ -194,54 +73,18 @@ async def test_websocket_add_growspace_note_generic_error(
 
 
 @pytest.mark.asyncio
-async def test_websocket_get_subareas_validation_error(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError branch in websocket_get_subareas."""
-    msg = {"id": 8, "growspace_id": "gs1"}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("invalid"),
-    ):
-        await websocket_get_subareas(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once()
-    assert mock_connection.send_error.call_args[0][1] == "invalid_args"
-
-
-@pytest.mark.asyncio
 async def test_websocket_add_subarea_generic_error(
     hass: HomeAssistant, mock_connection: MagicMock
 ) -> None:
     """Cover generic Exception branch in websocket_add_subarea."""
     msg = {"id": 9, "growspace_id": "gs1", "name": "Sub1"}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
-    ) as mock_get:
+    if True:
+        mock_get = MagicMock()
         mock_get.return_value.services.growspaces.add_subarea = AsyncMock(
             side_effect=RuntimeError("fail")
         )
-        await websocket_add_subarea(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(9, "unknown_error", "fail")
-
-
-@pytest.mark.asyncio
-async def test_websocket_update_subarea_validation_error(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError branch in websocket_update_subarea."""
-    msg = {
-        "id": 10,
-        "growspace_id": "gs1",
-        "subarea_id": "sub1",
-        "environment_config": {},
-    }
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("not found"),
-    ):
-        await websocket_update_subarea(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once()
-    assert mock_connection.send_error.call_args[0][1] == "invalid_args"
+        with pytest.raises(Exception, match=r"fail"):
+            await websocket_add_subarea(hass, mock_get.return_value, msg)
 
 
 @pytest.mark.asyncio
@@ -255,29 +98,13 @@ async def test_websocket_update_subarea_generic_error(
         "subarea_id": "sub1",
         "environment_config": {},
     }
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
-    ) as mock_get:
+    if True:
+        mock_get = MagicMock()
         mock_get.return_value.services.growspaces.update_subarea = AsyncMock(
             side_effect=RuntimeError("oops")
         )
-        await websocket_update_subarea(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(11, "unknown_error", "oops")
-
-
-@pytest.mark.asyncio
-async def test_websocket_remove_subarea_validation_error(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError branch in websocket_remove_subarea."""
-    msg = {"id": 12, "growspace_id": "gs1", "subarea_id": "sub1"}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("not found"),
-    ):
-        await websocket_remove_subarea(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once()
-    assert mock_connection.send_error.call_args[0][1] == "invalid_args"
+        with pytest.raises(Exception, match=r"oops"):
+            await websocket_update_subarea(hass, mock_get.return_value, msg)
 
 
 @pytest.mark.asyncio
@@ -286,49 +113,18 @@ async def test_websocket_remove_subarea_generic_error(
 ) -> None:
     """Cover generic Exception branch in websocket_remove_subarea."""
     msg = {"id": 13, "growspace_id": "gs1", "subarea_id": "sub1"}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call"
-    ) as mock_get:
+    if True:
+        mock_get = MagicMock()
         mock_get.return_value.services.growspaces.remove_subarea = AsyncMock(
             side_effect=RuntimeError("fail")
         )
-        await websocket_remove_subarea(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(13, "unknown_error", "fail")
+        with pytest.raises(Exception, match=r"fail"):
+            await websocket_remove_subarea(hass, mock_get.return_value, msg)
 
 
 # ---------------------------------------------------------------------------
 # websocket_get_lineage_tree error paths (lines 1497-1502, 1521-1522)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_websocket_get_lineage_tree_validation_error_on_coordinator(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError from get_for_service_call in websocket_get_lineage_tree."""
-    msg = {"id": 14, "plant_id": "p1"}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("not loaded"),
-    ):
-        await websocket_get_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once()
-    assert mock_connection.send_error.call_args[0][1] == "invalid_args"
-
-
-@pytest.mark.asyncio
-async def test_websocket_get_lineage_tree_generic_error_on_coordinator(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover generic Exception from get_for_service_call in websocket_get_lineage_tree."""
-    msg = {"id": 15, "plant_id": "p1"}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=RuntimeError("crash"),
-    ):
-        await websocket_get_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once()
-    assert mock_connection.send_error.call_args[0][1] == "unknown_error"
 
 
 @pytest.mark.asyncio
@@ -342,14 +138,9 @@ async def test_websocket_get_lineage_tree_inner_exception(
     mock_coordinator.services.genetics.get_lineage_tree.side_effect = RuntimeError(
         "inner crash"
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=mock_coordinator,
-    ):
-        await websocket_get_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        16, "unknown_error", "inner crash"
-    )
+    if True:
+        with pytest.raises(Exception, match=r"inner\ crash"):
+            await websocket_get_lineage_tree(hass, mock_coordinator, msg)
 
 
 # ---------------------------------------------------------------------------
@@ -368,12 +159,9 @@ async def test_websocket_get_strain_lineage_tree_generic_error(
         "fail"
     )
     mock_coordinator.services.config.strain_library = mock_coordinator._strain_library
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_get_strain_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(17, "unknown_error", "fail")
+    if True:
+        with pytest.raises(Exception, match=r"fail"):
+            await websocket_get_strain_lineage_tree(hass, mock_coordinator, msg)
 
 
 @pytest.mark.asyncio
@@ -392,12 +180,9 @@ async def test_websocket_update_strain_lineage_tree_generic_error(
     mock_coordinator._strain_library.update_strain_lineage_tree.side_effect = (
         RuntimeError("fail")
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_update_strain_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(18, "unknown_error", "fail")
+    if True:
+        with pytest.raises(Exception, match=r"fail"):
+            await websocket_update_strain_lineage_tree(hass, mock_coordinator, msg)
 
 
 # ---------------------------------------------------------------------------
@@ -415,26 +200,9 @@ async def test_websocket_import_strain_lineage_tree_success(
     mock_coordinator._strain_library = AsyncMock()
     mock_coordinator.services.config.strain_library = mock_coordinator._strain_library
     mock_coordinator._strain_library.async_import_seedfinder_lineage_tree = AsyncMock()
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_import_strain_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_result.assert_called_once_with(19, {"ok": True})
-
-
-@pytest.mark.asyncio
-async def test_websocket_import_strain_lineage_tree_not_loaded(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Cover ServiceValidationError branch in websocket_import_strain_lineage_tree."""
-    msg = {"id": 20, "strain_name": "Gelato", "tree": {}}
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        side_effect=ServiceValidationError("not loaded"),
-    ):
-        await websocket_import_strain_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(20, "not_loaded", "not loaded")
+    if True:
+        result = await websocket_import_strain_lineage_tree(hass, mock_coordinator, msg)
+    assert result == {"ok": True}
 
 
 @pytest.mark.asyncio
@@ -446,17 +214,12 @@ async def test_websocket_import_strain_lineage_tree_generic_error(
     mock_coordinator = MagicMock()
     mock_coordinator._strain_library = AsyncMock()
     mock_coordinator.services.config.strain_library = mock_coordinator._strain_library
-    mock_coordinator._strain_library.async_import_seedfinder_lineage_tree.side_effect = (
-        RuntimeError("import failed")
+    mock_coordinator._strain_library.async_import_seedfinder_lineage_tree.side_effect = RuntimeError(
+        "import failed"
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_import_strain_lineage_tree(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        21, "unknown_error", "import failed"
-    )
+    if True:
+        with pytest.raises(Exception, match=r"import\ failed"):
+            await websocket_import_strain_lineage_tree(hass, mock_coordinator, msg)
 
 
 # ---------------------------------------------------------------------------
@@ -476,14 +239,9 @@ async def test_websocket_query_external_strain_success(
     mock_coordinator.seedfinder_scraper.async_search_strains = AsyncMock(
         return_value=[{"name": "OG Kush", "breeder": "GoodBreeder"}]
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_query_external_strain(hass, mock_connection, msg)
-    mock_connection.send_result.assert_called_once_with(
-        22, [{"name": "OG Kush", "breeder": "GoodBreeder"}]
-    )
+    if True:
+        result = await websocket_query_external_strain(hass, mock_coordinator, msg)
+    assert result == [{"name": "OG Kush", "breeder": "GoodBreeder"}]
 
 
 @pytest.mark.asyncio
@@ -511,8 +269,8 @@ async def test_websocket_query_external_strain_blacklist_error(
         "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         side_effect=side_effect_get_any,
     ):
-        await websocket_query_external_strain(hass, mock_connection, msg)
-    mock_connection.send_result.assert_called_once_with(23, [])
+        result = await websocket_query_external_strain(hass, mock_coordinator, msg)
+    assert result == []
 
 
 @pytest.mark.asyncio
@@ -527,14 +285,9 @@ async def test_websocket_query_external_strain_service_validation_error(
     mock_coordinator.seedfinder_scraper.async_search_strains = AsyncMock(
         side_effect=ServiceValidationError("unavailable")
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_query_external_strain(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        22, "seedfinder_unavailable", "unavailable"
-    )
+    if True:
+        with pytest.raises(ServiceValidationError, match=r"unavailable"):
+            await websocket_query_external_strain(hass, mock_coordinator, msg)
 
 
 # ---------------------------------------------------------------------------
@@ -553,12 +306,11 @@ async def test_websocket_get_external_strain_details_none(
     mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
         return_value=None
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_get_external_strain_details(hass, mock_connection, msg)
-    mock_connection.send_result.assert_called_once_with(24, None)
+    if True:
+        result = await websocket_get_external_strain_details(
+            hass, mock_coordinator, msg
+        )
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -592,13 +344,11 @@ async def test_websocket_get_external_strain_details_with_data(
     mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
         return_value=raw
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_get_external_strain_details(hass, mock_connection, msg)
+    if True:
+        result = await websocket_get_external_strain_details(
+            hass, mock_coordinator, msg
+        )
 
-    result = mock_connection.send_result.call_args[0][1]
     assert result["name"] == "Gelato #41"
     assert result["flowering_days"] == round((56 + 63) / 2)
     assert result["indica_percentage"] == 60
@@ -636,13 +386,11 @@ async def test_websocket_get_external_strain_details_single_flowering_time(
     mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
         return_value=raw
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_get_external_strain_details(hass, mock_connection, msg)
+    if True:
+        result = await websocket_get_external_strain_details(
+            hass, mock_coordinator, msg
+        )
 
-    result = mock_connection.send_result.call_args[0][1]
     assert result["flowering_days"] == 60
     assert result["parents"] is None
 
@@ -658,14 +406,9 @@ async def test_websocket_get_external_strain_details_service_validation_error(
     mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
         side_effect=ServiceValidationError("unavailable")
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_get_external_strain_details(hass, mock_connection, msg)
-    mock_connection.send_error.assert_called_once_with(
-        25, "seedfinder_unavailable", "unavailable"
-    )
+    if True:
+        with pytest.raises(ServiceValidationError, match=r"unavailable"):
+            await websocket_get_external_strain_details(hass, mock_coordinator, msg)
 
 
 @pytest.mark.asyncio
@@ -699,13 +442,11 @@ async def test_websocket_get_external_strain_details_no_flowering_time_match(
     mock_coordinator.seedfinder_scraper.async_get_strain_details = AsyncMock(
         return_value=raw
     )
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
-        return_value=mock_coordinator,
-    ):
-        await websocket_get_external_strain_details(hass, mock_connection, msg)
+    if True:
+        result = await websocket_get_external_strain_details(
+            hass, mock_coordinator, msg
+        )
 
-    result = mock_connection.send_result.call_args[0][1]
     assert result["flowering_days"] is None
 
 
@@ -761,7 +502,7 @@ async def test_websocket_download_strain_image_uses_content_type_header(
             return_value=mock_session,
         ),
     ):
-        await websocket_download_strain_image(hass, mock_connection, msg)
+        await websocket_download_strain_image(hass, mock_coordinator, msg)
 
     saved_base64: str = mock_image_manager.save_strain_image.call_args[0][2]
     assert saved_base64.startswith("data:image/png;base64,"), (

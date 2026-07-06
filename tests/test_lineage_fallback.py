@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.exceptions import PlantNotFoundError
 from custom_components.growspace_manager.managers.genetics import GeneticsManager
 from custom_components.growspace_manager.models import (
     Plant,
@@ -32,13 +33,16 @@ def manager_empty(save_callback: AsyncMock) -> GeneticsManager:
     from custom_components.growspace_manager.data_access.growspace_repository import (
         GrowspaceRepository,
     )
+
     repo = GrowspaceRepository()
-    repo.add_plant(Plant(
-        plant_id="plant-1",
-        growspace_id="gs-1",
-        genetics=PlantGenetics(strain_name="OG Kush"),
-        stage="flower",
-    ))
+    repo.add_plant(
+        Plant(
+            plant_id="plant-1",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="OG Kush"),
+            stage="flower",
+        )
+    )
     return GeneticsManager(repository=repo, save_callback=save_callback)
 
 
@@ -48,19 +52,24 @@ def manager_with_pollination(save_callback: AsyncMock) -> GeneticsManager:
     from custom_components.growspace_manager.data_access.growspace_repository import (
         GrowspaceRepository,
     )
+
     repo = GrowspaceRepository()
-    repo.add_plant(Plant(
-        plant_id="plant-donor",
-        growspace_id="gs-1",
-        genetics=PlantGenetics(strain_name="Durban Poison"),
-        stage="flower",
-    ))
-    repo.add_plant(Plant(
-        plant_id="plant-receiver",
-        growspace_id="gs-1",
-        genetics=PlantGenetics(strain_name="OG Kush"),
-        stage="flower",
-    ))
+    repo.add_plant(
+        Plant(
+            plant_id="plant-donor",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="Durban Poison"),
+            stage="flower",
+        )
+    )
+    repo.add_plant(
+        Plant(
+            plant_id="plant-receiver",
+            growspace_id="gs-1",
+            genetics=PlantGenetics(strain_name="OG Kush"),
+            stage="flower",
+        )
+    )
     mgr = GeneticsManager(repository=repo, save_callback=save_callback)
     event = PollinationEvent(
         event_id="evt-1",
@@ -157,20 +166,15 @@ async def test_fallback_uses_strain_library_when_no_pollination_parents() -> Non
     plant.genetics.strain_name = "OG Kush"
 
     pollination_tree = {"name": "OG Kush", "parents": []}
-    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree, strain_library)
+    coordinator = _make_coordinator(
+        {"plant-1": plant}, pollination_tree, strain_library
+    )
 
     hass = _make_hass(DOMAIN)
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 1, "plant_id": "plant-1"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
-        await websocket_get_lineage_tree(hass, connection, msg)
-
-    connection.send_result.assert_called_once()
-    result_tree = connection.send_result.call_args[0][1]
+    result_tree = await websocket_get_lineage_tree(hass, coordinator, msg)
     assert len(result_tree["parents"]) == 2
     parent_names = [p["name"] for p in result_tree["parents"]]
     assert "Chemdawg" in parent_names
@@ -194,20 +198,15 @@ async def test_no_fallback_when_pollination_tree_has_parents() -> None:
             {"name": "Donor", "parents": []},
         ],
     }
-    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree, strain_library)
+    coordinator = _make_coordinator(
+        {"plant-1": plant}, pollination_tree, strain_library
+    )
 
     hass = _make_hass(DOMAIN)
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 2, "plant_id": "plant-1"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
-        await websocket_get_lineage_tree(hass, connection, msg)
-
-    connection.send_result.assert_called_once()
-    result_tree = connection.send_result.call_args[0][1]
+    result_tree = await websocket_get_lineage_tree(hass, coordinator, msg)
     # Parents come from pollination, not strain library
     assert result_tree["parents"] == pollination_tree["parents"]
     strain_library.get_strain_lineage_tree.assert_not_called()
@@ -221,20 +220,15 @@ async def test_fallback_skipped_when_strain_library_not_loaded() -> None:
     plant.genetics.strain_name = "OG Kush"
 
     pollination_tree = {"name": "OG Kush", "parents": []}
-    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree, strain_library=None)
+    coordinator = _make_coordinator(
+        {"plant-1": plant}, pollination_tree, strain_library=None
+    )
 
     hass = _make_hass(DOMAIN)
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 3, "plant_id": "plant-1"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
-        await websocket_get_lineage_tree(hass, connection, msg)
-
-    connection.send_result.assert_called_once()
-    result_tree = connection.send_result.call_args[0][1]
+    result_tree = await websocket_get_lineage_tree(hass, coordinator, msg)
     assert result_tree["parents"] == []
 
 
@@ -253,20 +247,15 @@ async def test_fallback_skipped_when_strain_library_tree_also_empty() -> None:
     plant.genetics.strain_name = "OG Kush"
 
     pollination_tree = {"name": "OG Kush", "parents": []}
-    coordinator = _make_coordinator({"plant-1": plant}, pollination_tree, strain_library)
+    coordinator = _make_coordinator(
+        {"plant-1": plant}, pollination_tree, strain_library
+    )
 
     hass = _make_hass(DOMAIN)
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 4, "plant_id": "plant-1"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
-        await websocket_get_lineage_tree(hass, connection, msg)
-
-    connection.send_result.assert_called_once()
-    result_tree = connection.send_result.call_args[0][1]
+    result_tree = await websocket_get_lineage_tree(hass, coordinator, msg)
     assert result_tree["parents"] == []
 
 
@@ -278,16 +267,8 @@ async def test_plant_not_found_sends_error() -> None:
 
     hass = MagicMock()
     hass.data = {}
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 5, "plant_id": "missing-plant"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
-        await websocket_get_lineage_tree(hass, connection, msg)
-
-    connection.send_error.assert_called_once()
-    call_args = connection.send_error.call_args[0]
-    assert call_args[1] == "invalid_args"
-    assert "missing-plant" in call_args[2]
+    with pytest.raises(PlantNotFoundError, match="missing-plant"):
+        await websocket_get_lineage_tree(hass, coordinator, msg)

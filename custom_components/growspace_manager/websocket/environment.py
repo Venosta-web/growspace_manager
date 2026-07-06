@@ -11,7 +11,10 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceError,
+    GrowspaceNotFoundError,
+)
 from homeassistant.components import websocket_api
 from homeassistant.components.recorder import (
     get_instance,
@@ -22,7 +25,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.util.dt as dt_util
 
-from ._common import _EPOCH_SENTINEL, _extract_ts
+from ._common import _EPOCH_SENTINEL, WSCommand, _extract_ts
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -263,99 +266,74 @@ async def _get_history_with_binary_search_downsample(
 
 
 async def websocket_get_history_stats(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Handle get history stats command with server-side optimization."""
     entity_ids = msg["entity_ids"]
     start_time_str = msg["start_time"]
     end_time_str = msg.get("end_time")
     interval = msg["interval_minutes"]
 
-    try:
-        start_time = dt_util.parse_datetime(start_time_str)
-        end_time = (
-            dt_util.parse_datetime(end_time_str) if end_time_str else dt_util.utcnow()
-        )
+    start_time = dt_util.parse_datetime(start_time_str)
+    end_time = (
+        dt_util.parse_datetime(end_time_str) if end_time_str else dt_util.utcnow()
+    )
 
-        if not start_time:
-            connection.send_error(msg["id"], "invalid_args", "Invalid start_time")
-            return
+    if not start_time:
+        raise ServiceValidationError("Invalid start_time")
+    if not end_time:
+        raise ServiceValidationError("Invalid end_time")
 
-        if not end_time:
-            connection.send_error(msg["id"], "invalid_args", "Invalid end_time")
-            return
-
-        if interval >= 60:
-            stats_result = await _get_statistics_data(
-                hass, entity_ids, start_time, end_time, interval
-            )
-            if stats_result:
-                connection.send_result(msg["id"], stats_result)
-                return
-
-        result = await _get_history_with_binary_search_downsample(
+    if interval >= 60:
+        stats_result = await _get_statistics_data(
             hass, entity_ids, start_time, end_time, interval
         )
-        connection.send_result(msg["id"], result)
+        if stats_result:
+            return stats_result
 
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_get_history_stats")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    return await _get_history_with_binary_search_downsample(
+        hass, entity_ids, start_time, end_time, interval
+    )
 
 
 async def websocket_update_sensor_coordinates(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> None:
     """Handle update sensor coordinates command."""
     growspace_id = msg["growspace_id"]
     entity_id = msg["entity_id"]
-    x = msg["x"]
-    y = msg["y"]
-    z = msg["z"]
     rotation = msg.get("rotation")
 
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        growspace = coordinator.growspaces.get(growspace_id)
+    growspace = coordinator.growspaces.get(growspace_id)
+    if not growspace:
+        raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
-        if not growspace:
-            connection.send_error(
-                msg["id"], "not_found", f"Growspace {growspace_id} not found"
-            )
-            return
+    if not hasattr(growspace, "environment_config") or not growspace.environment_config:
+        raise ServiceValidationError("Grow space has no environment configuration")
 
-        if (
-            not hasattr(growspace, "environment_config")
-            or not growspace.environment_config
-        ):
-            connection.send_error(
-                msg["id"],
-                "invalid_state",
-                "Grow space has no environment configuration",
-            )
-            return
+    if not growspace.environment_config.sensor_coordinates:
+        growspace.environment_config.sensor_coordinates = {}
 
-        if not growspace.environment_config.sensor_coordinates:
-            growspace.environment_config.sensor_coordinates = {}
+    data = {"x": msg["x"], "y": msg["y"], "z": msg["z"]}
+    if rotation is not None:
+        data["rotation"] = rotation
 
-        data = {"x": x, "y": y, "z": z}
-        if rotation is not None:
-            data["rotation"] = rotation
+    growspace.environment_config.sensor_coordinates[entity_id] = data
 
-        growspace.environment_config.sensor_coordinates[entity_id] = data
-
-        await coordinator.async_commit()
-        await coordinator.async_request_refresh()
-
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "invalid_args", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_update_sensor_coordinates")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await coordinator.async_commit()
+    await coordinator.async_request_refresh()
 
 
-COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (WS_TYPE_GET_HISTORY_STATS, websocket_get_history_stats, SCHEMA_WS_GET_HISTORY_STATS, False),
-    (WS_TYPE_UPDATE_SENSOR_COORDINATES, websocket_update_sensor_coordinates, SCHEMA_WS_UPDATE_SENSOR_COORDINATES, False),
+COMMANDS: list[WSCommand] = [
+    WSCommand(
+        WS_TYPE_GET_HISTORY_STATS,
+        websocket_get_history_stats,
+        SCHEMA_WS_GET_HISTORY_STATS,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_UPDATE_SENSOR_COORDINATES,
+        websocket_update_sensor_coordinates,
+        SCHEMA_WS_UPDATE_SENSOR_COORDINATES,
+    ),
 ]

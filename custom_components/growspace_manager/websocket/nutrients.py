@@ -10,15 +10,10 @@ import voluptuous as vol
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from homeassistant.components import websocket_api
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
-from ._common import WSErrorMap, handle_ws_errors_sync
-
-_ERROR_MAP: WSErrorMap = (
-    (ServiceValidationError, "not_loaded", False, "Growspace Manager integration not loaded"),
-    (Exception, "unknown_error", True, None),
-)
+from ._common import WSCommand
 
 WS_TYPE_GET_NUTRIENT_PRESETS = f"{DOMAIN}/get_nutrient_presets"
 SCHEMA_WS_GET_NUTRIENT_PRESETS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
@@ -77,69 +72,49 @@ SCHEMA_WS_REMOVE_NUTRIENT_STOCK = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exte
 )
 
 
-@callback
-@handle_ws_errors_sync(_ERROR_MAP)
 def websocket_get_nutrient_presets(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Handle get nutrient presets command via WebSocket."""
-    coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-    data = coordinator.services.config.get_nutrient_serialization_data()
-    connection.send_result(msg["id"], data["nutrient_presets"])
+    return coordinator.services.config.get_nutrient_serialization_data()[
+        "nutrient_presets"
+    ]
 
 
-@callback
-@handle_ws_errors_sync(_ERROR_MAP)
 def websocket_get_ipm_presets(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Handle get IPM presets command via WebSocket."""
-    coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-    data = coordinator.services.config.get_nutrient_serialization_data()
-    connection.send_result(msg["id"], data["ipm_presets"])
+    return coordinator.services.config.get_nutrient_serialization_data()["ipm_presets"]
 
 
-@callback
-@handle_ws_errors_sync(_ERROR_MAP)
 def websocket_get_ec_ramp_curves(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Handle get EC ramp curves command via WebSocket."""
-    coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-    data = coordinator.services.config.get_nutrient_serialization_data()
-    connection.send_result(msg["id"], data.get("ec_ramp_curves", []))
+    return coordinator.services.config.get_nutrient_serialization_data().get(
+        "ec_ramp_curves", []
+    )
 
 
-@callback
-@handle_ws_errors_sync(_ERROR_MAP)
 def websocket_get_nutrient_inventory(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Handle get nutrient inventory command."""
-    coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
     inventory = coordinator.services.config.get_inventory()
     if inventory is not None:
-        connection.send_result(msg["id"], asdict(inventory))
-    else:
-        connection.send_result(msg["id"], {"stocks": {}})
+        return asdict(inventory)
+    return {"stocks": {}}
 
 
-@callback
-@handle_ws_errors_sync(_ERROR_MAP)
 def websocket_update_nutrient_stock(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> None:
     """Handle update nutrient stock command."""
-    coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
     current_ml = float(msg["current_ml"])
     initial_ml = float(msg["initial_ml"])
     if current_ml > initial_ml:
-        connection.send_error(
-            msg["id"],
-            "invalid_input",
-            "current_ml cannot exceed initial_ml",
-        )
-        return
+        raise ServiceValidationError("current_ml cannot exceed initial_ml")
     coordinator.services.config.update_stock(
         nutrient_id=msg["nutrient_id"],
         name=msg["name"],
@@ -154,28 +129,56 @@ def websocket_update_nutrient_stock(
     coordinator.config_entry.async_create_background_task(
         hass, coordinator.async_commit(), "save_coordinator_data"
     )
-    connection.send_result(msg["id"])
 
 
-@callback
-@handle_ws_errors_sync(_ERROR_MAP)
 def websocket_remove_nutrient_stock(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> None:
     """Handle remove nutrient stock command."""
-    coordinator: GrowspaceCoordinator = GrowspaceCoordinator.get_any(hass)
     coordinator.services.config.remove_stock(msg["nutrient_id"])
     coordinator.config_entry.async_create_background_task(
         hass, coordinator.async_commit(), "save_coordinator_data"
     )
-    connection.send_result(msg["id"])
 
 
-COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (WS_TYPE_GET_NUTRIENT_PRESETS, websocket_get_nutrient_presets, SCHEMA_WS_GET_NUTRIENT_PRESETS, True),
-    (WS_TYPE_GET_IPM_PRESETS, websocket_get_ipm_presets, SCHEMA_WS_GET_IPM_PRESETS, True),
-    (WS_TYPE_GET_EC_RAMP_CURVES, websocket_get_ec_ramp_curves, SCHEMA_WS_GET_EC_RAMP_CURVES, True),
-    (WS_TYPE_GET_NUTRIENT_INVENTORY, websocket_get_nutrient_inventory, SCHEMA_WS_GET_NUTRIENT_INVENTORY, True),
-    (WS_TYPE_UPDATE_NUTRIENT_STOCK, websocket_update_nutrient_stock, SCHEMA_WS_UPDATE_NUTRIENT_STOCK, True),
-    (WS_TYPE_REMOVE_NUTRIENT_STOCK, websocket_remove_nutrient_stock, SCHEMA_WS_REMOVE_NUTRIENT_STOCK, True),
+COMMANDS: list[WSCommand] = [
+    WSCommand(
+        WS_TYPE_GET_NUTRIENT_PRESETS,
+        websocket_get_nutrient_presets,
+        SCHEMA_WS_GET_NUTRIENT_PRESETS,
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_GET_IPM_PRESETS,
+        websocket_get_ipm_presets,
+        SCHEMA_WS_GET_IPM_PRESETS,
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_GET_EC_RAMP_CURVES,
+        websocket_get_ec_ramp_curves,
+        SCHEMA_WS_GET_EC_RAMP_CURVES,
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_GET_NUTRIENT_INVENTORY,
+        websocket_get_nutrient_inventory,
+        SCHEMA_WS_GET_NUTRIENT_INVENTORY,
+        resolve="any",
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_UPDATE_NUTRIENT_STOCK,
+        websocket_update_nutrient_stock,
+        SCHEMA_WS_UPDATE_NUTRIENT_STOCK,
+        resolve="any",
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_REMOVE_NUTRIENT_STOCK,
+        websocket_remove_nutrient_stock,
+        SCHEMA_WS_REMOVE_NUTRIENT_STOCK,
+        resolve="any",
+        sync=True,
+    ),
 ]

@@ -4,6 +4,8 @@ import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from custom_components.growspace_manager.websocket import (
     WS_TYPE_GET_ALERTS,
     WS_TYPE_GET_LOG,
@@ -12,6 +14,16 @@ from custom_components.growspace_manager.websocket import (
 from homeassistant.core import HomeAssistant
 
 WebSocketGenerator = Any
+
+
+@pytest.fixture(autouse=True)
+def _any_coordinator_available():
+    """resolve="any" commands need a loaded coordinator under the lifecycle."""
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator.get_any",
+        return_value=MagicMock(),
+    ):
+        yield
 
 
 async def test_websocket_get_log_filters_new_spam_categories(

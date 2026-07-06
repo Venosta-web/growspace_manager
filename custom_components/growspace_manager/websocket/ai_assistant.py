@@ -27,6 +27,12 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exceptions import (
+    CoordinatorNotReadyError,
+    EntityNotFoundError,
+    GrowspaceError,
+    RateLimitedError,
+)
 from custom_components.growspace_manager.models import GrowspaceType
 from custom_components.growspace_manager.utils import (
     calculate_days_since,
@@ -37,6 +43,8 @@ from homeassistant.components import conversation, websocket_api
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
+from ._common import WSCommand
+
 _LOGGER = logging.getLogger(__name__)
 
 # Matches [ACTION]...[/ACTION] — non-greedy, allows multi-line content
@@ -44,7 +52,12 @@ _ACTION_RE = re.compile(r"\[ACTION\](.*?)\[/ACTION\]", re.DOTALL)
 
 _VALID_IMAGE_DOMAINS = {"camera", "image"}
 
-_RATE_LIMIT_MARKERS = ("429", "Too Many Requests", "RESOURCE_EXHAUSTED", "resource_exhausted")
+_RATE_LIMIT_MARKERS = (
+    "429",
+    "Too Many Requests",
+    "RESOURCE_EXHAUSTED",
+    "resource_exhausted",
+)
 _RATE_LIMIT_MESSAGE = "rate_limited"
 
 WS_TYPE_START_CONVERSATION = f"{DOMAIN}/start_conversation"
@@ -70,25 +83,14 @@ SCHEMA_WS_SEND_MESSAGE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 )
 
 
-def _validate_image_entities(
-    image_entities: list[str],
-    connection: websocket_api.ActiveConnection,
-    msg_id: int,
-) -> bool:
-    """Validate that all image entity IDs belong to camera or image domains.
-
-    Returns True if valid, False and sends an error to the connection if not.
-    """
+def _validate_image_entities(image_entities: list[str]) -> None:
+    """Validate that all image entity IDs belong to camera or image domains."""
     for entity_id in image_entities:
         domain = entity_id.split(".", 1)[0]
         if domain not in _VALID_IMAGE_DOMAINS:
-            connection.send_error(
-                msg_id,
-                "invalid_entity",
-                f"Entity '{entity_id}' is not in the camera or image domain",
+            raise ServiceValidationError(
+                f"Entity '{entity_id}' is not in the camera or image domain"
             )
-            return False
-    return True
 
 
 def _extract_action(text: str) -> tuple[str, dict[str, Any] | None]:
@@ -104,7 +106,7 @@ def _extract_action(text: str) -> tuple[str, dict[str, Any] | None]:
     raw_json = strip_markdown_fence(match.group(1).strip())
     try:
         action = json.loads(raw_json)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         # Malformed block — return the full text without modification
         return text, None
         return text, None
@@ -163,8 +165,16 @@ def _build_context_message(
 
     # Collect sensor readings — first valid entity per type wins
     sensor_specs: list[tuple[str, list[str | None]]] = [
-        ("Temperature", env.temperature_sensors or ([env.temperature_sensor] if env.temperature_sensor else [])),
-        ("Humidity", env.humidity_sensors or ([env.humidity_sensor] if env.humidity_sensor else [])),
+        (
+            "Temperature",
+            env.temperature_sensors
+            or ([env.temperature_sensor] if env.temperature_sensor else []),
+        ),
+        (
+            "Humidity",
+            env.humidity_sensors
+            or ([env.humidity_sensor] if env.humidity_sensor else []),
+        ),
         ("VPD", env.vpd_sensors or ([env.vpd_sensor] if env.vpd_sensor else [])),
         ("CO2", [env.co2_sensor] if env.co2_sensor else []),
         ("Substrate temp", env.substrate_temperature_sensors),
@@ -191,7 +201,11 @@ def _build_context_message(
         plants = coordinator.services.growspaces.get_growspace_plants(growspace_id)
         if plants:
             max_flower = max(
-                (calculate_days_since(p.flower_start) for p in plants if p.flower_start),
+                (
+                    calculate_days_since(p.flower_start)
+                    for p in plants
+                    if p.flower_start
+                ),
                 default=-1,
             )
             max_veg = max(
@@ -199,7 +213,11 @@ def _build_context_message(
                 default=-1,
             )
             max_seedling = max(
-                (calculate_days_since(p.seedling_start) for p in plants if p.seedling_start),
+                (
+                    calculate_days_since(p.seedling_start)
+                    for p in plants
+                    if p.seedling_start
+                ),
                 default=-1,
             )
             max_clone = max(
@@ -209,13 +227,19 @@ def _build_context_message(
             if max_flower >= 0:
                 stage_line = f"Stage: flower | Day {max_flower} | Week {days_to_week(max_flower)}"
             elif max_veg >= 0:
-                stage_line = f"Stage: veg | Day {max_veg} | Week {days_to_week(max_veg)}"
+                stage_line = (
+                    f"Stage: veg | Day {max_veg} | Week {days_to_week(max_veg)}"
+                )
             elif max_seedling >= 0:
                 stage_line = f"Stage: seedling | Day {max_seedling} | Week {days_to_week(max_seedling)}"
             elif max_clone >= 0:
-                stage_line = f"Stage: clone | Day {max_clone} | Week {days_to_week(max_clone)}"
+                stage_line = (
+                    f"Stage: clone | Day {max_clone} | Week {days_to_week(max_clone)}"
+                )
 
-    lines: list[str] = [f"[Growspace: {growspace.name} | Type: {growspace.growspace_type.value}]"]
+    lines: list[str] = [
+        f"[Growspace: {growspace.name} | Type: {growspace.growspace_type.value}]"
+    ]
     if stage_line:
         lines.append(stage_line)
     if sensor_parts:
@@ -241,11 +265,37 @@ async def _run_conversation(
     )
 
 
-async def websocket_start_conversation(
+async def _converse_or_raise(
     hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    message: str,
+    agent_id: str | None,
+    conversation_id: str | None,
+) -> tuple[str, str]:
+    """Run a conversation turn, raising typed errors for the lifecycle map.
+
+    Returns ``(speech, conversation_id)``.
+    """
+    try:
+        result = await _run_conversation(hass, message, agent_id, conversation_id)
+    except Exception as err:
+        _LOGGER.error("AI conversation failed: %s", err)
+        if _is_rate_limited_error(err):
+            raise RateLimitedError(_RATE_LIMIT_MESSAGE) from err
+        raise GrowspaceError(str(err)) from err
+
+    if _is_rate_limited_result(result):
+        _LOGGER.warning("AI rate limit reached")
+        raise RateLimitedError(_RATE_LIMIT_MESSAGE)
+
+    speech = _extract_speech(result)
+    if speech is None:
+        raise GrowspaceError("AI assistant returned an empty response")
+    return speech, result.conversation_id
+
+
+async def websocket_start_conversation(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Handle the start_conversation WebSocket command.
 
     Begins a brand-new AI conversation (conversation_id=None) and returns
@@ -254,45 +304,15 @@ async def websocket_start_conversation(
     growspace_id: str = msg["growspace_id"]
     message: str = msg["message"]
     agent_id: str | None = msg.get("agent_id")
-    coordinator = _get_coordinator(hass, connection)
-    if agent_id is None and coordinator is not None:
+    if agent_id is None:
         agent_id = coordinator.options.get("ai_settings", {}).get("assistant_id")
-    image_entities: list[str] = msg.get("image_entities") or []
 
-    if not _validate_image_entities(image_entities, connection, msg["id"]):
-        return
+    _validate_image_entities(msg.get("image_entities") or [])
+    message = _build_context_message(hass, coordinator, growspace_id, message)
 
-    if coordinator is not None:
-        message = _build_context_message(hass, coordinator, growspace_id, message)
-
-    try:
-        result = await _run_conversation(hass, message, agent_id, conversation_id=None)
-    except ServiceValidationError as err:
-        _LOGGER.error("Error in start_conversation: %s", err)
-        if _is_rate_limited_error(err):
-            connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
-        else:
-            connection.send_error(msg["id"], "ai_error", str(err))
-        return
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.error("Unexpected error in start_conversation: %s", err)
-        if _is_rate_limited_error(err):
-            connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
-        else:
-            connection.send_error(msg["id"], "ai_error", str(err))
-        return
-
-    if _is_rate_limited_result(result):
-        _LOGGER.warning("AI rate limit reached in start_conversation")
-        connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
-        return
-
-    speech = _extract_speech(result)
-    if speech is None:
-        connection.send_error(
-            msg["id"], "ai_error", "AI assistant returned an empty response"
-        )
-        return
+    speech, thread_id = await _converse_or_raise(
+        hass, message, agent_id, conversation_id=None
+    )
 
     display_text, action = _extract_action(speech)
     ai_message: dict[str, Any] = {
@@ -303,18 +323,16 @@ async def websocket_start_conversation(
     if action is not None:
         ai_message["suggestedAction"] = action
 
-    connection.send_result(msg["id"], {
-        "thread_id": result.conversation_id,
+    return {
+        "thread_id": thread_id,
         "growspace_id": growspace_id,
         "messages": [ai_message],
-    })
+    }
 
 
 async def websocket_send_message(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Handle the send_message WebSocket command.
 
     Continues an existing AI conversation identified by *conversation_id*.
@@ -322,47 +340,15 @@ async def websocket_send_message(
     conversation_id: str = msg["conversation_id"]
     growspace_id: str = msg["growspace_id"]
     message: str = msg["message"]
-    image_entities: list[str] = msg.get("image_entities") or []
 
-    if not _validate_image_entities(image_entities, connection, msg["id"]):
-        return
+    _validate_image_entities(msg.get("image_entities") or [])
 
-    coordinator = _get_coordinator(hass, connection)
-    agent_id: str | None = None
-    if coordinator is not None:
-        agent_id = coordinator.options.get("ai_settings", {}).get("assistant_id")
-        message = _build_context_message(hass, coordinator, growspace_id, message)
+    agent_id = coordinator.options.get("ai_settings", {}).get("assistant_id")
+    message = _build_context_message(hass, coordinator, growspace_id, message)
 
-    try:
-        result = await _run_conversation(
-            hass, message, agent_id=agent_id, conversation_id=conversation_id
-        )
-    except ServiceValidationError as err:
-        _LOGGER.error("Error in send_message: %s", err)
-        if _is_rate_limited_error(err):
-            connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
-        else:
-            connection.send_error(msg["id"], "ai_error", str(err))
-        return
-    except Exception as err:  # noqa: BLE001
-        _LOGGER.error("Unexpected error in send_message: %s", err)
-        if _is_rate_limited_error(err):
-            connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
-        else:
-            connection.send_error(msg["id"], "ai_error", str(err))
-        return
-
-    if _is_rate_limited_result(result):
-        _LOGGER.warning("AI rate limit reached in send_message")
-        connection.send_error(msg["id"], "rate_limited", _RATE_LIMIT_MESSAGE)
-        return
-
-    speech = _extract_speech(result)
-    if speech is None:
-        connection.send_error(
-            msg["id"], "ai_error", "AI assistant returned an empty response"
-        )
-        return
+    speech, _ = await _converse_or_raise(
+        hass, message, agent_id=agent_id, conversation_id=conversation_id
+    )
 
     display_text, action = _extract_action(speech)
     ai_message: dict[str, Any] = {
@@ -373,26 +359,11 @@ async def websocket_send_message(
     if action is not None:
         ai_message["suggestedAction"] = action
 
-    connection.send_result(msg["id"], {
+    return {
         "thread_id": conversation_id,
         "growspace_id": growspace_id,
         "messages": [ai_message],
-    })
-
-
-def _get_coordinator(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-) -> GrowspaceCoordinator | None:
-    """Return the first loaded GrowspaceCoordinator, or *None*.
-
-    Returns ``None`` (rather than raising) so callers can send a typed
-    WebSocket error response.
-    """
-    try:
-        return GrowspaceCoordinator.get_for_service_call(hass, {})
-    except (ServiceValidationError, Exception):  # noqa: BLE001
-        return None
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -410,28 +381,18 @@ SCHEMA_WS_GET_AI_ALERTS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_get_ai_alerts(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Return AI alert records, optionally filtered by growspace or type.
 
     WebSocket message fields:
     - ``growspace_id`` *(optional)*: filter to a specific growspace
     - ``alert_type`` *(optional)*: ``"stress"`` or ``"mold"``
     """
-    coordinator = _get_coordinator(hass, connection)
-    if coordinator is None:
-        connection.send_error(
-            msg["id"], "not_found", "Growspace Manager integration not loaded"
-        )
-        return
-
-    alerts = coordinator.services.notifications.get_alerts(
+    return coordinator.services.notifications.get_alerts(
         growspace_id=msg.get("growspace_id"),
         alert_type=msg.get("alert_type"),
     )
-    connection.send_result(msg["id"], alerts)
 
 
 # ---------------------------------------------------------------------------
@@ -449,34 +410,24 @@ SCHEMA_WS_RESOLVE_AI_ALERT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_resolve_ai_alert(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Mark an AI alert as resolved.
 
     WebSocket message fields:
     - ``alert_id`` *(required)*: UUID of the alert to resolve
     - ``resolution_note`` *(optional)*: resolution notes to attach
     """
-    coordinator = _get_coordinator(hass, connection)
-    if coordinator is None:
-        connection.send_error(
-            msg["id"], "not_found", "Growspace Manager integration not loaded"
-        )
-        return
-
     alert_id: str = msg["alert_id"]
     notes: str | None = msg.get("resolution_note")
-    resolved = await coordinator.services.notifications.resolve_alert(alert_id, notes=notes)
+    resolved = await coordinator.services.notifications.resolve_alert(
+        alert_id, notes=notes
+    )
 
     if not resolved:
-        connection.send_error(
-            msg["id"], "not_found", f"Alert '{alert_id}' not found"
-        )
-        return
+        raise EntityNotFoundError(f"Alert '{alert_id}' not found")
 
-    connection.send_result(msg["id"], {"success": True, "alert_id": alert_id})
+    return {"success": True, "alert_id": alert_id}
 
 
 # ---------------------------------------------------------------------------
@@ -494,10 +445,8 @@ SCHEMA_WS_GET_BRIEFING = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_get_briefing(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Return the latest AI briefing, optionally regenerating it.
 
     WebSocket message fields:
@@ -505,23 +454,12 @@ async def websocket_get_briefing(
     - ``force_refresh`` *(optional, default False)*: when ``True`` bypass the
       cache and generate a fresh briefing immediately.
     """
-    coordinator = _get_coordinator(hass, connection)
-    if coordinator is None:
-        connection.send_error(
-            msg["id"], "not_found", "Growspace Manager integration not loaded"
-        )
-        return
-
     briefing_scheduler = getattr(coordinator, "briefing_scheduler", None)
     if briefing_scheduler is None:
-        connection.send_error(
-            msg["id"], "not_found", "Briefing scheduler not available"
-        )
-        return
+        raise CoordinatorNotReadyError("Briefing scheduler not available")
 
     force_refresh: bool = msg.get("force_refresh", False)
-    briefing = await briefing_scheduler.async_get_briefing(force_refresh=force_refresh)
-    connection.send_result(msg["id"], briefing)
+    return await briefing_scheduler.async_get_briefing(force_refresh=force_refresh)
 
 
 # ---------------------------------------------------------------------------
@@ -535,23 +473,16 @@ SCHEMA_WS_GET_AI_STATUS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_get_ai_status(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Return the component-level AI enabled flag.
 
     Response: ``{ "ai_enabled": bool }``
     """
-    coordinator = _get_coordinator(hass, connection)
-    if coordinator is None:
-        connection.send_error(
-            msg["id"], "not_found", "Growspace Manager integration not loaded"
-        )
-        return
-
-    ai_enabled: bool = coordinator.options.get("ai_settings", {}).get("ai_enabled", False)
-    connection.send_result(msg["id"], {"ai_enabled": bool(ai_enabled)})
+    ai_enabled: bool = coordinator.options.get("ai_settings", {}).get(
+        "ai_enabled", False
+    )
+    return {"ai_enabled": bool(ai_enabled)}
 
 
 # ---------------------------------------------------------------------------
@@ -565,23 +496,14 @@ SCHEMA_WS_GET_AI_SETTINGS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_get_ai_settings(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Return the full ai_settings dict from the config entry options.
 
     Response: the ``ai_settings`` dict, or ``{}`` when not yet configured.
     """
-    coordinator = _get_coordinator(hass, connection)
-    if coordinator is None:
-        connection.send_error(
-            msg["id"], "not_found", "Growspace Manager integration not loaded"
-        )
-        return
-
     ai_settings: dict[str, Any] = coordinator.options.get("ai_settings", {})
-    connection.send_result(msg["id"], dict(ai_settings))
+    return dict(ai_settings)
 
 
 # ---------------------------------------------------------------------------
@@ -598,10 +520,8 @@ SCHEMA_WS_SAVE_AI_AGENT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_save_ai_agent(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Persist a conversation agent selection and enable AI features.
 
     WebSocket message fields:
@@ -610,13 +530,6 @@ async def websocket_save_ai_agent(
     Sets ``ai_settings.assistant_id`` and ``ai_settings.ai_enabled = True`` in
     the config entry options so the change survives restarts.
     """
-    coordinator = _get_coordinator(hass, connection)
-    if coordinator is None:
-        connection.send_error(
-            msg["id"], "not_found", "Growspace Manager integration not loaded"
-        )
-        return
-
     agent_id: str = msg["agent_id"]
     new_options = coordinator.config_entry.options.copy()
     ai_settings: dict[str, Any] = dict(new_options.get("ai_settings", {}))
@@ -627,10 +540,12 @@ async def websocket_save_ai_agent(
     if hasattr(coordinator, "options"):
         coordinator.options = new_options
 
-    hass.config_entries.async_update_entry(coordinator.config_entry, options=new_options)
+    hass.config_entries.async_update_entry(
+        coordinator.config_entry, options=new_options
+    )
     await coordinator.async_commit()
 
-    connection.send_result(msg["id"], {"success": True, "agent_id": agent_id})
+    return {"success": True, "agent_id": agent_id}
 
 
 # ---------------------------------------------------------------------------
@@ -667,37 +582,30 @@ SCHEMA_WS_SAVE_AI_SETTINGS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_save_ai_settings(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Persist all user-facing AI settings from the Growmaster Settings Panel.
 
     Accepts the nine user-facing ``ai_settings`` fields (all except
     ``vision_debug_enabled``) and writes them atomically to the config entry.
     """
-    coordinator = _get_coordinator(hass, connection)
-    if coordinator is None:
-        connection.send_error(
-            msg["id"], "not_found", "Growspace Manager integration not loaded"
-        )
-        return
-
     new_options = coordinator.config_entry.options.copy()
     existing_settings = dict(new_options.get("ai_settings", {}))
     ai_settings: dict[str, Any] = {
         **existing_settings,
-        **{k: msg[k] for k in _AI_SETTINGS_KEYS if k in msg}
+        **{k: msg[k] for k in _AI_SETTINGS_KEYS if k in msg},
     }
     new_options["ai_settings"] = ai_settings
 
     if hasattr(coordinator, "options"):
         coordinator.options = new_options
 
-    hass.config_entries.async_update_entry(coordinator.config_entry, options=new_options)
+    hass.config_entries.async_update_entry(
+        coordinator.config_entry, options=new_options
+    )
     await coordinator.async_commit()
 
-    connection.send_result(msg["id"], {"success": True})
+    return {"success": True}
 
 
 # ---------------------------------------------------------------------------
@@ -714,10 +622,8 @@ SCHEMA_WS_GET_CONVERSATION_THREADS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.e
 
 
 async def websocket_get_conversation_threads(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Return persisted conversation threads for a growspace.
 
     WebSocket message fields:
@@ -725,15 +631,7 @@ async def websocket_get_conversation_threads(
 
     Response: list of thread objects (may be empty).
     """
-    coordinator = _get_coordinator(hass, connection)
-    if coordinator is None:
-        connection.send_error(
-            msg["id"], "not_found", "Growspace Manager integration not loaded"
-        )
-        return
-
-    threads = coordinator.conversation_store.get_threads(msg["growspace_id"])
-    connection.send_result(msg["id"], threads)
+    return coordinator.conversation_store.get_threads(msg["growspace_id"])
 
 
 # ---------------------------------------------------------------------------
@@ -751,10 +649,8 @@ SCHEMA_WS_SAVE_CONVERSATION_THREADS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.
 
 
 async def websocket_save_conversation_threads(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Persist the frontend-managed conversation thread list for a growspace.
 
     The frontend enforces MAX_PINNED_THREADS / MAX_RECENT_THREADS eviction
@@ -766,29 +662,77 @@ async def websocket_save_conversation_threads(
 
     Response: ``{ "success": True }``
     """
-    coordinator = _get_coordinator(hass, connection)
-    if coordinator is None:
-        connection.send_error(
-            msg["id"], "not_found", "Growspace Manager integration not loaded"
-        )
-        return
-
     await coordinator.conversation_store.save_threads(
         msg["growspace_id"], msg["threads"]
     )
-    connection.send_result(msg["id"], {"success": True})
+    return {"success": True}
 
 
-COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (WS_TYPE_START_CONVERSATION, websocket_start_conversation, SCHEMA_WS_START_CONVERSATION, False),
-    (WS_TYPE_SEND_MESSAGE, websocket_send_message, SCHEMA_WS_SEND_MESSAGE, False),
-    (WS_TYPE_GET_AI_ALERTS, websocket_get_ai_alerts, SCHEMA_WS_GET_AI_ALERTS, False),
-    (WS_TYPE_RESOLVE_AI_ALERT, websocket_resolve_ai_alert, SCHEMA_WS_RESOLVE_AI_ALERT, False),
-    (WS_TYPE_GET_BRIEFING, websocket_get_briefing, SCHEMA_WS_GET_BRIEFING, False),
-    (WS_TYPE_GET_AI_STATUS, websocket_get_ai_status, SCHEMA_WS_GET_AI_STATUS, False),
-    (WS_TYPE_GET_AI_SETTINGS, websocket_get_ai_settings, SCHEMA_WS_GET_AI_SETTINGS, False),
-    (WS_TYPE_SAVE_AI_AGENT, websocket_save_ai_agent, SCHEMA_WS_SAVE_AI_AGENT, False),
-    (WS_TYPE_SAVE_AI_SETTINGS, websocket_save_ai_settings, SCHEMA_WS_SAVE_AI_SETTINGS, False),
-    (WS_TYPE_GET_CONVERSATION_THREADS, websocket_get_conversation_threads, SCHEMA_WS_GET_CONVERSATION_THREADS, False),
-    (WS_TYPE_SAVE_CONVERSATION_THREADS, websocket_save_conversation_threads, SCHEMA_WS_SAVE_CONVERSATION_THREADS, False),
+COMMANDS: list[WSCommand] = [
+    WSCommand(
+        WS_TYPE_START_CONVERSATION,
+        websocket_start_conversation,
+        SCHEMA_WS_START_CONVERSATION,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_SEND_MESSAGE,
+        websocket_send_message,
+        SCHEMA_WS_SEND_MESSAGE,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_GET_AI_ALERTS,
+        websocket_get_ai_alerts,
+        SCHEMA_WS_GET_AI_ALERTS,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_RESOLVE_AI_ALERT,
+        websocket_resolve_ai_alert,
+        SCHEMA_WS_RESOLVE_AI_ALERT,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_GET_BRIEFING,
+        websocket_get_briefing,
+        SCHEMA_WS_GET_BRIEFING,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_GET_AI_STATUS,
+        websocket_get_ai_status,
+        SCHEMA_WS_GET_AI_STATUS,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_GET_AI_SETTINGS,
+        websocket_get_ai_settings,
+        SCHEMA_WS_GET_AI_SETTINGS,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_SAVE_AI_AGENT,
+        websocket_save_ai_agent,
+        SCHEMA_WS_SAVE_AI_AGENT,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_SAVE_AI_SETTINGS,
+        websocket_save_ai_settings,
+        SCHEMA_WS_SAVE_AI_SETTINGS,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_GET_CONVERSATION_THREADS,
+        websocket_get_conversation_threads,
+        SCHEMA_WS_GET_CONVERSATION_THREADS,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_SAVE_CONVERSATION_THREADS,
+        websocket_save_conversation_threads,
+        SCHEMA_WS_SAVE_CONVERSATION_THREADS,
+        resolve="any",
+    ),
 ]

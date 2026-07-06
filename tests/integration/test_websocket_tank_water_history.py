@@ -1,6 +1,6 @@
 """Tests for get_tank_water_history WebSocket command."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -19,7 +19,14 @@ def mock_connection() -> MagicMock:
 
 
 def _make_buckets(count: int, liters: float = 0.0) -> list[dict]:
-    return [{"bucket_start": f"2024-01-01T00:{i:02d}:00+00:00", "liters_consumed": liters, "liters_refilled": 0.0} for i in range(count)]
+    return [
+        {
+            "bucket_start": f"2024-01-01T00:{i:02d}:00+00:00",
+            "liters_consumed": liters,
+            "liters_refilled": 0.0,
+        }
+        for i in range(count)
+    ]
 
 
 def _make_coordinator(
@@ -36,7 +43,9 @@ def _make_coordinator(
     growspace = MagicMock()
     growspace.environment_config = env
     coord.growspaces = {growspace_id: growspace}
-    coord.services.growspaces.get_all_trackers_for_growspace.return_value = trackers or {}
+    coord.services.growspaces.get_all_trackers_for_growspace.return_value = (
+        trackers or {}
+    )
     return coord
 
 
@@ -50,13 +59,7 @@ async def test_24h_returns_96_buckets(
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert result["growspace_id"] == "tent1"
     assert result["range"] == "24h"
     assert len(result["buckets"]) == 96
@@ -72,13 +75,7 @@ async def test_7d_returns_168_buckets(
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "7d"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert len(result["buckets"]) == 168
 
 
@@ -92,13 +89,7 @@ async def test_6h_returns_24_buckets(
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "6h"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert len(result["buckets"]) == 24
 
 
@@ -112,13 +103,7 @@ async def test_1h_returns_4_buckets(
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "1h"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert len(result["buckets"]) == 4
 
 
@@ -134,13 +119,7 @@ async def test_aggregates_liters_across_tanks(
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert all(b["liters"] == pytest.approx(1.5) for b in result["buckets"])
 
 
@@ -152,13 +131,7 @@ async def test_returns_empty_buckets_when_flow_sensors_configured(
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert result["buckets"] == []
 
 
@@ -170,13 +143,7 @@ async def test_returns_empty_buckets_when_drain_sensors_configured(
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert result["buckets"] == []
 
 
@@ -190,13 +157,7 @@ async def test_all_zero_buckets_when_no_consumption(
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert len(result["buckets"]) == 96
     assert all(b["liters"] == 0.0 for b in result["buckets"])
 
@@ -210,13 +171,7 @@ async def test_returns_empty_buckets_when_growspace_not_found(
 
     msg = {"id": 1, "growspace_id": "unknown", "range": "24h"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert result["growspace_id"] == "unknown"
     assert result["range"] == "24h"
     assert result["buckets"] == []
@@ -230,28 +185,7 @@ async def test_returns_empty_buckets_when_no_qualifying_trackers(
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        return_value=coord,
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    result = mock_connection.send_result.call_args[0][1]
+    result = await websocket_get_tank_water_history(hass, coord, msg)
     assert result["growspace_id"] == "tent1"
     assert result["range"] == "24h"
     assert result["buckets"] == []
-
-
-async def test_error_sends_error_response(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Exceptions are caught and sent as error responses."""
-    msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
-
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("boom"),
-    ):
-        await websocket_get_tank_water_history(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(1, "unknown_error", "boom")

@@ -51,15 +51,8 @@ async def test_get_ai_settings_returns_full_settings_dict(
     coordinator = _make_coordinator(settings)
     msg = {"id": 1, "type": f"{DOMAIN}/get_ai_settings"}
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: coordinator,
-        )
-        await websocket_get_ai_settings(MagicMock(), mock_connection, msg)
+    result = await websocket_get_ai_settings(MagicMock(), coordinator, msg)
 
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     assert result == settings
 
 
@@ -76,35 +69,6 @@ async def test_get_ai_settings_returns_empty_dict_when_no_ai_settings(
     coordinator.options = {}
     msg = {"id": 2, "type": f"{DOMAIN}/get_ai_settings"}
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: coordinator,
-        )
-        await websocket_get_ai_settings(MagicMock(), mock_connection, msg)
+    result = await websocket_get_ai_settings(MagicMock(), coordinator, msg)
 
-    result = mock_connection.send_result.call_args[0][1]
     assert result == {}
-
-
-@pytest.mark.asyncio
-async def test_get_ai_settings_sends_error_when_coordinator_missing(
-    mock_connection: MagicMock,
-) -> None:
-    """get_ai_settings sends a not_found error when the coordinator is not loaded."""
-    from custom_components.growspace_manager.websocket.ai_assistant import (
-        websocket_get_ai_settings,
-    )
-
-    msg = {"id": 3, "type": f"{DOMAIN}/get_ai_settings"}
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: None,
-        )
-        await websocket_get_ai_settings(MagicMock(), mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once()
-    error_code = mock_connection.send_error.call_args[0][1]
-    assert error_code == "not_found"

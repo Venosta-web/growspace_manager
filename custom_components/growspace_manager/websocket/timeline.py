@@ -26,7 +26,8 @@ from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.db_schema import Events
 from homeassistant.components.recorder.util import session_scope
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+
+from ._common import WSCommand
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,91 +67,65 @@ SCHEMA_WS_REMOVE_TIMELINE_EVENT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exte
 
 
 async def websocket_add_timeline_note(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> None:
     """Handle add timeline note command via WebSocket."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-
-        await coordinator.services.add_timeline_note(
-            plant_id=msg[ATTR_PLANT_ID],
-            notes=msg[ATTR_NOTES],
-            timestamp=msg.get(ATTR_TRANSITION_DATE),
-            images_base64=msg.get(ATTR_IMAGES),
-            tags=msg.get(ATTR_TAGS),
-            ph=msg.get(ATTR_PH),
-            ec=msg.get(ATTR_EC),
-            amount_ml=msg.get(ATTR_AMOUNT_ML),
-            external_metadata=msg.get(ATTR_METADATA),
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "invalid_args", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_add_timeline_note")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await coordinator.services.add_timeline_note(
+        plant_id=msg[ATTR_PLANT_ID],
+        notes=msg[ATTR_NOTES],
+        timestamp=msg.get(ATTR_TRANSITION_DATE),
+        images_base64=msg.get(ATTR_IMAGES),
+        tags=msg.get(ATTR_TAGS),
+        ph=msg.get(ATTR_PH),
+        ec=msg.get(ATTR_EC),
+        amount_ml=msg.get(ATTR_AMOUNT_ML),
+        external_metadata=msg.get(ATTR_METADATA),
+    )
 
 
 async def websocket_add_growspace_note(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> None:
     """Handle add growspace note command via WebSocket."""
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-
-        await coordinator.services.growspaces.add_growspace_note(
-            hass=hass,
-            growspace_id=msg[ATTR_GROWSPACE_ID],
-            notes=msg[ATTR_NOTES],
-            images_base64=msg.get(ATTR_IMAGES),
-        )
-        connection.send_result(msg["id"])
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "invalid_args", str(err))
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_add_growspace_note")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await coordinator.services.growspaces.add_growspace_note(
+        hass=hass,
+        growspace_id=msg[ATTR_GROWSPACE_ID],
+        notes=msg[ATTR_NOTES],
+        images_base64=msg.get(ATTR_IMAGES),
+    )
 
 
 async def websocket_remove_timeline_event(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> None:
     """Handle remove timeline event command via WebSocket."""
     event_id = msg["event_id"]
-    try:
-        recorder = get_instance(hass)
+    recorder = get_instance(hass)
 
-        def _delete_event() -> None:
-            with session_scope(hass=hass) as session:
-                session.query(Events).filter(Events.event_id == event_id).delete(
-                    synchronize_session=False
-                )
+    def _delete_event() -> None:
+        with session_scope(hass=hass) as session:
+            session.query(Events).filter(Events.event_id == event_id).delete(
+                synchronize_session=False
+            )
 
-        await recorder.async_add_executor_job(_delete_event)
-        connection.send_result(msg["id"])
-
-    except Exception as err:
-        _LOGGER.exception("Error handling websocket_remove_timeline_event")
-        connection.send_error(msg["id"], "unknown_error", str(err))
+    await recorder.async_add_executor_job(_delete_event)
 
 
-COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (
+COMMANDS: list[WSCommand] = [
+    WSCommand(
         WS_TYPE_ADD_TIMELINE_NOTE,
         websocket_add_timeline_note,
         SCHEMA_WS_ADD_TIMELINE_NOTE,
-        False,
     ),
-    (
+    WSCommand(
         WS_TYPE_ADD_GROWSPACE_NOTE,
         websocket_add_growspace_note,
         SCHEMA_WS_ADD_GROWSPACE_NOTE,
-        False,
     ),
-    (
+    WSCommand(
         WS_TYPE_REMOVE_TIMELINE_EVENT,
         websocket_remove_timeline_event,
         SCHEMA_WS_REMOVE_TIMELINE_EVENT,
-        False,
+        resolve="any",
     ),
 ]
