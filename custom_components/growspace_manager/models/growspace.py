@@ -41,12 +41,15 @@ from .irrigation import (
 )
 
 __all__ = [
+    "ENVIRONMENT_FIELD_OWNERSHIP",
     "CirculationFanConfig",
     "DLIState",
     "EnergyTracking",
     "EnvironmentConfig",
     "EnvironmentState",
     "ExhaustFanConfig",
+    "FieldClass",
+    "FieldOwnership",
     "GrowLightConfig",
     "Growspace",
     "GrowspaceEvent",
@@ -239,9 +242,7 @@ class EnvironmentConfig(BaseModel):
     circulation_fan_ac_infinity_devices: list[ACInfinityDevice] = field(
         default_factory=list
     )
-    humidifier_ac_infinity_devices: list[ACInfinityDevice] = field(
-        default_factory=list
-    )
+    humidifier_ac_infinity_devices: list[ACInfinityDevice] = field(default_factory=list)
     dehumidifier_ac_infinity_devices: list[ACInfinityDevice] = field(
         default_factory=list
     )
@@ -466,6 +467,110 @@ class EnvironmentConfig(BaseModel):
                 del data[k]
 
         return data
+
+
+class FieldClass(StrEnum):
+    """Environment Field Ownership classes (ADR-0026)."""
+
+    GROWER_CONFIG = "grower-config"
+    RUNTIME_ACCUMULATED = "runtime-accumulated"
+    SUB_CONFIG = "sub-config"
+
+
+@dataclass(frozen=True, slots=True)
+class FieldOwnership:
+    """How the Environment Patch merge treats one EnvironmentConfig field.
+
+    ``canonical`` marks a legacy singular shadow of a plural field: patch input
+    addressed at the shadow is rewritten onto the canonical, and the shadow is
+    re-derived from the canonical after every merge — so a stale singular can
+    never resurrect a deliberately cleared plural. ``item_identity`` /
+    ``item_runtime_fields`` describe list-of-dataclass fields whose items carry
+    runtime-accumulated state: items are matched across old/new lists by the
+    identity key and the runtime fields are always carried over from the
+    existing item.
+    """
+
+    field_class: FieldClass = FieldClass.GROWER_CONFIG
+    canonical: str | None = None
+    item_identity: str | None = None
+    item_runtime_fields: tuple[str, ...] = ()
+
+
+_GROWER = FieldOwnership()
+_SUB_CONFIG = FieldOwnership(FieldClass.SUB_CONFIG)
+
+ENVIRONMENT_FIELD_OWNERSHIP: dict[str, FieldOwnership] = {
+    "temperature_sensor": FieldOwnership(canonical="temperature_sensors"),
+    "humidity_sensor": FieldOwnership(canonical="humidity_sensors"),
+    "vpd_sensor": FieldOwnership(canonical="vpd_sensors"),
+    "co2_sensor": _GROWER,
+    "soil_moisture_sensor": _GROWER,
+    "veg_day_hours": _GROWER,
+    "flower_day_hours": _GROWER,
+    "temperature_sensors": _GROWER,
+    "humidity_sensors": _GROWER,
+    "vpd_sensors": _GROWER,
+    "light_sensors": _GROWER,
+    "exhaust_fan_entities": _GROWER,
+    "circulation_fan_entities": _GROWER,
+    "humidifier_entities": _GROWER,
+    "dehumidifier_entities": _GROWER,
+    "growlight_entities": _GROWER,
+    "exhaust_fan_ac_infinity_devices": _GROWER,
+    "circulation_fan_ac_infinity_devices": _GROWER,
+    "humidifier_ac_infinity_devices": _GROWER,
+    "dehumidifier_ac_infinity_devices": _GROWER,
+    "growlight_ac_infinity_devices": _GROWER,
+    "sensor_coordinates": _GROWER,
+    "sensor_groups": _GROWER,
+    "substrate_temperature_sensors": _GROWER,
+    "camera_entities": _GROWER,
+    "lung_room_temp_sensors": _GROWER,
+    "snapshot_interval_hours": _GROWER,
+    "ph_sensors": _GROWER,
+    "feed_ec_sensors": _GROWER,
+    "bulk_ec_sensors": _GROWER,
+    "pore_ec_sensors": _GROWER,
+    "runoff_ec_sensors": _GROWER,
+    "drain_volume_sensors": _GROWER,
+    "irrigation_flow_sensors": _GROWER,
+    "power_sensors": _GROWER,
+    "energy_sensors": _GROWER,
+    "electricity_cost_per_kwh": _GROWER,
+    "dli_target_veg": _GROWER,
+    "dli_target_flower": _GROWER,
+    "lst_offset": _GROWER,
+    "control_dehumidifier": _GROWER,
+    "dehumidifier_thresholds": _GROWER,
+    "control_humidifier": _GROWER,
+    "humidifier_thresholds": _GROWER,
+    "minimum_source_air_temperature": _GROWER,
+    "stress_threshold": _GROWER,
+    "mold_threshold": _GROWER,
+    "bayesian_options": _GROWER,
+    "irrigation_tanks": FieldOwnership(
+        item_identity="sensor_entity",
+        item_runtime_fields=("water_history", "last_recorded_level", "peak_level"),
+    ),
+    "vision_checkup_config": _SUB_CONFIG,
+    "circulation_fan_config": _SUB_CONFIG,
+    "exhaust_fan_config": _SUB_CONFIG,
+    "growlight_config": _SUB_CONFIG,
+    "vpd_optimal_overrides": _GROWER,
+}
+
+# Completeness invariant (ADR-0026): a new EnvironmentConfig field without an
+# ownership row must fail every import, not silently reset on the next edit.
+_ownership_mismatch = {f.name for f in fields(EnvironmentConfig)} ^ set(
+    ENVIRONMENT_FIELD_OWNERSHIP
+)
+if _ownership_mismatch:
+    raise RuntimeError(
+        "EnvironmentConfig fields without an Environment Patch ownership row "
+        f"(or stale rows): {sorted(_ownership_mismatch)} — add a FieldOwnership "
+        "entry to ENVIRONMENT_FIELD_OWNERSHIP next to the model (ADR-0026)"
+    )
 
 
 @dataclass(slots=True)

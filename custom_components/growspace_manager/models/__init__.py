@@ -10,6 +10,7 @@ from .base import BaseModel, BasePreset, _sanitize_numeric_fields
 from .contract import GrowspaceCoordinatorData
 from .genetics import PollinationEvent, SeedBatch
 from .growspace import (
+    ENVIRONMENT_FIELD_OWNERSHIP,
     ACInfinityDevice,
     ACInfinityGrowLight,
     CirculationFanConfig,
@@ -18,6 +19,8 @@ from .growspace import (
     EnvironmentConfig,
     EnvironmentState,
     ExhaustFanConfig,
+    FieldClass,
+    FieldOwnership,
     GrowLightConfig,
     Growspace,
     GrowspaceEvent,
@@ -69,6 +72,7 @@ from .types import (
 
 # Explicit __all__ list for documentation and IDE support
 __all__ = [
+    "ENVIRONMENT_FIELD_OWNERSHIP",
     "ACInfinityDevice",
     "ACInfinityGrowLight",
     # base
@@ -88,6 +92,8 @@ __all__ = [
     "EnvironmentConfig",
     "EnvironmentState",
     "ExhaustFanConfig",
+    "FieldClass",
+    "FieldOwnership",
     "GrowLightConfig",
     "Growspace",
     # contract
