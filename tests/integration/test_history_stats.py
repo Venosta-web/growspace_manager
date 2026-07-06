@@ -97,10 +97,7 @@ async def test_websocket_get_history_stats_binary_search(
                 "interval_minutes": 100,  # Should downsample to ~10 points
             }
 
-            await websocket_get_history_stats(mock_hass, mock_connection, msg)
-
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
+            result = await websocket_get_history_stats(mock_hass, MagicMock(), msg)
 
         assert "sensor.test" in result
         points = result["sensor.test"]
@@ -147,11 +144,9 @@ async def test_websocket_get_history_stats_statistics_api(
             "interval_minutes": 60,  # >= 60 triggers statistics API
         }
 
-        await websocket_get_history_stats(mock_hass, mock_connection, msg)
+        result = await websocket_get_history_stats(mock_hass, MagicMock(), msg)
 
         mock_stats.assert_called_once()
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
 
         assert "sensor.test" in result
         assert len(result["sensor.test"]) == 2
@@ -190,15 +185,13 @@ async def test_websocket_get_history_stats_statistics_daily_and_missing_and_exce
             "interval_minutes": 1440,  # >= 1440 triggers period = "day"
         }
 
-        await websocket_get_history_stats(mock_hass, mock_connection, msg)
+        result = await websocket_get_history_stats(mock_hass, MagicMock(), msg)
 
         mock_stats.assert_called_once()
         # Verify period="day" is passed
         args, kwargs = mock_stats.call_args
         assert args[4] == "day"
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result
         assert "sensor.missing" in result
         assert result["sensor.missing"] == []
@@ -211,7 +204,9 @@ async def test_websocket_get_history_stats_statistics_daily_and_missing_and_exce
         mock_stats.side_effect = Exception("Stats API failure")
         history_data = {"sensor.test": []}
         mock_recorder = MagicMock()
-        mock_recorder.async_add_executor_job = AsyncMock(side_effect=lambda f, *args: f(*args))
+        mock_recorder.async_add_executor_job = AsyncMock(
+            side_effect=lambda f, *args: f(*args)
+        )
 
         with (
             patch(
@@ -224,9 +219,7 @@ async def test_websocket_get_history_stats_statistics_daily_and_missing_and_exce
                 return_value=mock_recorder,
             ),
         ):
-            await websocket_get_history_stats(mock_hass, mock_connection, msg)
-            mock_connection.send_result.assert_called_once()
-            result = mock_connection.send_result.call_args[0][1]
+            result = await websocket_get_history_stats(mock_hass, MagicMock(), msg)
             assert "sensor.test" in result
             assert result["sensor.test"] == []
 
@@ -270,7 +263,9 @@ async def test_websocket_get_history_stats_binary_search_edge_cases(
 
     history_data = {"sensor.test": states}
     mock_recorder = MagicMock()
-    mock_recorder.async_add_executor_job = AsyncMock(side_effect=lambda f, *args: f(*args))
+    mock_recorder.async_add_executor_job = AsyncMock(
+        side_effect=lambda f, *args: f(*args)
+    )
 
     with (
         patch(
@@ -292,10 +287,8 @@ async def test_websocket_get_history_stats_binary_search_edge_cases(
             "interval_minutes": 50,
         }
 
-        await websocket_get_history_stats(mock_hass, mock_connection, msg)
+        result = await websocket_get_history_stats(mock_hass, MagicMock(), msg)
 
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     assert "sensor.test" in result
     points = result["sensor.test"]
     assert len(points) > 0
@@ -323,9 +316,7 @@ async def test_websocket_get_history_stats_binary_search_edge_cases(
             return_value=mock_recorder,
         ),
     ):
-        await websocket_get_history_stats(mock_hass, mock_connection, msg)
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
+        result = await websocket_get_history_stats(mock_hass, MagicMock(), msg)
         assert result["sensor.test"] == []
 
 
@@ -372,13 +363,20 @@ async def test_websocket_get_history_stats_sparse_and_fan_data(
     sensor_state_obj.last_updated = start_time + timedelta(minutes=50)
 
     history_data = {
-        "fan.test_fan": [fan_state_dict, fan_state_obj, fan_state_dict_no_pct, sentinel_state],
+        "fan.test_fan": [
+            fan_state_dict,
+            fan_state_obj,
+            fan_state_dict_no_pct,
+            sentinel_state,
+        ],
         "sensor.test_sensor": [sensor_state_dict, sensor_state_obj],
         "sensor.empty_sensor": [],
     }
 
     mock_recorder = MagicMock()
-    mock_recorder.async_add_executor_job = AsyncMock(side_effect=lambda f, *args: f(*args))
+    mock_recorder.async_add_executor_job = AsyncMock(
+        side_effect=lambda f, *args: f(*args)
+    )
 
     with (
         patch(
@@ -400,7 +398,7 @@ async def test_websocket_get_history_stats_sparse_and_fan_data(
             "interval_minutes": 5,
         }
 
-        await websocket_get_history_stats(mock_hass, mock_connection, msg)
+        result = await websocket_get_history_stats(mock_hass, MagicMock(), msg)
 
         # Verify that get_significant_states was called twice (once for non-fan, once for fan)
         assert mock_get_states.call_count == 2
@@ -422,9 +420,6 @@ async def test_websocket_get_history_stats_sparse_and_fan_data(
         assert sensor_call is not None
         assert "fan.test_fan" in fan_call[0][3]
         assert "sensor.test_sensor" in sensor_call[0][3]
-
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
 
     # Verify results
     assert "fan.test_fan" in result
@@ -468,12 +463,11 @@ async def test_websocket_get_history_stats_general_exception(
     }
 
     # Mock parse_datetime to raise a generic Exception
-    with patch(
-        "custom_components.growspace_manager.websocket.environment.dt_util.parse_datetime",
-        side_effect=RuntimeError("Unexpected parsing failure"),
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.environment.dt_util.parse_datetime",
+            side_effect=RuntimeError("Unexpected parsing failure"),
+        ),
+        pytest.raises(RuntimeError, match="Unexpected parsing failure"),
     ):
-        await websocket_get_history_stats(mock_hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(
-        6, "unknown_error", "Unexpected parsing failure"
-    )
+        await websocket_get_history_stats(mock_hass, MagicMock(), msg)

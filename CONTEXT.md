@@ -211,6 +211,17 @@ All external callers (sensors, websocket handlers, config flow handlers, service
 
 Infrastructure methods (`save`, `request_refresh`, `fire_event`, `add_timeline_note`) live on the container itself.
 
+## WebSocket API
+
+**WS Command Lifecycle**
+The one owner of everything between a WebSocket message arriving and a result or error leaving: coordinator resolution → handler execution → `send_result` → error mapping, implemented by the registration wrapper in `websocket/_common.py` (ADR-0027). A handler is a payload-returning function `(hass, coordinator, msg) → payload | None` — it never sees the connection, so its return value is its test surface (no mock connections). Each module declares its commands as [[WSCommand]] rows; the registrar loop in `websocket/__init__.py` wraps every row identically. Inline `connection.send_error` calls are forbidden in handlers — an error is a raised typed exception, mapped once by the shared error table.
+
+**WSCommand**
+The declarative row a websocket module contributes: `(type, handler, schema, resolve, sync)`. `resolve="targeted"` resolves the coordinator from ids in the message via `get_for_service_call`; `resolve="any"` uses `get_any` (global commands: strain library, genetics, nutrients, lineage). `sync=True` registers a `@callback` wrapper for cheap reads. Adding a WS command = one handler + one row; the lifecycle is inherited. (The WS command count is asserted in `test_core_init`.)
+
+**Typed Error Codes**
+The five-code wire vocabulary shared with the card (ADR-0005, completed backend-side by ADR-0027): `coordinator_not_ready`, `entity_not_found`, `validation_failed`, `internal_error`, `rate_limited`. Produced by the [[WS Command Lifecycle]] error table from typed exceptions — `EntityNotFoundError`, `CoordinatorNotReadyError`, `RateLimitedError` (subclasses of the existing hierarchy, so service-call paths behave as before) plus the validation family → `validation_failed` and everything else → `internal_error` (with traceback). The card's `errors.ts` types exactly this set and coerces anything else to `internal_error` — so ad-hoc codes are self-defeating and deliberately retired.
+
 ## Sensor Entities
 
 Each computed drying metric is a distinct HA sensor entity:

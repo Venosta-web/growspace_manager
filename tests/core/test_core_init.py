@@ -644,20 +644,20 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
             "type": f"{DOMAIN}/get_log",
             "growspace_id": "gs1",
         }
-        await websocket_get_event_log(hass, mock_connection, msg)
+        result = await websocket_get_event_log(hass, mock_coordinator, msg)
 
         expected_data = mock_event.data.copy()
         expected_data["event_id"] = 12345
-        mock_connection.send_result.assert_called_with(1, {"gs1": [expected_data]})
+        assert result == {"gs1": [expected_data]}
 
         # Case B: Global (Aggregate)
         msg_global = {
             "id": 2,
             "type": f"{DOMAIN}/get_log",
         }
-        await websocket_get_event_log(hass, mock_connection, msg_global)
+        result = await websocket_get_event_log(hass, mock_coordinator, msg_global)
 
-        mock_connection.send_result.assert_called_with(2, {"gs1": [expected_data]})
+        assert result == {"gs1": [expected_data]}
 
         # Case C: Filtering out unrelated ID - returns empty because query returns gs1 data
         msg_other = {
@@ -665,8 +665,8 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
             "type": f"{DOMAIN}/get_log",
             "growspace_id": "gs2",
         }
-        await websocket_get_event_log(hass, mock_connection, msg_other)
-        mock_connection.send_result.assert_called_with(3, {"gs2": []})
+        result = await websocket_get_event_log(hass, mock_coordinator, msg_other)
+        assert result == {"gs2": []}
 
 
 @pytest.mark.asyncio
@@ -679,51 +679,20 @@ async def test_websocket_get_growspace_data(
     mock_connection.send_result = MagicMock()
     mock_connection.send_error = MagicMock()
 
-    # 1. Success
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=mock_coordinator,
-    ):
-        # FIX: Add .services here to match the updated websocket.py logic
-        mock_coordinator.services.growspaces.get_growspace_data.return_value = {
-            "name": "Test space"
-        }
+    # Resolution failures are mapped by the WS Command Lifecycle and are
+    # covered in test_ws_command_lifecycle.py; the handler is a pure payload
+    # function.
+    mock_coordinator.services.growspaces.get_growspace_data.return_value = {
+        "name": "Test space"
+    }
 
-        msg = {
-            "id": 1,
-            "type": f"{DOMAIN}/get_data",
-            "growspace_id": "gs1",
-        }
-        await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_result.assert_called_with(1, {"name": "Test space"})
-
-    # 2. Error (ServiceValidationError)
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("Invalid ID"),
-    ):
-        msg = {
-            "id": 2,
-            "type": f"{DOMAIN}/get_data",
-            "growspace_id": "invalid",
-        }
-        await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(
-            2, "coordinator_not_ready", "Growspace Manager integration not loaded"
-        )
-
-    # 3. Unknown Error
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("Boom"),
-    ):
-        msg = {
-            "id": 3,
-            "type": f"{DOMAIN}/get_data",
-            "growspace_id": "gs1",
-        }
-        await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(3, "internal_error", "Boom")
+    msg = {
+        "id": 1,
+        "type": f"{DOMAIN}/get_data",
+        "growspace_id": "gs1",
+    }
+    result = await websocket_get_growspace_data(hass, mock_coordinator, msg)
+    assert result == {"name": "Test space"}
 
 
 @pytest.mark.asyncio
@@ -921,11 +890,9 @@ async def test_websocket_get_event_log_unknown_error(hass: HomeAssistant) -> Non
             "type": f"{DOMAIN}/get_log",
             "growspace_id": "gs_unknown",
         }
-        await websocket_get_event_log(hass, mock_connection, msg)
-
-        mock_connection.send_error.assert_called_with(
-            99, "unknown_error", "Unexpected Error"
-        )
+        # The lifecycle maps this to internal_error; the handler just raises.
+        with pytest.raises(RuntimeError, match="Unexpected Error"):
+            await websocket_get_event_log(hass, MagicMock(), msg)
 
 
 @pytest.mark.asyncio
@@ -1018,10 +985,8 @@ async def test_websocket_get_history_stats(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result
         stats = result["sensor.test"]
         # Expected: T+0, T+15, T+30 -> 3 points
@@ -1037,10 +1002,8 @@ async def test_websocket_get_history_stats(
         "interval_minutes": 5,
         "significant_changes_only": True,
     }
-    await websocket_get_history_stats(hass, mock_connection, msg_inv)
-    mock_connection.send_error.assert_called_with(
-        2, "invalid_args", "Invalid start_time"
-    )
+    with pytest.raises(ServiceValidationError, match="Invalid start_time"):
+        await websocket_get_history_stats(hass, MagicMock(), msg_inv)
 
     # 3. Exception Handling
     with (
@@ -1061,14 +1024,14 @@ async def test_websocket_get_history_stats(
             "interval_minutes": 5,
             "significant_changes_only": True,
         }
-        await websocket_get_history_stats(hass, mock_connection, msg_err)
-        mock_connection.send_error.assert_called_with(3, "unknown_error", "DB Error")
+        with pytest.raises(Exception, match="DB Error"):
+            await websocket_get_history_stats(hass, MagicMock(), msg_err)
 
 
 @pytest.mark.asyncio
 async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> None:
     """Test history stats with empty data or unavailable states."""
-    mock_connection = MagicMock()
+    MagicMock()
 
     start = dt_util.utcnow()
 
@@ -1103,9 +1066,8 @@ async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> N
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
-        result = mock_connection.send_result.call_args[0][1]
         assert result["sensor.empty"] == []
         # sensor.unavail should produce empty list because we filter out unavailable/unknown
         assert result["sensor.unavail"] == []
@@ -1257,13 +1219,10 @@ async def test_websocket_history_stats_uses_statistics_api_for_long_intervals(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Should use statistics API
         mock_stats.assert_called_once()
-        mock_connection.send_result.assert_called_once()
-
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result
         assert len(result["sensor.test"]) == 2
         assert result["sensor.test"][0]["s"] == "22.5"
@@ -1317,11 +1276,9 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Should fallback and still succeed
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result
 
 
@@ -1372,11 +1329,11 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Should NOT call statistics API for short intervals
         mock_stats.assert_not_called()
-        mock_connection.send_result.assert_called_once()
+        assert result is not None
 
 
 @pytest.mark.asyncio
@@ -1419,7 +1376,7 @@ async def test_websocket_history_stats_uses_daily_period_for_large_intervals(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Verify daily period was used
         mock_stats.assert_called_once()
@@ -1468,9 +1425,8 @@ async def test_websocket_history_stats_statistics_with_state_instead_of_mean(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
-        result = mock_connection.send_result.call_args[0][1]
         assert result["sensor.test"][0]["s"] == "on"
 
 
@@ -1510,9 +1466,7 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Should fallback to binary search when stats are empty
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result

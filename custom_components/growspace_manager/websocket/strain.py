@@ -10,26 +10,16 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS, DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from homeassistant.components import websocket_api
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import slugify
 
-from ._common import WSErrorMap, handle_ws_errors, handle_ws_errors_sync
+from ._common import WSCommand
 
 _LOGGER = logging.getLogger(__name__)
-
-_LIBRARY_ERROR_MAP: WSErrorMap = (
-    (ServiceValidationError, "not_loaded", False, "Growspace Manager strain library not loaded"),
-    (Exception, "unknown_error", True, None),
-)
-
-_IMAGE_ERROR_MAP: WSErrorMap = (
-    (ServiceValidationError, "not_loaded", False, "Strain library not loaded"),
-    (Exception, "unknown_error", False, None),
-)
 
 WS_TYPE_GET_STRAIN_LIBRARY = f"{DOMAIN}/get_strain_library"
 SCHEMA_WS_GET_STRAIN_LIBRARY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
@@ -79,50 +69,37 @@ SCHEMA_WS_DOWNLOAD_STRAIN_IMAGE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.exte
 )
 
 
-@callback
-@handle_ws_errors_sync(_LIBRARY_ERROR_MAP)
 def websocket_get_strain_library(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Handle get strain library command via WebSocket."""
-    coordinator = GrowspaceCoordinator.get_any(hass)
     strain_library: StrainLibrary = coordinator.services.config.strain_library
     all_strains = strain_library.get_all()
-    response = {
+    return {
         "strains": all_strains,
         "strain_list": list(all_strains.keys()),
     }
-    connection.send_result(msg["id"], response)
 
 
-@handle_ws_errors(_IMAGE_ERROR_MAP)
 async def websocket_upload_strain_image(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Upload a strain image to disk and return its local path."""
-    coordinator = GrowspaceCoordinator.get_any(hass)
     image_manager = coordinator.services.config.strain_library.image_manager
     abs_path = await image_manager.save_strain_image(
         slugify(msg["strain"]), slugify(msg["phenotype"]), msg["image_base64"]
     )
     filename = Path(abs_path).name
-    local_path = f"/local/growspace_manager/strains/{filename}"
-    connection.send_result(msg["id"], {"path": local_path})
+    return {"path": f"/local/growspace_manager/strains/{filename}"}
 
 
-@handle_ws_errors(_IMAGE_ERROR_MAP)
 async def websocket_download_strain_image(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
     """Download a remote image URL and save it as a local strain image."""
     import base64 as _base64  # noqa: PLC0415
 
     url = msg["url"]
-    coordinator = GrowspaceCoordinator.get_any(hass)
     image_manager = coordinator.services.config.strain_library.image_manager
 
     session = async_get_clientsession(hass)
@@ -131,10 +108,11 @@ async def websocket_download_strain_image(
         "Accept": "image/webp,image/png,image/jpeg,*/*",
         "Referer": "https://en.seedfinder.eu/",
     }
-    async with session.get(url, timeout=15, headers=headers, allow_redirects=True, max_redirects=20) as response:
+    async with session.get(
+        url, timeout=15, headers=headers, allow_redirects=True, max_redirects=20
+    ) as response:
         if response.status != 200:
-            connection.send_error(msg["id"], "fetch_failed", f"HTTP {response.status}")
-            return
+            raise GrowspaceError(f"Image download failed: HTTP {response.status}")
         raw = await response.read()
 
     mime_type = response.headers.get("Content-Type", "image/jpeg")
@@ -143,55 +121,35 @@ async def websocket_download_strain_image(
         slugify(msg["strain"]), slugify(msg["phenotype"]), image_base64
     )
     filename = Path(abs_path).name
-    local_path = f"/local/growspace_manager/strains/{filename}"
-    connection.send_result(msg["id"], {"path": local_path})
+    return {"path": f"/local/growspace_manager/strains/{filename}"}
 
 
 async def websocket_query_external_strain(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Query external strain database."""
-    query = msg["query"]
-    coordinator = GrowspaceCoordinator.get_any(hass)
     scraper = coordinator.seedfinder_scraper
 
     blacklist = []
     try:
-        coordinator = GrowspaceCoordinator.get_any(hass)
         blacklist = coordinator.config_entry.options.get(CONF_BLACKLIST_BREEDERS, [])
-    except (AttributeError, KeyError, RuntimeError):
-        _LOGGER.debug("Could not retrieve coordinator for blacklist, using empty list")
+    except AttributeError, KeyError, RuntimeError:
+        _LOGGER.debug("Could not retrieve blacklist, using empty list")
 
-    try:
-        results = await scraper.async_search_strains(query, blacklist=blacklist)
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "seedfinder_unavailable", str(err))
-        return
-    connection.send_result(msg["id"], results)
+    return await scraper.async_search_strains(msg["query"], blacklist=blacklist)
 
 
 async def websocket_get_external_strain_details(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any] | None:
     """Get details for an external strain."""
     import re  # noqa: PLC0415
 
-    url = msg["url"]
-    coordinator = GrowspaceCoordinator.get_any(hass)
     scraper = coordinator.seedfinder_scraper
 
-    try:
-        raw = await scraper.async_get_strain_details(url)
-    except ServiceValidationError as err:
-        connection.send_error(msg["id"], "seedfinder_unavailable", str(err))
-        return
+    raw = await scraper.async_get_strain_details(msg["url"])
     if raw is None:
-        connection.send_result(msg["id"], None)
-        return
+        return None
 
     flowering_days: int | None = None
     ft = raw.get("flowering_time") or ""
@@ -201,36 +159,59 @@ async def websocket_get_external_strain_details(
         hi = int(ft_match.group(2)) if ft_match.group(2) else lo
         flowering_days = round((lo + hi) / 2)
 
-    connection.send_result(
-        msg["id"],
-        {
-            "name": raw.get("name"),
-            "breeder": raw.get("breeder"),
-            "type": raw.get("type"),
-            "indica_percentage": (raw.get("composition") or {}).get("indica"),
-            "sativa_percentage": (raw.get("composition") or {}).get("sativa"),
-            "flowering_days": flowering_days,
-            "description": raw.get("description"),
-            "images": raw.get("images", []),
-            "yield_potential": raw.get("yield_potential"),
-            "height": raw.get("height"),
-            "thc": raw.get("thc"),
-            "cbd": raw.get("cbd"),
-            "cbg": raw.get("cbg"),
-            "awards": raw.get("awards"),
-            "parents": raw.get("lineage_tree") or None,
-            "lineage_str": raw.get("lineage_str"),
-            "effects": raw.get("effects"),
-            "aroma": raw.get("aroma"),
-            "taste": raw.get("taste"),
-        },
-    )
+    return {
+        "name": raw.get("name"),
+        "breeder": raw.get("breeder"),
+        "type": raw.get("type"),
+        "indica_percentage": (raw.get("composition") or {}).get("indica"),
+        "sativa_percentage": (raw.get("composition") or {}).get("sativa"),
+        "flowering_days": flowering_days,
+        "description": raw.get("description"),
+        "images": raw.get("images", []),
+        "yield_potential": raw.get("yield_potential"),
+        "height": raw.get("height"),
+        "thc": raw.get("thc"),
+        "cbd": raw.get("cbd"),
+        "cbg": raw.get("cbg"),
+        "awards": raw.get("awards"),
+        "parents": raw.get("lineage_tree") or None,
+        "lineage_str": raw.get("lineage_str"),
+        "effects": raw.get("effects"),
+        "aroma": raw.get("aroma"),
+        "taste": raw.get("taste"),
+    }
 
 
-COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (WS_TYPE_GET_STRAIN_LIBRARY, websocket_get_strain_library, SCHEMA_WS_GET_STRAIN_LIBRARY, True),
-    (WS_TYPE_UPLOAD_STRAIN_IMAGE, websocket_upload_strain_image, SCHEMA_WS_UPLOAD_STRAIN_IMAGE, False),
-    (WS_TYPE_DOWNLOAD_STRAIN_IMAGE, websocket_download_strain_image, SCHEMA_WS_DOWNLOAD_STRAIN_IMAGE, False),
-    (WS_TYPE_QUERY_EXTERNAL_STRAIN, websocket_query_external_strain, SCHEMA_WS_QUERY_EXTERNAL_STRAIN, False),
-    (WS_TYPE_GET_EXTERNAL_STRAIN_DETAILS, websocket_get_external_strain_details, SCHEMA_WS_GET_EXTERNAL_STRAIN_DETAILS, False),
+COMMANDS: list[WSCommand] = [
+    WSCommand(
+        WS_TYPE_GET_STRAIN_LIBRARY,
+        websocket_get_strain_library,
+        SCHEMA_WS_GET_STRAIN_LIBRARY,
+        resolve="any",
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_UPLOAD_STRAIN_IMAGE,
+        websocket_upload_strain_image,
+        SCHEMA_WS_UPLOAD_STRAIN_IMAGE,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_DOWNLOAD_STRAIN_IMAGE,
+        websocket_download_strain_image,
+        SCHEMA_WS_DOWNLOAD_STRAIN_IMAGE,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_QUERY_EXTERNAL_STRAIN,
+        websocket_query_external_strain,
+        SCHEMA_WS_QUERY_EXTERNAL_STRAIN,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_GET_EXTERNAL_STRAIN_DETAILS,
+        websocket_get_external_strain_details,
+        SCHEMA_WS_GET_EXTERNAL_STRAIN_DETAILS,
+        resolve="any",
+    ),
 ]

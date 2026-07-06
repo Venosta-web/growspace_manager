@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.websocket import (
     WS_TYPE_GET_EC_RAMP_CURVES,
     WS_TYPE_GET_IPM_PRESETS,
@@ -19,7 +20,6 @@ from custom_components.growspace_manager.websocket import (
     websocket_upload_strain_image,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 
 
 @dataclass
@@ -47,38 +47,17 @@ async def test_websocket_get_strain_library_success(mock_connection) -> None:
     coordinator._strain_library = mock_library
     coordinator.services.config.strain_library = mock_library
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {"id": 1, "type": WS_TYPE_GET_STRAIN_LIBRARY}
 
         # Call synchronously as it is now a callback
-        websocket_get_strain_library(hass, mock_connection, msg)
+        result = websocket_get_strain_library(hass, coordinator, msg)
 
         expected_response = {
             "strains": expected_strains,
             "strain_list": ["Strain A"],
         }
-        mock_connection.send_result.assert_called_once_with(1, expected_response)
-
-
-@pytest.mark.asyncio
-async def test_websocket_get_strain_library_not_loaded(mock_connection) -> None:
-    """Test error when strain library is not loaded."""
-    hass = Mock(spec=HomeAssistant)
-
-    msg = {"id": 1, "type": WS_TYPE_GET_STRAIN_LIBRARY}
-
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
-        side_effect=ServiceValidationError("Not loaded"),
-    ):
-        websocket_get_strain_library(hass, mock_connection, msg)
-
-        mock_connection.send_error.assert_called_once_with(
-            1, "not_loaded", "Growspace Manager strain library not loaded"
-        )
+    assert result == expected_response
 
 
 @pytest.mark.asyncio
@@ -93,17 +72,11 @@ async def test_websocket_get_strain_library_exception(mock_connection) -> None:
     coordinator._strain_library = mock_library
     coordinator.services.config.strain_library = mock_library
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {"id": 1, "type": WS_TYPE_GET_STRAIN_LIBRARY}
 
-        websocket_get_strain_library(hass, mock_connection, msg)
-
-        mock_connection.send_error.assert_called_once_with(
-            1, "unknown_error", "Unexpected error"
-        )
+        with pytest.raises(RuntimeError, match="Unexpected error"):
+            websocket_get_strain_library(hass, coordinator, msg)
 
 
 @pytest.mark.asyncio
@@ -117,13 +90,10 @@ async def test_websocket_get_nutrient_presets_success(mock_connection) -> None:
         "nutrient_presets": expected_data
     }
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {"id": 1, "type": WS_TYPE_GET_NUTRIENT_PRESETS}
-        websocket_get_nutrient_presets(hass, mock_connection, msg)
-        mock_connection.send_result.assert_called_once_with(1, expected_data)
+        result = websocket_get_nutrient_presets(hass, coordinator, msg)
+    assert result == expected_data
 
 
 @pytest.mark.asyncio
@@ -137,13 +107,10 @@ async def test_websocket_get_ipm_presets_success(mock_connection) -> None:
         "ipm_presets": expected_data
     }
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {"id": 1, "type": WS_TYPE_GET_IPM_PRESETS}
-        websocket_get_ipm_presets(hass, mock_connection, msg)
-        mock_connection.send_result.assert_called_once_with(1, expected_data)
+        result = websocket_get_ipm_presets(hass, coordinator, msg)
+    assert result == expected_data
 
 
 @pytest.mark.asyncio
@@ -157,13 +124,10 @@ async def test_websocket_get_ec_ramp_curves_success(mock_connection) -> None:
         "ec_ramp_curves": expected_data
     }
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {"id": 1, "type": WS_TYPE_GET_EC_RAMP_CURVES}
-        websocket_get_ec_ramp_curves(hass, mock_connection, msg)
-        mock_connection.send_result.assert_called_once_with(1, expected_data)
+        result = websocket_get_ec_ramp_curves(hass, coordinator, msg)
+    assert result == expected_data
 
 
 @pytest.mark.asyncio
@@ -180,19 +144,16 @@ async def test_websocket_get_strain_lineage_tree_success(mock_connection) -> Non
     coordinator._strain_library = mock_library
     coordinator.services.config.strain_library = mock_library
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {
             "id": 1,
             "type": WS_TYPE_GET_STRAIN_LINEAGE_TREE,
             "strain_name": "Strain A",
         }
 
-        await websocket_get_strain_lineage_tree(hass, mock_connection, msg)
+        result = await websocket_get_strain_lineage_tree(hass, coordinator, msg)
 
-        mock_connection.send_result.assert_called_once_with(1, expected_tree)
+    assert result == expected_tree
 
 
 @pytest.mark.asyncio
@@ -208,10 +169,7 @@ async def test_websocket_upload_strain_image_success(mock_connection: Mock) -> N
     coordinator = MagicMock()
     coordinator.services.config.strain_library.image_manager = mock_image_manager
 
-    with patch(
-        "custom_components.growspace_manager.websocket.strain.GrowspaceCoordinator.get_any",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {
             "id": 5,
             "type": f"{DOMAIN}/upload_strain_image",
@@ -219,36 +177,15 @@ async def test_websocket_upload_strain_image_success(mock_connection: Mock) -> N
             "phenotype": "Pheno 1",
             "image_base64": "data:image/jpeg;base64,abc123",
         }
-        await websocket_upload_strain_image(hass, mock_connection, msg)
+        result = await websocket_upload_strain_image(hass, coordinator, msg)
 
-    mock_connection.send_result.assert_called_once_with(
-        5, {"path": "/local/growspace_manager/strains/og_kush__pheno1.jpg"}
-    )
+    assert result == {"path": "/local/growspace_manager/strains/og_kush__pheno1.jpg"}
 
 
 @pytest.mark.asyncio
-async def test_websocket_upload_strain_image_not_loaded(mock_connection: Mock) -> None:
-    """Test upload error when strain library is not loaded."""
-    hass = Mock(spec=HomeAssistant)
-
-    with patch(
-        "custom_components.growspace_manager.websocket.strain.GrowspaceCoordinator.get_any",
-        side_effect=ServiceValidationError("Not loaded"),
-    ):
-        msg = {
-            "id": 6,
-            "type": f"{DOMAIN}/upload_strain_image",
-            "strain": "OG Kush",
-            "phenotype": "Pheno 1",
-            "image_base64": "data:image/jpeg;base64,abc123",
-        }
-        await websocket_upload_strain_image(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(6, "not_loaded", "Strain library not loaded")
-
-
-@pytest.mark.asyncio
-async def test_websocket_upload_strain_image_generic_error(mock_connection: Mock) -> None:
+async def test_websocket_upload_strain_image_generic_error(
+    mock_connection: Mock,
+) -> None:
     """Test upload generic exception handling."""
     hass = Mock(spec=HomeAssistant)
 
@@ -258,10 +195,7 @@ async def test_websocket_upload_strain_image_generic_error(mock_connection: Mock
     coordinator = MagicMock()
     coordinator.services.config.strain_library.image_manager = mock_image_manager
 
-    with patch(
-        "custom_components.growspace_manager.websocket.strain.GrowspaceCoordinator.get_any",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {
             "id": 7,
             "type": f"{DOMAIN}/upload_strain_image",
@@ -269,13 +203,14 @@ async def test_websocket_upload_strain_image_generic_error(mock_connection: Mock
             "phenotype": "Pheno 1",
             "image_base64": "data:image/jpeg;base64,abc123",
         }
-        await websocket_upload_strain_image(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(7, "unknown_error", "disk full")
+        with pytest.raises(OSError, match="disk full"):
+            await websocket_upload_strain_image(hass, coordinator, msg)
 
 
 @pytest.mark.asyncio
-async def test_websocket_download_strain_image_http_error(mock_connection: Mock) -> None:
+async def test_websocket_download_strain_image_http_error(
+    mock_connection: Mock,
+) -> None:
     """Test download returns fetch_failed when HTTP response is non-200."""
     hass = Mock(spec=HomeAssistant)
 
@@ -292,10 +227,6 @@ async def test_websocket_download_strain_image_http_error(mock_connection: Mock)
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.strain.GrowspaceCoordinator.get_any",
-            return_value=coordinator,
-        ),
-        patch(
             "custom_components.growspace_manager.websocket.strain.async_get_clientsession",
             return_value=mock_session,
         ),
@@ -307,34 +238,14 @@ async def test_websocket_download_strain_image_http_error(mock_connection: Mock)
             "strain": "OG Kush",
             "phenotype": "Pheno 1",
         }
-        await websocket_download_strain_image(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(8, "fetch_failed", "HTTP 404")
-
-
-@pytest.mark.asyncio
-async def test_websocket_download_strain_image_not_loaded(mock_connection: Mock) -> None:
-    """Test download error when strain library is not loaded."""
-    hass = Mock(spec=HomeAssistant)
-
-    with patch(
-        "custom_components.growspace_manager.websocket.strain.GrowspaceCoordinator.get_any",
-        side_effect=ServiceValidationError("Not loaded"),
-    ):
-        msg = {
-            "id": 9,
-            "type": f"{DOMAIN}/download_strain_image",
-            "url": "https://example.com/img.jpg",
-            "strain": "OG Kush",
-            "phenotype": "Pheno 1",
-        }
-        await websocket_download_strain_image(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(9, "not_loaded", "Strain library not loaded")
+        with pytest.raises(GrowspaceError, match="HTTP 404"):
+            await websocket_download_strain_image(hass, coordinator, msg)
 
 
 @pytest.mark.asyncio
-async def test_websocket_download_strain_image_generic_error(mock_connection: Mock) -> None:
+async def test_websocket_download_strain_image_generic_error(
+    mock_connection: Mock,
+) -> None:
     """Test download generic exception handling."""
     hass = Mock(spec=HomeAssistant)
 
@@ -342,10 +253,6 @@ async def test_websocket_download_strain_image_generic_error(mock_connection: Mo
     coordinator.services.config.strain_library.image_manager = MagicMock()
 
     with (
-        patch(
-            "custom_components.growspace_manager.websocket.strain.GrowspaceCoordinator.get_any",
-            return_value=coordinator,
-        ),
         patch(
             "custom_components.growspace_manager.websocket.strain.async_get_clientsession",
             side_effect=RuntimeError("session error"),
@@ -358,6 +265,5 @@ async def test_websocket_download_strain_image_generic_error(mock_connection: Mo
             "strain": "OG Kush",
             "phenotype": "Pheno 1",
         }
-        await websocket_download_strain_image(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(10, "unknown_error", "session error")
+        with pytest.raises(RuntimeError, match="session error"):
+            await websocket_download_strain_image(hass, coordinator, msg)

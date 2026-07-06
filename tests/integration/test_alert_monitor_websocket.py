@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.exceptions import EntityNotFoundError
 
 GROWSPACE_ID = "tent1"
 
@@ -15,20 +16,22 @@ GROWSPACE_ID = "tent1"
 def mock_alert_monitor():
     """Mock AlertMonitor returning wire-format dicts (as the real get_alerts() now does)."""
     monitor = MagicMock()
-    monitor.get_alerts = MagicMock(return_value=[
-        {
-            "id": "aaaaaaaa-0000-0000-0000-000000000001",
-            "growspace_id": GROWSPACE_ID,
-            "type": "stress",
-            "severity": "danger",
-            "bayesian_reasons": ["High VPD"],
-            "bayesian_probability": 0.91,
-            "ai_reasoning": "Adjust humidity",
-            "timestamp": 1736683200,
-            "resolved": False,
-            "resolution_note": None,
-        }
-    ])
+    monitor.get_alerts = MagicMock(
+        return_value=[
+            {
+                "id": "aaaaaaaa-0000-0000-0000-000000000001",
+                "growspace_id": GROWSPACE_ID,
+                "type": "stress",
+                "severity": "danger",
+                "bayesian_reasons": ["High VPD"],
+                "bayesian_probability": 0.91,
+                "ai_reasoning": "Adjust humidity",
+                "timestamp": 1736683200,
+                "resolved": False,
+                "resolution_note": None,
+            }
+        ]
+    )
     monitor.resolve_alert = AsyncMock(return_value=True)
     return monitor
 
@@ -71,18 +74,11 @@ async def test_get_ai_alerts_returns_all_alerts(
     hass = MagicMock()
     hass.data = {DOMAIN: {}}
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: mock_coordinator,
-        )
-        await websocket_get_ai_alerts(hass, mock_connection, msg)
+    result = await websocket_get_ai_alerts(hass, mock_coordinator, msg)
 
     mock_alert_monitor.get_alerts.assert_called_once_with(
         growspace_id=None, alert_type=None
     )
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     assert len(result) == 1
     assert result[0]["type"] == "stress"
     assert result[0]["severity"] == "danger"
@@ -106,44 +102,11 @@ async def test_get_ai_alerts_passes_filters(
     }
     hass = MagicMock()
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: mock_coordinator,
-        )
-        await websocket_get_ai_alerts(hass, mock_connection, msg)
+    await websocket_get_ai_alerts(hass, mock_coordinator, msg)
 
     mock_alert_monitor.get_alerts.assert_called_once_with(
         growspace_id=GROWSPACE_ID, alert_type="mold"
     )
-
-
-async def test_get_ai_alerts_no_coordinator_sends_error(
-    mock_connection: MagicMock,
-) -> None:
-    """websocket_get_ai_alerts sends an error when no coordinator is found."""
-    from custom_components.growspace_manager.websocket.ai_assistant import (
-        websocket_get_ai_alerts,
-    )
-
-    msg = {"id": 3, "type": f"{DOMAIN}/get_ai_alerts"}
-    hass = MagicMock()
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: None,
-        )
-        await websocket_get_ai_alerts(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once()
-    error_code = mock_connection.send_error.call_args[0][1]
-    assert error_code == "not_found"
-
-
-# ---------------------------------------------------------------------------
-# resolve_ai_alert
-# ---------------------------------------------------------------------------
 
 
 async def test_resolve_ai_alert_success(
@@ -164,16 +127,9 @@ async def test_resolve_ai_alert_success(
     }
     hass = MagicMock()
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: mock_coordinator,
-        )
-        await websocket_resolve_ai_alert(hass, mock_connection, msg)
+    result = await websocket_resolve_ai_alert(hass, mock_coordinator, msg)
 
     mock_alert_monitor.resolve_alert.assert_awaited_once_with(alert_id, notes=None)
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     assert result["success"] is True
 
 
@@ -196,12 +152,7 @@ async def test_resolve_ai_alert_with_resolution_note(
     }
     hass = MagicMock()
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: mock_coordinator,
-        )
-        await websocket_resolve_ai_alert(hass, mock_connection, msg)
+    await websocket_resolve_ai_alert(hass, mock_coordinator, msg)
 
     mock_alert_monitor.resolve_alert.assert_awaited_once_with(
         alert_id, notes="Fixed the dehumidifier"
@@ -215,7 +166,9 @@ async def test_resolve_ai_alert_not_found_sends_error(
 ) -> None:
     """websocket_resolve_ai_alert sends an error when alert_id is not found."""
     mock_alert_monitor.resolve_alert = AsyncMock(return_value=False)
-    mock_coordinator.services.notifications.resolve_alert = mock_alert_monitor.resolve_alert
+    mock_coordinator.services.notifications.resolve_alert = (
+        mock_alert_monitor.resolve_alert
+    )
 
     from custom_components.growspace_manager.websocket.ai_assistant import (
         websocket_resolve_ai_alert,
@@ -228,38 +181,5 @@ async def test_resolve_ai_alert_not_found_sends_error(
     }
     hass = MagicMock()
 
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: mock_coordinator,
-        )
-        await websocket_resolve_ai_alert(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once()
-    error_code = mock_connection.send_error.call_args[0][1]
-    assert error_code == "not_found"
-
-
-async def test_resolve_ai_alert_no_coordinator_sends_error(
-    mock_connection: MagicMock,
-) -> None:
-    """websocket_resolve_ai_alert sends error when no coordinator found."""
-    from custom_components.growspace_manager.websocket.ai_assistant import (
-        websocket_resolve_ai_alert,
-    )
-
-    msg = {
-        "id": 7,
-        "type": f"{DOMAIN}/resolve_ai_alert",
-        "alert_id": "some-id",
-    }
-    hass = MagicMock()
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(
-            "custom_components.growspace_manager.websocket.ai_assistant._get_coordinator",
-            lambda h, c: None,
-        )
-        await websocket_resolve_ai_alert(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once()
+    with pytest.raises(EntityNotFoundError, match="'nonexistent-id' not found"):
+        await websocket_resolve_ai_alert(hass, mock_coordinator, msg)

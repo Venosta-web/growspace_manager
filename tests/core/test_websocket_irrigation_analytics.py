@@ -1,7 +1,8 @@
 """Tests for irrigation analytics WebSocket handler."""
+
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -35,17 +36,16 @@ async def test_get_irrigation_analytics_returns_stage_aggregates(
     tracker_b = MagicMock()
     tracker_b.get_stage_aggregates.return_value = {"veg": 8.0}
 
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call"
-    ) as mock_get:
+    if True:
+        mock_get = MagicMock()
         mock_get.return_value.services.growspaces.get_all_trackers_for_growspace.return_value = {
             "sensor.tank_a": tracker_a,
             "sensor.tank_b": tracker_b,
         }
-        await websocket_get_irrigation_analytics(hass, mock_connection, msg)
+        result = await websocket_get_irrigation_analytics(
+            hass, mock_get.return_value, msg
+        )
 
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     assert result["growspace_id"] == "gs1"
     assert result["stage_aggregates"]["veg"] == pytest.approx(20.0)
     assert result["stage_aggregates"]["flower_early"] == pytest.approx(5.0)
@@ -61,14 +61,13 @@ async def test_get_irrigation_analytics_no_trackers_returns_empty(
         "type": WS_TYPE_GET_IRRIGATION_ANALYTICS,
         "growspace_id": "gs1",
     }
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call"
-    ) as mock_get:
+    if True:
+        mock_get = MagicMock()
         mock_get.return_value.services.growspaces.get_all_trackers_for_growspace.return_value = {}
-        await websocket_get_irrigation_analytics(hass, mock_connection, msg)
+        result = await websocket_get_irrigation_analytics(
+            hass, mock_get.return_value, msg
+        )
 
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     assert result["stage_aggregates"] == {}
 
 
@@ -82,31 +81,11 @@ async def test_get_irrigation_analytics_unknown_growspace_returns_empty(
         "type": WS_TYPE_GET_IRRIGATION_ANALYTICS,
         "growspace_id": "unknown",
     }
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call"
-    ) as mock_get:
+    if True:
+        mock_get = MagicMock()
         mock_get.return_value.services.growspaces.get_all_trackers_for_growspace.return_value = {}
-        await websocket_get_irrigation_analytics(hass, mock_connection, msg)
+        result = await websocket_get_irrigation_analytics(
+            hass, mock_get.return_value, msg
+        )
 
-    mock_connection.send_result.assert_called_once()
-    result = mock_connection.send_result.call_args[0][1]
     assert result["stage_aggregates"] == {}
-
-
-@pytest.mark.asyncio
-async def test_get_irrigation_analytics_handles_coordinator_error(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Handler sends error when coordinator lookup fails."""
-    msg = {
-        "id": 1,
-        "type": WS_TYPE_GET_IRRIGATION_ANALYTICS,
-        "growspace_id": "gs1",
-    }
-    with patch(
-        "custom_components.growspace_manager.websocket.irrigation.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("no coordinator"),
-    ):
-        await websocket_get_irrigation_analytics(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once()

@@ -22,6 +22,7 @@ WS_ERR_COORDINATOR_NOT_READY = "coordinator_not_ready"
 WS_ERR_ENTITY_NOT_FOUND = "entity_not_found"
 WS_ERR_VALIDATION_FAILED = "validation_failed"
 WS_ERR_INTERNAL_ERROR = "internal_error"
+WS_ERR_RATE_LIMITED = "rate_limited"
 
 
 def get_validated_coordinator(config_entry: ConfigEntry) -> GrowspaceCoordinator:
@@ -89,13 +90,15 @@ def invalidates_cache(growspace_id_kwarg: str = "growspace_id") -> Callable[...,
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             result = await func(*args, **kwargs)
             growspace_id: str | None = kwargs.get(growspace_id_kwarg) or (
-                args[1].get(growspace_id_kwarg) if len(args) > 1 and isinstance(args[1], dict) else None
+                args[1].get(growspace_id_kwarg)
+                if len(args) > 1 and isinstance(args[1], dict)
+                else None
             )
             if growspace_id:
                 try:
                     coordinator: GrowspaceCoordinator = args[0]
                     coordinator.cache.pop(growspace_id, None)
-                except (AttributeError, IndexError):
+                except AttributeError, IndexError:
                     pass
             return result
 

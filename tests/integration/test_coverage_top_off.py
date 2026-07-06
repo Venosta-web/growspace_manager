@@ -71,7 +71,9 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     plant_cure = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", cure_start="2024-01-01"
     )
-    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant_cure]
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        plant_cure
+    ]
     with patch(
         "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, s: 1 if s == PlantStage.CURE else 0,
@@ -96,7 +98,9 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     plant_seedling = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", seedling_start="2024-01-01"
     )
-    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant_seedling]
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        plant_seedling
+    ]
     with patch(
         "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, s: 1 if s == PlantStage.SEEDLING else 0,
@@ -288,7 +292,9 @@ async def test_batch_add_mother_auto_date_coverage(hass: HomeAssistant) -> None:
     entry.add_to_hass(hass)
     mock_coordinator = GrowspaceCoordinator.build(hass, entry, data={})
 
-    mock_coordinator._data_repository.add_growspace(Growspace(id="mother", name="mother"))
+    mock_coordinator._data_repository.add_growspace(
+        Growspace(id="mother", name="mother")
+    )
     with patch.object(
         mock_coordinator.validator, "find_first_available_position", return_value=(1, 1)
     ):
@@ -411,12 +417,14 @@ async def test_websocket_get_event_log_spam_filter_coverage(
     hass: HomeAssistant,
 ) -> None:
     """Test websocket_get_event_log with SQL-level spam filtering."""
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 1, "type": "growspace_manager/get_event_log", "limit": 10}
 
     # With SQL-level filtering, only normal events are returned from DB
     # Spam events (optimal/stress/mold) are excluded at SQL query level
-    normal_data = json.dumps({"category": "info", "growspace_id": "gs1", "sensor_type": "moisture"})
+    normal_data = json.dumps(
+        {"category": "info", "growspace_id": "gs1", "sensor_type": "moisture"}
+    )
 
     class MockEvent:
         def __init__(self, event_id, time_fired_ts) -> None:
@@ -466,10 +474,7 @@ async def test_websocket_get_event_log_spam_filter_coverage(
 
         mock_get_recorder.return_value.async_add_executor_job.side_effect = mock_add_job
 
-        await websocket_get_event_log(hass, connection, msg)
-
-        connection.send_result.assert_called_once()
-        result = connection.send_result.call_args[0][1]
+        result = await websocket_get_event_log(hass, MagicMock(), msg)
 
         # With SQL filtering, we only get the 10 requested normal events
         # (limit=10), not spam events
@@ -500,15 +505,15 @@ async def test_websocket_get_event_log_recorder_missing_coverage(
     hass: HomeAssistant,
 ) -> None:
     """Test websocket_get_event_log when recorder is missing."""
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 1, "type": "growspace_manager/get_event_log"}
 
     with patch(
         "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=ImportError("No recorder"),
     ):
-        await websocket_get_event_log(hass, connection, msg)
-        connection.send_result.assert_called_once()
+        result = await websocket_get_event_log(hass, MagicMock(), msg)
+        assert result == {}
 
 
 @pytest.mark.asyncio

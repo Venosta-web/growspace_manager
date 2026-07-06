@@ -9,17 +9,13 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.report import (
     async_websocket_get_grow_report,
 )
-from custom_components.growspace_manager.services.utils import (
-    WS_ERR_COORDINATOR_NOT_READY,
-    WS_ERR_INTERNAL_ERROR,
-)
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+
+from ._common import WSCommand
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,29 +39,17 @@ SCHEMA_WS_GET_GROW_REPORT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 
 async def websocket_get_growspace_data(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> None:
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> Any:
     """Handle get growspace data command."""
-    growspace_id = msg.get("growspace_id")
-    try:
-        coordinator = GrowspaceCoordinator.get_for_service_call(hass, msg)
-        data = coordinator.services.growspaces.get_growspace_data(growspace_id)
-        connection.send_result(msg["id"], data)
-    except ServiceValidationError:
-        connection.send_error(
-            msg["id"], WS_ERR_COORDINATOR_NOT_READY, "Growspace Manager integration not loaded"
-        )
-    except (
-        AttributeError,
-        KeyError,
-        ValueError,
-        GrowspaceError,
-        Exception,  # noqa: BLE001
-    ) as e:
-        connection.send_error(msg["id"], WS_ERR_INTERNAL_ERROR, str(e))
+    return coordinator.services.growspaces.get_growspace_data(msg.get("growspace_id"))
 
 
-COMMANDS: list[tuple[str, Any, Any, bool]] = [
-    (WS_TYPE_GET_DATA, websocket_get_growspace_data, SCHEMA_WS_GET_DATA, False),
-    (WS_TYPE_GET_GROW_REPORT, async_websocket_get_grow_report, SCHEMA_WS_GET_GROW_REPORT, False),
+COMMANDS: list[WSCommand] = [
+    WSCommand(WS_TYPE_GET_DATA, websocket_get_growspace_data, SCHEMA_WS_GET_DATA),
+    WSCommand(
+        WS_TYPE_GET_GROW_REPORT,
+        async_websocket_get_grow_report,
+        SCHEMA_WS_GET_GROW_REPORT,
+    ),
 ]

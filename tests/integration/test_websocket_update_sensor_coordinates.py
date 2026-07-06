@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.websocket import (
     _EPOCH_SENTINEL,
     WS_TYPE_GET_HISTORY_STATS,
@@ -54,10 +55,8 @@ async def test_websocket_get_history_stats_invalid_times(
         "start_time": "invalid",
         "interval_minutes": 60,
     }
-    await websocket_get_history_stats(hass, mock_connection, msg_bad_start)
-    mock_connection.send_error.assert_called_with(
-        1, "invalid_args", "Invalid start_time"
-    )
+    with pytest.raises(ServiceValidationError, match="Invalid start_time"):
+        await websocket_get_history_stats(hass, MagicMock(), msg_bad_start)
 
     # Line 617-618 coverage
     msg_bad_end = {
@@ -68,14 +67,14 @@ async def test_websocket_get_history_stats_invalid_times(
         "end_time": "invalid",
         "interval_minutes": 60,
     }
-    with patch(
-        "homeassistant.util.dt.parse_datetime",
-        side_effect=[datetime(2023, 1, 1, tzinfo=dt_util.UTC), None],
+    with (
+        patch(
+            "homeassistant.util.dt.parse_datetime",
+            side_effect=[datetime(2023, 1, 1, tzinfo=dt_util.UTC), None],
+        ),
+        pytest.raises(ServiceValidationError, match="Invalid end_time"),
     ):
-        await websocket_get_history_stats(hass, mock_connection, msg_bad_end)
-        mock_connection.send_error.assert_called_with(
-            2, "invalid_args", "Invalid end_time"
-        )
+        await websocket_get_history_stats(hass, MagicMock(), msg_bad_end)
 
 
 async def test_websocket_update_sensor_coordinates_success(
@@ -100,21 +99,16 @@ async def test_websocket_update_sensor_coordinates_success(
     mock_coord.async_commit = AsyncMock()
     mock_coord.async_request_refresh = AsyncMock()
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=mock_coord,
-    ):
-        await websocket_update_sensor_coordinates(hass, mock_connection, msg)
+    await websocket_update_sensor_coordinates(hass, mock_coord, msg)
 
-        assert mock_growspace.environment_config.sensor_coordinates["sensor.test"] == {
-            "x": 10,
-            "y": 20,
-            "z": 30,
-            "rotation": 90,
-        }
-        mock_coord.async_commit.assert_awaited()
-        mock_coord.async_request_refresh.assert_awaited()
-        mock_connection.send_result.assert_called_with(1)
+    assert mock_growspace.environment_config.sensor_coordinates["sensor.test"] == {
+        "x": 10,
+        "y": 20,
+        "z": 30,
+        "rotation": 90,
+    }
+    mock_coord.async_commit.assert_awaited()
+    mock_coord.async_request_refresh.assert_awaited()
 
 
 async def test_websocket_update_sensor_coordinates_no_rotation(
@@ -140,18 +134,13 @@ async def test_websocket_update_sensor_coordinates_no_rotation(
     mock_coord.async_commit = AsyncMock()
     mock_coord.async_request_refresh = AsyncMock()
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=mock_coord,
-    ):
-        await websocket_update_sensor_coordinates(hass, mock_connection, msg)
+    await websocket_update_sensor_coordinates(hass, mock_coord, msg)
 
-        assert mock_growspace.environment_config.sensor_coordinates["sensor.test"] == {
-            "x": 10,
-            "y": 20,
-            "z": 30,
-        }
-        mock_connection.send_result.assert_called_with(1)
+    assert mock_growspace.environment_config.sensor_coordinates["sensor.test"] == {
+        "x": 10,
+        "y": 20,
+        "z": 30,
+    }
 
 
 async def test_websocket_update_sensor_coordinates_errors(
@@ -169,44 +158,36 @@ async def test_websocket_update_sensor_coordinates_errors(
 
     mock_coord = MagicMock()
 
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        return_value=mock_coord,
-    ):
-        # 1. Growspace not found (Line 673-676)
-        mock_coord.growspaces = {}
-        await websocket_update_sensor_coordinates(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(
-            1, "not_found", "Growspace gs1 not found"
-        )
+    # 1. Growspace not found
+    mock_coord.growspaces = {}
+    with pytest.raises(GrowspaceNotFoundError, match="gs1 not found"):
+        await websocket_update_sensor_coordinates(hass, mock_coord, msg)
 
-        # 2. No environment config (Line 683-688)
-        mock_growspace = MagicMock()
-        mock_growspace.environment_config = None
-        mock_coord.growspaces = {"gs1": mock_growspace}
-        await websocket_update_sensor_coordinates(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(
-            1, "invalid_state", "Grow space has no environment configuration"
-        )
+    # 2. No environment config
+    mock_growspace = MagicMock()
+    mock_growspace.environment_config = None
+    mock_coord.growspaces = {"gs1": mock_growspace}
+    with pytest.raises(ServiceValidationError, match="no environment configuration"):
+        await websocket_update_sensor_coordinates(hass, mock_coord, msg)
 
-        # 3. ServiceValidationError (Line 711)
-        mock_growspace.environment_config = MagicMock()
-        with patch.object(
+    # 3. ServiceValidationError from commit propagates
+    mock_growspace.environment_config = MagicMock()
+    with (
+        patch.object(
             mock_coord,
             "async_commit",
             side_effect=ServiceValidationError("Validation Fail"),
-        ):
-            await websocket_update_sensor_coordinates(hass, mock_connection, msg)
-            mock_connection.send_error.assert_called_with(
-                1, "invalid_args", "Validation Fail"
-            )
+        ),
+        pytest.raises(ServiceValidationError, match="Validation Fail"),
+    ):
+        await websocket_update_sensor_coordinates(hass, mock_coord, msg)
 
-        # 4. Generic Exception (Line 713-714)
-        with patch.object(
-            mock_coord, "async_commit", side_effect=Exception("Unexpected")
-        ):
-            await websocket_update_sensor_coordinates(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(1, "unknown_error", "Unexpected")
+    # 4. Generic Exception propagates
+    with (
+        patch.object(mock_coord, "async_commit", side_effect=Exception("Unexpected")),
+        pytest.raises(Exception, match="Unexpected"),
+    ):
+        await websocket_update_sensor_coordinates(hass, mock_coord, msg)
 
 
 def test_merge_logbook_event_error() -> None:

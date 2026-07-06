@@ -3,15 +3,29 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
 import logging
 from typing import Any
 
 from custom_components.growspace_manager.const import MERGE_ALERT_GAP_SECONDS
-from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.exceptions import (
+    CoordinatorNotReadyError,
+    EntityNotFoundError,
+    GrowspaceError,
+    RateLimitedError,
+)
+from custom_components.growspace_manager.services.utils import (
+    WS_ERR_COORDINATOR_NOT_READY,
+    WS_ERR_ENTITY_NOT_FOUND,
+    WS_ERR_INTERNAL_ERROR,
+    WS_ERR_RATE_LIMITED,
+    WS_ERR_VALIDATION_FAILED,
+)
 from homeassistant.components import websocket_api
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.util.dt as dt_util
 
@@ -23,7 +37,19 @@ _EPOCH_SENTINEL: datetime = datetime.min.replace(tzinfo=dt_util.UTC)
 _WSHandler = Callable[
     [HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[None]
 ]
-_WSHandlerSync = Callable[[HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], None]
+_WSHandlerSync = Callable[
+    [HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], None
+]
+
+# Payload-returning handlers (ADR-0027): the WS Command Lifecycle owns the
+# connection; a handler computes a payload (or None) and raises typed
+# exceptions for errors.
+WSPayloadHandler = Callable[
+    [HomeAssistant, GrowspaceCoordinator, dict[str, Any]], Awaitable[Any]
+]
+WSPayloadHandlerSync = Callable[
+    [HomeAssistant, GrowspaceCoordinator, dict[str, Any]], Any
+]
 
 # (exception types to match, error code to send, whether to log a traceback,
 # optional fixed message overriding str(err))
@@ -31,12 +57,20 @@ WSErrorMap = tuple[
     tuple[type[Exception] | tuple[type[Exception], ...], str, bool, str | None], ...
 ]
 
-# Covers the common pattern: validation-shaped errors are reported as
-# "validation_failed" without a traceback, everything else is logged and
-# reported as "unknown_error".
+# The Typed Error Codes vocabulary shared with the card (ADR-0005, completed
+# by ADR-0027). The card's errors.ts types exactly this set and coerces any
+# other code to internal_error, so ad-hoc codes are self-defeating.
 DEFAULT_WS_ERROR_MAP: WSErrorMap = (
-    ((ServiceValidationError, GrowspaceError, ValueError), "validation_failed", False, None),
-    (Exception, "unknown_error", True, None),
+    (EntityNotFoundError, WS_ERR_ENTITY_NOT_FOUND, False, None),
+    (CoordinatorNotReadyError, WS_ERR_COORDINATOR_NOT_READY, False, None),
+    (RateLimitedError, WS_ERR_RATE_LIMITED, False, None),
+    (
+        (ServiceValidationError, GrowspaceError, ValueError),
+        WS_ERR_VALIDATION_FAILED,
+        False,
+        None,
+    ),
+    (Exception, WS_ERR_INTERNAL_ERROR, True, None),
 )
 
 
@@ -52,59 +86,90 @@ def _send_ws_error(
         if isinstance(err, exc_types):
             if should_log:
                 _LOGGER.exception("Error handling %s", func_name)
-            connection.send_error(msg["id"], code, message if message is not None else str(err))
+            connection.send_error(
+                msg["id"], code, message if message is not None else str(err)
+            )
             return
     raise err
 
 
-def handle_ws_errors(error_map: WSErrorMap = DEFAULT_WS_ERROR_MAP) -> Callable[[_WSHandler], _WSHandler]:
-    """Decorate an async WebSocket handler with standardized error reporting.
+@dataclass(frozen=True, slots=True)
+class WSCommand:
+    """One declarative WS command row (ADR-0027, [[WSCommand]]).
 
-    On success the handler is responsible for calling
-    ``connection.send_result``. On a raised exception, ``error_map`` is
-    checked in order for the first matching exception type and the
-    corresponding error code is sent via ``connection.send_error``.
-
-    Mirrors ``services.utils.handle_service_errors`` for the WebSocket layer.
+    ``resolve="targeted"`` locates the coordinator from ids in the message via
+    ``get_for_service_call``; ``"any"`` uses ``get_any`` (global commands).
+    ``sync=True`` registers a ``@callback`` wrapper for cheap reads.
+    ``error_map`` overrides the default Typed Error Codes table for modules
+    with a genuinely different message policy.
     """
 
-    def decorator(func: _WSHandler) -> _WSHandler:
-        @wraps(func)
-        async def wrapper(
+    type: str
+    handler: Any
+    schema: Any
+    resolve: str = "targeted"
+    sync: bool = False
+    error_map: WSErrorMap | None = None
+
+
+def _resolve_coordinator(
+    hass: HomeAssistant, msg: dict[str, Any], mode: str
+) -> GrowspaceCoordinator:
+    """Locate the coordinator for a command per its declared resolve mode."""
+    if mode == "any":
+        return GrowspaceCoordinator.get_any(hass)
+    return GrowspaceCoordinator.get_for_service_call(hass, msg)
+
+
+def register_ws_command(hass: HomeAssistant, command: WSCommand) -> None:
+    """Register one command behind the WS Command Lifecycle (ADR-0027).
+
+    The wrapper owns resolve → execute → ``send_result`` → error mapping;
+    the handler is a payload-returning function that never sees the
+    connection. Its return value is sent as the result payload (``None``
+    for mutations).
+    """
+    error_map = command.error_map or DEFAULT_WS_ERROR_MAP
+
+    if command.sync:
+
+        @callback
+        @wraps(command.handler)
+        def sync_wrapper(
             hass: HomeAssistant,
             connection: websocket_api.ActiveConnection,
             msg: dict[str, Any],
         ) -> None:
             try:
-                await func(hass, connection, msg)
+                coordinator = _resolve_coordinator(hass, msg, command.resolve)
+                payload = command.handler(hass, coordinator, msg)
+                connection.send_result(msg["id"], payload)
             except Exception as err:  # noqa: BLE001
-                _send_ws_error(connection, msg, func.__name__, err, error_map)
+                _send_ws_error(
+                    connection, msg, command.handler.__name__, err, error_map
+                )
 
-        return wrapper
+        websocket_api.async_register_command(
+            hass, command.type, sync_wrapper, command.schema
+        )
+        return
 
-    return decorator
+    @wraps(command.handler)
+    async def async_wrapper(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict[str, Any],
+    ) -> None:
+        try:
+            coordinator = _resolve_coordinator(hass, msg, command.resolve)
+            payload = await command.handler(hass, coordinator, msg)
+            connection.send_result(msg["id"], payload)
+        except Exception as err:  # noqa: BLE001
+            _send_ws_error(connection, msg, command.handler.__name__, err, error_map)
 
-
-def handle_ws_errors_sync(
-    error_map: WSErrorMap = DEFAULT_WS_ERROR_MAP,
-) -> Callable[[_WSHandlerSync], _WSHandlerSync]:
-    """Sync-callback variant of :func:`handle_ws_errors`."""
-
-    def decorator(func: _WSHandlerSync) -> _WSHandlerSync:
-        @wraps(func)
-        def wrapper(
-            hass: HomeAssistant,
-            connection: websocket_api.ActiveConnection,
-            msg: dict[str, Any],
-        ) -> None:
-            try:
-                func(hass, connection, msg)
-            except Exception as err:  # noqa: BLE001
-                _send_ws_error(connection, msg, func.__name__, err, error_map)
-
-        return wrapper
-
-    return decorator
+    websocket_api.async_register_command(
+        hass, command.type, websocket_api.async_response(async_wrapper), command.schema
+    )
 
 
 def _extract_ts(state_obj: Any) -> datetime:
@@ -165,6 +230,6 @@ def _merge_logbook_event(
                         )
                         last_evt["reasons"] = comb[:5]
                     return True  # type: ignore[no-any-return]
-        except (ValueError, TypeError, KeyError):
+        except ValueError, TypeError, KeyError:
             pass
     return False

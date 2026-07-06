@@ -8,6 +8,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.websocket import (
     websocket_add_growspace_note,
     websocket_add_timeline_note,
@@ -52,15 +53,10 @@ async def test_websocket_get_growspace_data_snapshot(
         ],
     }
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {"id": 1, "type": f"{DOMAIN}/get_data", "growspace_id": "gs1"}
-        await websocket_get_growspace_data(hass, mock_connection, msg)
+        result = await websocket_get_growspace_data(hass, coordinator, msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert result == snapshot
 
 
@@ -80,15 +76,10 @@ async def test_websocket_get_strain_library_snapshot(
     coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {"id": 2, "type": f"{DOMAIN}/get_strain_library"}
-        websocket_get_strain_library(hass, mock_connection, msg)
+        result = websocket_get_strain_library(hass, coordinator, msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert result == snapshot
 
 
@@ -113,19 +104,13 @@ async def test_websocket_get_nutrient_inventory_snapshot(
 
     with (
         patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
-            return_value=coordinator,
-        ),
-        patch(
             "custom_components.growspace_manager.websocket.nutrients.asdict",
             return_value=inventory_data,
         ),
     ):
         msg = {"id": 3, "type": f"{DOMAIN}/get_nutrient_inventory"}
-        websocket_get_nutrient_inventory(hass, mock_connection, msg)
+        result = websocket_get_nutrient_inventory(hass, coordinator, msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert result == snapshot
 
 
@@ -144,15 +129,10 @@ async def test_websocket_get_nutrient_presets_snapshot(
         "ipm_presets": [],
     }
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {"id": 4, "type": f"{DOMAIN}/get_nutrient_presets"}
-        websocket_get_nutrient_presets(hass, mock_connection, msg)
+        result = websocket_get_nutrient_presets(hass, coordinator, msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert result == snapshot
 
 
@@ -170,15 +150,10 @@ async def test_websocket_get_ipm_presets_snapshot(
         ],
     }
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {"id": 5, "type": f"{DOMAIN}/get_ipm_presets"}
-        websocket_get_ipm_presets(hass, mock_connection, msg)
+        result = websocket_get_ipm_presets(hass, coordinator, msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert result == snapshot
 
 
@@ -193,12 +168,7 @@ async def test_websocket_add_timeline_note_snapshot(
     coordinator.services.add_timeline_note = AsyncMock()
     coordinator._strain_library = MagicMock()
 
-    with (
-        patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-            return_value=coordinator,
-        ),
-    ):
+    if True:
         msg = {
             "id": 6,
             "type": f"{DOMAIN}/add_timeline_note",
@@ -212,10 +182,9 @@ async def test_websocket_add_timeline_note_snapshot(
             "amount_ml": 500,
             "metadata": {"source": "manual"},
         }
-        await websocket_add_timeline_note(hass, mock_connection, msg)
+        await websocket_add_timeline_note(hass, coordinator, msg)
 
         coordinator.services.add_timeline_note.assert_called_once()
-        mock_connection.send_result.assert_called_once_with(6)
 
 
 @pytest.mark.asyncio
@@ -230,10 +199,7 @@ async def test_websocket_add_growspace_note_snapshot(
     coordinator.services = MagicMock()
     coordinator.services.growspaces.add_growspace_note = AsyncMock()
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {
             "id": 7,
             "type": f"{DOMAIN}/add_growspace_note",
@@ -241,10 +207,9 @@ async def test_websocket_add_growspace_note_snapshot(
             "notes": "Tent looking healthy today.",
             "images": [],
         }
-        await websocket_add_growspace_note(hass, mock_connection, msg)
+        await websocket_add_growspace_note(hass, coordinator, msg)
 
         coordinator.services.growspaces.add_growspace_note.assert_called_once()
-        mock_connection.send_result.assert_called_once_with(7)
 
 
 @freeze_time("2024-01-01 12:00:00", tz_offset=0)
@@ -301,10 +266,8 @@ async def test_websocket_get_event_log_snapshot(
         mock_session_scope.return_value.__enter__.return_value = mock_session
 
         msg = {"id": 7, "type": f"{DOMAIN}/get_log", "growspace_id": "gs1"}
-        await websocket_get_event_log(hass, mock_connection, msg)
+        result = await websocket_get_event_log(hass, MagicMock(), msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert result == snapshot
 
 
@@ -362,10 +325,8 @@ async def test_websocket_get_alerts_snapshot(
         mock_session_scope.return_value.__enter__.return_value = mock_session
 
         msg = {"id": 8, "type": f"{DOMAIN}/get_alerts", "growspace_id": "gs1"}
-        await websocket_get_alerts(hass, mock_connection, msg)
+        result = await websocket_get_alerts(hass, MagicMock(), msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert result == snapshot
 
 
@@ -394,10 +355,8 @@ async def test_websocket_get_history_stats_snapshot(
             "start_time": "2026-01-12T11:00:00+00:00",
             "interval_minutes": 5,
         }
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert result == snapshot
 
 
@@ -414,10 +373,7 @@ async def test_websocket_update_breeder_snapshot(
     coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {
             "id": 10,
             "type": f"{DOMAIN}/update_breeder",
@@ -425,9 +381,9 @@ async def test_websocket_update_breeder_snapshot(
             "new_name": "New Breeder",
             "logo": "new_logo.png",
         }
-        await websocket_update_breeder(hass, mock_connection, msg)
+        result = await websocket_update_breeder(hass, coordinator, msg)
 
-        mock_connection.send_result.assert_called_once_with(10, {"updated": 5})
+        assert result == {"updated": 5}
         assert snapshot == {"updated": 5}
 
 
@@ -444,18 +400,15 @@ async def test_websocket_delete_breeder_snapshot(
     coordinator._strain_library = strain_library
     coordinator.services.config.strain_library = strain_library
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_any",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {
             "id": 11,
             "type": f"{DOMAIN}/delete_breeder",
             "breeder_name": "Breeder to Delete",
         }
-        await websocket_delete_breeder(hass, mock_connection, msg)
+        result = await websocket_delete_breeder(hass, coordinator, msg)
 
-        mock_connection.send_result.assert_called_once_with(11, {"deleted": 3})
+        assert result == {"deleted": 3}
         assert snapshot == {"deleted": 3}
 
 
@@ -469,18 +422,15 @@ async def test_websocket_get_vision_history_empty(
     growspace.vision_checkup_history = []
     coordinator.growspaces = {"tent1": growspace}
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {
             "id": 12,
             "type": f"{DOMAIN}/get_vision_history",
             "growspace_id": "tent1",
         }
-        await websocket_get_vision_history(hass, mock_connection, msg)
+        result = await websocket_get_vision_history(hass, coordinator, msg)
 
-    mock_connection.send_result.assert_called_once_with(12, {"history": [], "total": 0})
+        assert result == {"history": [], "total": 0}
 
 
 @pytest.mark.asyncio
@@ -512,21 +462,15 @@ async def test_websocket_get_vision_history_with_results(
     growspace.vision_checkup_history = [result1, result2]
     coordinator.growspaces = {"tent1": growspace}
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {
             "id": 13,
             "type": f"{DOMAIN}/get_vision_history",
             "growspace_id": "tent1",
             "limit": 10,
         }
-        await websocket_get_vision_history(hass, mock_connection, msg)
+        result = await websocket_get_vision_history(hass, coordinator, msg)
 
-    mock_connection.send_result.assert_called_once()
-    call_id, result = mock_connection.send_result.call_args[0]
-    assert call_id == 13
     assert result["total"] == 2
     assert len(result["history"]) == 2
 
@@ -548,20 +492,13 @@ async def test_websocket_get_vision_history_growspace_not_found(
     coordinator = MagicMock()
     coordinator.growspaces = {}
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
-        msg = {
-            "id": 14,
-            "type": f"{DOMAIN}/get_vision_history",
-            "growspace_id": "nonexistent",
-        }
-        await websocket_get_vision_history(hass, mock_connection, msg)
-
-    mock_connection.send_error.assert_called_once_with(
-        14, "not_found", "Growspace nonexistent not found"
-    )
+    msg = {
+        "id": 14,
+        "type": f"{DOMAIN}/get_vision_history",
+        "growspace_id": "nonexistent",
+    }
+    with pytest.raises(GrowspaceNotFoundError, match="'nonexistent' not found"):
+        await websocket_get_vision_history(hass, coordinator, msg)
 
 
 @pytest.mark.asyncio
@@ -587,20 +524,14 @@ async def test_websocket_get_vision_history_limit(
     growspace.vision_checkup_history = results
     coordinator.growspaces = {"tent1": growspace}
 
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=coordinator,
-    ):
+    if True:
         msg = {
             "id": 15,
             "type": f"{DOMAIN}/get_vision_history",
             "growspace_id": "tent1",
             "limit": 2,
         }
-        await websocket_get_vision_history(hass, mock_connection, msg)
+        result = await websocket_get_vision_history(hass, coordinator, msg)
 
-    mock_connection.send_result.assert_called_once()
-    call_id, result = mock_connection.send_result.call_args[0]
-    assert call_id == 15
     assert result["total"] == 5
     assert len(result["history"]) == 2

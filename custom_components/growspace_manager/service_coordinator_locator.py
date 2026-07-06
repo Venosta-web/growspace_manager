@@ -19,6 +19,7 @@ from .const import (
     ATTR_TARGET_GROWSPACE_ID,
     DOMAIN,
 )
+from .exceptions import CoordinatorNotReadyError
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -72,7 +73,12 @@ class ServiceCoordinatorLocator:
         if len(coordinators) == 1:
             return coordinators[0]
 
-        # Unable to determine which coordinator to use
+        if not coordinators:
+            raise CoordinatorNotReadyError(
+                "No Growspace Manager instance is currently loaded."
+            )
+
+        # Multiple instances and no id matched — the caller must disambiguate.
         raise ServiceValidationError(
             "Could not determine which Growspace Manager instance to use. "
             "Please specify a valid growspace_id or plant_id."
@@ -93,7 +99,7 @@ class ServiceCoordinatorLocator:
         """
         coordinators = ServiceCoordinatorLocator._get_loaded_coordinators(hass)
         if not coordinators:
-            raise ServiceValidationError(
+            raise CoordinatorNotReadyError(
                 "No Growspace Manager instance is currently loaded."
             )
         return coordinators[0]

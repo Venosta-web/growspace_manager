@@ -6,7 +6,6 @@ import logging
 
 from custom_components.growspace_manager.const import ATTR_NOTES, ATTR_PLANT_ID
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
 from . import (
@@ -25,7 +24,12 @@ from . import (
     timeline,
     vision,
 )
-from ._common import _EPOCH_SENTINEL, _extract_ts, _merge_logbook_event
+from ._common import (
+    _EPOCH_SENTINEL,
+    _extract_ts,
+    _merge_logbook_event,
+    register_ws_command,
+)
 from .ai_assistant import (
     SCHEMA_WS_SEND_MESSAGE,
     SCHEMA_WS_START_CONVERSATION,
@@ -196,9 +200,8 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     _LOGGER.debug("Registering WebSocket API for growspace_manager")
 
     for module in _MODULES:
-        for ws_type, handler, schema, is_sync in module.COMMANDS:
-            registered = handler if is_sync else websocket_api.async_response(handler)
-            websocket_api.async_register_command(hass, ws_type, registered, schema)
+        for command in module.COMMANDS:
+            register_ws_command(hass, command)
 
 
 __all__ = [
@@ -327,4 +330,3 @@ __all__ = [
     "websocket_update_vision_checkup_config",
     "websocket_upload_strain_image",
 ]
-
