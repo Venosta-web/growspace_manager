@@ -149,35 +149,11 @@ class GrowspaceViewModelBuilder:
         dry_week = days_to_week(max_dry_days)
         cure_week = days_to_week(max_cure_days)
 
-        # Get irrigation settings
-        irrigation_config = growspace.irrigation_config
-        irrigation_options = {
-            "irrigation_pump_entity": irrigation_config.irrigation_pump_entity,
-            "drain_pump_entity": irrigation_config.drain_pump_entity,
-            "irrigation_duration": irrigation_config.irrigation_duration,
-            "drain_duration": irrigation_config.drain_duration,
-            "irrigation_times": irrigation_config.irrigation_times,
-            "drain_times": irrigation_config.drain_times,
-            "veg_day_hours": irrigation_config.veg_day_hours,
-            "soil_trigger_percent": irrigation_config.soil_trigger_percent,
-            "daily_volume_cap_liters": irrigation_config.daily_volume_cap_liters,
-            "max_cycles_per_day": irrigation_config.max_cycles_per_day,
-            "skip_during_dark": irrigation_config.skip_during_dark,
-            "pause_on_low_tank": irrigation_config.pause_on_low_tank,
-            "log_to_logbook": irrigation_config.log_to_logbook,
-            "auto_advance_p1_to_p2": irrigation_config.auto_advance_p1_to_p2,
-            "auto_advance_p2_to_p3": irrigation_config.auto_advance_p2_to_p3,
-            "halt_on_runoff_ec_threshold": irrigation_config.halt_on_runoff_ec_threshold,
-            "active_steering_phase": irrigation_config.active_steering_phase,
-            "ec_target_ranges": [
-                {
-                    "stage": r.stage,
-                    "feed_ec_min": r.feed_ec_min,
-                    "feed_ec_max": r.feed_ec_max,
-                }
-                for r in irrigation_config.ec_target_ranges
-            ],
-        }
+        # Irrigation settings — model-complete via to_dict (ADR-0028), so new
+        # IrrigationConfig fields can never silently drop from the wire (the
+        # hand-copied block this replaces was missing pump_flow_rate_ml_per_sec
+        # and phase_changed_at)
+        irrigation_options = growspace.irrigation_config.to_dict()
 
         irrigation_strategy_dict = (
             growspace.irrigation_strategy.to_dict()
@@ -230,31 +206,16 @@ class GrowspaceViewModelBuilder:
             else f"Veg: {max_veg_days}d (W{veg_week}), Flower: {max_flower_days}d (W{flower_week})"
         )
 
+        # Sub-config blocks — model-complete via to_dict (ADR-0028)
         drain_config = (
-            {
-                "enabled": growspace.drain_config.enabled,
-                "max_ec_delta": growspace.drain_config.max_ec_delta,
-                "target_runoff_percent": growspace.drain_config.target_runoff_percent,
-                "readings": [
-                    {
-                        "timestamp": r.timestamp,
-                        "feed_ec": r.feed_ec,
-                        "drain_ec": r.drain_ec,
-                        "drain_volume_ml": r.drain_volume_ml,
-                        "feed_volume_ml": r.feed_volume_ml,
-                    }
-                    for r in growspace.drain_config.readings
-                ],
-            }
+            growspace.drain_config.to_dict()
             if getattr(growspace, "drain_config", None)
             else None
         )
 
         water_usage = (
             {
-                "total_liters": growspace.water_usage.total_liters,
-                "cycle_start_date": growspace.water_usage.cycle_start_date,
-                "daily_readings": growspace.water_usage.daily_readings,
+                **growspace.water_usage.to_dict(),
                 **({"liters_today": liters_today} if liters_today is not None else {}),
             }
             if getattr(growspace, "water_usage", None)
@@ -262,10 +223,7 @@ class GrowspaceViewModelBuilder:
         )
 
         energy_tracking = (
-            {
-                "cycle_start_date": growspace.energy_tracking.cycle_start_date,
-                "cycle_start_kwh": growspace.energy_tracking.cycle_start_kwh,
-            }
+            growspace.energy_tracking.to_dict()
             if getattr(growspace, "energy_tracking", None)
             else None
         )

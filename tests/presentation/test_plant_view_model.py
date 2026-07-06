@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import PLANT_STAGES
 from custom_components.growspace_manager.models import (
     DryingData,
     HarvestMetrics,
@@ -9,6 +10,7 @@ from custom_components.growspace_manager.models import (
     Plant,
     WeightEntry,
 )
+from custom_components.growspace_manager.models.plant import PhenotypeScore
 from custom_components.growspace_manager.presentation.plant_view_model import (
     PlantViewModelBuilder,
 )
@@ -35,6 +37,8 @@ def mock_plant() -> Plant:
     plant.last_ipm_type = "Neem"
     plant.harvest_metrics = HarvestMetrics()
     plant.drying_data = DryingData()
+    plant.phenotype_score = PhenotypeScore()
+    plant.phi_clearance_date = None
     return plant
 
 
@@ -101,7 +105,7 @@ def test_build_full_payload(
     # Verify mocks were called
     builder.entity_queries.lookup_plant_entity_id.assert_called_once_with("p1")
     mock_get_formatted_dates.assert_called_once_with(mock_plant)
-    assert mock_calculate_days_in_stage.call_count == 7
+    assert mock_calculate_days_in_stage.call_count == len(PLANT_STAGES)
 
 
 @patch(
@@ -181,3 +185,63 @@ def test_build_drying_data_empty_logs(builder, mock_plant: Plant):
     assert result["days_to_target"] is None
     assert result["drying_moisture"] is None
     assert result["drying_ready_for_cure"] is False
+
+
+def test_build_sub_dataclass_blocks_are_model_complete(
+    builder, mock_plant: Plant
+) -> None:
+    """phenotype_score / harvest_metrics carry every model field (ADR-0028)."""
+    builder.entity_queries = MagicMock()
+    builder.entity_queries.lookup_plant_entity_id.return_value = "sensor.plant_1"
+    mock_plant.phenotype_score = PhenotypeScore(vigor=8, notes="keeper candidate")
+
+    result = builder.build(mock_plant)
+
+    score_keys = set(PhenotypeScore().to_dict()) | {"total_score"}
+    assert set(result["phenotype_score"]) == score_keys
+    assert result["phenotype_score"]["notes"] == "keeper candidate"
+    assert result["phenotype_score"]["total_score"] == 8
+    assert set(result["harvest_metrics"]) == set(HarvestMetrics().to_dict())
+
+
+def test_build_includes_phi_fields_when_clearance_set(
+    builder, mock_plant: Plant
+) -> None:
+    """A set PHI clearance date ships with its computed days-remaining."""
+    builder.entity_queries = MagicMock()
+    builder.entity_queries.lookup_plant_entity_id.return_value = "sensor.plant_1"
+    mock_plant.phi_clearance_date = "2099-01-01"
+
+    result = builder.build(mock_plant)
+
+    assert result["phi_clearance_date"] == "2099-01-01"
+    assert result["phi_days_remaining"] > 0
+
+
+def test_build_attributes_matches_wire_payload_on_shared_blocks(
+    builder, mock_plant: Plant
+) -> None:
+    """The sensor attribute projection shares the computed blocks with build()."""
+    builder.entity_queries = MagicMock()
+    builder.entity_queries.lookup_plant_entity_id.return_value = "sensor.plant_1"
+    mock_plant.harvest_metrics = HarvestMetrics(wet_weight=100.0)
+    mock_plant.drying_data = DryingData(
+        weight_log=[WeightEntry(date="2024-01-01", weight_grams=80.0)],
+        visual_tag="Red Velcro",
+    )
+
+    wire = builder.build(mock_plant)
+    attributes = PlantViewModelBuilder.build_attributes(mock_plant)
+
+    for key in (
+        "drying_weight",
+        "weight_lost_pct",
+        "days_to_target",
+        "visual_tag",
+        "drying_moisture",
+        "drying_ready_for_cure",
+        "phenotype_score",
+        "harvest_metrics",
+        "position",
+    ):
+        assert attributes[key] == wire[key], key

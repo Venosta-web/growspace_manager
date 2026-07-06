@@ -16,6 +16,7 @@ from custom_components.growspace_manager.models import (
     Subarea,
     WaterUsageData,
 )
+from custom_components.growspace_manager.models.plant import PhenotypeScore
 from custom_components.growspace_manager.sensor import (
     CropSteeringSensor,
     DLISensor,
@@ -239,7 +240,7 @@ def test_plant_entity_phi_days_remaining() -> None:
     plant.get_days_in_stage = Mock(return_value=0)
     plant.get_week_in_stage = Mock(return_value=1)
     plant.get_days_since_watering = Mock(return_value=None)
-    plant.scores = Mock(to_dict=Mock(return_value={}))
+    plant.phenotype_score = PhenotypeScore()
     plant.harvest_metrics = Mock(to_dict=Mock(return_value={}), wet_weight=None)
     plant.drying_data = DryingData()
 

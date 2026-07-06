@@ -222,6 +222,11 @@ The declarative row a websocket module contributes: `(type, handler, schema, res
 **Typed Error Codes**
 The five-code wire vocabulary shared with the card (ADR-0005, completed backend-side by ADR-0027): `coordinator_not_ready`, `entity_not_found`, `validation_failed`, `internal_error`, `rate_limited`. Produced by the [[WS Command Lifecycle]] error table from typed exceptions — `EntityNotFoundError`, `CoordinatorNotReadyError`, `RateLimitedError` (subclasses of the existing hierarchy, so service-call paths behave as before) plus the validation family → `validation_failed` and everything else → `internal_error` (with traceback). The card's `errors.ts` types exactly this set and coerces anything else to `internal_error` — so ad-hoc codes are self-defeating and deliberately retired.
 
+## Serialization
+
+**Plant View Model**
+The one producer of serialized Plant data (`presentation/plant_view_model.py`, ADR-0028). Two projections share every computed block so they cannot drift field-by-field: `build()` — the wire payload the card reads (formatted dates, entity lookup) — and `build_attributes()` — the plant sensor's HA attribute dict (raw stored date strings for automations; the sensor delegates to it). Sub-dataclass blocks (`phenotype_score`, `harvest_metrics`, and the growspace payload's `irrigation_config` / `drain_config` / `water_usage` / `energy_tracking`) serialize via the model's own `to_dict()`, so a new model field ships to both surfaces automatically; computed properties like `total_score` are appended explicitly. Known kept divergence: the wire computes `{stage}_days` / `days_since_last_watering` with the `domain.date_logic` functions while the sensor uses the stage-history-aware `Plant` model methods — reconciling that is a semantic change, not a serialization one.
+
 ## Sensor Entities
 
 Each computed drying metric is a distinct HA sensor entity:
