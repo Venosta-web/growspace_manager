@@ -20,6 +20,7 @@ from custom_components.growspace_manager.models import (
     HarvestMetrics,
     IrrigationTank,
 )
+from custom_components.growspace_manager.models.plant import PhenotypeScore
 from custom_components.growspace_manager.sensor import (
     AirExchangeSensor,
     CalculatedVpdSensor,
@@ -71,6 +72,8 @@ def mock_coordinator() -> MagicMock:
             cure_start=None,
             drying_data=DryingData(),
             harvest_metrics=HarvestMetrics(),
+            phenotype_score=PhenotypeScore(),
+            phi_clearance_date=None,
         )
     }
     coordinator.services.growspaces.get_growspace_plants.return_value = list(
