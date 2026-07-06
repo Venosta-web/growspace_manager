@@ -532,7 +532,10 @@ switch_plants:
 
 configure_environment:
   name: Configure Environment Monitoring
-  description: Set up environment sensors for Bayesian monitoring on a growspace
+  description: >-
+    Update environment sensors and settings for a growspace. Patch semantics:
+    a field omitted from the call keeps its current value; send an explicit
+    empty value (e.g. an empty list) to deliberately clear a field.
   fields:
     growspace_id:
       name: Growspace ID

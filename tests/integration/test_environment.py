@@ -77,7 +77,6 @@ async def test_handle_configure_environment_success(
         substrate_temperature_sensors=[],
         camera_entities=[],
         energy_sensors=[],
-        electricity_cost_per_kwh=None,
     )
     mock_coordinator.services.save.assert_awaited_once()
     mock_coordinator.services.request_refresh.assert_awaited_once()

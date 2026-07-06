@@ -1366,14 +1366,14 @@ def test_stage_vpd_overrides_validation(
     bad_overrides: dict,
     match: str,
 ) -> None:
-    """_validate_stage_vpd_overrides rejects out-of-range values, unknown keys, and incomplete entries."""
-    from custom_components.growspace_manager.services.environment import (
-        _validate_stage_vpd_overrides,
+    """validate_stage_vpd_overrides rejects out-of-range values, unknown keys, and incomplete entries."""
+    from custom_components.growspace_manager.domain.environment_patch import (
+        EnvironmentPatchError,
+        validate_stage_vpd_overrides,
     )
-    from homeassistant.exceptions import ServiceValidationError
 
-    with pytest.raises(ServiceValidationError, match=match):
-        _validate_stage_vpd_overrides(bad_overrides)
+    with pytest.raises(EnvironmentPatchError, match=match):
+        validate_stage_vpd_overrides(bad_overrides)
 
 
 # ---------------------------------------------------------------------------

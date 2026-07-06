@@ -51,7 +51,7 @@ def mock_call():
 def mock_exhaust_migration():
     """Patch the migration repair helper (it needs a real issue registry)."""
     with patch(
-        "custom_components.growspace_manager.services.environment"
+        "custom_components.growspace_manager.services.environment_patch_commit"
         ".evaluate_exhaust_migration_issues"
     ) as mock_eval:
         yield mock_eval

@@ -1,6 +1,5 @@
 """Coverage-focused tests for EnvironmentConfigHandler."""
 
-from dataclasses import asdict
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -21,7 +20,6 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     IrrigationTank,
-    TankWaterHistory,
 )
 from homeassistant.config_entries import ConfigFlow
 from homeassistant.data_entry_flow import FlowResultType
@@ -68,7 +66,11 @@ def handler():
 
     coordinator.services = MagicMock()
     coordinator.services.save = AsyncMock()
+    coordinator.services.request_refresh = AsyncMock()
     coordinator.services.growspaces = gs_facade
+    coordinator._subsystem_manager.get_circulation_fan_controller.return_value = None
+    coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = None
+    coordinator._subsystem_manager.get_growlight_controller.return_value = None
 
     handler.config_entry = MagicMock()
     handler.config_entry.runtime_data = coordinator
@@ -769,30 +771,6 @@ def test_process_irrigation_tanks_comprehensive(
         side_effect=lambda entity: mock_state if entity == "sensor.tank_1" else None
     )
 
-    # Mock existing tanks - one object (IrrigationTank) and one dict to cover lines 251-258 and 281-296
-    history_obj = TankWaterHistory(
-        snapshots=[{"timestamp": "2026-05-19", "level_pct": 50.0}], events=[]
-    )
-    tank_obj = IrrigationTank(
-        sensor_entity="sensor.tank_1",
-        warning_level=20.0,
-        volume_liters=100.0,
-    )
-    tank_obj.water_history = history_obj
-    tank_obj.last_recorded_level = 50.0
-    tank_obj.peak_level = 95.0
-
-    tank_dict = {
-        "sensor_entity": "sensor.tank_2",
-        "warning_level": 25.0,
-        "volume_liters": 150.0,
-        "water_history": "raw_history_string_or_dict",
-        "last_recorded_level": 40.0,
-        "peak_level": 85.0,
-    }
-
-    existing_tanks = [tank_obj, tank_dict]
-
     # Call _process_irrigation_tanks
     env_config = {
         "irrigation_tank_sensors": ["sensor.tank_1", "sensor.tank_2", "sensor.tank_3"],
@@ -800,9 +778,7 @@ def test_process_irrigation_tanks_comprehensive(
         "irrigation_tank_volume": 120.0,
     }
 
-    result = handler._process_irrigation_tanks(
-        env_config, existing_tanks=existing_tanks
-    )
+    result = handler._process_irrigation_tanks(env_config)
 
     # Validate output
     assert "irrigation_tank_sensors" not in result
@@ -812,25 +788,26 @@ def test_process_irrigation_tanks_comprehensive(
     tanks = result["irrigation_tanks"]
     assert len(tanks) == 3
 
-    # Tank 1 (state object exists, friendly name lookup used, existing was object)
+    # Tank 1 (state object exists, friendly name lookup used)
     t1 = tanks[0]
     assert t1["sensor_entity"] == "sensor.tank_1"
     assert t1["name"] == "My Custom Tank"
     assert t1["warning_level"] == 35.0
     assert t1["volume_liters"] == 120.0
-    assert t1["water_history"] == asdict(history_obj)
-    assert t1["last_recorded_level"] == 50.0
-    assert t1["peak_level"] == 95.0
+    # Runtime carry-over is the Environment Patch merge's job (ADR-0026)
+    assert "water_history" not in t1
+    assert "last_recorded_level" not in t1
+    assert "peak_level" not in t1
 
-    # Tank 2 (no state object, friendly name fallback used, existing was dict)
+    # Tank 2 (no state object, friendly name fallback used)
     t2 = tanks[1]
     assert t2["sensor_entity"] == "sensor.tank_2"
     assert t2["name"] == "Tank 2"
     assert t2["warning_level"] == 35.0
     assert t2["volume_liters"] == 120.0
-    assert t2["water_history"] == "raw_history_string_or_dict"
-    assert t2["last_recorded_level"] == 40.0
-    assert t2["peak_level"] == 85.0
+    assert "water_history" not in t2
+    assert "last_recorded_level" not in t2
+    assert "peak_level" not in t2
 
     # Tank 3 (new tank, no existing runtime data)
     t3 = tanks[2]
@@ -894,8 +871,6 @@ def test_lst_offset_default_for_dry_and_cure_stages(
             break
     assert lst_key is not None
     assert lst_key.default() == -2.0
-
-
 
 
 @pytest.mark.asyncio
@@ -994,28 +969,13 @@ async def test_process_irrigation_tanks_edge_cases(
     """Test _process_irrigation_tanks logic with missing/None fields. Covers lines 262->256, 302->307, 307->309, 309->311."""
     handler.hass.states.get = MagicMock(return_value=None)
 
-    # tank_invalid triggers line 262->256 branch (missing sensor_entity key/attr)
-    tank_invalid = {"warning_level": 25.0}
-
-    # tank_none_fields triggers lines 302->307, 307->309, 309->311 branches (None fields)
-    tank_none_fields = {
-        "sensor_entity": "sensor.tank_none",
-        "water_history": None,
-        "last_recorded_level": None,
-        "peak_level": None,
-    }
-
-    existing_tanks = [tank_invalid, tank_none_fields]
-
     env_config = {
         "irrigation_tank_sensors": ["sensor.tank_none"],
         "irrigation_tank_warning_level": 35.0,
         "irrigation_tank_volume": 120.0,
     }
 
-    result = handler._process_irrigation_tanks(
-        env_config, existing_tanks=existing_tanks
-    )
+    result = handler._process_irrigation_tanks(env_config)
 
     tanks = result["irrigation_tanks"]
     assert len(tanks) == 1
@@ -1052,7 +1012,9 @@ async def test_configure_humidifier_branch(handler: EnvironmentConfigHandler) ->
 
 
 @pytest.mark.asyncio
-async def test_configure_humidifier_show_form(handler: EnvironmentConfigHandler) -> None:
+async def test_configure_humidifier_show_form(
+    handler: EnvironmentConfigHandler,
+) -> None:
     """Test async_step_configure_humidifier shows form when user_input is None."""
     gs = Growspace(id="gs1", name="GS1")
     handler.config_entry.runtime_data.growspaces = {"gs1": gs}
@@ -1079,7 +1041,9 @@ async def test_configure_humidifier_abort_growspace_not_found(
     handler: EnvironmentConfigHandler,
 ) -> None:
     """Test async_step_configure_humidifier aborts when growspace is missing."""
-    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = None
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = (
+        None
+    )
     handler.flow.selected_growspace_id = "missing"
 
     result = await handler.async_step_configure_humidifier()

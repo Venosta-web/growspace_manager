@@ -49,7 +49,12 @@ from custom_components.growspace_manager.const import (
     CONF_VPD_SENSOR,
     CONF_VPD_SENSORS,
 )
-from custom_components.growspace_manager.models import EnvironmentConfig
+from custom_components.growspace_manager.domain.environment_patch import (
+    patch_from_flow_options,
+)
+from custom_components.growspace_manager.services.environment_patch_commit import (
+    async_commit_environment_patch,
+)
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
@@ -70,7 +75,9 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 
-        growspace_options = coordinator.services.growspaces.get_sorted_growspace_options()
+        growspace_options = (
+            coordinator.services.growspaces.get_sorted_growspace_options()
+        )
 
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
@@ -138,14 +145,7 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
 
         if user_input is not None:
             env_config = self._clean_and_merge_input(user_input, growspace_options)
-            existing_tanks = (
-                growspace.environment_config.irrigation_tanks
-                if growspace.environment_config
-                else []
-            )
-            env_config = self._process_irrigation_tanks(
-                env_config, existing_tanks=existing_tanks
-            )
+            env_config = self._process_irrigation_tanks(env_config)
             self.flow.env_config_step1 = env_config
             return await self._determine_next_step(user_input)
 
@@ -167,7 +167,12 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
         env_config = {
             k: v
             for k, v in merged.items()
-            if k not in ("configure_dehumidifier", "configure_advanced", CONF_CONFIGURE_FAN_CONTROLLER)
+            if k
+            not in (
+                "configure_dehumidifier",
+                "configure_advanced",
+                CONF_CONFIGURE_FAN_CONTROLLER,
+            )
         }
 
         if "sensor_groups" in cleaned_input:
@@ -178,26 +183,15 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
 
         return env_config
 
-    def _process_irrigation_tanks(
-        self,
-        env_config: dict[str, Any],
-        existing_tanks: list | None = None,
-    ) -> dict[str, Any]:
-        """Convert irrigation tank sensors to IrrigationTank instances."""
+    def _process_irrigation_tanks(self, env_config: dict[str, Any]) -> dict[str, Any]:
+        """Fold the flat tank form fields into irrigation_tanks dicts.
+
+        Runtime state (water_history etc.) is deliberately not carried here —
+        the Environment Patch merge preserves it per tank (ADR-0026).
+        """
         tank_sensors = env_config.get(CONF_IRRIGATION_TANK_SENSORS, [])
         warning_level = env_config.get(CONF_IRRIGATION_TANK_WARNING_LEVEL, 30.0)
         volume_liters = env_config.get(CONF_IRRIGATION_TANK_VOLUME)
-
-        existing_by_entity: dict[str, Any] = {}
-        if existing_tanks:
-            for t in existing_tanks:
-                entity = (
-                    t.sensor_entity
-                    if hasattr(t, "sensor_entity")
-                    else t.get("sensor_entity")
-                )
-                if entity:
-                    existing_by_entity[entity] = t
 
         if tank_sensors:
             irrigation_tanks = []
@@ -208,42 +202,17 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
                     if state_obj
                     else f"Tank {i}"
                 )
-                tank_dict: dict[str, Any] = {
-                    "sensor_entity": sensor_entity,
-                    "name": tank_name,
-                    "warning_level": warning_level,
-                    "enable_prediction": True,
-                    "enable_lights_bias": False,
-                    "enable_vpd_weighting": False,
-                    "volume_liters": volume_liters,
-                }
-                existing = existing_by_entity.get(sensor_entity)
-                if existing is not None:
-                    water_history = (
-                        existing.water_history
-                        if hasattr(existing, "water_history")
-                        else existing.get("water_history")
-                    )
-                    last_level = (
-                        existing.last_recorded_level
-                        if hasattr(existing, "last_recorded_level")
-                        else existing.get("last_recorded_level")
-                    )
-                    peak_level = (
-                        existing.peak_level
-                        if hasattr(existing, "peak_level")
-                        else existing.get("peak_level")
-                    )
-                    if water_history is not None:
-                        try:
-                            tank_dict["water_history"] = asdict(water_history)
-                        except TypeError:
-                            tank_dict["water_history"] = water_history
-                    if last_level is not None:
-                        tank_dict["last_recorded_level"] = last_level
-                    if peak_level is not None:
-                        tank_dict["peak_level"] = peak_level
-                irrigation_tanks.append(tank_dict)
+                irrigation_tanks.append(
+                    {
+                        "sensor_entity": sensor_entity,
+                        "name": tank_name,
+                        "warning_level": warning_level,
+                        "enable_prediction": True,
+                        "enable_lights_bias": False,
+                        "enable_vpd_weighting": False,
+                        "volume_liters": volume_liters,
+                    }
+                )
             env_config["irrigation_tanks"] = irrigation_tanks
         else:
             env_config["irrigation_tanks"] = []
@@ -272,23 +241,17 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
 
         return await self.flow.async_step_configure_sensor_placement()
 
-    async def _async_save_and_finish(self, growspace: Any, env_config: dict[str, Any]) -> ConfigFlowResult:
-        """Save env config and finish the flow."""
+    async def _async_save_and_finish(
+        self, growspace: Any, env_config: dict[str, Any]
+    ) -> ConfigFlowResult:
+        """Apply the assembled form dict through the Environment Patch seam."""
         coordinator = self.config_entry.runtime_data
 
-        env_config.pop("configure_advanced", None)
-        env_config.pop("configure_dehumidifier", None)
-
-        self.preserve_ac_infinity_devices(growspace, env_config)
-
-        growspace.environment_config = EnvironmentConfig.from_dict(env_config)
-        await coordinator.services.save()
-        await coordinator.async_refresh()
-
-        _LOGGER.info(
-            "Environment configuration saved for growspace %s: %s",
-            growspace.name,
-            env_config,
+        await async_commit_environment_patch(
+            coordinator.hass,
+            coordinator,
+            growspace,
+            patch_from_flow_options(env_config),
         )
         return self.flow.async_create_entry(title="", data=self.config_entry.options)
 

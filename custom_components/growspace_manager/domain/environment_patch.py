@@ -454,7 +454,11 @@ def _build_patch(
             warnings.append(PatchWarning(key, "runtime-accumulated field ignored"))
             continue
         if key in _SUB_CONFIG_TYPES:
-            values[key] = _parse_sub_config(key, val)
+            # Explicit null sub-config means "keep existing" — the historic
+            # service contract (callers could never distinguish null from
+            # absent). Reset-to-defaults is an explicit empty dict.
+            if val is not None:
+                values[key] = _parse_sub_config(key, val)
         elif key in _ITEM_TYPES:
             items, item_warnings = _parse_item_list(key, val)
             values[key] = items
@@ -510,8 +514,6 @@ def _parse_sub_config(key: str, val: Any) -> Any:
     sub_type = _SUB_CONFIG_TYPES[key]
     if isinstance(val, sub_type):
         return val
-    if val is None:
-        return sub_type()
     if not isinstance(val, Mapping):
         raise EnvironmentPatchError(f"Field '{key}' must be a dictionary")
     if key == "circulation_fan_config":

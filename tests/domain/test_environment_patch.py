@@ -693,9 +693,15 @@ def test_sub_config_instance_passes_through() -> None:
     assert patch.values["growlight_config"] is cfg
 
 
-def test_sub_config_null_resets_to_defaults() -> None:
-    """Null sub-config is a deliberate reset to dataclass defaults."""
+def test_sub_config_null_means_keep() -> None:
+    """Null sub-config keeps the existing one (historic service contract)."""
     patch = patch_from_service_call({"vision_checkup_config": None})
+    assert "vision_checkup_config" not in patch.values
+
+
+def test_sub_config_empty_dict_resets_to_defaults() -> None:
+    """The explicit reset is an empty dict, replacing whole with defaults."""
+    patch = patch_from_service_call({"vision_checkup_config": {}})
     assert patch.values["vision_checkup_config"] == VisionCheckupConfig()
 
 

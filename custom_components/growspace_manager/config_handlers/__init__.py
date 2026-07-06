@@ -98,28 +98,6 @@ class BaseConfigHandler(ABC, Generic[T]):
         updated.update(new_options)
         return updated
 
-    def preserve_ac_infinity_devices(
-        self, growspace: Any, env_config: dict[str, Any]
-    ) -> None:
-        """Carry existing AC Infinity bundles into a rebuilt env-config dict.
-
-        The config flow has no AC Infinity bundle editor, so its form payload
-        never carries these lists; rebuilding ``EnvironmentConfig`` from that
-        payload would silently wipe configured devices. Preserve any already on
-        the growspace unless the payload explicitly provides them (ADR-0022).
-        """
-        existing = getattr(growspace, "environment_config", None)
-        if not existing:
-            return
-        for key in (
-            "exhaust_fan_ac_infinity_devices",
-            "circulation_fan_ac_infinity_devices",
-            "humidifier_ac_infinity_devices",
-            "dehumidifier_ac_infinity_devices",
-        ):
-            if key not in env_config:
-                env_config[key] = [d.to_dict() for d in getattr(existing, key)]
-
 
 # Import handlers AFTER BaseConfigHandler is defined to avoid circular import
 from .ai_config_handler import AIConfigHandler  # noqa: E402
