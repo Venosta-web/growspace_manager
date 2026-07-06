@@ -50,8 +50,13 @@ async def test_configure_dehumidifier_thresholds(
     ]
     mock_coordinator.services.growspaces.get_growspace.return_value = mock_growspace
     mock_coordinator.services.save = AsyncMock()
+    mock_coordinator.services.request_refresh = AsyncMock()
     mock_coordinator.async_refresh = AsyncMock()
-
+    mock_coordinator._subsystem_manager.get_circulation_fan_controller.return_value = (
+        None
+    )
+    mock_coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = None
+    mock_coordinator._subsystem_manager.get_growlight_controller.return_value = None
 
     entry.runtime_data = mock_coordinator
     entry.add_to_hass(hass)

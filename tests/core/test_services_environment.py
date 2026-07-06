@@ -53,7 +53,7 @@ def mock_call():
 def mock_exhaust_migration():
     """Patch the migration repair helper (it needs a real issue registry)."""
     with patch(
-        "custom_components.growspace_manager.services.environment"
+        "custom_components.growspace_manager.services.environment_patch_commit"
         ".evaluate_exhaust_migration_issues"
     ) as mock_eval:
         yield mock_eval
@@ -121,7 +121,9 @@ async def test_handle_configure_environment_preserves_exhaust_fan_config(
     preserved = mock_gs.environment_config.exhaust_fan_config
     assert preserved.enabled is True
     assert preserved.max_speed == 70
-    mock_exhaust_migration.assert_called_once_with(mock_hass, mock_coordinator)
+    # No exhaust-relevant field changed, so the repair re-evaluation is skipped
+    # (change-driven under ADR-0026, no longer unconditional).
+    mock_exhaust_migration.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -188,7 +190,10 @@ async def test_handle_configure_environment_restarts_growlight_controller(
     mock_coordinator._subsystem_manager.get_growlight_controller.return_value = (
         growlight_coord
     )
-    mock_call.data = {"growspace_id": "gs1", CONF_TEMP_SENSOR: "sensor.temp"}
+    # veg_day_hours moves the photoperiod window the grow light derives its
+    # schedule from — a growlight-relevant change under ADR-0026's
+    # change-driven restarts.
+    mock_call.data = {"growspace_id": "gs1", "veg_day_hours": 20}
 
     await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
 

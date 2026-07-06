@@ -19,6 +19,11 @@ from .const import (
     STORAGE_KEY_PLANTS,
     STORAGE_VERSION,
 )
+from .domain.environment_patch import (
+    EnvironmentPatchError,
+    apply_environment_patch,
+    patch_from_flow_options,
+)
 from .models import (
     ECRampCurve,
     EnvironmentConfig,
@@ -40,28 +45,6 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-def _preserve_tank_runtime_state(
-    previous: EnvironmentConfig | None, new: EnvironmentConfig
-) -> None:
-    """Carry tank runtime-accumulated state from ``previous`` into ``new``.
-
-    Tanks in the options snapshot only describe configuration; the runtime
-    water tracking (``water_history``, ``last_recorded_level``, ``peak_level``)
-    is accumulated on the persisted growspace and must survive the options
-    merge. Tanks are matched by ``sensor_entity``.
-    """
-    if previous is None:
-        return
-    previous_by_entity = {t.sensor_entity: t for t in previous.irrigation_tanks}
-    for tank in new.irrigation_tanks:
-        existing = previous_by_entity.get(tank.sensor_entity)
-        if existing is None:
-            continue
-        tank.water_history = existing.water_history
-        tank.last_recorded_level = existing.last_recorded_level
-        tank.peak_level = existing.peak_level
-
-
 def _migrate_preset_items(
     presets: dict[str, NutrientPreset],
     inventory: NutrientInventory,
@@ -74,8 +57,7 @@ def _migrate_preset_items(
     string as the nutrient_id value (orphan — frontend surfaces a warning).
     """
     name_to_id: dict[str, str] = {
-        stock.name.lower(): stock.nutrient_id
-        for stock in inventory.stocks.values()
+        stock.name.lower(): stock.nutrient_id for stock in inventory.stocks.values()
     }
 
     for preset in presets.values():
@@ -86,7 +68,9 @@ def _migrate_preset_items(
             else:
                 name: str = item.get("name", "")
                 nutrient_id = name_to_id.get(name.lower(), name)
-                migrated.append({"nutrient_id": nutrient_id, "dose_ml_l": item["dose_ml_l"]})
+                migrated.append(
+                    {"nutrient_id": nutrient_id, "dose_ml_l": item["dose_ml_l"]}
+                )
         preset.items = migrated
 
     return presets
@@ -151,8 +135,12 @@ class StorageManager:
             "growspaces": {
                 gs.id: asdict(gs) for gs in self.repository.get_all_growspaces()
             },
-            "notifications_sent": self.notification_state.sent if self.notification_state else {},
-            "notifications_enabled": self.notification_state.enabled if self.notification_state else {},
+            "notifications_sent": self.notification_state.sent
+            if self.notification_state
+            else {},
+            "notifications_enabled": self.notification_state.enabled
+            if self.notification_state
+            else {},
         }
         # Merge nutrient data (presets and inventory)
         config.update(nutrient_data)
@@ -265,7 +253,7 @@ class StorageManager:
                 key,
                 backup_path,
             )
-        except (OSError, TypeError, ValueError):
+        except OSError, TypeError, ValueError:
             _LOGGER.exception("Failed to backup corrupt %s data", key)
 
     def _load_plants(self, data: dict[str, Any]) -> None:
@@ -292,7 +280,7 @@ class StorageManager:
                             pid,
                             type(pdata),
                         )
-                except (ValueError, KeyError, TypeError):
+                except ValueError, KeyError, TypeError:
                     _LOGGER.exception(
                         "Failed to load plant %s due to data structure mismatch", pid
                     )
@@ -301,7 +289,7 @@ class StorageManager:
 
             self.repository.load_plants(plants)
             _LOGGER.info("Loaded %d plants", len(plants))
-        except (ValueError, KeyError, TypeError):
+        except ValueError, KeyError, TypeError:
             _LOGGER.exception("Critical data structure error loading plants")
             self._backup_corrupt_data("plants", data)
             self.repository.load_plants({})
@@ -336,7 +324,7 @@ class StorageManager:
                             gid,
                             type(gdata),
                         )
-                except (ValueError, KeyError, TypeError):
+                except ValueError, KeyError, TypeError:
                     _LOGGER.exception(
                         "Failed to load growspace %s due to data structure mismatch",
                         gid,
@@ -348,7 +336,7 @@ class StorageManager:
             _LOGGER.info("Loaded %d growspaces", len(growspaces))
 
             self._apply_options_to_growspaces(options)
-        except (ValueError, KeyError, TypeError):
+        except ValueError, KeyError, TypeError:
             _LOGGER.exception("Critical data structure error loading growspaces")
             self._backup_corrupt_data("growspaces", data)
             self.repository.load_growspaces({})
@@ -358,28 +346,40 @@ class StorageManager:
             self.repository.load_growspaces({})
 
     def _apply_options_to_growspaces(self, options: dict[str, Any] | None) -> None:
-        """Apply configuration options to loaded growspaces.
+        """One-time migration: adopt legacy per-growspace options blobs (ADR-0026).
 
-        The config entry options are the source of truth for environment
-        *configuration* (sensor entities, thresholds, tank setup), but tanks
-        also carry runtime-accumulated state (water_history, last_recorded_level,
-        peak_level) that lives only in the persisted growspace, not in options.
-        Replacing environment_config wholesale would discard that runtime state
-        on every restart, so it is carried over from the loaded growspace.
+        Nothing writes per-growspace environment blobs into config-entry
+        options anymore — the growspace store is the single source of truth.
+        A blob is adopted only when the store has no environment config for
+        that growspace (all defaults), covering installs that predate the
+        store-first write path; a store with real config always wins.
+        Blob deletion happens in async_setup_entry after load.
         """
         if not options:
             return
 
+        default_config = EnvironmentConfig()
         for growspace in self.repository.get_all_growspaces():
-            if growspace.id in options:
-                opts = options[growspace.id]
-                if isinstance(opts, dict):
-                    previous_config = growspace.environment_config
-                    new_config = EnvironmentConfig.from_dict(opts)
-                    _preserve_tank_runtime_state(previous_config, new_config)
-                    growspace.environment_config = new_config
-                else:
-                    growspace.environment_config = opts
+            opts = options.get(growspace.id)
+            if not isinstance(opts, dict):
+                continue
+            if growspace.environment_config != default_config:
+                continue
+            try:
+                growspace.environment_config = apply_environment_patch(
+                    None, patch_from_flow_options(opts)
+                ).config
+            except EnvironmentPatchError as err:
+                # A malformed legacy blob must not brick startup.
+                _LOGGER.warning(
+                    "Ignoring invalid legacy options environment config for %s: %s",
+                    growspace.id,
+                    err,
+                )
+            else:
+                _LOGGER.info(
+                    "Adopted legacy options environment config for %s", growspace.id
+                )
 
     def _load_nutrient_presets(self, data: dict[str, Any]) -> dict[str, NutrientPreset]:
         """Load nutrient presets from storage data."""

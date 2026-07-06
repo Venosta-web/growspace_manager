@@ -45,7 +45,13 @@ def _make_entry_with_growspace(
     ]
     mock_coordinator.services.growspaces.get_growspace.return_value = mock_growspace
     mock_coordinator.services.save = AsyncMock()
+    mock_coordinator.services.request_refresh = AsyncMock()
     mock_coordinator.async_refresh = AsyncMock()
+    mock_coordinator._subsystem_manager.get_circulation_fan_controller.return_value = (
+        None
+    )
+    mock_coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = None
+    mock_coordinator._subsystem_manager.get_growlight_controller.return_value = None
 
     entry.runtime_data = mock_coordinator
     entry.add_to_hass(hass)
@@ -53,9 +59,7 @@ def _make_entry_with_growspace(
     return entry, mock_coordinator, mock_growspace
 
 
-async def _navigate_to_env_step1(
-    hass: HomeAssistant, entry: MockConfigEntry
-) -> dict:
+async def _navigate_to_env_step1(hass: HomeAssistant, entry: MockConfigEntry) -> dict:
     """Navigate through options flow to the configure_environment step."""
     mock_component(hass, "recorder")
 

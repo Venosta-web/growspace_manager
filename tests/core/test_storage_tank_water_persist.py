@@ -1,4 +1,12 @@
-"""Regression test: tank water_history must survive restart (options merge)."""
+"""Regression tests: the growspace store owns environment_config (ADR-0026).
+
+Historically ``_apply_options_to_growspaces`` replaced the store's
+environment_config with the per-growspace options blob on every restart,
+wiping runtime-accumulated tank state (the restart-reset bug) and silently
+reverting service-made edits. Nothing writes those blobs anymore: on load a
+blob is adopted only when the store has no environment config, and otherwise
+ignored.
+"""
 
 from dataclasses import asdict
 from unittest.mock import MagicMock
@@ -60,16 +68,15 @@ def _tank_with_events(events: int) -> IrrigationTank:
     )
 
 
-def test_runtime_water_history_survives_options_merge(
+def test_stale_options_blob_is_ignored_on_load(
     storage: StorageManager, repository_mock: MagicMock
 ) -> None:
-    """Storage holds fresh runtime events; options holds a stale snapshot.
+    """A store with real environment config wins over a stale options blob.
 
-    On load the options snapshot must not clobber the runtime-accumulated
-    tank water_history (the restart-reset bug).
+    The store carries runtime events and the freshest config edits (which may
+    have been made via services and never reached options); re-applying the
+    blob would revert both.
     """
-    # Storage growspace: 10 runtime consumption events accumulated since the
-    # last config-flow save, with a stale warning_level config value.
     storage_tank = _tank_with_events(10)
     storage_tank.warning_level = 10.0
     storage_gs = Growspace(
@@ -81,9 +88,7 @@ def test_runtime_water_history_survives_options_merge(
     )
     data = {"growspaces": {"gs1": asdict(storage_gs)}}
 
-    # Config-entry options: the environment_config as last written by the config
-    # flow — same tank but NO accumulated runtime events and updated config
-    # values (warning_level, stress_threshold).
+    # A stale snapshot from the era when the config flow wrote options blobs.
     options_tank = IrrigationTank(
         sensor_entity="sensor.tank_1", volume_liters=200.0, warning_level=25.0
     )
@@ -97,10 +102,50 @@ def test_runtime_water_history_survives_options_merge(
 
     loaded = repository_mock.growspaces["gs1"]
     tank = loaded.environment_config.irrigation_tanks[0]
-    # Runtime-accumulated state survives the options merge.
     assert len(tank.water_history.events) == 10, "runtime events were wiped on load"
     assert tank.last_recorded_level == 42.0
     assert tank.peak_level == 80.0
-    # Configuration from options still wins over the persisted snapshot.
-    assert tank.warning_level == 25.0
+    assert tank.warning_level == 10.0, "stale blob reverted a store config value"
+    assert loaded.environment_config.stress_threshold == 0.5
+
+
+def test_legacy_blob_adopted_when_store_has_no_env_config(
+    storage: StorageManager, repository_mock: MagicMock
+) -> None:
+    """An install predating the store-first write path adopts its blob once.
+
+    The blob's own serialized runtime values come along — there is nothing in
+    the store to carry over.
+    """
+    storage_gs = Growspace(id="gs1", name="Tent")
+    data = {"growspaces": {"gs1": asdict(storage_gs)}}
+
+    blob_tank = _tank_with_events(3)
+    blob_tank.warning_level = 25.0
+    options = {
+        "gs1": asdict(
+            EnvironmentConfig(irrigation_tanks=[blob_tank], stress_threshold=0.9)
+        ),
+    }
+
+    storage._load_growspaces(data, options)
+
+    loaded = repository_mock.growspaces["gs1"]
+    tank = loaded.environment_config.irrigation_tanks[0]
     assert loaded.environment_config.stress_threshold == 0.9
+    assert tank.warning_level == 25.0
+    assert len(tank.water_history.events) == 3
+    assert tank.last_recorded_level == 42.0
+
+
+def test_non_dict_blob_is_ignored(
+    storage: StorageManager, repository_mock: MagicMock
+) -> None:
+    """A malformed legacy blob must not brick startup or touch the store."""
+    storage_gs = Growspace(id="gs1", name="Tent")
+    data = {"growspaces": {"gs1": asdict(storage_gs)}}
+
+    storage._load_growspaces(data, {"gs1": "not-a-dict"})
+
+    loaded = repository_mock.growspaces["gs1"]
+    assert loaded.environment_config == EnvironmentConfig()

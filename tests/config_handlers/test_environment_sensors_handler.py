@@ -45,7 +45,11 @@ def _make_flow(
         ("gs1", "Test Tent")
     ]
     coordinator.services.save = AsyncMock()
+    coordinator.services.request_refresh = AsyncMock()
     coordinator.async_refresh = AsyncMock()
+    coordinator._subsystem_manager.get_circulation_fan_controller.return_value = None
+    coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = None
+    coordinator._subsystem_manager.get_growlight_controller.return_value = None
 
     config_entry = MagicMock()
     config_entry.runtime_data = coordinator
@@ -401,56 +405,29 @@ def test_process_irrigation_tanks_uses_friendly_name_from_state() -> None:
     assert result["irrigation_tanks"][0]["name"] == "Main Reservoir"
 
 
-def test_process_irrigation_tanks_preserves_existing_dataclass_tank_data() -> None:
-    """Existing IrrigationTank dataclass → water_history, levels are preserved."""
+def test_process_irrigation_tanks_emits_no_runtime_keys() -> None:
+    """The form conversion carries no runtime state (ADR-0026).
+
+    Tank runtime carry-over (water_history, levels) is owned by the Environment
+    Patch merge, matched per item by sensor_entity — the flow's tank dicts stay
+    pure form data so they can never clobber it.
+    """
     flow = _make_flow()
     flow.hass.states.get.return_value = None
     handler = EnvironmentSensorsHandler(flow)
 
-    existing_tank = IrrigationTank(
-        sensor_entity="sensor.tank1",
-        name="Old Tank",
-        last_recorded_level=55.0,
-        peak_level=90.0,
-    )
     result = handler._process_irrigation_tanks(
         {
             CONF_IRRIGATION_TANK_SENSORS: ["sensor.tank1"],
             CONF_IRRIGATION_TANK_WARNING_LEVEL: 30.0,
-        },
-        existing_tanks=[existing_tank],
+        }
     )
 
     tank = result["irrigation_tanks"][0]
-    assert tank["last_recorded_level"] == 55.0
-    assert tank["peak_level"] == 90.0
-
-
-def test_process_irrigation_tanks_preserves_existing_dict_tank_data() -> None:
-    """Existing tank as a plain dict → water_history, levels are preserved."""
-    flow = _make_flow()
-    flow.hass.states.get.return_value = None
-    handler = EnvironmentSensorsHandler(flow)
-
-    existing_tank_dict: dict = {
-        "sensor_entity": "sensor.tank1",
-        "name": "Dict Tank",
-        "last_recorded_level": 42.5,
-        "peak_level": 80.0,
-        "water_history": {"some": "data"},
-    }
-    result = handler._process_irrigation_tanks(
-        {
-            CONF_IRRIGATION_TANK_SENSORS: ["sensor.tank1"],
-            CONF_IRRIGATION_TANK_WARNING_LEVEL: 30.0,
-        },
-        existing_tanks=[existing_tank_dict],  # type: ignore[list-item]
-    )
-
-    tank = result["irrigation_tanks"][0]
-    assert tank["last_recorded_level"] == 42.5
-    assert tank["peak_level"] == 80.0
-    assert tank["water_history"] == {"some": "data"}
+    assert tank["warning_level"] == 30.0
+    assert "water_history" not in tank
+    assert "last_recorded_level" not in tank
+    assert "peak_level" not in tank
 
 
 # ---------------------------------------------------------------------------
@@ -475,7 +452,7 @@ async def test_async_save_and_finish_saves_env_config_and_returns_entry() -> Non
     assert result["type"] == "create_entry"
     assert growspace.environment_config is not None
     flow.config_entry.runtime_data.services.save.assert_awaited_once()
-    flow.config_entry.runtime_data.async_refresh.assert_awaited_once()
+    flow.config_entry.runtime_data.services.request_refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio

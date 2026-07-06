@@ -114,6 +114,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Register/Unregister Sidebar Panel
     await async_register_sidebar_panel(hass, entry)
 
+    # One-time ADR-0026 cleanup: per-growspace environment blobs in options are
+    # legacy — the growspace store is the single source of truth, and any blob
+    # worth keeping was adopted during coordinator load. Strip them before the
+    # update listener is registered so this options write cannot trigger a
+    # reload.
+    stale_blob_ids = [gid for gid in coordinator.growspaces if gid in entry.options]
+    if stale_blob_ids:
+        new_options = {
+            k: v for k, v in entry.options.items() if k not in stale_blob_ids
+        }
+        hass.config_entries.async_update_entry(entry, options=new_options)
+        _LOGGER.info(
+            "Removed %d legacy per-growspace environment blob(s) from config entry options",
+            len(stale_blob_ids),
+        )
+
     # Listen for options updates
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
@@ -136,7 +152,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             new_data.pop("pending_growspace")
             hass.config_entries.async_update_entry(entry, data=new_data)
 
-        except (KeyError, RuntimeError):
+        except KeyError, RuntimeError:
             _LOGGER.exception(
                 "Failed to create pending growspace %s",
                 pending.get("name", "unknown"),
