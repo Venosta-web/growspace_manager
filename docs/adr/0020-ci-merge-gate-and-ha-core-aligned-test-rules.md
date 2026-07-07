@@ -57,3 +57,27 @@ indistinguishable from no gate.
   they land on `dev`. That is the intended place for the gate to bite.
 - Choosing fix-first over ratchet is the larger up-front cost, paid once, in exchange
   for a clean repo-wide bar with no per-file suppression to reason about later.
+
+## Amendment (2026-07-07) — enforcement mechanics and hook-tier cut
+
+A workflow review found decisions 1 and 2 were never fully implemented: no branch
+was protected, and no local hook was installed. Rather than re-litigate, the gaps
+were closed with three refinements:
+
+1. **Rulesets, not classic branch protection — and `prerelease` is included.**
+   The gate lands on `prerelease`, `dev`, and `main` (day-to-day integration happens
+   on `prerelease`; the original text predates that). Rulesets require a PR with
+   green checks (`ruff`, `mypy`, `validate-hassfest`, `validate-hacs`, pytest) and
+   carry a bypass list containing **only the GitHub Actions app**, so release
+   workflows pushing with `GITHUB_TOKEN` keep working while humans and agents go
+   through PRs.
+2. **Zero required approvals.** A PR author cannot approve their own PR, so on a
+   solo repo a review requirement is a rule the owner bypasses every time — which
+   trains bypassing. Green checks are the merge condition; the human gate on agent
+   work is the merge click itself.
+3. **The three-tier hook ladder is cut to one tier.** Pre-commit runs fast checks
+   only (ruff check/format, codespell, `no-commit-to-branch`, and a worktree guard
+   that rejects commits made in the shared main checkout unless
+   `ALLOW_MAIN_CHECKOUT=1`). The pre-push test tier is dropped: with the ruleset
+   enforcing CI, a slow pre-push hook only invites `--no-verify`. `pre-commit
+   install` is part of environment setup so fresh checkouts actually have the hook.
