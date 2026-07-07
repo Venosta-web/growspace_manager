@@ -420,6 +420,7 @@ async def test_async_add_schedule_item(
         # Test updating existing item
         await coordinator.async_add_schedule_item("irrigation_times", "08:00", 30)
 
+        items = growspace.irrigation_config.irrigation_times
         new_item = next((i for i in items if i["time"] == "08:00:00"), None)
         assert new_item is not None
         assert new_item["duration"] == 30
@@ -450,14 +451,31 @@ async def test_async_remove_schedule_item(
         mock_main_coordinator.async_commit.assert_awaited_once()
         mock_update.assert_awaited_once()
 
+        # Removing "HH:MM" matches the stored "HH:MM:SS" entry (ADR-0029 —
+        # the old raw-string comparison silently removed nothing)
+        mock_main_coordinator.async_commit.reset_mock()
+        mock_update.reset_mock()
+
+        await coordinator.async_remove_schedule_item("irrigation_times", "20:00")
+
+        items = growspace.irrigation_config.irrigation_times
+        assert not any(i["time"] == "20:00:00" for i in items)
+        mock_main_coordinator.async_commit.assert_awaited_once()
+
         # Test removing non-existent item
         mock_main_coordinator.async_commit.reset_mock()
         mock_update.reset_mock()
 
-        await coordinator.async_remove_schedule_item("irrigation_times", "99:99:99")
+        await coordinator.async_remove_schedule_item("irrigation_times", "23:45")
 
         mock_main_coordinator.async_commit.assert_not_awaited()
         mock_update.assert_not_awaited()
+
+        # An invalid time is a loud failure, matching the add path
+        with pytest.raises(ValueError):
+            await coordinator.async_remove_schedule_item(
+                "irrigation_times", "99:99:99"
+            )
 
 
 async def test_async_add_schedule_item_validation_error(
@@ -501,17 +519,16 @@ async def test_get_default_duration_error(
 async def test_schedule_event_invalid_time(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
-    """Test scheduling event with invalid time format."""
+    """Malformed schedule entries register no listeners (only a warning)."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
+    config = mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
+    config.irrigation_times = [{"time": 123}, {"time": "invalid"}]
+    config.drain_times = []
 
-    # Invalid time type
-    coordinator._schedule_event({"time": 123}, "irrigation")
-    assert len(coordinator._listeners) == 0
+    await coordinator.async_update_listeners()
 
-    # Invalid time string
-    coordinator._schedule_event({"time": "invalid"}, "irrigation")
     assert len(coordinator._listeners) == 0
 
 
@@ -655,14 +672,16 @@ async def test_async_remove_schedule_item_key_error_explicit(
 async def test_schedule_event_short_time_format(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
-    """Test scheduling event with HH:MM format."""
+    """A stored HH:MM entry still registers its listener."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
+    config = mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
+    config.irrigation_times = [{"time": "12:00"}]
+    config.drain_times = []
 
-    coordinator._schedule_event({"time": "12:00"}, "irrigation")
+    await coordinator.async_update_listeners()
 
-    # Should have added a listener
     assert len(coordinator._listeners) == 1
 
     coordinator.async_cancel_listeners()
@@ -978,21 +997,6 @@ async def test_irrigation_coordinator_coverage_gaps(
 
         # 7. Test active_events property (Line 46)
         assert isinstance(coordinator.active_events, dict)
-
-        # 8. Test async_remove_schedule_item exception (Lines 340-341)
-        with (
-            patch(
-                "custom_components.growspace_manager.irrigation_coordinator.hasattr",
-                return_value=True,
-            ),
-            patch(
-                "custom_components.growspace_manager.irrigation_coordinator.getattr",
-                side_effect=ValueError("Unexpected"),
-            ),
-        ):
-            await coordinator.async_remove_schedule_item(
-                "irrigation_times", "10:00:00"
-            )
 
         # 9. Test _async_wait_for_switch_state with irrelevant entity event (Line 145)
         mock_hass.states.get.return_value = Mock(state="off")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
-from datetime import datetime, timedelta
+from datetime import datetime, time
 from functools import partial
 import logging
 from typing import TYPE_CHECKING, Any, override
@@ -24,6 +24,12 @@ from .const import (
     CATEGORY_IRRIGATION_ERROR,
     EVENT_GROWSPACE_LOG_ENTRY,
     SENSOR_SETTLING_DELAY_CAP_SECONDS,
+)
+from .domain.irrigation_schedule import (
+    next_occurrence,
+    remove_items,
+    schedulable_events,
+    upsert_item,
 )
 from .domain.pump_cycle import (
     CycleVerdict,
@@ -191,7 +197,7 @@ class BaseIrrigationCoordinator:
             return getattr(
                 self.growspace.irrigation_config, f"{event_type}_duration", None
             )
-        except (KeyError, AttributeError):
+        except KeyError, AttributeError:
             return None
 
     async def _save_and_reload(self, reload_listeners: bool = True) -> None:
@@ -205,18 +211,11 @@ class BaseIrrigationCoordinator:
     async def async_add_schedule_item(
         self, schedule_key: str, time_str: str, duration: int | None
     ) -> None:
-        """Add a time entry to an irrigation or drain schedule."""
-        if not time_str:
-            raise ValueError("Time cannot be empty")
+        """Add a time entry to an irrigation or drain schedule.
 
-        if len(time_str) == 5:
-            time_str = f"{time_str}:00"
-
-        try:
-            datetime.strptime(time_str, "%H:%M:%S")
-        except ValueError as err:
-            raise ValueError(f"Invalid time '{time_str}': hours must be 00-23") from err
-
+        The list mutation is the Irrigation Schedule's `upsert_item`
+        (ADR-0029); this method owns the assign + persist effects.
+        """
         if not hasattr(self.growspace.irrigation_config, schedule_key):
             _LOGGER.error("Invalid schedule key %s", schedule_key)
             return
@@ -224,14 +223,10 @@ class BaseIrrigationCoordinator:
         current_schedule: list[dict[str, Any]] = getattr(
             self.growspace.irrigation_config, schedule_key
         )
+        change = upsert_item(current_schedule, time_str, duration)
+        setattr(self.growspace.irrigation_config, schedule_key, change.items)
 
-        existing_item = next(
-            (item for item in current_schedule if item.get("time") == time_str),
-            None,
-        )
-
-        if existing_item:
-            existing_item["duration"] = duration
+        if change.updated:
             _LOGGER.info(
                 "Updated %s in %s for growspace %s. Duration set to %s",
                 time_str,
@@ -239,19 +234,13 @@ class BaseIrrigationCoordinator:
                 self._growspace_id,
                 duration,
             )
-            new_list = list(current_schedule)
-            setattr(self.growspace.irrigation_config, schedule_key, new_list)
         else:
-            new_list = list(current_schedule)
-            new_list.append({"time": time_str, "duration": duration})
-            setattr(self.growspace.irrigation_config, schedule_key, new_list)
-
             _LOGGER.info(
                 "Added %s to %s for growspace %s. Schedule now has %d items",
-                {"time": time_str, "duration": duration},
+                time_str,
                 schedule_key,
                 self._growspace_id,
-                len(new_list),
+                len(change.items),
             )
 
         await self._save_and_reload()
@@ -259,10 +248,12 @@ class BaseIrrigationCoordinator:
     async def async_remove_schedule_item(
         self, schedule_key: str, time_str: str
     ) -> None:
-        """Remove all matching time entries from a schedule."""
-        if not time_str:
-            raise ValueError("Time cannot be empty")
+        """Remove all matching time entries from a schedule.
 
+        Matching runs through the Irrigation Schedule's shared normalizer
+        (ADR-0029), so removing "08:00" also matches the stored "08:00:00"
+        — the raw-string comparison this replaces silently removed nothing.
+        """
         if not hasattr(self.growspace.irrigation_config, schedule_key):
             _LOGGER.warning(
                 "Cannot remove item: schedule '%s' not found for growspace %s",
@@ -271,44 +262,28 @@ class BaseIrrigationCoordinator:
             )
             return
 
-        try:
-            schedule = getattr(self.growspace.irrigation_config, schedule_key)
-            items_before = len(schedule)
+        schedule = getattr(self.growspace.irrigation_config, schedule_key)
+        change = remove_items(schedule, time_str)
 
-            new_schedule = [item for item in schedule if item.get("time") != time_str]
-            setattr(self.growspace.irrigation_config, schedule_key, new_schedule)
-
-            items_after = len(new_schedule)
-
-            if items_before == items_after:
-                _LOGGER.warning(
-                    "Time %s not found in %s for growspace %s. No items removed",
-                    time_str,
-                    schedule_key,
-                    self._growspace_id,
-                )
-                return
-
-            _LOGGER.info(
-                "Removed %d item(s) with time %s from %s for growspace %s",
-                items_before - items_after,
+        if not change.removed:
+            _LOGGER.warning(
+                "Time %s not found in %s for growspace %s. No items removed",
                 time_str,
                 schedule_key,
                 self._growspace_id,
             )
+            return
 
-            await self._save_and_reload()
+        setattr(self.growspace.irrigation_config, schedule_key, change.items)
+        _LOGGER.info(
+            "Removed %d item(s) with time %s from %s for growspace %s",
+            change.removed,
+            time_str,
+            schedule_key,
+            self._growspace_id,
+        )
 
-        except (
-            AttributeError,
-            KeyError,
-            ValueError,
-            ServiceValidationError,
-            GrowspaceError,
-        ):
-            _LOGGER.exception(
-                "Unexpected error removing schedule item from %s", schedule_key
-            )
+        await self._save_and_reload()
 
     def _get_sensor_value(self, entity_id: str) -> float | None:
         """Get float value from sensor state."""
@@ -552,7 +527,10 @@ class BaseIrrigationCoordinator:
                 duration,
             )
 
-            if event_type == "irrigation" and self.growspace.irrigation_config.log_to_logbook:
+            if (
+                event_type == "irrigation"
+                and self.growspace.irrigation_config.log_to_logbook
+            ):
                 self._fire_logbook_event(
                     f"Irrigation started — {duration}s on {pump_entity}",
                 )
@@ -846,67 +824,43 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         if drain_times:
             _LOGGER.debug("Drain schedule: %s", drain_times)
 
-        # Deduplicate events based on time, skipping malformed records
-        unique_irrigation_times = {
-            t: event
-            for event in irrigation_times
-            if (t := event.get("time")) is not None
-        }.values()
-        unique_drain_times = {
-            t: event for event in drain_times if (t := event.get("time")) is not None
-        }.values()
-
-        for event in unique_irrigation_times:
-            self._schedule_event(event, "irrigation")
-
-        for event in unique_drain_times:
-            self._schedule_event(event, "drain")
-
-    def _schedule_event(self, event: Mapping[str, Any], event_type: str) -> None:
-        """Helper to schedule a single irrigation or drain event."""
-        try:
-            time_str = event.get("time")
-            if not isinstance(time_str, str):
+        # Dedup and time parsing live behind the Irrigation Schedule (ADR-0029)
+        for times, event_type in (
+            (irrigation_times, "irrigation"),
+            (drain_times, "drain"),
+        ):
+            events = schedulable_events(times)
+            for event in events.malformed:
                 _LOGGER.warning(
                     "Skipping %s event with invalid time format: %s",
                     event_type,
-                    time_str,
+                    event.get("time"),
                 )
-                return
+            for time_obj, event in events.valid:
+                self._schedule_event(time_obj, event, event_type)
 
-            if len(time_str) == 5:
-                time_str = f"{time_str}:00"
+    def _schedule_event(
+        self, time_obj: time, event: Mapping[str, Any], event_type: str
+    ) -> None:
+        """Register the time-change listener for one parsed schedule entry."""
+        handler = partial(self._handle_event, event_type=event_type, event_data=event)
 
-            time_obj = datetime.strptime(time_str, "%H:%M:%S").time()
+        listener = async_track_time_change(
+            self.hass,
+            handler,
+            hour=time_obj.hour,
+            minute=time_obj.minute,
+            second=time_obj.second,
+        )
 
-            handler = partial(
-                self._handle_event, event_type=event_type, event_data=event
-            )
+        self._listeners.append(listener)
 
-            listener = async_track_time_change(
-                self.hass,
-                handler,
-                hour=time_obj.hour,
-                minute=time_obj.minute,
-                second=time_obj.second,
-            )
-
-            self._listeners.append(listener)
-
-            _LOGGER.debug(
-                "Scheduled %s event for growspace %s at %s",
-                event_type,
-                self._growspace_id,
-                time_obj.isoformat(),
-            )
-        except (ValueError, KeyError) as e:
-            _LOGGER.error(
-                "Invalid %s time format for growspace %s in event %s: %s",
-                event_type,
-                self._growspace_id,
-                event,
-                e,
-            )
+        _LOGGER.debug(
+            "Scheduled %s event for growspace %s at %s",
+            event_type,
+            self._growspace_id,
+            time_obj.isoformat(),
+        )
 
     async def _handle_event(
         self, now: datetime, *, event_type: str, event_data: Mapping[str, Any]
@@ -954,33 +908,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         Scans the configured irrigation_times and returns the soonest future occurrence.
         Returns None when no times are configured.
         """
-        irrigation_times = self.growspace.irrigation_config.irrigation_times
-        if not irrigation_times:
-            return None
-
-        now = utcnow()
-        today = now.date()
-        soonest: datetime | None = None
-
-        for item in irrigation_times:
-            time_str = item.get("time")
-            if not isinstance(time_str, str):
-                continue
-            if len(time_str) == 5:
-                time_str = f"{time_str}:00"
-            try:
-                t = datetime.strptime(time_str, "%H:%M:%S").time()
-            except ValueError:
-                continue
-
-            candidate = datetime.combine(today, t, tzinfo=now.tzinfo)
-            if candidate <= now:
-                candidate = datetime.combine(
-                    today + timedelta(days=1), t, tzinfo=now.tzinfo
-                )
-            if soonest is None or candidate < soonest:
-                soonest = candidate
-
+        soonest = next_occurrence(
+            self.growspace.irrigation_config.irrigation_times, utcnow()
+        )
         return soonest.isoformat() if soonest else None
-
-
