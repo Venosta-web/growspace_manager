@@ -1923,21 +1923,26 @@ def _logbook_messages(mock_hass: MagicMock) -> list[str]:
 
 
 async def _drive_hold_and_release(
-    coordinator: VWCIrrigationCoordinator, mock_hass: MagicMock
+    coordinator: VWCIrrigationCoordinator,
+    mock_hass: MagicMock,
+    final_reading: str = "40.0",
 ) -> None:
     """Drive the real minute loop through a sustained hold and its release.
 
     The first two ticks sit inside the 15 min cooldown and build the rising
     measurement; the third clears the cooldown and is held by the gate (well
-    inside the 45 min backstop); the flat fourth settles the substrate and
-    releases it. Only that last tick fires a pump cycle.
+    inside the 45 min backstop); the fourth reading ends the hold. A flat one
+    settles the substrate and fires the shot; ``unavailable`` drops the sensor.
+
+    Asserts the latch actually cycled, so a test reading the logbook for an
+    absence cannot pass on a drive that never held.
     """
     mock_hass.bus = MagicMock()
     coordinator._last_cycle_timestamp = datetime(
         2023, 1, 1, 9, 25, 0, tzinfo=dt_util.UTC
     ).isoformat()
 
-    for minute, vwc in ((30, "40.0"), (35, "44.0"), (40, "48.0"), (45, "40.0")):
+    for minute, vwc in ((30, "40.0"), (35, "44.0"), (40, "48.0")):
         tick = datetime(2023, 1, 1, 9, minute, 0, tzinfo=dt_util.UTC)
         mock_hass.states.get.return_value = _state(vwc, last_updated=tick)
         with patch(
@@ -1945,6 +1950,16 @@ async def _drive_hold_and_release(
             return_value=tick,
         ):
             await coordinator._update_loop(tick)
+    assert coordinator._machine._infiltration_held is True
+
+    tick = datetime(2023, 1, 1, 9, 45, 0, tzinfo=dt_util.UTC)
+    mock_hass.states.get.return_value = _state(final_reading, last_updated=tick)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=tick,
+    ):
+        await coordinator._update_loop(tick)
+    assert coordinator._machine._infiltration_held is False
     await await_pump_task()
 
 
@@ -1960,6 +1975,17 @@ async def test_the_gate_logs_one_held_and_one_released_entry(
     assert messages.index(INFILTRATION_HELD_MESSAGE) < messages.index(
         INFILTRATION_RELEASED_MESSAGE
     )
+
+
+async def test_a_sensor_dropout_releases_the_hold(vwc_coordinator, mock_hass) -> None:
+    """The dropout path resets the monitor to UNKNOWN, so the hold may not outlive it."""
+    await _drive_hold_and_release(
+        vwc_coordinator, mock_hass, final_reading="unavailable"
+    )
+
+    messages = _logbook_messages(mock_hass)
+    assert messages.count(INFILTRATION_RELEASED_MESSAGE) == 1
+    assert vwc_coordinator._machine.current_phase == "P1 - Ramp Up"
 
 
 async def test_the_gate_writes_no_logbook_entries_when_logging_is_off(

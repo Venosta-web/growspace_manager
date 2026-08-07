@@ -167,6 +167,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                     self._growspace_id,
                 )
                 self._infiltration.reset()
+                self._apply_verdict(self._machine.mark_sensor_unavailable(), strategy)
                 return
 
             # Feed the Infiltration Monitor before the EC halt check: the

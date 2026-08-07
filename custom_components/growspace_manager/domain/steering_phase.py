@@ -315,6 +315,17 @@ class SteeringPhaseMachine:
         """Transition to the disabled state when no VWC sensor is configured."""
         return self._finish(PHASE_DISABLED, gate_held=False)
 
+    def mark_sensor_unavailable(self) -> SteeringTickVerdict:
+        """Release the [[Infiltration Gate]] hold on a VWC sensor dropout.
+
+        Deliberately keeps the current phase: unlike a *missing* sensor, a
+        momentarily unavailable one is not a configuration state and never
+        disabled steering. It still ends any hold — the measurement it rested on
+        is gone, and the gate fails open on ``UNKNOWN`` — so the logbook may not
+        leave the growspace reading as held across the dropout (ADR-0031).
+        """
+        return self._finish(self._phase, gate_held=False)
+
     def tick(self, inputs: SteeringTickInputs) -> SteeringTickVerdict:
         """Advance the machine one tick and return the full decision."""
         boundaries = phase_boundary_times(

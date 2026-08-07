@@ -753,6 +753,9 @@ def test_satisfied_demand_is_not_a_release() -> None:
             id="window_closed",
         ),
         pytest.param(lambda machine: machine.mark_no_sensor(), id="no_sensor"),
+        pytest.param(
+            lambda machine: machine.mark_sensor_unavailable(), id="sensor_dropout"
+        ),
     ],
 )
 def test_leaving_the_shot_decision_releases_the_hold(
@@ -763,6 +766,16 @@ def test_leaving_the_shot_decision_releases_the_hold(
     assert _held_tick(machine) == INFILTRATION_HELD_MESSAGE
     assert closing_tick(machine).infiltration_note == INFILTRATION_RELEASED_MESSAGE
     assert _held_tick(machine, 5) == INFILTRATION_HELD_MESSAGE
+
+
+def test_a_sensor_dropout_releases_without_disabling_steering() -> None:
+    """Unlike a missing sensor, a dropout keeps the phase — it only ends the hold."""
+    machine = SteeringPhaseMachine("gs1")
+    _held_tick(machine)
+    verdict = machine.mark_sensor_unavailable()
+    assert verdict.phase == PHASE_P1
+    assert verdict.phase_changed is False
+    assert verdict.infiltration_note == INFILTRATION_RELEASED_MESSAGE
 
 
 def test_the_daily_reset_leaves_the_latch_alone() -> None:
