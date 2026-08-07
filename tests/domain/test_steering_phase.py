@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 import pytest
 
 from custom_components.growspace_manager.const import ShotSizingMode
+from custom_components.growspace_manager.domain.infiltration import InfiltrationState
 from custom_components.growspace_manager.domain.steering_phase import (
     PHASE_DISABLED,
     PHASE_IDLE,
@@ -22,6 +23,7 @@ from custom_components.growspace_manager.domain.steering_phase import (
     PHASE_P2,
     PHASE_P3,
     SUPPRESSED_BY_COOLDOWN,
+    SUPPRESSED_BY_INFILTRATING,
     SUPPRESSED_BY_NO_PUMP,
     SUPPRESSED_BY_ZERO_VOLUME,
     SteeringPhaseMachine,
@@ -76,6 +78,7 @@ def _inputs(
         "live_plant_count": 3,
         "last_shot": None,
         "interval_factor": 1.0,
+        "infiltration": InfiltrationState.UNKNOWN,
     }
     defaults.update(overrides)
     return SteeringTickInputs(now=now, vwc=vwc, **defaults)
@@ -464,6 +467,167 @@ def test_non_window_phases_carry_no_suppression_reason() -> None:
     assert idle.phase == PHASE_IDLE
     assert idle.suppressed_by is None
     assert machine.mark_no_sensor().suppressed_by is None
+
+
+# ── the Infiltration Gate (ADR-0031) ──────────────────────────────────────────
+
+
+def test_p1_shot_is_withheld_while_the_substrate_is_infiltrating() -> None:
+    """P1 ramp-up is open-loop, so a still-climbing VWC must not trigger another shot."""
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(
+        _inputs(
+            _at(9),
+            vwc=40.0,
+            last_shot=_at(8, 30),  # 30 min: past the 15 min cooldown
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert verdict.fire is None
+    assert verdict.suppressed_by == SUPPRESSED_BY_INFILTRATING
+
+
+def test_p2_shot_is_withheld_while_the_substrate_is_infiltrating() -> None:
+    """The gate is a floor under both phase rules, not only P1's."""
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=56.0))  # reaches target, enters P2
+    verdict = machine.tick(
+        _inputs(
+            _at(10),
+            vwc=50.0,  # below the P2 trigger of 53%
+            last_shot=_at(9, 30),
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert verdict.phase == PHASE_P2
+    assert verdict.fire is None
+    assert verdict.suppressed_by == SUPPRESSED_BY_INFILTRATING
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        pytest.param(InfiltrationState.SETTLED, id="settled"),
+        pytest.param(InfiltrationState.DRYING, id="drying"),
+        pytest.param(InfiltrationState.UNKNOWN, id="unknown"),
+    ],
+)
+def test_only_an_infiltrating_reading_withholds_a_shot(
+    state: InfiltrationState,
+) -> None:
+    """UNKNOWN in particular must fail open: a dropout may not suspend irrigation."""
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(
+        _inputs(_at(9), vwc=40.0, last_shot=_at(8, 30), infiltration=state)
+    )
+    assert verdict.fire is not None
+    assert verdict.suppressed_by is None
+
+
+def test_the_gate_cannot_release_a_shot_the_cooldown_blocks() -> None:
+    """Strictly additive: the cooldown is evaluated first and still wins."""
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(
+        _inputs(
+            _at(9),
+            vwc=40.0,
+            last_shot=_at(8, 50),  # 10 min into the 15 min cooldown
+            infiltration=InfiltrationState.SETTLED,
+        )
+    )
+    assert verdict.fire is None
+    assert verdict.suppressed_by == SUPPRESSED_BY_COOLDOWN
+
+
+def test_a_cooling_down_infiltrating_tick_reports_the_cooldown() -> None:
+    """The cooldown is the binding constraint, so it is the reason reported."""
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(
+        _inputs(
+            _at(9),
+            vwc=40.0,
+            last_shot=_at(8, 50),
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert verdict.suppressed_by == SUPPRESSED_BY_COOLDOWN
+
+
+def test_a_never_watered_growspace_is_not_gated() -> None:
+    """Without a confirmed last shot the backstop has no anchor, so the gate opens."""
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(
+        _inputs(
+            _at(9),
+            vwc=40.0,
+            last_shot=None,
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert verdict.fire is not None
+    assert verdict.suppressed_by is None
+
+
+@pytest.mark.parametrize(
+    ("last_shot", "fires"),
+    [
+        pytest.param(_at(8, 15), False, id="at_the_backstop"),
+        pytest.param(_at(8, 14), True, id="past_the_backstop"),
+    ],
+)
+def test_the_backstop_releases_a_stuck_gate(last_shot: datetime, fires: bool) -> None:
+    """A persistently-rising signal may not block P1 all day: 3 x 15 min = 45 min."""
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(
+        _inputs(
+            _at(9),
+            vwc=40.0,
+            last_shot=last_shot,
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert (verdict.fire is not None) is fires
+
+
+def test_the_backstop_scales_with_the_interval_feedback_factor() -> None:
+    """A lengthened cooldown lengthens the backstop proportionally: 3 x 15 x 2 = 90."""
+    machine = SteeringPhaseMachine("gs1")
+    still_gated = machine.tick(
+        _inputs(
+            _at(9),
+            vwc=40.0,
+            last_shot=_at(7, 45),  # 75 min: past the doubled backstop of a factor of 1
+            interval_factor=2.0,
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert still_gated.suppressed_by == SUPPRESSED_BY_INFILTRATING
+    released = machine.tick(
+        _inputs(
+            _at(9),
+            vwc=40.0,
+            last_shot=_at(7, 29),  # 91 min
+            interval_factor=2.0,
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert released.fire is not None
+
+
+def test_the_p1_to_p2_transition_tick_backstops_on_the_post_reset_factor() -> None:
+    """The tick that resets the composer uses 1.0, so its backstop is the unscaled one."""
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=56.0))  # reaches target; machine is still in P1
+    verdict = machine.tick(
+        _inputs(
+            _at(10),
+            vwc=50.0,
+            last_shot=_at(9, 5),  # 55 min: past 3 x 15 x 1.0, inside 3 x 15 x 2.0
+            interval_factor=2.0,
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert verdict.fire is not None
 
 
 def test_volume_change_note_is_not_conflated_with_the_reason() -> None:
