@@ -39,7 +39,7 @@ from custom_components.growspace_manager.utils import (
     days_to_week,
     strip_markdown_fence,
 )
-from homeassistant.components import conversation, websocket_api
+from homeassistant.components import websocket_api
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
@@ -256,6 +256,8 @@ async def _run_conversation(
     conversation_id: str | None,
 ) -> Any:
     """Call conversation.async_converse and return the raw result."""
+    from homeassistant.components import conversation  # noqa: PLC0415
+
     return await conversation.async_converse(
         hass,
         text=message,

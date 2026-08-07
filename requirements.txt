@@ -1,7 +1,8 @@
 # Home Assistant Core (Minimal)
 # Kept in lockstep with pytest-homeassistant-custom-component (which pins an exact
-# homeassistant version) and home-assistant-intents below; a fresh CI install
-# otherwise floated intents to a version missing FuzzyConfig and broke collection.
+# homeassistant version) and the hassil/home-assistant-intents pair below; a fresh
+# CI install otherwise floats them past what this homeassistant version supports
+# and breaks collection (intents lost FuzzyConfig, hassil >=3.10 dropped hassil.fuzzy).
 homeassistant==2026.5.4
 aiosqlite
 Pillow
@@ -32,6 +33,6 @@ codespell
 pytest-xdist
 freezegun
 requests-mock
-hassil
+hassil==3.5.0
 home-assistant-intents==2026.5.5
 syrupy>=5.0.0
