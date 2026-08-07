@@ -46,7 +46,7 @@ the maintainer's memory (the #522/#439 episode).
   step that converts "silently dropped" into "CI told me which side is behind."
 - The fixture must be kept maximal as new sub-configs appear; a field added to the
   model but not to the fixture builder is invisible to the contract. The
-  `gsm-field-roundtrip` checklist carries this as a station.
+  `gsm-field-roundtrip` checklist carries this as a step.
 - Card PRs that move with an unreleased GSM change will fail the release-fixture
   check until GSM ships — that is the intended signal to hold the card merge, not
   a flake to bypass.
