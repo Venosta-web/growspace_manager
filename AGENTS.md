@@ -20,7 +20,7 @@ cd .worktrees/<branch-name>
 ## Base branches
 
 - Architecture/refactor work integrates on **`prerelease`**, not `dev`.
-- Crop-steering feature work integrates on **`feat-stageAnalyizer`**.
+- Crop-steering feature work integrates on **`feat-stageAnalyzer`**.
 - Check the issue / parent PR for stacked topologies before branching, and
   target the PR at the same base you branched from.
 
