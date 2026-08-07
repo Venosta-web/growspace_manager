@@ -1,6 +1,6 @@
 # ADR 0030 — Cross-repo contract fixture + GSM-first landing order
 
-**Status:** Accepted (consumer side: lovelace card ADR 0029)
+**Status:** Accepted (consumer side: Lovelace card ADR 0029)
 
 ## Context
 
