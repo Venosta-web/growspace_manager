@@ -107,7 +107,7 @@ def _drive_watering(
     coord: VWCIrrigationCoordinator, growspace: Growspace, phase: str
 ) -> None:
     """Drive the machine's shot evaluation plus the shell's fire path."""
-    fire, _note = coord._machine._evaluate_shot(
+    fire, _note, _suppressed = coord._machine._evaluate_shot(
         _tick_inputs(coord, growspace), phase, reset_pending=False
     )
     if fire is not None:

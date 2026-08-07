@@ -43,6 +43,15 @@ PHASE_IDLE = "Idle (no plants)"
 # IrrigationConfig and read by the frontend. Phases without an entry (e.g.
 # "Disabled (No Sensor)") leave active_steering_phase unchanged. The bare "P3"
 # entry covers the machine's initial safe state.
+# Reasons a WINDOW tick decided against firing a shot, carried on the verdict as
+# ``suppressed_by`` and surfaced in the shot-composition payload so a growspace
+# that isn't watering is explainable without enabling debug logging (ADR-0031).
+# The cooldown is evaluated first, so a tick that is both cooling down and
+# pump-less reports the cooldown.
+SUPPRESSED_BY_COOLDOWN = "cooldown"
+SUPPRESSED_BY_NO_PUMP = "no_pump"
+SUPPRESSED_BY_ZERO_VOLUME = "zero_volume"
+
 CANONICAL_PHASE: dict[str, str] = {
     PHASE_P0: "p1",
     PHASE_P1: "p1",
@@ -104,6 +113,11 @@ class SteeringTickVerdict:
     ``transition_message`` and ``volume_change_note`` are pure-formatted logbook
     texts (the [[Cycle Verdict]] message precedent) so the wording is
     unit-tested; the shell decides whether ``log_to_logbook`` lets them fire.
+
+    ``suppressed_by`` names why a shot the WINDOW phases would otherwise have
+    fired did not (one of the ``SUPPRESSED_BY_*`` reasons); it is None whenever
+    a shot fires and on ticks that never reach the shot decision at all. It is
+    a diagnostic only — nothing branches on it.
     """
 
     phase: str
@@ -113,6 +127,7 @@ class SteeringTickVerdict:
     reset_composer: bool
     fire: ShotRequest | None
     volume_change_note: str | None
+    suppressed_by: str | None = None
 
 
 def resolve_day_hours(environment_config: Any) -> int:
@@ -290,6 +305,7 @@ class SteeringPhaseMachine:
 
         fire: ShotRequest | None = None
         note: str | None = None
+        suppressed: str | None = None
 
         if not self._target_reached_today:
             # We are in P1: Ramp Up
@@ -302,8 +318,12 @@ class SteeringPhaseMachine:
                 self._target_reached_today = True
                 # No watering this tick, just switch state
                 return self._finish(PHASE_P1)
-            fire, note = self._evaluate_shot(inputs, "P1", reset_pending=False)
-            return self._finish(PHASE_P1, fire=fire, volume_change_note=note)
+            fire, note, suppressed = self._evaluate_shot(
+                inputs, "P1", reset_pending=False
+            )
+            return self._finish(
+                PHASE_P1, fire=fire, volume_change_note=note, suppressed_by=suppressed
+            )
 
         # We are in P2: Maintenance
         # Dynamic trigger: soil_trigger_percent overrides the calculated threshold
@@ -323,10 +343,12 @@ class SteeringPhaseMachine:
             # When this very tick performs the P1→P2 transition the composer is
             # reset before the shot composes, so the cooldown must use the
             # post-reset interval factor (1.0), not the stale pre-tick value.
-            fire, note = self._evaluate_shot(
+            fire, note, suppressed = self._evaluate_shot(
                 inputs, "P2", reset_pending=self._phase == PHASE_P1
             )
-        return self._finish(PHASE_P2, fire=fire, volume_change_note=note)
+        return self._finish(
+            PHASE_P2, fire=fire, volume_change_note=note, suppressed_by=suppressed
+        )
 
     def projected_shot_window(
         self,
@@ -382,12 +404,14 @@ class SteeringPhaseMachine:
 
     def _evaluate_shot(
         self, inputs: SteeringTickInputs, phase: str, *, reset_pending: bool
-    ) -> tuple[ShotRequest | None, str | None]:
+    ) -> tuple[ShotRequest | None, str | None, str | None]:
         """Decide whether a shot may fire this tick and its base duration.
 
-        Returns ``(request, volume_change_note)``; ``request`` is None when the
-        cooldown blocks, no pump is configured, or Volume Mode suspends
-        (zero live plants / zero volume — ADR-0011).
+        Returns ``(request, volume_change_note, suppressed_by)``; ``request`` is
+        None when the cooldown blocks, no pump is configured, or Volume Mode
+        suspends (zero live plants / zero volume — ADR-0011), and
+        ``suppressed_by`` names which of those it was. The note and the reason
+        stay separate: a volume change can be worth logging on a tick that fires.
         """
         seconds_duration, interval_minutes = shot_params_for_phase(
             inputs.strategy, phase
@@ -397,10 +421,10 @@ class SteeringPhaseMachine:
             effective_factor = 1.0 if reset_pending else inputs.interval_factor
             elapsed = (inputs.now - inputs.last_shot).total_seconds() / 60.0
             if elapsed < interval_minutes * effective_factor:
-                return None, None
+                return None, None, SUPPRESSED_BY_COOLDOWN
 
         if not inputs.pump_configured:
-            return None, None
+            return None, None, SUPPRESSED_BY_NO_PUMP
 
         # Derive the BASE per-shot duration. Volume Mode converts the per-phase
         # percent-of-substrate-volume size to pump seconds via the live plant
@@ -411,10 +435,10 @@ class SteeringPhaseMachine:
             base_seconds, note = self._volume_mode_base_duration(inputs, phase)
             if base_seconds is None:
                 # Zero live plants: suspend rather than firing a floored shot.
-                return None, note
-            return ShotRequest(phase=phase, base_seconds=base_seconds), note
+                return None, note, SUPPRESSED_BY_ZERO_VOLUME
+            return ShotRequest(phase=phase, base_seconds=base_seconds), note, None
 
-        return ShotRequest(phase=phase, base_seconds=seconds_duration), None
+        return ShotRequest(phase=phase, base_seconds=seconds_duration), None, None
 
     def _volume_mode_base_duration(
         self, inputs: SteeringTickInputs, phase: str
@@ -481,6 +505,7 @@ class SteeringPhaseMachine:
         *,
         fire: ShotRequest | None = None,
         volume_change_note: str | None = None,
+        suppressed_by: str | None = None,
     ) -> SteeringTickVerdict:
         """Apply the phase transition and assemble the verdict."""
         old_phase = self._phase
@@ -504,6 +529,7 @@ class SteeringPhaseMachine:
             reset_composer=changed and old_phase == PHASE_P1 and new_phase == PHASE_P2,
             fire=fire,
             volume_change_note=volume_change_note,
+            suppressed_by=suppressed_by,
         )
 
 

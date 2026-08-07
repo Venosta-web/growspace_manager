@@ -230,7 +230,7 @@ async def test_vwc_fired_shot_records_pump_estimate(
         inputs = coordinator._tick_inputs(
             40.0, growspace.irrigation_strategy, growspace
         )
-        fire, _note = coordinator._machine._evaluate_shot(
+        fire, _note, _suppressed = coordinator._machine._evaluate_shot(
             inputs, "P1", reset_pending=False
         )
         assert fire is not None

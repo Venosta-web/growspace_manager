@@ -10,6 +10,7 @@ from custom_components.growspace_manager.domain.ec_state import (
     ec_modulation_factor_for_reading,
 )
 from custom_components.growspace_manager.domain.steering_phase import (
+    SUPPRESSED_BY_COOLDOWN,
     SteeringTickVerdict,
 )
 from custom_components.growspace_manager.irrigation_coordinator import (
@@ -38,7 +39,9 @@ def _drive_watering(
     coordinator fires the composed pump cycle when a shot is requested.
     """
     inputs = coord._tick_inputs(40.0, strategy, coord.growspace)
-    fire, _note = coord._machine._evaluate_shot(inputs, phase, reset_pending=False)
+    fire, _note, _suppressed = coord._machine._evaluate_shot(
+        inputs, phase, reset_pending=False
+    )
     if fire is not None:
         coord._fire_shot(strategy, fire)
 
@@ -1732,6 +1735,20 @@ async def test_composed_shot_blocked_by_volume_cap_never_exceeds(
     mock_hass.services.async_call.assert_not_called()
 
 
+def _suppressed_verdict(reason: str | None) -> SteeringTickVerdict:
+    """A no-transition P1 verdict that fires nothing, carrying only a reason."""
+    return SteeringTickVerdict(
+        phase="P1 - Ramp Up",
+        canonical="p1",
+        phase_changed=False,
+        transition_message=None,
+        reset_composer=False,
+        fire=None,
+        volume_change_note=None,
+        suppressed_by=reason,
+    )
+
+
 def test_shot_composition_payload_capability_and_band(
     vwc_coordinator, mock_hass, mock_growspace
 ) -> None:
@@ -1847,3 +1864,19 @@ async def test_no_sensor_configured_discards_the_infiltration_measurement(
         await vwc_coordinator._update_loop(tick_two)
 
     assert vwc_coordinator.shot_composition_payload()["infiltration"] == "unknown"
+    assert payload["suppressed_by"] is None  # no tick applied yet
+
+
+def test_shot_composition_payload_surfaces_suppression_reason(
+    vwc_coordinator, mock_growspace
+) -> None:
+    """Applying a verdict publishes its suppression reason, and clears it again."""
+    strategy = mock_growspace.irrigation_strategy
+
+    vwc_coordinator._apply_verdict(
+        _suppressed_verdict(SUPPRESSED_BY_COOLDOWN), strategy
+    )
+    assert vwc_coordinator.shot_composition_payload()["suppressed_by"] == "cooldown"
+
+    vwc_coordinator._apply_verdict(_suppressed_verdict(None), strategy)
+    assert vwc_coordinator.shot_composition_payload()["suppressed_by"] is None

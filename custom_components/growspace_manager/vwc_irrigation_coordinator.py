@@ -89,6 +89,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # We track if we have logged a "sensor missing" warning recently to avoid spam
         self._sensor_warning_logged = False
 
+        # Why the last applied verdict withheld a shot, surfaced in the
+        # shot-composition payload (ADR-0031). Diagnostic only — nothing in the
+        # irrigation path reads it.
+        self._last_suppressed_by: str | None = None
+
     @override
     async def async_setup(self) -> None:
         """Set up the coordinator and start the update loop."""
@@ -220,6 +225,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         composes), logbook events, and the pump cycle.
         """
         config = self.growspace.irrigation_config
+        self._last_suppressed_by = verdict.suppressed_by
 
         if verdict.phase_changed:
             if verdict.canonical is not None:
@@ -400,6 +406,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         band, and a pore-EC reading are all present) plus the configured band,
         so the card can explain modulation even before the first shot fires.
         ``last_shot`` is None until a P2/P1 shot has fired this session.
+
+        ``suppressed_by`` names why the last steering tick withheld a shot (one
+        of the ``SUPPRESSED_BY_*`` reasons), so a growspace that isn't watering
+        is explainable without debug logging; None when the last tick fired or
+        never reached the shot decision.
         """
         growspace = self.growspace
         strategy = growspace.irrigation_strategy
@@ -415,6 +426,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "dynamic_shot_enabled": strategy.dynamic_shot_enabled,
             "infiltration": self._infiltration.state.value,
             "last_shot": asdict(composition) if composition is not None else None,
+            "suppressed_by": self._last_suppressed_by,
         }
 
     def _resolve_feed_target(
