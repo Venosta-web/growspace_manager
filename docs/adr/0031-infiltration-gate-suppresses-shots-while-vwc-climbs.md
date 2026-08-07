@@ -38,13 +38,25 @@ InfiltrationMonitor
 
 2. **A sibling of `_peak_settling`, not a repurpose.** The tracker's flag keeps its current meaning and its current role in dryback bounding. The monitor is a separate stateful controller in the [[ShotComposer]] / [[Steering Phase Machine]] mould — plain values in, no `hass`, no coordinator, owns its own `reset()` rule — so `tests/domain/test_infiltration.py` is zero-mock like its siblings.
 
+   **`reset()` clears the sample buffer on sensor loss only — never at midnight.** Infiltration is a physical process spanning minutes; clearing the buffer at 00:00 would discard a live in-flight measurement and open a one-tick blind spot for no reason. The triggers are: `_get_sensor_value` returning `None` (sensor unavailable), and `mark_no_sensor` (no sensor configured). The monitor is deliberately **not** added to `_reset_extra_daily_state` alongside the machine and composer, whose daily resets exist for daily state (the ramp-up target flag, the feedback factors) that infiltration has no equivalent of.
+
 3. **Both phases are gated.** The gate is a *floor* under whatever interval the grower configured: a no-op when `p1/p2_shot_interval_minutes` already exceeds infiltration time, biting only on the misconfiguration that produces the bug.
 
 4. **Fail open.** `UNKNOWN` never blocks. Because `_evaluate_shot` checks the configured cooldown *first* and returns early, the gate is **strictly additive** — it can only ever delay a shot that fires today, never permit one today's code blocks. On a dead or missing signal the behaviour is exactly today's.
 
-5. **A stall backstop derived from the grower's own setting.** The gate may hold a shot for at most `3 ×` the active phase's `shot_interval_minutes`; past that it fires anyway and logs once. No new configuration field, self-scaling per growspace and per phase. The log line ("fired despite infiltration") is itself the diagnostic for a leaking valve or a drifting probe.
+5. **A stall backstop anchored on `last_shot`, derived from the grower's own setting.** The backstop must not introduce a second timestamp: `InfiltrationMonitor` does not know when the cooldown expired, and `_evaluate_shot` returns early on cooldown before the gate is consulted, so nothing observes "the moment the gate became the binding constraint." The anchor is the one already in `SteeringTickInputs` — `last_shot`, i.e. `_last_cycle_timestamp`, set only on a **confirmed** switch-on. The rule is therefore pure and computed inline in `_evaluate_shot`:
 
-6. **A suppressed shot is explainable.** `SteeringTickVerdict` gains a `suppressed_by` reason — which also retrofits the currently-silent `cooldown` / `no_pump` / `zero_volume` blocks — surfaced in `shot_composition_payload()` for the card and written to the logbook **edge-triggered** (once when suppression begins, once when it releases), following the `_sensor_warning_logged` latch precedent rather than firing every minute.
+   ```
+   elapsed = (now - last_shot).total_seconds() / 60.0
+   if state is INFILTRATING and elapsed <= 3 * interval_minutes * effective_factor:
+       suppress
+   ```
+
+   This adds no state, composes with the [[Interval Feedback Scale Factor]] rather than fighting it (a lengthened cooldown lengthens the backstop proportionally), and self-scales per growspace and per phase — no new configuration field. When `last_shot is None` (fresh start, no confirmed cycle yet) the backstop has no anchor and the gate does not suppress; the monitor is typically `UNKNOWN` at that point anyway, so both paths agree on fail-open. On trip, the shot fires and one log line records it — "fired despite infiltration" is itself the diagnostic for a leaking valve or a drifting probe.
+
+6. **A suppressed shot is explainable.** `SteeringTickVerdict` gains a `suppressed_by` reason, surfaced in `shot_composition_payload()` for the card and written to the logbook **edge-triggered** (once when suppression begins, once when it releases), following the `_sensor_warning_logged` latch precedent rather than firing every minute.
+
+   This is a wider change than one field: `_evaluate_shot` currently signals every block as a bare `(None, None)` tuple, so retrofitting the existing `cooldown` / `no_pump` / `zero_volume` reasons widens its return signature, and both of its call sites in `tick()` plus the `_volume_mode_base_duration` path (which already carries a note) must thread the reason through to `_finish`. The retrofit is deliberate — adding a fourth silent block to a subsystem that promises explainability would be the wrong trade — but it should be scoped as such, not as a one-line addition.
 
 Retiming `observe()`'s `moisture_after` to the monitor's `SETTLED` signal is **deliberately out of scope**, filed as a follow-up with its own amendment to ADR-0008 and ADR-0014: it changes measured feedback behaviour for every existing grower and has no fail-open guarantee to hide behind. With the gate in place the mistraining is second-order — stacking is already prevented.
 
