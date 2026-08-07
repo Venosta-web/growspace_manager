@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
 
-from homeassistant.components.ai_task import async_generate_data
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import now as ha_now, utcnow
@@ -494,6 +493,8 @@ class VisionCheckupScheduler:
         Returns:
             VisionCheckupResult or None if skipped (no cameras, AI error, etc.).
         """
+        from homeassistant.components import ai_task  # noqa: PLC0415
+
         growspace = self.coordinator.growspaces.get(growspace_id)
         if not growspace:
             _LOGGER.warning("Growspace %s not found for vision checkup", growspace_id)
@@ -568,7 +569,7 @@ class VisionCheckupScheduler:
         )
 
         try:
-            task_result = await async_generate_data(
+            task_result = await ai_task.async_generate_data(
                 self.hass,
                 task_name="growspace_vision_checkup",
                 entity_id=entity_id,

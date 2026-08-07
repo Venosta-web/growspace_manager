@@ -21,7 +21,6 @@ from custom_components.growspace_manager.schemas import (
     ASK_GROW_ADVICE_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
 )
-from homeassistant.components import conversation
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
@@ -521,6 +520,8 @@ class GrowAssistant:
         self, full_prompt: str, agent_id: str, max_length: int | None, growspace_id: str
     ) -> str:
         """Execute the conversation and process the response."""
+        from homeassistant.components import conversation  # noqa: PLC0415
+
         if not agent_id:
             # Should be caught above, but double check
             raise ServiceValidationError(
@@ -591,6 +592,8 @@ async def handle_analyze_all_growspaces(
 
     This service scans all active growspaces and provides prioritized recommendations.
     """
+    from homeassistant.components import conversation  # noqa: PLC0415
+
     assistant = GrowAssistant(hass, coordinator, strain_library)
     ai_settings = assistant.get_ai_settings()
     agent_id = None
@@ -742,6 +745,8 @@ async def handle_strain_recommendation(
 
     This service analyzes the strain library and suggests strains for the next grow.
     """
+    from homeassistant.components import conversation  # noqa: PLC0415
+
     assistant = GrowAssistant(hass, coordinator, strain_library)
     ai_settings = assistant.get_ai_settings()
     agent_id = None

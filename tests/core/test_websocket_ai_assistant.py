@@ -60,7 +60,7 @@ async def test_start_conversation_returns_conversation_id(
     fake_result = _make_converse_result("Here is my advice.", conv_id="conv-123")
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=fake_result),
     ) as mock_converse:
         msg = {
@@ -96,7 +96,7 @@ async def test_start_conversation_extracts_action_block(
     fake_result = _make_converse_result(speech, conv_id="conv-xyz")
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=fake_result),
     ):
         msg = {
@@ -126,7 +126,7 @@ async def test_start_conversation_malformed_action_block_is_plain_text(
     fake_result = _make_converse_result(speech)
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=fake_result),
     ):
         msg = {
@@ -181,7 +181,7 @@ async def test_start_conversation_valid_camera_entity_accepted(
     hass.states.get = MagicMock(return_value=cam_state)
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=fake_result),
     ):
         msg = {
@@ -212,7 +212,7 @@ async def test_start_conversation_valid_image_entity_accepted(
     hass.states.get = MagicMock(return_value=img_state)
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=fake_result),
     ):
         msg = {
@@ -243,7 +243,7 @@ async def test_send_message_passes_conversation_id(
     fake_result = _make_converse_result("Follow-up answer.", conv_id="conv-existing")
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=fake_result),
     ) as mock_converse:
         msg = {
@@ -278,7 +278,7 @@ async def test_send_message_extracts_action_block(
     fake_result = _make_converse_result(speech, conv_id="conv-42")
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=fake_result),
     ):
         msg = {
@@ -326,7 +326,7 @@ async def test_send_message_empty_response_returns_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=None),
     ):
         msg = {
@@ -355,7 +355,7 @@ async def test_start_conversation_service_validation_error_returns_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(side_effect=ServiceValidationError("bad request")),
     ):
         msg = {
@@ -378,7 +378,7 @@ async def test_start_conversation_generic_exception_returns_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(side_effect=RuntimeError("boom")),
     ):
         msg = {
@@ -401,7 +401,7 @@ async def test_start_conversation_empty_response_returns_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=None),
     ):
         msg = {
@@ -429,7 +429,7 @@ async def test_send_message_service_validation_error_returns_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(side_effect=ServiceValidationError("invalid")),
     ):
         msg = {
@@ -453,7 +453,7 @@ async def test_send_message_generic_exception_returns_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(side_effect=ValueError("unexpected")),
     ):
         msg = {
@@ -592,7 +592,7 @@ async def test_send_message_uses_configured_agent_id(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            "homeassistant.components.conversation.async_converse",
             new=AsyncMock(return_value=fake_result),
         ) as mock_converse,
     ):
@@ -633,7 +633,7 @@ async def test_start_conversation_uses_configured_agent_when_no_agent_id_in_mess
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            "homeassistant.components.conversation.async_converse",
             new=AsyncMock(return_value=fake_result),
         ) as mock_converse,
     ):
@@ -669,7 +669,7 @@ async def test_start_conversation_explicit_agent_id_takes_precedence(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            "homeassistant.components.conversation.async_converse",
             new=AsyncMock(return_value=fake_result),
         ) as mock_converse,
     ):
@@ -951,7 +951,7 @@ async def test_start_conversation_injects_context_when_coordinator_available(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            "homeassistant.components.conversation.async_converse",
             new=AsyncMock(return_value=fake_result),
         ) as mock_converse,
     ):
@@ -984,7 +984,7 @@ async def test_send_message_injects_context_when_coordinator_available(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+            "homeassistant.components.conversation.async_converse",
             new=AsyncMock(return_value=fake_result),
         ) as mock_converse,
     ):
@@ -1092,7 +1092,7 @@ async def test_start_conversation_rate_limited_service_validation_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(side_effect=ServiceValidationError("Rate limit exceeded: 429")),
     ):
         msg = {
@@ -1115,7 +1115,7 @@ async def test_start_conversation_rate_limited_generic_exception(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(side_effect=RuntimeError("Error 429 - Too Many Requests")),
     ):
         msg = {
@@ -1146,7 +1146,7 @@ async def test_start_conversation_rate_limited_result(
     fake_result.response.error_code = "RESOURCE_EXHAUSTED"
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=fake_result),
     ):
         msg = {
@@ -1169,7 +1169,7 @@ async def test_send_message_rate_limited_service_validation_error(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(side_effect=ServiceValidationError("API call rejected (429)")),
     ):
         msg = {
@@ -1193,7 +1193,7 @@ async def test_send_message_rate_limited_generic_exception(
     )
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(side_effect=ValueError("429 Too Many Requests")),
     ):
         msg = {
@@ -1223,7 +1223,7 @@ async def test_send_message_rate_limited_result(
     fake_result.response.error_code = "RESOURCE_EXHAUSTED"
 
     with patch(
-        "custom_components.growspace_manager.websocket.ai_assistant.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new=AsyncMock(return_value=fake_result),
     ):
         msg = {

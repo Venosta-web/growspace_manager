@@ -50,7 +50,7 @@ def _make_converse_result(speech: str | None, error_code: str | None = None) -> 
 async def test_async_rewrite_success(rewriter: AINotificationRewriter) -> None:
     """Test successful AI rewrite returns rewritten message."""
     with patch(
-        "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new_callable=AsyncMock,
         return_value=_make_converse_result("Ahoy! Test Message Rewrite"),
     ):
@@ -77,7 +77,7 @@ async def test_async_rewrite_rate_limit_sets_cooldown(
     mock_result = _make_converse_result("Too Many Requests", error_code="rate_limit")
 
     with patch(
-        "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new_callable=AsyncMock,
         return_value=mock_result,
     ):
@@ -95,7 +95,7 @@ async def test_async_rewrite_non_rate_limit_error_no_cooldown(
 
     with (
         patch(
-            "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+            "homeassistant.components.conversation.async_converse",
             new_callable=AsyncMock,
             return_value=mock_result,
         ),
@@ -120,7 +120,7 @@ async def test_async_rewrite_empty_speech_returns_original(
     mock_result.response.speech = {}
 
     with patch(
-        "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new_callable=AsyncMock,
         return_value=mock_result,
     ):
@@ -134,7 +134,7 @@ async def test_async_rewrite_none_result_returns_original(
 ) -> None:
     """Test None response returns original message."""
     with patch(
-        "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new_callable=AsyncMock,
         return_value=None,
     ):
@@ -148,7 +148,7 @@ async def test_async_rewrite_exception_returns_original(
 ) -> None:
     """Test exception during rewrite returns original message."""
     with patch(
-        "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new_callable=AsyncMock,
         side_effect=ValueError("AI Error"),
     ):
@@ -174,7 +174,7 @@ async def test_async_rewrite_personalities(
     ai_settings = {**AI_SETTINGS_BASE, CONF_NOTIFICATION_PERSONALITY: personality}
 
     with patch(
-        "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new_callable=AsyncMock,
         return_value=_make_converse_result(f"Rewritten as {personality}"),
     ) as mock_converse:
@@ -191,7 +191,7 @@ async def test_async_rewrite_sensor_formatting(
     sensor_states = {"temp": 25, "humidity": 60, "fan": True, "light": None}
 
     with patch(
-        "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new_callable=AsyncMock,
         return_value=_make_converse_result("Rewritten"),
     ) as mock_converse:
@@ -212,7 +212,7 @@ async def test_async_rewrite_truncation_close(
     long_response = "This is a long response"  # 23 chars; 10 < 23 < 60
 
     with patch(
-        "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new_callable=AsyncMock,
         return_value=_make_converse_result(long_response),
     ):
@@ -229,7 +229,7 @@ async def test_async_rewrite_truncation_too_long(
     very_long_response = "A" * 70  # 70 >= 10 + 50
 
     with patch(
-        "custom_components.growspace_manager.notification_rewriter.conversation.async_converse",
+        "homeassistant.components.conversation.async_converse",
         new_callable=AsyncMock,
         return_value=_make_converse_result(very_long_response),
     ):

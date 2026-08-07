@@ -205,7 +205,7 @@ async def test_run_vision_analysis_calls_ai_task(mock_hass, mock_coordinator):
             return_value=([], None, []),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             return_value=mock_result,
         ) as mock_gen,
@@ -308,7 +308,7 @@ async def test_run_vision_analysis_stores_result_in_history(
             return_value=([], None, []),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             return_value=mock_result,
         ),
@@ -363,7 +363,7 @@ async def test_run_vision_analysis_ai_failure_raises_error(mock_hass, mock_coord
             return_value=([], None, []),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             side_effect=Exception("AI service unavailable"),
         ),
@@ -491,7 +491,7 @@ async def test_run_vision_analysis_context_exception(mock_hass, mock_coordinator
             return_value=([], None, []),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             return_value=mock_result,
         ),
@@ -1013,7 +1013,7 @@ async def test_run_vision_analysis_uses_processed_image_attachments(
             return_value=([{"media_content_id": processed_uri}], 55.0, [fake_temp]),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ) as mock_gen,
@@ -1055,7 +1055,7 @@ async def test_run_vision_analysis_falls_back_to_raw_camera_uris_when_processing
             return_value=([], None, []),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ) as mock_gen,
@@ -1102,7 +1102,7 @@ async def test_run_vision_analysis_snapshot_paths_contain_public_uris(
             return_value=(b"\xff\xd8\xff\xe0processed", 55.0),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ),
@@ -1160,7 +1160,7 @@ async def test_run_vision_analysis_deletes_temp_files_after_success(
             ),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ),
@@ -1198,7 +1198,7 @@ async def test_run_vision_analysis_deletes_temp_files_after_ai_failure(
             ),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             side_effect=Exception("AI service down"),
         ),
@@ -1328,7 +1328,7 @@ async def test_run_vision_analysis_saves_debug_images(
             ),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ),
@@ -1381,7 +1381,7 @@ async def test_run_vision_analysis_debug_images_exception(
             ),
         ),
         patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.async_generate_data",
+            "homeassistant.components.ai_task.async_generate_data",
             new_callable=AsyncMock,
             return_value=mock_ai_result,
         ),
