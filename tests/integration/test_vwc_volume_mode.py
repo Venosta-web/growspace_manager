@@ -267,7 +267,12 @@ async def test_zero_plants_reports_idle_phase_no_pump(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        state = MagicMock()
+        state.state = "40.0"
+        # The Infiltration Monitor orders sensor timestamps; a bare MagicMock
+        # attribute is not orderable, and an absent one is simply not a sample.
+        state.last_updated = None
+        mock_hass.states.get.return_value = state
         await coord._update_loop(now)
 
     assert coord._machine.current_phase == "Idle (no plants)"

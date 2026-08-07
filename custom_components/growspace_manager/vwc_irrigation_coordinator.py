@@ -31,6 +31,7 @@ from .domain.ec_state import (
     resolve_feed_stage_week,
     runoff_halt,
 )
+from .domain.infiltration import InfiltrationMonitor
 from .domain.shot_composer import FeedbackTuning, ShotComposer
 from .domain.steering_phase import (
     ShotRequest,
@@ -79,6 +80,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # reset() triggers (lights-on / P1→P2); it never reaches back into
         # the coordinator.
         self._composer = ShotComposer()
+        # Measures whether the substrate is still absorbing the last shot
+        # (domain/infiltration.py, ADR-0031). Measurement only for now: nothing
+        # gates on it, and it samples on distinct *sensor* updates rather than
+        # on loop ticks, so it needs the freshness-aware read below.
+        self._infiltration = InfiltrationMonitor()
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
         self._sensor_warning_logged = False
@@ -138,6 +144,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                         self._growspace_id,
                     )
                     self._sensor_warning_logged = True
+                self._infiltration.reset()
                 self._apply_verdict(self._machine.mark_no_sensor(), strategy)
                 return
 
@@ -152,7 +159,13 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                     sensor_entity,
                     self._growspace_id,
                 )
+                self._infiltration.reset()
                 return
+
+            # Feed the Infiltration Monitor before the EC halt check: the
+            # substrate keeps absorbing whether or not steering is halted, and a
+            # gap in the samples would be indistinguishable from a dropout.
+            self._record_infiltration(sensor_entity, current_vwc)
 
             if self._is_halted_by_runoff_ec(growspace):
                 return
@@ -315,6 +328,25 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             1 for p in plants if str(getattr(p, "stage", "")) not in _NON_LIVE_STAGES
         )
 
+    def _record_infiltration(self, sensor_entity: str, current_vwc: float) -> None:
+        """Offer the reading to the Infiltration Monitor with the sensor's own time.
+
+        The existing reading path is freshness-blind — ``_get_sensor_value``
+        discards ``last_updated`` and the substrate tracker stamps readings with
+        the loop's ``now()``, timestamps that are load-bearing for dryback
+        bounding. Rather than retrofit those readers, this reads the state again
+        purely for its timestamp; the monitor dedupes the repeats itself. No
+        ``await`` separates that read from the one that produced ``current_vwc``,
+        so the two cannot straddle a state change. A state carrying no update
+        time yields no distinct-update signal, so it is not a measurement and is
+        skipped.
+        """
+        state = self.hass.states.get(sensor_entity)
+        last_updated = state.last_updated if state else None
+        if last_updated is None:
+            return
+        self._infiltration.record(current_vwc, last_updated)
+
     def _feed_substrate_reading(self, current_vwc: float, growspace: Growspace) -> None:
         """Feed the current VWC reading to the growspace's SubstrateTracker.
 
@@ -381,6 +413,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "current_vwc_factor": round(self._composer.size_factor, 3),
             "current_interval_factor": round(self._composer.interval_factor, 3),
             "dynamic_shot_enabled": strategy.dynamic_shot_enabled,
+            "infiltration": self._infiltration.state.value,
             "last_shot": asdict(composition) if composition is not None else None,
         }
 
