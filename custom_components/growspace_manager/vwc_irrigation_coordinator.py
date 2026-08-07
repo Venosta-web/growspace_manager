@@ -251,6 +251,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         if verdict.volume_change_note and config.log_to_logbook:
             self._fire_logbook_event(verdict.volume_change_note, category="irrigation")
 
+        # Edge-triggered by the machine's own latch, so a hold sustained across
+        # many ticks writes one entry and one release (ADR-0031).
+        if verdict.infiltration_note and config.log_to_logbook:
+            self._fire_logbook_event(verdict.infiltration_note, category="irrigation")
+
         if verdict.fire is not None:
             self._fire_shot(strategy, verdict.fire)
 

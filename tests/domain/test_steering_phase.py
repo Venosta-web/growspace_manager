@@ -9,6 +9,7 @@ through the full VWC-coordinator fixture in
 ``tests/integration/test_vwc_volume_mode.py``.
 """
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import pytest
@@ -16,6 +17,8 @@ import pytest
 from custom_components.growspace_manager.const import ShotSizingMode
 from custom_components.growspace_manager.domain.infiltration import InfiltrationState
 from custom_components.growspace_manager.domain.steering_phase import (
+    INFILTRATION_HELD_MESSAGE,
+    INFILTRATION_RELEASED_MESSAGE,
     PHASE_DISABLED,
     PHASE_IDLE,
     PHASE_P0,
@@ -28,7 +31,9 @@ from custom_components.growspace_manager.domain.steering_phase import (
     SUPPRESSED_BY_ZERO_VOLUME,
     SteeringPhaseMachine,
     SteeringTickInputs,
+    SteeringTickVerdict,
     determine_time_period,
+    infiltration_gate_note,
     phase_boundary_times,
     resolve_day_hours,
     shot_params_for_phase,
@@ -628,6 +633,145 @@ def test_the_p1_to_p2_transition_tick_backstops_on_the_post_reset_factor() -> No
         )
     )
     assert verdict.fire is not None
+
+
+# ── the Infiltration Gate's logbook edges (ADR-0031 decision 6) ───────────────
+
+
+def _held_tick(machine: SteeringPhaseMachine, minute: int = 0) -> str | None:
+    """Tick a P1 growspace whose substrate is still infiltrating; return the note."""
+    return machine.tick(
+        _inputs(
+            _at(9, minute),
+            vwc=40.0,
+            last_shot=_at(8, 30),
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    ).infiltration_note
+
+
+def _settled_tick(machine: SteeringPhaseMachine, minute: int = 0) -> str | None:
+    """Tick the same growspace with the substrate settled; return the note."""
+    return machine.tick(
+        _inputs(
+            _at(9, minute),
+            vwc=40.0,
+            last_shot=_at(8, 30),
+            infiltration=InfiltrationState.SETTLED,
+        )
+    ).infiltration_note
+
+
+@pytest.mark.parametrize(
+    ("was_held", "now_held", "expected"),
+    [
+        pytest.param(False, True, INFILTRATION_HELD_MESSAGE, id="hold_begins"),
+        pytest.param(True, False, INFILTRATION_RELEASED_MESSAGE, id="hold_releases"),
+        pytest.param(True, True, None, id="still_held"),
+        pytest.param(False, False, None, id="still_open"),
+    ],
+)
+def test_the_gate_note_is_produced_on_the_edges_only(
+    was_held: bool, now_held: bool, expected: str | None
+) -> None:
+    """The pure half of the latch: text on the transitions, silence in between."""
+    assert infiltration_gate_note(was_held, now_held) == expected
+
+
+def test_a_sustained_hold_logs_once() -> None:
+    """The loop ticks every minute; a 15 min hold is one logbook entry, not 15."""
+    machine = SteeringPhaseMachine("gs1")
+    notes = [_held_tick(machine, minute) for minute in range(15)]
+    assert notes[0] == INFILTRATION_HELD_MESSAGE
+    assert all(note is None for note in notes[1:])
+
+
+def test_the_stall_backstop_releases_the_hold() -> None:
+    """The backstop firing a shot ends the hold, so it logs a release like any other."""
+    machine = SteeringPhaseMachine("gs1")
+    assert _held_tick(machine) == INFILTRATION_HELD_MESSAGE
+    # 8:30 + 3 x 15 min: the first tick past the backstop fires despite the reading
+    assert _held_tick(machine, 16) == INFILTRATION_RELEASED_MESSAGE
+
+
+def test_the_release_logs_once_and_the_latch_re_arms() -> None:
+    """A later hold must log again, so the release has to disarm the latch."""
+    machine = SteeringPhaseMachine("gs1")
+    assert _held_tick(machine, 0) == INFILTRATION_HELD_MESSAGE
+    assert _settled_tick(machine, 1) == INFILTRATION_RELEASED_MESSAGE
+    assert _settled_tick(machine, 2) is None
+    assert _held_tick(machine, 3) == INFILTRATION_HELD_MESSAGE
+
+
+def test_a_growspace_that_never_holds_never_logs() -> None:
+    """Ordinary firing ticks stay silent — no release entry without a hold."""
+    machine = SteeringPhaseMachine("gs1")
+    assert all(_settled_tick(machine, minute) is None for minute in range(3))
+
+
+def test_a_cooling_down_tick_releases_the_hold() -> None:
+    """The shot fired that ended the hold, so the next tick's cooldown is a release."""
+    machine = SteeringPhaseMachine("gs1")
+    assert _held_tick(machine) == INFILTRATION_HELD_MESSAGE
+    verdict = machine.tick(
+        _inputs(
+            _at(9, 10),
+            vwc=40.0,
+            last_shot=_at(9, 5),  # inside the 15 min cooldown
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert verdict.suppressed_by == SUPPRESSED_BY_COOLDOWN
+    assert verdict.infiltration_note == INFILTRATION_RELEASED_MESSAGE
+
+
+def test_satisfied_demand_is_not_a_release() -> None:
+    """VWC crossing the P2 trigger skips the gate entirely; the hold still stands."""
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=56.0))  # reaches target, enters P2
+
+    def _p2_tick(minute: int, vwc: float) -> str | None:
+        return machine.tick(
+            _inputs(
+                _at(10, minute),
+                vwc=vwc,
+                last_shot=_at(9, 30),
+                infiltration=InfiltrationState.INFILTRATING,
+            )
+        ).infiltration_note
+
+    assert _p2_tick(0, 50.0) == INFILTRATION_HELD_MESSAGE  # below the 53% trigger
+    assert _p2_tick(1, 56.0) is None  # demand vanished, not the gate releasing
+    assert _p2_tick(2, 50.0) is None  # still the same hold
+
+
+@pytest.mark.parametrize(
+    "closing_tick",
+    [
+        pytest.param(
+            lambda machine: machine.tick(_inputs(_at(19), vwc=40.0)),
+            id="window_closed",
+        ),
+        pytest.param(lambda machine: machine.mark_no_sensor(), id="no_sensor"),
+    ],
+)
+def test_leaving_the_shot_decision_releases_the_hold(
+    closing_tick: Callable[[SteeringPhaseMachine], SteeringTickVerdict],
+) -> None:
+    """A hold at window close must not stay latched into the next day."""
+    machine = SteeringPhaseMachine("gs1")
+    assert _held_tick(machine) == INFILTRATION_HELD_MESSAGE
+    assert closing_tick(machine).infiltration_note == INFILTRATION_RELEASED_MESSAGE
+    assert _held_tick(machine, 5) == INFILTRATION_HELD_MESSAGE
+
+
+def test_the_daily_reset_leaves_the_latch_alone() -> None:
+    """Infiltration is physical, not daily state (ADR-0031): midnight may not re-arm it."""
+    machine = SteeringPhaseMachine("gs1")
+    assert _held_tick(machine) == INFILTRATION_HELD_MESSAGE
+    machine.reset()
+    assert _held_tick(machine, 1) is None
+    assert _settled_tick(machine, 2) == INFILTRATION_RELEASED_MESSAGE
 
 
 def test_volume_change_note_is_not_conflated_with_the_reason() -> None:

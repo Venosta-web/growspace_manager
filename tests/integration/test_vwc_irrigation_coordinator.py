@@ -6,10 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
 from custom_components.growspace_manager.domain.ec_state import (
     ec_modulation_factor_for_reading,
 )
 from custom_components.growspace_manager.domain.steering_phase import (
+    INFILTRATION_HELD_MESSAGE,
+    INFILTRATION_RELEASED_MESSAGE,
     SUPPRESSED_BY_COOLDOWN,
     SteeringTickVerdict,
 )
@@ -1908,3 +1911,65 @@ def test_shot_composition_payload_surfaces_suppression_reason(
 
     vwc_coordinator._apply_verdict(_suppressed_verdict(None), strategy)
     assert vwc_coordinator.shot_composition_payload()["suppressed_by"] is None
+
+
+def _logbook_messages(mock_hass: MagicMock) -> list[str]:
+    """Return the messages of every growspace logbook event fired so far."""
+    return [
+        call.args[1]["message"]
+        for call in mock_hass.bus.async_fire.call_args_list
+        if call.args[0] == EVENT_GROWSPACE_LOG_ENTRY
+    ]
+
+
+async def _drive_hold_and_release(
+    coordinator: VWCIrrigationCoordinator, mock_hass: MagicMock
+) -> None:
+    """Drive the real minute loop through a sustained hold and its release.
+
+    The first two ticks sit inside the 15 min cooldown and build the rising
+    measurement; the third clears the cooldown and is held by the gate (well
+    inside the 45 min backstop); the flat fourth settles the substrate and
+    releases it. Only that last tick fires a pump cycle.
+    """
+    mock_hass.bus = MagicMock()
+    coordinator._last_cycle_timestamp = datetime(
+        2023, 1, 1, 9, 25, 0, tzinfo=dt_util.UTC
+    ).isoformat()
+
+    for minute, vwc in ((30, "40.0"), (35, "44.0"), (40, "48.0"), (45, "40.0")):
+        tick = datetime(2023, 1, 1, 9, minute, 0, tzinfo=dt_util.UTC)
+        mock_hass.states.get.return_value = _state(vwc, last_updated=tick)
+        with patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=tick,
+        ):
+            await coordinator._update_loop(tick)
+    await await_pump_task()
+
+
+async def test_the_gate_logs_one_held_and_one_released_entry(
+    vwc_coordinator, mock_hass
+) -> None:
+    """A hold sustained across ticks is one logbook entry, and its release is one more."""
+    await _drive_hold_and_release(vwc_coordinator, mock_hass)
+
+    messages = _logbook_messages(mock_hass)
+    assert messages.count(INFILTRATION_HELD_MESSAGE) == 1
+    assert messages.count(INFILTRATION_RELEASED_MESSAGE) == 1
+    assert messages.index(INFILTRATION_HELD_MESSAGE) < messages.index(
+        INFILTRATION_RELEASED_MESSAGE
+    )
+
+
+async def test_the_gate_writes_no_logbook_entries_when_logging_is_off(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """Both edges respect log_to_logbook, like every other steering write."""
+    mock_growspace.irrigation_config.log_to_logbook = False
+
+    await _drive_hold_and_release(vwc_coordinator, mock_hass)
+
+    messages = _logbook_messages(mock_hass)
+    assert INFILTRATION_HELD_MESSAGE not in messages
+    assert INFILTRATION_RELEASED_MESSAGE not in messages
