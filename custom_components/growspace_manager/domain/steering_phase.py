@@ -28,6 +28,7 @@ import logging
 from typing import Any
 
 from custom_components.growspace_manager.const import ShotSizingMode
+from custom_components.growspace_manager.domain.infiltration import InfiltrationState
 from custom_components.growspace_manager.models import IrrigationStrategy
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,11 +47,19 @@ PHASE_IDLE = "Idle (no plants)"
 # Reasons a WINDOW tick decided against firing a shot, carried on the verdict as
 # ``suppressed_by`` and surfaced in the shot-composition payload so a growspace
 # that isn't watering is explainable without enabling debug logging (ADR-0031).
-# The cooldown is evaluated first, so a tick that is both cooling down and
-# pump-less reports the cooldown.
+# Evaluated in this order, so the first that applies is the one reported: the
+# configured cooldown, then the [[Infiltration Gate]], then the missing pump,
+# then a zero-size Volume Mode shot.
 SUPPRESSED_BY_COOLDOWN = "cooldown"
+SUPPRESSED_BY_INFILTRATING = "infiltrating"
 SUPPRESSED_BY_NO_PUMP = "no_pump"
 SUPPRESSED_BY_ZERO_VOLUME = "zero_volume"
+
+# The Infiltration Gate's stall backstop: a shot fires despite an INFILTRATING
+# reading once this many configured (factor-scaled) intervals have passed since
+# the last confirmed one, so a persistently-rising signal — a leaking valve, a
+# drifting probe — cannot withhold irrigation all day (ADR-0031).
+INFILTRATION_BACKSTOP_INTERVALS = 3
 
 CANONICAL_PHASE: dict[str, str] = {
     PHASE_P0: "p1",
@@ -87,6 +96,10 @@ class ShotRequest:
 class SteeringTickInputs:
     """Plain-value inputs for one steering tick. No hass, no live objects.
 
+    ``infiltration`` is the [[Infiltration]] state measured by the
+    ``InfiltrationMonitor``, threaded in as a plain value; the machine takes no
+    dependency on the monitor itself.
+
     ``interval_factor`` is the [[Interval Feedback Scale Factor]] read from the
     composer *before* the tick; when the tick itself triggers the P1→P2 composer
     reset, the machine uses 1.0 (the post-reset value) for the cooldown check,
@@ -104,6 +117,7 @@ class SteeringTickInputs:
     live_plant_count: int
     last_shot: datetime | None
     interval_factor: float
+    infiltration: InfiltrationState
 
 
 @dataclass(frozen=True, slots=True)
@@ -408,10 +422,17 @@ class SteeringPhaseMachine:
         """Decide whether a shot may fire this tick and its base duration.
 
         Returns ``(request, volume_change_note, suppressed_by)``; ``request`` is
-        None when the cooldown blocks, no pump is configured, or Volume Mode
-        suspends (zero live plants / zero volume — ADR-0011), and
-        ``suppressed_by`` names which of those it was. The note and the reason
-        stay separate: a volume change can be worth logging on a tick that fires.
+        None when the cooldown blocks, the [[Infiltration Gate]] holds, no pump
+        is configured, or Volume Mode suspends (zero live plants / zero volume —
+        ADR-0011), and ``suppressed_by`` names which of those it was. The note
+        and the reason stay separate: a volume change can be worth logging on a
+        tick that fires.
+
+        The gate sits behind the cooldown and is therefore strictly additive: it
+        can only delay a shot the cooldown already permits, never release one it
+        blocks. It fails open — only ``INFILTRATING`` suppresses — and gives up
+        after ``INFILTRATION_BACKSTOP_INTERVALS`` intervals so a stuck signal
+        cannot withhold irrigation all day (ADR-0031).
         """
         seconds_duration, interval_minutes = shot_params_for_phase(
             inputs.strategy, phase
@@ -422,6 +443,14 @@ class SteeringPhaseMachine:
             elapsed = (inputs.now - inputs.last_shot).total_seconds() / 60.0
             if elapsed < interval_minutes * effective_factor:
                 return None, None, SUPPRESSED_BY_COOLDOWN
+            backstop_minutes = (
+                INFILTRATION_BACKSTOP_INTERVALS * interval_minutes * effective_factor
+            )
+            if (
+                inputs.infiltration is InfiltrationState.INFILTRATING
+                and elapsed <= backstop_minutes
+            ):
+                return None, None, SUPPRESSED_BY_INFILTRATING
 
         if not inputs.pump_configured:
             return None, None, SUPPRESSED_BY_NO_PUMP

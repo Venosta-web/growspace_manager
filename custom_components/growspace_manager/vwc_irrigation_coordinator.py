@@ -81,9 +81,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # the coordinator.
         self._composer = ShotComposer()
         # Measures whether the substrate is still absorbing the last shot
-        # (domain/infiltration.py, ADR-0031). Measurement only for now: nothing
-        # gates on it, and it samples on distinct *sensor* updates rather than
-        # on loop ticks, so it needs the freshness-aware read below.
+        # (domain/infiltration.py, ADR-0031). Its state threads into the tick
+        # inputs, where the [[Infiltration Gate]] withholds a shot that would
+        # otherwise compose against a still-climbing reading. It samples on
+        # distinct *sensor* updates rather than on loop ticks, so it needs the
+        # freshness-aware read below.
         self._infiltration = InfiltrationMonitor()
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
@@ -213,6 +215,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             live_plant_count=self._live_plant_count(),
             last_shot=self._last_shot_dt(),
             interval_factor=self._composer.interval_factor,
+            infiltration=self._infiltration.state,
         )
 
     def _apply_verdict(

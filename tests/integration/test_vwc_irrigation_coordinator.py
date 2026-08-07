@@ -1773,7 +1773,7 @@ async def test_infiltration_state_reaches_the_payload(
 
     Drives the real minute loop, so this covers the whole path: the
     freshness-aware read, the monitor, and the shot-composition payload the card
-    renders (ADR-0031, measurement only — no shot is gated on this yet).
+    renders (ADR-0031).
     """
     tick_one = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
     tick_two = datetime(2023, 1, 1, 9, 35, 0, tzinfo=dt_util.UTC)
@@ -1791,6 +1791,34 @@ async def test_infiltration_state_reaches_the_payload(
     # A plain str, not the StrEnum: this payload is serialized to the card over
     # the WebSocket and re-emitted as a crop-steering entity attribute.
     assert type(infiltration) is str
+
+
+async def test_a_rising_reading_withholds_the_shot_the_cooldown_would_allow(
+    vwc_coordinator, mock_hass
+) -> None:
+    """The measured state reaches the tick and gates the pump (ADR-0031).
+
+    Drives the real minute loop with two rising readings from distinct sensor
+    updates, with the configured cooldown already expired, so only the
+    Infiltration Gate can be what withholds the shot.
+    """
+    tick_one = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    tick_two = datetime(2023, 1, 1, 9, 35, 0, tzinfo=dt_util.UTC)
+    vwc_coordinator._last_cycle_timestamp = datetime(
+        2023, 1, 1, 9, 10, 0, tzinfo=dt_util.UTC
+    ).isoformat()  # 25 min: past the 15 min cooldown, inside the 45 min backstop
+
+    for tick, vwc in ((tick_one, "40.0"), (tick_two, "44.0")):
+        mock_hass.states.get.return_value = _state(vwc, last_updated=tick)
+        with patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=tick,
+        ):
+            await vwc_coordinator._update_loop(tick)
+
+    assert vwc_coordinator._machine.current_phase == "P1 - Ramp Up"
+    mock_hass.services.async_call.assert_not_called()
+    assert vwc_coordinator.shot_composition_payload()["suppressed_by"] == "infiltrating"
 
 
 async def test_midnight_reset_leaves_the_infiltration_measurement_intact(
