@@ -215,7 +215,7 @@ async def test_handle_remove_growspace_exception(
 
 @pytest.mark.asyncio
 @patch(
-    "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse",
+    "homeassistant.components.conversation.async_converse",
     new_callable=AsyncMock,
     create=True,
 )
@@ -321,7 +321,7 @@ async def test_handle_ask_grow_advice_growspace_not_found(
 
 @pytest.mark.asyncio
 @patch(
-    "custom_components.growspace_manager.services.ai_assistant.conversation.async_converse",
+    "homeassistant.components.conversation.async_converse",
     new_callable=AsyncMock,
     create=True,
 )

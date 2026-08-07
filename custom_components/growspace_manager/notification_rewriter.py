@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import logging
 from typing import Any, cast
 
-from homeassistant.components import conversation
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import intent
@@ -40,6 +39,12 @@ class AINotificationRewriter:
         if self._ai_cooldown_until and utcnow() < self._ai_cooldown_until:
             _LOGGER.debug("AI notification generation is on rate-limit cooldown")
             return original_message
+
+        # Imported here rather than at module scope: the conversation component pulls
+        # in the HA intent stack (hassil, home-assistant-intents) at import time, so a
+        # module-scope import makes every module that transitively reaches this file —
+        # including __init__ — fail to import when that stack is unavailable.
+        from homeassistant.components import conversation  # noqa: PLC0415
 
         try:
             personality = ai_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
