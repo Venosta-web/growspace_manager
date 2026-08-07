@@ -11,6 +11,8 @@ through the full VWC-coordinator fixture in
 
 from datetime import UTC, datetime
 
+import pytest
+
 from custom_components.growspace_manager.const import ShotSizingMode
 from custom_components.growspace_manager.domain.steering_phase import (
     PHASE_DISABLED,
@@ -19,6 +21,9 @@ from custom_components.growspace_manager.domain.steering_phase import (
     PHASE_P1,
     PHASE_P2,
     PHASE_P3,
+    SUPPRESSED_BY_COOLDOWN,
+    SUPPRESSED_BY_NO_PUMP,
+    SUPPRESSED_BY_ZERO_VOLUME,
     SteeringPhaseMachine,
     SteeringTickInputs,
     determine_time_period,
@@ -390,6 +395,102 @@ def test_no_volume_change_note_when_count_unchanged() -> None:
     machine.tick(_inputs(_at(9), vwc=40.0, strategy=strategy))
     second = machine.tick(_inputs(_at(9, 20), vwc=40.0, strategy=strategy))
     assert second.volume_change_note is None
+
+
+# ── suppression reasons (ADR-0031) ────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        pytest.param({"last_shot": _at(8, 50)}, SUPPRESSED_BY_COOLDOWN, id="cooldown"),
+        pytest.param({"pump_configured": False}, SUPPRESSED_BY_NO_PUMP, id="no_pump"),
+        pytest.param(
+            {"strategy": _volume_strategy(p1_shot_volume_percent=0.0)},
+            SUPPRESSED_BY_ZERO_VOLUME,
+            id="zero_volume",
+        ),
+    ],
+)
+def test_suppressed_shot_names_its_reason(overrides: dict, expected: str) -> None:
+    """Each existing block cause reports its own distinct reason."""
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(_inputs(_at(9), vwc=40.0, **overrides))
+    assert verdict.fire is None
+    assert verdict.suppressed_by == expected
+
+
+def test_fired_shot_carries_no_suppression_reason() -> None:
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(_inputs(_at(9), vwc=40.0))
+    assert verdict.fire is not None
+    assert verdict.suppressed_by is None
+
+
+def test_cooldown_takes_precedence_over_missing_pump() -> None:
+    """The cooldown is checked first, so a cooling-down pumpless tick says cooldown."""
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(
+        _inputs(_at(9), vwc=40.0, last_shot=_at(8, 50), pump_configured=False)
+    )
+    assert verdict.suppressed_by == SUPPRESSED_BY_COOLDOWN
+
+
+def test_p2_above_trigger_is_not_a_suppressed_shot() -> None:
+    """A phase that never evaluates a shot reports no reason, not a stale one."""
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=40.0, pump_configured=False))
+    machine.tick(_inputs(_at(9, 20), vwc=56.0))  # reaches target, enters P2
+    verdict = machine.tick(_inputs(_at(9, 40), vwc=54.0))  # above the P2 trigger
+    assert verdict.phase == PHASE_P2
+    assert verdict.fire is None
+    assert verdict.suppressed_by is None
+
+
+def test_reaching_target_is_not_a_suppressed_shot() -> None:
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(_inputs(_at(9), vwc=56.0))
+    assert verdict.phase == PHASE_P1
+    assert verdict.suppressed_by is None
+
+
+def test_non_window_phases_carry_no_suppression_reason() -> None:
+    machine = SteeringPhaseMachine("gs1")
+    assert machine.tick(_inputs(_at(5), vwc=40.0)).suppressed_by is None  # P3
+    assert machine.tick(_inputs(_at(6, 30), vwc=40.0)).suppressed_by is None  # P0
+    idle = machine.tick(
+        _inputs(_at(9), vwc=40.0, strategy=_volume_strategy(), live_plant_count=0)
+    )
+    assert idle.phase == PHASE_IDLE
+    assert idle.suppressed_by is None
+    assert machine.mark_no_sensor().suppressed_by is None
+
+
+def test_volume_change_note_is_not_conflated_with_the_reason() -> None:
+    """A firing tick can still carry a volume-change note; the two are separate."""
+    machine = SteeringPhaseMachine("gs1")
+    strategy = _volume_strategy()
+    machine.tick(_inputs(_at(9), vwc=40.0, strategy=strategy))
+    verdict = machine.tick(
+        _inputs(_at(9, 20), vwc=40.0, strategy=strategy, live_plant_count=2)
+    )
+    assert verdict.fire is not None
+    assert verdict.volume_change_note == "shot volume 1200→800 ml: plant count 3→2"
+    assert verdict.suppressed_by is None
+
+
+def test_zero_volume_suppression_keeps_its_volume_change_note() -> None:
+    """A count change down to a zero-size shot reports both the note and the reason."""
+    machine = SteeringPhaseMachine("gs1")
+    strategy = _volume_strategy()
+    machine.tick(_inputs(_at(9), vwc=40.0, strategy=strategy))
+    strategy.p1_shot_volume_percent = 0.0
+    verdict = machine.tick(
+        _inputs(_at(9, 20), vwc=40.0, strategy=strategy, live_plant_count=2)
+    )
+    assert verdict.fire is None
+    assert verdict.suppressed_by == SUPPRESSED_BY_ZERO_VOLUME
+    assert verdict.volume_change_note == "shot volume 1200→0 ml: plant count 3→2"
 
 
 # ── disabled / idle states ────────────────────────────────────────────────────
