@@ -79,7 +79,9 @@ were closed with three refinements:
    only (ruff check/format, codespell, `no-commit-to-branch`, and a worktree guard
    that rejects commits made in the shared main checkout unless
    `ALLOW_MAIN_CHECKOUT=1`). The pre-push test tier is dropped: with the ruleset
-   enforcing CI, a slow pre-push hook only invites `--no-verify`.\n   `pre-commit install` is part of environment setup so fresh checkouts actually have the hook.
+   enforcing CI, a slow pre-push hook only invites `--no-verify`.
+   `pre-commit install` is part of environment setup so fresh checkouts actually
+   have the hook.
 
 ## Amendment (2026-08-07) — the gate's install must be reproducible
 
