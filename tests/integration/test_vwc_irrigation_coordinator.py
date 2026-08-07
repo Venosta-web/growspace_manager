@@ -1763,6 +1763,7 @@ def test_shot_composition_payload_capability_and_band(
     assert payload["pore_ec_target_min"] == 2.0
     assert payload["pore_ec_target_max"] == 3.0
     assert payload["last_shot"] is None  # no shot fired yet
+    assert payload["suppressed_by"] is None  # no tick applied yet
 
 
 async def test_infiltration_state_reaches_the_payload(
@@ -1864,7 +1865,6 @@ async def test_no_sensor_configured_discards_the_infiltration_measurement(
         await vwc_coordinator._update_loop(tick_two)
 
     assert vwc_coordinator.shot_composition_payload()["infiltration"] == "unknown"
-    assert payload["suppressed_by"] is None  # no tick applied yet
 
 
 def test_shot_composition_payload_surfaces_suppression_reason(
