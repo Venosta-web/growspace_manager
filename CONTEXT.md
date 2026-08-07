@@ -340,3 +340,12 @@ A point-in-time image captured from a growspace camera. Can be triggered manuall
 **Vision Checkup**
 An AI-powered diagnostic task performed on one or more [[Camera Snapshot]]s from a growspace, scheduled at three key times in the light cycle (early, mid, late) or triggered manually. The snapshots are processed with a 4x4 grid overlay and canopy green-pixel coverage analysis before being sent to the AI model. The analysis results (severity, detected issues, recommendations) are stored as a `VisionCheckupResult` in the growspace's vision history.
 
+
+**Contract Fixture**
+The golden `get_data` growspace payload committed at `tests/fixtures/contract/growspace_payload.json`, serialized from one **maximally populated** growspace (every optional sub-config set). A snapshot test fails when the payload shape changes without the fixture being deliberately regenerated; the lovelace card strict-parses the same file in its CI. Maximal population is the load-bearing property — a field absent from the fixture builder is invisible to the contract.
+
+**GSM-First Landing Order**
+The rule that for any cross-repo feature, the integration side merges to `prerelease` and ships in a GSM release **before** the card PR merges to the card's `dev`. The only sanctioned exception is a [[Backward-Safe Card Change]].
+
+**Backward-Safe Card Change**
+A card change proven safe against the *released* GSM backend, not just `prerelease` — the proof being the card's strict parse of the release-ref [[Contract Fixture]] passing. Named after the env-clear fix pattern (card #439), which had to behave correctly under both the old full-replace and the new patch semantics of `configure_environment`.
