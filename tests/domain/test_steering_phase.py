@@ -539,6 +539,20 @@ def test_the_gate_cannot_release_a_shot_the_cooldown_blocks() -> None:
     assert verdict.suppressed_by == SUPPRESSED_BY_COOLDOWN
 
 
+def test_a_cooling_down_infiltrating_tick_reports_the_cooldown() -> None:
+    """The cooldown is the binding constraint, so it is the reason reported."""
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(
+        _inputs(
+            _at(9),
+            vwc=40.0,
+            last_shot=_at(8, 50),
+            infiltration=InfiltrationState.INFILTRATING,
+        )
+    )
+    assert verdict.suppressed_by == SUPPRESSED_BY_COOLDOWN
+
+
 def test_a_never_watered_growspace_is_not_gated() -> None:
     """Without a confirmed last shot the backstop has no anchor, so the gate opens."""
     machine = SteeringPhaseMachine("gs1")
