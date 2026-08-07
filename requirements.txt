@@ -34,11 +34,12 @@ mashumaro==3.22
 beautifulsoup4==4.15.0
 
 # Test Dependencies
-aiodhcpwatcher
+# pycares is pinned here and nowhere else: HA's constraints file does not list it,
+# and its only requirer (aiodns) allows >=5.0.0,<6 — so dropping this line would
+# let it float.
 pycares==5.0.1
 coverage
 pydantic
-pipdeptree
 pytest-asyncio
 pytest-homeassistant-custom-component==0.13.333
 pytest-cov
