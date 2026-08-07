@@ -17,6 +17,16 @@ cd .worktrees/<branch-name>
   `origin`, not the checkout — another session may have moved HEAD.
 - Clean up with `git worktree remove` once the PR is open.
 
+## Test environment
+
+One repo-local `.venv` (Python 3.14) lives in the main checkout and every
+worktree shares it: `.venv/bin/pytest` from the main checkout,
+`../../.venv/bin/pytest` from a worktree — the path the pre-commit hooks
+already use. **Never the HA core venv at `/home/maxi/core/core/.venv`**: its
+syrupy is newer than the one `pytest-homeassistant-custom-component` pins, so
+every test import dies at collection. Building or refreshing the venv is
+documented in `CLAUDE.md`.
+
 ## Base branches
 
 - Architecture/refactor work integrates on **`prerelease`**, not `dev`.

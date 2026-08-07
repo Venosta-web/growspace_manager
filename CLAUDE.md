@@ -19,25 +19,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Testing
 
-All tests should be run using the parent project's virtual environment at `/home/maxi/core/core/.venv` (Python 3.14+):
+Tests run against the **repo-local** venv at `.venv` in the main checkout (Python 3.14+, built from `requirements.txt`). Worktrees share that one venv — they do not get their own:
+
+| Running from | Path |
+| --- | --- |
+| the main checkout | `.venv/bin/pytest` |
+| a `.worktrees/<branch>` worktree | `../../.venv/bin/pytest` — the same path the pre-commit hooks use |
+
+**Never use the Home Assistant core venv at `/home/maxi/core/core/.venv`.** It is HA core's own test environment, so it carries HA core's syrupy rather than the version `pytest-homeassistant-custom-component` pins, and every test import then dies inside `pytest_homeassistant_custom_component/syrupy.py` on a symbol newer syrupy removed. It surfaces as a collection error, which reads like a broken test rather than a wrong interpreter.
 
 ```bash
 # Run all tests
-/home/maxi/core/core/.venv/bin/pytest tests/ -q
+.venv/bin/pytest tests/ -q
 
 # Run tests with coverage
-/home/maxi/core/core/.venv/bin/pytest tests/ --cov=custom_components.growspace_manager --cov-report=term-missing -q
+.venv/bin/pytest tests/ --cov=custom_components.growspace_manager --cov-report=term-missing -q
 
 # Run specific test file
-/home/maxi/core/core/.venv/bin/pytest tests/test_<module>.py -v
+.venv/bin/pytest tests/test_<module>.py -v
 
 # Run tests matching a pattern
-/home/maxi/core/core/.venv/bin/pytest tests/ -k "test_pattern" -v
+.venv/bin/pytest tests/ -k "test_pattern" -v
 
 # Update test snapshots (if used)
-/home/maxi/core/core/.venv/bin/pytest tests/ --snapshot-update
+.venv/bin/pytest tests/ --snapshot-update
 # Always run tests again without --snapshot-update to verify
 ```
+
+`pytest.ini` sets `pythonpath = .`, so no `PYTHONPATH` export is needed as long as pytest runs from the checkout root (which is what makes the shared venv work from a worktree).
+
+#### Creating or refreshing the venv
+
+A fresh clone has no `.venv`; rebuild it whenever `requirements.txt` changes. Use the same **two-phase install CI uses** (`.github/workflows/tests.yaml`) so a local run resolves the dependency set the gate resolves. Installing `requirements.txt` in one unconstrained pass is what let hassil float past the pinned HA release and zero out collection (ADR-0020, 2026-08-07 amendment):
+
+```bash
+uv venv --python 3.14 .venv
+# Phase 1: HA alone, so its package_constraints.txt is on disk to constrain phase 2.
+uv pip install --python .venv/bin/python "$(grep '^homeassistant==' requirements.txt)"
+uv pip install --python .venv/bin/python -r requirements.txt -c "$(
+  .venv/bin/python -c 'import homeassistant, pathlib; print(pathlib.Path(homeassistant.__file__).parent / "package_constraints.txt")'
+)"
+```
+
+Plain `pip install` works too — CI uses it — but the system `python3` is not 3.14, so create the venv with an explicit interpreter either way.
 
 **CRITICAL:** After completing any task involving code changes, ALWAYS run the relevant tests to ensure no regressions. For bug fixes, run the related test file. For features, run all affected test files. Before marking work complete, run the full test suite.
 
@@ -306,7 +330,7 @@ Optional:
 2. **Never make polling intervals user-configurable** - integration determines intervals
 3. **Don't allow user-configurable config entry names** (except for helper integrations)
 4. **Always validate config entry is loaded before service execution**
-5. **Use the parent venv at `/home/maxi/core/core/.venv`**, not a local one
+5. **Use the repo-local `.venv`**, never the HA core venv at `/home/maxi/core/core/.venv` — its syrupy breaks every test import (see [Testing](#testing))
 6. **Run tests after every code change** - don't wait until the end
 
 ## Refactoring Quick Reference
