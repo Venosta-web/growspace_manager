@@ -149,7 +149,7 @@ async def test_p0_activation(vwc_coordinator, mock_hass, mock_growspace) -> None
         return_value=now,
     ):
         # Sensor value low, but P0 shouldn't water
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
 
         await vwc_coordinator._update_loop(now)
 
@@ -185,7 +185,7 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
         ),
     ):
         # Sensor value: 40% (Target 50%) -> Should Water
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
 
         await vwc_coordinator._update_loop(now)
         await await_pump_task()
@@ -215,7 +215,7 @@ async def test_p1_target_reached(vwc_coordinator, mock_hass) -> None:
         return_value=now,
     ):
         # Sensor value: 50% (Target 50%) -> Target Reached
-        mock_hass.states.get.return_value = MagicMock(state="50.0")
+        mock_hass.states.get.return_value = _state("50.0")
 
         await vwc_coordinator._update_loop(now)
 
@@ -255,13 +255,13 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
     ):
         # Case A: VWC 49% (Target 50%, Dryback 2% -> Trigger at 48%)
         # 49 > 48 -> No Water
-        mock_hass.states.get.return_value = MagicMock(state="49.0")
+        mock_hass.states.get.return_value = _state("49.0")
         await vwc_coordinator._update_loop(now)
         mock_hass.services.async_call.assert_not_called()
         assert vwc_coordinator._machine.current_phase == "P2 - Maintenance"
 
         # Case B: VWC 47% (Below 48%) -> Water
-        mock_hass.states.get.return_value = MagicMock(state="47.0")
+        mock_hass.states.get.return_value = _state("47.0")
         await vwc_coordinator._update_loop(now)
         await await_pump_task()
         mock_hass.services.async_call.assert_any_call(
@@ -285,7 +285,7 @@ async def test_p3_dryback(vwc_coordinator, mock_hass, mock_growspace) -> None:
         return_value=now,
     ):
         # Even if very dry, should NOT water
-        mock_hass.states.get.return_value = MagicMock(state="30.0")
+        mock_hass.states.get.return_value = _state("30.0")
 
         await vwc_coordinator._update_loop(now)
 
@@ -321,7 +321,7 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_p2,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="45.0")
+        mock_hass.states.get.return_value = _state("45.0")
         vwc_coordinator._machine._target_reached_today = True  # Force P2
         vwc_coordinator._machine._last_reset_date = (
             "2023-01-01"  # Prevent date guard from re-resetting
@@ -381,15 +381,15 @@ async def test_strategy_disabled(vwc_coordinator, mock_growspace, mock_hass) -> 
 async def test_sensor_states_invalid(vwc_coordinator, mock_hass) -> None:
     """Test sensor returning invalid values."""
     # 1. Unavailable
-    mock_hass.states.get.return_value = MagicMock(state="unavailable")
+    mock_hass.states.get.return_value = _state("unavailable")
     assert vwc_coordinator._get_sensor_value("sensor.test") is None
 
     # 2. Unknown
-    mock_hass.states.get.return_value = MagicMock(state="unknown")
+    mock_hass.states.get.return_value = _state("unknown")
     assert vwc_coordinator._get_sensor_value("sensor.test") is None
 
     # 3. ValueError
-    mock_hass.states.get.return_value = MagicMock(state="not_a_number")
+    mock_hass.states.get.return_value = _state("not_a_number")
     assert vwc_coordinator._get_sensor_value("sensor.test") is None
 
     # Verify loop handles None return gracefully
@@ -398,7 +398,7 @@ async def test_sensor_states_invalid(vwc_coordinator, mock_hass) -> None:
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="unavailable")
+        mock_hass.states.get.return_value = _state("unavailable")
         await vwc_coordinator._update_loop(now)
         # Should log debug but not crash
         mock_hass.services.async_call.assert_not_called()
@@ -417,7 +417,7 @@ async def test_before_lights_on(vwc_coordinator, mock_hass) -> None:
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now)
         assert "P3" in vwc_coordinator._machine.current_phase
 
@@ -525,7 +525,7 @@ async def test_vwc_skips_watering_when_tank_is_low(
 
     def states_side_effect(entity_id: str) -> MagicMock | None:
         if entity_id == "sensor.tank_level":
-            return MagicMock(state="20.0")  # Below 30% warning
+            return _state("20.0")  # Below 30% warning
         if entity_id == "sensor.moisture":
             return MagicMock(
                 state="40.0"
@@ -561,7 +561,7 @@ async def test_vwc_skips_watering_when_max_cycles_reached(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")  # VWC below target
+        mock_hass.states.get.return_value = _state("40.0")  # VWC below target
         await vwc_coordinator._update_loop(now_dt)
         await await_pump_task()
 
@@ -582,9 +582,9 @@ async def test_vwc_skips_watering_when_dark_and_skip_enabled(
 
     def states_side_effect(entity_id: str) -> MagicMock | None:
         if entity_id == "binary_sensor.light":
-            return MagicMock(state="off")  # Light is off → dark period
+            return _state("off")  # Light is off → dark period
         if entity_id == "sensor.moisture":
-            return MagicMock(state="40.0")
+            return _state("40.0")
         return None
 
     mock_hass.states.get.side_effect = states_side_effect
@@ -619,9 +619,11 @@ async def test_vwc_waters_when_numeric_light_sensor_reports_on(
 
     def states_side_effect(entity_id: str) -> MagicMock | None:
         if entity_id == "sensor.grow_light_power":
-            return MagicMock(state="4", domain="sensor")  # Light draws 4W → ON
+            state = _state("4")
+            state.domain = "sensor"
+            return state  # Light draws 4W → ON
         if entity_id == "sensor.moisture":
-            return MagicMock(state="40.0")
+            return _state("40.0")
         return None
 
     mock_hass.states.get.side_effect = states_side_effect
@@ -657,7 +659,7 @@ async def test_vwc_phase_transition_fires_logbook_event(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now_dt)
 
     # Phase changed from "P3" (initial) to "P0 - Activation" → logbook must fire
@@ -690,7 +692,7 @@ async def test_vwc_soil_trigger_percent_overrides_p2_maintenance_threshold(
     ):
         # VWC 47%: above the soil_trigger_percent threshold of 45% → no watering
         mock_hass.states.get.side_effect = lambda eid: (
-            MagicMock(state="47.0") if eid == "sensor.moisture" else None
+            _state("47.0") if eid == "sensor.moisture" else None
         )
         await vwc_coordinator._update_loop(now_dt)
         await await_pump_task()
@@ -729,7 +731,7 @@ async def test_vwc_soil_trigger_percent_fires_watering_when_below(
     ):
         # VWC 44%: below soil_trigger_percent=45% → should water
         mock_hass.states.get.side_effect = lambda eid: (
-            MagicMock(state="44.0") if eid == "sensor.moisture" else None
+            _state("44.0") if eid == "sensor.moisture" else None
         )
         await vwc_coordinator._update_loop(now_dt)
         await await_pump_task()
@@ -754,7 +756,7 @@ async def test_vwc_no_logbook_when_disabled(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now_dt)
 
     mock_hass.bus.async_fire.assert_not_called()
@@ -812,7 +814,7 @@ async def test_auto_advance_p1_to_p2_flag_off_no_advance(
         return_value=now_dt,
     ):
         # VWC below target so shot fires
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now_dt)
         await await_pump_task()
 
@@ -834,7 +836,7 @@ async def test_auto_advance_p1_to_p2_flag_on_advances_after_shot(
         return_value=now_dt,
     ):
         # VWC exactly at target — the existing transition should fire even without a shot
-        mock_hass.states.get.return_value = MagicMock(state="50.0")
+        mock_hass.states.get.return_value = _state("50.0")
         await vwc_coordinator._update_loop(now_dt)
 
     assert vwc_coordinator._machine._target_reached_today is True
@@ -859,7 +861,7 @@ async def test_auto_advance_p2_to_p3_flag_off_no_early_stop(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="45.0")
+        mock_hass.states.get.return_value = _state("45.0")
         await vwc_coordinator._update_loop(now_dt)
 
     assert "P2" in vwc_coordinator._machine.current_phase
@@ -882,7 +884,7 @@ async def test_auto_advance_p2_to_p3_flag_on_enters_p3_early(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="45.0")
+        mock_hass.states.get.return_value = _state("45.0")
         await vwc_coordinator._update_loop(now_dt)
 
     assert "P3" in vwc_coordinator._machine.current_phase
@@ -906,7 +908,7 @@ async def test_halt_on_runoff_ec_threshold_not_set_no_halt(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now_dt)
         await await_pump_task()
 
@@ -937,7 +939,7 @@ async def test_halt_on_runoff_ec_threshold_exceeded_halts_watering(
         ),
         patch("custom_components.growspace_manager.vwc_irrigation_coordinator._LOGGER"),
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now_dt)
 
     mock_hass.services.async_call.assert_not_called()
@@ -961,7 +963,7 @@ async def test_vwc_uses_detected_lights_on_time_when_set(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now)
 
     assert vwc_coordinator._machine.current_phase == "P0 - Activation"
@@ -980,7 +982,7 @@ async def test_vwc_falls_back_to_lights_on_time_when_detected_is_none(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now)
 
     assert vwc_coordinator._machine.current_phase == "P0 - Activation"
@@ -1027,7 +1029,7 @@ async def test_halt_on_runoff_ec_threshold_no_readings(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now_dt)
         await await_pump_task()
 
@@ -1055,7 +1057,7 @@ async def test_halt_on_runoff_ec_threshold_not_exceeded(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        mock_hass.states.get.return_value = MagicMock(state="40.0")
+        mock_hass.states.get.return_value = _state("40.0")
         await vwc_coordinator._update_loop(now_dt)
         await await_pump_task()
 
@@ -1413,10 +1415,16 @@ async def test_projected_shot_window_uses_active_phase_interval(
     }
 
 
-def _state(value: str) -> MagicMock:
-    """Build a mock HA state with a given string state."""
+def _state(value: str, last_updated: datetime | None = None) -> MagicMock:
+    """Build a mock HA state with a given string state.
+
+    ``last_updated`` is the sensor's own update time, which the Infiltration
+    Monitor samples on; a bare MagicMock attribute is not orderable, so callers
+    exercising the monitor pass a real datetime.
+    """
     state = MagicMock()
     state.state = value
+    state.last_updated = last_updated
     return state
 
 
@@ -1756,6 +1764,107 @@ def test_shot_composition_payload_capability_and_band(
     assert payload["pore_ec_target_max"] == 3.0
     assert payload["last_shot"] is None  # no shot fired yet
     assert payload["suppressed_by"] is None  # no tick applied yet
+
+
+async def test_infiltration_state_reaches_the_payload(
+    vwc_coordinator, mock_hass
+) -> None:
+    """Two rising readings from distinct sensor updates surface as infiltrating.
+
+    Drives the real minute loop, so this covers the whole path: the
+    freshness-aware read, the monitor, and the shot-composition payload the card
+    renders (ADR-0031, measurement only — no shot is gated on this yet).
+    """
+    tick_one = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    tick_two = datetime(2023, 1, 1, 9, 35, 0, tzinfo=dt_util.UTC)
+
+    for tick, vwc in ((tick_one, "50.0"), (tick_two, "54.0")):
+        mock_hass.states.get.return_value = _state(vwc, last_updated=tick)
+        with patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=tick,
+        ):
+            await vwc_coordinator._update_loop(tick)
+
+    infiltration = vwc_coordinator.shot_composition_payload()["infiltration"]
+    assert infiltration == "infiltrating"
+    # A plain str, not the StrEnum: this payload is serialized to the card over
+    # the WebSocket and re-emitted as a crop-steering entity attribute.
+    assert type(infiltration) is str
+
+
+async def test_midnight_reset_leaves_the_infiltration_measurement_intact(
+    vwc_coordinator, mock_hass
+) -> None:
+    """The daily reset must not discard a live in-flight measurement.
+
+    Infiltration is a physical process spanning minutes with no daily state, so
+    unlike the phase machine and the composer the monitor is deliberately absent
+    from the midnight reset — clearing it there would open a nightly blind spot
+    (ADR-0031).
+    """
+    tick_one = datetime(2023, 1, 1, 23, 55, 0, tzinfo=dt_util.UTC)
+    tick_two = datetime(2023, 1, 1, 23, 59, 0, tzinfo=dt_util.UTC)
+
+    for tick, vwc in ((tick_one, "50.0"), (tick_two, "54.0")):
+        mock_hass.states.get.return_value = _state(vwc, last_updated=tick)
+        with patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=tick,
+        ):
+            await vwc_coordinator._update_loop(tick)
+
+    await vwc_coordinator._async_reset_daily_counters()
+
+    assert vwc_coordinator.shot_composition_payload()["infiltration"] == "infiltrating"
+
+
+async def test_sensor_dropout_discards_the_infiltration_measurement(
+    vwc_coordinator, mock_hass
+) -> None:
+    """An unavailable sensor clears the buffer: readings across a gap are not a slope."""
+    tick_one = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    tick_two = datetime(2023, 1, 1, 9, 35, 0, tzinfo=dt_util.UTC)
+    tick_three = datetime(2023, 1, 1, 9, 40, 0, tzinfo=dt_util.UTC)
+
+    for tick, vwc in (
+        (tick_one, "50.0"),
+        (tick_two, "54.0"),
+        (tick_three, "unavailable"),
+    ):
+        mock_hass.states.get.return_value = _state(vwc, last_updated=tick)
+        with patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=tick,
+        ):
+            await vwc_coordinator._update_loop(tick)
+
+    assert vwc_coordinator.shot_composition_payload()["infiltration"] == "unknown"
+
+
+async def test_no_sensor_configured_discards_the_infiltration_measurement(
+    vwc_coordinator, mock_hass, mock_growspace
+) -> None:
+    """Removing the moisture sensor clears the buffer alongside mark_no_sensor."""
+    tick_one = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
+    tick_two = datetime(2023, 1, 1, 9, 35, 0, tzinfo=dt_util.UTC)
+
+    for tick, vwc in ((tick_one, "50.0"), (tick_two, "54.0")):
+        mock_hass.states.get.return_value = _state(vwc, last_updated=tick)
+        with patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=tick,
+        ):
+            await vwc_coordinator._update_loop(tick)
+
+    mock_growspace.environment_config.soil_moisture_sensor = None
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=tick_two,
+    ):
+        await vwc_coordinator._update_loop(tick_two)
+
+    assert vwc_coordinator.shot_composition_payload()["infiltration"] == "unknown"
 
 
 def test_shot_composition_payload_surfaces_suppression_reason(

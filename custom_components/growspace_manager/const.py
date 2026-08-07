@@ -271,6 +271,18 @@ SUBSTRATE_NOISE_FLOOR_PCT = 0.5  # VWC change too small to move a peak/trough
 # flapping rising<->falling on sensor noise. 0.2 mS/cm is a conservative default
 # below the typical day-to-day drift of substrate EC probes.
 SUBSTRATE_EC_TREND_DEADBAND = 0.2
+# Deadband for the Infiltration slope (ADR-0031): a VWC rate whose magnitude is
+# at or below this many percentage points per minute reads "settled" rather than
+# flapping infiltrating<->drying on probe noise. PROVISIONAL — unlike the values
+# above it cannot be derived from SUBSTRATE_NOISE_FLOOR_PCT, which is a
+# magnitude rather than a rate; validating it against real coco and rockwool
+# traces is what the measurement-only slice exists to enable.
+SUBSTRATE_INFILTRATION_DEADBAND_PP_PER_MIN = 0.05
+# How far back the Infiltration slope may reach. Samples older than this many
+# minutes before the newest one are dropped, so a lone fresh reading beside a
+# stale one reads "unknown" rather than manufacturing a near-zero slope across
+# the gap. Sized to span several updates of a 5-minute probe.
+SUBSTRATE_INFILTRATION_WINDOW_MINUTES = 15.0
 
 # EC Modulation bounds and response (see CONTEXT.md "EC Modulation",
 # "Pore EC Target Band", "Shot Size Composition"). The modulation factor scales
