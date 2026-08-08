@@ -60,14 +60,13 @@ A worked example of why the tier matters is in [Could not verify](#could-not-ver
 
 > Three sensors per strain in a 1,000-square-foot room should produce the most helpful and complete dataset.
 
-The stated rationale is that a single sensor in a 10,000 sq ft facility captures data about one plant only.
-Note the unit of subdivision in that sentence: **per strain**, not per room or per bench. AROYA is a sensor
-vendor and cites no study, hence tier B.
+The rule of thumb above is verbatim. The stated rationale — paraphrased, not quoted — is that a single sensor in
+a large facility captures data about one plant only. Note the unit of subdivision in that sentence: **per
+strain**, not per room or per bench. AROYA is a sensor vendor and cites no study, hence tier B.
 
-The same page acknowledges the substrate itself is a variability source:
-
-> grow media typically contain inconsistencies "even within the same brand" due to production and shipping
-> variations, which can produce "data inconsistencies"
+The same page also acknowledges (paraphrased) that grow media contain inconsistencies even within one brand, from
+production and shipping variation, and that these can produce inconsistent data even where the substrate looks
+uniform.
 
 ### Athena — one main sensor at the average plant, secondaries optional
 
