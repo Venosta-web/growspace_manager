@@ -61,6 +61,16 @@ SUPPRESSED_BY_ZERO_VOLUME = "zero_volume"
 # drifting probe — cannot withhold irrigation all day (ADR-0031).
 INFILTRATION_BACKSTOP_INTERVALS = 3
 
+# Logbook texts for the [[Infiltration Gate]] edges (ADR-0031 decision 6). The
+# held side may name the cause — only a still-climbing reading holds — but the
+# release side deliberately may not: a hold ends when infiltration settles, when
+# the stall backstop gives up, or when the shot window closes, so the wording
+# claims only that shots are no longer withheld.
+INFILTRATION_HELD_MESSAGE = (
+    "Irrigation held: substrate still infiltrating the last shot"
+)
+INFILTRATION_RELEASED_MESSAGE = "Irrigation hold released: shots are no longer withheld"
+
 CANONICAL_PHASE: dict[str, str] = {
     PHASE_P0: "p1",
     PHASE_P1: "p1",
@@ -132,6 +142,11 @@ class SteeringTickVerdict:
     fired did not (one of the ``SUPPRESSED_BY_*`` reasons); it is None whenever
     a shot fires and on ticks that never reach the shot decision at all. It is
     a diagnostic only — nothing branches on it.
+
+    ``infiltration_note`` carries the [[Infiltration Gate]] logbook text on the
+    tick the gate starts or stops holding, and None on every tick in between —
+    the machine owns the latch, so a hold sustained across many ticks yields one
+    entry, not one per tick (ADR-0031).
     """
 
     phase: str
@@ -142,6 +157,7 @@ class SteeringTickVerdict:
     fire: ShotRequest | None
     volume_change_note: str | None
     suppressed_by: str | None = None
+    infiltration_note: str | None = None
 
 
 def resolve_day_hours(environment_config: Any) -> int:
@@ -211,6 +227,18 @@ def determine_time_period(
     return "P3"
 
 
+def infiltration_gate_note(was_held: bool, now_held: bool) -> str | None:
+    """Return the logbook text for an [[Infiltration Gate]] edge, or None.
+
+    The pure half of the latch: a text only on the transitions, so the caller
+    can call it on every observed tick and get one entry per hold rather than
+    one per minute.
+    """
+    if now_held == was_held:
+        return None
+    return INFILTRATION_HELD_MESSAGE if now_held else INFILTRATION_RELEASED_MESSAGE
+
+
 def shot_params_for_phase(strategy: IrrigationStrategy, phase: str) -> tuple[int, int]:
     """Return the (duration_seconds, interval_minutes) pair for a steering phase.
 
@@ -259,6 +287,12 @@ class SteeringPhaseMachine:
         # across ticks and surfaced as a verdict note (ADR-0011).
         self._last_shot_volume_ml: float | None = None
         self._last_live_plant_count: int | None = None
+        # [[Infiltration Gate]] latch: True while the gate is withholding shots,
+        # so the logbook texts fire on the edges only (ADR-0031). Deliberately
+        # absent from reset(): infiltration is a physical process spanning
+        # minutes, not daily state (ADR-0031 decision 2), and clearing the latch
+        # at midnight would swallow the release entry for a live hold.
+        self._infiltration_held = False
 
     @property
     def current_phase(self) -> str:
@@ -279,7 +313,18 @@ class SteeringPhaseMachine:
 
     def mark_no_sensor(self) -> SteeringTickVerdict:
         """Transition to the disabled state when no VWC sensor is configured."""
-        return self._finish(PHASE_DISABLED)
+        return self._finish(PHASE_DISABLED, gate_held=False)
+
+    def mark_sensor_unavailable(self) -> SteeringTickVerdict:
+        """Release the [[Infiltration Gate]] hold on a VWC sensor dropout.
+
+        Deliberately keeps the current phase: unlike a *missing* sensor, a
+        momentarily unavailable one is not a configuration state and never
+        disabled steering. It still ends any hold — the measurement it rested on
+        is gone, and the gate fails open on ``UNKNOWN`` — so the logbook may not
+        leave the growspace reading as held across the dropout (ADR-0031).
+        """
+        return self._finish(self._phase, gate_held=False)
 
     def tick(self, inputs: SteeringTickInputs) -> SteeringTickVerdict:
         """Advance the machine one tick and return the full decision."""
@@ -306,13 +351,13 @@ class SteeringPhaseMachine:
             and volume_mode_active(inputs.strategy, inputs.pump_flow_rate_ml_per_sec)
             and inputs.live_plant_count == 0
         ):
-            return self._finish(PHASE_IDLE)
+            return self._finish(PHASE_IDLE, gate_held=False)
 
         if period == "P3":
-            return self._finish(PHASE_P3)
+            return self._finish(PHASE_P3, gate_held=False)
 
         if period == "P0":
-            return self._finish(PHASE_P0)
+            return self._finish(PHASE_P0, gate_held=False)
 
         # P1 / P2 WINDOW
         target = inputs.strategy.target_vwc_percent
@@ -320,6 +365,12 @@ class SteeringPhaseMachine:
         fire: ShotRequest | None = None
         note: str | None = None
         suppressed: str | None = None
+        # None until the shot decision actually consults the [[Infiltration
+        # Gate]]. A tick that skips the decision because demand vanished (VWC at
+        # or above the P1 target / the P2 trigger) leaves the latch untouched: a
+        # satisfied growspace is not the gate releasing, and treating it as one
+        # would split a single hold into several logbook pairs.
+        gate_held: bool | None = None
 
         if not self._target_reached_today:
             # We are in P1: Ramp Up
@@ -336,7 +387,11 @@ class SteeringPhaseMachine:
                 inputs, "P1", reset_pending=False
             )
             return self._finish(
-                PHASE_P1, fire=fire, volume_change_note=note, suppressed_by=suppressed
+                PHASE_P1,
+                fire=fire,
+                volume_change_note=note,
+                suppressed_by=suppressed,
+                gate_held=suppressed == SUPPRESSED_BY_INFILTRATING,
             )
 
         # We are in P2: Maintenance
@@ -360,8 +415,13 @@ class SteeringPhaseMachine:
             fire, note, suppressed = self._evaluate_shot(
                 inputs, "P2", reset_pending=self._phase == PHASE_P1
             )
+            gate_held = suppressed == SUPPRESSED_BY_INFILTRATING
         return self._finish(
-            PHASE_P2, fire=fire, volume_change_note=note, suppressed_by=suppressed
+            PHASE_P2,
+            fire=fire,
+            volume_change_note=note,
+            suppressed_by=suppressed,
+            gate_held=gate_held,
         )
 
     def projected_shot_window(
@@ -535,8 +595,16 @@ class SteeringPhaseMachine:
         fire: ShotRequest | None = None,
         volume_change_note: str | None = None,
         suppressed_by: str | None = None,
+        gate_held: bool | None = None,
     ) -> SteeringTickVerdict:
-        """Apply the phase transition and assemble the verdict."""
+        """Apply the phase transition and assemble the verdict.
+
+        ``gate_held`` is this tick's [[Infiltration Gate]] observation — True
+        while it withholds a shot, False on any tick that leaves the gate not
+        holding (including the P3/P0/idle/disabled ticks that carry no shot
+        decision at all, so a hold at window close still releases), and None
+        when the tick made no observation and the latch must stand.
+        """
         old_phase = self._phase
         changed = new_phase != old_phase
         transition_message: str | None = None
@@ -550,6 +618,13 @@ class SteeringPhaseMachine:
             transition_message = f"VWC phase transition: {old_phase} → {new_phase}"
         self._phase = new_phase
 
+        infiltration_note: str | None = None
+        if gate_held is not None:
+            infiltration_note = infiltration_gate_note(
+                self._infiltration_held, gate_held
+            )
+            self._infiltration_held = gate_held
+
         return SteeringTickVerdict(
             phase=new_phase,
             canonical=CANONICAL_PHASE.get(new_phase),
@@ -559,6 +634,7 @@ class SteeringPhaseMachine:
             fire=fire,
             volume_change_note=volume_change_note,
             suppressed_by=suppressed_by,
+            infiltration_note=infiltration_note,
         )
 
 
