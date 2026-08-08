@@ -58,8 +58,9 @@ class NotificationsFacade:
         )
 
     def report_evaluation(self, snapshot: EvaluationSnapshot) -> None:
-        """Report a Bayesian sensor evaluation to the notification manager."""
+        """Report a Bayesian sensor evaluation to notification consumers."""
         self.manager.report_evaluation(snapshot)
+        self._coordinator.alert_monitor.report_evaluation(snapshot)
 
     def get_timed_notifications(self) -> list[dict[str, Any]]:
         """Return the list of configured timed notifications."""
@@ -166,7 +167,3 @@ class NotificationsFacade:
         return await self._coordinator.alert_monitor.resolve_alert(
             alert_id, notes=notes
         )
-
-    def register_alert_sensor(self, *args: Any, **kwargs: Any) -> None:
-        """Register a binary sensor with the alert monitor."""
-        self._coordinator.alert_monitor.register_sensor(*args, **kwargs)

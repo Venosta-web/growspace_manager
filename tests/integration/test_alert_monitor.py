@@ -7,8 +7,6 @@ import uuid
 
 import pytest
 
-from custom_components.growspace_manager.const import ATTR_PROBABILITY, ATTR_REASONS
-
 GROWSPACE_ID = "tent1"
 STRESS_REASONS = ["High VPD: 1.8 kPa", "Fan off"]
 MOLD_REASONS = ["High humidity: 85%", "Dense canopy"]
@@ -186,12 +184,17 @@ async def test_ai_reasoning_populated_when_available(mock_hass, store) -> None:
 
     coord = MagicMock()
     coord.options = {"ai_enabled": True, "ai_auto_alerts": True}
-    monitor = AlertMonitor(hass=mock_hass, coordinator=coord, store=store, ai_assistant_factory=ai_factory)
+    monitor = AlertMonitor(
+        hass=mock_hass, coordinator=coord, store=store, ai_assistant_factory=ai_factory
+    )
 
     await monitor.async_record_alert(GROWSPACE_ID, "stress", STRESS_REASONS, 0.9)
 
     alert = monitor.get_alerts()[0]
-    assert alert["ai_reasoning"] == "High VPD detected. Increase humidity or reduce temperature."
+    assert (
+        alert["ai_reasoning"]
+        == "High VPD detected. Increase humidity or reduce temperature."
+    )
 
 
 async def test_ai_failure_leaves_bayesian_only_alert(mock_hass, store) -> None:
@@ -207,7 +210,9 @@ async def test_ai_failure_leaves_bayesian_only_alert(mock_hass, store) -> None:
 
     coord = MagicMock()
     coord.options = {"ai_enabled": True, "ai_auto_alerts": True}
-    monitor = AlertMonitor(hass=mock_hass, coordinator=coord, store=store, ai_assistant_factory=ai_factory)
+    monitor = AlertMonitor(
+        hass=mock_hass, coordinator=coord, store=store, ai_assistant_factory=ai_factory
+    )
 
     await monitor.async_record_alert(GROWSPACE_ID, "stress", STRESS_REASONS, 0.9)
 
@@ -230,9 +235,7 @@ async def test_cap_evicts_oldest_at_500(mock_hass, store) -> None:
     monitor = AlertMonitor(hass=mock_hass, coordinator=coord, store=store)
 
     for i in range(502):
-        await monitor.async_record_alert(
-            f"tent{i}", "stress", ["reason"], 0.9
-        )
+        await monitor.async_record_alert(f"tent{i}", "stress", ["reason"], 0.9)
 
     alerts = monitor.get_alerts()
     assert len(alerts) == 500
@@ -300,171 +303,6 @@ async def test_get_alerts_unknown_type_severity_defaults_to_info(monitor) -> Non
 
     alert = monitor.get_alerts()[0]
     assert alert["severity"] == "info"
-
-
-# ---------------------------------------------------------------------------
-# State-change listener
-# ---------------------------------------------------------------------------
-
-
-async def test_state_change_off_to_on_creates_alert(mock_hass, store) -> None:
-    """off→on transition on a registered sensor creates an alert."""
-    from custom_components.growspace_manager.alert_monitor import AlertMonitor
-
-    coord = MagicMock()
-    coord.options = {}
-    monitor = AlertMonitor(hass=mock_hass, coordinator=coord, store=store)
-    monitor.register_sensor(
-        entity_id="binary_sensor.growspace_manager_tent1_stress",
-        growspace_id=GROWSPACE_ID,
-        alert_type="stress",
-    )
-
-    old_state = MagicMock()
-    old_state.state = "off"
-    new_state = MagicMock()
-    new_state.state = "on"
-    new_state.attributes = {
-        ATTR_REASONS: STRESS_REASONS,
-        ATTR_PROBABILITY: 0.91,
-    }
-
-    event = MagicMock()
-    event.data = {
-        "entity_id": "binary_sensor.growspace_manager_tent1_stress",
-        "old_state": old_state,
-        "new_state": new_state,
-    }
-
-    await monitor._async_handle_state_change(event)
-
-    alerts = monitor.get_alerts()
-    assert len(alerts) == 1
-    assert alerts[0]["growspace_id"] == GROWSPACE_ID
-    assert alerts[0]["type"] == "stress"
-
-
-async def test_state_change_on_to_on_no_alert(mock_hass, store) -> None:
-    """on→on transition (no rising edge) does NOT create a new alert."""
-    from custom_components.growspace_manager.alert_monitor import AlertMonitor
-
-    coord = MagicMock()
-    coord.options = {}
-    monitor = AlertMonitor(hass=mock_hass, coordinator=coord, store=store)
-    monitor.register_sensor(
-        entity_id="binary_sensor.growspace_manager_tent1_stress",
-        growspace_id=GROWSPACE_ID,
-        alert_type="stress",
-    )
-
-    old_state = MagicMock()
-    old_state.state = "on"
-    new_state = MagicMock()
-    new_state.state = "on"
-    new_state.attributes = {ATTR_REASONS: STRESS_REASONS, ATTR_PROBABILITY: 0.91}
-
-    event = MagicMock()
-    event.data = {
-        "entity_id": "binary_sensor.growspace_manager_tent1_stress",
-        "old_state": old_state,
-        "new_state": new_state,
-    }
-
-    await monitor._async_handle_state_change(event)
-
-    assert len(monitor.get_alerts()) == 0
-
-
-async def test_state_change_on_to_off_no_alert(mock_hass, store) -> None:
-    """on→off (falling edge) does NOT create a new alert."""
-    from custom_components.growspace_manager.alert_monitor import AlertMonitor
-
-    coord = MagicMock()
-    coord.options = {}
-    monitor = AlertMonitor(hass=mock_hass, coordinator=coord, store=store)
-    monitor.register_sensor(
-        entity_id="binary_sensor.growspace_manager_tent1_stress",
-        growspace_id=GROWSPACE_ID,
-        alert_type="stress",
-    )
-
-    old_state = MagicMock()
-    old_state.state = "on"
-    new_state = MagicMock()
-    new_state.state = "off"
-    new_state.attributes = {}
-
-    event = MagicMock()
-    event.data = {
-        "entity_id": "binary_sensor.growspace_manager_tent1_stress",
-        "old_state": old_state,
-        "new_state": new_state,
-    }
-
-    await monitor._async_handle_state_change(event)
-
-    assert len(monitor.get_alerts()) == 0
-
-
-async def test_state_change_unregistered_sensor_ignored(mock_hass, store) -> None:
-    """State changes for unregistered entities are silently ignored."""
-    from custom_components.growspace_manager.alert_monitor import AlertMonitor
-
-    coord = MagicMock()
-    coord.options = {}
-    monitor = AlertMonitor(hass=mock_hass, coordinator=coord, store=store)
-
-    new_state = MagicMock()
-    new_state.state = "on"
-    new_state.attributes = {ATTR_REASONS: STRESS_REASONS, ATTR_PROBABILITY: 0.91}
-    old_state = MagicMock()
-    old_state.state = "off"
-
-    event = MagicMock()
-    event.data = {
-        "entity_id": "binary_sensor.some_other_sensor",
-        "old_state": old_state,
-        "new_state": new_state,
-    }
-
-    await monitor._async_handle_state_change(event)
-
-    assert len(monitor.get_alerts()) == 0
-
-
-# ---------------------------------------------------------------------------
-# Listener setup / teardown
-# ---------------------------------------------------------------------------
-
-
-async def test_async_setup_registers_listener(mock_hass, store) -> None:
-    """async_start registers a state_changed listener on hass.bus."""
-    from custom_components.growspace_manager.alert_monitor import AlertMonitor
-
-    coord = MagicMock()
-    coord.options = {}
-    monitor = AlertMonitor(hass=mock_hass, coordinator=coord, store=store)
-    await monitor.async_start()
-
-    mock_hass.bus.async_listen.assert_called_once_with(
-        "state_changed", monitor._async_handle_state_change
-    )
-
-
-async def test_async_unload_cancels_listener(mock_hass, store) -> None:
-    """async_stop cancels the registered state_changed listener."""
-    from custom_components.growspace_manager.alert_monitor import AlertMonitor
-
-    cancel_mock = MagicMock()
-    mock_hass.bus.async_listen.return_value = cancel_mock
-
-    coord = MagicMock()
-    coord.options = {}
-    monitor = AlertMonitor(hass=mock_hass, coordinator=coord, store=store)
-    await monitor.async_start()
-    monitor.async_stop()
-
-    cancel_mock.assert_called_once()
 
 
 async def test_async_setup_loads_persisted_alerts(mock_hass) -> None:

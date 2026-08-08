@@ -399,14 +399,6 @@ class BayesianEnvironmentSensor(
             get_notification_message=generate_notification_message,
         )
 
-        # Register stress/mold sensors with AlertMonitor for Inbox population
-        if self.entity_description.sensor_type in ("stress", "mold"):
-            self.coordinator.services.notifications.register_alert_sensor(
-                self.entity_id,
-                self.growspace_id,
-                self.entity_description.sensor_type,
-            )
-
         c = self.env_config
         sensors = [
             c.temperature_sensor,

@@ -1,6 +1,6 @@
 """Alert monitor for AI-detected stress and mold events.
 
-Listens for off→on transitions on Bayesian binary sensors and creates
+Consumes Evaluation Snapshot inactive-to-active transitions and creates
 persistent alert records.  An async background task subsequently enriches
 each alert with AI reasoning; if AI is unavailable the record is kept with
 Bayesian data only.
@@ -39,7 +39,8 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import ATTR_PROBABILITY, ATTR_REASONS, CONF_AI_AUTO_ALERTS, CONF_AI_ENABLED
+from .const import CONF_AI_AUTO_ALERTS, CONF_AI_ENABLED
+from .notifications.evaluation_snapshot import EvaluationSnapshot
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +59,11 @@ def _serialize_alert(alert: dict[str, Any]) -> dict[str, Any]:
     unix_ts = int(parsed_dt.timestamp()) if parsed_dt is not None else 0
 
     return {
-        **{k: v for k, v in alert.items() if k not in {"alert_id", "alert_type", "timestamp", "resolution_notes"}},
+        **{
+            k: v
+            for k, v in alert.items()
+            if k not in {"alert_id", "alert_type", "timestamp", "resolution_notes"}
+        },
         "id": alert["alert_id"],
         "type": alert["alert_type"],
         "severity": _SEVERITY_MAP.get(alert["alert_type"], "info"),
@@ -68,7 +73,7 @@ def _serialize_alert(alert: dict[str, Any]) -> dict[str, Any]:
 
 
 class AlertMonitor:
-    """Monitors binary sensor state changes and persists AI alert records."""
+    """Monitor evaluation transitions and persist AI alert records."""
 
     MAX_ALERTS: int = 500
 
@@ -98,75 +103,48 @@ class AlertMonitor:
         self._store = store
         self._ai_assistant_factory = ai_assistant_factory
         self._alerts: list[dict[str, Any]] = []
-        # entity_id → (growspace_id, alert_type)
-        self._watched: dict[str, tuple[str, str]] = {}
-        self._cancel_listener: Callable[[], None] | None = None
+        self._active_evaluations: set[tuple[str, str]] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def async_start(self) -> None:
-        """Load persisted alerts and register state-change listener."""
+        """Load persisted alerts."""
         data = await self._store.async_load() or {}
         self._alerts = list(data.get("alerts", []))
 
-        self._cancel_listener = self._hass.bus.async_listen(
-            "state_changed", self._async_handle_state_change
-        )
+    # ------------------------------------------------------------------
+    # Evaluation intake
+    # ------------------------------------------------------------------
 
     @callback
-    def async_stop(self) -> None:
-        """Cancel the state-change listener."""
-        if self._cancel_listener is not None:
-            self._cancel_listener()
-            self._cancel_listener = None
-
-    # ------------------------------------------------------------------
-    # Sensor registration
-    # ------------------------------------------------------------------
-
-    def register_sensor(
-        self,
-        entity_id: str,
-        growspace_id: str,
-        alert_type: str,
-    ) -> None:
-        """Register a binary sensor entity to watch for off→on transitions.
-
-        Only ``stress`` and ``mold`` sensor types generate alerts.
-        """
-        if alert_type in ("stress", "mold"):
-            self._watched[entity_id] = (growspace_id, alert_type)
-
-    # ------------------------------------------------------------------
-    # State-change handler
-    # ------------------------------------------------------------------
-
-    async def _async_handle_state_change(self, event: Any) -> None:
-        """Handle a ``state_changed`` HA bus event.
-
-        Creates an alert only when a *registered* sensor transitions from
-        any non-on state to ``"on"`` (rising edge).
-        """
-        entity_id: str = event.data.get("entity_id", "")
-        if entity_id not in self._watched:
+    def report_evaluation(self, snapshot: EvaluationSnapshot) -> None:
+        """Persist a Triage Alert on a stress or mold rising edge."""
+        if snapshot.sensor_type not in ("stress", "mold"):
             return
 
-        new_state = event.data.get("new_state")
-        old_state = event.data.get("old_state")
-
-        if new_state is None or new_state.state != "on":
+        key = (snapshot.growspace_id, snapshot.sensor_type)
+        if not snapshot.is_on:
+            self._active_evaluations.discard(key)
             return
 
-        if old_state is not None and old_state.state == "on":
-            return  # Not a rising edge
+        if key in self._active_evaluations:
+            return
+        self._active_evaluations.add(key)
 
-        growspace_id, alert_type = self._watched[entity_id]
-        reasons: list[str] = new_state.attributes.get(ATTR_REASONS) or []
-        probability: float = float(new_state.attributes.get(ATTR_PROBABILITY, 0.0))
-
-        await self.async_record_alert(growspace_id, alert_type, reasons, probability)
+        reasons = [
+            reason for _weight, reason in sorted(snapshot.reasons, reverse=True)[:5]
+        ]
+        self._hass.async_create_task(
+            self.async_record_alert(
+                snapshot.growspace_id,
+                snapshot.sensor_type,
+                reasons,
+                snapshot.probability,
+            ),
+            f"record_triage_alert_{snapshot.growspace_id}_{snapshot.sensor_type}",
+        )
 
     # ------------------------------------------------------------------
     # Core alert creation
