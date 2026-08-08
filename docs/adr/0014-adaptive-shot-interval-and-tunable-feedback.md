@@ -71,10 +71,33 @@ amendment fixes the measurement that mistrains the correction.
 
 `observe()` fires when the [[Settled Observation]] resolves: the
 `InfiltrationMonitor` reports at least two distinct sensor updates stamped after
-the cycle's `end_dt`, with a slope that is no longer positive. The monitor
-returns the reading itself rather than a boolean, so `moisture_after` is
-provably one of the samples the readiness rule was evaluated over — there is no
-second sensor read anywhere in the path to drift from it.
+the cycle's `end_dt`, with a slope across **those samples only** that is no
+longer positive. The monitor returns the reading itself rather than a boolean,
+so `moisture_after` is provably one of the samples the readiness rule was
+evaluated over — there is no second sensor read anywhere in the path to drift
+from it.
+
+**Readiness must not reuse the monitor's ring-wide `state`**, and this is the
+one place an implementer will get it wrong. `state` computes its slope
+`_samples[0]` → `_samples[-1]` across the whole
+`SUBSTRATE_INFILTRATION_WINDOW_MINUTES` ring, so a *level shift* inside the
+window reads as a positive slope long after motion has stopped. A shot ending at
+T on a 5-minute probe, 45.0% settling to 48.0% by T+6:
+
+```
+ring at T+11: [(T-4, 45.0), (T+1, 46.5), (T+6, 48.0), (T+11, 48.1)]
+ring-wide slope = (48.1 - 45.0) / 15min = +0.21 pp/min  ->  INFILTRATING
+post-cycle slope = (48.1 - 48.0) / 5min  = +0.02 pp/min  ->  ready
+```
+
+Reading `state` here would make readiness unreachable until the last pre-shot
+sample ages out of the ring — never before ~15 minutes post-shot — while the
+bound below is `3 × interval`, i.e. 15 minutes on a 5-minute interval. Every
+observation would abandon on precisely the short-interval growspaces the
+[[Infiltration Gate]] bites on. Restricting the slope to post-`end_dt` samples
+also makes the predicate self-contained: it stops depending on the window
+constant at all, so retuning that constant against real traces cannot silently
+change feedback behaviour.
 
 Three sub-decisions, each with a rejected alternative:
 
@@ -107,10 +130,14 @@ Three sub-decisions, each with a rejected alternative:
 
 ### An observation is abandoned, never approximated
 
-Three paths abandon: the bound expires; a fast-following cycle starts
+Four paths abandon: the bound expires; a fast-following cycle starts
 (`_last_cycle_timestamp` advances past the snapshot's `end_dt`, i.e. confirmed
-switch-on, manual runs included); or a sensor dropout outlasts the bound. In
-every case `observe()` simply does not run, leaving both factors untouched.
+switch-on, manual runs included); a sensor dropout outlasts the bound; or the
+composer resets underneath the pending observation (below). In every case
+`observe()` simply does not run, leaving both factors untouched. A fifth skip
+sits inside `observe()` itself and is pre-existing: it returns early on
+`d_actual <= 0` (`shot_composer.py:131`), newly reachable now that `drying` is
+accepted and the reading can land at or below `moisture_before`.
 
 Note the bound (`3 × interval`) deliberately exceeds the cooldown
 (`1 × interval`), so a shot firing mid-observation is normal operation. That
@@ -145,6 +172,22 @@ the monitor never saw, on a slow probe usually from a moment it never sampled.
 Loop evaluation also removes the poll-cadence question (the loop's 60s tick is
 already the monitor's feed cadence), the second task set and unload path, and
 any window between the fast-follow check and the `observe()` call.
+
+**The pending observation is discarded wherever the composer resets** — at
+midnight in `_reset_extra_daily_state` and on the [[Steering Tick Verdict]]'s
+P1→P2 `reset_composer` flag. A reset asserts that the session's feedback history
+no longer applies; honouring a straggler measured before it would contradict
+that, applying yesterday's (or P1's) overshoot to factors just returned to 1.0.
+The P1→P2 case is the likelier one, since that transition happens while shots
+are actively firing.
+
+This is deliberately the **opposite** rule to the monitor's, and the contrast is
+the point: `InfiltrationMonitor` is explicitly *not* reset at midnight
+(ADR-0031 decision 2) because infiltration is a physical process with no daily
+state, while the pending observation is control-loop lineage whose only purpose
+is to move factors that were just cleared. Two pieces of retained state on the
+same coordinator, opposite reset behaviour, because one measures the substrate
+and the other serves the controller.
 
 A consequence to leave standing rather than fix: while steering is disabled or
 the loop early-returns, a pending observation is never evaluated and simply
