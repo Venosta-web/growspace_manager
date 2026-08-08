@@ -652,9 +652,19 @@ Not retrieved, and therefore not used:
 - **Grodan e-Gro** (the irrigation-strategy software layer above GroSens) — not retrieved. This is the most
   significant remaining gap: e-Gro is where Grodan's *zoning* guidance would live, as opposed to GroSens'
   sensor-hardware guidance.
-- **METER Group application notes** on sensor replication — not retrieved in this pass. METER manufactures the
-  TEROS sensors AROYA resells, so METER's own guidance is the closest thing to a first-party statement on
-  replication and remains the highest-value unfetched source.
+- **METER Group** — `metergroup.com` is behind a Cloudflare JavaScript interstitial ("Just a moment… Enable
+  JavaScript and cookies to continue"); 403 to WebFetch and to browser-UA curl, and its `www` host fails TLS
+  verification. **Nothing from METER is cited in this document.** This is the highest-value remaining gap: METER
+  manufactures the TEROS sensors AROYA resells, so its guidance is the closest thing to a first-party statement
+  on replication. Retrieving it needs a JS-capable browser.
+
+  Two unverified leads from search summaries, recorded as leads only and **not** used above:
+  (a) that TEROS 12 has roughly a 1 L volume of influence versus ~200 mL typical, which if true bears on how much
+  within-zone variability a single probe already integrates; and (b) that METER publishes **coir-specific
+  calibrations** for its soil moisture sensors. Lead (b) is potentially significant for §5 — if VWC accuracy
+  depends on a substrate-specific calibration, then **substrate type is not merely an agronomic zoning dimension
+  but a measurement-validity one**, and mixing coco and rockwool under one probe calibration would produce wrong
+  numbers rather than merely suboptimal irrigation. Worth confirming before any zone-identity ADR is written.
 - **AROYA's definition of Room vs Zone** — the help-docs article on creating rooms and zones documents the UI
   steps only. AROYA never defines what a Zone *is*, nor states any relationship between a Zone and a valve. This
   is a genuine gap in the source, not a retrieval failure, and it is telling: the market-leading platform ships
