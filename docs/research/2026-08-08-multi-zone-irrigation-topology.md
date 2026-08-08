@@ -25,11 +25,11 @@ A worked example of why the tier matters is in [Could not verify](#could-not-ver
 
 ## Summary of findings
 
-1. **No retrieved source states a typical or recommended zone count.** Not AROYA, not Athena, not any
-   controller manual. What exists is a hardware *ceiling* (8–72 stations on OpenSprinkler, "up to 30"
-   on TrolMaster NFS-1) and a derivable *floor* (zones ≥ distinct cultivars in the room, from Athena's
-   strain-per-zone rule). The map's 2–6 target survives as an inference from a published rule, not as
-   an observation. See [Zone counts](#4-zone-counts-the-honest-answer-is-no-number).
+1. **No source *recommends* a zone count**, and exactly one *observes* one. Hardware ceilings run from 4
+   (Autogrow) to hundreds; the derivable floor is "zones ≥ distinct cultivars". The single observed
+   install is a 2-acre container nursery with **54 valves grouped into 8 control zones** — which also
+   shows that zone and valve are not 1:1. The map's 2–6 target survives as inference from a published
+   composition rule, not as observation. See [Zone counts](#4-zone-counts-the-honest-answer-is-no-number).
 2. **The reference hydraulic layout is one shared pump plus N solenoid valves, run sequentially.**
    Five vendors' manuals independently describe the same shape — OpenSprinkler (master/pump outputs +
    sequential station groups), Autogrow IntelliDose ("a single irrigation pump with each station being
@@ -46,9 +46,15 @@ A worked example of why the tier matters is in [Could not verify](#could-not-ver
    here: cultivar/strain, substrate type *and* volume, emitter count and flow rate, plant size/age, and
    light intensity. See [Must not merge](#5-where-published-methodology-says-zones-must-not-be-merged).
 5. **Three independent sources converge on roughly three probes per controlled cohort**, and — more
-   usefully — all three give the same *rationale*: within-zone spatial variability driven by airflow and
-   position. The rationale generalises to a design constraint; the number does not.
+   usefully — all give the same *rationale*: within-zone spatial variability driven by airflow and
+   position, corroborated independently in peer-reviewed container research. The rationale generalises
+   to a design constraint; the number does not. METER, who make the sensors AROYA resells, answer the
+   count question with "**No single answer captures all scenarios**" and note that **irrigation
+   scheduling specifically needs fewer sensors** than estimating a true mean.
    See [Probes per zone](#1-probes-per-controlled-zone).
+6. **How to reduce several probes to one number is genuinely unsettled** — Grodan averages (in hardware),
+   Athena elects the average-moisture plant, UF/IFAS elects the driest zone, AROYA is silent. This is a
+   decision #544 has not yet listed and it needs an ADR.
 
 ---
 
@@ -60,13 +66,17 @@ A worked example of why the tier matters is in [Could not verify](#could-not-ver
 
 > Three sensors per strain in a 1,000-square-foot room should produce the most helpful and complete dataset.
 
-The rule of thumb above is verbatim. The stated rationale — paraphrased, not quoted — is that a single sensor in
-a large facility captures data about one plant only. Note the unit of subdivision in that sentence: **per
-strain**, not per room or per bench. AROYA is a sensor vendor and cites no study, hence tier B.
+The surrounding rationale, recovered verbatim on a second pass:
 
-The same page also acknowledges (paraphrased) that grow media contain inconsistencies even within one brand, from
-production and shipping variation, and that these can produce inconsistent data even where the substrate looks
-uniform.
+> Incorporating one cannabis moisture sensor into a 10,000-square-foot facility will only yield data about a
+> single plant. It takes multiple sensors to collect a cross-section of data about your plants overall.
+
+Note the unit of subdivision: **per strain**, not per room or per bench. AROYA is a sensor vendor and cites no
+study, hence tier B. The same page on substrate variability:
+
+> Growers using the most precise cannabis moisture sensor on the market must still watch for inconsistencies
+> within the substrate. After all, any affordably priced grow medium likely has variances, even within the same
+> brand.
 
 ### Athena — one main sensor at the average plant, secondaries optional
 
@@ -105,6 +115,97 @@ And for runoff validation, a separate sample of plants per zone:
 
 > Before P1 Irrigation Phase begins, select 2-3 average size plants within each irrigation zone. This will give
 > the best representation of the average runoff for plants within the zone.
+
+### METER Group — the manufacturer's answer is "it depends", and that is the finding
+
+**Tier A (application note).** METER publishes a note asking exactly the ticket's question.
+["Soil moisture sensors — how many do you need?" (PDF)](https://publications.metergroup.com/Sales%20and%20Support/METER%20Environment/Website%20Articles/how-many-soil-moisture-sensors-needed.pdf)
+
+> How many sensors will produce the most complete soil moisture picture? **No single answer captures all
+> scenarios.** Study objectives, accuracy requirements, scale, and site-specific characteristics all influence the
+> number of sensors required. In addition, soil moisture is variable both spatially and temporally.
+
+And, decisively for GSM's use case:
+
+> If the objective is to determine the "true" mean soil water content for a study area, then the sampling scheme
+> needs to account for the sources of variability described above. […] If instead, the study site is fairly
+> homogenous **or the researcher is only interested in the temporal pattern of soil water content (e.g., for
+> irrigation scheduling), then fewer soil moisture sensors may be required** due to temporal autocorrelation in
+> the data (Brocca et al. 2010; Loescher et al., 2014).
+
+This is the most important sentence in the probe-count question and it comes from the manufacturer of the sensors
+AROYA resells, citing literature. **Irrigation scheduling is explicitly the low-sensor-count case.** Estimating a
+zone's true mean VWC is a *harder* problem than deciding when to fire the next shot, and crop steering is the
+latter. A design that demands many probes before it will steer is solving the wrong problem.
+
+METER's companion article on interpreting the data
+([measurement insights](https://metergroup.com/measurement-insights/how-to-analyze-soil-moisture-data/), tier A)
+adds a warning that bears directly on any averaging logic:
+
+> Soil water content has a high spatial variability. Multiple sensors installed throughout the same field should
+> show variation. **If there is no variability whatsoever, that is a sign to be concerned.**
+
+> each spot will have its own baseline, so it's important to compare soil water content measurements to previous
+> measurements in the same spot and not expect identical readings from one location to the next, no matter how
+> close they are.
+
+The second quote is a direct argument for **trend-relative rather than absolute-threshold** logic per probe, and
+against naively averaging probes with different baselines.
+
+The [TEROS 11/12 manual](https://publications.metergroup.com/Manuals/20587_TEROS11-12_Manual_Web.pdf) (tier A)
+contains **no** sensors-per-zone figure and no dripper-relative placement rule. It does carry **separate mineral-soil
+and "SOILLESS MEDIA" calibrations** — which partially confirms the substrate-calibration concern noted under
+[Could not verify](#could-not-verify): substrate type changes how a raw reading becomes VWC.
+
+### Extension and peer-reviewed sources — the only non-vendor evidence in this corpus
+
+Everything above is vendor-authored. These are not.
+
+**A zone is defined by a solenoid valve, and one sensor may control several.**
+Tier A, UF/IFAS EDIS AE437,
+["Smart Irrigation Controllers: How Do Soil Moisture Sensor (SMS) Systems Work?"](https://edis.ifas.ufl.edu/publication/AE437)
+(turf/landscape context, not containers):
+
+> A single sensor can be used to control the irrigation for many zones (**where an irrigation zone is defined by a
+> solenoid valve**) or multiple sensors can be used to irrigate individual zones. In the case of one sensor for
+> several zones, **the zone that is normally the driest, or most in need of irrigation, is selected for placement
+> of the sensor** to ensure adequate irrigation in all zones.
+
+> Soil in the area of burial should be representative of the entire irrigated area.
+
+> Sensors should also be located at least 5 feet from irrigation heads and toward the center of an irrigation zone.
+
+Two things here are new. First, an **independent, non-commercial definition of "irrigation zone" as the solenoid
+valve** — which is the cleanest definition retrieved from any source, vendor or otherwise. Second, a documented
+topology GSM has not been considering: **one probe governing several valves**, with the probe sited in the
+*driest* zone so no zone is under-watered. That is a conservative fallback pattern with a published rationale,
+and it is directly relevant to 544's open "fallback behavior when control is degraded" item.
+
+Note it inverts Athena's placement rule: Athena sites the probe at the *average* plant to steer one zone; UF/IFAS
+sites it at the *driest* zone to safely cover many. Different objectives, different placement — recorded under
+[Disagreements](#disagreements).
+
+**Container-crop research reports sensor counts only as study design, never as recommendation.**
+Chappell et al., "Implementation of Sensor-based Automated Irrigation in Commercial Floriculture", *HortTechnology*
+([PDF](https://www.publicgardens.org/wp-content/uploads/2019/03/19437714-horttechnology-implementation-sensor-based-automated-irrigation-commercial-floriculture.pdf)):
+
+> Five soil moisture sensors (GS3; Decagon Devices, Pullman, WA) were distributed randomly throughout each crop
+
+And, with an explicit replication rationale, "Greenhouse cucumber production using sensor-based irrigation" (2017),
+Irrigation Association technical paper
+([PDF](https://www.irrigation.org//IA/FileUploads/IA/Resources/TechnicalPapers/2017/GreenhouseCucumberProductionUsingSensor-basedIrrigation.pdf)):
+
+> Irrigation was performed on-demand using **one substrate moisture sensor per experimental unit formed by four
+> pots.**
+
+> Replication differences are expected, and explained by the use of independent experimental units, variations in
+> moisture caused by **container positioning in the greenhouse**, sensor installation, and the natural variability
+> between plants
+
+The container-positioning mechanism is the same one Athena names (fans, aisles), arrived at independently in a
+peer-reviewed setting. That is the strongest corroboration in this document of *why* probe siting matters — and
+notably it corroborates the **rationale**, while no peer-reviewed or extension source recommends a
+sensors-per-zone *number* for containerised crops at all.
 
 ### Convergence, and what it is worth
 
@@ -367,6 +468,26 @@ NFS-2 caps medium sensors at 50 against hundreds of valve outputs, and the 50 is
 under one controller. AROYA's sensor guidance is denominated per strain for the same reason. Neither states how
 many cultivars a room runs.
 
+**One observed installation.** The single retrieved source that reports an actual deployed zone count is
+peer-reviewed and not from this industry — Chappell, Dove, van Iersel, Thomas & Ruter, "Implementation of Wireless
+Sensor Networks for Irrigation Control in Three Container Nurseries", *HortTechnology* 23(6):747–753 (2013),
+[journals.ashs.org](https://journals.ashs.org/horttech/view/journals/horttech/23/6/article-p747.xml) (tier A):
+
+> The 2-acre coldframe at MNI has a total of **54 irrigation valves**… The coldframe was initially divided into
+> **eight separate irrigation zones, with six to seven valves per zone.**
+
+Read this carefully, because it is the only observation available and it is easy to over-read:
+
+- It is a **container nursery**, not cannabis, and 2 acres — far larger than GSM's referent scale.
+- Critically, it shows **a two-level hierarchy**: 54 physical valves grouped into 8 *control* zones. The
+  controlled/steered unit is not the valve. This is real-world evidence that "zone" and "valve" are distinct
+  concepts even in a working install, and it matches UF/IFAS's note that one sensor can govern several valves.
+- **8 control zones** is the only observed figure in the corpus, and it sits just above the map's 2–6 range at
+  roughly 30× the area.
+
+None of this makes 2–6 observed. It does mean the map's range is not obviously wrong in order of magnitude, and
+it flags that GSM may need to distinguish a *steered zone* from a *valve* rather than assuming 1:1.
+
 **Therefore:** the map's 2–6 zone target is defensible as *"one zone per cultivar cohort, and small rooms run
 few cultivars"*. That is inference from a published composition rule. It is **not** observation, and nothing in
 this research converts it into one. A zone-shape ticket citing this document should name that chain explicitly
@@ -421,20 +542,57 @@ And on hydraulic grounds specifically, p.19:
 The second is a pressure/head argument, not an agronomic one. It is a reminder that a zone boundary can be forced
 by hydraulics alone, independent of what is planted.
 
+### Grodan — the only *quantified* within-zone uniformity tolerance
+
+**Tier A/B (co-branded best-practice guide).** Grodan & Priva, *Best Practice Guidelines for Greenhouse Water
+Management* (© 2016), p.26
+([PDF](https://hortamericas.com/wp-content/uploads/2018/09/grodan_best-practice-water-management.pdf)):
+
+> Check the variation between individual drippers **within a valve section** during crop turn around.
+> • A variation of 0 and 5% is good • A variation of 5 and 7% is acceptable • A variation of > 7 to 10% usually
+> indicates that the drippers need cleaning or replacing.
+
+And Grodan's measurement procedure sheet, *Cleaning and checking the irrigation system*
+([PDF](https://www.grodan.com/syssiteassets/downloads/tools--services/english/ts-2-3-checking-irrigation-en.pdf)):
+
+> Select 10 drippers from the first, middle and bottom irrigation line of a chosen irrigation section. […] Adding
+> up the volume of these 30 drippers provides a good insight into the output per section.
+
+> 5% variation is good, no action is required. / 5% to 10% variation is poor, it is recommended that action is
+> taken to correct this. / **More than 10% variation is extremely poor and will result in uneven slab water
+> contents and poor water management capabilities if action is not taken.**
+
+This puts a **number** on Netafim's qualitative do-not-mix-emitters rule: within one valve section, >10 % dripper
+output variation is stated to break water management. It also gives a hydraulic sizing figure —
+"As a general rule the distribution system should be designed to deliver 1.2 - 1.5 l/m2/hr" — where the stated
+determinants include "the number of irrigation zones within one valve/pump compartment".
+
+**An important negative finding.** Across every Grodan document retrieved — GroSens brochure and installation
+manual, the e-Gro Companion quick guide, the Cannabis Grow Guide chapter on Precision Irrigation, the Best
+Practice Guidelines, and the 6-phase tomato brochure — **Grodan never states that a section must be uniform in
+cultivar, plant age or stage, dripper flow rate, or light level.** What Grodan constrains per section is (a) the
+**slab/media type**, which is a configuration field in its software ("Media type — Choose the correct slab type
+for this section"), and (b) **dripper output variation**, quantified above. Do not infer a Grodan crop-uniformity
+rule; there isn't one. The cultivar rule is Athena's alone, softened by AROYA.
+
 ### Composite: what makes two cohorts incompatible
 
 Assembled from the three sources above. Each dimension traces to a named source; the *list* is my synthesis.
 
-| Dimension | Source | Mechanism |
-| --- | --- | --- |
-| Cultivar / strain | Athena (unconditional), AROYA (conditional on strain-matching) | divergent dryback rate |
-| Substrate volume | AROYA | same shot % ⇒ different absolute volume ⇒ different VWC response |
-| Substrate type (coco vs rockwool) | Athena (implicit — separate shot tables and field capacities) | different field capacity and dryback curve |
-| Emitter count / flow rate | Netafim (explicit), AROYA ("drip system is uniform") | same valve-open duration ⇒ different delivered volume |
-| Dripline spacing | Netafim | distribution uniformity |
-| Plant size / age / health | AROYA | divergent transpiration |
-| Light intensity | AROYA | divergent transpiration |
-| Elevation change > 10 ft | Netafim | pressure variation across the zone |
+| Dimension | Source | Mechanism | Threshold given? |
+| --- | --- | --- | --- |
+| Cultivar / strain | Athena (unconditional), AROYA (conditional on strain-matching) | divergent dryback rate | no |
+| Substrate volume | AROYA | same shot % ⇒ different absolute volume ⇒ different VWC response | no |
+| Substrate type | Athena (implicit — separate shot tables and field capacities), Grodan (explicit config field), METER (separate soilless-media calibration) | different field capacity and dryback curve; **and different raw-to-VWC calibration** | no |
+| Emitter output variation | **Grodan (quantified)**, Netafim (qualitative), AROYA ("drip system is uniform") | same valve-open duration ⇒ different delivered volume | **yes — >10 % breaks it** |
+| Dripline spacing | Netafim | distribution uniformity | no |
+| Plant size / age / health | AROYA | divergent transpiration | no |
+| Light intensity | AROYA | divergent transpiration | no |
+| Elevation change > 10 ft | Netafim | pressure variation across the zone | **yes — 10 ft** |
+
+Only two dimensions carry a published threshold. The rest are directional rules. Note also that substrate type is
+the one dimension that is not merely agronomic: because METER ships a distinct soilless-media calibration, mixing
+substrates under one probe produces *wrong numbers*, not just suboptimal irrigation.
 
 ---
 
@@ -508,9 +666,25 @@ zone.
 > The Sensors that are in the same irrigation section should be used to calculate the average of that section.
 
 That is an unambiguous rule, and it **conflicts with Athena's main-plus-secondary model** — see
-[Disagreements](#disagreements). Grodan also ships three sensors as the standard set (component list: "3x"
-Sensors, 1× Receiver, 1× Reader, 1× Smartbox, 1× Converter), with a 50 m sensor-to-receiver range and a 3-minute
-data refresh.
+[Disagreements](#disagreements). It is not an isolated line: averaging is built into the product's data path.
+The Smartbox "creates averages of GroSens Sensor data over the chosen sections of the greenhouse according to the
+grower's wishes", the analogue converter's outputs are specified as "0-5V output representing **average** water
+content of the section" (likewise EC and temperature), and the e-Gro app shows "exact measurement values (**always
+average of all sensors**)" per section. Grodan has committed to averaging at the hardware interface.
+
+Grodan also ships three sensors as the standard set (component list: "3x" Sensors, 1× Receiver, 1× Reader,
+1× Smartbox, 1× Converter), with a 50 m sensor-to-receiver range and a 3-minute data refresh, and describes the
+set's purpose precisely:
+
+> The GroSens Basic Set has been designed to guarantee reliable, representative WC and EC figures for **one
+> watering section**.
+
+So Grodan's three sensors are explicitly scoped to *one* section — the same denominator as AROYA's three-per-strain.
+
+Placement is dripper- and drain-relative, the only such rule retrieved from any manufacturer:
+
+> Place sensor 8 – 10 cm left from the 2nd block from the drain hole. […] In case, sensor over the width is on a
+> slope, place sensor at the lowest site of the slab.
 
 Measurement envelope, verbatim:
 
@@ -568,20 +742,31 @@ provided the grower has characterised the strains. Neither cites data.
 
 **3. Whether multiple probes in a zone should be averaged. This is a direct contradiction, and it matters most.**
 
-- **Grodan (tier A, manual):** "The Sensors that are in the same irrigation section should be used to calculate
-  the average of that section." Unambiguous — average them.
-- **Athena (tier B):** distinguishes a MAIN sensor from a SECONDARY sensor in its diagram, instructs the grower
-  to site the main one at "a plant that best represents the average moisture level", and then explicitly refuses
-  to generalise: "Depending on the irrigation controller additional sensors may be used as supplemental data or
-  may be used to take average readings."
-- **AROYA (tier B):** three per strain framed as producing "the most helpful and complete dataset" — a dataset,
-  not a control signal. Never says how it is reduced.
+- **Grodan (tier A, manual): average.** "The Sensors that are in the same irrigation section should be used to
+  calculate the average of that section" — and averaging is wired into the Smartbox and the 0–5 V converter
+  outputs, so this is a product commitment, not advice.
+- **Athena (tier B): elect a representative.** Distinguishes a MAIN from a SECONDARY sensor, sites the main one
+  at "a plant that best represents the average moisture level", then explicitly refuses to generalise:
+  "Depending on the irrigation controller additional sensors may be used as supplemental data or may be used to
+  take average readings."
+- **UF/IFAS AE437 (tier A, extension): elect the driest.** "the zone that is normally the driest, or most in need
+  of irrigation, is selected for placement of the sensor to ensure adequate irrigation in all zones."
+- **AROYA (tier B): silent.** Three per strain framed as "the most helpful and complete dataset" — a dataset, not
+  a control signal. Never says how it is reduced.
+- **METER (tier A, application note): depends on the objective.** Estimating a true mean needs a sampling scheme;
+  "if… the researcher is only interested in the temporal pattern of soil water content (e.g., for irrigation
+  scheduling), then fewer soil moisture sensors may be required."
 
-So: one source says average, one says elect a representative and defers the rest to the controller, one is
-silent. Note the sources differ in substrate too — Grodan is rockwool slabs in glasshouse sections (physically
-uniform, high measurement homogeneity), Athena is pots on benches beside fans and aisles (where Athena's whole
-point is that position *creates* divergence). The disagreement may be a substrate/layout artefact rather than a
-genuine conflict of principle, but no retrieved source says so, so it is recorded as a conflict.
+Four sources, three different reduction rules, and a manufacturer saying the right answer depends on what you are
+computing. Note also that the two "elect a representative" rules **disagree with each other on which plant**:
+Athena picks the *average* plant (objective: steer this zone accurately), UF/IFAS picks the *driest* zone
+(objective: never under-water any zone it covers). Placement follows objective, not convention.
+
+Context worth holding: the sources differ in setting. Grodan is rockwool slabs in glasshouse sections
+(physically uniform, high measurement homogeneity, and its own ±5 % V/V sensor accuracy argues for averaging);
+Athena is pots on benches beside fans and aisles, where its whole point is that position *creates* divergence and
+METER warns that each spot has its own baseline. The conflict may be a substrate/layout artefact rather than a
+conflict of principle — but no retrieved source says so, so it is recorded as a conflict.
 
 Design consequence: **"what is a zone's VWC when it has three probes" has no single published answer, so GSM
 should not silently pick one.** Whichever it picks is a decision requiring an ADR, not an implementation detail.
@@ -651,19 +836,30 @@ Not retrieved, and therefore not used:
 - **Grodan e-Gro** (the irrigation-strategy software layer above GroSens) — not retrieved. This is the most
   significant remaining gap: e-Gro is where Grodan's *zoning* guidance would live, as opposed to GroSens'
   sensor-hardware guidance.
-- **METER Group** — `metergroup.com` is behind a Cloudflare JavaScript interstitial ("Just a moment… Enable
-  JavaScript and cookies to continue"); 403 to WebFetch and to browser-UA curl, and its `www` host fails TLS
-  verification. **Nothing from METER is cited in this document.** This is the highest-value remaining gap: METER
-  manufactures the TEROS sensors AROYA resells, so its guidance is the closest thing to a first-party statement
-  on replication. Retrieving it needs a JS-capable browser.
-
-  Two unverified leads from search summaries, recorded as leads only and **not** used above:
-  (a) that TEROS 12 has roughly a 1 L volume of influence versus ~200 mL typical, which if true bears on how much
-  within-zone variability a single probe already integrates; and (b) that METER publishes **coir-specific
-  calibrations** for its soil moisture sensors. Lead (b) is potentially significant for §5 — if VWC accuracy
-  depends on a substrate-specific calibration, then **substrate type is not merely an agronomic zoning dimension
-  but a measurement-validity one**, and mixing coco and rockwool under one probe calibration would produce wrong
-  numbers rather than merely suboptimal irrigation. Worth confirming before any zone-identity ADR is written.
+- **METER Group HTML pages** — `metergroup.com` sits behind a Cloudflare JavaScript interstitial; 403 to
+  WebFetch and to browser-UA curl, and the `www` host fails TLS verification. **Method note:** the two METER
+  articles quoted in §1 were recovered through the `r.jina.ai` text proxy of the primary METER URLs; the PDFs
+  (application note, TEROS 11/12 manual) came directly from `publications.metergroup.com` and were text-extracted
+  locally. Proxy-recovered text is one step removed from a direct fetch — treated as tier A because the proxy
+  returns the page's own text rather than a summary, but flagged here.
+- **TEROS 21 manual** — URL not located; product page 403.
+- **A confirmed coir-specific calibration document.** Partially addressed: the TEROS 11/12 manual does carry a
+  distinct "SOILLESS MEDIA" calibration alongside the mineral-soil one, which establishes the principle used in
+  §5. A dedicated *coir-specific* calibration article was seen only in a search summary and is **not** cited.
+- **TEROS 12 "1 L volume of influence versus ~200 mL typical"** — search summary only, not fetched. Not cited.
+  If true it bears on how much within-zone variability a single probe already integrates.
+- **AROYA's "Uniformity" crash course** — a second retrieval pass found `/knowledge-base/crash-courses/uniformity`
+  and `/resources/uniformity` resolving to index or 404 pages. The quotes used in §5 come from
+  `aroya.io/education-guides/uniformity-cannabis-cultivation`, which *did* fetch successfully in this session.
+  AROYA's knowledge base appears to have several dead or duplicated slugs; the education-guides path is the live one.
+- **Grodan plants-per-slab / plants-per-block figures** — block and slab dimensions, volumes, drip-stakes-per-block
+  and 6,000 slabs/ha were retrieved, but no plants-per-slab figure appears in any Grodan document fetched.
+- **A peer-reviewed or extension publication that *recommends* a sensors-per-zone number for containerised crops**
+  — none found. The container papers state counts only as experimental design; the extension sources that do give
+  guidance (UF/IFAS, UMN) are turf/landscape and field-crop contexts. This is a real absence in the literature,
+  not a retrieval failure.
+- **Grodan e-Gro** irrigation-strategy software documentation beyond the Companion App quick guide, and the
+  **GroSens HandHeld** documentation.
 - **AROYA's definition of Room vs Zone** — the help-docs article on creating rooms and zones documents the UI
   steps only. AROYA never defines what a Zone *is*, nor states any relationship between a Zone and a valve. This
   is a genuine gap in the source, not a retrieval failure, and it is telling: the market-leading platform ships
@@ -698,9 +894,15 @@ Offered as input to #544's charting, not as decisions.
 - **Zone identity**: sources constrain zone *composition* strongly and zone *count* not at all. The composition
   table in §5 is the sourced answer. GSM should let the grower declare zone membership rather than deriving it,
   given disagreement #1.
-- **Degraded control**: Athena's model is one designated representative probe per zone, extras optional. A
+- **Degraded control**: Athena's model is one designated representative probe per zone, extras optional, and
+  METER states outright that irrigation scheduling needs fewer sensors than estimating a true mean. A
   single-probe zone is therefore the *documented normal case*, not a degraded one. Any design treating one probe
-  as degraded contradicts the methodology.
+  as degraded contradicts both. UF/IFAS additionally documents a graceful-degradation pattern GSM has not
+  considered: **one probe governing several valves, sited in the driest zone** so no zone is under-watered. That
+  is a published fallback for "we have fewer probes than zones", which is the likely real-world state.
+- **Zone vs valve**: the one observed install groups 54 valves into 8 control zones, and UF/IFAS defines a zone
+  *as* a solenoid valve while describing one sensor covering several. GSM should not assume steered-zone and
+  valve are 1:1 — deciding that mapping is itself a charting question.
 - **Existing GSM shape**: `models/irrigation.py` already carries `SubstrateProfile` (`media_type`,
   `liters_per_pot`) and percent-of-substrate shot sizing (`p1_shot_volume_percent`, `p2_shot_volume_percent`),
   which is exactly Athena's model. `models/growspace.py` already has a `Subarea` ("A named sub-zone within a
