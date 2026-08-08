@@ -30,13 +30,18 @@ A worked example of why the tier matters is in [Could not verify](#could-not-ver
    on TrolMaster NFS-1) and a derivable *floor* (zones ≥ distinct cultivars in the room, from Athena's
    strain-per-zone rule). The map's 2–6 target survives as an inference from a published rule, not as
    an observation. See [Zone counts](#4-zone-counts-the-honest-answer-is-no-number).
-2. **The reference hydraulic layout is one pump plus N sequenced solenoid valves, one open at a time.**
-   AROYA — the dominant crop-steering platform — drives *only* OpenSprinkler, whose model is
-   software-defined master/pump outputs plus sequential station groups. AROYA's own FAQ states
-   "no more than one zone can be open at once." See [Hydraulics](#2-hydraulics-one-pump-n-valves-one-open-at-a-time).
-3. **Flow meters are optional, and where present they report pulse-derived cumulative volume per
-   irrigation event — not instantaneous rate.** Athena's 121-page methodology document mentions flow
-   meters zero times. See [Flow metering](#3-flow-metering-optional-pulse-based-cumulative-per-event).
+2. **The reference hydraulic layout is one shared pump plus N solenoid valves, run sequentially.**
+   Five vendors' manuals independently describe the same shape — OpenSprinkler (master/pump outputs +
+   sequential station groups), Autogrow IntelliDose ("a single irrigation pump with each station being
+   watered by opening a solenoid valve"), Galcon (12 valves + one master valve), TrolMaster NFS-2
+   ("Master Pump Link"), and AROYA on top of OpenSprinkler ("no more than one zone can be open at once").
+   Pump-per-zone is not the documented pattern anywhere.
+   See [Hydraulics](#2-hydraulics-one-pump-n-valves-run-sequentially).
+3. **Flow meters are optional, and vendors disagree on what a meter reports.** Athena's 121-page
+   methodology document mentions flow meters zero times, and two of five controllers have no flow input
+   at all. Among those that do: OpenSprinkler totalises pulses per station run, Galcon reports an
+   instantaneous rate in m³/hr, TrolMaster's DFM-1 reports both. **GSM must handle both shapes; there is
+   no single documented convention.** See [Flow metering](#3-flow-metering-optional-and-vendors-disagree-on-units).
 4. **"Must not merge" is enumerable from primary sources** and is the most decision-relevant finding
    here: cultivar/strain, substrate type *and* volume, emitter count and flow rate, plant size/age, and
    light intensity. See [Must not merge](#5-where-published-methodology-says-zones-must-not-be-merged).
@@ -105,7 +110,8 @@ And for runoff validation, a separate sample of plants per zone:
 ### Convergence, and what it is worth
 
 AROYA's three-per-strain, Athena's main-plus-secondary with 2–3 plants sampled for runoff, and Grodan's
-three-sensor basic set (see [Grodan](#grodan)) land in the same place without citing each other. Treat this as
+three-sensor standard set (see [Grodan](#grodan-grosens--the-one-source-that-says-how-to-reduce-multiple-probes))
+land in the same place without citing each other. Treat this as
 convergence among vendors sharing an industry practice, **not** as three independent confirmations of a measured
 optimum. None of the three publishes data behind the number.
 
@@ -116,7 +122,7 @@ probe, the rest are not.
 
 ---
 
-## 2. Hydraulics: one pump, N valves, one open at a time
+## 2. Hydraulics: one pump, N valves, run sequentially
 
 ### AROYA supports exactly one irrigation controller: OpenSprinkler
 
@@ -155,20 +161,72 @@ So: **one shared pump, many solenoid valves, sequential within a group, with con
 Parallel operation is possible but is an explicit opt-out that the grower must configure, and AROYA's layer
 forbids it outright.
 
-### TrolMaster
+### TrolMaster Aqua-X — a split bus, and a marketing page its own manual contradicts
 
-**Tier C (marketing page).** [trolmaster.com — Aqua-X NFS-1](https://www.trolmaster.com/Products/Details/NFS-1)
+**Tier A (manual).** [Aqua-X NFS-1 Instructions (PDF)](https://s3-us-west-2.amazonaws.com/trolmasterfilese/ManualFiles/Aqua-X+Irrigation+Controller(NFS-1)_Instructions.pdf)
 
-> control up to 30 separate irrigation zones (24vac solenoid valves or 120vac pumps)
+> Each set of Aqua-X Irrigation Controller can connect up to 30 outputs (24V or 110V) and monitor the pH value,
+> EC value and water temperature of nutrient.
 
-> up to (8) Water Content Sensors connected to a single Aqua-x controller
+> There are two RJ12 ports for the Control Board. One is for 24V Control Board (6 individually controlled 24V
+> outputs for solenoid valves), the other is 110V Control Board (6 individually controlled 110V outputs for
+> water pumps). The maximum number of connections to the Aqua-X is 5 pieces for either 24V Control Board or
+> 110V Control Board.
 
-The product page does not address whether multiple zones may run simultaneously. Note the architecture is the
-same shape as OpenSprinkler's — a zone output drives *either* a 24 V solenoid *or* a 120 V pump, i.e. the pump
-is one of the switched outputs rather than a separate concept.
+This is a **split-bus** architecture: a 24 V bus for solenoids and a separate 110 V bus for pumps, 6 outputs per
+board, max 5 boards, 30 outputs total. It is neither one-pump-per-zone nor a single master-pump abstraction —
+NFS-1 has no master-pump linkage at all.
 
-The **8 water content sensors per controller** figure is worth holding next to the 30-zone figure: at TrolMaster's
-own ceiling the controller cannot supply even one probe per zone. Probe-per-zone is not assumed by the hardware.
+**Tier A (spec sheet).** [NFS-2 Aqua-X Pro Tech Sheet (PDF)](https://trolmasterfilese.s3.us-west-2.amazonaws.com/ManualFiles/Aqua-X+system/Main+Controllers/Aqua-X+Pro/NFS-2+Tech+Sheet.pdf)
+
+> There are 2 control lines in NFS-2, Pump Line & Valve Line
+
+> Master Pump Link functions by allowing users to employ multiple pumps, linked together with multiple groups of
+> solenoids. The improved Master Pump Link function on the Aqua-X Pro will allow the user to control multiple
+> water/booster pumps, with each pump assigned to only run with a selected group of solenoids.
+
+That is the most explicit statement retrieved of the **general** topology: *N pumps, each bound to a group of
+solenoids*. One-pump-many-valves is the degenerate single-pump case of it. If GSM ever models more than one pump,
+this is the documented shape to match — a pump owns a group of zones, not a zone.
+
+**⚠️ Marketing contradicts the manual.** The NFS-1 product page (tier C) claims
+"up to (8) Water Content Sensors connected to a single Aqua-x controller"
+([trolmaster.com/Products/Details/NFS-1](https://www.trolmaster.com/Products/Details/NFS-1)). The NFS-1 manual's
+exhaustive specifications page lists **no substrate moisture input** — only WD-1 water detectors, an AMP-2 sensor
+board, and nutrient-solution pH/EC/temp probes — and TrolMaster's own
+[Aqua-X comparison chart](https://trolmasterfilese.s3.us-west-2.amazonaws.com/ManualFiles/Aqua-X+system/Main+Controllers/AUQA-X_NFS-1-2_Comparison.pdf)
+marks the WCS and DFM rows "-" for NFS-1. The comparison chart lists "Crop Steering (with WCS-1/2)" as an
+**NFS-2-only** feature. The earlier controller in this product line cannot do substrate crop steering at all.
+This is the cleanest documented-practice-versus-marketing divergence in the corpus, and it is *within one vendor*.
+
+### Autogrow / Bluelab IntelliDose — the small-scale case
+
+**Tier A (manual).** [IntelliDose Controller Manual (PDF, BL_ENG_Manual_BCTIND01)](https://files.plytix.com/api/v1.1/file/public_files/pim/assets/89/90/94/62/629490895d155f1bc7e496a7/texts/85/ef/53/65/6553ef858005720eaf2dc0cd/BL_ENG_Manual_BCTIND01_IntelliDose-Controller.pdf)
+
+> IntelliDose provides the ability to control up to 4 irrigation stations with an optional master pump.
+
+> If a master pump is selected, this output will run each time any of the station outputs is set to run, to
+> accommodate having a single irrigation pump with each station being watered by opening a solenoid valve.
+
+> Sequential - where each station is run in turn (one after the other) all being triggered by a single trigger
+> (day/night interval or time of day)
+
+> Independent – where each station is completely independent, each having its own trigger (day/night interval or
+> time of day).
+
+This is the most GSM-relevant controller in the set: **four zones, one shared pump, and an explicit
+sequential-versus-independent scheduling choice.** It also confirms the shared-pump semantics precisely — the
+master output runs whenever *any* station runs. Irrigation is purely time-based; there is no flow input and no
+substrate moisture input.
+
+### Galcon G.S.I DC
+
+**Tier A (manual).** [Galcon G.S.I DC Controller (PDF)](https://www.galconc.com/wp-content/uploads/2020/09/AT1272.pdf)
+
+> The G.S.I DC Controller has the following output connectors: 12 irrigation valves / Master valve
+
+Same shape again: N zone valves plus one master. Inputs are exactly rain sensor, water meter, fertilizer meter —
+no substrate moisture.
 
 ### Facility engineering view
 
@@ -187,7 +245,7 @@ see [Disagreements](#disagreements).
 
 ---
 
-## 3. Flow metering: optional, pulse-based, cumulative per event
+## 3. Flow metering: optional, and vendors disagree on units
 
 This section answers the item 544 flags as blocked on "unit handling (rate vs cumulative)".
 
@@ -207,9 +265,19 @@ Delivered volume is instead controlled *open-loop* by shot size and verified by 
 That is the honest state of the published methodology: **volume is calculated from emitter flow rate × duration
 and spot-checked with a jug, not metered.** Runoff is likewise measured manually in a graduated cylinder.
 
-### Where meters do exist, they are pulse counters totalised per station run
+### Two of five controllers have no flow input at all
 
-**Tier A.** OpenSprinkler manual (as above):
+**Tier A**, from the manuals cited in §2. Autogrow IntelliDose: no flow or water meter input exists across the
+41-page manual; irrigation is specified only as "Irrigate every" / "Irrigate time", i.e. purely time-based.
+TrolMaster NFS-1: no flow meter in its exhaustive specifications list, and "-" in the DFM row of TrolMaster's own
+comparison chart. Metering is an **upgrade tier**, not a baseline, in this equipment class — which independently
+corroborates Athena's methodology running entirely without one.
+
+### Where meters do exist, the reported unit is not consistent
+
+This is the part that must not be simplified. Three vendors, three answers.
+
+**OpenSprinkler — pulse in, cumulative volume out.** Tier A, manual (as above):
 
 - Signal: "All dry-contact, 2-wire flow sensors (recommended)" plus "3-wire flow sensors that work with +5V".
 - Conversion: "Flow Pulse Rate: can be found in the flow sensor datasheet" and is "used to convert flow pulse
@@ -221,18 +289,51 @@ and spot-checked with a jug, not metered.** Runoff is likewise measured manually
 
 That last point is the structural consequence of one-zone-open-at-a-time: a single shared meter on the manifold
 can attribute volume per zone *only because* zones are sequenced. Concurrent zones on a shared meter make
-per-zone attribution impossible without a meter per line.
+per-zone attribution impossible without a meter per line. **This is the strongest hydraulic argument in the
+corpus for serialising a shared-pump group** — it is not merely a pressure constraint, it is what makes metered
+accounting possible at all.
 
-TrolMaster sells its meter as a separate add-on (DFM-1 / DFM-3), i.e. metering is opt-in there too.
+**Galcon — pulse in, instantaneous rate out.** Tier A,
+[G.S.I DC manual](https://www.galconc.com/wp-content/uploads/2020/09/AT1272.pdf):
 
-**Design conclusion for GSM:** the crop-steering equipment class reports **cumulative volume per irrigation
-event**, derived from a pulse count and a datasheet pulses-per-unit constant. The unit is whatever the constant
-declares (L or gal); the meter itself is unit-agnostic.
+> The GSI unit supports the following input devices: Rain sensor / Flow meter (pulse type) / Fertilizer meter
 
-**Honest caveat:** this conclusion is about *this equipment class*. Generic flow sensors surfaced through Home
-Assistant frequently expose an instantaneous rate (L/min) instead of, or alongside, a totaliser, and a
-`total_increasing` totaliser resets on device reboot. GSM cannot assume the crop-steering shape from an
-arbitrary HA entity. The finding narrows the *primary* case, it does not eliminate the rate case.
+> Flow value currently detected by the flow sensor (in m 3/hr).
+
+Same physical pulse sensor, but the controller surfaces a **rate in m³/hr** on its main screen, not a totaliser.
+
+**TrolMaster DFM-1 — both, over a proprietary digital bus.** Tier A,
+[DFM-1 Tech Sheet (PDF)](https://trolmasterfilese.s3.us-west-2.amazonaws.com/ManualFiles/Aqua-X+system/Water+monitoring/DFM-1/DFM-1+Tech+sheet.pdf):
+
+> Rated Flow Rate: 0.53-15.85 Gallon/Min (2-60 L/min)
+
+> Users can monitor the flow speed as well as the total flow volume.
+
+> When using Feed By Volume, the DFM-1 will accurately measure and allow a precise and desired volume of nutrient
+> solution to be used during each scheduled irrigation cycle.
+
+Note the signal type differs too: the DFM-1's output connector is an "RJ12 Male Connector" on TrolMaster's
+daisy-chain module bus. There is no K-factor or pulse-scaling for the user to configure — the meter reports
+engineering units over the bus. So "pulse sensor + datasheet constant" is *not* universal either.
+
+**Cross-vendor summary:**
+
+| Product | Signal into controller | Unit surfaced |
+| --- | --- | --- |
+| OpenSprinkler (tier A) | dry-contact 2-wire pulse, ≤50 Hz, user-entered pulse rate | **cumulative** volume, totalised per station run and per program cycle |
+| Galcon G.S.I DC (tier A) | "Flow meter (pulse type)", dry-contact pair | **instantaneous rate**, m³/hr |
+| TrolMaster DFM-1 (tier A) | digital module on proprietary RJ12 bus, no K-factor | **both** — rate (gal/min and L/min) and total volume |
+| Autogrow IntelliDose (tier A) | none | — |
+| TrolMaster NFS-1 (tier A) | none | — |
+
+**Design conclusion for GSM:** there is **no single documented convention**. A metered-irrigation feature must
+accept both an instantaneous-rate source and a cumulative-totaliser source, and must not infer one from the
+other. The earlier hypothesis that this equipment class standardises on cumulative-per-event is **not supported**
+— it holds for OpenSprinkler (and therefore for AROYA), but Galcon contradicts it outright and TrolMaster
+straddles it.
+
+The generic Home Assistant case only widens this: HA flow entities commonly expose `L/min` rate, and a
+`total_increasing` totaliser resets on device reboot. Both hazards are already real in the vendor corpus.
 
 ---
 
@@ -246,11 +347,22 @@ What the sources do give:
 
 **Hardware ceilings** (these are equipment capability, *not* evidence of practice — do not read them as such):
 
-| Controller | Zone/station ceiling | Probe ceiling |
+| Controller | Zone/station ceiling | Substrate probe ceiling |
 | --- | --- | --- |
+| Autogrow / Bluelab IntelliDose (tier A, manual) | **4 stations** + optional master pump | none (solution EC/pH only) |
 | OpenSprinkler v3 (tier A, manual) | 8 onboard, expandable to 72 | n/a (probes are AROYA-side) |
 | OpenSprinkler Pi (tier A, manual) | 8 onboard, expandable to 200 | n/a |
-| TrolMaster Aqua-X NFS-1 (tier C, marketing) | "up to 30" | 8 per controller |
+| Galcon G.S.I DC (tier A, manual) | 12 valves + 1 master valve | none |
+| TrolMaster Aqua-X NFS-1 (tier A, manual) | 30 outputs (6 per board × max 5 boards, 24 V and 110 V buses) | **none** — no WCS support |
+| TrolMaster Aqua-X Pro NFS-2 (tier A, spec sheet) | vendor states 300 *and* 600 in the same document (see disagreements) | "Medium Sensors (WCS-2, WCS-1): Max 50 pc" |
+
+The **IntelliDose's four stations** is the single most interesting number here: a mainstream, currently-sold
+fertigation controller whose entire zone ceiling sits inside the map's 2–6 target. It is evidence that a
+small-digit zone count is a real product category, though still a capability rather than an observation.
+
+Note also that no controller in the set provides one substrate probe per zone at its own ceiling. TrolMaster
+NFS-2 caps medium sensors at 50 against hundreds of valve outputs, and the 50 is a *shared address pool*
+("Nutrient Sensors (AMP-3, DFM-1, WD-1): Max 50 pc"). Probe-per-zone is not an assumption the hardware makes.
 
 **A derivable floor.** Athena's strain-per-zone rule (below) makes zone count ≥ number of distinct cultivars
 under one controller. AROYA's sensor guidance is denominated per strain for the same reason. Neither states how
@@ -385,22 +497,54 @@ available and should be treated as a well-specified convention rather than a val
 
 ---
 
-## Grodan
+## Grodan GroSens — the one source that says how to reduce multiple probes
 
-*Awaiting the substrate/probe retrieval pass; the fetched-and-quoted material will be filled in here.*
+GroSens is a *measurement* system, not a controller: no zones, no valve or pump outputs, no flow metering. It
+answers the probe question, and it is the only retrieved source that states what to do with several probes in one
+zone.
 
-What is currently held at **UNVERIFIED** (search summary only, page not fetched — do not cite):
-that the GroSens basic set consists of three sensors and is modular; that "more measurement points lead to more
-representative WC and EC figures in the irrigation section"; that GroSens works on slabs 7.5 cm and 10 cm high;
-that sensors are positioned "in any pre-defined irrigation section". If confirmed, the three-sensor basic set
-corroborates the convergence noted in §1 — from a third vendor, in a non-cannabis greenhouse context, which
-would make it the most interesting of the three.
+**Tier A (installation manual).**
+[Grodan GroSens MultiSensor Installation Manual (PDF)](https://www.grodan.com/siteassets/downloads/downloads-en/installation-guides-en/grodan-grosens-installation-manual-multisensor-a4-2020-en.pdf)
 
-## METER Group
+> The Sensors that are in the same irrigation section should be used to calculate the average of that section.
 
-*Awaiting the substrate/probe retrieval pass.* METER manufactures the TEROS sensors AROYA resells, so METER's own
-application notes are the closest thing to a first-party statement on sensor replication and are worth having
-verbatim.
+That is an unambiguous rule, and it **conflicts with Athena's main-plus-secondary model** — see
+[Disagreements](#disagreements). Grodan also ships three sensors as the standard set (component list: "3x"
+Sensors, 1× Receiver, 1× Reader, 1× Smartbox, 1× Converter), with a 50 m sensor-to-receiver range and a 3-minute
+data refresh.
+
+Measurement envelope, verbatim:
+
+| Quantity | Range | Accuracy | Resolution |
+| --- | --- | --- | --- |
+| Water Content | 0–100 % V/v | 5 % V/V | 0.1 % V/V |
+| Electrical Conductivity | 0–10 mS/cm | 0.5 mS/cm | 0.01 mS/cm |
+| Temperature | 0–50 °C | 1 °C | 0.05 °C |
+
+> The accuracy decreases slowly towards the borders of the respective ranges and is not guaranteed outside them.
+
+**The ±5 % V/V water-content accuracy deserves attention.** Athena's maintenance-shot logic operates on dryback
+deltas of a few percent VWC and GSM's own default `maintenance_dryback_percent` is 2.0. A single probe's absolute
+accuracy is wider than the signal being steered on. This is the strongest published argument for averaging or for
+trend-relative rather than absolute-threshold logic — and Grodan is the manufacturer stating it about its own
+sensor, so it is not a competitor's criticism.
+
+Integration is analogue, not digital:
+
+> 3 free analogue connections to the climate computer. The GroSens System will communicate 3 separate signals:
+> WC, EC and Temperature. These signals are 0-5 Volt signals.
+
+**Tier C (brochure).**
+[GroSens MultiSensor brochure (PDF)](https://www.grodan.com/siteassets/downloads/downloads-en/brochures-grodan-en/Grodan-Brochure-GroSens-Multisensor.pdf)
+
+> The GroSens system starts with 3 sensors. However, the more sensors you install, the more accurate your insight
+> into the WC and EC situation in the greenhouse will be.
+
+This confirms the three-sensor convergence noted in §1 from a third vendor, in a non-cannabis greenhouse context
+— which makes it the most interesting of the three, since it cannot be explained by cannabis-industry copying.
+But note it is a brochure making an unquantified accuracy claim ("the more sensors … the more accurate"), with no
+stated function relating count to error. Treat the *direction* as sound and the absence of a stopping rule as a
+real gap: no source says when adding probes stops paying.
 
 ---
 
@@ -423,16 +567,44 @@ physical layout or cultivar alone, and should let the grower state it.
 characteristics and structure", and "group similar-growing plants together". AROYA permits what Athena forbids,
 provided the grower has characterised the strains. Neither cites data.
 
-**3. Whether multiple probes in a zone should be averaged.** Athena is explicitly non-committal and defers to the
-controller: "Depending on the irrigation controller additional sensors may be used as supplemental data or may be
-used to take average readings." Its diagram distinguishes a MAIN from a SECONDARY sensor, implying the main one
-controls. AROYA's three-per-strain guidance implies a dataset rather than a control signal, without saying how it
-is reduced. There is no published answer to "what is a zone's VWC when it has three probes."
+**3. Whether multiple probes in a zone should be averaged. This is a direct contradiction, and it matters most.**
+
+- **Grodan (tier A, manual):** "The Sensors that are in the same irrigation section should be used to calculate
+  the average of that section." Unambiguous — average them.
+- **Athena (tier B):** distinguishes a MAIN sensor from a SECONDARY sensor in its diagram, instructs the grower
+  to site the main one at "a plant that best represents the average moisture level", and then explicitly refuses
+  to generalise: "Depending on the irrigation controller additional sensors may be used as supplemental data or
+  may be used to take average readings."
+- **AROYA (tier B):** three per strain framed as producing "the most helpful and complete dataset" — a dataset,
+  not a control signal. Never says how it is reduced.
+
+So: one source says average, one says elect a representative and defers the rest to the controller, one is
+silent. Note the sources differ in substrate too — Grodan is rockwool slabs in glasshouse sections (physically
+uniform, high measurement homogeneity), Athena is pots on benches beside fans and aisles (where Athena's whole
+point is that position *creates* divergence). The disagreement may be a substrate/layout artefact rather than a
+genuine conflict of principle, but no retrieved source says so, so it is recorded as a conflict.
+
+Design consequence: **"what is a zone's VWC when it has three probes" has no single published answer, so GSM
+should not silently pick one.** Whichever it picks is a decision requiring an ADR, not an implementation detail.
 
 **4. Concurrency.** OpenSprinkler's firmware supports parallel groups. AROYA's integration on top of it states
-"no more than one zone can be open at once." The platform is more restrictive than the hardware. Whether that is
-a hydraulic judgement (a shared pump cannot supply two zones at spec pressure) or an integration simplification
-is not stated anywhere retrieved.
+"no more than one zone can be open at once." The platform is more restrictive than the hardware. Autogrow offers
+the choice explicitly as a user setting (Sequential versus Independent). Whether serialisation is a hydraulic
+judgement (a shared pump cannot supply two zones at spec pressure) or an integration simplification is not stated
+anywhere retrieved — though §3 supplies a second, independent reason to serialise: a single shared flow meter can
+only attribute volume per zone if zones do not overlap.
+
+**5. TrolMaster's marketing versus TrolMaster's manual.** The NFS-1 product page advertises 8 water content
+sensors; the NFS-1 manual and the vendor's own comparison chart show the model has no substrate moisture input,
+and list crop steering as NFS-2-only. Recorded here rather than resolved, but for practical purposes the manual
+and comparison chart agree with each other and the product page does not.
+
+**6. TrolMaster's spec sheet versus itself.** The NFS-2 tech sheet states "Max. Up to 300 Valves in Total", "Max.
+600 Pumps & Valves", and "up to 600 valves or pumps can be controlled by a single NFS-2" — on one document.
+Separately, the NFS-2 quick-start manual prints "Flow Range 0-60mL/min" while the DFM-1 tech sheet rates the same
+device at "2-60 L/min", a 1000× discrepancy. Neither is resolvable from the documents. The lesson for GSM is not
+which number is right but that **vendor-published capability figures are unreliable enough that a design should
+not be pinned to one.**
 
 ---
 
@@ -463,9 +635,26 @@ Not retrieved, and therefore not used:
 - **Netafim "CV of 3% or less" and "10% flow variation is considered uniform"** — appeared in a search summary.
   Fetched and text-extracted the Techline DL Design Guide in full; neither figure is in it. Not asserted here.
   The one Netafim uniformity statement that *is* verified is the do-not-mix-emitters rule quoted in §5.
-- **TrolMaster NFS-2 "up to 300 valves using up to 50 control modules"** and DFM-1 meter behaviour ("feed by
-  volume function") — search summaries and retailer pages only; the TrolMaster manual PDFs were not fetched by
-  me. Treated as UNVERIFIED and excluded from the ceilings table.
+- **TrolMaster "AQS-1" / "AQS-2"** — the model numbers named in the ticket do not exist. The Aqua-X irrigation
+  controllers are NFS-1, NFS-1+ and NFS-2. Recorded so the ticket's premise is corrected rather than silently
+  reinterpreted.
+- **The unit in which an NFS-2 "Feed By Volume" target is entered** (gallons versus litres), and whether the
+  NFS-2 offers a unit toggle. This lives in the full NFS-2 instruction manual, which 403s on every mirror tried
+  (`device.report`, `manuals.plus`); only the 7-page quick-start was obtainable. **This is the one sub-question of
+  the units request left open**, and it is the one that would tell GSM what unit a grower expects to type.
+- **DFM-1 accuracy, pulse constant / K-factor, and update interval** — absent from the DFM-1 tech sheet.
+- **Whether a TrolMaster WCS binds 1:1 to an irrigation output** (Feed-on-Demand cardinality — one sensor per
+  zone, or averaged across a group). Not stated in any TrolMaster document retrieved. This would have been a
+  fourth data point on disagreement #3.
+- **Hunter ACC2 / ICC2 flow documentation** — 403 on all four URLs attempted; Hunter appears to block automated
+  fetching entirely. **Argus, Priva, Netafim NetBeat, Rain Bird commercial** — documentation dealer-gated, not
+  attempted. Galcon was substituted.
+- **Grodan e-Gro** (the irrigation-strategy software layer above GroSens) — not retrieved. This is the most
+  significant remaining gap: e-Gro is where Grodan's *zoning* guidance would live, as opposed to GroSens'
+  sensor-hardware guidance.
+- **METER Group application notes** on sensor replication — not retrieved in this pass. METER manufactures the
+  TEROS sensors AROYA resells, so METER's own guidance is the closest thing to a first-party statement on
+  replication and remains the highest-value unfetched source.
 - **AROYA's definition of Room vs Zone** — the help-docs article on creating rooms and zones documents the UI
   steps only. AROYA never defines what a Zone *is*, nor states any relationship between a Zone and a valve. This
   is a genuine gap in the source, not a retrieval failure, and it is telling: the market-leading platform ships
@@ -480,13 +669,23 @@ Offered as input to #544's charting, not as decisions.
 
 - **Shared-pump arbitration** (544, "Not yet specified"): the documented reference behaviour is *sequential, one
   zone open at a time, with configurable pump lead/lag offsets* (OpenSprinkler ±600 s; AROYA "no more than one
-  zone can be open at once"). A queue with a single in-flight zone matches published practice; concurrent
-  delivery does not, and would also break per-zone attribution on a single shared meter.
-- **Flow-meter unit handling** (544, "Not yet specified"): the crop-steering equipment case is
-  *pulse-count → cumulative volume, totalised at the end of each irrigation event*, with the unit carried by a
-  datasheet constant. The instantaneous-rate case is real for generic HA entities but is not what this equipment
-  class does. Staged confidence fits the evidence: Athena's published methodology runs entirely open-loop with a
-  manual jug check, so metering is genuinely an upgrade, not a baseline.
+  zone can be open at once"; Autogrow's Sequential mode; Galcon and IntelliDose both wiring one master to N
+  zone valves). A queue with a single in-flight zone matches published practice on every controller retrieved.
+  Two independent reasons support it: shared-pump capacity, and the fact that a single shared flow meter can
+  attribute volume per zone *only* if zones do not overlap. If GSM ever models multiple pumps, TrolMaster's
+  Master Pump Link is the documented shape — **a pump owns a group of zones**, so arbitration is per pump-group,
+  not global.
+- **Flow-meter unit handling** (544, "Not yet specified"): **there is no single convention to adopt.**
+  OpenSprinkler totalises pulses into cumulative volume per station run; Galcon surfaces an instantaneous rate in
+  m³/hr from the same class of pulse sensor; TrolMaster's DFM-1 reports both over a digital bus with no
+  user-visible pulse constant. A metered-irrigation feature must accept rate and totaliser sources as distinct
+  configured shapes and must not infer one from the other. The staged-confidence framing survives intact and is
+  reinforced: Athena's published methodology runs entirely open-loop with a manual jug check, and two of five
+  controllers have no flow input at all, so metering is genuinely an upgrade tier rather than a baseline.
+- **Probe reduction** (a decision 544 has not yet listed, and should): sources directly contradict each other on
+  whether a zone's probes are averaged (Grodan) or elect a representative (Athena). GSM cannot pick silently;
+  this warrants its own ADR. Grodan's own ±5 % V/V accuracy figure against Athena's few-percent dryback deltas
+  is the substantive argument in the averaging direction.
 - **Zone identity**: sources constrain zone *composition* strongly and zone *count* not at all. The composition
   table in §5 is the sourced answer. GSM should let the grower declare zone membership rather than deriving it,
   given disagreement #1.
