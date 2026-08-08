@@ -1,4 +1,4 @@
-"""Tests for new NotificationsFacade methods (get_alerts, resolve_alert, register_alert_sensor)."""
+"""Tests for new NotificationsFacade methods (get_alerts and resolve_alert)."""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -14,7 +14,6 @@ def _make_coordinator() -> MagicMock:
     coordinator.alert_monitor = MagicMock()
     coordinator.alert_monitor.get_alerts = MagicMock(return_value=[])
     coordinator.alert_monitor.resolve_alert = AsyncMock(return_value=True)
-    coordinator.alert_monitor.register_sensor = MagicMock()
     coordinator._notification_manager = MagicMock()
     coordinator.notification_settings = MagicMock()
     coordinator.notification_state = MagicMock()
@@ -92,20 +91,6 @@ async def test_resolve_alert_without_notes() -> None:
     result = await facade.resolve_alert("alert-99")
 
     assert result is False
-    coordinator.alert_monitor.resolve_alert.assert_awaited_once_with("alert-99", notes=None)
-
-
-# ---------------------------------------------------------------------------
-# register_alert_sensor
-# ---------------------------------------------------------------------------
-
-
-def test_register_alert_sensor_delegates_to_alert_monitor() -> None:
-    """register_alert_sensor delegates to alert_monitor.register_sensor."""
-    sensor = MagicMock()
-    coordinator = _make_coordinator()
-    facade = NotificationsFacade(coordinator)
-
-    facade.register_alert_sensor(sensor)
-
-    coordinator.alert_monitor.register_sensor.assert_called_once_with(sensor)
+    coordinator.alert_monitor.resolve_alert.assert_awaited_once_with(
+        "alert-99", notes=None
+    )

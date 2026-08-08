@@ -152,7 +152,7 @@ A structured service call embedded in an AI response alongside the natural-langu
 
 ## Triage Alert
 
-A persisted anomaly record created when a Bayesian binary sensor (`plants_under_stress`, `high_mold_risk`) transitions to `on`. Stored in `growspace_manager.ai_alerts`. Fields: `id`, `growspace_id`, `type` (`stress` | `mold`), `bayesian_reasons` (always present), `ai_reasoning` (added asynchronously if AI is enabled and available), `timestamp`, `resolved`.
+A persisted anomaly record created when a stress or mold Evaluation Snapshot transitions from inactive to active. Stored in `growspace_manager.ai_alerts`. Fields: `id`, `growspace_id`, `type` (`stress` | `mold`), `bayesian_reasons` (always present), `ai_reasoning` (added asynchronously if AI is enabled and available), `timestamp`, `resolved`.
 
 **Graceful degradation**: if AI is disabled or rate-limited, the alert is logged with only `bayesian_reasons`; the Triage Inbox renders those directly. No alert is ever lost due to AI unavailability.
 
@@ -193,7 +193,7 @@ The five sub-facades are:
 | `coordinator.services.growspaces` | `GrowspaceFacade` | Growspace CRUD, irrigation coordinator access (`get_irrigation_coordinator`, `get_dehumidifier_coordinator`), crop steering metrics |
 | `coordinator.services.plants` | `PlantFacade` | Plant CRUD, watering, training, IPM, harvesting |
 | `coordinator.services.config` | `ConfigFacade` | Nutrient presets, IPM presets, nutrient inventory (`get_inventory`, `update_stock`, `remove_stock`) |
-| `coordinator.services.notifications` | `NotificationsFacade` | Alert creation/resolution, alert sensor registration (`get_alerts`, `resolve_alert`, `register_alert_sensor`) |
+| `coordinator.services.notifications` | `NotificationsFacade` | Evaluation Snapshot intake and alert query/resolution (`report_evaluation`, `get_alerts`, `resolve_alert`) |
 | `coordinator.services.genetics` | `GeneticsFacade` | Seed batches, lineage trees, pollination logs, phenotype scoring, plant sex assignment (`seed_batches`, `get_total_seed_count`, `get_lineage_tree`, etc.) |
 
 ### Internal Mechanic vs Deep-Subsystem Accessor

@@ -456,7 +456,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.vision_scheduler.async_stop()
         self.briefing_scheduler.async_stop()
         self.photoperiod_checker.async_stop()
-        self.alert_monitor.async_stop()
         await self.storage_manager.async_force_save()
 
     async def async_load(self) -> None:
