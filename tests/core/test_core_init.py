@@ -1029,6 +1029,48 @@ async def test_websocket_get_history_stats(
 
 
 @pytest.mark.asyncio
+async def test_websocket_history_stats_preserves_dense_fan_percentage(
+    hass: HomeAssistant,
+) -> None:
+    """Test dense fan history retains percentage attributes when downsampled."""
+    start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+
+    class MockState:
+        def __init__(self, index: int) -> None:
+            self.state = "on"
+            self.attributes = {"percentage": index % 100}
+            self.last_updated = start + timedelta(minutes=index)
+
+    states = [MockState(index) for index in range(201)]
+
+    with (
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states",
+            return_value={"fan.circulation": states},
+        ),
+        patch(
+            "custom_components.growspace_manager.websocket.environment.get_instance"
+        ) as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
+        result = await websocket_get_history_stats(
+            hass,
+            MagicMock(),
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/get_history_stats",
+                "entity_ids": ["fan.circulation"],
+                "start_time": start.isoformat(),
+                "end_time": (start + timedelta(minutes=200)).isoformat(),
+                "interval_minutes": 5,
+                "significant_changes_only": True,
+            },
+        )
+
+    assert result["fan.circulation"][1]["a"]["percentage"] == 5
+
+
+@pytest.mark.asyncio
 async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> None:
     """Test history stats with empty data or unavailable states."""
     MagicMock()
