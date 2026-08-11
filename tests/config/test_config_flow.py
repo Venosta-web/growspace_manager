@@ -935,7 +935,7 @@ async def test_options_flow_add_plant_error(
     assert result.get("type") == FlowResultType.FORM
     assert "errors" in result
     assert result["errors"] is not None
-    assert result["errors"]["base"] == "Test error"
+    assert result["errors"]["base"] == "add_failed"
 
 
 # ============================================================================
@@ -1012,7 +1012,7 @@ async def test_options_flow_update_plant_error(
     assert result.get("type") == FlowResultType.FORM
     assert "errors" in result
     assert result["errors"] is not None  # Add this assertion
-    assert result["errors"]["base"] == "Test error"
+    assert result["errors"]["base"] == "update_failed"
 
 
 @pytest.mark.asyncio
@@ -1209,7 +1209,7 @@ async def test_config_flow_user_step_exception(
     with patch.object(flow, "async_create_entry", side_effect=Exception("Test error")):
         result = await flow.async_step_user(user_input={"name": "Test"})
         assert result.get("type") == FlowResultType.FORM
-        assert result.get("errors") == {"base": "Error: Test error"}
+        assert result.get("errors") == {"base": "unknown"}
 
 
 @pytest.mark.asyncio
@@ -3134,7 +3134,7 @@ async def test_options_flow_add_plant_exception(
         user_input={"strain": "New", "row": 1, "col": 1}
     )
     assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {"base": "Invalid"}
+    assert result["errors"] == {"base": "add_failed"}
 
 
 @pytest.mark.asyncio
@@ -3727,3 +3727,42 @@ async def test_async_step_save_and_finish_success(
     mock_save_and_finish.assert_called_once_with(
         growspace, {"temp_sensor": "sensor.temp"}
     )
+
+
+@pytest.mark.asyncio
+async def test_config_flow_user_step_error_uses_a_translation_key(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """The user step's failure path shows a key, not the exception text."""
+    flow = ConfigFlow()
+    flow.hass = hass
+
+    with patch.object(
+        ConfigFlow, "async_create_entry", side_effect=RuntimeError("boom")
+    ):
+        result = await flow.async_step_user(user_input={"name": "My Growspace"})
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "user"
+    assert result.get("errors") == {"base": "unknown"}
+
+
+@pytest.mark.asyncio
+async def test_config_flow_add_growspace_error_uses_a_translation_key(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """The add_growspace step's failure path shows a key, not the exception text."""
+    flow = ConfigFlow()
+    flow.hass = hass
+    hass.data[DOMAIN] = {}
+
+    with patch.object(
+        ConfigFlow, "async_create_entry", side_effect=RuntimeError("boom")
+    ):
+        result = await flow.async_step_add_growspace(
+            user_input={"name": "Tent", "rows": 2, "plants_per_row": 2}
+        )
+
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "add_growspace"
+    assert result.get("errors") == {"base": "unknown"}

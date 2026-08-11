@@ -8,6 +8,9 @@
           "name": "Integration Name"
         }
       }
+    },
+    "error": {
+      "unknown": "An unexpected error occurred. Check the logs for details."
     }
   },
   "options": {
