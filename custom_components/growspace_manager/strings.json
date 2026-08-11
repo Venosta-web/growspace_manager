@@ -239,7 +239,9 @@
       "growspace_not_found": "The selected growspace could not be found",
       "position_occupied": "The selected position is already occupied by another plant",
       "invalid_position": "The selected position is outside the growspace boundaries",
-      "assistant_required": "An AI assistant entity must be selected when AI features are enabled"
+      "assistant_required": "An AI assistant entity must be selected when AI features are enabled",
+      "strain_delete_blocked": "Cannot delete {strain}: {detail}. Resolve those references first, then try again.",
+      "delete_failed": "The strain could not be deleted because of an unexpected error. Check the logs for details."
     }
   },
   "services": {

@@ -62,7 +62,13 @@ class StrainReferenceError(ValidationChangeError):
             or (not plant_count and has_harvest_history)
             else "reference"
         )
+        self.strain = strain
+        self.plant_count = plant_count
+        self.has_harvest_history = has_harvest_history
+        # Rendered separately from the message so UI surfaces can place the phrase
+        # into their own translated sentence instead of re-deriving the wording.
+        self.detail = f"{reference_summary} still {verb} it"
         super().__init__(
-            f"Cannot remove strain '{strain}': {reference_summary} still {verb} it. "
+            f"Cannot remove strain '{strain}': {self.detail}. "
             "Resolve the cultivation references first."
         )
