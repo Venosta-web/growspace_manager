@@ -27,8 +27,6 @@ from custom_components.growspace_manager.const import (
     ATTR_TRANSITION_DATE,
     CANONICAL_ID_MOTHER,
     DATE_FIELDS,
-    DOMAIN,
-    VERSION,
     GrowspaceService,
     NotificationTier,
     PlantStage,
@@ -56,7 +54,7 @@ from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.utils import parse_date_field
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
 from ._definition import ServiceDefinition
@@ -93,19 +91,9 @@ class PlantFacade:
         return self._coordinator._nutrient_manager.get_applicable_presets(plant_id)
 
     async def add_plant(self, **kwargs: Any) -> Plant:
-        """Add a new plant and register its HA device."""
+        """Add a new plant."""
         plant = await self._coordinator._plant_manager.add_plant(**kwargs)
-        device_registry = dr.async_get(self._coordinator.hass)
         strain_name = plant.genetics.strain_name if plant.genetics else "Unknown"
-        device_registry.async_get_or_create(
-            config_entry_id=self._coordinator.config_entry.entry_id,
-            identifiers={(DOMAIN, plant.plant_id)},
-            name=strain_name,
-            model=f"Plant ({strain_name})" if strain_name else "Plant",
-            manufacturer="Growspace Manager",
-            sw_version=VERSION,
-            suggested_area=plant.growspace_id,
-        )
         _LOGGER.info(
             "Added plant %s (%s) to %s",
             strain_name,
@@ -115,14 +103,8 @@ class PlantFacade:
         return plant
 
     async def update_plant(self, plant_id: str, **kwargs: Any) -> Plant:
-        """Update an existing plant and sync its HA device name if changed."""
+        """Update an existing plant."""
         plant = await self._coordinator._plant_manager.update_plant(plant_id, **kwargs)
-        if "name" in kwargs:
-            device_registry = dr.async_get(self._coordinator.hass)
-            if device := device_registry.async_get_device(
-                identifiers={(DOMAIN, plant_id)}
-            ):
-                device_registry.async_update_device(device.id, name=kwargs["name"])
         _LOGGER.info("Updated plant %s", plant_id)
         return plant
 
@@ -446,7 +428,9 @@ class PlantFacade:
             ps.keeper = keeper
         if notes is not None:
             ps.notes = notes
-        await self._coordinator._plant_manager.update_plant(plant_id, phenotype_score=ps)
+        await self._coordinator._plant_manager.update_plant(
+            plant_id, phenotype_score=ps
+        )
         _LOGGER.info("Plant %s phenotype scored", plant_id)
 
     async def update_harvest_metrics(

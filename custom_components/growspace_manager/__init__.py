@@ -13,7 +13,7 @@ from homeassistant.components.frontend import (
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
@@ -33,6 +33,9 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
 
+_LEGACY_PLANT_MANUFACTURER = "Growspace Manager"
+_LEGACY_PLANT_MODEL_PREFIX = "Plant ("
+
 
 if TYPE_CHECKING:  # pragma: no cover
     from typing import TypeAlias
@@ -51,6 +54,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     _LOGGER.debug(
         "Setting up Growspace Manager integration for entry %s", entry.entry_id
     )
+
+    _async_remove_legacy_plant_devices(hass, entry)
 
     # Initialize Storage and Coordinator
     store = Store[dict[str, Any]](hass, STORAGE_VERSION, STORAGE_KEY)
@@ -183,6 +188,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
 
     return True
+
+
+@callback
+def _async_remove_legacy_plant_devices(hass: HomeAssistant, entry: ConfigEntry) -> int:
+    """Remove obsolete per-plant devices owned by this config entry."""
+    device_registry = dr.async_get(hass)
+    legacy_devices = [
+        device
+        for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+        if device.manufacturer == _LEGACY_PLANT_MANUFACTURER
+        and (
+            device.model == "Plant"
+            or (
+                device.model is not None
+                and device.model.startswith(_LEGACY_PLANT_MODEL_PREFIX)
+            )
+        )
+    ]
+    for device in legacy_devices:
+        device_registry.async_update_device(
+            device.id, remove_config_entry_id=entry.entry_id
+        )
+
+    if legacy_devices:
+        _LOGGER.info(
+            "Cleaned up %d legacy Plant device(s) for config entry %s",
+            len(legacy_devices),
+            entry.entry_id,
+        )
+    return len(legacy_devices)
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
