@@ -165,7 +165,10 @@
           "name": "Growspace Name",
           "rows": "Number of Rows",
           "plants_per_row": "Plants per Row",
-          "notification_target": "Notification Target"
+          "notification_target": "Notification Target",
+          "length": "Length (cm)",
+          "width": "Width (cm)",
+          "height": "Height (cm)"
         },
         "data_description": {
           "notification_target": "Optional: notification service (e.g., mobile_app_your_phone)"
@@ -232,6 +235,306 @@
           "vision_checkup_enabled": "Enable AI vision checkups",
           "ai_task_entity_id": "AI task entity (for vision analysis)"
         }
+      },
+      "select_growspace_for_env": {
+        "title": "Select Growspace",
+        "description": "Choose which growspace to configure the environment for.",
+        "data": {
+          "growspace_id": "Growspace"
+        }
+      },
+      "irrigation_overview": {
+        "title": "Irrigation for {growspace_name}",
+        "description": "Configure the pump, schedule, and VWC crop-steering strategy for this growspace.",
+        "data": {
+          "growspace_id_read_only": "Growspace",
+          "irrigation_pump_entity": "Irrigation Pump",
+          "irrigation_duration": "Irrigation Duration (seconds)",
+          "current_irrigation_times": "Irrigation Times",
+          "drain_pump_entity": "Drain Pump",
+          "drain_duration": "Drain Duration (seconds)",
+          "current_drain_times": "Drain Times",
+          "soil_trigger_percent": "Soil Moisture Trigger (%)",
+          "max_cycles_per_day": "Maximum Cycles per Day",
+          "daily_volume_cap_liters": "Daily Volume Cap (L)",
+          "pause_on_low_tank": "Pause When Tank Is Low",
+          "skip_during_dark": "Skip During Dark Period",
+          "log_to_logbook": "Log Waterings to the Logbook",
+          "use_vwc_steering": "Enable VWC Crop Steering",
+          "substrate_media_type": "Substrate Media Type",
+          "substrate_liters_per_pot": "Substrate Volume per Pot (L)",
+          "target_vwc_percent": "Target VWC (%)",
+          "maintenance_dryback_percent": "Maintenance Dryback (%)",
+          "shot_sizing_mode": "Shot Sizing Mode",
+          "pump_flow_rate_ml_per_sec": "Pump Flow Rate (ml/s)",
+          "lights_on_time": "Lights-On Time",
+          "p0_duration_minutes": "P0 Duration (minutes)",
+          "p1_shot_volume_percent": "P1 Shot Volume (%)",
+          "p1_shot_duration_seconds": "P1 Shot Duration (seconds)",
+          "p1_shot_interval_minutes": "P1 Shot Interval (minutes)",
+          "auto_advance_p1_to_p2": "Auto-Advance P1 to P2",
+          "p2_shot_volume_percent": "P2 Shot Volume (%)",
+          "p2_shot_duration_seconds": "P2 Shot Duration (seconds)",
+          "p2_shot_interval_minutes": "P2 Shot Interval (minutes)",
+          "p2_stop_before_lights_off_minutes": "Stop P2 Before Lights Off (minutes)",
+          "auto_advance_p2_to_p3": "Auto-Advance P2 to P3",
+          "ec_modulation_enabled": "Enable EC Modulation",
+          "pore_ec_target_min": "Minimum Pore EC Target",
+          "pore_ec_target_max": "Maximum Pore EC Target",
+          "halt_on_runoff_ec_threshold": "Halt on Runoff EC Above"
+        },
+        "data_description": {
+          "shot_sizing_mode": "Duration Mode uses fixed shot durations; Volume Mode derives them from the pump flow rate and substrate volume.",
+          "growspace_id_read_only": "The growspace these settings apply to. Read-only."
+        }
+      },
+      "update_growspace": {
+        "title": "Update Growspace",
+        "description": "Change the name, dimensions, or notification target of this growspace.",
+        "data": {
+          "name": "Growspace Name",
+          "length": "Length (cm)",
+          "width": "Width (cm)",
+          "height": "Height (cm)",
+          "rows": "Number of Rows",
+          "plants_per_row": "Plants per Row",
+          "notification_target": "Notification Target"
+        },
+        "data_description": {
+          "notification_target": "Optional: notification service (e.g., mobile_app_your_phone)"
+        }
+      },
+      "confirm_remove_growspace": {
+        "title": "Remove Growspace",
+        "description": "Remove {growspace_name} and every plant in it? This cannot be undone."
+      },
+      "configure_humidifier": {
+        "title": "Humidifier Thresholds for {growspace_name}",
+        "description": "Set the VPD band that turns the humidifier on and off, per growth stage and day/night cycle.",
+        "data": {
+          "seedling_day_on": "Seedling — Day turn on (kPa)",
+          "seedling_day_off": "Seedling — Day turn off (kPa)",
+          "seedling_night_on": "Seedling — Night turn on (kPa)",
+          "seedling_night_off": "Seedling — Night turn off (kPa)",
+          "veg_day_on": "Vegetative — Day turn on (kPa)",
+          "veg_day_off": "Vegetative — Day turn off (kPa)",
+          "veg_night_on": "Vegetative — Night turn on (kPa)",
+          "veg_night_off": "Vegetative — Night turn off (kPa)",
+          "flower_early_day_on": "Early Flower — Day turn on (kPa)",
+          "flower_early_day_off": "Early Flower — Day turn off (kPa)",
+          "flower_early_night_on": "Early Flower — Night turn on (kPa)",
+          "flower_early_night_off": "Early Flower — Night turn off (kPa)",
+          "flower_mid_day_on": "Mid Flower — Day turn on (kPa)",
+          "flower_mid_day_off": "Mid Flower — Day turn off (kPa)",
+          "flower_mid_night_on": "Mid Flower — Night turn on (kPa)",
+          "flower_mid_night_off": "Mid Flower — Night turn off (kPa)",
+          "flower_late_day_on": "Late Flower — Day turn on (kPa)",
+          "flower_late_day_off": "Late Flower — Day turn off (kPa)",
+          "flower_late_night_on": "Late Flower — Night turn on (kPa)",
+          "flower_late_night_off": "Late Flower — Night turn off (kPa)",
+          "dry_day_on": "Drying — Day turn on (kPa)",
+          "dry_day_off": "Drying — Day turn off (kPa)",
+          "dry_night_on": "Drying — Night turn on (kPa)",
+          "dry_night_off": "Drying — Night turn off (kPa)",
+          "cure_day_on": "Curing — Day turn on (kPa)",
+          "cure_day_off": "Curing — Day turn off (kPa)",
+          "cure_night_on": "Curing — Night turn on (kPa)",
+          "cure_night_off": "Curing — Night turn off (kPa)"
+        }
+      },
+      "configure_dehumidifier": {
+        "title": "Dehumidifier Thresholds for {growspace_name}",
+        "description": "Set the VPD band that turns the dehumidifier on and off, per growth stage and day/night cycle.",
+        "data": {
+          "seedling_day_on": "Seedling — Day turn on (kPa)",
+          "seedling_day_off": "Seedling — Day turn off (kPa)",
+          "seedling_night_on": "Seedling — Night turn on (kPa)",
+          "seedling_night_off": "Seedling — Night turn off (kPa)",
+          "veg_day_on": "Vegetative — Day turn on (kPa)",
+          "veg_day_off": "Vegetative — Day turn off (kPa)",
+          "veg_night_on": "Vegetative — Night turn on (kPa)",
+          "veg_night_off": "Vegetative — Night turn off (kPa)",
+          "flower_early_day_on": "Early Flower — Day turn on (kPa)",
+          "flower_early_day_off": "Early Flower — Day turn off (kPa)",
+          "flower_early_night_on": "Early Flower — Night turn on (kPa)",
+          "flower_early_night_off": "Early Flower — Night turn off (kPa)",
+          "flower_mid_day_on": "Mid Flower — Day turn on (kPa)",
+          "flower_mid_day_off": "Mid Flower — Day turn off (kPa)",
+          "flower_mid_night_on": "Mid Flower — Night turn on (kPa)",
+          "flower_mid_night_off": "Mid Flower — Night turn off (kPa)",
+          "flower_late_day_on": "Late Flower — Day turn on (kPa)",
+          "flower_late_day_off": "Late Flower — Day turn off (kPa)",
+          "flower_late_night_on": "Late Flower — Night turn on (kPa)",
+          "flower_late_night_off": "Late Flower — Night turn off (kPa)",
+          "dry_day_on": "Drying — Day turn on (kPa)",
+          "dry_day_off": "Drying — Day turn off (kPa)",
+          "dry_night_on": "Drying — Night turn on (kPa)",
+          "dry_night_off": "Drying — Night turn off (kPa)",
+          "cure_day_on": "Curing — Day turn on (kPa)",
+          "cure_day_off": "Curing — Day turn off (kPa)",
+          "cure_night_on": "Curing — Night turn on (kPa)",
+          "cure_night_off": "Curing — Night turn off (kPa)"
+        }
+      },
+      "configure_advanced_bayesian": {
+        "title": "Advanced Bayesian Settings for {growspace_name}",
+        "description": "Tune the Bayesian probabilities behind the environment sensors. Field names are derived from your configured sensors and are shown untranslated."
+      },
+      "configure_sensor_placement": {
+        "title": "Sensor Placement for {growspace_name}",
+        "description": "Give each sensor its X/Y/Z position inside the growspace. Field names are derived from your configured sensors and are shown untranslated."
+      },
+      "configure_fan_controller": {
+        "title": "Circulation Fan for {growspace_name}",
+        "description": "Choose how the circulation fan is regulated and the speed range it may use.",
+        "data": {
+          "enabled": "Enable Fan Controller",
+          "regulation_mode": "Regulation Mode",
+          "min_speed": "Minimum Speed (%)",
+          "max_speed": "Maximum Speed (%)",
+          "wind_enabled": "Enable Wind Simulation"
+        }
+      },
+      "configure_fan_vpd": {
+        "title": "VPD Fan Regulation for {growspace_name}",
+        "description": "Set the VPD target the fan regulates towards and the critical temperatures that override it.",
+        "data": {
+          "vpd_target": "VPD Target (kPa)",
+          "vpd_tolerance": "VPD Tolerance (kPa)",
+          "stage_vpd_enabled": "Use Per-Stage VPD Targets",
+          "critical_temp_high": "Critical High Temperature (°C)",
+          "critical_temp_low": "Critical Low Temperature (°C)",
+          "critical_temp_hysteresis": "Critical Temperature Hysteresis (°C)"
+        }
+      },
+      "configure_fan_humidity": {
+        "title": "Humidity Fan Regulation for {growspace_name}",
+        "description": "Set the humidity target the fan regulates towards.",
+        "data": {
+          "humidity_target": "Humidity Target (%)",
+          "humidity_tolerance": "Humidity Tolerance (%)"
+        }
+      },
+      "configure_fan_temperature": {
+        "title": "Temperature Fan Regulation for {growspace_name}",
+        "description": "Set the temperature target the fan regulates towards.",
+        "data": {
+          "temperature_target": "Temperature Target (°C)",
+          "temperature_tolerance": "Temperature Tolerance (°C)"
+        }
+      },
+      "configure_fan_wind": {
+        "title": "Wind Simulation for {growspace_name}",
+        "description": "Vary the fan speed over time to simulate natural wind.",
+        "data": {
+          "wind_amplitude_pct": "Wind Amplitude (%)",
+          "wind_period_seconds": "Wind Period (seconds)"
+        }
+      },
+      "manage_strain_library": {
+        "title": "Manage Strain Library",
+        "description": "Add, edit, import, or export the strains available to your plants.",
+        "data": {
+          "action": "Action",
+          "strain_id": "Select Strain"
+        }
+      },
+      "add_strain": {
+        "title": "Add Strain",
+        "description": "Add a new strain to the library.",
+        "data": {
+          "strain": "Strain Name",
+          "phenotype": "Phenotype",
+          "breeder": "Breeder",
+          "breeder_logo": "Breeder Logo URL",
+          "type": "Type",
+          "lineage": "Lineage",
+          "sex": "Sex",
+          "flower_days_min": "Minimum Flowering Days",
+          "flower_days_max": "Maximum Flowering Days",
+          "description": "Description",
+          "sativa_percentage": "Sativa (%)",
+          "indica_percentage": "Indica (%)",
+          "yield_potential": "Yield Potential"
+        }
+      },
+      "edit_strain": {
+        "title": "Edit Strain",
+        "description": "Change the details of an existing strain.",
+        "data": {
+          "strain": "Strain Name",
+          "phenotype": "Phenotype",
+          "breeder": "Breeder",
+          "breeder_logo": "Breeder Logo URL",
+          "type": "Type",
+          "lineage": "Lineage",
+          "sex": "Sex",
+          "flower_days_min": "Minimum Flowering Days",
+          "flower_days_max": "Maximum Flowering Days",
+          "description": "Description",
+          "sativa_percentage": "Sativa (%)",
+          "indica_percentage": "Indica (%)",
+          "yield_potential": "Yield Potential"
+        }
+      },
+      "import_strain_library": {
+        "title": "Import Strain Library",
+        "description": "Import strains from a ZIP archive. Imported strains are merged into the existing library.",
+        "data": {
+          "file_path": "ZIP File Path"
+        },
+        "data_description": {
+          "file_path": "Full path to the archive, e.g. {default_path}"
+        }
+      },
+      "export_strain_library": {
+        "title": "Export Strain Library",
+        "description": "The strain library was exported to {path}."
+      },
+      "manage_breeder_blacklist": {
+        "title": "Breeder Blacklist",
+        "description": "Breeders listed here are hidden from strain suggestions.",
+        "data": {
+          "blacklist_breeders": "Blacklisted Breeders"
+        }
+      },
+      "manage_timed_notifications": {
+        "title": "Timed Notifications",
+        "description": "Add, edit, or delete notifications that fire on a given day of a grow.",
+        "data": {
+          "action": "Action",
+          "notification_id": "Select Notification"
+        }
+      },
+      "add_timed_notification": {
+        "title": "Add Timed Notification",
+        "description": "Send a message once a grow reaches the given day.",
+        "data": {
+          "message": "Message",
+          "trigger_type": "Count Days From",
+          "day": "Day",
+          "growspace_ids": "Growspaces"
+        },
+        "data_description": {
+          "growspace_ids": "Leave empty to apply to every growspace"
+        }
+      },
+      "edit_timed_notification": {
+        "title": "Edit Timed Notification",
+        "description": "Change when this notification fires and what it says.",
+        "data": {
+          "message": "Message",
+          "trigger_type": "Count Days From",
+          "day": "Day",
+          "growspace_ids": "Growspaces"
+        },
+        "data_description": {
+          "growspace_ids": "Leave empty to apply to every growspace"
+        }
+      },
+      "delete_timed_notification": {
+        "title": "Delete Timed Notification",
+        "description": "Delete notification {notification_id}? This cannot be undone."
       }
     },
     "error": {
@@ -241,7 +544,25 @@
       "invalid_position": "The selected position is outside the growspace boundaries",
       "assistant_required": "An AI assistant entity must be selected when AI features are enabled",
       "strain_delete_blocked": "Cannot delete {strain}: {detail}. Resolve those references first, then try again.",
-      "delete_failed": "The strain could not be deleted because of an unexpected error. Check the logs for details."
+      "delete_failed": "The strain could not be deleted because of an unexpected error. Check the logs for details.",
+      "setup_error": "The integration is not set up yet. Try again once it has finished loading.",
+      "file_not_found": "No file was found at that path. Check the path and try again.",
+      "invalid_zip": "That file is not a valid strain library archive.",
+      "import_failed": "The strain library could not be imported. Check the logs for details.",
+      "add_failed": "The item could not be added because of an unexpected error. Check the logs for details.",
+      "update_failed": "The item could not be updated because of an unexpected error. Check the logs for details.",
+      "remove_failed": "The item could not be removed because of an unexpected error. Check the logs for details.",
+      "select_growspace": "Select a growspace to continue",
+      "fan_speed_invalid": "The minimum fan speed must be lower than the maximum fan speed",
+      "invalid_tuple_format": "The advanced Bayesian values must be entered as number pairs, for example (0.1, 0.9)"
+    },
+    "abort": {
+      "setup_error": "The integration is not set up yet. Try again once it has finished loading.",
+      "export_failed": "The strain library could not be exported. Check the logs for details.",
+      "growspace_not_found": "The selected growspace could not be found.",
+      "plant_not_found": "The selected plant could not be found.",
+      "notification_not_found": "The selected notification could not be found.",
+      "no_growspaces": "No growspaces are configured yet. Add one first."
     }
   },
   "services": {
@@ -422,6 +743,15 @@
       },
       "drying_moisture": {
         "name": "Drying moisture"
+      },
+      "air_exchange": {
+        "name": "Air Exchange"
+      },
+      "overview": {
+        "name": "Overview"
+      },
+      "power_usage": {
+        "name": "Power Usage"
       }
     },
     "binary_sensor": {
@@ -430,6 +760,26 @@
       },
       "drying_ready_for_cure": {
         "name": "Ready for cure"
+      },
+      "stress": {
+        "name": "Stress"
+      },
+      "mold": {
+        "name": "Mold Risk"
+      },
+      "optimal": {
+        "name": "Optimal Conditions"
+      },
+      "drying": {
+        "name": "Drying"
+      },
+      "curing": {
+        "name": "Curing"
+      }
+    },
+    "switch": {
+      "notifications": {
+        "name": "Notifications"
       }
     }
   },
