@@ -1,13 +1,18 @@
 """Tests for the StrainLibrary class."""
 
+from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiosqlite
 import pytest
 
+from custom_components.growspace_manager.exceptions import StrainReferenceError
 from custom_components.growspace_manager.image_manager import ImageManager
+from custom_components.growspace_manager.models import Plant, PlantGenetics
 from custom_components.growspace_manager.strain_library import StrainLibrary
+from homeassistant.config_entries import ConfigEntryState
 
 
 @pytest.fixture
@@ -183,6 +188,188 @@ async def test_remove_strain(strain_library: StrainLibrary) -> None:
 
     await strain_library.remove_strain("Sour Diesel")
     assert "Sour Diesel" not in strain_library.strains
+
+
+async def _add_catalogued_strain(
+    strain_library: StrainLibrary, *, descendants: tuple[str, ...] = ()
+) -> None:
+    """Add a fully managed strain and optionally a descendant that references it."""
+    await strain_library.add_strain(
+        "Target Strain",
+        "Keeper",
+        breeder="Breeder",
+        breeder_logo="/local/breeder.webp",
+        strain_type="Hybrid",
+        lineage="Parent Strain",
+        sex="Feminized",
+        description="Phenotype notes",
+        image_path="/local/target-strain_keeper.webp",
+        images=[{"path": "/local/target-strain_keeper_2.webp"}],
+        sativa_percentage=60,
+        yield_potential="High",
+        thc=24,
+        effects=["Happy"],
+        strain_description="Catalogue notes",
+        awards=["Cup"],
+        lineage_tree={
+            "name": "Target Strain",
+            "parents": [{"name": "Parent Strain", "source": "library"}],
+        },
+    )
+    for descendant in descendants:
+        await strain_library.add_strain(
+            descendant,
+            lineage_tree={
+                "name": descendant,
+                "parents": [{"name": "Target Strain", "source": "library"}],
+            },
+        )
+
+
+def _set_plant_references(strain_library: StrainLibrary, count: int) -> None:
+    """Expose loaded coordinators containing plants that reference the target."""
+    plants = {
+        f"plant-{index}": Plant(
+            plant_id=f"plant-{index}",
+            growspace_id="veg",
+            genetics=PlantGenetics(strain_name="Target Strain"),
+        )
+        for index in range(count)
+    }
+    coordinator = SimpleNamespace(plants=plants)
+    entry = SimpleNamespace(
+        state=ConfigEntryState.LOADED,
+        runtime_data=coordinator,
+    )
+    strain_library.hass.config_entries.async_entries.return_value = [entry]
+
+
+async def _database_snapshot(strain_library: StrainLibrary) -> dict[str, list[tuple]]:
+    """Return all deletion-relevant rows for atomicity assertions."""
+    assert strain_library._db is not None
+    snapshot = {}
+    for table in ("strains", "phenotypes", "harvests", "strain_ancestry"):
+        async with strain_library._db.execute(
+            f"SELECT * FROM {table} ORDER BY 1"  # noqa: S608
+        ) as cursor:
+            snapshot[table] = [tuple(row) for row in await cursor.fetchall()]
+    return snapshot
+
+
+@pytest.mark.parametrize(
+    ("plant_count", "harvest_count", "descendants", "reference_message"),
+    [
+        pytest.param(1, 0, (), "1 Plant record", id="plant"),
+        pytest.param(0, 1, (), "harvest history", id="harvest"),
+        pytest.param(2, 1, (), "2 Plant records and harvest history", id="both"),
+        pytest.param(1, 0, ("Child",), "1 Plant record", id="plant-and-lineage"),
+        pytest.param(0, 1, ("Child",), "harvest history", id="harvest-and-lineage"),
+        pytest.param(
+            2,
+            1,
+            ("Child",),
+            "2 Plant records and harvest history",
+            id="all-references",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_remove_strain_rejects_cultivation_references_without_changes(
+    strain_library: StrainLibrary,
+    plant_count: int,
+    harvest_count: int,
+    descendants: tuple[str, ...],
+    reference_message: str,
+) -> None:
+    """Cultivation references block deletion before catalogue data is changed."""
+    await _add_catalogued_strain(strain_library, descendants=descendants)
+    _set_plant_references(strain_library, plant_count)
+    for _ in range(harvest_count):
+        await strain_library.record_harvest("Target Strain", "Keeper", 28, 63)
+    database_before = await _database_snapshot(strain_library)
+    cache_before = deepcopy(strain_library.strains)
+
+    with pytest.raises(StrainReferenceError, match=reference_message):
+        await strain_library.remove_strain("Target Strain")
+
+    assert await _database_snapshot(strain_library) == database_before
+    assert strain_library.strains == cache_before
+
+
+@pytest.mark.asyncio
+async def test_remove_lineage_referenced_strain_demotes_to_ancestor(
+    strain_library: StrainLibrary, mock_image_manager: ImageManager
+) -> None:
+    """A lineage-only reference retains identity and parents but clears catalogue data."""
+    await _add_catalogued_strain(strain_library, descendants=("Child Strain",))
+    _set_plant_references(strain_library, 0)
+
+    await strain_library.remove_strain("Target Strain")
+
+    assert strain_library._db is not None
+    async with strain_library._db.execute(
+        "SELECT * FROM strains WHERE strain_name = ?", ("Target Strain",)
+    ) as cursor:
+        row = dict(await cursor.fetchone())
+    assert row == {
+        "strain_id": row["strain_id"],
+        "strain_name": "Target Strain",
+        "breeder": None,
+        "breeder_logo": None,
+        "type": None,
+        "lineage": "Parent Strain",
+        "sex": None,
+        "sativa_percentage": None,
+        "indica_percentage": None,
+        "yield_potential": None,
+        "height": None,
+        "thc": None,
+        "awards": None,
+        "lineage_tree": '[{"name": "Parent Strain", "source": "library"}]',
+        "cbd": None,
+        "cbg": None,
+        "effects": None,
+        "aroma": None,
+        "taste": None,
+        "description": None,
+        "is_indoor": None,
+        "is_outdoor": None,
+        "is_greenhouse": None,
+        "is_stub": 1,
+        "generation": None,
+    }
+    async with strain_library._db.execute(
+        "SELECT COUNT(*) FROM phenotypes WHERE strain_id = ?", (row["strain_id"],)
+    ) as cursor:
+        assert (await cursor.fetchone())[0] == 0
+    async with strain_library._db.execute(
+        "SELECT ancestor_name FROM strain_ancestry WHERE descendant_strain_id = ?",
+        (row["strain_id"],),
+    ) as cursor:
+        assert [item[0] for item in await cursor.fetchall()] == ["Parent Strain"]
+    assert strain_library.strains["Target Strain"]["meta"]["is_stub"] is True
+    assert strain_library.strains["Target Strain"]["phenotypes"] == {}
+    mock_image_manager.delete_image.assert_called_once_with("target_strain", "keeper")
+
+
+@pytest.mark.asyncio
+async def test_remove_unreferenced_strain_deletes_everything(
+    strain_library: StrainLibrary, mock_image_manager: ImageManager
+) -> None:
+    """An entirely unreferenced strain is removed rather than demoted."""
+    await _add_catalogued_strain(strain_library)
+    _set_plant_references(strain_library, 0)
+
+    await strain_library.remove_strain("Target Strain")
+
+    assert "Target Strain" not in strain_library.strains
+    assert strain_library._db is not None
+    for table in ("strains", "phenotypes", "strain_ancestry"):
+        async with strain_library._db.execute(
+            f"SELECT COUNT(*) FROM {table}"  # noqa: S608
+        ) as cursor:
+            assert (await cursor.fetchone())[0] == 0
+    mock_image_manager.delete_image.assert_called_once_with("target_strain", "keeper")
 
 
 @pytest.mark.asyncio
@@ -1048,4 +1235,3 @@ async def test_resolve_thumbnail_none_exists(strain_library: StrainLibrary) -> N
 
     thumbnail = strain_library.resolve_thumbnail("OG Kush", "Pheno A")
     assert thumbnail is None
-

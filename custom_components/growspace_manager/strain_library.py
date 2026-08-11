@@ -14,10 +14,12 @@ from typing import Any
 
 import aiosqlite
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util, slugify
 
-from .const import DB_FILE_STRAIN_LIBRARY
+from .const import DB_FILE_STRAIN_LIBRARY, DOMAIN
+from .exceptions import StrainReferenceError
 from .image_manager import ImageManager
 from .import_export_manager import ImportExportManager
 from .managers.lineage import StrainLineageManager
@@ -1162,7 +1164,7 @@ class StrainLibrary:
         _LOGGER.info("Removed phenotype %s from strain %s", phenotype, strain)
 
     async def remove_strain(self, strain: str) -> None:
-        """Remove an entire strain and all related data."""
+        """Remove, demote, or reject removal according to strain references."""
         if self._db is None:
             _LOGGER.warning("Database not connected, cannot remove strain")
             return
@@ -1178,20 +1180,116 @@ class StrainLibrary:
                 )
                 return
             strain_id = row[0]
-        # Delete harvests, phenotypes, strain
-        await self._db.execute(
-            "DELETE FROM harvests WHERE phenotype_id IN (SELECT phenotype_id FROM phenotypes WHERE strain_id = ?)",
+
+        plant_count = self._count_plant_references(strain_id, strain)
+        async with self._db.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM harvests h
+                JOIN phenotypes p ON p.phenotype_id = h.phenotype_id
+                WHERE p.strain_id = ?
+            )
+            """,
             (strain_id,),
-        )
+        ) as cur:
+            reference_row = await cur.fetchone()
+            has_harvest_history = bool(reference_row and reference_row[0])
+        if plant_count or has_harvest_history:
+            raise StrainReferenceError(
+                strain,
+                plant_count=plant_count,
+                has_harvest_history=has_harvest_history,
+            )
+
+        async with self._db.execute(
+            "SELECT phenotype_name FROM phenotypes WHERE strain_id = ?", (strain_id,)
+        ) as cur:
+            phenotype_names = [row[0] for row in await cur.fetchall()]
+        async with self._db.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM strain_ancestry
+                WHERE ancestor_name = ? AND descendant_strain_id != ?
+            )
+            """,
+            (strain, strain_id),
+        ) as cur:
+            reference_row = await cur.fetchone()
+            has_lineage_references = bool(reference_row and reference_row[0])
+
         await self._db.execute(
             "DELETE FROM phenotypes WHERE strain_id = ?", (strain_id,)
         )
-        await self._db.execute("DELETE FROM strains WHERE strain_id = ?", (strain_id,))
+        if has_lineage_references:
+            await self._db.execute(
+                """
+                UPDATE strains SET
+                    breeder = NULL,
+                    breeder_logo = NULL,
+                    type = NULL,
+                    sex = NULL,
+                    generation = NULL,
+                    sativa_percentage = NULL,
+                    indica_percentage = NULL,
+                    yield_potential = NULL,
+                    height = NULL,
+                    thc = NULL,
+                    awards = NULL,
+                    cbd = NULL,
+                    cbg = NULL,
+                    effects = NULL,
+                    aroma = NULL,
+                    taste = NULL,
+                    description = NULL,
+                    is_indoor = NULL,
+                    is_outdoor = NULL,
+                    is_greenhouse = NULL,
+                    is_stub = 1
+                WHERE strain_id = ?
+                """,
+                (strain_id,),
+            )
+        else:
+            await self._db.execute(
+                "DELETE FROM strain_ancestry WHERE descendant_strain_id = ?",
+                (strain_id,),
+            )
+            await self._db.execute(
+                "DELETE FROM strains WHERE strain_id = ?", (strain_id,)
+            )
         await self._db.commit()
+
+        safe_strain = slugify(strain)
+        for phenotype_name in phenotype_names:
+            self.image_manager.delete_image(
+                safe_strain, slugify(phenotype_name or "default")
+            )
+
         # Invalidate cache and reload
         self._analytics.invalidate()
         await self.load()
-        _LOGGER.info("Removed strain %s from library", strain)
+        if has_lineage_references:
+            _LOGGER.info("Demoted strain %s to an ancestor strain", strain)
+        else:
+            _LOGGER.info("Removed strain %s from library", strain)
+
+    def _count_plant_references(self, strain_id: int, strain_name: str) -> int:
+        """Count plants across loaded config entries that reference a strain."""
+        plant_ids: set[str] = set()
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if entry.state != ConfigEntryState.LOADED:
+                continue
+            coordinator = getattr(entry, "runtime_data", None)
+            plants = getattr(coordinator, "plants", {}) if coordinator else {}
+            for plant in plants.values():
+                genetics = getattr(plant, "genetics", None)
+                if genetics is None:
+                    continue
+                referenced_id = getattr(genetics, "strain_id", None)
+                referenced_name = getattr(genetics, "strain_name", "").strip()
+                if referenced_id == strain_id or referenced_name == strain_name:
+                    plant_ids.add(plant.plant_id)
+        return len(plant_ids)
 
     def get_all(self) -> dict[str, dict[str, Any]]:
         """Return the raw in‑memory strain dictionary."""

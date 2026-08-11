@@ -40,3 +40,29 @@ class GrowspaceNotFoundError(EntityNotFoundError):
 
 class ValidationChangeError(GrowspaceError):
     """Raised when a validation check fails for a state change."""
+
+
+class StrainReferenceError(ValidationChangeError):
+    """Raised when cultivation records prevent removing a strain."""
+
+    def __init__(
+        self, strain: str, *, plant_count: int = 0, has_harvest_history: bool = False
+    ) -> None:
+        """Describe the references that must be resolved before removal."""
+        references = []
+        if plant_count:
+            record = "record" if plant_count == 1 else "records"
+            references.append(f"{plant_count} Plant {record}")
+        if has_harvest_history:
+            references.append("harvest history")
+        reference_summary = " and ".join(references)
+        verb = (
+            "references"
+            if (plant_count == 1 and not has_harvest_history)
+            or (not plant_count and has_harvest_history)
+            else "reference"
+        )
+        super().__init__(
+            f"Cannot remove strain '{strain}': {reference_summary} still {verb} it. "
+            "Resolve the cultivation references first."
+        )
