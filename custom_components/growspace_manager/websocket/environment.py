@@ -141,6 +141,8 @@ def _downsample_entity_binary_search(
     start_time: datetime,
     end_time: datetime,
     interval_delta: timedelta,
+    *,
+    include_fan_attrs: bool = False,
 ) -> list[dict[str, Any]]:
     """Downsample states using binary search with finger optimization."""
     downsampled = []
@@ -166,12 +168,15 @@ def _downsample_entity_binary_search(
                 state_val = s.state
 
             if state_val and state_val not in ("unknown", "unavailable"):
-                downsampled.append(
-                    {
-                        "s": state_val,
-                        "lu": current_time.isoformat(),
-                    }
-                )
+                point: dict[str, Any] = {
+                    "s": state_val,
+                    "lu": current_time.isoformat(),
+                }
+                if include_fan_attrs:
+                    attrs = _extract_fan_attrs(s)
+                    if attrs:
+                        point["a"] = attrs
+                downsampled.append(point)
         else:
             last_idx = 0
 
@@ -257,7 +262,11 @@ async def _get_history_with_binary_search_downsample(
                 result[entity_id] = passthrough
             else:
                 result[entity_id] = _downsample_entity_binary_search(
-                    states, start_time, end_time, interval_delta
+                    states,
+                    start_time,
+                    end_time,
+                    interval_delta,
+                    include_fan_attrs=is_fan,
                 )
 
         return result
