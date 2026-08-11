@@ -3,12 +3,8 @@
   "ai_auto_alerts": false,
   "environment": {
     "active_events": {},
-    "bulk_ec_sensors": [
-      "sensor.contract_bulk_ec"
-    ],
-    "camera_entities": [
-      "camera.contract"
-    ],
+    "bulk_ec_sensors": ["sensor.contract_bulk_ec"],
+    "camera_entities": ["camera.contract"],
     "circulation_fan_ac_infinity_devices": [
       {
         "mode_entity": "select.contract_circulation_mode",
@@ -29,8 +25,8 @@
       "stage_vpd_enabled": true,
       "stage_vpd_overrides": {
         "flower": {
-          "target": 1.3,
-          "tolerance": 0.1
+          "day": 1.3,
+          "night": 1.1
         }
       },
       "temperature_target": 25.5,
@@ -41,9 +37,7 @@
       "wind_enabled": true,
       "wind_period_seconds": 90
     },
-    "circulation_fan_entities": [
-      "fan.contract_circulation"
-    ],
+    "circulation_fan_entities": ["fan.contract_circulation"],
     "circulation_fan_entity": "fan.contract_circulation",
     "circulation_fan_state": "on",
     "co2_sensor": "sensor.contract_co2",
@@ -56,9 +50,7 @@
     ],
     "dehumidifier_control_enabled": true,
     "dehumidifier_current_humidity": 58,
-    "dehumidifier_entities": [
-      "humidifier.contract_dehumidifier"
-    ],
+    "dehumidifier_entities": ["humidifier.contract_dehumidifier"],
     "dehumidifier_entity": "humidifier.contract_dehumidifier",
     "dehumidifier_humidity": 52,
     "dehumidifier_mode": "auto",
@@ -70,13 +62,9 @@
       }
     },
     "drain_pump_state": "off",
-    "drain_volume_sensors": [
-      "sensor.contract_drain_volume"
-    ],
+    "drain_volume_sensors": ["sensor.contract_drain_volume"],
     "electricity_cost_per_kwh": 0.32,
-    "energy_sensors": [
-      "sensor.contract_energy"
-    ],
+    "energy_sensors": ["sensor.contract_energy"],
     "exhaust_entity": "fan.contract_exhaust",
     "exhaust_fan_ac_infinity_devices": [
       {
@@ -97,8 +85,8 @@
       "stage_vpd_enabled": true,
       "stage_vpd_overrides": {
         "veg": {
-          "target": 1.0,
-          "tolerance": 0.15
+          "day": 1.0,
+          "night": 0.8
         }
       },
       "temperature_target": 26.0,
@@ -106,13 +94,9 @@
       "vpd_target": 1.2,
       "vpd_tolerance": 0.2
     },
-    "exhaust_fan_entities": [
-      "fan.contract_exhaust"
-    ],
+    "exhaust_fan_entities": ["fan.contract_exhaust"],
     "exhaust_state": "on",
-    "feed_ec_sensors": [
-      "sensor.contract_feed_ec"
-    ],
+    "feed_ec_sensors": ["sensor.contract_feed_ec"],
     "growlight_ac_infinity_devices": [
       {
         "mode_entity": "select.contract_growlight_mode",
@@ -129,9 +113,7 @@
       "sunrise_enabled": true,
       "sunrise_minutes": 30
     },
-    "growlight_entities": [
-      "light.contract_growlight"
-    ],
+    "growlight_entities": ["light.contract_growlight"],
     "humidifier_ac_infinity_devices": [
       {
         "mode_entity": "select.contract_humidifier_mode",
@@ -140,9 +122,7 @@
       }
     ],
     "humidifier_control_enabled": true,
-    "humidifier_entities": [
-      "humidifier.contract"
-    ],
+    "humidifier_entities": ["humidifier.contract"],
     "humidifier_entity": "humidifier.contract",
     "humidifier_state": "on",
     "humidifier_thresholds": {
@@ -157,9 +137,7 @@
       "sensor.contract_humidity",
       "sensor.contract_humidity_2"
     ],
-    "irrigation_flow_sensors": [
-      "sensor.contract_irrigation_flow"
-    ],
+    "irrigation_flow_sensors": ["sensor.contract_irrigation_flow"],
     "irrigation_pump_state": "off",
     "irrigation_tanks": [
       {
@@ -202,31 +180,17 @@
       }
     ],
     "light_sensor": "sensor.contract_light",
-    "light_sensors": [
-      "sensor.contract_light"
-    ],
+    "light_sensors": ["sensor.contract_light"],
     "lst_offset": -2.5,
-    "lung_room_temp_sensors": [
-      "sensor.contract_lung_temperature"
-    ],
-    "ph_sensors": [
-      "sensor.contract_ph"
-    ],
-    "pore_ec_sensors": [
-      "sensor.contract_pore_ec"
-    ],
-    "power_sensors": [
-      "sensor.contract_power"
-    ],
-    "runoff_ec_sensors": [
-      "sensor.contract_runoff_ec"
-    ],
+    "lung_room_temp_sensors": ["sensor.contract_lung_temperature"],
+    "ph_sensors": ["sensor.contract_ph"],
+    "pore_ec_sensors": ["sensor.contract_pore_ec"],
+    "power_sensors": ["sensor.contract_power"],
+    "runoff_ec_sensors": ["sensor.contract_runoff_ec"],
     "soil_moisture_sensor": "sensor.contract_soil_moisture",
     "soil_moisture_value": "56.0",
     "substrate_ec_delta": 0.4,
-    "substrate_temperature_sensors": [
-      "sensor.contract_substrate_temperature"
-    ],
+    "substrate_temperature_sensors": ["sensor.contract_substrate_temperature"],
     "temperature": "25.4",
     "temperature_sensor": "sensor.contract_temperature",
     "temperature_sensors": [
@@ -254,10 +218,7 @@
       }
     },
     "vpd_sensor": "sensor.contract_vpd",
-    "vpd_sensors": [
-      "sensor.contract_vpd",
-      "sensor.contract_vpd_2"
-    ]
+    "vpd_sensors": ["sensor.contract_vpd", "sensor.contract_vpd_2"]
   },
   "grid": {
     "dimensions": {
@@ -505,10 +466,7 @@
     "night_vpd_target_max": 0.9,
     "night_vpd_target_min": 0.7,
     "transition_factor": 0.0,
-    "transition_stages": [
-      "cure",
-      "cure"
-    ],
+    "transition_stages": ["cure", "cure"],
     "veg_week": 28,
     "vpd_danger_max": 1.1,
     "vpd_danger_min": 0.5,
@@ -539,17 +497,11 @@
     },
     "sensor_groups": [
       {
-        "humidity_sensors": [
-          "sensor.contract_humidity"
-        ],
+        "humidity_sensors": ["sensor.contract_humidity"],
         "id": "contract-canopy",
         "name": "Canopy",
-        "temperature_sensors": [
-          "sensor.contract_temperature"
-        ],
-        "vpd_sensors": [
-          "sensor.contract_vpd"
-        ],
+        "temperature_sensors": ["sensor.contract_temperature"],
+        "vpd_sensors": ["sensor.contract_vpd"],
         "x": 0.5,
         "y": 0.5,
         "z": 1.2
@@ -581,12 +533,8 @@
           "min_probability": 0.75,
           "observations": 4
         },
-        "bulk_ec_sensors": [
-          "sensor.subarea_bulk_ec"
-        ],
-        "camera_entities": [
-          "camera.subarea"
-        ],
+        "bulk_ec_sensors": ["sensor.subarea_bulk_ec"],
+        "camera_entities": ["camera.subarea"],
         "circulation_fan_ac_infinity_devices": [
           {
             "mode_entity": "select.subarea_circulation_mode",
@@ -607,8 +555,8 @@
           "stage_vpd_enabled": true,
           "stage_vpd_overrides": {
             "flower": {
-              "target": 1.3,
-              "tolerance": 0.1
+              "day": 1.3,
+              "night": 1.1
             }
           },
           "temperature_target": 25.5,
@@ -619,9 +567,7 @@
           "wind_enabled": true,
           "wind_period_seconds": 90
         },
-        "circulation_fan_entities": [
-          "fan.subarea_circulation"
-        ],
+        "circulation_fan_entities": ["fan.subarea_circulation"],
         "co2_sensor": "sensor.subarea_co2",
         "control_dehumidifier": true,
         "control_humidifier": true,
@@ -632,9 +578,7 @@
             "speed_entity": "number.subarea_dehumidifier_speed"
           }
         ],
-        "dehumidifier_entities": [
-          "humidifier.subarea_dehumidifier"
-        ],
+        "dehumidifier_entities": ["humidifier.subarea_dehumidifier"],
         "dehumidifier_thresholds": {
           "flower": {
             "target": 52.0,
@@ -643,13 +587,9 @@
         },
         "dli_target_flower": 44.0,
         "dli_target_veg": 32.0,
-        "drain_volume_sensors": [
-          "sensor.subarea_drain_volume"
-        ],
+        "drain_volume_sensors": ["sensor.subarea_drain_volume"],
         "electricity_cost_per_kwh": 0.32,
-        "energy_sensors": [
-          "sensor.subarea_energy"
-        ],
+        "energy_sensors": ["sensor.subarea_energy"],
         "exhaust_fan_ac_infinity_devices": [
           {
             "mode_entity": "select.subarea_exhaust_mode",
@@ -669,8 +609,8 @@
           "stage_vpd_enabled": true,
           "stage_vpd_overrides": {
             "veg": {
-              "target": 1.0,
-              "tolerance": 0.15
+              "day": 1.0,
+              "night": 0.8
             }
           },
           "temperature_target": 26.0,
@@ -678,12 +618,8 @@
           "vpd_target": 1.2,
           "vpd_tolerance": 0.2
         },
-        "exhaust_fan_entities": [
-          "fan.subarea_exhaust"
-        ],
-        "feed_ec_sensors": [
-          "sensor.subarea_feed_ec"
-        ],
+        "exhaust_fan_entities": ["fan.subarea_exhaust"],
+        "feed_ec_sensors": ["sensor.subarea_feed_ec"],
         "flower_day_hours": 12,
         "growlight_ac_infinity_devices": [
           {
@@ -701,9 +637,7 @@
           "sunrise_enabled": true,
           "sunrise_minutes": 30
         },
-        "growlight_entities": [
-          "light.subarea_growlight"
-        ],
+        "growlight_entities": ["light.subarea_growlight"],
         "humidifier_ac_infinity_devices": [
           {
             "mode_entity": "select.subarea_humidifier_mode",
@@ -711,9 +645,7 @@
             "speed_entity": "number.subarea_humidifier_speed"
           }
         ],
-        "humidifier_entities": [
-          "humidifier.subarea"
-        ],
+        "humidifier_entities": ["humidifier.subarea"],
         "humidifier_thresholds": {
           "veg": {
             "target": 68.0,
@@ -725,9 +657,7 @@
           "sensor.subarea_humidity",
           "sensor.subarea_humidity_2"
         ],
-        "irrigation_flow_sensors": [
-          "sensor.subarea_irrigation_flow"
-        ],
+        "irrigation_flow_sensors": ["sensor.subarea_irrigation_flow"],
         "irrigation_tanks": [
           {
             "enable_lights_bias": true,
@@ -763,27 +693,15 @@
             }
           }
         ],
-        "light_sensors": [
-          "sensor.subarea_light"
-        ],
+        "light_sensors": ["sensor.subarea_light"],
         "lst_offset": -2.5,
-        "lung_room_temp_sensors": [
-          "sensor.subarea_lung_temperature"
-        ],
+        "lung_room_temp_sensors": ["sensor.subarea_lung_temperature"],
         "minimum_source_air_temperature": 17.5,
         "mold_threshold": 0.8,
-        "ph_sensors": [
-          "sensor.subarea_ph"
-        ],
-        "pore_ec_sensors": [
-          "sensor.subarea_pore_ec"
-        ],
-        "power_sensors": [
-          "sensor.subarea_power"
-        ],
-        "runoff_ec_sensors": [
-          "sensor.subarea_runoff_ec"
-        ],
+        "ph_sensors": ["sensor.subarea_ph"],
+        "pore_ec_sensors": ["sensor.subarea_pore_ec"],
+        "power_sensors": ["sensor.subarea_power"],
+        "runoff_ec_sensors": ["sensor.subarea_runoff_ec"],
         "sensor_coordinates": {
           "sensor.subarea_humidity": {
             "x": 0.75,
@@ -798,17 +716,11 @@
         },
         "sensor_groups": [
           {
-            "humidity_sensors": [
-              "sensor.subarea_humidity"
-            ],
+            "humidity_sensors": ["sensor.subarea_humidity"],
             "id": "subarea-canopy",
             "name": "Canopy",
-            "temperature_sensors": [
-              "sensor.subarea_temperature"
-            ],
-            "vpd_sensors": [
-              "sensor.subarea_vpd"
-            ],
+            "temperature_sensors": ["sensor.subarea_temperature"],
+            "vpd_sensors": ["sensor.subarea_vpd"],
             "x": 0.5,
             "y": 0.5,
             "z": 1.2
@@ -846,10 +758,7 @@
           }
         },
         "vpd_sensor": "sensor.subarea_vpd",
-        "vpd_sensors": [
-          "sensor.subarea_vpd",
-          "sensor.subarea_vpd_2"
-        ]
+        "vpd_sensors": ["sensor.subarea_vpd", "sensor.subarea_vpd_2"]
       },
       "id": "contract-subarea",
       "name": "Propagation Shelf"
@@ -858,9 +767,7 @@
   "timed_notifications": [
     {
       "day": 14,
-      "growspace_ids": [
-        "contract_growspace"
-      ],
+      "growspace_ids": ["contract_growspace"],
       "id": "contract-notification",
       "message": "Inspect irrigation runoff",
       "trigger_type": "flower_start"
