@@ -34,19 +34,16 @@ async def test_import_lineage_marks_ancestors_as_stubs():
 
     await lib.async_import_seedfinder_lineage_tree(root, tree)
 
-    stub_update_sqls = [
+    stub_insert_sqls = [
         (sql, params)
         for sql, params in execute_calls
-        if "is_stub" in sql and "UPDATE" in sql
+        if "is_stub" in sql and "INSERT OR IGNORE INTO strains" in sql
     ]
-    marked = {params[0] for _, params in stub_update_sqls if params}
+    marked = {params[0] for _, params in stub_insert_sqls if params}
     assert "Blueberry" in marked
     assert "Haze" in marked
     assert "Blue Dream" not in marked
-    for sql, _ in stub_update_sqls:
-        assert "breeder IS NULL" in sql, (
-            "Stub UPDATE must guard against overwriting real entries"
-        )
+    assert not any("UPDATE strains SET is_stub = 1" in sql for sql, _ in execute_calls)
 
 
 @pytest.mark.asyncio
@@ -93,6 +90,7 @@ async def test_add_strain_clears_stub_flag():
     lib._db.executemany = AsyncMock()
     lib._db.commit = AsyncMock()
     lib._analytics_cache = None
+    lib.load = AsyncMock()
     lib.image_manager = MagicMock()
     lib.image_manager.save_strain_image = AsyncMock(return_value="/tmp/img.webp")
 
@@ -103,14 +101,72 @@ async def test_add_strain_clears_stub_flag():
         None,
     )
     assert upsert_sql is not None, "Expected INSERT OR REPLACE INTO strains"
-    assert "is_stub" in upsert_sql, "ON CONFLICT clause must set is_stub = 0"
+    assert "is_stub=0" in upsert_sql
+    assert "lineage=COALESCE(excluded.lineage, lineage)" in upsert_sql
+    assert "lineage_tree=COALESCE(excluded.lineage_tree, lineage_tree)" in upsert_sql
+
+
+@pytest.mark.asyncio
+async def test_editing_ancestor_uses_promoting_add_path() -> None:
+    """Editing an ancestor uses add_strain, which clears the ancestor flag."""
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+
+    lib = StrainLibrary(MagicMock())
+    lib.add_strain = AsyncMock()
+
+    await lib.set_strain_meta(strain="Haze", strain_description="Managed")
+
+    lib.add_strain.assert_awaited_once_with(
+        strain="Haze",
+        phenotype=None,
+        breeder=None,
+        breeder_logo=None,
+        strain_type=None,
+        lineage=None,
+        sex=None,
+        flower_days_min=None,
+        flower_days_max=None,
+        description=None,
+        image_base64=None,
+        image_path=None,
+        image_crop_meta=None,
+        images=None,
+        sativa_percentage=None,
+        indica_percentage=None,
+        yield_potential=None,
+        height=None,
+        thc=None,
+        cbd=None,
+        cbg=None,
+        effects=None,
+        aroma=None,
+        taste=None,
+        strain_description="Managed",
+        awards=None,
+        lineage_tree=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_importing_ancestor_uses_promoting_add_path() -> None:
+    """Explicitly importing an ancestor uses add_strain to promote it."""
+    from custom_components.growspace_manager.strain_library import StrainLibrary
+
+    lib = StrainLibrary(MagicMock())
+    lib.add_strain = AsyncMock()
+    lib.load = AsyncMock()
+
+    await lib.import_strains(["Haze"])
+
+    lib.add_strain.assert_awaited_once_with("Haze")
 
 
 @pytest.mark.asyncio
 async def test_load_populates_is_stub_from_db():
-    """load() must read is_stub from the DB row and store it as a bool in meta."""
+    """A managed ancestor is promoted while retaining its lineage."""
     import aiosqlite
 
+    from custom_components.growspace_manager.sensor import StrainLibrarySensor
     from custom_components.growspace_manager.strain_library import (
         STRAIN_LIBRARY_SCHEMA,
         StrainLibrary,
@@ -130,9 +186,17 @@ async def test_load_populates_is_stub_from_db():
         await db.execute("ALTER TABLE phenotypes ADD COLUMN images TEXT")
         await db.commit()
 
-        # Insert one stub (no breeder) and one real entry
         await db.execute(
-            "INSERT INTO strains (strain_name, is_stub) VALUES (?, ?)", ("Haze", 1)
+            """
+            INSERT INTO strains (strain_name, lineage, lineage_tree, is_stub)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "Haze",
+                "Thai",
+                '[{"name": "Thai", "source": "library"}]',
+                1,
+            ),
         )
         await db.execute(
             "INSERT INTO strains (strain_name, breeder, is_stub) VALUES (?, ?, ?)",
@@ -149,8 +213,24 @@ async def test_load_populates_is_stub_from_db():
         lib._db = db
         await lib.load()
 
-    assert "Haze" in lib.strains
-    assert lib.strains["Haze"]["meta"]["is_stub"] is True
+        coordinator = MagicMock()
+        coordinator.services.config.strain_library = lib
+        sensor = StrainLibrarySensor(coordinator)
 
+        assert sensor.native_value == 1
+        assert sensor.extra_state_attributes["ancestor_strain_count"] == 1
+        assert sensor.extra_state_attributes["total_strain_count"] == 2
+
+        await lib.add_strain("Haze", breeder="Explicitly managed")
+
+        assert sensor.native_value == 2
+        assert sensor.extra_state_attributes["ancestor_strain_count"] == 0
+        assert sensor.extra_state_attributes["total_strain_count"] == 2
+
+    assert lib.strains["Haze"]["meta"]["is_stub"] is False
+    assert lib.strains["Haze"]["meta"]["lineage"] == "Thai"
+    assert lib.strains["Haze"]["meta"]["lineage_tree"] == [
+        {"name": "Thai", "source": "library"}
+    ]
     assert "OG Kush" in lib.strains
     assert lib.strains["OG Kush"]["meta"]["is_stub"] is False

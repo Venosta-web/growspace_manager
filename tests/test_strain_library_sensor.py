@@ -1,4 +1,5 @@
 """Tests for StrainLibrarySensor — performance optimization."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -11,6 +12,7 @@ def _make_sensor() -> StrainLibrarySensor:
     coordinator = MagicMock()
     coordinator.services.config.strain_library.get_all.return_value = {
         "OG Kush": {"meta": {}, "phenotypes": {}},
+        "Hindu Kush": {"meta": {"is_stub": True}, "phenotypes": {}},
     }
     coordinator.services.config.strain_library.get_analytics.return_value = {
         "strains": {"OG Kush": {}},
@@ -39,4 +41,22 @@ def test_strain_library_sensor_analytics_basics() -> None:
     sensor = _make_sensor()
     attrs = sensor.extra_state_attributes
     assert attrs["strain_count"] == 1
+    assert attrs["ancestor_strain_count"] == 1
+    assert attrs["total_strain_count"] == 2
     assert attrs["strain_list"] == ["OG Kush"]
+
+
+def test_strain_library_sensor_state_counts_only_catalogued_strains() -> None:
+    """The state excludes lineage-only ancestor strains."""
+    sensor = _make_sensor()
+    assert sensor.native_value == 1
+
+
+def test_strain_library_sensor_uses_dedicated_device() -> None:
+    """The Strain Library sensor uses the same dedicated device identifier."""
+    coordinator = MagicMock()
+    sensor = StrainLibrarySensor(coordinator)
+    assert sensor.device_info is not None
+    assert sensor.device_info["identifiers"] == {
+        ("growspace_manager", "strain_library")
+    }
