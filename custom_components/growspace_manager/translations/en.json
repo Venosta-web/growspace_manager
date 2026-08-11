@@ -222,5 +222,11 @@
     "phi_not_cleared": {
       "message": "Cannot harvest {plant_id}: pre-harvest interval not cleared until {clearance_date} ({days_remaining} days remaining)."
     }
+  },
+  "options": {
+    "error": {
+      "strain_delete_blocked": "Cannot delete {strain}: {detail}. Resolve those references first, then try again.",
+      "delete_failed": "The strain could not be deleted because of an unexpected error. Check the logs for details."
+    }
   }
 }

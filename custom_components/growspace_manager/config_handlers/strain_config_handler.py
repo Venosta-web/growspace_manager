@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS
+from custom_components.growspace_manager.exceptions import StrainReferenceError
 from custom_components.growspace_manager.schemas import ADD_STRAIN_SCHEMA
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -43,6 +44,16 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 try:
                     await coordinator.services.config.strain_library.remove_strain(
                         user_input.get("strain_id")
+                    )
+                except StrainReferenceError as err:
+                    return self.flow.async_show_form(
+                        step_id="manage_strain_library",
+                        data_schema=self._get_strain_library_menu_schema(coordinator),
+                        errors={"base": "strain_delete_blocked"},
+                        description_placeholders={
+                            "strain": err.strain,
+                            "detail": err.detail,
+                        },
                     )
                 except Exception:
                     _LOGGER.exception("Error deleting strain")
@@ -126,8 +137,10 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         export_dir = self.flow.hass.config.path("exports")
 
         try:
-            zip_path = await coordinator.services.config.strain_library.export_library_to_zip(
-                export_dir
+            zip_path = (
+                await coordinator.services.config.strain_library.export_library_to_zip(
+                    export_dir
+                )
             )
             return self.flow.async_show_form(
                 step_id="export_strain_library",

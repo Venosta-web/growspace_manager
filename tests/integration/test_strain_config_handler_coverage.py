@@ -9,6 +9,7 @@ from custom_components.growspace_manager.config_handlers.strain_config_handler i
     StrainConfigHandler,
 )
 from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS, DOMAIN
+from custom_components.growspace_manager.exceptions import StrainReferenceError
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -131,7 +132,11 @@ async def test_async_step_manage_strain_library_post_edit(
 async def test_async_step_manage_strain_library_post_delete_success(
     handler: StrainConfigHandler,
 ) -> None:
-    """Test deleting a strain successfully."""
+    """Deletion and demotion alike return to the menu without an error.
+
+    remove_strain returns plainly whether the strain was deleted outright or
+    demoted to an ancestor, so one assertion covers both success outcomes.
+    """
     # Access the deeply nested mock through the facade
     strain_service = handler.config_entry.runtime_data.services.config.strain_library
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
@@ -141,6 +146,56 @@ async def test_async_step_manage_strain_library_post_delete_success(
     )
     assert result["type"] == "form"
     strain_service.remove_strain.assert_awaited_once_with("test_strain")
+    handler.flow.async_show_form.assert_called_once_with(
+        step_id="manage_strain_library",
+        data_schema=ANY,
+    )
+
+
+@pytest.mark.parametrize(
+    ("plant_count", "has_harvest_history", "expected_detail"),
+    [
+        pytest.param(1, False, "1 Plant record still references it", id="plant"),
+        pytest.param(0, True, "harvest history still references it", id="harvest"),
+        pytest.param(
+            2,
+            True,
+            "2 Plant records and harvest history still reference it",
+            id="both",
+        ),
+    ],
+)
+async def test_async_step_manage_strain_library_post_delete_blocked_by_references(
+    handler: StrainConfigHandler,
+    plant_count: int,
+    has_harvest_history: bool,
+    expected_detail: str,
+) -> None:
+    """A blocked removal reports which references must be resolved."""
+    strain_service = handler.config_entry.runtime_data.services.config.strain_library
+    strain_service.remove_strain = AsyncMock(
+        side_effect=StrainReferenceError(
+            "test_strain",
+            plant_count=plant_count,
+            has_harvest_history=has_harvest_history,
+        )
+    )
+    handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
+
+    result = await handler.async_step_manage_strain_library(
+        {"action": "delete_strain", "strain_id": "test_strain"}
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    handler.flow.async_show_form.assert_called_with(
+        step_id="manage_strain_library",
+        data_schema=ANY,
+        errors={"base": "strain_delete_blocked"},
+        description_placeholders={
+            "strain": "test_strain",
+            "detail": expected_detail,
+        },
+    )
 
 
 async def test_async_step_manage_strain_library_post_delete_fail(
@@ -148,7 +203,9 @@ async def test_async_step_manage_strain_library_post_delete_fail(
 ) -> None:
     """Test deleting a strain failure."""
     coordinator = handler.config_entry.runtime_data
-    coordinator._strain_library.remove_strain = AsyncMock(side_effect=Exception("Error"))
+    coordinator._strain_library.remove_strain = AsyncMock(
+        side_effect=Exception("Error")
+    )
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
 
     result = await handler.async_step_manage_strain_library(
@@ -441,9 +498,7 @@ async def test_async_step_manage_breeder_blacklist_post(
     handler.config_entry.options = {"existing_option": "value"}
     handler.hass.config_entries = MagicMock()
     handler.hass.config_entries.async_update_entry = MagicMock()
-    handler.async_step_manage_strain_library = AsyncMock(
-        return_value={"type": "form"}
-    )
+    handler.async_step_manage_strain_library = AsyncMock(return_value={"type": "form"})
 
     user_input = {CONF_BLACKLIST_BREEDERS: ["Breeder B"]}
     result = await handler.async_step_manage_breeder_blacklist(user_input)
@@ -454,4 +509,3 @@ async def test_async_step_manage_breeder_blacklist_post(
         options={"existing_option": "value", CONF_BLACKLIST_BREEDERS: ["Breeder B"]},
     )
     handler.async_step_manage_strain_library.assert_called_once()
-
