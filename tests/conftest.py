@@ -70,6 +70,15 @@ dt_util.set_default_time_zone = patched_set_default_time_zone
 import pytest
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register explicit regeneration options for committed contract fixtures."""
+    parser.addoption(
+        "--regenerate-contract-fixture",
+        action="store_true",
+        help="Regenerate tests/fixtures/contract/growspace_payload.json",
+    )
+
+
 @pytest.fixture(autouse=True)
 def enforce_utc_timezone():
     """Ensure timezone is UTC before and after each test.
@@ -311,4 +320,3 @@ def cleanup_coordinators(request):
     else:
         with contextlib.suppress(Exception):
             loop.run_until_complete(shutdown_all())
-
