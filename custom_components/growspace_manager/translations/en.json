@@ -224,7 +224,235 @@
     }
   },
   "options": {
+    "step": {
+      "init": {
+        "title": "Growspace Manager Options",
+        "description": "Manage your growspaces and plants"
+      },
+      "main_menu": {
+        "title": "Growspace Manager",
+        "description": "Choose what you would like to manage",
+        "menu_options": {
+          "manage_growspaces": "Manage Growspaces",
+          "manage_plants": "Manage Plants",
+          "configure_environment": "Configure Growspace Environment",
+          "configure_global": "Configure Global Sensors",
+          "configure_irrigation": "Configure Irrigation",
+          "configure_general": "General Settings"
+        }
+      },
+      "select_growspace_for_irrigation": {
+        "title": "Select Growspace for Irrigation",
+        "description": "Choose which growspace to configure the irrigation controller for.",
+        "data": {
+          "growspace_id": "Growspace"
+        }
+      },
+      "configure_irrigation": {
+        "title": "Configure Irrigation for {growspace_name}",
+        "description": "Manage the irrigation and drain controller for this growspace.",
+        "menu_options": {
+          "edit_pump_settings": "Edit Pump Settings",
+          "add_irrigation_time": "Add Irrigation Time",
+          "remove_irrigation_time": "Remove Irrigation Time",
+          "add_drain_time": "Add Drain Time",
+          "remove_drain_time": "Remove Drain Time"
+        }
+      },
+      "edit_pump_settings": {
+        "title": "Edit Pump Settings for {growspace_name}",
+        "description": "Configure the switch entities and default run durations.",
+        "data": {
+          "irrigation_pump_entity": "Irrigation Pump Switch",
+          "drain_pump_entity": "Drain Pump Switch",
+          "irrigation_duration": "Default Irrigation Duration (seconds)",
+          "drain_duration": "Default Drain Duration (seconds)"
+        }
+      },
+      "add_irrigation_time": {
+        "title": "Add Irrigation Time for {growspace_name}",
+        "description": "Add a new time slot for an irrigation event. You can optionally set a custom duration.",
+        "data": {
+          "time": "Time",
+          "duration": "Custom Duration (seconds)"
+        },
+        "data_description": {
+          "duration": "Optional: a custom duration for this specific event."
+        }
+      },
+      "remove_irrigation_time": {
+        "title": "Remove Irrigation Time for {growspace_name}",
+        "description": "Select an irrigation time to remove.",
+        "data": {
+          "time": "Irrigation Time"
+        }
+      },
+      "add_drain_time": {
+        "title": "Add Drain Time for {growspace_name}",
+        "description": "Add a new time slot for a drain event. You can optionally set a custom duration.",
+        "data": {
+          "time": "Time",
+          "duration": "Custom Duration (seconds)"
+        },
+        "data_description": {
+          "duration": "Optional: a custom duration for this specific event."
+        }
+      },
+      "remove_drain_time": {
+        "title": "Remove Drain Time for {growspace_name}",
+        "description": "Select a drain time to remove.",
+        "data": {
+          "time": "Drain Time"
+        }
+      },
+      "configure_global": {
+        "title": "Configure Global Sensors",
+        "description": "Set up optional sensors for outside and lung room environments.",
+        "data": {
+          "weather_entity": "Outside Weather Entity",
+          "lung_room_temp_sensor": "Lung Room Temperature Sensor",
+          "lung_room_humidity_sensor": "Lung Room Humidity Sensor"
+        }
+      },
+      "configure_general": {
+        "title": "General Settings",
+        "description": "Configure general integration behavior",
+        "data": {
+          "show_sidebar": "Show Growspace Manager in sidebar"
+        }
+      },
+      "configure_environment": {
+        "title": "Configure Environment for {growspace_name}",
+        "description": "Set up and fine-tune the environmental sensors and thresholds for this growspace.",
+        "data": {
+          "minimum_source_air_temperature": "Minimum Source Air Temperature (°C)",
+          "temperature_sensor": "Temperature Sensor",
+          "humidity_sensor": "Humidity Sensor",
+          "vpd_sensor": "VPD Sensor (Optional)",
+          "lst_offset": "Leaf Surface Temp Offset (°C)",
+          "configure_light": "Enable Light Monitoring",
+          "light_sensor": "Light Status Sensor",
+          "configure_fan": "Enable Circulation Fan",
+          "circulation_fan": "Circulation Fan Device",
+          "configure_co2": "Enable CO2 Monitoring",
+          "co2_sensor": "CO2 Sensor",
+          "exhaust_fan_entity": "Exhaust Fan Device (Control)",
+          "configure_exhaust": "Enable Exhaust Monitoring",
+          "exhaust_sensor": "Exhaust Airflow/Speed Sensor",
+          "humidifier_entity": "Humidifier Device (Control)",
+          "configure_humidifier": "Enable Humidifier Monitoring",
+          "humidifier_sensor": "Humidifier Power/Status Sensor",
+          "configure_dehumidifier": "Enable Dehumidifier",
+          "dehumidifier_entity": "Dehumidifier Device",
+          "control_dehumidifier": "Enable Dehumidifier Automation",
+          "ph_sensors": "PH Sensors",
+          "feed_ec_sensors": "Feed EC Sensors",
+          "substrate_ec_sensors": "Substrate EC Sensors",
+          "runoff_ec_sensors": "Runoff EC Sensors",
+          "drain_volume_sensors": "Drain Volume Sensors",
+          "irrigation_flow_sensors": "Irrigation Flow Sensors",
+          "camera_entities": "Camera Entities",
+          "snapshot_interval_hours": "Snapshot Interval (Hours)",
+          "power_sensors": "Power Sensors",
+          "energy_sensors": "Energy Sensors",
+          "irrigation_tank_sensors": "Irrigation Tank Sensors",
+          "irrigation_tank_warning_level": "Tank Warning Level (%)",
+          "irrigation_tank_volume": "Tank volume (litres)"
+        },
+        "data_description": {
+          "irrigation_tank_volume": "Total capacity of the tank in litres. Used for tank-based water consumption tracking when no flow sensors are configured. Leave empty to disable."
+        }
+      },
+      "manage_growspaces": {
+        "title": "Manage Growspaces",
+        "description": "Add, remove, or view your growspaces",
+        "data": {
+          "action": "Action",
+          "growspace_id": "Select Growspace"
+        }
+      },
+      "add_growspace": {
+        "title": "Add New Growspace",
+        "description": "Create a new growspace for your plants",
+        "data": {
+          "name": "Growspace Name",
+          "rows": "Number of Rows",
+          "plants_per_row": "Plants per Row",
+          "notification_target": "Notification Target"
+        },
+        "data_description": {
+          "notification_target": "Optional: notification service (e.g., mobile_app_your_phone)"
+        }
+      },
+      "manage_plants": {
+        "title": "Manage Plants",
+        "description": "Add, update, or remove plants from your growspaces",
+        "data": {
+          "action": "Action",
+          "plant_id": "Select Plant"
+        }
+      },
+      "select_growspace_for_plant": {
+        "title": "Select Growspace",
+        "description": "Choose which growspace to add the plant to",
+        "data": {
+          "growspace_id": "Growspace"
+        }
+      },
+      "add_plant": {
+        "title": "Add New Plant",
+        "description": "Add a plant to the selected growspace",
+        "data": {
+          "strain": "Strain Name",
+          "phenotype": "Phenotype",
+          "row": "Row Position",
+          "col": "Column Position",
+          "veg_start": "Vegetative Start Date",
+          "flower_start": "Flowering Start Date"
+        },
+        "data_description": {
+          "phenotype": "Optional: specific phenotype identifier",
+          "veg_start": "Optional: when vegetative stage started",
+          "flower_start": "Optional: when flowering stage started"
+        }
+      },
+      "update_plant": {
+        "title": "Update Plant",
+        "description": "Modify plant information",
+        "data": {
+          "strain": "Strain Name",
+          "phenotype": "Phenotype",
+          "row": "Row Position",
+          "col": "Column Position",
+          "veg_start": "Vegetative Start Date",
+          "flower_start": "Flowering Start Date"
+        },
+        "data_description": {
+          "phenotype": "Optional: specific phenotype identifier",
+          "veg_start": "Optional: when vegetative stage started",
+          "flower_start": "Optional: when flowering stage started"
+        }
+      },
+      "configure_ai": {
+        "title": "Configure AI Settings",
+        "description": "Set up the AI assistant for grow advice, notifications, and vision checkups.",
+        "data": {
+          "ai_enabled": "Enable AI features",
+          "assistant_id": "AI assistant entity",
+          "notification_personality": "Notification personality",
+          "ai_auto_alerts": "Enable automatic AI alerts",
+          "max_response_length": "Maximum response length (characters)",
+          "vision_checkup_enabled": "Enable AI vision checkups",
+          "ai_task_entity_id": "AI task entity (for vision analysis)"
+        }
+      }
+    },
     "error": {
+      "plant_not_found": "The selected plant could not be found",
+      "growspace_not_found": "The selected growspace could not be found",
+      "position_occupied": "The selected position is already occupied by another plant",
+      "invalid_position": "The selected position is outside the growspace boundaries",
+      "assistant_required": "An AI assistant entity must be selected when AI features are enabled",
       "strain_delete_blocked": "Cannot delete {strain}: {detail}. Resolve those references first, then try again.",
       "delete_failed": "The strain could not be deleted because of an unexpected error. Check the logs for details."
     }
