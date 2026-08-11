@@ -228,7 +228,7 @@ def _maximal_environment_config(prefix: str) -> EnvironmentConfig:
             wind_period_seconds=90,
             wind_amplitude_pct=15,
             stage_vpd_enabled=True,
-            stage_vpd_overrides={"flower": {"target": 1.3, "tolerance": 0.1}},
+            stage_vpd_overrides={"flower": {"day": 1.3, "night": 1.1}},
         ),
         exhaust_fan_config=ExhaustFanConfig(
             enabled=True,
@@ -241,7 +241,7 @@ def _maximal_environment_config(prefix: str) -> EnvironmentConfig:
             vpd_target=1.2,
             vpd_tolerance=0.2,
             stage_vpd_enabled=True,
-            stage_vpd_overrides={"veg": {"target": 1.0, "tolerance": 0.15}},
+            stage_vpd_overrides={"veg": {"day": 1.0, "night": 0.8}},
             critical_temp_low=16.0,
             critical_temp_high=34.0,
             critical_temp_hysteresis=2.0,
