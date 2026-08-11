@@ -41,16 +41,30 @@ def _leaf_keys(value: Any, prefix: str = "") -> set[str]:
     }
 
 
-def _step_ids_shown_by_flows() -> set[str]:
-    """Collect every literal ``step_id`` the config and options flows show."""
+def _literals_matching(pattern: str) -> set[str]:
+    """Collect every string literal the component matches against ``pattern``."""
     return {
         match
         for source in COMPONENT_DIR.rglob("*.py")
-        for match in re.findall(
-            r'step_id\s*=\s*["\']([A-Za-z0-9_]+)["\']',
-            source.read_text(encoding="utf-8"),
-        )
+        for match in re.findall(pattern, source.read_text(encoding="utf-8"))
     }
+
+
+def _step_ids_shown_by_flows() -> set[str]:
+    """Collect every literal ``step_id`` the config and options flows show."""
+    return _literals_matching(r'step_id\s*=\s*["\']([A-Za-z0-9_]+)["\']')
+
+
+def _error_keys_set_by_flows() -> set[str]:
+    """Collect every literal key the flows put on ``errors["base"]``."""
+    # Both spellings the handlers use: ``errors={"base": "x"}`` and
+    # ``errors["base"] = "x"``.
+    return _literals_matching(r'"base"\]?\s*[:=]\s*["\']([A-Za-z0-9_]+)["\']')
+
+
+def _abort_reasons_raised_by_flows() -> set[str]:
+    """Collect every literal reason the flows abort with."""
+    return _literals_matching(r'reason\s*=\s*["\']([A-Za-z0-9_]+)["\']')
 
 
 def test_strings_and_en_translations_have_the_same_keys() -> None:
@@ -78,6 +92,27 @@ def test_every_shown_step_has_a_translation() -> None:
 
     assert not untranslated, (
         f"steps shown by a flow with no strings.json entry: {untranslated}"
+    )
+
+
+def test_every_error_and_abort_the_flows_raise_has_a_translation() -> None:
+    """No form error or abort dialog renders as a raw translation key.
+
+    Only the options flow reaches ``config_handlers/``; the config flow builds
+    its one step inline, which is why both are checked against ``options``.
+    """
+    options = _load(STRINGS_PATH)["options"]
+
+    untranslated_errors = sorted(_error_keys_set_by_flows() - set(options["error"]))
+    untranslated_aborts = sorted(
+        _abort_reasons_raised_by_flows() - set(options["abort"])
+    )
+
+    assert not untranslated_errors, (
+        f"errors raised by a flow with no strings.json entry: {untranslated_errors}"
+    )
+    assert not untranslated_aborts, (
+        f"aborts raised by a flow with no strings.json entry: {untranslated_aborts}"
     )
 
 

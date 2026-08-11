@@ -479,12 +479,9 @@
       },
       "import_strain_library": {
         "title": "Import Strain Library",
-        "description": "Import strains from a ZIP archive. Imported strains are merged into the existing library.",
+        "description": "Import strains from a ZIP archive, for example {default_path}. Imported strains are merged into the existing library.",
         "data": {
           "file_path": "ZIP File Path"
-        },
-        "data_description": {
-          "file_path": "Full path to the archive, e.g. {default_path}"
         }
       },
       "export_strain_library": {
