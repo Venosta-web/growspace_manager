@@ -264,7 +264,7 @@ class StrainLineageManager:
             if ancestor_name == root_strain_name:
                 continue
             await self._db.execute(
-                "INSERT OR IGNORE INTO strains (strain_name) VALUES (?)",
+                "INSERT OR IGNORE INTO strains (strain_name, is_stub) VALUES (?, 1)",
                 (ancestor_name,),
             )
             await self._db.execute(
@@ -281,14 +281,6 @@ class StrainLineageManager:
             await self._db.execute(
                 "UPDATE strains SET lineage_tree = ?, lineage = ? WHERE strain_name = ?",
                 (json.dumps(library_parents), flat_lineage, name),
-            )
-
-        for ancestor_name in all_names:
-            if ancestor_name == root_strain_name:
-                continue
-            await self._db.execute(
-                "UPDATE strains SET is_stub = 1 WHERE strain_name = ? AND breeder IS NULL",
-                (ancestor_name,),
             )
 
         await self._db.commit()

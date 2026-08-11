@@ -61,10 +61,12 @@ class TestSeedInventorySensor:
         assert batches[0]["strain_name"] == "OG Kush"
         assert batches[0]["quantity"] == 10
 
-    def test_device_info_uses_service_device(self, coordinator):
-        """Sensor attaches to the service device (not a growspace)."""
+    def test_device_info_uses_strain_library_device(self, coordinator):
+        """Sensor attaches to the dedicated Strain Library device."""
         sensor = SeedInventorySensor(coordinator)
         assert sensor.device_info is not None
         identifiers = dict(sensor.device_info.get("identifiers", set()))
         assert "growspace_manager" in identifiers
-        assert identifiers["growspace_manager"] == "service"
+        assert identifiers["growspace_manager"] == "strain_library"
+        assert sensor.device_info["name"] == "Strain Library"
+        assert sensor.device_info["model"] == "Strain Library"
