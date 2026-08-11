@@ -11,24 +11,14 @@ from homeassistant.exceptions import ServiceValidationError
 
 @pytest.mark.asyncio
 async def test_update_plant_name_change(mock_coordinator, mock_plant) -> None:
-    """Test updating plant name updates the device name."""
+    """Test updating a Plant name does not access the device registry."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator._plant_manager.async_update_plant = AsyncMock(
-        return_value=mock_plant
-    )
+    mock_coordinator._plant_manager.update_plant = AsyncMock(return_value=mock_plant)
 
-    # Mock device registry
-    mock_dr = MagicMock()
-    mock_device = MagicMock()
-    mock_device.id = "device_1"
-    mock_dr.async_get_device.return_value = mock_device
-
-    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
+    with patch("homeassistant.helpers.device_registry.async_get") as async_get_registry:
         await facade.plants.update_plant("plant_1", name="New Plant Name")
 
-    mock_dr.async_update_device.assert_called_once_with(
-        "device_1", name="New Plant Name"
-    )
+    async_get_registry.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -160,4 +150,3 @@ async def test_growspace_lifecycle_services(mock_coordinator) -> None:
 
     await facade.growspaces.async_set_lighting_schedule("gs1", 12, 12, 12)
     assert gs.environment_config.veg_day_hours == 12
-

@@ -5,12 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.const import (
-    DOMAIN,
-    VERSION,
-    NotificationTier,
-    PlantStage,
-)
+from custom_components.growspace_manager.const import NotificationTier, PlantStage
 from custom_components.growspace_manager.models import Plant, PlantGenetics
 from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from homeassistant.exceptions import ServiceValidationError
@@ -41,98 +36,53 @@ async def test_get_applicable_presets(mock_coordinator: MagicMock) -> None:
     facade = PlantFacade(mock_coordinator)
     mock_coordinator._nutrient_manager.get_applicable_presets.return_value = ["preset1"]
     assert facade.get_applicable_presets("plant_1") == ["preset1"]
-    mock_coordinator._nutrient_manager.get_applicable_presets.assert_called_once_with("plant_1")
+    mock_coordinator._nutrient_manager.get_applicable_presets.assert_called_once_with(
+        "plant_1"
+    )
 
 
 @pytest.mark.asyncio
 async def test_add_plant_success(mock_coordinator: MagicMock) -> None:
-    """Test add_plant successfully registers HA device."""
+    """Test add_plant delegates without registering an HA device."""
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_1", growspace_id="gs1")
     plant.genetics = PlantGenetics(strain_name="OG Kush", phenotype_name="Pheno 1")
     mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
 
-    mock_dr = MagicMock()
-    mock_dr.async_get_or_create = MagicMock()
-
-    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
+    with patch("homeassistant.helpers.device_registry.async_get") as async_get_registry:
         result = await facade.add_plant(strain="OG Kush")
 
     assert result == plant
-    mock_dr.async_get_or_create.assert_called_once_with(
-        config_entry_id=mock_coordinator.config_entry.entry_id,
-        identifiers={(DOMAIN, "plant_1")},
-        name="OG Kush",
-        model="Plant (OG Kush)",
-        manufacturer="Growspace Manager",
-        sw_version=VERSION,
-        suggested_area="gs1",
-    )
+    async_get_registry.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_add_plant_success_no_genetics(mock_coordinator: MagicMock) -> None:
-    """Test add_plant successfully registers HA device with no genetics."""
+    """Test add_plant supports missing genetics without registering a device."""
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_1", growspace_id="gs1")
     plant.genetics = None
     mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
 
-    mock_dr = MagicMock()
-    mock_dr.async_get_or_create = MagicMock()
-
-    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
+    with patch("homeassistant.helpers.device_registry.async_get") as async_get_registry:
         result = await facade.add_plant()
 
     assert result == plant
-    mock_dr.async_get_or_create.assert_called_once_with(
-        config_entry_id=mock_coordinator.config_entry.entry_id,
-        identifiers={(DOMAIN, "plant_1")},
-        name="Unknown",
-        model="Plant (Unknown)",
-        manufacturer="Growspace Manager",
-        sw_version=VERSION,
-        suggested_area="gs1",
-    )
+    async_get_registry.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_update_plant_name_no_device(mock_coordinator: MagicMock) -> None:
-    """Test update_plant when device is not found in the device registry."""
+    """Test update_plant does not access the device registry."""
     facade = PlantFacade(mock_coordinator)
     plant = Plant(plant_id="plant_123", growspace_id="gs1")
     mock_coordinator._plant_manager.update_plant = AsyncMock(return_value=plant)
 
-    # Mock device registry to return None (device not found)
-    mock_dr = MagicMock()
-    mock_dr.async_get_device.return_value = None
-
-    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
+    with patch("homeassistant.helpers.device_registry.async_get") as async_get_registry:
         result = await facade.update_plant("plant_123", name="New Name")
 
     assert result == plant
-    mock_dr.async_get_device.assert_called_once_with(identifiers={(DOMAIN, "plant_123")})
-    mock_dr.async_update_device.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_update_plant_device_success(mock_coordinator: MagicMock) -> None:
-    """Test update_plant when device is found and its name is updated in HA."""
-    facade = PlantFacade(mock_coordinator)
-    plant = Plant(plant_id="plant_123", growspace_id="gs1")
-    mock_coordinator._plant_manager.update_plant = AsyncMock(return_value=plant)
-
-    mock_dr = MagicMock()
-    mock_device = MagicMock()
-    mock_device.id = "dev_123"
-    mock_dr.async_get_device.return_value = mock_device
-
-    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
-        result = await facade.update_plant("plant_123", name="New Name")
-
-    assert result == plant
-    mock_dr.async_get_device.assert_called_once_with(identifiers={(DOMAIN, "plant_123")})
-    mock_dr.async_update_device.assert_called_once_with("dev_123", name="New Name")
+    async_get_registry.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -142,7 +92,9 @@ async def test_remove_plant_not_removed(mock_coordinator: MagicMock) -> None:
     mock_coordinator._plant_manager.remove_plant = AsyncMock(return_value=False)
 
     # We patch remove_plant_entities to verify it is not called
-    with patch.object(facade, "remove_plant_entities", new_callable=AsyncMock) as mock_remove_entities:
+    with patch.object(
+        facade, "remove_plant_entities", new_callable=AsyncMock
+    ) as mock_remove_entities:
         result = await facade.remove_plant("plant_123")
 
     assert result is False
@@ -155,7 +107,9 @@ async def test_remove_plant_success(mock_coordinator: MagicMock) -> None:
     facade = PlantFacade(mock_coordinator)
     mock_coordinator._plant_manager.remove_plant = AsyncMock(return_value=True)
 
-    with patch.object(facade, "remove_plant_entities", new_callable=AsyncMock) as mock_remove_entities:
+    with patch.object(
+        facade, "remove_plant_entities", new_callable=AsyncMock
+    ) as mock_remove_entities:
         result = await facade.remove_plant("plant_123")
 
     assert result is True
@@ -169,7 +123,9 @@ async def test_async_remove_plant(mock_coordinator: MagicMock) -> None:
     mock_coordinator._plant_manager.remove_plant = AsyncMock(return_value=True)
 
     # Patch remove_plant_entities to avoid HA registry calls
-    with patch.object(facade, "remove_plant_entities", new_callable=AsyncMock) as mock_remove_entities:
+    with patch.object(
+        facade, "remove_plant_entities", new_callable=AsyncMock
+    ) as mock_remove_entities:
         result = await facade.async_remove_plant("plant_123")
 
     assert result is True
@@ -271,7 +227,9 @@ async def test_switch_plants(mock_coordinator: MagicMock) -> None:
 
     await facade.switch_plants("plant1", "plant2")
 
-    mock_coordinator._plant_manager.switch_plants.assert_called_once_with("plant1", "plant2")
+    mock_coordinator._plant_manager.switch_plants.assert_called_once_with(
+        "plant1", "plant2"
+    )
 
 
 @pytest.mark.asyncio
@@ -544,11 +502,15 @@ async def test_score_plant_success_full(mock_coordinator: MagicMock) -> None:
     assert ps.keeper is True
     assert ps.notes == "Amazing vigor and resin"
 
-    mock_coordinator._plant_manager.update_plant.assert_called_once_with("plant_123", phenotype_score=ps)
+    mock_coordinator._plant_manager.update_plant.assert_called_once_with(
+        "plant_123", phenotype_score=ps
+    )
 
 
 @pytest.mark.asyncio
-async def test_score_plant_success_alternative_names(mock_coordinator: MagicMock) -> None:
+async def test_score_plant_success_alternative_names(
+    mock_coordinator: MagicMock,
+) -> None:
     """Test score_plant success path covering non-legacy names (e.g. internodal_spacing, terpene_intensity, mold_resistance)."""
     facade = MagicMock()
     facade = PlantFacade(mock_coordinator)
@@ -568,7 +530,9 @@ async def test_score_plant_success_alternative_names(mock_coordinator: MagicMock
     assert ps.terpene_intensity == 8
     assert ps.mold_resistance == 7
 
-    mock_coordinator._plant_manager.update_plant.assert_called_once_with("plant_123", phenotype_score=ps)
+    mock_coordinator._plant_manager.update_plant.assert_called_once_with(
+        "plant_123", phenotype_score=ps
+    )
 
 
 @pytest.mark.asyncio
@@ -607,7 +571,9 @@ async def test_update_harvest_metrics_success(mock_coordinator: MagicMock) -> No
     assert metrics.cbd_percentage == 0.8
     assert metrics.terpene_profile == "Myrcene, Limonene"
 
-    mock_coordinator._plant_manager.update_plant.assert_called_once_with("plant_123", harvest_metrics=metrics)
+    mock_coordinator._plant_manager.update_plant.assert_called_once_with(
+        "plant_123", harvest_metrics=metrics
+    )
 
 
 @pytest.mark.asyncio

@@ -195,6 +195,9 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
             new_callable=AsyncMock,
         ),
         patch(
+            "custom_components.growspace_manager._async_remove_legacy_plant_devices"
+        ) as mock_plant_device_cleanup,
+        patch(
             "custom_components.growspace_manager.async_create_issue"
         ) as mock_create_issue,
         patch.object(
@@ -203,6 +206,7 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
     ):
         assert await async_setup_entry(hass, entry) is True
 
+        mock_plant_device_cleanup.assert_called_once_with(hass, entry)
         mock_create_issue.assert_called_once()
 
 

@@ -142,8 +142,8 @@ async def test_update_growspace_with_name_change(mock_coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_add_plant_registers_device(mock_coordinator) -> None:
-    """add_plant should create a device entry for the plant."""
+async def test_add_plant_does_not_register_device(mock_coordinator) -> None:
+    """add_plant should not create a device entry for the plant."""
     facade = ServiceFacade(mock_coordinator)
     plant = MagicMock()
     plant.plant_id = "p1"
@@ -152,12 +152,11 @@ async def test_add_plant_registers_device(mock_coordinator) -> None:
     plant.genetics.strain_name = "OG Kush"
     mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
 
-    mock_dr = MagicMock()
-    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
+    with patch("homeassistant.helpers.device_registry.async_get") as async_get_registry:
         result = await facade.plants.add_plant(growspace_id="gs1", strain="OG Kush")
 
     assert result is plant
-    mock_dr.async_get_or_create.assert_called_once()
+    async_get_registry.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -170,13 +169,11 @@ async def test_add_plant_no_genetics(mock_coordinator) -> None:
     plant.genetics = None
     mock_coordinator._plant_manager.add_plant = AsyncMock(return_value=plant)
 
-    mock_dr = MagicMock()
-    with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
+    with patch("homeassistant.helpers.device_registry.async_get") as async_get_registry:
         result = await facade.plants.add_plant(growspace_id="gs1", strain="")
 
     assert result is plant
-    call_kwargs = mock_dr.async_get_or_create.call_args.kwargs
-    assert call_kwargs["name"] == "Unknown"
+    async_get_registry.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
