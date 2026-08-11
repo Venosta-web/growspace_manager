@@ -122,12 +122,12 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 return self.flow.async_create_entry(
                     title="", data=self.config_entry.options
                 )
-            except Exception as err:
+            except Exception:
                 _LOGGER.exception("Error adding plant")
                 return self.flow.async_show_form(
                     step_id="add_plant",
                     data_schema=self.get_add_plant_schema(growspace, coordinator),
-                    errors={"base": str(err)},
+                    errors={"base": "add_failed"},
                 )
 
         return self.flow.async_show_form(
@@ -157,12 +157,12 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 return self.flow.async_create_entry(
                     title="", data=self.config_entry.options
                 )
-            except Exception as err:
+            except Exception:
                 _LOGGER.exception("Error updating plant")
                 return self.flow.async_show_form(
                     step_id="update_plant",
                     data_schema=self.get_update_plant_schema(plant, coordinator),
-                    errors={"base": str(err)},
+                    errors={"base": "update_failed"},
                 )
 
         return self.flow.async_show_form(

@@ -55,11 +55,29 @@ def _step_ids_shown_by_flows() -> set[str]:
     return _literals_matching(r'step_id\s*=\s*["\']([A-Za-z0-9_]+)["\']')
 
 
+# Both spellings the flows use: ``errors={"base": "x"}`` and
+# ``errors["base"] = "x"``. The value is captured loosely so a non-literal can
+# be spotted rather than silently skipped.
+_ERROR_ASSIGNMENT = re.compile(r'"base"\]?\s*[:=]\s*([^,}\n]+)')
+_PLAIN_STRING = re.compile(r'^["\'][A-Za-z0-9_]+["\']$')
+
+
+def _error_values_set_by_flows() -> set[str]:
+    """Collect the raw source text of every value assigned to ``errors["base"]``."""
+    return {
+        match.strip()
+        for source in COMPONENT_DIR.rglob("*.py")
+        for match in _ERROR_ASSIGNMENT.findall(source.read_text(encoding="utf-8"))
+    }
+
+
 def _error_keys_set_by_flows() -> set[str]:
     """Collect every literal key the flows put on ``errors["base"]``."""
-    # Both spellings the handlers use: ``errors={"base": "x"}`` and
-    # ``errors["base"] = "x"``.
-    return _literals_matching(r'"base"\]?\s*[:=]\s*["\']([A-Za-z0-9_]+)["\']')
+    return {
+        value.strip("\"'")
+        for value in _error_values_set_by_flows()
+        if _PLAIN_STRING.match(value)
+    }
 
 
 def _abort_reasons_raised_by_flows() -> set[str]:
@@ -95,15 +113,37 @@ def test_every_shown_step_has_a_translation() -> None:
     )
 
 
+def test_error_values_are_translation_keys_not_interpolated_strings() -> None:
+    """A key built with an f-string can never match a strings.json entry.
+
+    ``errors={"base": f"Error: {err}"}`` looks like it works and renders the
+    raw text; the key check below cannot see it, because there is no literal
+    to compare.
+    """
+    non_literals = sorted(
+        value
+        for value in _error_values_set_by_flows()
+        if not _PLAIN_STRING.match(value)
+    )
+
+    assert not non_literals, (
+        "errors['base'] must be given a literal translation key, not an"
+        f" expression: {non_literals}"
+    )
+
+
 def test_every_error_and_abort_the_flows_raise_has_a_translation() -> None:
     """No form error or abort dialog renders as a raw translation key.
 
-    Only the options flow reaches ``config_handlers/``; the config flow builds
-    its one step inline, which is why both are checked against ``options``.
+    Errors are checked against both sections' keys because the two flows share
+    ``config_flow.py``; aborts only against ``options``, since every
+    ``config_handlers/`` abort is reached from ``OptionsFlowHandler``.
     """
-    options = _load(STRINGS_PATH)["options"]
+    strings = _load(STRINGS_PATH)
+    options = strings["options"]
+    error_keys = set(options["error"]) | set(strings["config"].get("error", {}))
 
-    untranslated_errors = sorted(_error_keys_set_by_flows() - set(options["error"]))
+    untranslated_errors = sorted(_error_keys_set_by_flows() - error_keys)
     untranslated_aborts = sorted(
         _abort_reasons_raised_by_flows() - set(options["abort"])
     )

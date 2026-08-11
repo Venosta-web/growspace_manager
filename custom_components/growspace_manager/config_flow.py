@@ -96,14 +96,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=STEP_USER_DATA_SCHEMA,
             )
 
-        except Exception as err:
+        except Exception:
             _LOGGER.exception("Error in async_step_user")
             return self.async_show_form(
                 step_id="user",
                 data_schema=vol.Schema(
                     {vol.Optional("name", default=DEFAULT_NAME): cv.string}
                 ),
-                errors={"base": f"Error: {err}"},
+                errors={"base": "unknown"},
             )
 
     async def async_step_add_growspace(
@@ -138,14 +138,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "pending_growspace": pending_growspace,
                     },
                 )
-            except Exception as err:
+            except Exception:
                 _LOGGER.exception("Error in async_step_add_growspace")
                 return self.async_show_form(
                     step_id="add_growspace",
                     data_schema=GrowspaceConfigHandler(
                         self.hass, None
                     ).get_add_growspace_schema(),
-                    errors={"base": f"Error: {err}"},
+                    errors={"base": "unknown"},
                 )
 
             _LOGGER.debug("Stored pending growspace data in config entry")

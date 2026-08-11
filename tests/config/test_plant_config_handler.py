@@ -416,7 +416,7 @@ async def test_async_step_add_plant_error(
     mock_coordinator.services.plants.add_plant.side_effect = Exception("Failed")
     result = await handler.async_step_add_plant({"strain": "S1", "row": 1, "col": 1})
     assert result["type"] == FlowResultType.FORM
-    assert result["errors"] == {"base": "Failed"}
+    assert result["errors"] == {"base": "add_failed"}
 
 
 @pytest.mark.asyncio
@@ -447,7 +447,7 @@ async def test_async_step_update_plant_errors(
     with patch.object(handler, "async_update_plant", side_effect=Exception("Failed")):
         result = await handler.async_step_update_plant({"strain": "New"})
         assert result["type"] == FlowResultType.FORM
-        assert result["errors"] == {"base": "Failed"}
+        assert result["errors"] == {"base": "update_failed"}
 
 
 @pytest.mark.asyncio
