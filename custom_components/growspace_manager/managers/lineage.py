@@ -15,6 +15,9 @@ from ..exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)
 
+# Upper bound on prune passes, so a lineage cycle cannot loop forever.
+_MAX_PRUNE_PASSES = 32
+
 type StoredParent = dict[str, str]
 type StoredParents = list[StoredParent]
 type LineageNode = dict[str, Any]
@@ -171,6 +174,89 @@ class StrainLineageManager:
             )
         await self._db.commit()
 
+    async def prune_orphan_ancestor_strains(
+        self, protected: set[str] | None = None
+    ) -> list[str]:
+        """Delete Ancestor Strains that no lineage references any more.
+
+        An Ancestor Strain (``is_stub = 1``) exists only to hold a position in
+        someone's lineage. Once the last ``strain_ancestry`` row naming it is
+        gone, the record is unreachable and would otherwise accumulate with
+        every lineage edit.
+
+        Deleting a stub drops the ancestry rows where it was the *descendant*,
+        which can orphan its own parents, so this repeats until a pass deletes
+        nothing. Catalogued Strains are never touched — ``is_stub = 1`` is the
+        whole guard. ``protected`` shields names the caller is mid-way through
+        writing, whose ancestry rows may not exist yet.
+
+        Returns the names pruned, oldest pass first.
+        """
+        if self._db is None:
+            return []
+
+        protected = protected or set()
+        pruned: list[str] = []
+
+        # Bounded so a cyclic lineage cannot spin forever; each pass must
+        # delete at least one row to continue, so the cap is never reached by
+        # a well-formed graph.
+        for _ in range(_MAX_PRUNE_PASSES):
+            # ``await execute`` rather than ``async with``, matching
+            # _rebuild_strain_ancestry above.
+            cursor = await self._db.execute(
+                """
+                SELECT s.strain_id, s.strain_name
+                FROM strains s
+                WHERE s.is_stub = 1
+                  AND NOT EXISTS (
+                      SELECT 1 FROM strain_ancestry sa
+                      WHERE sa.ancestor_name = s.strain_name
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM harvests h
+                      JOIN phenotypes p ON p.phenotype_id = h.phenotype_id
+                      WHERE p.strain_id = s.strain_id
+                  )
+                """
+            )
+            rows = await cursor.fetchall()
+            orphans = [(row[0], row[1]) for row in rows if row[1] not in protected]
+
+            if not orphans:
+                break
+
+            for strain_id, strain_name in orphans:
+                # No ON DELETE CASCADE on phenotypes, so tear down in the same
+                # order remove_strain does or the rows leak.
+                await self._db.execute(
+                    "DELETE FROM phenotypes WHERE strain_id = ?", (strain_id,)
+                )
+                await self._db.execute(
+                    "DELETE FROM strain_ancestry WHERE descendant_strain_id = ?",
+                    (strain_id,),
+                )
+                await self._db.execute(
+                    "DELETE FROM strains WHERE strain_id = ?", (strain_id,)
+                )
+                pruned.append(strain_name)
+            await self._db.commit()
+        else:
+            # Loop ran its full budget with orphans still pending, which means
+            # the ancestry graph has a cycle. Truncating silently would hide it.
+            _LOGGER.warning(
+                "Stopped pruning ancestor strains after %d passes with orphans"
+                " remaining; the lineage graph may contain a cycle",
+                _MAX_PRUNE_PASSES,
+            )
+
+        if pruned:
+            self._lineage_cache.clear()
+            if self._load_callback is not None:
+                await self._load_callback()
+            _LOGGER.info("Pruned %d unreferenced ancestor strains", len(pruned))
+        return pruned
+
     async def update_strain_lineage_tree(
         self,
         strain_name: str,
@@ -193,6 +279,7 @@ class StrainLineageManager:
         if self._load_callback is not None:
             await self._load_callback()
         await self._rebuild_strain_ancestry(strain_name)
+        await self.prune_orphan_ancestor_strains(protected={strain_name})
         _LOGGER.info("Updated lineage tree for strain '%s'", strain_name)
         return flat_lineage
 
@@ -289,6 +376,16 @@ class StrainLineageManager:
         self._lineage_cache.clear()
         for name in lineage_by_node:
             await self._rebuild_strain_ancestry(name)
+        # Only after every node's ancestry is rebuilt — pruning inside the loop
+        # would delete stubs that a later node is about to reference.
+        # Every name this import touched, not just the nodes that have parents:
+        # a leaf ancestor gets a stub but never a lineage_by_node entry, and if
+        # the root has no strains row yet the rebuild above no-ops, leaving
+        # nothing to name it. Stubs from a previous tree are absent from
+        # all_names, so a re-import still prunes them.
+        await self.prune_orphan_ancestor_strains(
+            protected={root_strain_name, *all_names}
+        )
         _LOGGER.info(
             "Imported seedfinder lineage tree for '%s' (%d nodes)",
             root_strain_name,

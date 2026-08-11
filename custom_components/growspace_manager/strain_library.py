@@ -338,14 +338,18 @@ class StrainLibrary:
                     crop_meta = json.loads(raw_crop)
                 except json.JSONDecodeError:
                     crop_meta = None
-            gallery = [{"path": image_path, "crop_meta": crop_meta, "is_thumbnail": True}]
+            gallery = [
+                {"path": image_path, "crop_meta": crop_meta, "is_thumbnail": True}
+            ]
             await self._db.execute(
                 "UPDATE phenotypes SET images = ? WHERE phenotype_id = ?",
                 (json.dumps(gallery), row["phenotype_id"]),
             )
 
         await self._db.commit()
-        _LOGGER.info("Migrated %d phenotype(s) from image_path to images gallery", len(rows))
+        _LOGGER.info(
+            "Migrated %d phenotype(s) from image_path to images gallery", len(rows)
+        )
 
     async def load(self) -> None:
         """Load all strain and phenotype data into the in-memory cache."""
@@ -440,7 +444,7 @@ class StrainLibrary:
                         val = row[field]
                         try:
                             meta[field] = json.loads(val) if val else []
-                        except (json.JSONDecodeError, TypeError):
+                        except json.JSONDecodeError, TypeError:
                             meta[field] = []
 
                     if lineage_tree is not None:
@@ -470,8 +474,10 @@ class StrainLibrary:
                         try:
                             parsed = json.loads(raw_images)
                             images = [
-                                img for img in parsed
-                                if isinstance(img, dict) and "=404" not in (img.get("path") or "")
+                                img
+                                for img in parsed
+                                if isinstance(img, dict)
+                                and "=404" not in (img.get("path") or "")
                             ] or None
                         except json.JSONDecodeError:
                             _LOGGER.warning(
@@ -483,7 +489,9 @@ class StrainLibrary:
                     phenotype_data = {
                         "phenotype_id": pheno_id,
                         "description": row["description"],
-                        "image_path": None if (raw_image_path and "=404" in raw_image_path) else raw_image_path,
+                        "image_path": None
+                        if (raw_image_path and "=404" in raw_image_path)
+                        else raw_image_path,
                         "image_crop_meta": image_crop_meta,
                         "images": images,
                         "flower_days_min": row["flower_days_min"],
@@ -799,7 +807,10 @@ class StrainLibrary:
                 # Store only immediate parents (StoredParents flat list), not the
                 # full nested tree — get_strain_lineage_tree() builds the tree on demand.
                 [
-                    {"name": p.get("name", "").strip(), "source": p.get("source", "library")}
+                    {
+                        "name": p.get("name", "").strip(),
+                        "source": p.get("source", "library"),
+                    }
                     for p in (lineage_tree.get("parents") or [])[:2]
                     if p.get("name", "").strip()
                 ]
@@ -873,6 +884,9 @@ class StrainLibrary:
                     [(name, strain_id, depth, url) for name, url, depth in ancestors],
                 )
             await self._db.commit()
+            await self._lineage_manager.prune_orphan_ancestor_strains(
+                protected={strain}
+            )
         # Prepare phenotype data
         pheno_data = {
             "description": description,
@@ -1007,7 +1021,9 @@ class StrainLibrary:
         self, strain_name: str, parents: StoredParents
     ) -> str:
         """Replace a strain's recorded parents and rebuild its lineage tree."""
-        return await self._lineage_manager.update_strain_lineage_tree(strain_name, parents)
+        return await self._lineage_manager.update_strain_lineage_tree(
+            strain_name, parents
+        )
 
     async def async_import_seedfinder_lineage_tree(
         self,
@@ -1024,7 +1040,9 @@ class StrainLibrary:
         self, strain_name: str, generation: str
     ) -> None:
         """Update the recorded generation label for a strain."""
-        await self._lineage_manager.async_update_strain_generation(strain_name, generation)
+        await self._lineage_manager.async_update_strain_generation(
+            strain_name, generation
+        )
 
     def get_strain_lineage_tree(
         self,
@@ -1101,7 +1119,10 @@ class StrainLibrary:
             return result
 
         # Fallback: prefer "default", then alphabetical siblings
-        fallback_order = ["default", *sorted(k for k in phenotypes if k not in ("default", normalized))]
+        fallback_order = [
+            "default",
+            *sorted(k for k in phenotypes if k not in ("default", normalized)),
+        ]
         for sibling_name in fallback_order:
             sibling = phenotypes.get(sibling_name, {})
             result = _thumbnail_from(sibling)
@@ -1258,6 +1279,10 @@ class StrainLibrary:
                 "DELETE FROM strains WHERE strain_id = ?", (strain_id,)
             )
         await self._db.commit()
+
+        # Demoting or deleting this strain drops the ancestry rows it owned,
+        # which can leave its own ancestors with no descendant left.
+        await self._lineage_manager.prune_orphan_ancestor_strains()
 
         safe_strain = slugify(strain)
         for phenotype_name in phenotype_names:
