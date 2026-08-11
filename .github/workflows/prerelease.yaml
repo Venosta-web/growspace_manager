@@ -72,7 +72,6 @@ jobs:
         with:
           keep_latest: 5 # Number of most recent pre-releases to keep
           delete_prerelease_only: true
-          delete_tag_pattern: "(b[0-9]+|-beta)$"
           delete_tags: true # Also delete the tags associated with the releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

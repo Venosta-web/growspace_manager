@@ -1,7 +1,6 @@
 """Regression tests for the active prerelease publishing channel."""
 
 from pathlib import Path
-import re
 import runpy
 
 from awesomeversion import AwesomeVersion
@@ -48,9 +47,6 @@ def test_prerelease_publishing_contract() -> None:
     assert "git/ref/tags" in verification["run"]
 
     cleanup = _step("Delete Older Pre-releases")
-    pattern = re.compile(cleanup["with"]["delete_tag_pattern"])
 
     assert cleanup["with"]["delete_prerelease_only"] is True
-    assert pattern.search("v1.2.2b123")
-    assert pattern.search("v0.2.20260811164742-beta")
-    assert not pattern.search("v1.2.1")
+    assert "delete_tag_pattern" not in cleanup["with"]
