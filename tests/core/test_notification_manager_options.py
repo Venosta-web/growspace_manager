@@ -36,16 +36,42 @@ def test_get_notification_option_returns_value_from_options() -> None:
     """_get_notification_option returns the value stored in notification_settings."""
     manager = _make_manager({"critical_cooldown_minutes": 5})
 
-    result = manager._get_notification_option("critical_cooldown_minutes", CRITICAL_COOLDOWN_MINUTES)
+    result = manager._get_notification_option(
+        "critical_cooldown_minutes", CRITICAL_COOLDOWN_MINUTES
+    )
 
     assert result == 5
+
+
+@pytest.mark.parametrize(
+    ("option_key", "stored_key"),
+    [
+        ("critical_cooldown_minutes", "criticalCooldownMinutes"),
+        ("warning_cooldown_minutes", "warningCooldownMinutes"),
+        ("recovery_cooldown_minutes", "recoveryCooldownMinutes"),
+        ("escalation_delay_minutes", "escalationDelayMinutes"),
+        ("min_stress_duration_seconds", "minStressDurationSeconds"),
+        ("warning_persistence_minutes", "warningPersistenceMinutes"),
+    ],
+)
+def test_get_notification_option_returns_camel_case_value(
+    option_key: str, stored_key: str
+) -> None:
+    """_get_notification_option accepts the card's camelCase option keys."""
+    manager = _make_manager({stored_key: 59})
+
+    result = manager._get_notification_option(option_key, 30)
+
+    assert result == 59
 
 
 def test_get_notification_option_returns_fallback_when_key_absent() -> None:
     """_get_notification_option returns fallback when key is not in notification_settings."""
     manager = _make_manager({})
 
-    result = manager._get_notification_option("critical_cooldown_minutes", CRITICAL_COOLDOWN_MINUTES)
+    result = manager._get_notification_option(
+        "critical_cooldown_minutes", CRITICAL_COOLDOWN_MINUTES
+    )
 
     assert result == CRITICAL_COOLDOWN_MINUTES
 
@@ -54,7 +80,9 @@ def test_get_notification_option_returns_fallback_when_settings_absent() -> None
     """_get_notification_option returns fallback when notification_settings key is absent entirely."""
     manager = _make_manager(notification_settings=None)
 
-    result = manager._get_notification_option("critical_cooldown_minutes", CRITICAL_COOLDOWN_MINUTES)
+    result = manager._get_notification_option(
+        "critical_cooldown_minutes", CRITICAL_COOLDOWN_MINUTES
+    )
 
     assert result == CRITICAL_COOLDOWN_MINUTES
 
@@ -67,8 +95,16 @@ def test_get_notification_option_returns_fallback_when_settings_absent() -> None
 @pytest.mark.parametrize(
     ("tier", "option_key", "const_fallback"),
     [
-        (NotificationTier.CRITICAL, "critical_cooldown_minutes", CRITICAL_COOLDOWN_MINUTES),
-        (NotificationTier.WARNING, "warning_cooldown_minutes", WARNING_COOLDOWN_MINUTES),
+        (
+            NotificationTier.CRITICAL,
+            "critical_cooldown_minutes",
+            CRITICAL_COOLDOWN_MINUTES,
+        ),
+        (
+            NotificationTier.WARNING,
+            "warning_cooldown_minutes",
+            WARNING_COOLDOWN_MINUTES,
+        ),
         ("recovery", "recovery_cooldown_minutes", RECOVERY_COOLDOWN_MINUTES),
     ],
 )
@@ -108,20 +144,23 @@ def test_get_tier_cooldown_falls_back_to_const_when_absent(
 # ---------------------------------------------------------------------------
 
 
-def test_is_on_cooldown_respects_option_override() -> None:
-    """_is_on_cooldown uses the option-driven cooldown, not the class-level constant."""
-
-    manager = _make_manager({"critical_cooldown_minutes": 1})
+@pytest.mark.parametrize(
+    "option_key", ["critical_cooldown_minutes", "criticalCooldownMinutes"]
+)
+def test_is_on_cooldown_respects_option_override(option_key: str) -> None:
+    """Configured cooldown suppresses within its window and expires after it."""
+    manager = _make_manager({option_key: 59})
     growspace_id = "gs1"
     tier = NotificationTier.CRITICAL
+    last_sent = datetime(2026, 8, 12, tzinfo=UTC)
+    manager._cooldowns[growspace_id] = {tier: last_sent}
 
-    # Record cooldown 30 seconds ago
-    thirty_seconds_ago = datetime.now(tz=UTC) - timedelta(seconds=30)
-    manager._cooldowns[growspace_id] = {tier: thirty_seconds_ago}
-
-    now = datetime.now(tz=UTC)
-    # 30s < 1 min — should be on cooldown
-    assert manager._is_on_cooldown(growspace_id, tier, now) is True
+    assert manager._is_on_cooldown(
+        growspace_id, tier, last_sent + timedelta(minutes=58)
+    )
+    assert not manager._is_on_cooldown(
+        growspace_id, tier, last_sent + timedelta(minutes=60)
+    )
 
 
 def test_is_on_cooldown_expired_with_option_override() -> None:
@@ -151,7 +190,12 @@ def test_get_min_stress_duration_reads_from_options() -> None:
     from custom_components.growspace_manager.const import MIN_STRESS_DURATION_SECONDS
 
     manager = _make_manager({"min_stress_duration_seconds": 60})
-    assert manager._get_notification_option("min_stress_duration_seconds", MIN_STRESS_DURATION_SECONDS) == 60
+    assert (
+        manager._get_notification_option(
+            "min_stress_duration_seconds", MIN_STRESS_DURATION_SECONDS
+        )
+        == 60
+    )
 
 
 def test_get_escalation_delay_reads_from_options() -> None:
@@ -159,7 +203,12 @@ def test_get_escalation_delay_reads_from_options() -> None:
     from custom_components.growspace_manager.const import ESCALATION_DELAY_MINUTES
 
     manager = _make_manager({"escalation_delay_minutes": 10})
-    assert manager._get_notification_option("escalation_delay_minutes", ESCALATION_DELAY_MINUTES) == 10
+    assert (
+        manager._get_notification_option(
+            "escalation_delay_minutes", ESCALATION_DELAY_MINUTES
+        )
+        == 10
+    )
 
 
 def test_get_warning_persistence_reads_from_options() -> None:
@@ -167,4 +216,9 @@ def test_get_warning_persistence_reads_from_options() -> None:
     from custom_components.growspace_manager.const import WARNING_PERSISTENCE_MINUTES
 
     manager = _make_manager({"warning_persistence_minutes": 5})
-    assert manager._get_notification_option("warning_persistence_minutes", WARNING_PERSISTENCE_MINUTES) == 5
+    assert (
+        manager._get_notification_option(
+            "warning_persistence_minutes", WARNING_PERSISTENCE_MINUTES
+        )
+        == 5
+    )

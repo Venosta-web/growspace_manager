@@ -124,8 +124,12 @@ class NotificationManager:
 
     def _get_notification_option(self, key: str, fallback: int) -> int:
         """Read a timing/cooldown value from notification_settings options, with fallback."""
-        settings: dict = self.coordinator.options.get("notification_settings", {})
-        return settings.get(key, fallback)
+        settings: dict[str, int] = self.coordinator.options.get(
+            "notification_settings", {}
+        )
+        first_word, *remaining_words = key.split("_")
+        camel_case_key = first_word + "".join(word.title() for word in remaining_words)
+        return settings.get(key, settings.get(camel_case_key, fallback))
 
     def _get_tier_cooldown(self, tier: str) -> timedelta:
         """Return the cooldown timedelta for a tier, respecting user-configured options."""
