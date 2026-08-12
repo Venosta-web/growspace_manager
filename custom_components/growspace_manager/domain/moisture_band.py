@@ -63,6 +63,24 @@ class MoistureBand:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class MoistureInterpretation:
+    """A compatible raw reading interpreted against its effective band."""
+
+    reading: float
+    band: MoistureBand
+    classification: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the canonical interpretation for downstream consumers."""
+        return {
+            "reading": self.reading,
+            "unit": PERCENTAGE_UNIT,
+            "band": self.band.to_dict(),
+            "classification": self.classification,
+        }
+
+
 DEFAULT_MOISTURE_BAND = MoistureBand(
     minimum=DEFAULT_MOISTURE_MIN,
     maximum=DEFAULT_MOISTURE_MAX,
@@ -103,12 +121,38 @@ def is_percentage_unit(unit: str | None) -> bool:
     return unit.strip() == PERCENTAGE_UNIT
 
 
+def interpret_moisture_reading(
+    reading: Any,
+    unit: str | None,
+    minimum: Any,
+    maximum: Any,
+) -> MoistureInterpretation | None:
+    """Interpret a compatible finite reading against the effective band.
+
+    Sensors with no unit metadata retain the legacy percentage assumption.
+    Explicitly incompatible units and non-numeric readings produce no
+    interpretation, preventing downstream consumers from relabeling them as
+    percentages.
+    """
+    if not is_percentage_unit(unit):
+        return None
+    numeric_reading = _as_finite_float(reading)
+    if numeric_reading is None:
+        return None
+    band = effective_moisture_band(minimum, maximum)
+    return MoistureInterpretation(
+        reading=numeric_reading,
+        band=band,
+        classification=band.classify(numeric_reading),
+    )
+
+
 def _as_finite_float(value: Any) -> float | None:
     """Coerce to a finite float, or None when the value cannot be one."""
     if value is None or isinstance(value, bool):
         return None
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return number if isfinite(number) else None
