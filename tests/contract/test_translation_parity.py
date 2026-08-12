@@ -25,6 +25,12 @@ STEPS_WITH_GENERATED_FIELDS = frozenset(
     {"configure_advanced_bayesian", "configure_sensor_placement"}
 )
 
+# Step entries deliberately kept although no flow shows them — a step being
+# reintroduced shortly, say. JSON carries no comments, so the reason lives
+# here. Empty is the healthy state: an entry nothing renders is dead weight
+# that reads as a live screen to whoever finds it next.
+STEPS_TRANSLATED_BUT_NOT_SHOWN: frozenset[str] = frozenset()
+
 
 def _load(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -53,6 +59,18 @@ def _literals_matching(pattern: str) -> set[str]:
 def _step_ids_shown_by_flows() -> set[str]:
     """Collect every literal ``step_id`` the config and options flows show."""
     return _literals_matching(r'step_id\s*=\s*["\']([A-Za-z0-9_]+)["\']')
+
+
+_STEP_ID_ASSIGNMENT = re.compile(r"step_id\s*=\s*([^,)\n]+)")
+
+
+def _step_id_values_used_by_flows() -> set[str]:
+    """Collect the raw source text of every value passed as ``step_id``."""
+    return {
+        match.strip()
+        for source in COMPONENT_DIR.rglob("*.py")
+        for match in _STEP_ID_ASSIGNMENT.findall(source.read_text(encoding="utf-8"))
+    }
 
 
 # Both spellings the flows use: ``errors={"base": "x"}`` and
@@ -111,6 +129,43 @@ def test_every_shown_step_has_a_translation() -> None:
     assert not untranslated, (
         f"steps shown by a flow with no strings.json entry: {untranslated}"
     )
+
+
+def test_step_ids_are_literals() -> None:
+    """A ``step_id`` built at runtime is invisible to the two step checks.
+
+    Both compare translation keys against the literals found in the source. A
+    computed ``step_id=f"edit_{kind}"`` would make the shown-but-untranslated
+    check miss a raw key, and make the translated-but-unshown check condemn an
+    entry that is in fact live. Keeping every step id a literal is what
+    licenses them.
+    """
+    non_literals = sorted(
+        value
+        for value in _step_id_values_used_by_flows()
+        if not _PLAIN_STRING.match(value)
+    )
+
+    assert not non_literals, (
+        f"step_id must be a string literal, not an expression: {non_literals}"
+    )
+
+
+def test_every_translated_step_is_shown_by_a_flow() -> None:
+    """No step entry describes a screen the flows can no longer reach.
+
+    The reverse of ``test_every_shown_step_has_a_translation``. A stale entry
+    breaks nothing at runtime, which is exactly why it survives: it reads as a
+    live screen and sends the next reader looking for a step that isn't there.
+    """
+    strings = _load(STRINGS_PATH)
+    shown = _step_ids_shown_by_flows() | STEPS_TRANSLATED_BUT_NOT_SHOWN
+    for section in ("config", "options"):
+        unshown = sorted(set(strings[section]["step"]) - shown)
+        assert not unshown, (
+            f"{section}.step entries no flow shows: {unshown} — delete them, or "
+            "add them to STEPS_TRANSLATED_BUT_NOT_SHOWN with the reason"
+        )
 
 
 def test_error_values_are_translation_keys_not_interpolated_strings() -> None:
