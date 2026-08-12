@@ -28,10 +28,15 @@ from custom_components.growspace_manager.const import (
     CONF_VPD_SENSORS,
     DOMAIN,
 )
+from custom_components.growspace_manager.domain.moisture_band import (
+    effective_moisture_band,
+    is_percentage_unit,
+)
 from custom_components.growspace_manager.tank_water_tracker import (
     consumption_buckets_24h,
 )
 from custom_components.growspace_manager.utils import days_to_week
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
 from homeassistant.util import dt as dt_util
 
 from .entity_queries import EntityQueries
@@ -524,12 +529,31 @@ class GrowspaceViewModelBuilder:
             attributes[CONF_VPD_SENSOR] = vpd_entity
             attributes["vpd"] = state_obj.state if state_obj else None
 
-        # Soil Moisture Sensor
+        # Soil Moisture Sensor + Acceptable Moisture Band.
+        #
+        # The raw override pair and the effective band are exposed
+        # unconditionally: a stored custom pair survives removing or replacing
+        # the sensor, so hiding it behind the sensor gate would make the card
+        # believe the growspace had reverted to the inherited default.
+        band = effective_moisture_band(
+            env_config.soil_moisture_min, env_config.soil_moisture_max
+        )
+        attributes["soil_moisture_min"] = env_config.soil_moisture_min
+        attributes["soil_moisture_max"] = env_config.soil_moisture_max
+        attributes["soil_moisture_band"] = band.to_dict()
+
         soil_moisture_entity = env_config.soil_moisture_sensor
         if soil_moisture_entity:
             state_obj = self.hass.states.get(soil_moisture_entity)
             attributes["soil_moisture_sensor"] = soil_moisture_entity
             attributes["soil_moisture_value"] = state_obj.state if state_obj else None
+            unit = (
+                state_obj.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+                if state_obj
+                else None
+            )
+            attributes["soil_moisture_unit"] = unit
+            attributes["soil_moisture_band_compatible"] = is_percentage_unit(unit)
 
         # Light Sensors
         attributes[CONF_LIGHT_SENSORS] = env_config.light_sensors

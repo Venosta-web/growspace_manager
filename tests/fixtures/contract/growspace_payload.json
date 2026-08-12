@@ -187,7 +187,16 @@
     "pore_ec_sensors": ["sensor.contract_pore_ec"],
     "power_sensors": ["sensor.contract_power"],
     "runoff_ec_sensors": ["sensor.contract_runoff_ec"],
+    "soil_moisture_band": {
+      "is_custom": true,
+      "max": 54.0,
+      "min": 32.5
+    },
+    "soil_moisture_band_compatible": true,
+    "soil_moisture_max": 54.0,
+    "soil_moisture_min": 32.5,
     "soil_moisture_sensor": "sensor.contract_soil_moisture",
+    "soil_moisture_unit": "%",
     "soil_moisture_value": "56.0",
     "substrate_ec_delta": 0.4,
     "substrate_temperature_sensors": ["sensor.contract_substrate_temperature"],
@@ -727,6 +736,8 @@
           }
         ],
         "snapshot_interval_hours": 6,
+        "soil_moisture_max": 54.0,
+        "soil_moisture_min": 32.5,
         "soil_moisture_sensor": "sensor.subarea_soil_moisture",
         "stress_threshold": 0.65,
         "substrate_temperature_sensors": [

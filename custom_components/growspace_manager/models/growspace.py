@@ -221,6 +221,11 @@ class EnvironmentConfig(BaseModel):
     vpd_sensor: str | None = None
     co2_sensor: str | None = None
     soil_moisture_sensor: str | None = None
+    # Acceptable Moisture Band override — an atomic pair. Both None means the
+    # growspace inherits the default band; a complete pair overrides it. The
+    # pair is validated (and kept atomic) by the Environment Patch builder.
+    soil_moisture_min: float | None = None
+    soil_moisture_max: float | None = None
     veg_day_hours: int = 18
     flower_day_hours: int = 12
 
@@ -506,6 +511,8 @@ ENVIRONMENT_FIELD_OWNERSHIP: dict[str, FieldOwnership] = {
     "vpd_sensor": FieldOwnership(canonical="vpd_sensors"),
     "co2_sensor": _GROWER,
     "soil_moisture_sensor": _GROWER,
+    "soil_moisture_min": _GROWER,
+    "soil_moisture_max": _GROWER,
     "veg_day_hours": _GROWER,
     "flower_day_hours": _GROWER,
     "temperature_sensors": _GROWER,

@@ -44,6 +44,7 @@ from custom_components.growspace_manager.models import (
 )
 
 from .fan_control import FAN_VPD_STAGE_DEFAULTS
+from .moisture_band import MOISTURE_BAND_CEILING, MOISTURE_BAND_FLOOR, is_valid_band
 
 _VALID_STAGE_KEYS = {stage.value for stage in FAN_VPD_STAGE_DEFAULTS}
 _VPD_OVERRIDE_MIN = 0.1
@@ -468,11 +469,48 @@ def _build_patch(
         else:
             _parse_plain_field(key, val, values, warnings)
 
+    _validate_moisture_band(values)
+
     return EnvironmentPatch(
         values=values,
         bayesian_updates=bayesian_updates,
         warnings=tuple(warnings),
     )
+
+
+def _validate_moisture_band(values: dict[str, Any]) -> None:
+    """Keep the Acceptable Moisture Band an atomic, valid pair.
+
+    Patch semantics would otherwise let a payload carrying only one bound
+    combine with the stored other bound into a partial or inverted band, so a
+    payload touching either bound must carry both. Both ``None`` is the
+    deliberate clear back to the inherited default.
+    """
+    present = {"soil_moisture_min", "soil_moisture_max"} & values.keys()
+    if not present:
+        return
+    if len(present) == 1:
+        raise EnvironmentPatchError(
+            "The Acceptable Moisture Band is set as a pair: send both "
+            "'soil_moisture_min' and 'soil_moisture_max', or neither."
+        )
+
+    minimum = values["soil_moisture_min"]
+    maximum = values["soil_moisture_max"]
+    if minimum is None and maximum is None:
+        return
+    if minimum is None or maximum is None:
+        raise EnvironmentPatchError(
+            "The Acceptable Moisture Band needs both bounds or neither; "
+            "clear it by sending both as null."
+        )
+    if not is_valid_band(minimum, maximum):
+        raise EnvironmentPatchError(
+            f"Invalid Acceptable Moisture Band ({minimum}–{maximum}%): requires "
+            f"{MOISTURE_BAND_FLOOR:g} ≤ minimum < maximum ≤ {MOISTURE_BAND_CEILING:g}."
+        )
+    values["soil_moisture_min"] = float(minimum)
+    values["soil_moisture_max"] = float(maximum)
 
 
 def _parse_plain_field(
