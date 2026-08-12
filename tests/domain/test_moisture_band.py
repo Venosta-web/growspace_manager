@@ -26,7 +26,7 @@ def test_default_band_is_the_legacy_20_60_inclusive_range() -> None:
     """No override inherits the historic 20–60% band, marked as inherited."""
     assert DEFAULT_MOISTURE_MIN == 20.0
     assert DEFAULT_MOISTURE_MAX == 60.0
-    assert DEFAULT_MOISTURE_BAND == MoistureBand(20.0, 60.0, is_custom=False)
+    assert MoistureBand(20.0, 60.0, is_custom=False) == DEFAULT_MOISTURE_BAND
 
 
 def test_no_override_resolves_to_the_default_band() -> None:

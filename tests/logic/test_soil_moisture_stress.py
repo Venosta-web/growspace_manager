@@ -9,9 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.growspace_manager.bayesian_data import (
-    PROB_SOIL_MOISTURE_STRESS,
-)
+from custom_components.growspace_manager.bayesian_data import PROB_SOIL_MOISTURE_STRESS
 from custom_components.growspace_manager.bayesian_evaluator import (
     evaluate_soil_moisture_stress,
 )
