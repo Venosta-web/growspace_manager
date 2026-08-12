@@ -52,20 +52,174 @@ Projected number of days until the plant's current weight reaches the Target Dry
 **Active Growspace**
 A growspace with `total_plants > 0`, regardless of `PlantStage`. A growspace in `dry` or `cure` mode still counts as active if plants are present. An empty growspace (no plants at all) is inactive.
 
+## Irrigation Product Scope
+
+**Precision Substrate Irrigation**
+Irrigation of cannabis grown in controlled environments and rooted in a measured container substrate such as coco, rockwool, peat, or soil. Open-field agriculture and crop-neutral irrigation are outside this product boundary.
+_Avoid_: generic agriculture, field irrigation
+
+**Organization**
+The operator responsible for one or more Facilities.
+_Avoid_: account, tenant
+
+**Facility**
+A single physical cultivation site containing one or more Growspaces.
+_Avoid_: site, farm
+
+**Growspace**
+A physically bounded cultivation environment containing cannabis plants managed under shared environmental conditions. A Growspace may contain multiple Irrigation Zones.
+_Avoid_: room, tent
+
+**Irrigation Zone**
+A subdivision of a Growspace with an independently assigned irrigation strategy and measurable substrate response. An Irrigation Zone contains one or more Delivery Groups.
+_Avoid_: room, growspace
+
+**Delivery Group**
+The smallest set of emitters that is actuated and measured as one irrigation unit. Plants belong to a Delivery Group for irrigation purposes but are not assumed to be individually actuated.
+_Avoid_: zone, valve
+
+**Operating Profile**
+The depth of guidance and operational control presented to a grower without changing the underlying irrigation rules. The profiles are Guided, Advanced, and Facility.
+_Avoid_: product tier, separate edition
+
+**Bounded Autonomy**
+Automated irrigation decision-making constrained by grower-defined limits and promoted through three levels: observe and recommend, apply after approval, and auto-apply within limits.
+_Avoid_: full autonomy, AI control
+
+**Facility Irrigation Allocator**
+The facility-wide authority that orders competing Requested Shots against shared hydraulic capacity, grower-defined priority, and latest-safe-delivery deadlines.
+_Avoid_: scheduler, pump queue
+
+**Requested Shot**
+An irrigation demand produced by a schedule, crop-steering strategy, or grower before hydraulic allocation and actuation. A Requested Shot is intent, not evidence that water was delivered.
+_Avoid_: completed cycle, watering event
+
+**Actuated Shot**
+A Requested Shot whose assigned outputs were confirmed active for the intended duration. It establishes actuator execution but does not prove water delivery.
+_Avoid_: verified shot, delivered water
+
+**Verified Delivery**
+An Actuated Shot whose measured flow or volume falls within its expected delivery range.
+_Avoid_: estimated delivery, pump runtime
+
+**Sensor Position**
+A named physical sampling location within an Irrigation Zone, carrying its own readings, health, and inclusion in control decisions.
+_Avoid_: sensor average, probe slot
+
+**Zone VWC Estimate**
+The representative substrate VWC for an Irrigation Zone, derived from the healthy Sensor Positions explicitly included in control. Individual readings remain distinct from this estimate.
+_Avoid_: average VWC, primary probe
+
+**Degraded Control**
+A declared operating state entered when control evidence is insufficient or contradictory. Automation uses only its configured conservative fallback, stops self-tuning, and makes the loss of confidence visible.
+_Avoid_: normal operation, silent fallback
+
+**Execution Ledger**
+The durable chronological record of every irrigation request, allocation, actuation, confirmation, measured delivery, suppression, override, and reconciliation. Entries belonging to one attempted delivery share a correlation identity.
+_Avoid_: logbook, water total
+
+**Baseline VWC Setup**
+The smallest crop-steering setup: one Growspace, one irrigation output, one VWC Sensor Position, and an entered shot duration. Its single Irrigation Zone and Delivery Group are implicit until the grower chooses to configure more topology.
+_Avoid_: demo setup, incomplete setup
+
+**Irrigation Cohort**
+The cannabis plants within an Irrigation Zone that share the same lifecycle stage and compatible substrate, container geometry, emitter delivery, and steering targets. Cultivar alone neither establishes nor prevents cohort membership.
+_Avoid_: strain group, plant batch
+
+**Delivery Calibration Confidence**
+The evidence supporting an expected irrigation output: entered estimate, measured catch test, or continuously flow-verified. Confidence and calibration age are distinct from the configured output value.
+_Avoid_: accuracy, verified flow
+
+**Fallback Recipe**
+The bounded, explicitly selected irrigation behavior used while an Irrigation Zone is in Degraded Control. It is visibly distinct from normal closed-loop crop steering and may require grower intervention instead of actuating.
+_Avoid_: normal schedule, silent fallback
+
+**Runoff Attribution**
+The declared physical scope represented by a runoff observation—Delivery Group, Irrigation Zone, shared drain, or unknown—and the confidence that the collected runoff came from that scope.
+_Avoid_: runoff source, zone runoff without attribution
+
+**Irrigation Recipe**
+An immutable, versioned statement of irrigation targets, timing, bounds, and fallback behavior for a compatible Irrigation Cohort. A zone may carry explicit local overrides without changing the recipe version.
+_Avoid_: preset, loose settings
+
+**Zone Wet Reference**
+The grower-approved upper wet reference established for an Irrigation Zone from a commissioned saturation-and-dryback observation. It supports relative VWC interpretation without replacing or relabeling the raw sensor reading as field capacity.
+_Avoid_: field capacity, maximum VWC
+
+**Feed Intent**
+The desired feed solution for an Irrigation Zone, including target EC, target pH, source tank, and nutrient recipe. It may describe hand-mixed feed or be fulfilled by an optional dosing capability.
+_Avoid_: dosing command, irrigation recipe
+
+**Zone Trial**
+A bounded comparison of versioned Irrigation Recipes across comparable Irrigation Cohorts, with a declared hypothesis, control and treatment, time window, and protected operating limits.
+_Avoid_: automatic optimization, grow comparison without a control
+
+**Facility Change**
+A versioned change to facility irrigation behavior promoted through Draft, Reviewed, Approved, Scheduled, Active, and Retired states. An emergency change records its operator, reason, bounded duration, and follow-up disposition.
+_Avoid_: immediate edit, recipe tweak
+
+**Commissioned Zone**
+An Irrigation Zone whose profile-required actuator, calibration, sensor response, topology, operating limits, fallback, alert delivery, and restart-reconciliation checks have passed. Commissioning states the evidence available; it does not imply every optional capability is installed.
+_Avoid_: configured zone, enabled zone
+
+**Home Assistant Deployment Boundary**
+One Home Assistant instance contains the complete Organization and all of its Facilities, Growspaces, Irrigation Zones, and Delivery Groups. Cross-instance federation and a separate cloud service are outside the product boundary.
+_Avoid_: facility instance, federated organization
+
+**Irrigation Incident**
+An actionable abnormal condition with severity, affected scope, required response, escalation deadline, ownership, acknowledgement, and recovery evidence. Existing Home Assistant notification channels deliver Incident updates but are not the Incident itself.
+_Avoid_: notification, repeated alert
+
+**Maintenance Session**
+A named, time-bounded period for testing irrigation equipment. Its actions remain in the Execution Ledger and physical water totals but are excluded from recipe-performance evidence and adaptive learning.
+_Avoid_: manual run, production operation
+
+**Control Measurement**
+A sensor observation together with its raw value, normalized unit, source, source and receipt times, freshness, validity, calibration confidence, uncertainty when known, and any exclusion reason.
+_Avoid_: sensor value, reading without quality
+
+**Strategy Replay**
+A deterministic evaluation of an Irrigation Recipe against recorded Control Measurements, producing the requests, suppressions, limits, fallbacks, and differences the strategy would have produced without claiming biological outcomes.
+_Avoid_: simulation of plant growth, yield prediction
+
+**Operational Data Boundary**
+Irrigation data is accessed through Home Assistant and the Growspace Manager integration only. The product has no independent cloud API or standalone operational data service.
+_Avoid_: external platform, Growspace cloud
+
+**Certified Facility Envelope**
+The scale at which facility behavior is acceptance-tested: up to 128 Irrigation Zones, eight Sensor Positions per zone, and 32 simultaneously active Delivery Groups in one Home Assistant instance. Larger configurations are not declared unsupported, but carry no tested facility assurance until the envelope is raised.
+_Avoid_: hard limit, unlimited scale
+
+**Control Timescale**
+The response horizon appropriate to a control concern: minute-scale for agronomic decisions, event-driven or second-scale for actuator and flow verification, and multi-minute to daily for analytics and optimization.
+_Avoid_: universal polling interval, faster-is-better
+
+**Device Capability**
+A normalized irrigation action or measurement such as actuation, variable flow, cumulative volume, position confirmation, or dosing readiness, independent of the Home Assistant entity or vendor bundle that provides it.
+_Avoid_: entity domain, vendor driver
+
+**Water Source Route**
+An allowed physical path from a reservoir or feed source through shared hydraulic resources to a Delivery Group. A route identifies which source and shared resources a delivery may use.
+_Avoid_: selected tank, pump entity
+
+**Feed Readiness**
+The evidence that a source satisfies an Irrigation Zone's Feed Intent, including declared or measured EC and pH, solution age, and dosing state when present. Readiness may be grower-declared or device-verified, and its confidence remains visible.
+_Avoid_: dosing complete, tank available
+
 **Water Usage Cycle**
 The period over which cumulative water consumption is tracked for a growspace. Begins on `cycle_start_date` (set when the grower calls `reset_water_tracking`) and accumulates until the next reset. `WaterUsageSensor` reports total liters since `cycle_start_date` as its primary value.
 
 **Aggregate Water Use**
-The single canonical figure for how much water a growspace has consumed, the one number every consumer (`WaterUsageSensor`, briefing KPI, AI context, the frontend [[Tank-Derived Water Chip]]) reports. Composed from three [[Water Source]]s under one rule: **manual watering plus exactly one measurement source** — [[Tank-Derived Water Mode]] when it qualifies, otherwise the [[Pump-Cycle Water Estimate]]. The two measurement sources are never summed (they describe the same physical water when a pump draws from a monitored tank); manual is always added on top, because hand-watering may come from a source the measurement never sees. See [[ADR-0017]].
+The single canonical figure for how much water a growspace has consumed, reconciled from evidence attached to deliveries in the Execution Ledger. Tank change, measured flow, pump estimate, and manual declaration are summed only when they describe distinct physical deliveries; evidence about the same delivery is reconciled by confidence and attribution. See [[ADR-0042]].
 
 **Water Source**
-One of the three independent ways water reaching a growspace is accounted for: **manual** (explicit watering events, liters supplied by the caller), **tank-derived** ([[Tank-Derived Water Mode]] inference from reservoir-level change), and **pump-cycle** ([[Pump-Cycle Water Estimate]]). "Flow-based water use" is *not* a source — no `irrigation_flow_sensor` reading is ever converted to liters; that config only gates whether [[Tank-Derived Water Mode]] is active.
+The physical origin of water used for a delivery. Manual declaration, tank-level change, measured flow, and pump runtime are measurement evidence, not automatically distinct Water Sources.
 
 **Pump-Cycle Water Estimate**
 The liters a fired irrigation pump cycle delivered, estimated as pump runtime × `pump_flow_rate_ml_per_sec` (the same figure the daily-volume cap already uses). It is persisted write-through into `WaterUsageData` — bumping `total_liters` and appending a `daily_readings` entry tagged `source: "pump_estimate"` (manual events are tagged `"manual"`) — so it survives restarts. The write is **skipped when the growspace is in [[Tank-Derived Water Mode]]**, since the tank already measures that water. The fallback measurement source whenever there is no qualifying tank. See [[ADR-0017]].
 
 **Tank-Derived Water Mode**
-The reservoir-measurement mode for water consumption tracking. Active when a growspace has at least one tank with `volume_liters` configured and no `irrigation_flow_sensors` or `drain_volume_sensors` are set. In this mode the tank-derived measurement comes from summing events across all qualifying `TankWaterTracker` instances since `cycle_start_date` (read-through — `WaterUsageData`'s pump estimates are *not* written in this mode). It is one input to [[Aggregate Water Use]], which adds manual watering on top (per [[ADR-0017]] this can double-count hand-watering drawn from the monitored tank — a deliberate trade-off). The `reset_water_tracking` service advances `cycle_start_date` in both modes; `TankWaterHistory` is never cleared on reset.
+The reservoir-measurement capability that infers consumed water from changes in tank level. Tank-derived evidence is reconciled with manual, flow, and pump evidence through their Water Source Route and delivery correlation; it is not blindly added to or substituted for them.
 
 The growspace view model payload includes `water_usage.liters_today` (sum of `TankWaterTracker.get_total_liters_today()` across all qualifying tanks) so the frontend chip can display today's consumption without reading from the HA sensor entity. The `growspace_manager/get_tank_water_history` WebSocket command returns pre-bucketed consumption data (aggregated across all qualifying tanks) for the frontend [[Tank Water Chart]].
 

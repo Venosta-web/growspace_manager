@@ -1,0 +1,3 @@
+# Water use reconciles evidence per delivery
+
+Aggregate Water Use derives from deliveries in the Execution Ledger rather than adding independent manual, tank, flow, and pump-estimate counters. Each item of evidence names its Water Source Route, measurement scope, confidence, and correlated delivery; evidence describing one physical delivery is reconciled, while genuinely separate deliveries are summed. This supersedes ADR-0017's deliberate manual-plus-tank double-counting trade-off: the richer model costs correlation and attribution work, but prevents both double-counting and false per-zone precision.

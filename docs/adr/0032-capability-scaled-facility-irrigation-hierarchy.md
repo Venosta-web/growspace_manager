@@ -1,0 +1,3 @@
+# Capability-scaled facility irrigation hierarchy
+
+The irrigation domain serves cannabis grows from a single pump and probe through multi-zone facilities without splitting into separate products. It uses the hierarchy Organization → Facility → Growspace → Irrigation Zone → Delivery Group: an Irrigation Zone owns agronomic strategy and measured substrate response, a Delivery Group is the smallest jointly actuated and measured unit, and the Facility Irrigation Allocator arbitrates shared hydraulic capacity. Simple installations receive an implicit single Zone and Delivery Group so facility capability adds no mandatory setup or concepts for hobby growers.

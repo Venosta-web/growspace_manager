@@ -1,0 +1,3 @@
+# Control measurements carry quality and provenance
+
+Every value used for irrigation control is a Control Measurement carrying source, source and receipt times, unit, freshness, validity, calibration confidence, uncertainty when known, and exclusion reason. Multi-probe zones may temporarily exclude a stale, impossible, or isolated Sensor Position under visible recovery rules; a single-probe zone never enables automatic probe exclusion and instead enters Degraded Control when its only evidence is invalid. This costs more storage and normalization than scalar readings, but prevents aggregation from laundering bad evidence into false confidence.

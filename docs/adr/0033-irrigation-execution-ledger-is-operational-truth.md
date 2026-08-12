@@ -1,0 +1,3 @@
+# Irrigation Execution Ledger is operational truth
+
+Irrigation intent, actuator execution, and measured delivery are different facts, recorded as Requested Shot, Actuated Shot, and Verified Delivery. A persistent Execution Ledger links requests, allocation, actuation, confirmation, measurement, suppression, overrides, and restart reconciliation under one correlation identity; daily exposure limits and operational analytics derive from it rather than restart-volatile counters. This costs more storage and modeling than aggregate counters, but prevents a restart or uncertain actuator state from being mistaken for either missed or delivered water.
