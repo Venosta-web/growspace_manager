@@ -8,7 +8,7 @@ coordinator is involved. They pin the sensor-reading logic that moved off
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 import pytest
@@ -32,6 +32,7 @@ class FakeState:
 
     state: str
     domain: str = "sensor"
+    attributes: dict[str, object] = field(default_factory=dict)
 
 
 def make_get_state(states: dict[str, FakeState]):
@@ -403,3 +404,42 @@ def test_state_and_observations_share_one_read() -> None:
     assert result.observations["humidity"] == result.state.humidity
     assert result.observations["co2"] == result.state.co2
     assert result.observations["soil_moisture"] == result.state.soil_moisture
+
+
+# -- soil moisture unit compatibility --------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [
+        pytest.param("%", 42.0, id="percentage-participates"),
+        pytest.param(None, 42.0, id="legacy-no-unit-participates"),
+        pytest.param("°C", None, id="temperature-excluded"),
+        pytest.param("m³/m³", None, id="volumetric-ratio-excluded"),
+    ],
+)
+def test_soil_moisture_excluded_for_non_percentage_units(
+    unit: str | None, expected: float | None
+) -> None:
+    """Only percentage and unit-less sensors reach moisture classification."""
+    config = EnvironmentConfig(soil_moisture_sensor="sensor.moisture")
+    attributes: dict[str, object] = (
+        {} if unit is None else {"unit_of_measurement": unit}
+    )
+    states = {"sensor.moisture": FakeState("42.0", attributes=attributes)}
+
+    result = build_assembler(config, states).assemble()
+
+    assert result.state.soil_moisture == expected
+    assert result.observations["soil_moisture"] == expected
+
+
+def test_soil_moisture_unavailable_reading_yields_none() -> None:
+    """An unavailable sensor produces no reading to classify."""
+    config = EnvironmentConfig(soil_moisture_sensor="sensor.moisture")
+    states = {
+        "sensor.moisture": FakeState(
+            STATE_UNAVAILABLE, attributes={"unit_of_measurement": "%"}
+        )
+    }
+    assert build_assembler(config, states).assemble().state.soil_moisture is None

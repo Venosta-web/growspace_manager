@@ -78,6 +78,10 @@ def _maximal_environment_config(prefix: str) -> EnvironmentConfig:
         vpd_sensor=vpd,
         co2_sensor=f"sensor.{prefix}_co2",
         soil_moisture_sensor=f"sensor.{prefix}_soil_moisture",
+        # Deliberately decimal and different from the inherited 20–60 default,
+        # so the encoded band proves a custom override serializes as custom.
+        soil_moisture_min=32.5,
+        soil_moisture_max=54.0,
         veg_day_hours=18,
         flower_day_hours=12,
         temperature_sensors=[temperature, f"sensor.{prefix}_temperature_2"],
@@ -524,6 +528,8 @@ def _set_runtime_states(hass: HomeAssistant) -> None:
             if entity_id == "humidifier.contract_dehumidifier"
             else {"status": "normal"}
             if "tank_depletion" in entity_id
+            else {"unit_of_measurement": "%"}
+            if "soil_moisture" in entity_id
             else None
         )
         hass.states.async_set(entity_id, state, attributes)

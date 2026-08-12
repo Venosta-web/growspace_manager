@@ -48,8 +48,6 @@ from .bayesian_constants import (
     SENSITIVITY_BASE_PROB,
     SENSITIVITY_FALSE_MULTIPLIER,
     SENSITIVITY_TRUE_MULTIPLIER,
-    SOIL_MOISTURE_HIGH_THRESHOLD,
-    SOIL_MOISTURE_LOW_THRESHOLD,
     TEMP_COLD_THRESHOLD,
     TEMP_EXTREME_COLD_THRESHOLD,
     TEMP_EXTREME_HEAT_THRESHOLD,
@@ -94,6 +92,7 @@ from .const import (
     CONF_TREND_THRESHOLD_MAP,
 )
 from .domain.environmental_targets import StageEnvironmentalTargets
+from .domain.moisture_band import effective_moisture_band
 from .domain.stage import BayesianStage, StageClassification, StageDays, classify_stages
 from .models import EnvironmentState
 
@@ -107,15 +106,17 @@ Obs = tuple[float, float]
 
 
 def _classify(state: EnvironmentState) -> StageClassification:
-    return classify_stages(StageDays(
-        veg=state.veg_days,
-        flower=state.flower_days,
-        dry=state.dry_days,
-        cure=state.cure_days,
-        seedling=state.seedling_days,
-        clone=state.clone_days,
-        mother=state.mother_days,
-    ))
+    return classify_stages(
+        StageDays(
+            veg=state.veg_days,
+            flower=state.flower_days,
+            dry=state.dry_days,
+            cure=state.cure_days,
+            seedling=state.seedling_days,
+            clone=state.clone_days,
+            mother=state.mother_days,
+        )
+    )
 
 
 Reason = tuple[float, str]
@@ -547,7 +548,9 @@ def evaluate_direct_humidity_stress(
     if sc.stage_a == BayesianStage.EMPTY:
         return observations, reasons
 
-    band = StageEnvironmentalTargets(sc.stage_a, sc.stage_b, sc.factor).humidity_band(env_config)
+    band = StageEnvironmentalTargets(sc.stage_a, sc.stage_b, sc.factor).humidity_band(
+        env_config
+    )
 
     if hum < band.low or hum > band.high:
         observations.append(band.prob)
@@ -628,14 +631,24 @@ def evaluate_soil_moisture_stress(
     moisture = state.soil_moisture
     prob_stress = PROB_SOIL_MOISTURE_STRESS
 
-    # Simple thresholds: < SOIL_MOISTURE_LOW_THRESHOLD (Dry) or > SOIL_MOISTURE_HIGH_THRESHOLD (Wet)
-    # These could be made configurable in the future
-    if moisture < SOIL_MOISTURE_LOW_THRESHOLD:
+    # Acceptable Moisture Band: the growspace's custom pair when it has one,
+    # otherwise the inherited default. Boundaries are inclusive, so a reading
+    # exactly on a bound adds no evidence.
+    band = effective_moisture_band(
+        env_config.get("soil_moisture_min"), env_config.get("soil_moisture_max")
+    )
+    classification = band.classify(moisture)
+
+    if classification == "too_dry":
         observations.append(prob_stress)
-        reasons.append((prob_stress[0], f"Soil Moisture Low ({moisture}%)"))
-    elif moisture > SOIL_MOISTURE_HIGH_THRESHOLD:
+        reasons.append(
+            (prob_stress[0], f"Soil Moisture Low ({moisture}% < {band.minimum:g}%)")
+        )
+    elif classification == "too_wet":
         observations.append(prob_stress)
-        reasons.append((prob_stress[0], f"Soil Moisture High ({moisture}%)"))
+        reasons.append(
+            (prob_stress[0], f"Soil Moisture High ({moisture}% > {band.maximum:g}%)")
+        )
 
     return observations, reasons
 
@@ -796,9 +809,9 @@ def evaluate_optimal_vpd(
     time_of_day = "night" if state.is_lights_on is False else "day"
     vpd_overrides: dict[str, Any] = env_config.get("vpd_optimal_overrides", {})
 
-    bands = StageEnvironmentalTargets(sc.stage_a, sc.stage_b, sc.factor).vpd_optimal_band(
-        time_of_day, vpd_overrides
-    )
+    bands = StageEnvironmentalTargets(
+        sc.stage_a, sc.stage_b, sc.factor
+    ).vpd_optimal_band(time_of_day, vpd_overrides)
 
     for p_low, p_high, prob in bands:
         if p_low <= state.vpd <= p_high:

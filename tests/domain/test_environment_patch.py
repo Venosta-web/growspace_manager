@@ -758,3 +758,107 @@ def test_item_list_null_clears() -> None:
     """Null on a dataclass-list field is a deliberate clear."""
     patch = patch_from_service_call({"irrigation_tanks": None})
     assert patch.values["irrigation_tanks"] == []
+
+
+# -- Acceptable Moisture Band ----------------------------------------------
+
+
+def test_moisture_band_saves_a_complete_decimal_pair() -> None:
+    """Both bounds are stored, coerced to float, in one atomic write."""
+    verdict = apply_environment_patch(
+        EnvironmentConfig(),
+        patch_from_service_call(
+            {"growspace_id": "gs1", "soil_moisture_min": 32.5, "soil_moisture_max": 54}
+        ),
+    )
+    assert verdict.config.soil_moisture_min == 32.5
+    assert verdict.config.soil_moisture_max == 54.0
+    assert verdict.changed("soil_moisture_min", "soil_moisture_max")
+
+
+def test_moisture_band_both_null_clears_back_to_inherited() -> None:
+    """Reset-and-save removes the override rather than storing 20–60."""
+    stored = EnvironmentConfig(soil_moisture_min=32.5, soil_moisture_max=54.0)
+    verdict = apply_environment_patch(
+        stored,
+        patch_from_service_call({"soil_moisture_min": None, "soil_moisture_max": None}),
+    )
+    assert verdict.config.soil_moisture_min is None
+    assert verdict.config.soil_moisture_max is None
+
+
+def test_moisture_band_untouched_payload_preserves_a_stored_pair() -> None:
+    """Patch semantics: a save that omits both bounds keeps the override."""
+    stored = EnvironmentConfig(soil_moisture_min=32.5, soil_moisture_max=54.0)
+    verdict = apply_environment_patch(
+        stored, patch_from_service_call({"co2_sensor": "sensor.co2"})
+    )
+    assert verdict.config.soil_moisture_min == 32.5
+    assert verdict.config.soil_moisture_max == 54.0
+
+
+def test_moisture_band_survives_replacing_and_removing_the_sensor() -> None:
+    """The override outlives the sensor it was configured against."""
+    stored = EnvironmentConfig(
+        soil_moisture_sensor="sensor.old",
+        soil_moisture_min=32.5,
+        soil_moisture_max=54.0,
+    )
+    replaced = apply_environment_patch(
+        stored, patch_from_service_call({"soil_moisture_sensor": "sensor.new"})
+    ).config
+    assert (replaced.soil_moisture_min, replaced.soil_moisture_max) == (32.5, 54.0)
+
+    removed = apply_environment_patch(
+        replaced, patch_from_service_call({"soil_moisture_sensor": None})
+    ).config
+    assert removed.soil_moisture_sensor is None
+    assert (removed.soil_moisture_min, removed.soil_moisture_max) == (32.5, 54.0)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({"soil_moisture_min": 30.0}, id="minimum-alone"),
+        pytest.param({"soil_moisture_max": 55.0}, id="maximum-alone"),
+        pytest.param(
+            {"soil_moisture_min": 30.0, "soil_moisture_max": None}, id="half-cleared"
+        ),
+        pytest.param(
+            {"soil_moisture_min": None, "soil_moisture_max": 55.0}, id="half-set"
+        ),
+    ],
+)
+def test_moisture_band_rejects_a_partial_pair(payload: dict[str, Any]) -> None:
+    """A lone bound would combine with the stored one into an unintended band."""
+    with pytest.raises(EnvironmentPatchError, match="Acceptable Moisture Band"):
+        patch_from_service_call(payload)
+
+
+@pytest.mark.parametrize(
+    ("minimum", "maximum"),
+    [
+        pytest.param(60.0, 30.0, id="inverted"),
+        pytest.param(40.0, 40.0, id="equal-bounds"),
+        pytest.param(-1.0, 50.0, id="below-floor"),
+        pytest.param(20.0, 101.0, id="above-ceiling"),
+        pytest.param(float("nan"), 50.0, id="not-finite"),
+    ],
+)
+def test_moisture_band_rejects_an_invalid_pair(minimum: float, maximum: float) -> None:
+    """0 ≤ minimum < maximum ≤ 100 is enforced at the write seam."""
+    with pytest.raises(EnvironmentPatchError, match="Acceptable Moisture Band"):
+        patch_from_service_call(
+            {"soil_moisture_min": minimum, "soil_moisture_max": maximum}
+        )
+
+
+def test_moisture_band_round_trips_through_serialization() -> None:
+    """The pair survives a to_dict/from_dict cycle (storage + restart)."""
+    stored = apply_environment_patch(
+        EnvironmentConfig(),
+        patch_from_service_call({"soil_moisture_min": 32.5, "soil_moisture_max": 54.0}),
+    ).config
+    restored = EnvironmentConfig.from_dict(stored.to_dict())
+    assert restored.soil_moisture_min == 32.5
+    assert restored.soil_moisture_max == 54.0

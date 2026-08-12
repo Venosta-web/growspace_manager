@@ -18,7 +18,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import (
+    ATTR_UNIT_OF_MEASUREMENT,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 
 from ..models import (
     EnvironmentConfig,
@@ -28,6 +32,7 @@ from ..models import (
     Plant,
 )
 from ..utils import VPDCalculator, calculate_days_since
+from .moisture_band import is_percentage_unit
 
 if TYPE_CHECKING:
     from homeassistant.core import State
@@ -105,7 +110,7 @@ class EnvironmentStateAssembler:
             )
 
         co2 = self._sensor_value(config.co2_sensor)
-        soil_moisture = self._sensor_value(config.soil_moisture_sensor)
+        soil_moisture = self._moisture_value(config.soil_moisture_sensor)
         substrate_temp = self._aggregated_value(config.substrate_temperature_sensors)
 
         # ``.get(..., 0)`` mirrors the historical default and tolerates the
@@ -177,6 +182,22 @@ class EnvironmentStateAssembler:
             return float(state.state)
         except ValueError, TypeError:
             return None
+
+    def _moisture_value(self, sensor_id: str | None) -> float | None:
+        """Read a soil-moisture sensor, excluding non-percentage units.
+
+        The Acceptable Moisture Band interprets readings as percentages, so a
+        sensor explicitly reporting some other unit contributes nothing. A
+        sensor with no unit metadata keeps the legacy 0–100 assumption.
+        """
+        if not sensor_id:
+            return None
+        value = self._sensor_value(sensor_id)
+        if value is None:
+            return None
+        state = self._get_state(sensor_id)
+        unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT) if state else None
+        return value if is_percentage_unit(unit) else None
 
     def _aggregated_value(self, sensor_ids: list[str]) -> float | None:
         """Average the valid numeric readings from a list of sensor ids."""

@@ -142,6 +142,8 @@
       'sensor_groups': list([
       ]),
       'snapshot_interval_hours': 24,
+      'soil_moisture_max': None,
+      'soil_moisture_min': None,
       'soil_moisture_sensor': None,
       'stress_threshold': 0.7,
       'substrate_temperature_sensors': list([
