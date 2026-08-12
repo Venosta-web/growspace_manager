@@ -76,6 +76,29 @@ def test_get_add_edit_schema_with_growspaces(
     assert "growspace_id" in str(schema.schema)
 
 
+def test_get_add_edit_schema_uses_bare_stage_triggers(
+    handler: NotificationConfigHandler,
+) -> None:
+    """Test timed notification forms expose the firing path's vocabulary."""
+    coordinator = MagicMock()
+    coordinator.growspaces = {}
+
+    schema = handler.get_add_edit_schema(coordinator)
+    trigger_selector = next(
+        value
+        for key, value in schema.schema.items()
+        if getattr(key, "schema", None) == "trigger_type"
+    )
+
+    assert trigger_selector.config["options"] == [
+        {"value": "clone", "label": "Clone"},
+        {"value": "veg", "label": "Vegetative"},
+        {"value": "flower", "label": "Flowering"},
+        {"value": "dry", "label": "Drying"},
+    ]
+    assert trigger_selector.config["options"][2]["value"] == "flower"
+
+
 def test_get_add_edit_schema_defaults(handler: NotificationConfigHandler) -> None:
     """Test schema defaults from existing notification."""
     coordinator = MagicMock()

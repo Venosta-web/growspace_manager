@@ -19,6 +19,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import GrowspaceCoordinator
+from .notifications.timed import normalize_timed_notifications
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,8 +113,12 @@ class GrowspaceCalendar(CalendarEntity):  # type: ignore[misc]
     def _generate_events(self) -> None:
         """Generate all calendar events for the growspace based on timed notifications."""
         events = []
-        notifications = self.coordinator.options.get("timed_notifications", [])
-        plants = self.coordinator.services.growspaces.get_growspace_plants(self.growspace_id)
+        notifications = normalize_timed_notifications(
+            self.coordinator.options.get("timed_notifications", [])
+        )
+        plants = self.coordinator.services.growspaces.get_growspace_plants(
+            self.growspace_id
+        )
 
         for plant in plants:
             for notification in notifications:

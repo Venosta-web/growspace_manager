@@ -37,6 +37,7 @@ from .exceptions import GrowspaceError
 from .notification_rewriter import AINotificationRewriter
 from .notifications.evaluation_snapshot import EvaluationSnapshot
 from .notifications.formatting import generate_notification_message
+from .notifications.timed import normalize_timed_notifications
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -492,7 +493,9 @@ class NotificationManager:
 
     async def async_check_timed_notifications(self) -> None:
         """Check all configured timed notifications and send them if the conditions are met."""
-        notifications = self.coordinator.options.get("timed_notifications", [])
+        notifications = normalize_timed_notifications(
+            self.coordinator.options.get("timed_notifications", [])
+        )
         if not notifications:
             return
 

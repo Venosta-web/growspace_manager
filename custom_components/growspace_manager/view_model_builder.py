@@ -15,6 +15,7 @@ from .crop_steering import get_crop_steering_state
 from .domain.stage import StageDays
 from .domain.water_aggregation import compute_growspace_water
 from .models import Plant
+from .notifications.timed import normalize_timed_notifications
 from .presentation import GrowspaceViewModelBuilder
 from .utils import calculate_days_since
 
@@ -239,7 +240,9 @@ class ViewModelBuilder:
         serialized["ai_auto_alerts"] = options.get("ai_settings", {}).get(
             "ai_auto_alerts", True
         )
-        serialized["timed_notifications"] = options.get("timed_notifications", [])
+        serialized["timed_notifications"] = normalize_timed_notifications(
+            options.get("timed_notifications", [])
+        )
 
         # Top-level timestamp for efficient frontend equality checks (change detection)
         serialized["_ts"] = int(current_time * 1000)
@@ -299,7 +302,9 @@ class ViewModelBuilder:
             "notifications_sent": self.notifications_sent,
             "notifications_enabled": self.notifications_enabled,
             "notification_settings": options.get("notification_settings", {}),
-            "timed_notifications": options.get("timed_notifications", []),
+            "timed_notifications": normalize_timed_notifications(
+                options.get("timed_notifications", [])
+            ),
             "_version": dt_util.now().isoformat(),
             "serialized_growspaces": serialized_growspaces,
             "air_exchange_recommendations": recs,

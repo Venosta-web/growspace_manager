@@ -209,7 +209,9 @@ async def test_async_send_notification_disabled(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
     """Test sending notification when disabled."""
-    mock_coordinator.services.notifications.is_notifications_enabled.return_value = False
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = (
+        False
+    )
 
     await manager.async_send_notification(GROWSPACE_ID, "Test Title", "Test Message")
 
@@ -287,6 +289,40 @@ async def test_async_check_timed_notifications(
     mock_coordinator.async_commit.assert_awaited()
 
 
+async def test_async_check_timed_notifications_normalizes_legacy_trigger(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test a legacy stored trigger fires against its normalized stage."""
+    mock_coordinator.options = {
+        "timed_notifications": [
+            {
+                "id": "legacy_notify",
+                "trigger_type": "days_since_flip",
+                "day": 10,
+                "message": "Flower Day 10",
+                "growspace_ids": [GROWSPACE_ID],
+            }
+        ]
+    }
+    plant = create_plant(
+        plant_id="plant_1",
+        growspace_id=GROWSPACE_ID,
+        strain="Strain A",
+    )
+    mock_coordinator.plants = {"plant_1": plant}
+    mock_coordinator.notification_state.sent = {"plant_1": {}}
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+        return_value=10,
+    ) as calculate_days:
+        await manager.async_check_timed_notifications()
+
+    calculate_days.assert_called_once_with(plant, "flower")
+    mock_hass.services.async_call.assert_awaited()
+    assert mock_coordinator.notification_state.sent["plant_1"]["timed_legacy_notify"]
+
+
 def test_generate_notification_message_truncation(manager: NotificationManager) -> None:
     """Test message truncation in generate_notification_message."""
     base_message = "Base"
@@ -310,7 +346,6 @@ async def test_async_send_notification_exception(
 
     # Should not raise exception
     await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
-
 
 
 async def test_async_check_timed_notifications_empty_config(
@@ -373,7 +408,6 @@ async def test_async_send_batched_notification_sensor_name_fallback(
         assert "sensor.no_name" in args[1]
 
 
-
 async def test_async_send_batched_notification_multiple_sensors(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
@@ -423,7 +457,9 @@ async def test_async_send_batched_notification_unique_reasons(
         "stress", sensor_name="S1", reasons=[(0.9, "Reason 1"), (0.8, "Reason 2")]
     )
     manager._latest_snapshots[(GROWSPACE_ID, "mold")] = make_snapshot(
-        "mold", sensor_name="S2", reasons=[(0.7, "Reason 1")]  # Duplicate reason
+        "mold",
+        sensor_name="S2",
+        reasons=[(0.7, "Reason 1")],  # Duplicate reason
     )
 
     with patch.object(
@@ -472,7 +508,9 @@ async def test_async_send_notification_disabled_cases(
 ) -> None:
     """Test notification disabled cases (lines 44-45, 49-50)."""
     # CASE: Notifications disabled for growspace
-    mock_coordinator.services.notifications.is_notifications_enabled.return_value = False
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = (
+        False
+    )
     await manager.async_send_notification(GROWSPACE_ID, "T", "M")
     mock_hass.services.async_call.assert_not_called()
 
@@ -924,8 +962,6 @@ async def test_no_recovery_for_warning_resolve(
         mock_recovery.assert_not_called()
 
 
-
-
 async def test_send_recovery_notification(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
@@ -1049,9 +1085,7 @@ def test_optimal_high_probability_creates_no_pending_alert(
     manager: NotificationManager,
 ) -> None:
     """A triggered optimal snapshot is stored but never creates a pending alert."""
-    manager.report_evaluation(
-        make_snapshot("optimal", is_on=True, probability=0.99)
-    )
+    manager.report_evaluation(make_snapshot("optimal", is_on=True, probability=0.99))
 
     assert (GROWSPACE_ID, "optimal") in manager._latest_snapshots
     assert manager._pending_alerts == {}
@@ -1060,7 +1094,9 @@ def test_optimal_high_probability_creates_no_pending_alert(
 # --- Step 4: light-flip cooldown migration ---
 
 
-def _snapshot_with_lights(sensor_type: str, lights_on: bool | None) -> EvaluationSnapshot:
+def _snapshot_with_lights(
+    sensor_type: str, lights_on: bool | None
+) -> EvaluationSnapshot:
     """Build a resolved snapshot carrying the given light state."""
     return EvaluationSnapshot(
         growspace_id=GROWSPACE_ID,
@@ -1215,7 +1251,9 @@ async def test_check_and_trigger_plant_notification_init(
         )
 
     assert "new_plant" in mock_coordinator.notification_state.sent
-    assert mock_coordinator.notification_state.sent["new_plant"]["timed_notify_1"] is True
+    assert (
+        mock_coordinator.notification_state.sent["new_plant"]["timed_notify_1"] is True
+    )
 
     # Test fallback to growspace.growspace_id if id not present
     del growspace.id
@@ -1372,5 +1410,3 @@ async def test_async_send_notification_no_plants_skips(
     await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
 
     mock_hass.services.async_call.assert_not_awaited()
-
-
