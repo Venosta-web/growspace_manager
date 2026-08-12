@@ -172,11 +172,21 @@ HA `input_number` + `template sensor` entities used as stand-ins for real hardwa
 
 ## Strain Library
 
-The user's personal collection of cannabis strains, stored in a SQLite database (`strain_library.db`). Each strain has metadata (breeder, generation), zero or more phenotypes, and a harvest history. The library is the source of truth for strain names used when assigning plants.
+The user's personal collection of Catalogued Strains and lineage-only Ancestor Strains. Each strain has metadata (breeder, generation), zero or more phenotypes, and a harvest history. The library is the source of truth for strain names used when assigning plants.
+
+## Catalogued Strain
+
+A strain the grower explicitly added or imported into the Strain Library, whether or not they currently cultivate a Plant of that strain. It is included in the library's primary strain count.
+_Avoid_: cultivated strain, active strain, ancestor strain
 
 ## Strain Lineage Tree
 
 A recursive tree structure describing the parent strains of a given strain. Built entirely from in-memory `strains` data — no DB I/O during tree construction. Nodes carry `name`, `source` (`library` | `manual` | `seedfinder`), optional `phenotype`, and a `parents` list (capped at 2 parents, depth-limited to 15). Cycle detection prevents infinite loops via a `_seen` frozenset passed through recursion.
+
+## Ancestor Strain
+
+A strain retained because it appears in another strain's lineage, even when the grower has not added it as a Catalogued Strain. Ancestor Strains belong to the Strain Library's lineage graph but are distinct from Plants.
+_Avoid_: plant, imported plant, ancestor device
 
 ## Strain Analytics
 
