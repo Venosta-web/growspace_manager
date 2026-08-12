@@ -770,7 +770,7 @@
       "growspace_ids": ["contract_growspace"],
       "id": "contract-notification",
       "message": "Inspect irrigation runoff",
-      "trigger_type": "flower_start"
+      "trigger_type": "flower"
     }
   ]
 }

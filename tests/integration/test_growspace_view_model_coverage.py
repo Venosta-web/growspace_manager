@@ -751,7 +751,13 @@ def test_view_model_builder_includes_timed_notifications(
 
     result = ViewModelBuilder(coordinator).build_serialized_growspace("gs1")
 
-    assert result["timed_notifications"] == timed
+    assert result["timed_notifications"] == [
+        {
+            **timed[0],
+            "trigger_type": "veg",
+        }
+    ]
+    assert timed[0]["trigger_type"] == "veg_start"
 
 
 def test_view_model_builder_timed_notifications_default_empty(

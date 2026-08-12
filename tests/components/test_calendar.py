@@ -129,6 +129,28 @@ async def test_growspace_calendar_update_and_get_events(mock_coordinator: Mock) 
 
 
 @pytest.mark.asyncio
+async def test_growspace_calendar_normalizes_legacy_trigger(
+    mock_coordinator: Mock,
+) -> None:
+    """Test calendar events use the normalized stage for legacy triggers."""
+    mock_coordinator.options["timed_notifications"] = [
+        {
+            "id": "legacy_flower_reminder",
+            "growspace_ids": ["gs1"],
+            "trigger_type": "days_since_flip",
+            "day": "1",
+            "message": "First day of flower",
+        }
+    ]
+
+    calendar = GrowspaceCalendar(mock_coordinator, "gs1")
+    await calendar.async_update()
+
+    assert len(calendar._events) == 1
+    assert calendar._events[0].summary.startswith("Flower Day 1")
+
+
+@pytest.mark.asyncio
 async def test_growspace_calendar_event_property(mock_coordinator: Mock) -> None:
     """Test the event property to get the next upcoming event."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")

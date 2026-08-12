@@ -106,6 +106,33 @@ def test_get_timed_notifications_configured() -> None:
 
 
 @pytest.mark.parametrize(
+    ("legacy_trigger", "expected_trigger"),
+    [
+        pytest.param("days_since_flip", "flower", id="days-since-flip"),
+        pytest.param("days_since_germination", "veg", id="days-since-germination"),
+        pytest.param("clone_start", "clone", id="clone-start"),
+        pytest.param("veg_start", "veg", id="veg-start"),
+        pytest.param("flower_start", "flower", id="flower-start"),
+        pytest.param("dry_start", "dry", id="dry-start"),
+    ],
+)
+def test_get_timed_notifications_normalizes_legacy_trigger_types(
+    legacy_trigger: str, expected_trigger: str
+) -> None:
+    """Test legacy trigger values are normalized without mutating stored options."""
+    mock_coordinator = MagicMock()
+    stored_notification = {"id": "1", "trigger_type": legacy_trigger}
+    mock_coordinator.config_entry.options = {
+        "timed_notifications": [stored_notification]
+    }
+
+    manager = NotificationSettingsManager(mock_coordinator)
+
+    assert manager.get_timed_notifications()[0]["trigger_type"] == expected_trigger
+    assert stored_notification["trigger_type"] == legacy_trigger
+
+
+@pytest.mark.parametrize(
     ("growspace_ids", "expected_ids"),
     [
         (None, []),
@@ -200,7 +227,11 @@ def test_remove_timed_notification_from_list() -> None:
 def test_repr() -> None:
     """Test string representation of NotificationSettingsManager."""
     mock_coordinator = MagicMock()
-    mock_coordinator.notification_state.enabled = {"gs1": True, "gs2": False, "gs3": True}
+    mock_coordinator.notification_state.enabled = {
+        "gs1": True,
+        "gs2": False,
+        "gs3": True,
+    }
     mock_coordinator.config_entry.options = {
         "timed_notifications": [
             {"id": "1"},

@@ -13,6 +13,10 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
+from ..notifications.timed import (
+    TIMED_NOTIFICATION_TRIGGER_OPTIONS,
+    normalize_timed_notification_trigger,
+)
 from . import AbortFlow, BaseConfigHandler
 
 _LOGGER = logging.getLogger(__name__)
@@ -67,7 +71,9 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 user_input["day"],
                 user_input.get("growspace_ids"),
             )
-            return self.flow.async_create_entry(title="", data=self.config_entry.options)
+            return self.flow.async_create_entry(
+                title="", data=self.config_entry.options
+            )
 
         return self.flow.async_show_form(
             step_id="add_timed_notification",
@@ -102,7 +108,9 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 user_input["day"],
                 user_input.get("growspace_ids"),
             )
-            return self.flow.async_create_entry(title="", data=self.config_entry.options)
+            return self.flow.async_create_entry(
+                title="", data=self.config_entry.options
+            )
 
         return self.flow.async_show_form(
             step_id="edit_timed_notification",
@@ -119,7 +127,9 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         notification_id = self.flow.selected_notification_id
 
         if user_input is not None:
-            await coordinator.services.notifications.async_remove_timed_notification(notification_id)
+            await coordinator.services.notifications.async_remove_timed_notification(
+                notification_id
+            )
             return self.flow.async_create_entry(title="", data={})
 
         return self.flow.async_show_form(
@@ -184,17 +194,14 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             ): selector.TextSelector(),
             vol.Required(
                 "trigger_type",
-                default=notification.get("trigger_type", "days_since_flip"),
+                default=normalize_timed_notification_trigger(
+                    notification.get("trigger_type", "flower")
+                ),
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
-                        selector.SelectOptionDict(
-                            value="days_since_flip", label="Days Since Flip"
-                        ),
-                        selector.SelectOptionDict(
-                            value="days_since_germination",
-                            label="Days Since Germination",
-                        ),
+                        selector.SelectOptionDict(value=value, label=label)
+                        for value, label in TIMED_NOTIFICATION_TRIGGER_OPTIONS
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
