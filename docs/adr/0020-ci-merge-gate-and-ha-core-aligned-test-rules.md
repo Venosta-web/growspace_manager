@@ -10,7 +10,7 @@ the integration branch:
 1. **No branch protection.** Every branch was unprotected, so even when `tests.yaml`
    went red a PR could still be merged. The workflows existed but enforced nothing.
 2. **CI never ran ruff or mypy.** `tests.yaml` ran `pytest --cov` only. Linting and
-   type-checking lived solely in `.pre-commit-config.yaml`, which checks *staged*
+   type-checking lived solely in `.pre-commit-config.yaml`, which checks _staged_
    files. A `git commit --no-verify` (or any path where the hook didn't fire) merged
    lint- and type-dirty code. Run repo-wide, the accumulated debt was **3887 ruff
    errors** and **460 mypy errors in 74 files**.
@@ -40,7 +40,7 @@ indistinguishable from no gate.
 
 3. **`per-file-ignores` are re-pointed at this repo's layout to match HA core's own
    stance**, ignoring `SLF001` and the docstring `D1xx` rules under `tests/**`. This
-   is a *correction* of an inherited path mismatch, not a relaxation of the bar:
+   is a _correction_ of an inherited path mismatch, not a relaxation of the bar:
    production code in `custom_components/` stays fully strict. Tests legitimately
    poke internals and do not need docstrings on every function — the same judgement
    HA core makes for its own tests.
@@ -53,7 +53,7 @@ indistinguishable from no gate.
 
 ## Consequences
 
-- Stacked feature branches that PR into *other* feature branches are not gated until
+- Stacked feature branches that PR into _other_ feature branches are not gated until
   they land on `dev`. That is the intended place for the gate to bite.
 - Choosing fix-first over ratchet is the larger up-front cost, paid once, in exchange
   for a clean repo-wide bar with no per-file suppression to reason about later.
@@ -112,13 +112,13 @@ Two decisions follow:
    `homeassistant==2026.5.4` → `hassil==3.5.0`; HA ships that mapping as
    `homeassistant/package_constraints.txt`, so it is a fact to be read, not a
    judgement to be made. The near-term mechanism is a direct pin. The intended
-   end state is a constrained install — `pip install -r requirements.txt -c
-   <site-packages>/homeassistant/package_constraints.txt` after installing
-   `homeassistant` — which closes the class rather than one member of it. A
+   end state is a constrained install using Home Assistant's packaged
+   `package_constraints.txt` after installing `homeassistant` — which closes the
+   class rather than one member of it. A
    dry-run confirms the constraints file resolves cleanly against this
    `requirements.txt` with no conflicts.
 
-   *Rejected:* a lockfile. A stale `uv.lock` is tracked in the repo root, last
+   _Rejected:_ a lockfile. A stale `uv.lock` is tracked in the repo root, last
    touched 2026-05-11, referenced by no workflow, and does not contain `hassil`.
    It is debris, not a live mechanism. Adopting a lockfile would mean maintaining
    a second source of truth alongside HA's constraints file, which would drift
@@ -146,3 +146,27 @@ Two decisions follow:
 - Pinning transitively-owned dependencies by hand is a stopgap. Until the
   constrained install lands, a `homeassistant` bump that changes a pin we mirror
   will fail CI until the mirrored value is updated by hand.
+
+## Amendment (2026-08-12) — test against Home Assistant 2026.8.1
+
+The standalone test and CI baseline moves from Home Assistant 2026.5.4 to
+2026.8.1. Its coupled dependency chain moves with it:
+
+- `pytest-homeassistant-custom-component==0.13.355` pins
+  `homeassistant==2026.8.1`;
+- Home Assistant 2026.8.1's packaged constraints pin `hassil==3.11.0` and
+  `home-assistant-intents==2026.7.30`.
+
+The two-phase constrained install remains the source of truth for the rest of
+Home Assistant's dependency graph. The explicit `hassil` and
+`home-assistant-intents` pins remain mirrored in `requirements.txt` so an
+accidental unconstrained install still fails deterministically rather than
+silently selecting a different pair.
+
+`hacs.json` retains Home Assistant 2026.5.4 as the minimum supported runtime.
+Moving the development baseline does not by itself justify dropping working
+installations on 2026.5 through 2026.7. Compatibility fixes exposed by the new
+baseline must preserve that minimum; a change that cannot do so requires a
+separate decision to raise it. CI continues to exercise one Home Assistant
+version for now. A minimum-and-latest matrix is a separate reliability change
+with its own paired test-helper dependency maintenance.
