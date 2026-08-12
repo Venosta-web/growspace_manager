@@ -101,6 +101,7 @@
       'lst_offset': -2.0,
       'lung_room_temp_sensors': list([
       ]),
+      'mold_threshold': 0.75,
       'ph_sensors': list([
       ]),
       'pore_ec_sensors': list([
@@ -116,6 +117,7 @@
       }),
       'soil_moisture_max': None,
       'soil_moisture_min': None,
+      'stress_threshold': 0.7,
       'substrate_temperature_sensors': list([
       ]),
       'temperature': None,

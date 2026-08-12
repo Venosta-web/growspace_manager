@@ -579,6 +579,8 @@ class GrowspaceViewModelBuilder:
         attributes[CONF_HUMIDITY_SENSORS] = env_config.humidity_sensors
         attributes[CONF_VPD_SENSORS] = env_config.vpd_sensors
         attributes["lst_offset"] = env_config.lst_offset
+        attributes["stress_threshold"] = env_config.stress_threshold
+        attributes["mold_threshold"] = env_config.mold_threshold
 
         # New sensor arrays and scalars
         attributes["substrate_temperature_sensors"] = (
