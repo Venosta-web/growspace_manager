@@ -143,15 +143,24 @@ class GrowspaceManager(BaseService):
             async_fire_growspace_event(self.hass, EVENT_GROWSPACE_ADDED, growspace)
             return growspace
 
-    async def remove_growspace(self, growspace_id: str) -> None:
-        """Remove a growspace and all plants contained within it."""
+    async def remove_growspace(
+        self, growspace_id: str, *, delete_plants: bool = True
+    ) -> None:
+        """Remove a growspace and all plants contained within it.
+
+        `delete_plants=False` leaves the contained plants in the plant store,
+        still referencing the removed growspace. Only the special-growspace
+        reset uses it: it removes and recreates the canonical growspace, then
+        re-places the detached plants on it through the plant manager.
+        """
         async with self._lock:
             self.validator.validate_growspace_exists(growspace_id)
 
-            # Remove all plants in this growspace
-            plants_to_remove = [
-                p.plant_id for p in self.repository.get_growspace_plants(growspace_id)
-            ]
+            plants_to_remove = (
+                [p.plant_id for p in self.repository.get_growspace_plants(growspace_id)]
+                if delete_plants
+                else []
+            )
 
             for plant_id in plants_to_remove:
                 self.repository.remove_plant(plant_id)

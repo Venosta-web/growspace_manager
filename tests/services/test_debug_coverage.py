@@ -66,5 +66,5 @@ async def test_consolidate_plants_no_space(mock_coordinator) -> None:
     )
     assert mock_plant.growspace_id == "dry_1"
 
-    # Verify duplicate growspace was still removed (as per logic)
-    assert "dry_1" not in mock_coordinator.growspaces
+    # The plant had nowhere to go, so removing the duplicate would delete it.
+    mock_coordinator._growspace_manager.remove_growspace.assert_not_called()

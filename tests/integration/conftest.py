@@ -88,6 +88,7 @@ def mock_coordinator():
 
     coordinator._growspace_manager.add_growspace = AsyncMock(side_effect=_mock_add_gs)
     coordinator._growspace_manager.update_growspace = AsyncMock()
+    coordinator._growspace_manager.remove_growspace = AsyncMock()
     coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         return_value="special_gs"
     )
@@ -103,6 +104,7 @@ def mock_coordinator():
     coordinator.async_commit = AsyncMock()
     coordinator.async_load = AsyncMock()
     coordinator.async_refresh = AsyncMock()
+    coordinator.async_register_devices = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
     coordinator.async_transition_plant_stage = AsyncMock()
     coordinator.async_update_environment_config = AsyncMock()
