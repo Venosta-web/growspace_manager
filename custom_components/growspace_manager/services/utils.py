@@ -19,6 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Typed WebSocket error codes (stay inside HA's wire format — ADR 0005)
 WS_ERR_COORDINATOR_NOT_READY = "coordinator_not_ready"
+WS_ERR_CONFLICT = "conflict"
 WS_ERR_ENTITY_NOT_FOUND = "entity_not_found"
 WS_ERR_VALIDATION_FAILED = "validation_failed"
 WS_ERR_INTERNAL_ERROR = "internal_error"

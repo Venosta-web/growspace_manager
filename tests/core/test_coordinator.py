@@ -365,8 +365,10 @@ async def test_get_plant(coordinator: GrowspaceCoordinator) -> None:
         coordinator: The mock GrowspaceCoordinator.
     """
 
-    # Add a plant
-    plant = await coordinator._plant_manager.add_plant("gs1", "StrainX", row=1, col=1)
+    growspace = await coordinator._growspace_manager.add_growspace("Plant GS")
+    plant = await coordinator._plant_manager.add_plant(
+        growspace.id, "StrainX", row=1, col=1
+    )
 
     # Retrieve the plant
     fetched = coordinator.plants.get(plant.plant_id)
@@ -808,32 +810,24 @@ async def test_async_update_growspace_invalid_id(
 
 
 @pytest.mark.asyncio
-async def test_validate_plants_after_growspace_resize_logs_warnings(
-    coordinator: GrowspaceCoordinator, caplog: pytest.LogCaptureFixture
+async def test_resize_rejects_stranded_plants(
+    coordinator: GrowspaceCoordinator,
 ) -> None:
-    """Test that resizing a growspace logs warnings for out-of-bounds plants.
+    """Test that resizing a growspace rejects out-of-bounds plants.
 
     Args:
         coordinator: The mock GrowspaceCoordinator.
-        caplog: The pytest log capture fixture.
     """
     # Setup: create growspace 2x2
     gs = await coordinator._growspace_manager.add_growspace("Resize GS", 2, 2)
     # Add a plant outside the new resized bounds
     plant = await coordinator._plant_manager.add_plant(gs.id, "StrainX", row=3, col=1)
 
-    # Set log level synchronously
-    caplog.set_level("WARNING")
-
-    # Call update_growspace to trigger validation
-    await coordinator._growspace_manager.update_growspace(
-        gs.id, rows=1, plants_per_row=1
-    )
-
-    # Check that warnings were logged about invalid plant
-    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
-    assert any(f"Plant {plant.plant_id}" in w for w in warnings)
-    assert any("outside new grid" in w for w in warnings)
+    with pytest.raises(ValidationChangeError, match=plant.plant_id):
+        await coordinator._growspace_manager.update_growspace(
+            gs.id, rows=1, plants_per_row=1
+        )
+    assert (gs.rows, gs.plants_per_row) == (2, 2)
 
 
 @pytest.mark.asyncio
@@ -2328,20 +2322,15 @@ async def test_async_update_growspace_full(
         await coordinator._growspace_manager.update_growspace(gs.id)  # no kwargs
         mock_fire.assert_not_called()
 
-    # 8. Validation after resize warnings
+    # 8. A resize cannot strand a plant
     # Add a plant at 4,4
     await coordinator._plant_manager.add_plant(gs.id, "Strain", row=4, col=4)
 
-    # Resize to 3x3 (plant now out of bounds)
-    with patch(
-        "custom_components.growspace_manager.managers.growspace._LOGGER"
-    ) as mock_logger:
+    with pytest.raises(ValidationChangeError, match="strand plant"):
         await coordinator._growspace_manager.update_growspace(
             gs.id, rows=3, plants_per_row=3
         )
-        assert (
-            mock_logger.warning.call_count >= 1
-        )  # Should warn about plants outside grid
+    assert (gs.rows, gs.plants_per_row) == (4, 4)
 
 
 @pytest.mark.asyncio

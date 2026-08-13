@@ -1,6 +1,9 @@
 {
   "_ts": 1786449600000,
   "ai_auto_alerts": false,
+  "capabilities": {
+    "atomic_plant_layout": true
+  },
   "environment": {
     "active_events": {},
     "bulk_ec_sensors": ["sensor.contract_bulk_ec"],
@@ -451,6 +454,7 @@
       "total_liters": 88.5
     }
   },
+  "layout_revision": 0,
   "metrics": {
     "air_exchange": null,
     "cure_week": 2,

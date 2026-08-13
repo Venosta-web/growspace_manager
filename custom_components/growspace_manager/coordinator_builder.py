@@ -167,6 +167,8 @@ class CoordinatorBuilder:
             lock=lock,
             add_event=coordinator.add_event,
             invalidate_cache=cache.invalidate,
+            save_layout_callback=coordinator.async_save_plant_layout_snapshot,
+            publish_callback=coordinator.async_publish_committed_state,
         )
 
         growspace_manager = GrowspaceManager(

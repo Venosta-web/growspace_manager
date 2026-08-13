@@ -176,6 +176,22 @@ SCHEMA_WS_SWITCH_PLANTS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     }
 )
 
+WS_TYPE_SET_PLANT_LAYOUT = f"{DOMAIN}/set_plant_layout"
+SCHEMA_WS_SET_PLANT_LAYOUT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SET_PLANT_LAYOUT,
+        vol.Required(ATTR_GROWSPACE_ID): str,
+        vol.Required("expected_layout_revision"): vol.All(int, vol.Range(min=0)),
+        vol.Required("placements"): [
+            {
+                vol.Required(ATTR_PLANT_ID): str,
+                vol.Required(ATTR_ROW): vol.All(int, vol.Range(min=1)),
+                vol.Required(ATTR_COL): vol.All(int, vol.Range(min=1)),
+            }
+        ],
+    }
+)
+
 WS_TYPE_TAKE_CLONE = f"{DOMAIN}/take_clone"
 SCHEMA_WS_TAKE_CLONE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -538,6 +554,19 @@ async def websocket_switch_plants(
     await coordinator.services.plants.switch_plants(plant1_id, plant2_id)
 
 
+async def websocket_set_plant_layout(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Commit and return an authoritative complete Plant Layout."""
+    return await coordinator.services.plants.set_plant_layout(
+        msg[ATTR_GROWSPACE_ID],
+        msg["expected_layout_revision"],
+        msg["placements"],
+    )
+
+
 async def websocket_take_clone(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -669,6 +698,11 @@ COMMANDS: list[WSCommand] = [
     WSCommand(WS_TYPE_MOVE_PLANT, websocket_move_plant, SCHEMA_WS_MOVE_PLANT),
     WSCommand(WS_TYPE_MOVE_CLONE, websocket_move_clone, SCHEMA_WS_MOVE_CLONE),
     WSCommand(WS_TYPE_SWITCH_PLANTS, websocket_switch_plants, SCHEMA_WS_SWITCH_PLANTS),
+    WSCommand(
+        WS_TYPE_SET_PLANT_LAYOUT,
+        websocket_set_plant_layout,
+        SCHEMA_WS_SET_PLANT_LAYOUT,
+    ),
     WSCommand(WS_TYPE_TAKE_CLONE, websocket_take_clone, SCHEMA_WS_TAKE_CLONE),
     WSCommand(WS_TYPE_SCORE_PLANT, websocket_score_plant, SCHEMA_WS_SCORE_PLANT),
     WSCommand(

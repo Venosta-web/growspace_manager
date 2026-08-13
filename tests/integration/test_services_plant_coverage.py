@@ -112,6 +112,7 @@ def service(
 @pytest.mark.asyncio
 async def test_add_plant(service, repository_mock) -> None:
     """Test adding a plant."""
+    repository_mock.has_growspace.return_value = True
     with patch("uuid.uuid4", return_value="p1"):
         result = await service.add_plant("gs1", "S1")
 
@@ -153,6 +154,7 @@ async def test_take_clones_default(
         genetics=PlantGenetics(strain_name="S1", phenotype_name="P1"),
     )
     repository_mock.require_plant.return_value = mother
+    repository_mock.has_growspace.return_value = True
     gs_service_mock.ensure_special_growspace.return_value = "clone"
     validator_mock.find_first_available_position.return_value = (1, 1)
 
@@ -203,6 +205,7 @@ async def test_update_plant_move(
     repository_mock.get_plant.return_value = plant
     repository_mock.require_plant.return_value = plant
     repository_mock.has_plant.return_value = True
+    repository_mock.has_growspace.return_value = True
     lifecycle_manager_mock.async_update_plant.return_value = plant
 
     await service.update_plant("p1", growspace_id="gs2")

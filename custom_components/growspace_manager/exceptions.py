@@ -30,6 +30,10 @@ class RateLimitedError(GrowspaceError):
     """
 
 
+class LayoutConflictError(GrowspaceError):
+    """The supplied Layout Revision is no longer current."""
+
+
 class PlantNotFoundError(EntityNotFoundError):
     """Raised when a plant is not found."""
 

@@ -234,6 +234,8 @@ class GrowspaceViewModelBuilder:
         )
 
         return {
+            "layout_revision": growspace.layout_revision,
+            "capabilities": {"atomic_plant_layout": True},
             "identity": {
                 "growspace_id": growspace.id,
                 "overview_entity_id": overview_entity_id,

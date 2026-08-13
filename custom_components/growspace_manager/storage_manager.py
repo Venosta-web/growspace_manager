@@ -125,6 +125,36 @@ class StorageManager:
         if self.genetics_manager is not None:
             await self.genetics_store.async_save(self._get_genetics_data())
 
+    async def async_save_plant_layout_snapshot(
+        self,
+        growspace_id: str,
+        layout_revision: int,
+        placements: list[dict[str, Any]],
+        updated_at: str,
+    ) -> None:
+        """Persist a complete staged Plant Layout without publishing it in memory."""
+        config_data = self._get_config_data()
+        plants_data = self._get_plants_data()
+        config_data["growspaces"][growspace_id]["layout_revision"] = layout_revision
+        for placement in placements:
+            plant_data = plants_data["plants"][placement["plant_id"]]
+            plant_data["row"] = placement["row"]
+            plant_data["col"] = placement["col"]
+            plant_data["updated_at"] = updated_at
+
+        try:
+            await self.config_store.async_save(config_data)
+            await self.plants_store.async_save(plants_data)
+        except Exception:
+            # A segmented store can fail after its sibling succeeded. Restore both
+            # persisted documents from the still-unpublished repository snapshot.
+            try:
+                await self.config_store.async_save(self._get_config_data())
+                await self.plants_store.async_save(self._get_plants_data())
+            except Exception:
+                _LOGGER.exception("Failed to restore Plant Layout storage snapshot")
+            raise
+
     def _get_config_data(self) -> dict[str, Any]:
         """Gather configuration data for storage."""
         # Use nutrient manager for serialization data

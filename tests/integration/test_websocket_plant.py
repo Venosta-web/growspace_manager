@@ -23,6 +23,7 @@ from custom_components.growspace_manager.websocket.plant import (
     websocket_print_label,
     websocket_remove_plant,
     websocket_score_plant,
+    websocket_set_plant_layout,
     websocket_set_visual_tag,
     websocket_switch_plants,
     websocket_take_clone,
@@ -67,12 +68,41 @@ def mock_coordinator() -> MagicMock:
     svc.switch_plants = AsyncMock()
     svc.take_clones = AsyncMock()
     svc.score_plant = AsyncMock()
+    svc.set_plant_layout = AsyncMock()
     svc.log_drying_weight = AsyncMock()
     svc.log_moisture_reading = AsyncMock()
     svc.set_visual_tag = AsyncMock()
     svc.update_harvest_metrics = AsyncMock()
     coordinator.services.plants = svc
     return coordinator
+
+
+async def test_set_plant_layout_returns_authoritative_mapping(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """The handler delegates through the same plant-operation facade."""
+    expected = {
+        "growspace_id": "tent",
+        "layout_revision": 4,
+        "placements": [{"plant_id": "p1", "row": 1, "col": 1}],
+    }
+    mock_coordinator.services.plants.set_plant_layout.return_value = expected
+
+    result = await websocket_set_plant_layout(
+        hass,
+        mock_coordinator,
+        {
+            "id": 1,
+            "growspace_id": "tent",
+            "expected_layout_revision": 3,
+            "placements": [{"plant_id": "p1", "row": 1, "col": 1}],
+        },
+    )
+
+    assert result == expected
+    mock_coordinator.services.plants.set_plant_layout.assert_awaited_once_with(
+        "tent", 3, [{"plant_id": "p1", "row": 1, "col": 1}]
+    )
 
 
 # ---------------------------------------------------------------------------

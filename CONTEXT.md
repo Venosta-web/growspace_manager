@@ -11,6 +11,17 @@ The single designated image from a phenotype's Strain Image Gallery that is used
 **Plant**
 An individual cannabis plant tracked from seedling through cure. The atomic unit of all lifecycle, drying, and curing tracking. A "harvest batch" is not a separate concept — each plant is weighed and tracked individually.
 
+**Plant Layout**
+The complete mapping of every Plant in one growspace to a unique grid cell within that growspace's current dimensions. A layout and any dimension change that affects its valid bounds are committed as one unit rather than as independently observable plant moves.
+
+**Layout Revision**
+A monotonically increasing identifier for a growspace's Plant Layout. Adding, removing, moving, swapping, or transplanting a Plant changes the affected layout's revision, allowing a stale complete-layout update to be rejected rather than overwriting newer positions.
+_Avoid_: plant version, layout timestamp
+
+**Plant Layout Changed**
+The single growspace-level event emitted after an atomic Plant Layout commit. It identifies the growspace and its new Layout Revision; it is not decomposed into independent plant-move or plant-swap events.
+_Avoid_: plants moved, arrangement saved
+
 **PlantStage**
 The lifecycle phase of a Plant. Ordered stages: `seedling → clone → mother → veg → flower → dry → cure`. The `dry` and `cure` stages are fully-fledged lifecycle stages, not post-harvest metadata.
 

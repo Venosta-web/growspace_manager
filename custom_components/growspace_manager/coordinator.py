@@ -336,6 +336,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Persist current state and notify listeners."""
         await self.async_commit()
 
+    async def async_save_plant_layout_snapshot(
+        self,
+        growspace_id: str,
+        layout_revision: int,
+        placements: list[dict[str, Any]],
+        updated_at: str,
+    ) -> None:
+        """Persist a staged layout while the live repository remains unchanged."""
+        await self.storage_manager.async_save_plant_layout_snapshot(
+            growspace_id, layout_revision, placements, updated_at
+        )
+
     def _load_initial_data(self, data: dict[str, Any]) -> None:
         """Load and validate initial data from a dictionary.
 
@@ -402,10 +414,22 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         This is the primary method for persisting state changes.
         """
-        # Ensure we always have fresh data when committing
+        # Build the candidate projection before persistence, but do not publish it
+        # until every store has accepted the corresponding domain state.
+        self.cache.invalidate()
+        candidate_data = self.view_model_builder.build_data_property()
+        await self.storage_manager.async_force_save()
+        self.data = candidate_data
+        await self._publish_current_data()
+
+    async def async_publish_committed_state(self) -> None:
+        """Publish domain state that was persisted through a staged transaction."""
         self.cache.invalidate()
         self.data = self.view_model_builder.build_data_property()
-        await self.storage_manager.async_force_save()
+        await self._publish_current_data()
+
+    async def _publish_current_data(self) -> None:
+        """Notify projections and dependent coordinators of committed data."""
         self.async_set_updated_data(self.data)
         self._event_bus.fire_growspace_updated()
 

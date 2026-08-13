@@ -63,5 +63,8 @@ is wrapped by `handle_ws_errors`, and coordinator resolution is one call
 - The card's not-found / retry-later narrowing becomes reachable; nothing on
   the wire changes shape except error `code` strings, which the card already
   types or coerces.
-- The `test_core_init` hardcoded command count (67) is unaffected — no
-  commands are added or removed.
+- The `test_core_init` command count remains an explicit registration guard.
+
+## Amendment: layout conflicts
+
+Revision-guarded Plant Layout commits add `conflict` to the shared WebSocket error vocabulary. A dedicated layout-conflict exception maps to `conflict`; malformed layouts remain `validation_failed`, missing plants or growspaces remain `entity_not_found`, unavailable coordinators remain `coordinator_not_ready`, authorization follows the existing plant-operation policy, and unexpected persistence failures remain `internal_error`.
