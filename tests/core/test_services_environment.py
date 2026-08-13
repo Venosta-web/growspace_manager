@@ -3,13 +3,17 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import voluptuous as vol
 
 from custom_components.growspace_manager.const import (
     CONF_BULK_EC_SENSORS,
+    CONF_CONTROL_DEHUMIDIFIER,
     CONF_CONTROL_HUMIDIFIER,
     CONF_DEHUMIDIFIER_THRESHOLDS,
     CONF_HUMIDITY_SENSOR,
+    CONF_MOLD_THRESHOLD,
     CONF_PORE_EC_SENSORS,
+    CONF_STRESS_THRESHOLD,
     CONF_TEMP_SENSOR,
 )
 from custom_components.growspace_manager.models import (
@@ -1182,6 +1186,93 @@ async def test_schema_validated_payload_omitting_bundles_preserves(
     await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
 
     assert mock_gs.environment_config.humidifier_ac_infinity_devices == [existing]
+
+
+# Scalar keys that used to carry a schema default, and so were written on every
+# sparse call. Stored values are deliberately off EnvironmentConfig's own
+# defaults, otherwise the preserve assertion would pass even with the defaults
+# back in place.
+_SCALAR_OMISSION_FIELDS = [
+    pytest.param(CONF_CONTROL_DEHUMIDIFIER, True, False, id="control_dehumidifier"),
+    pytest.param(CONF_CONTROL_HUMIDIFIER, True, False, id="control_humidifier"),
+    pytest.param(CONF_STRESS_THRESHOLD, 0.42, 0.9, id="stress_threshold"),
+    pytest.param(CONF_MOLD_THRESHOLD, 0.55, 0.95, id="mold_threshold"),
+]
+
+
+def _seeded_growspace(mock_coordinator, field: str, stored: bool | float) -> MagicMock:
+    """Register a growspace whose environment config holds ``stored`` in ``field``."""
+    mock_gs = MagicMock()
+    mock_gs.name = "Test GS"
+    mock_gs.environment_config = EnvironmentConfig(**{field: stored})
+    mock_coordinator.growspaces = {"gs1": mock_gs}
+    return mock_gs
+
+
+@pytest.mark.parametrize(("field", "stored", "sent"), _SCALAR_OMISSION_FIELDS)
+@pytest.mark.asyncio
+async def test_schema_validated_payload_omitting_scalar_preserves(
+    mock_hass,
+    mock_coordinator,
+    mock_call,
+    field: str,
+    stored: bool | float,
+    sent: bool | float,
+) -> None:
+    """Regression guard: the schema must not inject defaults for scalar keys.
+
+    These four keys carried ``default=`` until issue #586, so a caller editing
+    only a sensor silently reset the grower's control toggles and Bayesian
+    thresholds. The assertion runs the real boundary — schema validation, then
+    patch construction and application — because a builder-only test cannot see
+    a key the schema invented.
+    """
+    mock_gs = _seeded_growspace(mock_coordinator, field, stored)
+
+    validated = CONFIGURE_ENVIRONMENT_SCHEMA(
+        {"growspace_id": "gs1", CONF_TEMP_SENSOR: "sensor.temp"}
+    )
+    assert field not in validated
+    mock_call.data = validated
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert getattr(mock_gs.environment_config, field) == stored
+
+
+@pytest.mark.parametrize(("field", "stored", "sent"), _SCALAR_OMISSION_FIELDS)
+@pytest.mark.asyncio
+async def test_schema_validated_payload_applies_explicit_scalar(
+    mock_hass,
+    mock_coordinator,
+    mock_call,
+    field: str,
+    stored: bool | float,
+    sent: bool | float,
+) -> None:
+    """An explicitly sent value still validates and reaches the stored config."""
+    mock_gs = _seeded_growspace(mock_coordinator, field, stored)
+
+    mock_call.data = CONFIGURE_ENVIRONMENT_SCHEMA({"growspace_id": "gs1", field: sent})
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert getattr(mock_gs.environment_config, field) == sent
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    [
+        pytest.param(CONF_STRESS_THRESHOLD, 1.5, id="stress_threshold"),
+        pytest.param(CONF_MOLD_THRESHOLD, -0.1, id="mold_threshold"),
+    ],
+)
+def test_threshold_range_validation_survives_default_removal(
+    field: str, invalid: float
+) -> None:
+    """Dropping the defaults must not drop the 0.0-1.0 range check with them."""
+    with pytest.raises(vol.Invalid):
+        CONFIGURE_ENVIRONMENT_SCHEMA({"growspace_id": "gs1", field: invalid})
 
 
 @pytest.mark.asyncio

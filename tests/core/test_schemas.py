@@ -13,6 +13,19 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.schemas import CONFIGURE_ENVIRONMENT_SCHEMA
 
 
+def test_configure_environment_schema_injects_no_defaults() -> None:
+    """No optional key may carry a default (ADR-0026 patch semantics).
+
+    The patch seam reads presence as intent, so any ``default=`` on this schema
+    turns every sparse caller into a silent write of that field. Asserting on
+    the validated payload rather than voluptuous' markers catches a default on
+    any future key, not just today's.
+    """
+    assert set(CONFIGURE_ENVIRONMENT_SCHEMA({"growspace_id": "gs1"})) == {
+        "growspace_id"
+    }
+
+
 def test_configure_environment_schema_supports_multi_entities() -> None:
     """Test that CONFIGURE_ENVIRONMENT_SCHEMA accepts multi-entity selection lists."""
 
