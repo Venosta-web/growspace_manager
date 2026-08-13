@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import Growspace
 from homeassistant.core import HomeAssistant
 from tests.common import MockConfigEntry
 
@@ -10,11 +11,14 @@ from .common import create_plant
 
 
 @pytest.fixture
-def mock_coordinator(hass: HomeAssistant):
+def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     entry = MockConfigEntry(domain="growspace_manager", data={}, options={})
     entry.add_to_hass(hass)
 
     coordinator = GrowspaceCoordinator.build(hass, entry, data={})
+    coordinator._data_repository.add_growspace(
+        Growspace(id="test_gs", name="Test Growspace")
+    )
 
     # Mock lifecycle manager
     coordinator._plant_manager.lifecycle_manager = AsyncMock()

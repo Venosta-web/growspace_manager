@@ -198,6 +198,14 @@ async def test_transition_plant_stage_to_clone(
         strain="Test Strain",
     )
     repository_mock.get_plant.return_value = plant
+    growspaces = {
+        "test_growspace": Growspace(id="test_growspace", name="Test"),
+        "dry": Growspace(id="dry", name="Dry"),
+    }
+    repository_mock.has_growspace.side_effect = lambda growspace_id: (
+        growspace_id in growspaces
+    )
+    repository_mock.get_growspace.side_effect = growspaces.get
 
     # Transition to CLONE stage
     await manager.transition_plant_stage(plant_id, PlantStage.CLONE, date(2024, 1, 15))

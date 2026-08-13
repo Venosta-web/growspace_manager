@@ -1,6 +1,6 @@
 """Coverage tests for StorageManager."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -96,6 +96,76 @@ async def test_storage_async_force_save(storage) -> None:
         await storage.async_force_save()
         mock_config_save.assert_awaited_once()
         mock_plants_save.assert_awaited_once()
+
+
+async def test_save_plant_layout_snapshot_uses_staged_documents(storage) -> None:
+    """Atomic layout persistence writes staged values, not live repository state."""
+    config_data = {"growspaces": {"tent": {"layout_revision": 2}}}
+    plants_data = {"plants": {"p1": {"row": 1, "col": 1, "updated_at": "before"}}}
+    storage.config_store.async_save = AsyncMock()
+    storage.plants_store.async_save = AsyncMock()
+
+    with (
+        patch.object(storage, "_get_config_data", return_value=config_data),
+        patch.object(storage, "_get_plants_data", return_value=plants_data),
+    ):
+        await storage.async_save_plant_layout_snapshot(
+            "tent",
+            3,
+            [{"plant_id": "p1", "row": 2, "col": 2}],
+            "after",
+        )
+
+    storage.config_store.async_save.assert_awaited_once_with(
+        {"growspaces": {"tent": {"layout_revision": 3}}}
+    )
+    storage.plants_store.async_save.assert_awaited_once_with(
+        {"plants": {"p1": {"row": 2, "col": 2, "updated_at": "after"}}}
+    )
+
+
+async def test_save_plant_layout_snapshot_restores_both_stores_on_failure(
+    storage,
+) -> None:
+    """A segmented write failure restores the unpublished repository snapshot."""
+    old_config = {"growspaces": {"tent": {"layout_revision": 2}}}
+    old_plants = {"plants": {"p1": {"row": 1, "col": 1, "updated_at": "before"}}}
+    storage.config_store.async_save = AsyncMock()
+    storage.plants_store.async_save = AsyncMock(
+        side_effect=[RuntimeError("disk full"), None]
+    )
+
+    with (
+        patch.object(
+            storage,
+            "_get_config_data",
+            side_effect=[
+                {"growspaces": {"tent": {"layout_revision": 2}}},
+                old_config,
+            ],
+        ),
+        patch.object(
+            storage,
+            "_get_plants_data",
+            side_effect=[
+                {"plants": {"p1": {"row": 1, "col": 1, "updated_at": "before"}}},
+                old_plants,
+            ],
+        ),
+        pytest.raises(RuntimeError, match="disk full"),
+    ):
+        await storage.async_save_plant_layout_snapshot(
+            "tent",
+            3,
+            [{"plant_id": "p1", "row": 2, "col": 2}],
+            "after",
+        )
+
+    assert storage.config_store.async_save.await_args_list == [
+        call({"growspaces": {"tent": {"layout_revision": 3}}}),
+        call(old_config),
+    ]
+    assert storage.plants_store.async_save.await_args_list[-1] == call(old_plants)
 
 
 def test_storage_get_config_data(

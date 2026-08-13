@@ -273,26 +273,23 @@ async def test_remove_plant_not_found(manager, repository_mock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_remove_plant_race_condition(manager, repository_mock) -> None:
+async def test_remove_plant_race_condition(
+    manager: PlantManager, repository_mock: MagicMock
+) -> None:
     """Test remove_plant returns False if plant disappears before lock acquisition."""
     plant_id = "race_plant"
     plant = MagicMock()
 
-    # Initially plant is found on the first check
+    # The plant exists until the shared mutation lock is acquired.
     repository_mock.get_plant.return_value = plant
 
-    # Define a side effect for the lock that simulates plant disappearing
-    async def side_effect_enter():
-        # After lock acquisition, plant is gone and has_plant returns False
-        repository_mock.has_plant.return_value = False
+    async def side_effect_enter() -> None:
+        repository_mock.get_plant.return_value = None
 
     manager._ctx.lock.__aenter__.side_effect = side_effect_enter
-    repository_mock.has_plant.return_value = True
 
     result = await manager.remove_plant(plant_id)
     assert result is False
-
-    # Verify the fallback path was taken (line 229) logic
 
 
 @pytest.mark.asyncio

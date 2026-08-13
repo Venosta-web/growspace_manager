@@ -190,6 +190,17 @@ class PlantFacade:
         """Move a plant to a new grid position."""
         await self._coordinator._plant_manager.move_plant(plant_id, new_row, new_col)
 
+    async def set_plant_layout(
+        self,
+        growspace_id: str,
+        expected_layout_revision: int,
+        placements: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Commit a complete revision-guarded Plant Layout."""
+        return await self._coordinator._plant_manager.set_plant_layout(
+            growspace_id, expected_layout_revision, placements
+        )
+
     async def transition_plant_stage(
         self,
         plant_id: str,

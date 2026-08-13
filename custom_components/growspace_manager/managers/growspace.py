@@ -24,7 +24,10 @@ from custom_components.growspace_manager.events import (
     EVENT_GROWSPACE_UPDATED,
     async_fire_growspace_event,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceNotFoundError,
+    ValidationChangeError,
+)
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -192,6 +195,25 @@ class GrowspaceManager(BaseService):
 
             growspace = self.repository.require_growspace(growspace_id)
             changes: list[str] = []
+            new_rows = int(kwargs.get("rows", growspace.rows))
+            new_plants_per_row = int(
+                kwargs.get("plants_per_row", growspace.plants_per_row)
+            )
+            grid_changed = (
+                new_rows != growspace.rows
+                or new_plants_per_row != growspace.plants_per_row
+            )
+            if grid_changed:
+                stranded = [
+                    plant.plant_id
+                    for plant in self.repository.get_growspace_plants(growspace_id)
+                    if plant.row > new_rows or plant.col > new_plants_per_row
+                ]
+                if stranded:
+                    raise ValidationChangeError(
+                        "Cannot reduce the growspace grid while it would strand "
+                        f"plant {min(stranded)}"
+                    )
 
             # Update structure
             struct_updated = self._update_growspace_structure(
@@ -210,13 +232,8 @@ class GrowspaceManager(BaseService):
                     ", ".join(changes),
                 )
 
-                # Validate plants if grid changed
-                if "rows" in kwargs or "plants_per_row" in kwargs:
-                    await self._validate_plants_after_growspace_resize(
-                        growspace_id,
-                        growspace.rows,
-                        growspace.plants_per_row,
-                    )
+                if grid_changed:
+                    growspace.layout_revision += 1
 
                 await self._save()
                 async_fire_growspace_event(

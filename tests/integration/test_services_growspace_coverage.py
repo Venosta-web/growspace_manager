@@ -6,7 +6,10 @@ from freezegun import freeze_time
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceNotFoundError,
+    ValidationChangeError,
+)
 from custom_components.growspace_manager.managers.growspace import GrowspaceManager
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
@@ -149,10 +152,8 @@ async def test_update_growspace_no_changes(
 
 
 @pytest.mark.asyncio
-async def test_resize_growspace_with_invalid_plants(
-    service, repository_mock, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Test resizing growspace when plants become out of bounds."""
+async def test_resize_growspace_with_invalid_plants(service, repository_mock) -> None:
+    """Test rejecting a resize that would strand plants."""
     gs = Growspace(id="gs1", name="Test", rows=2, plants_per_row=2)
     _setup_growspaces(repository_mock, {"gs1": gs})
 
@@ -160,13 +161,10 @@ async def test_resize_growspace_with_invalid_plants(
     plant = Plant(plant_id="p1", growspace_id="gs1", row=2, col=2)
     _setup_plants(repository_mock, {"p1": plant})
 
-    # Resize to 1x1
-    await service.update_growspace("gs1", rows=1, plants_per_row=1)
+    with pytest.raises(ValidationChangeError, match="strand plant p1"):
+        await service.update_growspace("gs1", rows=1, plants_per_row=1)
 
-    assert gs.rows == 1
-    assert gs.plants_per_row == 1
-    assert "Found 1 plants outside new grid boundaries" in caplog.text
-    assert "Plant p1" in caplog.text
+    assert (gs.rows, gs.plants_per_row) == (2, 2)
 
 
 def test_generate_unique_name(service, repository_mock) -> None:

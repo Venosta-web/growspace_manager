@@ -673,6 +673,7 @@ class Growspace(BaseModel):
     )
     rows: int = 3
     plants_per_row: int = 3
+    layout_revision: int = 0
     notification_target: str | None = None
     created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
     device_id: str | None = None

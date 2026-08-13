@@ -4,6 +4,9 @@
 # ---
 # name: test_growspace_view_model_snapshot.1
   dict({
+    'capabilities': dict({
+      'atomic_plant_layout': True,
+    }),
     'environment': dict({
       'active_events': dict({
       }),
@@ -309,6 +312,7 @@
         'total_liters': 0.0,
       }),
     }),
+    'layout_revision': 0,
     'metrics': dict({
       'air_exchange': None,
       'cure_week': 0,

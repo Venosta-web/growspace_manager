@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.models import GrowspaceEvent
@@ -24,6 +24,10 @@ class ServiceContext:
     lock: asyncio.Lock
     add_event: Callable[[str, GrowspaceEvent], None]
     invalidate_cache: Callable[[str | None], None]
+    save_layout_callback: (
+        Callable[[str, int, list[dict[str, Any]], str], Awaitable[None]] | None
+    ) = None
+    publish_callback: Callable[[], Awaitable[None]] | None = None
 
 
 class BaseService:
@@ -41,6 +45,26 @@ class BaseService:
 
     def _invalidate(self, growspace_id: str | None = None) -> None:
         self._ctx.invalidate_cache(growspace_id)
+
+    async def _save_layout_snapshot(
+        self,
+        growspace_id: str,
+        layout_revision: int,
+        placements: list[dict[str, Any]],
+        updated_at: str,
+    ) -> bool:
+        """Persist a staged layout when the coordinator provides that seam."""
+        if self._ctx.save_layout_callback is None:
+            return False
+        await self._ctx.save_layout_callback(
+            growspace_id, layout_revision, placements, updated_at
+        )
+        return True
+
+    async def _publish(self) -> None:
+        """Publish already-persisted domain state to projections."""
+        if self._ctx.publish_callback is not None:
+            await self._ctx.publish_callback()
 
     @property
     def _lock(self) -> asyncio.Lock:

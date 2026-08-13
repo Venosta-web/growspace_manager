@@ -27,9 +27,11 @@ from custom_components.growspace_manager.events import (
     EVENT_PLANT_UPDATED,
     async_fire_clones_taken_event,
     async_fire_plant_event,
+    async_fire_plant_layout_changed_event,
 )
 from custom_components.growspace_manager.exceptions import (
     GrowspaceNotFoundError,
+    LayoutConflictError,
     PlantNotFoundError,
     ValidationChangeError,
 )
@@ -98,6 +100,13 @@ class PlantManager(BaseService):
         payload = {"event_type": event_type, "data": data}
         self.hass.bus.async_fire("growspace_manager_updated", payload)
 
+    def _advance_layout_revision(self, growspace_id: str) -> None:
+        """Advance a growspace Layout Revision while the manager lock is held."""
+        growspace = self.repository.get_growspace(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+        growspace.layout_revision += 1
+
     # =========================================================================
     # PLANT CRUD OPERATIONS
     # =========================================================================
@@ -119,6 +128,8 @@ class PlantManager(BaseService):
     ) -> Plant:
         """Add a new plant to the system."""
         async with self._lock:
+            if not self.repository.has_growspace(growspace_id):
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
             try:
                 self.validator.validate_position_not_occupied(growspace_id, row, col)
                 final_row, final_col = row, col
@@ -190,6 +201,7 @@ class PlantManager(BaseService):
                 plant.stage = calculate_plant_stage(plant)
 
             self.repository.add_plant(plant)
+            self._advance_layout_revision(growspace_id)
             await self._save()
 
         # Event Firing (outside lock if possible, or inside? Service did it after lifecycle call)
@@ -207,6 +219,18 @@ class PlantManager(BaseService):
             plant = self.repository.get_plant(plant_id)
             if not plant:
                 raise PlantNotFoundError(f"Plant {plant_id} does not exist")
+
+            old_growspace_id = plant.growspace_id
+            new_growspace_id = updates.get("growspace_id", old_growspace_id)
+            growspace_changed = new_growspace_id != old_growspace_id
+            if growspace_changed and not self.repository.has_growspace(
+                new_growspace_id
+            ):
+                raise GrowspaceNotFoundError(f"Growspace {new_growspace_id} not found")
+            position_changed = any(
+                key in updates and updates[key] != getattr(plant, key)
+                for key in ("row", "col")
+            )
 
             for key in DATE_FIELDS:
                 if key in updates:
@@ -226,6 +250,11 @@ class PlantManager(BaseService):
                     setattr(plant, key, value)
 
             plant.updated_at = dt_util.now().date().isoformat()
+            if growspace_changed:
+                self._advance_layout_revision(old_growspace_id)
+                self._advance_layout_revision(new_growspace_id)
+            elif position_changed:
+                self._advance_layout_revision(old_growspace_id)
             await self._save()
 
         self._fire_event(
@@ -241,28 +270,21 @@ class PlantManager(BaseService):
 
     async def remove_plant(self, plant_id: str) -> bool:
         """Remove a plant."""
-        # Cache plant data for event
-        plant = self.repository.get_plant(plant_id)
-        if not plant:
-            return False
-
         async with self._lock:
-            if self.repository.has_plant(plant_id):
-                self.repository.remove_plant(plant_id)
-                self.notification_state.sent.pop(plant_id, None)
-                await self._save()
-                removed = True
-            else:
-                removed = False
+            plant = self.repository.get_plant(plant_id)
+            if not plant:
+                return False
+            self.repository.remove_plant(plant_id)
+            self.notification_state.sent.pop(plant_id, None)
+            self._advance_layout_revision(plant.growspace_id)
+            await self._save()
 
-        if removed:
-            self._fire_event(
-                "plant_removed",
-                {"plant_id": plant.plant_id, "growspace_id": plant.growspace_id},
-            )
-            async_fire_plant_event(self.hass, EVENT_PLANT_REMOVED, plant)
-
-        return removed
+        self._fire_event(
+            "plant_removed",
+            {"plant_id": plant.plant_id, "growspace_id": plant.growspace_id},
+        )
+        async_fire_plant_event(self.hass, EVENT_PLANT_REMOVED, plant)
+        return True
 
     async def move_plant(self, plant_id: str, new_row: int, new_col: int) -> None:
         """Move a plant to a new position."""
@@ -301,6 +323,7 @@ class PlantManager(BaseService):
             plant1.updated_at = now
             plant2.updated_at = now
 
+            self._advance_layout_revision(plant1.growspace_id)
             await self._save()
 
         # Fire events
@@ -317,6 +340,131 @@ class PlantManager(BaseService):
                 {"plant": self.plant_view_builder.build(p2)},
             )
             async_fire_plant_event(self.hass, EVENT_PLANT_SWITCHED, p2)
+
+    async def set_plant_layout(
+        self,
+        growspace_id: str,
+        expected_layout_revision: int,
+        placements: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Validate and commit a complete Plant Layout as one mutation."""
+        async with self._lock:
+            growspace = self.repository.get_growspace(growspace_id)
+            if not growspace:
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            if growspace.layout_revision != expected_layout_revision:
+                raise LayoutConflictError(
+                    "Plant Layout revision conflict: "
+                    f"expected {expected_layout_revision}, "
+                    f"current {growspace.layout_revision}"
+                )
+
+            plants = self.repository.get_growspace_plants(growspace_id)
+            current_ids = {plant.plant_id for plant in plants}
+            placement_by_id: dict[str, tuple[int, int]] = {}
+            occupied: set[tuple[int, int]] = set()
+
+            for placement in placements:
+                plant_id = str(placement["plant_id"])
+                if plant_id in placement_by_id:
+                    raise ValidationChangeError(
+                        f"Plant {plant_id} has more than one placement"
+                    )
+                plant = self.repository.get_plant(plant_id)
+                if not plant:
+                    raise PlantNotFoundError(f"Plant {plant_id} does not exist")
+                if plant.growspace_id != growspace_id:
+                    raise ValidationChangeError(
+                        f"Plant {plant_id} does not belong to growspace {growspace_id}"
+                    )
+
+                row = int(placement["row"])
+                col = int(placement["col"])
+                if (
+                    not 1 <= row <= growspace.rows
+                    or not 1 <= col <= growspace.plants_per_row
+                ):
+                    raise ValidationChangeError(
+                        f"Position ({row}, {col}) is outside growspace {growspace_id}"
+                    )
+                cell = (row, col)
+                if cell in occupied:
+                    raise ValidationChangeError(
+                        f"Position ({row}, {col}) is assigned more than once"
+                    )
+                occupied.add(cell)
+                placement_by_id[plant_id] = cell
+
+            if missing_ids := current_ids - placement_by_id.keys():
+                missing_id = min(missing_ids)
+                raise PlantNotFoundError(
+                    f"Plant {missing_id} is missing from the complete layout"
+                )
+            if extra_ids := placement_by_id.keys() - current_ids:
+                extra_id = min(extra_ids)
+                raise ValidationChangeError(
+                    f"Plant {extra_id} is not part of growspace {growspace_id}"
+                )
+
+            authoritative = [
+                {"plant_id": plant_id, "row": row, "col": col}
+                for plant_id, (row, col) in sorted(placement_by_id.items())
+            ]
+            current = [
+                {"plant_id": plant.plant_id, "row": plant.row, "col": plant.col}
+                for plant in sorted(plants, key=lambda item: item.plant_id)
+            ]
+            if authoritative == current:
+                return {
+                    "growspace_id": growspace_id,
+                    "layout_revision": growspace.layout_revision,
+                    "placements": current,
+                }
+
+            previous_positions = {
+                plant.plant_id: (plant.row, plant.col, plant.updated_at)
+                for plant in plants
+            }
+            previous_revision = growspace.layout_revision
+            updated_at = dt_util.now().isoformat()
+            new_revision = previous_revision + 1
+            snapshot_saved = await self._save_layout_snapshot(
+                growspace_id, new_revision, authoritative, updated_at
+            )
+            if snapshot_saved:
+                for plant in plants:
+                    plant.row, plant.col = placement_by_id[plant.plant_id]
+                    plant.updated_at = updated_at
+                growspace.layout_revision = new_revision
+            else:
+                for plant in plants:
+                    plant.row, plant.col = placement_by_id[plant.plant_id]
+                    plant.updated_at = updated_at
+                growspace.layout_revision = new_revision
+                try:
+                    await self._save()
+                except Exception:
+                    for plant in plants:
+                        plant.row, plant.col, plant.updated_at = previous_positions[
+                            plant.plant_id
+                        ]
+                    growspace.layout_revision = previous_revision
+                    self._invalidate(growspace_id)
+                    raise
+
+            committed_revision = growspace.layout_revision
+            result: dict[str, Any] = {
+                "growspace_id": growspace_id,
+                "layout_revision": committed_revision,
+                "placements": authoritative,
+            }
+            if snapshot_saved:
+                await self._publish()
+
+        async_fire_plant_layout_changed_event(
+            self.hass, growspace_id, committed_revision
+        )
+        return result
 
     def get_plant(self, plant_id: str) -> Plant | None:
         """Retrieve a plant by its ID."""

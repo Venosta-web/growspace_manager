@@ -15,9 +15,11 @@ from custom_components.growspace_manager.exceptions import (
     CoordinatorNotReadyError,
     EntityNotFoundError,
     GrowspaceError,
+    LayoutConflictError,
     RateLimitedError,
 )
 from custom_components.growspace_manager.services.utils import (
+    WS_ERR_CONFLICT,
     WS_ERR_COORDINATOR_NOT_READY,
     WS_ERR_ENTITY_NOT_FOUND,
     WS_ERR_INTERNAL_ERROR,
@@ -61,6 +63,7 @@ WSErrorMap = tuple[
 # by ADR-0027). The card's errors.ts types exactly this set and coerces any
 # other code to internal_error, so ad-hoc codes are self-defeating.
 DEFAULT_WS_ERROR_MAP: WSErrorMap = (
+    (LayoutConflictError, WS_ERR_CONFLICT, False, None),
     (EntityNotFoundError, WS_ERR_ENTITY_NOT_FOUND, False, None),
     (CoordinatorNotReadyError, WS_ERR_COORDINATOR_NOT_READY, False, None),
     (RateLimitedError, WS_ERR_RATE_LIMITED, False, None),

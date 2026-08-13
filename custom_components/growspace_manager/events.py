@@ -22,6 +22,7 @@ EVENT_PLANT_MOVED = f"{DOMAIN}_plant_moved"
 EVENT_PLANT_SWITCHED = f"{DOMAIN}_plant_switched"
 EVENT_PLANT_TRANSITIONED = f"{DOMAIN}_plant_transitioned"
 EVENT_PLANT_HARVESTED = f"{DOMAIN}_plant_harvested"
+EVENT_PLANT_LAYOUT_CHANGED = f"{DOMAIN}_plant_layout_changed"
 EVENT_CLONES_TAKEN = f"{DOMAIN}_clones_taken"
 
 
@@ -54,6 +55,24 @@ class ClonesTakenEventPayload(TypedDict):
     num_clones: int
     growspace_id: str
     device_id: str | None
+
+
+class PlantLayoutChangedEventPayload(TypedDict):
+    """Payload for a committed Plant Layout."""
+
+    growspace_id: str
+    layout_revision: int
+
+
+def async_fire_plant_layout_changed_event(
+    hass: HomeAssistant, growspace_id: str, layout_revision: int
+) -> None:
+    """Fire one growspace-level event for an atomic Plant Layout commit."""
+    data: PlantLayoutChangedEventPayload = {
+        "growspace_id": growspace_id,
+        "layout_revision": layout_revision,
+    }
+    hass.bus.async_fire(EVENT_PLANT_LAYOUT_CHANGED, data)
 
 
 def async_fire_growspace_event(

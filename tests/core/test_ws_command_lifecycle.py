@@ -17,6 +17,7 @@ import voluptuous as vol
 from custom_components.growspace_manager.exceptions import (
     CoordinatorNotReadyError,
     GrowspaceError,
+    LayoutConflictError,
     PlantNotFoundError,
     RateLimitedError,
 )
@@ -113,6 +114,7 @@ async def test_resolve_modes(
     ("raised", "expected_code"),
     [
         (PlantNotFoundError("Plant 'p9' not found"), "entity_not_found"),
+        (LayoutConflictError("stale layout"), "conflict"),
         (CoordinatorNotReadyError("no instance loaded"), "coordinator_not_ready"),
         (RateLimitedError("rate_limited"), "rate_limited"),
         (ServiceValidationError("bad input"), "validation_failed"),
@@ -196,10 +198,11 @@ async def test_custom_error_map_overrides_default(hass: HomeAssistant) -> None:
 
 
 def test_default_map_covers_the_full_typed_vocabulary() -> None:
-    """The default table emits exactly the five codes the card types."""
+    """The default table emits exactly the shared codes the card types."""
     codes = {row[1] for row in DEFAULT_WS_ERROR_MAP}
     assert codes == {
         "entity_not_found",
+        "conflict",
         "coordinator_not_ready",
         "rate_limited",
         "validation_failed",
