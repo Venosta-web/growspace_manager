@@ -8,6 +8,8 @@ Changing grid dimensions also advances the revision. A dimension reduction that 
 
 The WebSocket command is `growspace_manager/set_plant_layout`. It accepts `growspace_id`, `expected_layout_revision`, and `placements: [{ plant_id, row, col }]` using the existing backend coordinate convention. The mapping must contain exactly one placement for every current plant and no others. Success returns the authoritative `growspace_id`, `layout_revision`, and `placements`; a no-op returns the current revision and mapping without an event or revision increment. Each serialized growspace advertises `layout_revision` and `capabilities.atomic_plant_layout` so the card can capability-gate Arrange.
 
+The special-growspace repair services relocate plants through the same plant-manager seam rather than writing positions directly. A repair takes the shared plant lock, moves its batch of plants as one mutation, and advances the Layout Revision of every source growspace and the destination exactly once, emitting one [[Plant Layout Changed]] event per affected growspace instead of one per plant. Because a reset removes and recreates its canonical growspace, that growspace resumes from a revision past the one it discarded rather than restarting at `0`, so a draft captured before the repair still conflicts.
+
 ## Considered Options
 
 - Replaying individual move and swap calls was rejected because partial failure makes the original layout impossible for the card to restore reliably.

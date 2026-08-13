@@ -150,6 +150,14 @@ class GrowspaceFacade:
             *args, **kwargs
         )
 
+    async def carry_forward_layout_revision(
+        self, growspace_id: str, previous_revision: int
+    ) -> int:
+        """Advance a Layout Revision past the value a repair discarded."""
+        return await self._coordinator._growspace_manager.carry_forward_layout_revision(
+            growspace_id, previous_revision
+        )
+
     # -------------------------------------------------------------------------
     # Subareas
     # -------------------------------------------------------------------------
