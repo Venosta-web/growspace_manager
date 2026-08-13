@@ -129,6 +129,7 @@ class PlantViewModelBuilder:
         return {
             "plant_id": plant.plant_id,
             "growspace_id": plant.growspace_id,
+            "updated_at": plant.updated_at,
             "entity_id": entity_id,
             "strain": plant.strain,
             "phenotype": plant.phenotype,
@@ -166,6 +167,7 @@ class PlantViewModelBuilder:
             "stage": calculate_plant_stage(plant),
             "growspace_id": plant.growspace_id,
             "plant_id": plant.plant_id,
+            "updated_at": plant.updated_at,
             "strain": plant.strain,
             "phenotype": plant.phenotype,
             "row": plant.row,

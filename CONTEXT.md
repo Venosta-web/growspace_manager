@@ -11,6 +11,14 @@ The single designated image from a phenotype's Strain Image Gallery that is used
 **Plant**
 An individual cannabis plant tracked from seedling through cure. The atomic unit of all lifecycle, drying, and curing tracking. A "harvest batch" is not a separate concept — each plant is weighed and tracked individually.
 
+**Plant Updated Date**
+The calendar day on which a Plant was most recently mutated. Stored and emitted
+through `updated_at` as an ISO 8601 date-only string (`YYYY-MM-DD`), never as a
+datetime. Every write site routes through `plant_updated_date()` in
+`domain/date_logic.py`, the single owner of this representation. Distinct from
+the [[Lifecycle Timestamp]], which records the full timezone-aware moment a Plant
+entered a lifecycle stage.
+
 **Plant Layout**
 The complete mapping of every Plant in one growspace to a unique grid cell within that growspace's current dimensions. A layout and any dimension change that affects its valid bounds are committed as one unit rather than as independently observable plant moves.
 

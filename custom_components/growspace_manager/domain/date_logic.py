@@ -62,6 +62,16 @@ def to_lifecycle_timestamp(supplied: DateInput = None) -> str:
     return parsed.isoformat()
 
 
+def plant_updated_date() -> str:
+    """Return the date-only stamp for a Plant's most recent mutation.
+
+    This is the single owner of the ``Plant.updated_at`` representation (see
+    CONTEXT.md "Plant Updated Date"). Unlike a Lifecycle Timestamp, this field
+    records a calendar day and is always written as ``YYYY-MM-DD``.
+    """
+    return now().date().isoformat()
+
+
 def calculate_days_since(start_date: DateInput, end_date: DateInput = None) -> int:
     """Calculate the number of days since a start date."""
     if not start_date:
