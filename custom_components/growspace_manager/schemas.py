@@ -528,14 +528,17 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_EXHAUST_ENTITY): str,
         vol.Optional(CONF_HUMIDIFIER_ENTITY): str,
         vol.Optional(CONF_SOIL_MOISTURE_SENSOR): str,
-        vol.Optional(CONF_CONTROL_DEHUMIDIFIER, default=False): bool,
+        # No defaults on any optional key: the patch seam (ADR-0026) distinguishes
+        # an omitted field from an explicit set, so a schema-injected default would
+        # turn every sparse caller into a silent write.
+        vol.Optional(CONF_CONTROL_DEHUMIDIFIER): bool,
         vol.Optional(CONF_DEHUMIDIFIER_THRESHOLDS): dict,
-        vol.Optional(CONF_CONTROL_HUMIDIFIER, default=False): bool,
+        vol.Optional(CONF_CONTROL_HUMIDIFIER): bool,
         vol.Optional(CONF_HUMIDIFIER_THRESHOLDS): dict,
-        vol.Optional(CONF_STRESS_THRESHOLD, default=0.70): vol.All(
+        vol.Optional(CONF_STRESS_THRESHOLD): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),
-        vol.Optional(CONF_MOLD_THRESHOLD, default=0.75): vol.All(
+        vol.Optional(CONF_MOLD_THRESHOLD): vol.All(
             vol.Coerce(float), vol.Range(min=0.0, max=1.0)
         ),
         # Multi-device support — basic sensors
