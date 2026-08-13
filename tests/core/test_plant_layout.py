@@ -102,6 +102,8 @@ async def test_set_plant_layout_commits_once_and_emits_one_event(
     assert result == {
         "growspace_id": "tent",
         "layout_revision": 1,
+        "rows": 2,
+        "plants_per_row": 2,
         "placements": [
             {"plant_id": "p1", "row": 1, "col": 2},
             {"plant_id": "p2", "row": 1, "col": 1},
@@ -180,13 +182,95 @@ async def test_set_plant_layout_rejects_stale_revision(
                 {"plant_id": "p1", "row": 2, "col": 1},
                 {"plant_id": "p2", "row": 2, "col": 2},
             ],
+            rows=3,
         )
 
     assert (repository.require_plant("p1").row, repository.require_plant("p1").col) == (
         1,
         1,
     )
+    assert repository.require_growspace("tent").rows == 2
     save_callback.assert_not_awaited()
+
+
+async def test_resize_with_layout_commits_dimensions_and_positions_once(
+    hass: HomeAssistant,
+    repository: GrowspaceRepository,
+    manager: PlantManager,
+    save_callback: AsyncMock,
+) -> None:
+    """A valid shrinking layout publishes one indivisible revision."""
+    repository.require_plant("p2").row = 2
+    events = async_capture_events(hass, EVENT_PLANT_LAYOUT_CHANGED)
+
+    result = await manager.set_plant_layout(
+        "tent",
+        0,
+        [
+            {"plant_id": "p1", "row": 1, "col": 1},
+            {"plant_id": "p2", "row": 1, "col": 2},
+        ],
+        rows=1,
+        plants_per_row=2,
+    )
+
+    assert result["layout_revision"] == 1
+    assert result["rows"] == 1
+    assert result["plants_per_row"] == 2
+    growspace = repository.require_growspace("tent")
+    assert (growspace.rows, growspace.plants_per_row) == (1, 2)
+    assert repository.require_plant("p2").row == 1
+    save_callback.assert_awaited_once_with()
+    assert [event.data for event in events] == [
+        {"growspace_id": "tent", "layout_revision": 1}
+    ]
+
+
+async def test_resize_with_layout_rejects_layout_outside_target_bounds(
+    repository: GrowspaceRepository,
+    manager: PlantManager,
+    save_callback: AsyncMock,
+) -> None:
+    """Target dimensions validate the staged layout before any mutation."""
+    with pytest.raises(ValidationChangeError, match="outside growspace"):
+        await manager.set_plant_layout(
+            "tent",
+            0,
+            [
+                {"plant_id": "p1", "row": 1, "col": 1},
+                {"plant_id": "p2", "row": 2, "col": 2},
+            ],
+            rows=1,
+        )
+
+    growspace = repository.require_growspace("tent")
+    assert (growspace.rows, growspace.plants_per_row) == (2, 2)
+    assert growspace.layout_revision == 0
+    assert repository.require_plant("p2").row == 1
+    save_callback.assert_not_awaited()
+
+
+async def test_resize_with_layout_repairs_existing_out_of_bounds_plant(
+    repository: GrowspaceRepository,
+    manager: PlantManager,
+) -> None:
+    """The atomic path can recover a historically invalid stored layout."""
+    repository.require_plant("p2").row = 3
+
+    await manager.set_plant_layout(
+        "tent",
+        0,
+        [
+            {"plant_id": "p1", "row": 1, "col": 1},
+            {"plant_id": "p2", "row": 1, "col": 2},
+        ],
+        rows=1,
+    )
+
+    growspace = repository.require_growspace("tent")
+    assert (growspace.rows, growspace.plants_per_row) == (1, 2)
+    assert repository.require_plant("p2").row == 1
+    assert growspace.layout_revision == 1
 
 
 @pytest.mark.parametrize(
@@ -264,6 +348,7 @@ async def test_set_plant_layout_rolls_back_persistence_failure(
     """A failed save restores positions, timestamps, and revision without an event."""
     events = async_capture_events(hass, EVENT_PLANT_LAYOUT_CHANGED)
     previous_updated_at = repository.require_plant("p1").updated_at
+    repository.require_plant("p2").row = 2
     save_callback.side_effect = RuntimeError("disk full")
 
     with pytest.raises(RuntimeError, match="disk full"):
@@ -271,9 +356,10 @@ async def test_set_plant_layout_rolls_back_persistence_failure(
             "tent",
             0,
             [
-                {"plant_id": "p1", "row": 2, "col": 1},
-                {"plant_id": "p2", "row": 2, "col": 2},
+                {"plant_id": "p1", "row": 1, "col": 1},
+                {"plant_id": "p2", "row": 1, "col": 2},
             ],
+            rows=1,
         )
 
     assert (repository.require_plant("p1").row, repository.require_plant("p1").col) == (
@@ -281,7 +367,10 @@ async def test_set_plant_layout_rolls_back_persistence_failure(
         1,
     )
     assert repository.require_plant("p1").updated_at == previous_updated_at
-    assert repository.require_growspace("tent").layout_revision == 0
+    assert repository.require_plant("p2").row == 2
+    growspace = repository.require_growspace("tent")
+    assert (growspace.rows, growspace.plants_per_row) == (2, 2)
+    assert growspace.layout_revision == 0
     assert events == []
 
 
@@ -301,9 +390,12 @@ async def test_set_plant_layout_persists_staged_state_before_publish(
         revision: int,
         placements: list[dict[str, Any]],
         updated_at: str,
+        rows: int,
+        plants_per_row: int,
     ) -> None:
         assert growspace_id == "tent"
         assert updated_at
+        assert (rows, plants_per_row) == (2, 2)
         assert repository.require_growspace("tent").layout_revision == 0
         assert repository.require_plant("p1").col == 1
         persisted.append((revision, placements))
@@ -346,6 +438,7 @@ async def test_staged_persistence_failure_never_publishes_candidate_state(
     service_context: ServiceContext,
 ) -> None:
     """The production staged seam fails before mutating the live repository."""
+    repository.require_plant("p2").row = 2
     service_context.save_layout_callback = AsyncMock(
         side_effect=RuntimeError("store unavailable")
     )
@@ -357,16 +450,20 @@ async def test_staged_persistence_failure_never_publishes_candidate_state(
             "tent",
             0,
             [
-                {"plant_id": "p1", "row": 2, "col": 1},
-                {"plant_id": "p2", "row": 2, "col": 2},
+                {"plant_id": "p1", "row": 1, "col": 1},
+                {"plant_id": "p2", "row": 1, "col": 2},
             ],
+            rows=1,
         )
 
-    assert repository.require_growspace("tent").layout_revision == 0
+    growspace = repository.require_growspace("tent")
+    assert (growspace.rows, growspace.plants_per_row) == (2, 2)
+    assert growspace.layout_revision == 0
     assert (repository.require_plant("p1").row, repository.require_plant("p1").col) == (
         1,
         1,
     )
+    assert repository.require_plant("p2").row == 2
     publish_callback.assert_not_awaited()
 
 

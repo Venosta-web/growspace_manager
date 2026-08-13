@@ -715,18 +715,6 @@ class GrowspaceFacade:
                     growspace_id, new_row, new_col, plant_id
                 )
 
-    def validate_plants_after_growspace_resize(
-        self, growspace_id: str, new_rows: int, new_plants_per_row: int
-    ) -> None:
-        """Trigger background validation of plants after resizing a growspace."""
-        self._coordinator.config_entry.async_create_background_task(
-            self._coordinator.hass,
-            self._coordinator._growspace_manager._validate_plants_after_growspace_resize(
-                growspace_id, new_rows, new_plants_per_row
-            ),
-            f"validate_plants_{growspace_id}",
-        )
-
     # -------------------------------------------------------------------------
     # Subsystem coordinator access
     # -------------------------------------------------------------------------

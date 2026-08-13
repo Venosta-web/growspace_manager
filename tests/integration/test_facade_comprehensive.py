@@ -1493,21 +1493,6 @@ def test_handle_position_update_force_skips_occupancy(mock_coordinator) -> None:
 
 
 # ---------------------------------------------------------------------------
-# validate_plants_after_growspace_resize
-# ---------------------------------------------------------------------------
-
-
-def test_validate_plants_after_growspace_resize(mock_coordinator) -> None:
-    facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.config_entry = MagicMock()
-    mock_coordinator._growspace_manager._validate_plants_after_growspace_resize = (
-        MagicMock(return_value=MagicMock())
-    )
-    facade.growspaces.validate_plants_after_growspace_resize("gs1", 5, 5)
-    mock_coordinator.config_entry.async_create_background_task.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
 # Remaining gap coverage
 # ---------------------------------------------------------------------------
 

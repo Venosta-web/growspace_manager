@@ -195,10 +195,17 @@ class PlantFacade:
         growspace_id: str,
         expected_layout_revision: int,
         placements: list[dict[str, Any]],
+        *,
+        rows: int | None = None,
+        plants_per_row: int | None = None,
     ) -> dict[str, Any]:
         """Commit a complete revision-guarded Plant Layout."""
         return await self._coordinator._plant_manager.set_plant_layout(
-            growspace_id, expected_layout_revision, placements
+            growspace_id,
+            expected_layout_revision,
+            placements,
+            rows=rows,
+            plants_per_row=plants_per_row,
         )
 
     async def relocate_to_growspace(

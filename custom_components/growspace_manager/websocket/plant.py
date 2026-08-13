@@ -25,9 +25,11 @@ from custom_components.growspace_manager.const import (
     ATTR_PLANT1_ID,
     ATTR_PLANT2_ID,
     ATTR_PLANT_ID,
+    ATTR_PLANTS_PER_ROW,
     ATTR_PRESET_ID,
     ATTR_RESIN,
     ATTR_ROW,
+    ATTR_ROWS,
     ATTR_SEED_BATCH_ID,
     ATTR_START_NUMBER,
     ATTR_STRAIN,
@@ -182,6 +184,8 @@ SCHEMA_WS_SET_PLANT_LAYOUT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Required("type"): WS_TYPE_SET_PLANT_LAYOUT,
         vol.Required(ATTR_GROWSPACE_ID): str,
         vol.Required("expected_layout_revision"): vol.All(int, vol.Range(min=0)),
+        vol.Optional(ATTR_ROWS): vol.All(int, vol.Range(min=1)),
+        vol.Optional(ATTR_PLANTS_PER_ROW): vol.All(int, vol.Range(min=1)),
         vol.Required("placements"): [
             {
                 vol.Required(ATTR_PLANT_ID): str,
@@ -564,6 +568,8 @@ async def websocket_set_plant_layout(
         msg[ATTR_GROWSPACE_ID],
         msg["expected_layout_revision"],
         msg["placements"],
+        rows=msg.get(ATTR_ROWS),
+        plants_per_row=msg.get(ATTR_PLANTS_PER_ROW),
     )
 
 

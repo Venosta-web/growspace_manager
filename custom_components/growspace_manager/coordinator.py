@@ -132,7 +132,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         return ServiceCoordinatorLocator.get_any(hass)
 
-
     def __init__(
         self,
         hass: HomeAssistant,
@@ -342,10 +341,17 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         layout_revision: int,
         placements: list[dict[str, Any]],
         updated_at: str,
+        rows: int,
+        plants_per_row: int,
     ) -> None:
         """Persist a staged layout while the live repository remains unchanged."""
         await self.storage_manager.async_save_plant_layout_snapshot(
-            growspace_id, layout_revision, placements, updated_at
+            growspace_id,
+            layout_revision,
+            placements,
+            updated_at,
+            rows,
+            plants_per_row,
         )
 
     def _load_initial_data(self, data: dict[str, Any]) -> None:
@@ -363,7 +369,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif isinstance(gdata, dict):
                 try:
                     growspaces[gid] = Growspace.from_dict(gdata)
-                except (ValueError, KeyError, TypeError, Exception):
+                except ValueError, KeyError, TypeError, Exception:
                     # Catch mashumaro or other deserialization errors as "structure mismatch"
                     # We use Exception here to be safe but log specifically
                     _LOGGER.exception(
@@ -384,7 +390,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             elif isinstance(pdata, dict):
                 try:
                     plants[pid] = Plant.from_dict(pdata)
-                except (ValueError, KeyError, TypeError, Exception):
+                except ValueError, KeyError, TypeError, Exception:
                     _LOGGER.exception(
                         "Failed to load plant %s due to data structure mismatch",
                         pid,
@@ -437,7 +443,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if gs_id in self._subsystem_manager.irrigation_coordinators:
                 self.config_entry.async_create_background_task(
                     self.hass,
-                    self._subsystem_manager.irrigation_coordinators[gs_id].async_request_refresh(),
+                    self._subsystem_manager.irrigation_coordinators[
+                        gs_id
+                    ].async_request_refresh(),
                     f"irrigation_refresh_{gs_id}",
                 )
 
