@@ -71,6 +71,7 @@ def mock_coordinator():
     coordinator._plant_manager.transition_plant = AsyncMock()
     coordinator._plant_manager.remove_plant = AsyncMock()
     coordinator._plant_manager.harvest = AsyncMock()
+    coordinator._plant_manager.relocate_plants_to_growspace = AsyncMock(return_value=[])
 
     # 3. Mock growspace_manager
     coordinator._growspace_manager = MagicMock()
@@ -92,6 +93,9 @@ def mock_coordinator():
     )
     coordinator._growspace_manager.get_sorted_growspace_options = MagicMock(
         return_value=[]
+    )
+    coordinator._growspace_manager.carry_forward_layout_revision = AsyncMock(
+        return_value=1
     )
 
     # 4. Core coordinator-level async methods

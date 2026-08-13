@@ -23,6 +23,7 @@ from custom_components.growspace_manager.events import (
     EVENT_GROWSPACE_REMOVED,
     EVENT_GROWSPACE_UPDATED,
     async_fire_growspace_event,
+    async_fire_plant_layout_changed_event,
 )
 from custom_components.growspace_manager.exceptions import (
     GrowspaceNotFoundError,
@@ -398,6 +399,29 @@ class GrowspaceManager(BaseService):
     def get_sorted_growspace_options(self) -> list[tuple[str, str]]:
         """Return a sorted list of growspaces for dropdown selection."""
         return self.repository.get_sorted_growspace_options()
+
+    async def carry_forward_layout_revision(
+        self, growspace_id: str, previous_revision: int
+    ) -> int:
+        """Advance a Layout Revision past the value a repair discarded.
+
+        A special-growspace reset removes and recreates the canonical
+        growspace, which would otherwise restart its revision at `0` and let a
+        draft captured before the reset apply against the repaired layout.
+        """
+        async with self._lock:
+            growspace = self.repository.get_growspace(growspace_id)
+            if not growspace:
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            growspace.layout_revision = (
+                max(growspace.layout_revision, previous_revision) + 1
+            )
+            revision = growspace.layout_revision
+            self._invalidate(growspace_id)
+            await self._save()
+
+        async_fire_plant_layout_changed_event(self.hass, growspace_id, revision)
+        return revision
 
     def ensure_special_growspace(
         self,

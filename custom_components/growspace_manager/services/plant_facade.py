@@ -201,6 +201,14 @@ class PlantFacade:
             growspace_id, expected_layout_revision, placements
         )
 
+    async def relocate_to_growspace(
+        self, target_growspace_id: str, plant_ids: list[str]
+    ) -> list[str]:
+        """Relocate plants into a growspace as one layout mutation."""
+        return await self._coordinator._plant_manager.relocate_plants_to_growspace(
+            target_growspace_id, plant_ids
+        )
+
     async def transition_plant_stage(
         self,
         plant_id: str,

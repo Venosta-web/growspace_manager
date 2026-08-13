@@ -86,44 +86,63 @@ async def _restore_plants_to_canonical_growspace(
     plants_data_to_restore: list[dict[str, Any]],
     log_prefix: str,
 ) -> None:
-    restored_count = 0
-    for plant_data in plants_data_to_restore:
-        plant_id = plant_data["plant_id"]
-        if plant_id in coordinator.plants:
-            try:
-                new_row, new_col = coordinator.validator.find_first_available_position(
-                    canonical_id
-                )
-                if new_row is None or new_col is None:
-                    _LOGGER.warning(
-                        "Cannot restore %s: no space in %s", plant_id, canonical_id
-                    )
-                    continue
+    restored = await coordinator.services.plants.relocate_to_growspace(
+        canonical_id, [plant_data["plant_id"] for plant_data in plants_data_to_restore]
+    )
+    _LOGGER.debug("Restored %d plants to canonical %s", len(restored), log_prefix)
 
-                coordinator.plants[plant_id].growspace_id = canonical_id
-                coordinator.plants[plant_id].row = new_row
-                coordinator.plants[plant_id].col = new_col
-                restored_count += 1
-                _LOGGER.debug(
-                    "Restored %s to %s at (%d,%d) from %s",
-                    plant_id,
-                    canonical_id,
-                    new_row,
-                    new_col,
-                    plant_data["old_pos"],
-                )
-            except ValueError as e:
-                _LOGGER.warning(
-                    "Failed to assign position to preserved plant %s: %s",
-                    plant_id,
-                    e,
-                )
-        else:
-            _LOGGER.warning(
-                "Plant %s to restore not found in coordinator.plants",
-                plant_id,
+
+async def _reset_special_growspace(
+    coordinator: GrowspaceCoordinator,
+    canonical_id: str,
+    preserve_plants: bool,
+) -> None:
+    """Reset one family of special growspaces onto its canonical growspace."""
+    ids_to_remove = [
+        gs_id
+        for gs_id in list(coordinator.growspaces.keys())
+        if gs_id == canonical_id or gs_id.startswith(f"{canonical_id}_overview")
+    ]
+
+    plants_data_to_restore: list[dict[str, Any]] = []
+    if preserve_plants:
+        for gs_id in ids_to_remove:
+            plants_data_to_restore.extend(
+                {
+                    "plant_id": plant.plant_id,
+                    "strain": plant.strain,
+                    "old_pos": f"({plant.row},{plant.col})",
+                }
+                for plant in coordinator.services.growspaces.get_growspace_plants(gs_id)
+                if plant.plant_id in coordinator.plants
             )
-    _LOGGER.debug("Restored %d plants to canonical %s", restored_count, log_prefix)
+
+    # The canonical growspace is recreated below, so its revision would restart
+    # at 0 and let a draft captured before the reset apply afterwards.
+    previous_revision = max(
+        (
+            coordinator.growspaces[gs_id].layout_revision
+            for gs_id in ids_to_remove
+            if gs_id in coordinator.growspaces
+        ),
+        default=0,
+    )
+
+    for gs_id in ids_to_remove:
+        coordinator.growspaces.pop(gs_id, None)
+        _LOGGER.debug("Removed %s growspace %s", canonical_id, gs_id)
+
+    canonical = coordinator.services.growspaces.ensure_special_growspace(
+        canonical_id, canonical_id
+    )
+    await coordinator.services.growspaces.carry_forward_layout_revision(
+        canonical, previous_revision
+    )
+
+    if preserve_plants and plants_data_to_restore:
+        await _restore_plants_to_canonical_growspace(
+            coordinator, canonical, plants_data_to_restore, canonical_id
+        )
 
 
 async def _handle_reset_dry_growspace(
@@ -131,37 +150,7 @@ async def _handle_reset_dry_growspace(
     coordinator: GrowspaceCoordinator,
     preserve_plants: bool,
 ) -> None:
-    dry_ids_to_remove = [
-        gs_id
-        for gs_id in list(coordinator.growspaces.keys())
-        if gs_id == CANONICAL_ID_DRY or gs_id.startswith("dry_overview")
-    ]
-
-    dry_plants_data_to_restore: list[dict[str, Any]] = []
-    if preserve_plants:
-        for dry_id in dry_ids_to_remove:
-            dry_plants_data_to_restore.extend(
-                {
-                    "plant_id": plant.plant_id,
-                    "strain": plant.strain,
-                    "old_pos": f"({plant.row},{plant.col})",
-                }
-                for plant in coordinator.services.growspaces.get_growspace_plants(dry_id)
-                if plant.plant_id in coordinator.plants
-            )
-
-    for dry_id in dry_ids_to_remove:
-        coordinator.growspaces.pop(dry_id, None)
-        _LOGGER.debug("Removed dry growspace %s", dry_id)
-
-    canonical_dry = coordinator.services.growspaces.ensure_special_growspace(
-        CANONICAL_ID_DRY, "dry"
-    )
-
-    if preserve_plants and dry_plants_data_to_restore:
-        await _restore_plants_to_canonical_growspace(
-            coordinator, canonical_dry, dry_plants_data_to_restore, CANONICAL_ID_DRY
-        )
+    await _reset_special_growspace(coordinator, CANONICAL_ID_DRY, preserve_plants)
 
 
 async def _handle_reset_cure_growspace(
@@ -169,37 +158,7 @@ async def _handle_reset_cure_growspace(
     coordinator: GrowspaceCoordinator,
     preserve_plants: bool,
 ) -> None:
-    cure_ids_to_remove = [
-        gs_id
-        for gs_id in list(coordinator.growspaces.keys())
-        if gs_id == CANONICAL_ID_CURE or gs_id.startswith("cure_overview")
-    ]
-
-    cure_plants_data_to_restore: list[dict[str, Any]] = []
-    if preserve_plants:
-        for cure_id in cure_ids_to_remove:
-            cure_plants_data_to_restore.extend(
-                {
-                    "plant_id": plant.plant_id,
-                    "strain": plant.strain,
-                    "old_pos": f"({plant.row},{plant.col})",
-                }
-                for plant in coordinator.services.growspaces.get_growspace_plants(cure_id)
-                if plant.plant_id in coordinator.plants
-            )
-
-    for cure_id in cure_ids_to_remove:
-        coordinator.growspaces.pop(cure_id, None)
-        _LOGGER.debug("Removed cure growspace %s", cure_id)
-
-    canonical_cure = coordinator.services.growspaces.ensure_special_growspace(
-        CANONICAL_ID_CURE, "cure"
-    )
-
-    if preserve_plants and cure_plants_data_to_restore:
-        await _restore_plants_to_canonical_growspace(
-            coordinator, canonical_cure, cure_plants_data_to_restore, CANONICAL_ID_CURE
-        )
+    await _reset_special_growspace(coordinator, CANONICAL_ID_CURE, preserve_plants)
 
 
 async def handle_debug_consolidate_duplicate_special(
@@ -321,44 +280,27 @@ async def _consolidate_plants_to_canonical_growspace(
     log_prefix: str,
 ) -> None:
     """Move plants from duplicate growspaces to the canonical one."""
-    for dup_id in duplicate_ids:
-        plants_to_move = coordinator.services.growspaces.get_growspace_plants(dup_id)
-        for plant in plants_to_move:
-            plant_id = plant.plant_id
-            if plant_id in coordinator.plants:
-                try:
-                    new_row, new_col = (
-                        coordinator.validator.find_first_available_position(
-                            canonical_id
-                        )
-                    )
-                    if new_row is None or new_col is None:
-                        _LOGGER.warning(
-                            "Cannot move plant %s to %s: No space available",
-                            plant_id,
-                            canonical_id,
-                        )
-                        continue
+    plant_ids_to_move = [
+        plant.plant_id
+        for dup_id in duplicate_ids
+        for plant in coordinator.services.growspaces.get_growspace_plants(dup_id)
+        if plant.plant_id in coordinator.plants
+    ]
 
-                    plant.growspace_id = canonical_id
-                    plant.row = new_row
-                    plant.col = new_col
-                    _LOGGER.debug(
-                        "Moved plant %s from duplicate %s %s to %s at (%d,%d)",
-                        plant_id,
-                        log_prefix,
-                        dup_id,
-                        canonical_id,
-                        new_row,
-                        new_col,
-                    )
-                except ValueError as e:
-                    _LOGGER.warning(
-                        "Failed to find position for plant %s from duplicate %s: %s",
-                        plant_id,
-                        dup_id,
-                        e,
-                    )
+    # Relocate before the duplicates are removed, so every source growspace is
+    # still present to have its Layout Revision advanced.
+    if plant_ids_to_move:
+        moved = await coordinator.services.plants.relocate_to_growspace(
+            canonical_id, plant_ids_to_move
+        )
+        _LOGGER.debug(
+            "Moved %d plants from duplicate %s growspaces to %s",
+            len(moved),
+            log_prefix,
+            canonical_id,
+        )
+
+    for dup_id in duplicate_ids:
         coordinator.growspaces.pop(dup_id, None)
         _LOGGER.debug("Removed duplicate %s growspace %s", log_prefix, dup_id)
 

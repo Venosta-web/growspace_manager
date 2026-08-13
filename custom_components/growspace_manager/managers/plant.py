@@ -466,6 +466,109 @@ class PlantManager(BaseService):
         )
         return result
 
+    async def relocate_plants_to_growspace(
+        self, target_growspace_id: str, plant_ids: list[str]
+    ) -> list[str]:
+        """Relocate plants into a growspace as one layout mutation.
+
+        Used by the special-growspace repairs, which move a batch of plants
+        into a canonical growspace. Every source growspace and the destination
+        advance their Layout Revision exactly once, so a draft captured before
+        the repair conflicts instead of overwriting the repaired positions.
+        Plants that no longer exist, or that do not fit, are skipped rather
+        than failing the repair.
+        """
+        affected: dict[str, int] = {}
+        async with self._lock:
+            target = self.repository.get_growspace(target_growspace_id)
+            if not target:
+                raise GrowspaceNotFoundError(
+                    f"Growspace {target_growspace_id} not found"
+                )
+
+            # Tracked across the batch rather than re-derived per plant, so a
+            # full destination skips the surplus instead of stacking plants on
+            # the last cell.
+            occupied = {
+                (plant.row, plant.col)
+                for plant in self.repository.get_growspace_plants(target_growspace_id)
+            }
+            free_cells = (
+                (row, col)
+                for row in range(1, int(target.rows) + 1)
+                for col in range(1, int(target.plants_per_row) + 1)
+            )
+
+            relocated: list[str] = []
+            updated_at = dt_util.now().isoformat()
+            for plant_id in plant_ids:
+                plant = self.repository.get_plant(plant_id)
+                if not plant:
+                    _LOGGER.warning(
+                        "Plant %s to relocate not found in the plant store", plant_id
+                    )
+                    continue
+
+                in_bounds = 1 <= plant.row <= int(
+                    target.rows
+                ) and 1 <= plant.col <= int(target.plants_per_row)
+                if plant.growspace_id == target_growspace_id:
+                    # Already placed in the destination; leaving a valid
+                    # position alone keeps the repair from consuming a second
+                    # cell per plant.
+                    if in_bounds:
+                        continue
+                    occupied.discard((plant.row, plant.col))
+
+                cell = next((cell for cell in free_cells if cell not in occupied), None)
+                if cell is None:
+                    _LOGGER.warning(
+                        "Cannot relocate plant %s to %s: no space available",
+                        plant_id,
+                        target_growspace_id,
+                    )
+                    continue
+                new_row, new_col = cell
+                occupied.add(cell)
+
+                source_growspace_id = plant.growspace_id
+                plant.growspace_id = target_growspace_id
+                plant.row = new_row
+                plant.col = new_col
+                plant.updated_at = updated_at
+                relocated.append(plant_id)
+                _LOGGER.debug(
+                    "Relocated plant %s from %s to %s at (%d,%d)",
+                    plant_id,
+                    source_growspace_id,
+                    target_growspace_id,
+                    new_row,
+                    new_col,
+                )
+
+                if source_growspace_id != target_growspace_id:
+                    affected.setdefault(source_growspace_id, 0)
+                affected.setdefault(target_growspace_id, 0)
+
+            for growspace_id in affected:
+                # A source growspace may already be gone when a repair relocates
+                # plants out of a growspace it has removed from the store.
+                if growspace := self.repository.get_growspace(growspace_id):
+                    growspace.layout_revision += 1
+                    affected[growspace_id] = growspace.layout_revision
+                self._invalidate(growspace_id)
+
+            if relocated:
+                await self._save()
+
+        for growspace_id, layout_revision in affected.items():
+            if layout_revision:
+                async_fire_plant_layout_changed_event(
+                    self.hass, growspace_id, layout_revision
+                )
+
+        return relocated
+
     def get_plant(self, plant_id: str) -> Plant | None:
         """Retrieve a plant by its ID."""
         return self.repository.get_plant(plant_id)

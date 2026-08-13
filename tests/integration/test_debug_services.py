@@ -79,7 +79,9 @@ async def test_debug_list_growspaces(
     plant.plant_id = "p1"
     plant.row = 1
     plant.col = 1
-    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[plant])
+    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(
+        return_value=[plant]
+    )
 
     with patch("logging.Logger.debug") as mock_debug:
         await handle_debug_list_growspaces(
@@ -109,7 +111,10 @@ async def test_debug_reset_special_growspaces(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ) -> None:
     """Test handle_debug_reset_special_growspaces service."""
-    mock_coordinator.growspaces = {"dry": {}, "cure": {}}
+    mock_coordinator.growspaces = {
+        "dry": MagicMock(layout_revision=0),
+        "cure": MagicMock(layout_revision=0),
+    }
     mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         side_effect=["dry", "cure"]
     )
@@ -130,9 +135,9 @@ async def test_debug_reset_special_growspaces_preserve_plants(
     mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         side_effect=["dry", "cure"]
     )
-    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[
-        MagicMock(plant_id="p1")
-    ])
+    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(
+        return_value=[MagicMock(plant_id="p1")]
+    )
     mock_coordinator.plants = {
         "p1": create_plant(plant_id="p1", growspace_id="dry", strain="test")
     }
@@ -284,92 +289,6 @@ async def test_debug_consolidate_duplicate_special_with_missing_canonical_and_mu
 
 
 @pytest.mark.asyncio
-async def test_restore_plants_to_canonical_growspace_find_position_exception(
-    mock_coordinator,
-) -> None:
-    """Test _restore_plants_to_canonical_growspace when find_first_available_position raises an exception."""
-    canonical_id = "dry"
-    plants_data_to_restore = [
-        {"plant_id": "p1", "strain": "Test Strain", "old_pos": "(1,1)"}
-    ]
-    log_prefix = "dry"
-
-    mock_coordinator.plants = {
-        "p1": create_plant(plant_id="p1", growspace_id="old_dry", strain="test")
-    }
-    mock_coordinator.validator.find_first_available_position.side_effect = ValueError(
-        "No position"
-    )
-
-    with patch(
-        "custom_components.growspace_manager.services.debug._LOGGER.warning"
-    ) as mock_warning:
-        await _restore_plants_to_canonical_growspace(
-            mock_coordinator, canonical_id, plants_data_to_restore, log_prefix
-        )
-        mock_warning.assert_called_once()
-        assert (
-            mock_coordinator.plants["p1"].growspace_id == "old_dry"
-        )  # Should not change
-
-
-@pytest.mark.asyncio
-async def test_restore_plants_to_canonical_growspace_plant_not_in_coordinator(
-    mock_coordinator,
-) -> None:
-    """Test _restore_plants_to_canonical_growspace when plant is not in coordinator.plants."""
-    canonical_id = "dry"
-    plants_data_to_restore = [
-        {"plant_id": "p1", "strain": "Test Strain", "old_pos": "(1,1)"}
-    ]
-    log_prefix = "dry"
-
-    with patch(
-        "custom_components.growspace_manager.services.debug._LOGGER.warning"
-    ) as mock_warning:
-        await _restore_plants_to_canonical_growspace(
-            mock_coordinator, canonical_id, plants_data_to_restore, log_prefix
-        )
-        mock_warning.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_restore_plants_to_canonical_growspace_success(
-    mock_coordinator,
-) -> None:
-    """Test _restore_plants_to_canonical_growspace when a plant is successfully restored."""
-    canonical_id = "dry"
-    plants_data_to_restore = [
-        {"plant_id": "p1", "strain": "Test Strain", "old_pos": "(1,1)"}
-    ]
-    log_prefix = "dry"
-
-    mock_plant = MagicMock(
-        spec=Plant, plant_id="p1", growspace_id="old_dry", strain="test", row=1, col=1
-    )
-    mock_coordinator.plants = {"p1": mock_plant}
-    mock_coordinator.validator.find_first_available_position.return_value = (2, 2)
-
-    with patch(
-        "custom_components.growspace_manager.services.debug._LOGGER.debug"
-    ) as mock_debug:
-        await _restore_plants_to_canonical_growspace(
-            mock_coordinator, canonical_id, plants_data_to_restore, log_prefix
-        )
-        assert mock_plant.growspace_id == canonical_id
-        assert mock_plant.row == 2
-        assert mock_plant.col == 2
-        mock_debug.assert_any_call(
-            "Restored %s to %s at (%d,%d) from %s",
-            "p1",
-            canonical_id,
-            2,
-            2,
-            "(1,1)",
-        )
-
-
-@pytest.mark.asyncio
 async def test_handle_reset_dry_growspace_preserve_plants_no_plants(
     mock_hass, mock_coordinator
 ) -> None:
@@ -380,10 +299,12 @@ async def test_handle_reset_dry_growspace_preserve_plants_no_plants(
     mock_coordinator.growspaces.keys.return_value = ["dry"]
     mock_coordinator.growspaces.__contains__.side_effect = lambda x: x == "dry"
     mock_coordinator.growspaces.__getitem__.side_effect = lambda x: MagicMock(
-        name="Dry"
+        name="Dry", layout_revision=0
     )
 
-    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[])  # No plants
+    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(
+        return_value=[]
+    )  # No plants
 
     mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         return_value="dry"
@@ -421,7 +342,7 @@ async def test_handle_reset_dry_growspace_preserve_plants_with_plants(
         ]
     )
     mock_coordinator.growspaces.__getitem__.side_effect = lambda x: MagicMock(
-        name="Dry"
+        name="Dry", layout_revision=0
     )
 
     # Configure mock_coordinator.services.growspaces.get_growspace_plants to return mock plants
@@ -435,10 +356,12 @@ async def test_handle_reset_dry_growspace_preserve_plants_with_plants(
         row=2,
         col=2,
     )
-    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(side_effect=lambda gs_id: {
-        "dry": [mock_plant_1],
-        "dry_overview_1": [mock_plant_2],
-    }.get(gs_id, []))
+    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(
+        side_effect=lambda gs_id: {
+            "dry": [mock_plant_1],
+            "dry_overview_1": [mock_plant_2],
+        }.get(gs_id, [])
+    )
 
     # Configure mock_coordinator.plants to contain these mock plants
     mock_coordinator.plants = {"p1": mock_plant_1, "p2": mock_plant_2}
@@ -484,10 +407,12 @@ async def test_handle_reset_cure_growspace_preserve_plants_no_plants(
     mock_coordinator.growspaces.keys.return_value = ["cure"]
     mock_coordinator.growspaces.__contains__.side_effect = lambda x: x == "cure"
     mock_coordinator.growspaces.__getitem__.side_effect = lambda x: MagicMock(
-        name="Cure"
+        name="Cure", layout_revision=0
     )
 
-    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[])  # No plants
+    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(
+        return_value=[]
+    )  # No plants
 
     mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         return_value="cure"
@@ -525,7 +450,7 @@ async def test_handle_reset_cure_growspace_preserve_plants_with_plants(
         ]
     )
     mock_coordinator.growspaces.__getitem__.side_effect = lambda x: MagicMock(
-        name="Cure"
+        name="Cure", layout_revision=0
     )
 
     # Configure mock_coordinator.services.growspaces.get_growspace_plants to return mock plants
@@ -539,10 +464,12 @@ async def test_handle_reset_cure_growspace_preserve_plants_with_plants(
         row=2,
         col=2,
     )
-    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(side_effect=lambda gs_id: {
-        "cure": [mock_plant_1],
-        "cure_overview_1": [mock_plant_2],
-    }.get(gs_id, []))
+    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(
+        side_effect=lambda gs_id: {
+            "cure": [mock_plant_1],
+            "cure_overview_1": [mock_plant_2],
+        }.get(gs_id, [])
+    )
 
     # Configure mock_coordinator.plants to contain these mock plants
     mock_coordinator.plants = {"p1": mock_plant_1, "p2": mock_plant_2}
@@ -578,42 +505,6 @@ async def test_handle_reset_cure_growspace_preserve_plants_with_plants(
 
 
 @pytest.mark.asyncio
-async def test_consolidate_plants_to_canonical_growspace_find_position_exception(
-    mock_coordinator,
-) -> None:
-    """Test _consolidate_plants_to_canonical_growspace when find_first_available_position raises an exception."""
-    duplicate_ids = ["dry_1"]
-    canonical_id = "dry"
-    log_prefix = "dry"
-
-    mock_coordinator.growspaces = MagicMock(spec=dict)
-    mock_coordinator.growspaces.keys.return_value = ["dry_1"]
-    mock_coordinator.growspaces.__contains__.side_effect = lambda x: x == "dry_1"
-    mock_coordinator.growspaces.__getitem__.side_effect = lambda x: MagicMock(
-        name="Dry"
-    )
-
-    mock_coordinator.plants = {"p1": MagicMock(spec=Plant, plant_id="p1")}
-    mock_coordinator.validator.find_first_available_position.side_effect = ValueError(
-        "No position"
-    )
-    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[
-        mock_coordinator.plants["p1"]
-    ])
-
-    with patch(
-        "custom_components.growspace_manager.services.debug._LOGGER.warning"
-    ) as mock_warning:
-        await _consolidate_plants_to_canonical_growspace(
-            mock_coordinator, duplicate_ids, canonical_id, log_prefix
-        )
-        mock_warning.assert_called_once()
-        mock_coordinator.growspaces.pop.assert_called_once_with(
-            "dry_1", None
-        )  # Should still remove duplicate
-
-
-@pytest.mark.asyncio
 async def test_consolidate_plants_to_canonical_growspace_plant_not_in_coordinator(
     mock_coordinator,
 ) -> None:
@@ -626,7 +517,7 @@ async def test_consolidate_plants_to_canonical_growspace_plant_not_in_coordinato
     mock_coordinator.growspaces.keys.return_value = ["dry_1"]
     mock_coordinator.growspaces.__contains__.side_effect = lambda x: x == "dry_1"
     mock_coordinator.growspaces.__getitem__.side_effect = lambda x: MagicMock(
-        name="Dry"
+        name="Dry", layout_revision=0
     )
 
     with patch(
@@ -646,7 +537,7 @@ async def test_debug_reset_special_growspaces_exception(
     mock_hass, mock_coordinator, mock_strain_library, mock_call
 ) -> None:
     """Test handle_debug_reset_special_growspaces service with an exception."""
-    mock_coordinator.growspaces = {"dry": {}}
+    mock_coordinator.growspaces = {"dry": MagicMock(layout_revision=0)}
     mock_coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         side_effect=RuntimeError("Test Exception")
     )
@@ -690,7 +581,9 @@ async def test_debug_list_growspaces_zero_plants(
     mock_growspace.rows = 2
     mock_growspace.plants_per_row = 2
     mock_coordinator.growspaces = {"gs_empty": mock_growspace}
-    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[])
+    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(
+        return_value=[]
+    )
 
     with patch(
         "custom_components.growspace_manager.services.debug._LOGGER.debug"
@@ -702,31 +595,41 @@ async def test_debug_list_growspaces_zero_plants(
 
 
 @pytest.mark.asyncio
-async def test_consolidate_plants_to_canonical_growspace_true_success(
+async def test_restore_plants_routes_through_the_plant_manager(
     mock_coordinator,
 ) -> None:
-    """Test _consolidate_plants_to_canonical_growspace success (covers lines 460-463)."""
-    duplicate_ids = ["dry_1"]
-    canonical_id = "dry"
-    log_prefix = "dry"
+    """Preserved plants are relocated through the plant-manager seam."""
+    plants_data_to_restore = [
+        {"plant_id": "p1", "strain": "Test Strain", "old_pos": "(1,1)"},
+        {"plant_id": "p2", "strain": "Other Strain", "old_pos": "(2,2)"},
+    ]
 
-    mock_plant = MagicMock(
-        spec=Plant,
-        plant_id="p1",
-        growspace_id="dry_1",
-        strain="Test Strain",
-        row=1,
-        col=1,
+    await _restore_plants_to_canonical_growspace(
+        mock_coordinator, "dry", plants_data_to_restore, "dry"
     )
+
+    mock_coordinator._plant_manager.relocate_plants_to_growspace.assert_awaited_once_with(
+        "dry", ["p1", "p2"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_consolidate_routes_through_the_plant_manager(
+    mock_coordinator,
+) -> None:
+    """Duplicates are emptied through the seam before they are removed."""
+    mock_plant = MagicMock(spec=Plant, plant_id="p1", growspace_id="dry_1")
     mock_coordinator.plants = {"p1": mock_plant}
-    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[mock_plant])
-    mock_coordinator.validator.find_first_available_position.return_value = (2, 2)
+    mock_coordinator.growspaces = {"dry_1": MagicMock(layout_revision=1)}
+    mock_coordinator.services.growspaces.get_growspace_plants = MagicMock(
+        return_value=[mock_plant]
+    )
 
     await _consolidate_plants_to_canonical_growspace(
-        mock_coordinator, duplicate_ids, canonical_id, log_prefix
+        mock_coordinator, ["dry_1"], "dry", "dry"
     )
 
-    assert mock_plant.growspace_id == canonical_id
-    assert mock_plant.row == 2
-    assert mock_plant.col == 2
+    mock_coordinator._plant_manager.relocate_plants_to_growspace.assert_awaited_once_with(
+        "dry", ["p1"]
+    )
     assert "dry_1" not in mock_coordinator.growspaces
