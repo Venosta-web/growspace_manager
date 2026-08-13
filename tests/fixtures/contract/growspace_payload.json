@@ -299,6 +299,7 @@
         "seedling_start": "2026-01-01",
         "stage": "cure",
         "strain": "Contract Cultivar",
+        "updated_at": "2026-08-11",
         "veg_days": 59,
         "veg_early_days": 0,
         "veg_late_days": 0,

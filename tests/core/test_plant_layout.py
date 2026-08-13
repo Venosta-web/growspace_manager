@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+from freezegun import freeze_time
 import pytest
 
 from custom_components.growspace_manager.data_access.growspace_repository import (
@@ -115,6 +116,28 @@ async def test_set_plant_layout_commits_once_and_emits_one_event(
     assert [event.data for event in events] == [
         {"growspace_id": "tent", "layout_revision": 1}
     ]
+
+
+@freeze_time("2026-01-12 12:00:00", tz_offset=0)
+async def test_layout_and_ordinary_update_share_updated_at_representation(
+    repository: GrowspaceRepository,
+    manager: PlantManager,
+) -> None:
+    """Layout commits and ordinary mutations stamp the same date-only value."""
+    await manager.set_plant_layout(
+        "tent",
+        0,
+        [
+            {"plant_id": "p1", "row": 2, "col": 1},
+            {"plant_id": "p2", "row": 2, "col": 2},
+        ],
+    )
+    layout_updated_at = repository.require_plant("p1").updated_at
+
+    await manager.update_plant("p1", phenotype="Keeper")
+    ordinary_updated_at = repository.require_plant("p1").updated_at
+
+    assert layout_updated_at == ordinary_updated_at == "2026-01-12"
 
 
 async def test_set_plant_layout_no_op_has_no_write_or_event(

@@ -14,6 +14,7 @@ from custom_components.growspace_manager.const import (
     SPECIAL_GROWSPACES,
     PlantStage,
 )
+from custom_components.growspace_manager.domain.date_logic import plant_updated_date
 from custom_components.growspace_manager.domain.stage_calculator import (
     calculate_days_in_stage,
 )
@@ -190,7 +191,7 @@ class PlantManager(BaseService):
                 device_id=device_id,
                 seed_batch_id=seed_batch_id,
                 created_at=dt_util.utcnow().isoformat(),
-                updated_at=dt_util.utcnow().isoformat(),
+                updated_at=plant_updated_date(),
                 **date_fields,  # type: ignore[arg-type]
                 source_mother=kwargs.get("source_mother")
                 or kwargs.get("source_mother_id")
@@ -249,7 +250,7 @@ class PlantManager(BaseService):
                 if hasattr(plant, key):
                     setattr(plant, key, value)
 
-            plant.updated_at = dt_util.now().date().isoformat()
+            plant.updated_at = plant_updated_date()
             if growspace_changed:
                 self._advance_layout_revision(old_growspace_id)
                 self._advance_layout_revision(new_growspace_id)
@@ -319,7 +320,7 @@ class PlantManager(BaseService):
             plant1.row, plant1.col = p2_row, p2_col
             plant2.row, plant2.col = p1_row, p1_col
 
-            now = dt_util.now().date().isoformat()
+            now = plant_updated_date()
             plant1.updated_at = now
             plant2.updated_at = now
 
@@ -426,7 +427,7 @@ class PlantManager(BaseService):
                 for plant in plants
             }
             previous_revision = growspace.layout_revision
-            updated_at = dt_util.now().isoformat()
+            updated_at = plant_updated_date()
             new_revision = previous_revision + 1
             snapshot_saved = await self._save_layout_snapshot(
                 growspace_id, new_revision, authoritative, updated_at
@@ -500,7 +501,7 @@ class PlantManager(BaseService):
             )
 
             relocated: list[str] = []
-            updated_at = dt_util.now().isoformat()
+            updated_at = plant_updated_date()
             for plant_id in plant_ids:
                 plant = self.repository.get_plant(plant_id)
                 if not plant:
