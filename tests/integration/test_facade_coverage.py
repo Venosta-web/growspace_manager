@@ -143,7 +143,9 @@ async def test_growspace_lifecycle_services(mock_coordinator) -> None:
     mock_coordinator.growspaces = {"gs1": gs}
 
     await facade.growspaces.remove_growspace("gs1")
-    mock_coordinator._growspace_manager.remove_growspace.assert_called_once_with("gs1")
+    mock_coordinator._growspace_manager.remove_growspace.assert_called_once_with(
+        "gs1", delete_plants=True
+    )
 
     await facade.growspaces.update_options({"opt": "val"})
     mock_coordinator.async_commit.assert_called()

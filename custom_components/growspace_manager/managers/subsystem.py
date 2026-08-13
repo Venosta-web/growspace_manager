@@ -138,6 +138,31 @@ class SubsystemManager:
             await controller.async_setup()
         self.environment_controllers[growspace_id] = controllers
 
+    def teardown_growspace_sub_coordinators(self, growspace_id: str) -> None:
+        """Cancel and drop the sub-coordinators of a single growspace.
+
+        A sub-coordinator holds the `Growspace` object it was built from, so
+        one left behind after its growspace is removed keeps driving actuators
+        from configuration that no longer exists.
+        """
+        if irrigation := self.irrigation_coordinators.pop(growspace_id, None):
+            try:
+                irrigation.async_cancel_listeners()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error("Error cancelling irrigation listeners: %s", err)
+
+        if tracker := self.light_cycle_trackers.pop(growspace_id, None):
+            try:
+                tracker.unload()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error("Error unloading light cycle tracker: %s", err)
+
+        for controller in self.environment_controllers.pop(growspace_id, []):
+            try:
+                controller.unload()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error("Error unloading environment controller: %s", err)
+
     def get_dehumidifier_controller(self, growspace_id: str) -> DehumidifierCoordinator | None:
         """Return the dehumidifier coordinator for a growspace, or None."""
         for c in self.environment_controllers.get(growspace_id, []):

@@ -129,12 +129,20 @@ async def _reset_special_growspace(
     )
 
     for gs_id in ids_to_remove:
-        coordinator.growspaces.pop(gs_id, None)
+        # Preserved plants are detached rather than deleted, and re-placed on
+        # the recreated canonical growspace below.
+        await coordinator.services.growspaces.remove_growspace(
+            gs_id, delete_plants=not preserve_plants
+        )
         _LOGGER.debug("Removed %s growspace %s", canonical_id, gs_id)
 
     canonical = coordinator.services.growspaces.ensure_special_growspace(
         canonical_id, canonical_id
     )
+    # Removing the growspace took its device and sub-coordinators with it, and
+    # recreating the canonical restores neither.
+    await coordinator.async_register_devices()
+    await coordinator.services.growspaces.setup_sub_coordinators(canonical)
     await coordinator.services.growspaces.carry_forward_layout_revision(
         canonical, previous_revision
     )
@@ -301,7 +309,20 @@ async def _consolidate_plants_to_canonical_growspace(
         )
 
     for dup_id in duplicate_ids:
-        coordinator.growspaces.pop(dup_id, None)
+        # Relocation skips a plant the canonical has no room for. Removing the
+        # duplicate would delete it, so a duplicate that still holds plants is
+        # left in place for the next run instead.
+        if remaining := coordinator.services.growspaces.get_growspace_plants(dup_id):
+            _LOGGER.warning(
+                "Keeping duplicate %s growspace %s: %d plant(s) could not be "
+                "relocated to %s",
+                log_prefix,
+                dup_id,
+                len(remaining),
+                canonical_id,
+            )
+            continue
+        await coordinator.services.growspaces.remove_growspace(dup_id)
         _LOGGER.debug("Removed duplicate %s growspace %s", log_prefix, dup_id)
 
 

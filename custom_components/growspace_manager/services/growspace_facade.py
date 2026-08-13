@@ -140,9 +140,26 @@ class GrowspaceFacade:
         _LOGGER.info("Updated growspace %s", growspace_id)
         return growspace
 
-    async def remove_growspace(self, growspace_id: str) -> None:
-        """Remove a growspace."""
-        await self._coordinator._growspace_manager.remove_growspace(growspace_id)
+    async def remove_growspace(
+        self, growspace_id: str, *, delete_plants: bool = True
+    ) -> None:
+        """Remove a growspace, optionally detaching its plants instead."""
+        await self._coordinator._growspace_manager.remove_growspace(
+            growspace_id, delete_plants=delete_plants
+        )
+        # Mirrors add_growspace, which sets these up.
+        self._coordinator._subsystem_manager.teardown_growspace_sub_coordinators(
+            growspace_id
+        )
+
+    async def setup_sub_coordinators(self, growspace_id: str) -> None:
+        """Set up the sub-coordinators of an existing growspace."""
+        growspace = self._coordinator._data_repository.require_growspace(growspace_id)
+        await (
+            self._coordinator._subsystem_manager.async_setup_growspace_sub_coordinators(
+                growspace_id, growspace
+            )
+        )
 
     def ensure_special_growspace(self, *args: Any, **kwargs: Any) -> Any:
         """Ensure a special growspace exists; delegates to GrowspaceManager."""
