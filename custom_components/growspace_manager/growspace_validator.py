@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING
 
 from .const import PlantStage
@@ -16,8 +15,6 @@ if TYPE_CHECKING:
     from .data_access.growspace_repository import GrowspaceRepository
 
 from .utils import find_first_free_position
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class GrowspaceValidator:
@@ -99,45 +96,3 @@ class GrowspaceValidator:
             (p.row, p.col) for p in self.repository.get_growspace_plants(growspace_id)
         }
         return find_first_free_position(growspace, occupied)
-
-    def validate_plants_after_resize(
-        self, growspace_id: str, new_rows: int, new_plants_per_row: int
-    ) -> None:
-        """Log warnings for plants outside new grid boundaries after resize.
-
-        Args:
-            growspace_id: The ID of the growspace that was resized
-            new_rows: The new number of rows
-            new_plants_per_row: The new number of plants per row
-        """
-        # Get all plants in this growspace
-        plants_to_check = self.repository.get_growspace_plants(growspace_id)
-
-        # Find plants outside new boundaries
-        invalid_plants = [
-            plant
-            for plant in plants_to_check
-            if int(plant.row) > new_rows or int(plant.col) > new_plants_per_row
-        ]
-
-        if invalid_plants:
-            _LOGGER.warning(
-                "Growspace %s resized to %dx%d. Found %d plants outside new grid boundaries:",
-                growspace_id,
-                new_rows,
-                new_plants_per_row,
-                len(invalid_plants),
-            )
-
-            for plant in invalid_plants:
-                _LOGGER.warning(
-                    "  - Plant %s (%s) at position (%d,%d) is outside new grid",
-                    plant.plant_id,
-                    plant.strain,
-                    plant.row,
-                    plant.col,
-                )
-
-            _LOGGER.warning(
-                "Please update these plants' positions manually or they may not display correctly"
-            )

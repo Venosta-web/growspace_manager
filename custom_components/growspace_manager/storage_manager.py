@@ -131,11 +131,16 @@ class StorageManager:
         layout_revision: int,
         placements: list[dict[str, Any]],
         updated_at: str,
+        rows: int,
+        plants_per_row: int,
     ) -> None:
         """Persist a complete staged Plant Layout without publishing it in memory."""
         config_data = self._get_config_data()
         plants_data = self._get_plants_data()
-        config_data["growspaces"][growspace_id]["layout_revision"] = layout_revision
+        growspace_data = config_data["growspaces"][growspace_id]
+        growspace_data["layout_revision"] = layout_revision
+        growspace_data["rows"] = rows
+        growspace_data["plants_per_row"] = plants_per_row
         for placement in placements:
             plant_data = plants_data["plants"][placement["plant_id"]]
             plant_data["row"] = placement["row"]

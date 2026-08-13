@@ -355,38 +355,6 @@ class GrowspaceManager(BaseService):
 
         return updated
 
-    async def _validate_plants_after_growspace_resize(
-        self, growspace_id: str, new_rows: int, new_plants_per_row: int
-    ) -> None:
-        """Log a warning if any plants are outside the new grid boundaries after a resize."""
-        # Get all plants in this growspace
-        plants_to_check = self.repository.get_growspace_plants(growspace_id)
-        invalid_plants = []
-
-        invalid_plants = [
-            plant
-            for plant in plants_to_check
-            if int(plant.row) > new_rows or int(plant.col) > new_plants_per_row
-        ]
-
-        if invalid_plants:
-            _LOGGER.warning(
-                "Growspace %s resized to %dx%d. Found %d plants outside new grid boundaries:",
-                growspace_id,
-                new_rows,
-                new_plants_per_row,
-                len(invalid_plants),
-            )
-
-            for plant in invalid_plants:
-                _LOGGER.warning(
-                    "  - Plant %s (%s) at position (%d,%d) is outside new grid",
-                    plant.plant_id,
-                    plant.strain,
-                    plant.row,
-                    plant.col,
-                )
-
     def generate_unique_name(self, base_name: str) -> str:
         """Generate a unique growspace name."""
         existing_names = {

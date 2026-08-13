@@ -347,8 +347,11 @@ class PlantManager(BaseService):
         growspace_id: str,
         expected_layout_revision: int,
         placements: list[dict[str, Any]],
+        *,
+        rows: int | None = None,
+        plants_per_row: int | None = None,
     ) -> dict[str, Any]:
-        """Validate and commit a complete Plant Layout as one mutation."""
+        """Commit dimensions and a complete Plant Layout as one mutation."""
         async with self._lock:
             growspace = self.repository.get_growspace(growspace_id)
             if not growspace:
@@ -358,6 +361,15 @@ class PlantManager(BaseService):
                     "Plant Layout revision conflict: "
                     f"expected {expected_layout_revision}, "
                     f"current {growspace.layout_revision}"
+                )
+
+            target_rows = growspace.rows if rows is None else rows
+            target_plants_per_row = (
+                growspace.plants_per_row if plants_per_row is None else plants_per_row
+            )
+            if target_rows < 1 or target_plants_per_row < 1:
+                raise ValidationChangeError(
+                    "Growspace grid dimensions must be positive"
                 )
 
             plants = self.repository.get_growspace_plants(growspace_id)
@@ -381,10 +393,7 @@ class PlantManager(BaseService):
 
                 row = int(placement["row"])
                 col = int(placement["col"])
-                if (
-                    not 1 <= row <= growspace.rows
-                    or not 1 <= col <= growspace.plants_per_row
-                ):
+                if not 1 <= row <= target_rows or not 1 <= col <= target_plants_per_row:
                     raise ValidationChangeError(
                         f"Position ({row}, {col}) is outside growspace {growspace_id}"
                     )
@@ -415,10 +424,16 @@ class PlantManager(BaseService):
                 {"plant_id": plant.plant_id, "row": plant.row, "col": plant.col}
                 for plant in sorted(plants, key=lambda item: item.plant_id)
             ]
-            if authoritative == current:
+            dimensions_changed = (
+                target_rows != growspace.rows
+                or target_plants_per_row != growspace.plants_per_row
+            )
+            if authoritative == current and not dimensions_changed:
                 return {
                     "growspace_id": growspace_id,
                     "layout_revision": growspace.layout_revision,
+                    "rows": growspace.rows,
+                    "plants_per_row": growspace.plants_per_row,
                     "placements": current,
                 }
 
@@ -426,21 +441,31 @@ class PlantManager(BaseService):
                 plant.plant_id: (plant.row, plant.col, plant.updated_at)
                 for plant in plants
             }
+            previous_dimensions = (growspace.rows, growspace.plants_per_row)
             previous_revision = growspace.layout_revision
             updated_at = plant_updated_date()
             new_revision = previous_revision + 1
             snapshot_saved = await self._save_layout_snapshot(
-                growspace_id, new_revision, authoritative, updated_at
+                growspace_id,
+                new_revision,
+                authoritative,
+                updated_at,
+                target_rows,
+                target_plants_per_row,
             )
             if snapshot_saved:
                 for plant in plants:
                     plant.row, plant.col = placement_by_id[plant.plant_id]
                     plant.updated_at = updated_at
+                growspace.rows = target_rows
+                growspace.plants_per_row = target_plants_per_row
                 growspace.layout_revision = new_revision
             else:
                 for plant in plants:
                     plant.row, plant.col = placement_by_id[plant.plant_id]
                     plant.updated_at = updated_at
+                growspace.rows = target_rows
+                growspace.plants_per_row = target_plants_per_row
                 growspace.layout_revision = new_revision
                 try:
                     await self._save()
@@ -449,6 +474,7 @@ class PlantManager(BaseService):
                         plant.row, plant.col, plant.updated_at = previous_positions[
                             plant.plant_id
                         ]
+                    growspace.rows, growspace.plants_per_row = previous_dimensions
                     growspace.layout_revision = previous_revision
                     self._invalidate(growspace_id)
                     raise
@@ -457,6 +483,8 @@ class PlantManager(BaseService):
             result: dict[str, Any] = {
                 "growspace_id": growspace_id,
                 "layout_revision": committed_revision,
+                "rows": growspace.rows,
+                "plants_per_row": growspace.plants_per_row,
                 "placements": authoritative,
             }
             if snapshot_saved:

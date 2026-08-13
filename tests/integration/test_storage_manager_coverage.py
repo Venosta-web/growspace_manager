@@ -114,10 +114,20 @@ async def test_save_plant_layout_snapshot_uses_staged_documents(storage) -> None
             3,
             [{"plant_id": "p1", "row": 2, "col": 2}],
             "after",
+            2,
+            3,
         )
 
     storage.config_store.async_save.assert_awaited_once_with(
-        {"growspaces": {"tent": {"layout_revision": 3}}}
+        {
+            "growspaces": {
+                "tent": {
+                    "layout_revision": 3,
+                    "rows": 2,
+                    "plants_per_row": 3,
+                }
+            }
+        }
     )
     storage.plants_store.async_save.assert_awaited_once_with(
         {"plants": {"p1": {"row": 2, "col": 2, "updated_at": "after"}}}
@@ -159,10 +169,22 @@ async def test_save_plant_layout_snapshot_restores_both_stores_on_failure(
             3,
             [{"plant_id": "p1", "row": 2, "col": 2}],
             "after",
+            2,
+            3,
         )
 
     assert storage.config_store.async_save.await_args_list == [
-        call({"growspaces": {"tent": {"layout_revision": 3}}}),
+        call(
+            {
+                "growspaces": {
+                    "tent": {
+                        "layout_revision": 3,
+                        "rows": 2,
+                        "plants_per_row": 3,
+                    }
+                }
+            }
+        ),
         call(old_config),
     ]
     assert storage.plants_store.async_save.await_args_list[-1] == call(old_plants)

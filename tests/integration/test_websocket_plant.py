@@ -7,12 +7,14 @@ import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import voluptuous as vol
 
 from custom_components.growspace_manager.exceptions import (
     EntityNotFoundError,
     GrowspaceError,
 )
 from custom_components.growspace_manager.websocket.plant import (
+    SCHEMA_WS_SET_PLANT_LAYOUT,
     websocket_add_plant,
     websocket_add_plants,
     websocket_harvest_plant,
@@ -84,6 +86,8 @@ async def test_set_plant_layout_returns_authoritative_mapping(
     expected = {
         "growspace_id": "tent",
         "layout_revision": 4,
+        "rows": 2,
+        "plants_per_row": 2,
         "placements": [{"plant_id": "p1", "row": 1, "col": 1}],
     }
     mock_coordinator.services.plants.set_plant_layout.return_value = expected
@@ -95,14 +99,37 @@ async def test_set_plant_layout_returns_authoritative_mapping(
             "id": 1,
             "growspace_id": "tent",
             "expected_layout_revision": 3,
+            "rows": 2,
+            "plants_per_row": 2,
             "placements": [{"plant_id": "p1", "row": 1, "col": 1}],
         },
     )
 
     assert result == expected
     mock_coordinator.services.plants.set_plant_layout.assert_awaited_once_with(
-        "tent", 3, [{"plant_id": "p1", "row": 1, "col": 1}]
+        "tent",
+        3,
+        [{"plant_id": "p1", "row": 1, "col": 1}],
+        rows=2,
+        plants_per_row=2,
     )
+
+
+def test_set_plant_layout_schema_accepts_optional_target_dimensions() -> None:
+    """The command boundary accepts positive optional target dimensions."""
+    message = {
+        "id": 1,
+        "type": "growspace_manager/set_plant_layout",
+        "growspace_id": "tent",
+        "expected_layout_revision": 3,
+        "rows": 2,
+        "plants_per_row": 2,
+        "placements": [{"plant_id": "p1", "row": 1, "col": 1}],
+    }
+
+    assert SCHEMA_WS_SET_PLANT_LAYOUT(message) == message
+    with pytest.raises(vol.Invalid):
+        SCHEMA_WS_SET_PLANT_LAYOUT({**message, "rows": 0})
 
 
 # ---------------------------------------------------------------------------

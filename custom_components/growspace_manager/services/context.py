@@ -25,7 +25,8 @@ class ServiceContext:
     add_event: Callable[[str, GrowspaceEvent], None]
     invalidate_cache: Callable[[str | None], None]
     save_layout_callback: (
-        Callable[[str, int, list[dict[str, Any]], str], Awaitable[None]] | None
+        Callable[[str, int, list[dict[str, Any]], str, int, int], Awaitable[None]]
+        | None
     ) = None
     publish_callback: Callable[[], Awaitable[None]] | None = None
 
@@ -52,12 +53,19 @@ class BaseService:
         layout_revision: int,
         placements: list[dict[str, Any]],
         updated_at: str,
+        rows: int,
+        plants_per_row: int,
     ) -> bool:
         """Persist a staged layout when the coordinator provides that seam."""
         if self._ctx.save_layout_callback is None:
             return False
         await self._ctx.save_layout_callback(
-            growspace_id, layout_revision, placements, updated_at
+            growspace_id,
+            layout_revision,
+            placements,
+            updated_at,
+            rows,
+            plants_per_row,
         )
         return True
 

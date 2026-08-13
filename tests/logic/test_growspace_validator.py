@@ -1,6 +1,5 @@
 """Tests for GrowspaceValidator."""
 
-
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage
@@ -67,7 +66,9 @@ def test_validate_position_bounds(validator, repo) -> None:
 
 def test_validate_position_bounds_special(validator, repo) -> None:
     """Test validate_position_bounds for special growspaces (covers line 46)."""
-    repo.add_growspace(Growspace(id=PlantStage.MOTHER, name="Mother", rows=1, plants_per_row=1))
+    repo.add_growspace(
+        Growspace(id=PlantStage.MOTHER, name="Mother", rows=1, plants_per_row=1)
+    )
 
     # Special growspaces skip bounds check
     validator.validate_position_bounds(PlantStage.MOTHER, 99, 99)
@@ -93,42 +94,8 @@ def test_validate_position_not_occupied(validator, repo) -> None:
 def test_find_first_available_position(validator, repo) -> None:
     """Test find_first_available_position."""
     repo.add_growspace(Growspace(id="g1", name="G1", rows=2, plants_per_row=2))
-    repo.add_plant(create_plant(plant_id="p1", growspace_id="g1", row=1, col=1, strain="A"))
+    repo.add_plant(
+        create_plant(plant_id="p1", growspace_id="g1", row=1, col=1, strain="A")
+    )
 
     assert validator.find_first_available_position("g1") == (1, 2)
-
-
-def test_validate_plants_after_resize_no_invalid(
-    validator, repo, caplog
-) -> None:
-    """Test validate_plants_after_resize with no invalid plants."""
-    repo.add_plant(create_plant(plant_id="p1", growspace_id="g1", row=1, col=1, strain="A"))
-
-    # All within bounds (2x2)
-    validator.validate_plants_after_resize("g1", 2, 2)
-
-    # Verify no warnings logged
-    assert "Found 0 plants outside new grid boundaries" not in caplog.text
-
-
-def test_validate_plants_after_resize_with_invalid(
-    validator, repo, caplog
-) -> None:
-    """Test validate_plants_after_resize with invalid plants."""
-    p1 = create_plant(plant_id="p1", growspace_id="g1", row=3, col=1, strain="A")
-    p2 = create_plant(plant_id="p2", growspace_id="g1", row=1, col=3, strain="B")
-    p3 = create_plant(plant_id="p3", growspace_id="g1", row=1, col=1, strain="C")
-    for p in [p1, p2, p3]:
-        repo.add_plant(p)
-
-    # p1 and p2 are outside 2x2 grid
-    validator.validate_plants_after_resize("g1", 2, 2)
-
-    # Verify warnings logged
-    assert "Found 2 plants outside new grid boundaries" in caplog.text
-    assert "Plant p1 (A) at position (3,1) is outside new grid" in caplog.text
-    assert "Plant p2 (B) at position (1,3) is outside new grid" in caplog.text
-    assert (
-        "Please update these plants' positions manually or they may not display correctly"
-        in caplog.text
-    )

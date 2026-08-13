@@ -1,6 +1,5 @@
 """Additional tests for GrowspaceCoordinator to reach 100% coverage."""
 
-import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -55,26 +54,6 @@ async def test_async_update_growspace_returns_gs(hass: HomeAssistant) -> None:
     assert result.id == gs_id
     assert result.name == "Updated GS"
     assert coordinator.growspaces[gs_id] is result
-
-
-@pytest.mark.asyncio
-async def test_validate_plants_after_growspace_resize_task(hass: HomeAssistant) -> None:
-    """Test that _validate_plants_after_growspace_resize creates an asyncio task."""
-    coordinator = create_test_coordinator(hass)
-
-    # Mock the service facade validate method
-    coordinator.services.growspaces.validate_plants_after_growspace_resize = MagicMock()
-
-    # Call the service method
-    coordinator.services.growspaces.validate_plants_after_growspace_resize("gs1", 2, 2)
-
-    # Give it a tiny bit of time to schedule/run
-    await asyncio.sleep(0)
-
-    # Verify the service method was called
-    coordinator.services.growspaces.validate_plants_after_growspace_resize.assert_called_once_with(
-        "gs1", 2, 2
-    )
 
 
 @pytest.mark.asyncio
