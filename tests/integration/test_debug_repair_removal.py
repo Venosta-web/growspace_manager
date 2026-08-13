@@ -117,6 +117,33 @@ async def test_reset_restores_default_dimensions(
     assert canonical.plants_per_row == DEFAULT_PLANTS_PER_ROW
 
 
+async def test_reset_re_places_a_plant_the_default_grid_no_longer_fits(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    strain_library: MagicMock,
+) -> None:
+    """Shrinking back to the default grid moves a stranded plant, not deletes it."""
+    coordinator = init_integration.runtime_data
+    await coordinator.services.growspaces.update_growspace(
+        CANONICAL_DRY, rows=DEFAULT_ROWS + 2, plants_per_row=DEFAULT_PLANTS_PER_ROW + 2
+    )
+    plant = await coordinator.services.plants.add_plant(
+        growspace_id=CANONICAL_DRY,
+        strain="OG Kush",
+        row=DEFAULT_ROWS + 2,
+        col=DEFAULT_PLANTS_PER_ROW + 2,
+    )
+
+    await handle_debug_reset_special_growspaces(
+        hass, coordinator, strain_library, _reset_call()
+    )
+
+    relocated = coordinator.plants[plant.plant_id]
+    assert relocated.growspace_id == CANONICAL_DRY
+    assert 1 <= relocated.row <= DEFAULT_ROWS
+    assert 1 <= relocated.col <= DEFAULT_PLANTS_PER_ROW
+
+
 async def test_reset_removes_the_duplicates_it_folded_in(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,

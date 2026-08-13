@@ -139,9 +139,10 @@ async def _reset_special_growspace(
     canonical = coordinator.services.growspaces.ensure_special_growspace(
         canonical_id, canonical_id
     )
-    # Removing the growspace took its device with it, and recreating the
-    # canonical does not register one.
+    # Removing the growspace took its device and sub-coordinators with it, and
+    # recreating the canonical restores neither.
     await coordinator.async_register_devices()
+    await coordinator.services.growspaces.setup_sub_coordinators(canonical)
     await coordinator.services.growspaces.carry_forward_layout_revision(
         canonical, previous_revision
     )
