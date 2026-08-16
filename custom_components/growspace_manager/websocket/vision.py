@@ -132,7 +132,7 @@ async def websocket_get_snapshots(
     )
 
     if not snapshot_dir.exists():
-        return {"snapshots": [], "total": 0}
+        return {"growspace_id": growspace_id, "snapshots": [], "total": 0}
 
     all_files = sorted(
         snapshot_dir.glob("*.jpg"),

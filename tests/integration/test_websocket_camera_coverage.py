@@ -161,7 +161,7 @@ async def test_get_snapshots_directory_not_exists(
     with patch.object(hass.config, "path", return_value=str(tmp_path)):
         result = await websocket_get_snapshots(hass, MagicMock(), msg)
 
-    assert result == {"snapshots": [], "total": 0}
+    assert result == {"growspace_id": "gs_no_dir", "snapshots": [], "total": 0}
 
 
 async def test_get_snapshots_with_files(
