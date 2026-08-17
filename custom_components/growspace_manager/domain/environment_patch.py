@@ -105,6 +105,26 @@ _DICT_FIELDS = {
 } | {"dehumidifier_thresholds", "bayesian_options"}
 
 _CONTROLLER_RELEVANT_FIELDS: dict[str, frozenset[str]] = {
+    "dehumidifier": frozenset(
+        {
+            "control_dehumidifier",
+            "dehumidifier_entities",
+            "dehumidifier_ac_infinity_devices",
+            "dehumidifier_thresholds",
+            "vpd_sensor",
+            "light_sensors",
+        }
+    ),
+    "humidifier": frozenset(
+        {
+            "control_humidifier",
+            "humidifier_entities",
+            "humidifier_ac_infinity_devices",
+            "humidifier_thresholds",
+            "vpd_sensor",
+            "light_sensors",
+        }
+    ),
     "circulation_fan": frozenset(
         {
             "circulation_fan_config",

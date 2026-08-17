@@ -75,16 +75,35 @@ class VpdOnOffController:
             )
             return
 
+        self.vpd_sensor: str | None = None
+        self.light_sensors: list[str] = []
+        self.control_enabled: bool = False
+        self.user_thresholds: dict[str, Any] = {}
+        self.device_config: dict[str, Any] = {}
+        self._load_config()
+
+    def _load_config(self) -> None:
+        """(Re)read the fields this controller caches from the live environment config.
+
+        Split out of ``__init__`` so ``async_restart`` can refresh them after a
+        config-dialog edit — the controller instance is long-lived (constructed
+        once at entry setup) and otherwise never notices later changes to its
+        control flag, thresholds, or sensors.
+        """
+        if not self.growspace:
+            return
         env = self.growspace.environment_config or {}
-        self.vpd_sensor: str | None = getattr(env, "vpd_sensor", None)
-        self.light_sensors: list[str] = getattr(env, "light_sensors", []) or []
-        self.control_enabled: bool = getattr(env, self._CONTROL_FLAG_ATTR, False)
-        self.user_thresholds: dict[str, Any] = (
-            getattr(env, self._THRESHOLDS_ATTR, {}) or {}
-        )
-        self.device_config: dict[str, Any] = (
-            getattr(self.growspace, self._DEVICE_CONFIG_ATTR, {}) or {}
-        )
+        self.vpd_sensor = getattr(env, "vpd_sensor", None)
+        self.light_sensors = getattr(env, "light_sensors", []) or []
+        self.control_enabled = getattr(env, self._CONTROL_FLAG_ATTR, False)
+        self.user_thresholds = getattr(env, self._THRESHOLDS_ATTR, {}) or {}
+        self.device_config = getattr(self.growspace, self._DEVICE_CONFIG_ATTR, {}) or {}
+
+    async def async_restart(self) -> None:
+        """Restart after a config change: reload cached config and rebind listeners."""
+        self.unload()
+        self._load_config()
+        await self.async_setup()
 
     def _get_all_controlled_entities(self) -> list[str]:
         """Return all entity IDs managed by this controller. Subclasses implement."""

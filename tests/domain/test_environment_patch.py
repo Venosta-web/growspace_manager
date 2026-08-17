@@ -521,6 +521,28 @@ def test_controllers_to_restart_mapping(
 
 
 @pytest.mark.parametrize(
+    ("values", "expected_controllers"),
+    [
+        ({"control_dehumidifier": True}, {"dehumidifier"}),
+        ({"control_humidifier": True}, {"humidifier"}),
+        ({"dehumidifier_entities": ["switch.dehum"]}, {"dehumidifier"}),
+        ({"humidifier_entities": ["switch.hum"]}, {"humidifier"}),
+    ],
+)
+def test_control_flag_flips_mark_the_matching_controller_for_restart(
+    values: dict[str, Any], expected_controllers: set[str]
+) -> None:
+    """set_dehumidifier_control / set_humidifier_control's lone-key patch (the
+    shape ``handle_set_dehumidifier_control`` / ``handle_set_humidifier_control``
+    build) must restart the coordinator it flips — otherwise the long-lived
+    controller instance never notices the flag changed and keeps controlling
+    (or not controlling) the device with whatever it read at HA startup.
+    """
+    verdict = apply_environment_patch(_lived_in_config(), EnvironmentPatch(values=values))
+    assert verdict.controllers_to_restart == frozenset(expected_controllers)
+
+
+@pytest.mark.parametrize(
     ("payload", "expected"),
     [
         ({"control_dehumidifier": True}, True),
