@@ -110,6 +110,16 @@ def mock_coordinator():
     coordinator._subsystem_manager.get_exhaust_fan_controller = MagicMock(
         return_value=_exhaust_coord_mock
     )
+    _dehumidifier_coord_mock = MagicMock()
+    _dehumidifier_coord_mock.async_restart = AsyncMock()
+    coordinator._subsystem_manager.get_dehumidifier_controller = MagicMock(
+        return_value=_dehumidifier_coord_mock
+    )
+    _humidifier_coord_mock = MagicMock()
+    _humidifier_coord_mock.async_restart = AsyncMock()
+    coordinator._subsystem_manager.get_humidifier_controller = MagicMock(
+        return_value=_humidifier_coord_mock
+    )
 
     # Initialize ServiceFacade AFTER all async mocks are set so the facade's
     # internal _coordinator reference sees the correct AsyncMock attributes.
