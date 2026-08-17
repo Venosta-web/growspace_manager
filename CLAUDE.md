@@ -21,9 +21,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Tests run against the **repo-local** venv at `.venv` in the main checkout (Python 3.14+, built from `requirements.txt`). Worktrees share that one venv — they do not get their own:
 
-| Running from | Path |
-| --- | --- |
-| the main checkout | `.venv/bin/pytest` |
+| Running from                     | Path                                                              |
+| -------------------------------- | ----------------------------------------------------------------- |
+| the main checkout                | `.venv/bin/pytest`                                                |
 | a `.worktrees/<branch>` worktree | `../../.venv/bin/pytest` — the same path the pre-commit hooks use |
 
 **Never use the Home Assistant core venv at `/home/maxi/core/core/.venv`.** It is HA core's own test environment, so it carries HA core's syrupy rather than the version `pytest-homeassistant-custom-component` pins, and every test import then dies inside `pytest_homeassistant_custom_component/syrupy.py` on a symbol newer syrupy removed. It surfaces as a collection error, which reads like a broken test rather than a wrong interpreter.
@@ -62,6 +62,16 @@ uv pip install --python .venv/bin/python -r requirements.txt -c "$(
 ```
 
 Plain `pip install` works too — CI uses it — but the system `python3` is not 3.14, so create the venv with an explicit interpreter either way.
+
+#### Fresh workspace setup
+
+A fresh clone (or a fresh container hosting one, e.g. Home Assistant core's devcontainer with this repo cloned in as a sibling folder) has neither the venv above nor its git hooks wired up. After building `.venv`, install the hooks once from the main checkout — they're shared by every worktree, since hooks aren't per-worktree in git:
+
+```bash
+prek install                       # or: pre-commit install
+prek install --hook-type commit-msg  # not installed by the plain form above, despite
+                                      # default_install_hook_types in .pre-commit-config.yaml
+```
 
 **CRITICAL:** After completing any task involving code changes, ALWAYS run the relevant tests to ensure no regressions. For bug fixes, run the related test file. For features, run all affected test files. Before marking work complete, run the full test suite.
 
