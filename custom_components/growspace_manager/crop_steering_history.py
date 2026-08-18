@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 from homeassistant.util.dt import as_utc, now, utcnow
 
 if TYPE_CHECKING:
+    from homeassistant.components.recorder import Recorder
+
     from .models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,7 +21,7 @@ _BUCKET_SIZE = timedelta(minutes=5)
 _ANCHOR_LEAD = timedelta(hours=2)
 
 
-def get_recorder_instance(hass: HomeAssistant):
+def get_recorder_instance(hass: HomeAssistant) -> Recorder:
     """Get the recorder instance (deferred import)."""
     from homeassistant.helpers.recorder import get_instance  # noqa: PLC0415
 
@@ -53,9 +55,7 @@ class CropSteeringHistoryAnalyzer:
         end_time = utcnow()
 
         env = growspace.environment_config
-        soil_sensor_ids = (
-            [env.soil_moisture_sensor] if env.soil_moisture_sensor else []
-        )
+        soil_sensor_ids = [env.soil_moisture_sensor] if env.soil_moisture_sensor else []
 
         sensor_ids = [*soil_sensor_ids, *env.pore_ec_sensors, *env.bulk_ec_sensors]
         history = await self._async_fetch_history(sensor_ids, anchor, end_time)
@@ -115,9 +115,9 @@ class CropSteeringHistoryAnalyzer:
 
         from homeassistant.components.recorder import history  # noqa: PLC0415
 
-        result: dict[str, list[State]] = await get_recorder_instance(
-            self.hass
-        ).async_add_executor_job(
+        # minimal_response and compressed_state_format are both left at their
+        # default False, so every value is a State, never the dict variant.
+        result = await get_recorder_instance(self.hass).async_add_executor_job(
             lambda: history.get_significant_states(
                 self.hass,
                 start_time,
@@ -126,7 +126,7 @@ class CropSteeringHistoryAnalyzer:
                 include_start_time_state=True,
             )
         )
-        return result
+        return cast("dict[str, list[State]]", result)
 
     def _bucket_sensor(
         self, states: list[State], anchor: datetime, end_time: datetime
@@ -163,5 +163,5 @@ class CropSteeringHistoryAnalyzer:
             return None
         try:
             return float(state.state)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None

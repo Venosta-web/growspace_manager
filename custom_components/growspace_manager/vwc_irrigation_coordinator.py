@@ -519,11 +519,16 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             lambda: self._average_pore_ec(growspace),
             read_runoff=lambda: self._runoff_inputs(growspace),
         ).resolve()
-        if state.recommendation is ECRecommendation.UNAVAILABLE:
+        if (
+            state.recommendation is ECRecommendation.UNAVAILABLE
+            or state.pore_ec is None
+        ):
             return 1.0, False
 
         band_min = strategy.pore_ec_target_min
         band_max = strategy.pore_ec_target_max
+        if band_min is None or band_max is None:
+            return 1.0, False
         # The flush magnitude reflects whichever EC is driving it, through the one
         # helper (one explainable factor, ADR-0016): a pore-driven flush/stack uses
         # pore EC; a runoff-driven flush (pore within band, escalated to FLUSH by

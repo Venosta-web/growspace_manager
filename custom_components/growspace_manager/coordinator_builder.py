@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -44,6 +44,9 @@ from .tank_monitor import TankLevelMonitor
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
 
+if TYPE_CHECKING:
+    from .coordinator import GrowspaceCoordinator
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -74,7 +77,7 @@ class CoordinatorBuilder:
         options: dict[str, Any] | None = None,
         strain_library: StrainLibrary | None = None,
         seedfinder_scraper: SeedfinderScraper | None = None,
-    ) -> Any:
+    ) -> GrowspaceCoordinator:
         """Build a fully configured GrowspaceCoordinator.
 
         Args:
@@ -96,7 +99,9 @@ class CoordinatorBuilder:
         # ------------------------------------------------------------------
         # Phase 1 – pure collaborators (no coordinator reference needed)
         # ------------------------------------------------------------------
-        alert_store = Store(self.hass, 1, "growspace_manager.ai_alerts")
+        alert_store: Store[dict[str, Any]] = Store(
+            self.hass, 1, "growspace_manager.ai_alerts"
+        )
         conversation_store = ConversationStore(
             Store(self.hass, 1, "growspace_manager.ai_conversations")
         )

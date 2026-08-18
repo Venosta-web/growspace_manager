@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util.dt import utcnow
@@ -325,7 +325,7 @@ class BaseIrrigationCoordinator:
         state_reached = asyncio.Event()
 
         @callback
-        def state_change_listener(event: Event) -> None:
+        def state_change_listener(event: Event[EventStateChangedData]) -> None:
             """Listen for state changes."""
             event_entity_id = event.data.get("entity_id")
             if event_entity_id != entity_id:
@@ -829,7 +829,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             (irrigation_times, "irrigation"),
             (drain_times, "drain"),
         ):
-            events = schedulable_events(times)
+            events = schedulable_events([dict(item) for item in times])
             for event in events.malformed:
                 _LOGGER.warning(
                     "Skipping %s event with invalid time format: %s",
@@ -909,6 +909,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         Returns None when no times are configured.
         """
         soonest = next_occurrence(
-            self.growspace.irrigation_config.irrigation_times, utcnow()
+            [dict(item) for item in self.growspace.irrigation_config.irrigation_times],
+            utcnow(),
         )
         return soonest.isoformat() if soonest else None

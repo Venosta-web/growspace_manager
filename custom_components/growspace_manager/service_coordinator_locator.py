@@ -146,8 +146,10 @@ class ServiceCoordinatorLocator:
 
     @staticmethod
     def _check_collection(
-        value: str | list[str], collection_name: str, coordinators: list[Any]
-    ) -> Any | None:
+        value: str | list[str],
+        collection_name: str,
+        coordinators: list[GrowspaceCoordinator],
+    ) -> GrowspaceCoordinator | None:
         """Check if value exists in coordinator's collection.
 
         Args:

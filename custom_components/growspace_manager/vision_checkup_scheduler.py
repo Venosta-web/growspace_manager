@@ -6,11 +6,12 @@ and sends them to an AI vision model for plant health analysis.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Coroutine
 from datetime import datetime, time, timedelta
 import logging
 from pathlib import Path
 import shutil
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
 
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
 
     from .coordinator import GrowspaceCoordinator
     from .models import Growspace
+    from .strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,7 +97,7 @@ class VisionCheckupScheduler:
     def _get_ai_task_entity_id(self) -> str | None:
         """Get the configured AI task entity ID from coordinator options."""
         ai_settings = self.coordinator.options.get("ai_settings", {})
-        return ai_settings.get("ai_task_entity_id")
+        return cast("str | None", ai_settings.get("ai_task_entity_id"))
 
     def _get_active_day_hours(self, growspace: Growspace) -> int:
         """Determine active light hours based on dominant plant stage.
@@ -121,12 +123,19 @@ class VisionCheckupScheduler:
         except ValueError:
             return datetime.strptime(raw, "%H:%M").time()
 
+    def _require_strain_library(self) -> StrainLibrary:
+        """Return the loaded strain library, raising if it is unavailable."""
+        strain_library = self.coordinator.services.config.strain_library
+        if strain_library is None:
+            raise HomeAssistantError("Strain library is not loaded")
+        return strain_library
+
     def _gather_context_data(self, growspace_id: str) -> dict[str, Any]:
         """Gather growspace context data for the AI prompt."""
         from .services.ai_assistant import GrowAssistant  # noqa: PLC0415
 
         assistant = GrowAssistant(
-            self.hass, self.coordinator, self.coordinator.services.config.strain_library
+            self.hass, self.coordinator, self._require_strain_library()
         )
         return assistant.gather_growspace_data(growspace_id)
 
@@ -142,7 +151,7 @@ class VisionCheckupScheduler:
         from .services.ai_assistant import GrowAssistant  # noqa: PLC0415
 
         assistant = GrowAssistant(
-            self.hass, self.coordinator, self.coordinator.services.config.strain_library
+            self.hass, self.coordinator, self._require_strain_library()
         )
         env_context = assistant._format_context_data(context_data)  # noqa: SLF001
 
@@ -432,7 +441,9 @@ class VisionCheckupScheduler:
         for growspace_id in self.coordinator.growspaces:
             self.schedule_growspace(growspace_id)
 
-    def _create_checkup_callback(self, growspace_id: str, check_type: str):
+    def _create_checkup_callback(
+        self, growspace_id: str, check_type: str
+    ) -> Callable[[datetime], Coroutine[Any, Any, None]]:
         """Create a callback for a scheduled checkup that reschedules after running."""
 
         async def _callback(_now: datetime) -> None:

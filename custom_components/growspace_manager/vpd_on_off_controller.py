@@ -44,7 +44,7 @@ class VpdOnOffController:
     _THRESHOLDS_ATTR: ClassVar[str]
     _DEVICE_CONFIG_ATTR: ClassVar[str]
     _ON_TRIGGER_IS_HIGH_VPD: ClassVar[bool]
-    _DEFAULT_THRESHOLDS: ClassVar[dict]
+    _DEFAULT_THRESHOLDS: ClassVar[dict[PlantStage, dict[str, dict[str, float]]]]
     _LOGBOOK_SENSOR_TYPE: ClassVar[str]
     _LOGBOOK_CATEGORY: ClassVar[str]
     _DEFAULT_MIN_RUNTIME: ClassVar[int] = 300
@@ -92,7 +92,7 @@ class VpdOnOffController:
         """
         if not self.growspace:
             return
-        env = self.growspace.environment_config or {}
+        env = self.growspace.environment_config
         self.vpd_sensor = getattr(env, "vpd_sensor", None)
         self.light_sensors = getattr(env, "light_sensors", []) or []
         self.control_enabled = getattr(env, self._CONTROL_FLAG_ATTR, False)
@@ -123,6 +123,8 @@ class VpdOnOffController:
 
     async def async_setup(self) -> None:
         """Set up state-change listeners and run an initial check."""
+        if self.growspace is None:
+            return
         entities = self._get_all_controlled_entities()
         has_actuators = bool(entities or self._get_ac_infinity_devices())
         if self.vpd_sensor and has_actuators and self.control_enabled:

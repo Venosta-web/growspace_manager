@@ -47,8 +47,6 @@ def _needs_migration(growspace: Growspace) -> bool:
     controller and must not be nagged.
     """
     env = growspace.environment_config
-    if env is None:
-        return False
     return bool(
         env.control_dehumidifier
         and env.exhaust_fan_entities

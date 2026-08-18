@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import timedelta
 import logging
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import (
@@ -44,7 +44,7 @@ from .utils import read_environment_vpd, strip_markdown_fence
 if TYPE_CHECKING:
     import asyncio
 
-    from homeassistant.core import CALLBACK_TYPE, Event
+    from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData
 
     from .coordinator import GrowspaceCoordinator
 
@@ -76,7 +76,7 @@ class BriefingScheduler:
     # ------------------------------------------------------------------
 
     def _ai_settings(self) -> dict[str, Any]:
-        return self.coordinator.options.get("ai_settings", {})
+        return cast("dict[str, Any]", self.coordinator.options.get("ai_settings", {}))
 
     def _get_interval_minutes(self) -> int:
         return int(
@@ -133,7 +133,7 @@ class BriefingScheduler:
         await self._async_generate_and_cache()
 
     @callback
-    def _async_on_entity_change(self, event: Event) -> None:
+    def _async_on_entity_change(self, event: Event[EventStateChangedData]) -> None:
         """Handle entity state-change events.
 
         Only fires for transitions to ``on``; rapid changes are debounced so that
@@ -259,7 +259,7 @@ class BriefingScheduler:
             raw_json = strip_markdown_fence(parts[1].strip())
             try:
                 recommendations = json.loads(raw_json)
-            except (json.JSONDecodeError, ValueError):
+            except json.JSONDecodeError, ValueError:
                 _LOGGER.warning(
                     "Failed to parse briefing recommendations JSON: %s", raw_json[:200]
                 )
@@ -287,9 +287,11 @@ class BriefingScheduler:
             # Aggregate today's water across all sources — manual, tank-derived,
             # and pump-cycle (ADR-0017). Previously read a nonexistent field and
             # was always 0.0.
-            trackers = self.coordinator.services.growspaces.get_all_trackers_for_growspace(
-                growspace.id
-            ).values()
+            trackers = (
+                self.coordinator.services.growspaces.get_all_trackers_for_growspace(
+                    growspace.id
+                ).values()
+            )
             water_use_l += compute_growspace_water(growspace, trackers).today
 
         avg_vpd = (
