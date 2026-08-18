@@ -8,7 +8,7 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.strain_library import StrainLibrary
+from custom_components.growspace_manager.exceptions import CoordinatorNotReadyError
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
@@ -51,7 +51,9 @@ async def websocket_update_breeder(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> dict[str, Any]:
     """Handle updating breeder info across all strains."""
-    strain_library: StrainLibrary = coordinator.services.config.strain_library
+    strain_library = coordinator.services.config.strain_library
+    if strain_library is None:
+        raise CoordinatorNotReadyError("Strain library not initialized")
     count = await strain_library.update_breeder(
         original_name=msg["original_name"],
         new_name=msg["new_name"],
@@ -64,7 +66,9 @@ async def websocket_delete_breeder(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> dict[str, Any]:
     """Handle removing breeder association from all strains."""
-    strain_library: StrainLibrary = coordinator.services.config.strain_library
+    strain_library = coordinator.services.config.strain_library
+    if strain_library is None:
+        raise CoordinatorNotReadyError("Strain library not initialized")
     count = await strain_library.delete_breeder(
         breeder_name=msg["breeder_name"],
     )

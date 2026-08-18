@@ -195,9 +195,7 @@ class GrowspaceManager(BaseService):
             )
             async_fire_growspace_event(self.hass, EVENT_GROWSPACE_REMOVED, growspace)
 
-    async def update_growspace(
-        self, growspace_id: str, **kwargs: dict[str, Any]
-    ) -> Growspace:
+    async def update_growspace(self, growspace_id: str, **kwargs: Any) -> Growspace:
         """Update a growspace."""
         async with self._lock:
             if not self.repository.has_growspace(growspace_id):
@@ -546,7 +544,7 @@ class GrowspaceManager(BaseService):
             updated = False
             temps = env_config.temperature_sensors
             hums = env_config.humidity_sensors
-            vpds = env_config.vpd_sensors
+            vpds: list[str | None] = list(env_config.vpd_sensors)
 
             if not temps and env_config.temperature_sensor:
                 temps = [env_config.temperature_sensor]
@@ -566,10 +564,11 @@ class GrowspaceManager(BaseService):
                 vpds.append(None)
 
             for i in range(num_pairs):
+                vpd_entry = vpds[i]
                 if (
                     temps[i]
                     and hums[i]
-                    and (vpds[i] is None or "calculated_vpd" in vpds[i])
+                    and (vpd_entry is None or "calculated_vpd" in vpd_entry)
                 ):
                     suffix = f" {i + 1}" if num_pairs > 1 else ""
                     calc_name = f"{growspace.name} Calculated VPD{suffix}"
@@ -585,7 +584,7 @@ class GrowspaceManager(BaseService):
                         )
 
             if updated:
-                env_config.vpd_sensors = vpds
+                env_config.vpd_sensors = [v if v is not None else "" for v in vpds]
                 if len(vpds) > 0:
                     env_config.vpd_sensor = vpds[0]
                 if self.cache:

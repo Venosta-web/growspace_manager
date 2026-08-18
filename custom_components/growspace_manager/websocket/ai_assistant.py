@@ -109,7 +109,6 @@ def _extract_action(text: str) -> tuple[str, dict[str, Any] | None]:
     except json.JSONDecodeError, ValueError:
         # Malformed block — return the full text without modification
         return text, None
-        return text, None
 
     # Strip the block (and any surrounding whitespace) from the display text
     display = _ACTION_RE.sub("", text).strip()
@@ -164,7 +163,7 @@ def _build_context_message(
     env = growspace.environment_config
 
     # Collect sensor readings — first valid entity per type wins
-    sensor_specs: list[tuple[str, list[str | None]]] = [
+    sensor_specs: list[tuple[str, list[str]]] = [
         (
             "Temperature",
             env.temperature_sensors
