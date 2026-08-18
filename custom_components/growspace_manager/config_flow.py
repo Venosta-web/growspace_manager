@@ -293,7 +293,6 @@ class OptionsFlowHandler(OptionsFlow):
             self._strain_handler = StrainConfigHandler(self)
         return self._strain_handler
 
-    @override
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -511,6 +510,8 @@ class OptionsFlowHandler(OptionsFlow):
             coordinator = self.env_sensors_handler.get_coordinator()
         except AbortFlow as e:
             return self.async_abort(reason=e.reason)
+        if not self.selected_growspace_id:
+            return self.async_abort(reason="growspace_not_found")
         growspace = coordinator.services.growspaces.get_growspace(
             self.selected_growspace_id
         )
