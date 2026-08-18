@@ -36,6 +36,13 @@ repos:
     rev: v3.6.2
     hooks:
       - id: prettier
+        # Without this, prek/pre-commit also runs prettier during the commit-msg
+        # stage — where "files" resolves to the commit message file itself — and
+        # errors out with "No matching files", hard-blocking every commit. Only
+        # surfaced once commit-msg was actually installed (see CLAUDE.md's fresh
+        # workspace setup note); default_install_hook_types declares the stage,
+        # each hook still needs its own restriction.
+        stages: [pre-commit]
         additional_dependencies:
           - prettier@3.6.2
           - prettier-plugin-sort-json@4.2.0
