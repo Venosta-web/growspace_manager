@@ -12,7 +12,6 @@ from custom_components.growspace_manager.sensor import (
     ECTargetSensor,
     GrowspaceListSensor,
     _async_create_derivative_sensors,
-    _check_calculated_vpd_sensor,
     _check_subarea_calculated_vpd_sensors,
     _create_initial_entities,
     _get_env_config_val,
@@ -55,18 +54,24 @@ async def test_async_create_derivative_sensors_skips_none() -> None:
     growspace.id = "gs_test"
     growspace.name = "Test GS"
     # Provide a list with None to trigger Line 116
-    growspace.environment_config = {
-        "temperature_sensors": [None, "sensor.valid_temp"],
-        "humidity_sensors": [],
-        "vpd_sensors": [],
-    }
+    growspace.environment_config = Mock(
+        temperature_sensors=[None, "sensor.valid_temp"],
+        humidity_sensors=[],
+        vpd_sensors=[],
+        temperature_sensor=None,
+        humidity_sensor=None,
+        vpd_sensor=None,
+    )
 
-    with patch(
-        "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
-        new_callable=AsyncMock,
-    ) as mock_trend, patch(
-        "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
-        new_callable=AsyncMock,
+    with (
+        patch(
+            "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
+            new_callable=AsyncMock,
+        ) as mock_trend,
+        patch(
+            "custom_components.growspace_manager.sensor._setup.async_setup_statistics_sensor",
+            new_callable=AsyncMock,
+        ),
     ):
         await _async_create_derivative_sensors(hass, config_entry, growspace)
 
@@ -96,74 +101,6 @@ def test_growspace_list_sensor_native_value(
 
     # native_value should call _update_growspaces and return 2
     assert sensor.native_value == 2
-
-
-@pytest.mark.asyncio
-async def test_get_val_attribute_error_derivative_sensors() -> None:
-    """Test AttributeError fallback in _async_create_derivative_sensors get_val helper (Lines 116-117)."""
-    hass = MagicMock()
-    config_entry = Mock()
-    config_entry.runtime_data = Mock()
-    config_entry.runtime_data.created_entity_ids = []
-
-    growspace = Mock()
-    growspace.id = "gs_test"
-    growspace.name = "Test GS"
-    growspace.environment_config = Mock()
-
-    orig_getattr = getattr
-
-    def mock_getattr(obj, name, default=None):
-        if name in (
-            "temperature_sensors",
-            "humidity_sensors",
-            "vpd_sensors",
-            "temperature_sensor",
-            "humidity_sensor",
-            "vpd_sensor",
-        ):
-            raise AttributeError("Simulated AttributeError")
-        return orig_getattr(obj, name, default)
-
-    with patch(
-        "custom_components.growspace_manager.sensor._setup.getattr", side_effect=mock_getattr
-    ), patch(
-        "custom_components.growspace_manager.sensor._setup.async_setup_trend_sensor",
-        new_callable=AsyncMock,
-    ) as mock_trend:
-        # This should complete without exception and return default, hitting line 116-117
-        await _async_create_derivative_sensors(hass, config_entry, growspace)
-        # Because of AttributeError, raw_sensors is [], so no setup is called
-        mock_trend.assert_not_called()
-
-
-def test_get_val_attribute_error_calculated_vpd_sensor(
-    mock_coordinator: MagicMock,
-) -> None:
-    """Test AttributeError fallback in _check_calculated_vpd_sensor get_val helper (Lines 503-504)."""
-    growspace = Mock()
-    growspace.environment_config = Mock()
-
-    orig_getattr = getattr
-
-    def mock_getattr(obj, name, default=None):
-        if name in (
-            "temperature_sensors",
-            "humidity_sensors",
-            "vpd_sensors",
-            "temperature_sensor",
-            "humidity_sensor",
-            "vpd_sensor",
-        ):
-            raise AttributeError("Simulated AttributeError")
-        return orig_getattr(obj, name, default)
-
-    with patch(
-        "custom_components.growspace_manager.sensor._setup.getattr", side_effect=mock_getattr
-    ):
-        # This should safely return empty list, hitting lines 503-504
-        result = _check_calculated_vpd_sensor(mock_coordinator, growspace)
-        assert result == []
 
 
 @pytest.mark.asyncio
@@ -290,7 +227,8 @@ def test_get_env_config_val_dict_and_attribute_error() -> None:
         return orig_getattr(obj, name, default)
 
     with patch(
-        "custom_components.growspace_manager.sensor._setup.getattr", side_effect=mock_getattr
+        "custom_components.growspace_manager.sensor._setup.getattr",
+        side_effect=mock_getattr,
     ):
         assert _get_env_config_val(config_obj, "my_key", "default_val") == "default_val"
 
@@ -360,8 +298,8 @@ def test_drying_weight_sensor_no_plant(
     # Set up plants and growspaces in coordinator
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs_1": MagicMock()}
-    mock_coordinator._data_repository.get_plant.side_effect = (
-        lambda plant_id: mock_coordinator.plants.get(plant_id)
+    mock_coordinator._data_repository.get_plant.side_effect = lambda plant_id: (
+        mock_coordinator.plants.get(plant_id)
     )
 
     sensor = DryingWeightSensor(mock_coordinator, mock_plant)

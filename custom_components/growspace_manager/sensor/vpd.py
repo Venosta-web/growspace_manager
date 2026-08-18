@@ -13,7 +13,7 @@ from custom_components.growspace_manager.utils import (
     generate_vpd_sensor_unique_id,
 )
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
-from homeassistant.core import Event
+from homeassistant.core import Event, EventStateChangedData
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
 
@@ -34,7 +34,7 @@ class BaseVpdSensor(SensorEntity):
                 )
             )
 
-    async def _handle_source_update(self, event: Event) -> None:
+    async def _handle_source_update(self, event: Event[EventStateChangedData]) -> None:
         """Handle updates from source sensors."""
         self.async_write_ha_state()
 

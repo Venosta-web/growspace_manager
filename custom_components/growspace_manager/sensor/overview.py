@@ -12,7 +12,7 @@ from custom_components.growspace_manager.utils import (
 )
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import EntityCategory
-from homeassistant.core import Event
+from homeassistant.core import Event, EventStateChangedData
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -97,7 +97,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
         return sensors
 
-    async def _handle_sensor_update(self, event: Event) -> None:
+    async def _handle_sensor_update(self, event: Event[EventStateChangedData]) -> None:
         """Handle updates from tracked environment sensors."""
         await self.coordinator.async_refresh_growspace_data(self.growspace_id)
         self.async_write_ha_state()

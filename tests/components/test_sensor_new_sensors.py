@@ -921,16 +921,16 @@ def test_ec_sensor_extra_state_attributes_no_curve() -> None:
 
 
 def test_check_calculated_vpd_sensor_dict_singular_fallback() -> None:
-    """Lines 451, 453: dict env_config with empty plural lists uses singular fields."""
-    env_config = {
-        "temperature_sensors": [],
-        "humidity_sensors": [],
-        "vpd_sensors": [],
-        "temperature_sensor": "sensor.temp",
-        "humidity_sensor": "sensor.hum",
-        "vpd_sensor": None,
-        "lst_offset": 0.0,
-    }
+    """Empty plural sensor lists fall back to the singular sensor fields."""
+    env_config = Mock(
+        temperature_sensors=[],
+        humidity_sensors=[],
+        vpd_sensors=[],
+        temperature_sensor="sensor.temp",
+        humidity_sensor="sensor.hum",
+        vpd_sensor=None,
+        lst_offset=0.0,
+    )
     growspace = Mock(id="gs1", name="GS1", environment_config=env_config)
     result = _check_calculated_vpd_sensor(MagicMock(), growspace)
     assert len(result) == 1

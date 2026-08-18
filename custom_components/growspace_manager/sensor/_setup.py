@@ -78,12 +78,7 @@ async def _async_create_derivative_sensors(
     }
 
     def get_val(key: str, default: Any = None) -> Any:
-        try:
-            if isinstance(growspace.environment_config, dict):
-                return growspace.environment_config.get(key, default)
-            return getattr(growspace.environment_config, key, default)
-        except AttributeError:
-            return default
+        return getattr(growspace.environment_config, key, default)
 
     for sensor_type, (singular_key, plural_key) in metric_map.items():
         raw_sensors = get_val(plural_key, [])
@@ -203,7 +198,11 @@ async def async_setup_entry(
                 calculated_subarea_vpd_ids,
             )
             await _update_plant_entities(
-                hass, coordinator, plant_entities, async_add_entities, initialized_drying_sensor_ids
+                hass,
+                coordinator,
+                plant_entities,
+                async_add_entities,
+                initialized_drying_sensor_ids,
             )
 
     def _listener_callback() -> None:
@@ -238,14 +237,16 @@ async def _create_initial_entities(
         vpd_entities = _check_calculated_vpd_sensor(coordinator, growspace)
         for vpd_entity in vpd_entities:
             initial_entities.append(vpd_entity)
-            calculated_vpd_growspace_ids.add(vpd_entity.unique_id)
+            if vpd_entity.unique_id:
+                calculated_vpd_growspace_ids.add(vpd_entity.unique_id)
 
         subarea_vpd_entities = _check_subarea_calculated_vpd_sensors(
             coordinator, growspace
         )
         for vpd_entity in subarea_vpd_entities:
             initial_entities.append(vpd_entity)
-            calculated_subarea_vpd_ids.add(vpd_entity.unique_id)
+            if vpd_entity.unique_id:
+                calculated_subarea_vpd_ids.add(vpd_entity.unique_id)
 
         env_config = getattr(growspace, "environment_config", None)
         if env_config:
@@ -378,7 +379,8 @@ async def _update_growspace_entities(
         if new_calculated_vpds:
             async_add_entities(new_calculated_vpds)
             for v in new_calculated_vpds:
-                calculated_vpd_growspace_ids.add(v.unique_id)
+                if v.unique_id:
+                    calculated_vpd_growspace_ids.add(v.unique_id)
             coordinator.config_entry.async_create_background_task(
                 hass, coordinator.async_request_refresh(), "coordinator_refresh"
             )
@@ -394,7 +396,8 @@ async def _update_growspace_entities(
         if new_subarea_vpds:
             async_add_entities(new_subarea_vpds)
             for v in new_subarea_vpds:
-                calculated_subarea_vpd_ids.add(v.unique_id)
+                if v.unique_id:
+                    calculated_subarea_vpd_ids.add(v.unique_id)
 
     for removed_gs_id in list(growspace_entities.keys()):
         if removed_gs_id not in coordinator.growspaces:
@@ -412,13 +415,16 @@ async def _update_plant_entities(
     initialized_drying_sensor_ids: set[str],
 ) -> None:
     """Update plant entities based on coordinator data."""
-    new_entities = []
+    new_entities: list[Entity] = []
     for plant_id, plant in coordinator.plants.items():
         if plant_id not in plant_entities:
             pe = PlantEntity(coordinator, plant)
             plant_entities[plant_id] = pe
             new_entities.append(pe)
-        if plant.dry_start is not None and plant_id not in initialized_drying_sensor_ids:
+        if (
+            plant.dry_start is not None
+            and plant_id not in initialized_drying_sensor_ids
+        ):
             new_entities.append(DryingWeightSensor(coordinator, plant))
             new_entities.append(DryingMoistureSensor(coordinator, plant))
             initialized_drying_sensor_ids.add(plant_id)
@@ -445,12 +451,7 @@ def _check_calculated_vpd_sensor(
         return []
 
     def get_val(key: str, default: Any = None) -> Any:
-        try:
-            if isinstance(env_config, dict):
-                return env_config.get(key, default)
-            return getattr(env_config, key, default)
-        except AttributeError:
-            return default
+        return getattr(env_config, key, default)
 
     temp_sensors = get_val("temperature_sensors", [])
     hum_sensors = get_val("humidity_sensors", [])
@@ -523,9 +524,13 @@ def _check_subarea_calculated_vpd_sensors(
         hum_sensors = _get_env_config_val(env_config, "humidity_sensors", [])
         vpd_sensors = _get_env_config_val(env_config, "vpd_sensors", [])
 
-        if not temp_sensors and (ts := _get_env_config_val(env_config, "temperature_sensor")):
+        if not temp_sensors and (
+            ts := _get_env_config_val(env_config, "temperature_sensor")
+        ):
             temp_sensors = [ts]
-        if not hum_sensors and (hs := _get_env_config_val(env_config, "humidity_sensor")):
+        if not hum_sensors and (
+            hs := _get_env_config_val(env_config, "humidity_sensor")
+        ):
             hum_sensors = [hs]
         if not vpd_sensors and (vs := _get_env_config_val(env_config, "vpd_sensor")):
             vpd_sensors = [vs]
