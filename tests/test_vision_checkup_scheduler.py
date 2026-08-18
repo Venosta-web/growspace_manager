@@ -451,14 +451,39 @@ def test_async_stop_cancels_all_timers(mock_hass, mock_coordinator):
 
 @pytest.mark.asyncio
 async def test_get_active_day_hours_flower(mock_hass, mock_coordinator):
-    """Test getting active day hours when a plant is in flower."""
+    """Test getting active day hours when a plant has entered flower.
+
+    Resolution must key off ``flower_start`` (like the grow light
+    controller), not the cached ``plant.stage`` attribute, since the latter
+    is only set once at plant creation and never updated on flip.
+    """
+
+    gs = _make_mock_growspace()
+    plant = MagicMock()
+    plant.flower_start = "2000-01-01"
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+    assert scheduler._get_active_day_hours(gs) == 12
+
+
+@pytest.mark.asyncio
+async def test_get_active_day_hours_stale_stage_ignored(mock_hass, mock_coordinator):
+    """A stale ``plant.stage`` of "flower" must not override flower_start.
+
+    Regression test: the vision scheduler previously trusted the cached
+    ``plant.stage`` attribute, which desynced from the actual grow light
+    schedule (driven by ``flower_start``) once a plant had been created,
+    producing checkup times that landed hours after lights had already
+    turned off.
+    """
 
     gs = _make_mock_growspace()
     plant = MagicMock()
     plant.stage = "flower"
+    plant.flower_start = None
     mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    assert scheduler._get_active_day_hours(gs) == 12
+    assert scheduler._get_active_day_hours(gs) == 18
 
 
 def test_get_lights_on_time_fallback(mock_hass, mock_coordinator):

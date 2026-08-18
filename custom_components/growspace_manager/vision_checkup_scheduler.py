@@ -18,7 +18,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import now as ha_now, utcnow
 
-from .const import PlantStage
+from .domain.light_schedule import resolve_photoperiod_hours
 from .image_processor import GrowspaceImageProcessor
 from .models import VisionCheckupResult
 
@@ -100,14 +100,18 @@ class VisionCheckupScheduler:
     def _get_active_day_hours(self, growspace: Growspace) -> int:
         """Determine active light hours based on dominant plant stage.
 
-        Uses flower hours if any plant is in flower stage, otherwise veg hours.
+        Uses the same ``flower_start``-based resolution as the grow light
+        controller (see ``grow_light_coordinator._photoperiod_hours``) rather
+        than the cached ``plant.stage`` attribute, which is only set once at
+        plant creation and does not update when a plant flips to flower.
         """
         plants = self.coordinator.services.growspaces.get_growspace_plants(growspace.id)
         env = growspace.environment_config
-        for plant in plants:
-            if getattr(plant, "stage", None) in (PlantStage.FLOWER, "flower"):
-                return env.flower_day_hours
-        return env.veg_day_hours
+        return int(
+            resolve_photoperiod_hours(
+                plants, env.veg_day_hours, env.flower_day_hours, ha_now().date()
+            )
+        )
 
     def _get_lights_on_time(self, growspace: Growspace) -> time:
         """Parse the lights_on_time from the irrigation strategy."""
