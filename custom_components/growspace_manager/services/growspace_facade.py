@@ -675,7 +675,7 @@ class GrowspaceFacade:
         registry: er.EntityRegistry = er.async_get(self._coordinator.hass)
         entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
         if entity_id:
-            return entity_id  # type: ignore[no-any-return]
+            return entity_id
         for special_def in SPECIAL_GROWSPACES.values():
             canonical_id = special_def["canonical_id"]
             if growspace_id == canonical_id or growspace_id in special_def.get(

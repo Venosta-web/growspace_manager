@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from custom_components.growspace_manager.models import Growspace
 
 
-class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor tracking electricity consumption per growspace."""
 
     _attr_has_entity_name = True
@@ -61,12 +61,12 @@ class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity): 
             if state and state.state not in ("unknown", "unavailable"):
                 try:
                     total += float(state.state)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     continue
         return total
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return total kWh for current grow cycle."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
@@ -77,7 +77,7 @@ class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity): 
         return round(max(0.0, current_kwh - cycle_start), 2)
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return energy details."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
@@ -91,7 +91,7 @@ class EnergyUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity): 
         }
 
 
-class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor tracking current power draw per growspace."""
 
     _attr_has_entity_name = True
@@ -120,7 +120,7 @@ class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
         )
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return total current wattage across all configured power sensors."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
@@ -134,12 +134,12 @@ class PowerUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
                 try:
                     total += float(state.state)
                     any_valid = True
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     continue
         return round(total, 1) if any_valid else None
 
 
-class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor tracking water consumption per growspace."""
 
     _attr_has_entity_name = True
@@ -179,7 +179,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
         return compute_growspace_water(growspace, trackers)
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return total liters used in current cycle (since cycle_start_date)."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
@@ -188,7 +188,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
         return self._compute_water(growspace).cycle
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return water usage details, exposing both today and cycle figures."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
@@ -210,7 +210,7 @@ class WaterUsageSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  
             try:
                 start = date_cls.fromisoformat(usage.cycle_start_date)
                 days = max(1, (date_cls.today() - start).days)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 pass
 
         liters_per_plant = (

@@ -21,7 +21,7 @@ STRAIN_LIBRARY_DEVICE_INFO = DeviceInfo(
 )
 
 
-class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """A sensor that provides analytics from the user's strain library."""
 
     _attr_has_entity_name = True
@@ -49,7 +49,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         return total_count - ancestor_count, ancestor_count, total_count
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> int:
         """Return the number of catalogued strains in the library."""
         strains = self.coordinator.services.config.strain_library.get_all()
@@ -57,7 +57,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         return catalogued_count
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return strain analytics as state attributes."""
         analytics = self.coordinator.services.config.strain_library.get_analytics()
@@ -83,7 +83,7 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         }
 
 
-class SeedInventorySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class SeedInventorySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor exposing the total seed count across all batches."""
 
     _attr_has_entity_name = True
@@ -98,13 +98,13 @@ class SeedInventorySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         self._attr_device_info = STRAIN_LIBRARY_DEVICE_INFO
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> int:
         """Return total number of seeds across all batches."""
         return self.coordinator.services.genetics.get_total_seed_count()
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return each seed batch as a list of dicts."""
         return {

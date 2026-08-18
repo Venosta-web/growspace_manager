@@ -271,7 +271,7 @@ async def _get_history_with_binary_search_downsample(
 
         return result
 
-    return await hass.async_add_executor_job(_downsample_with_binary_search)  # type: ignore[no-any-return]
+    return await hass.async_add_executor_job(_downsample_with_binary_search)
 
 
 async def websocket_get_history_stats(

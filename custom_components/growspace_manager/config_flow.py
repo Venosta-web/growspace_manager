@@ -62,7 +62,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     MINOR_VERSION = 1
     integration_name = "Growspace Manager"
 
-    @override  # type: ignore[misc]
+    @override
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -293,7 +293,7 @@ class OptionsFlowHandler(OptionsFlow):
             self._strain_handler = StrainConfigHandler(self)
         return self._strain_handler
 
-    @override  # type: ignore[misc]
+    @override
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -443,37 +443,49 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate dehumidifier configuration to the handler."""
-        return await self.dehumidifier_handler.async_step_configure_dehumidifier(user_input)
+        return await self.dehumidifier_handler.async_step_configure_dehumidifier(
+            user_input
+        )
 
     async def async_step_configure_fan_controller(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate fan controller configuration to the handler."""
-        return await self.fan_controller_handler.async_step_configure_fan_controller(user_input)
+        return await self.fan_controller_handler.async_step_configure_fan_controller(
+            user_input
+        )
 
     async def async_step_configure_fan_vpd(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate fan VPD configuration to the handler."""
-        return await self.fan_controller_handler.async_step_configure_fan_vpd(user_input)
+        return await self.fan_controller_handler.async_step_configure_fan_vpd(
+            user_input
+        )
 
     async def async_step_configure_fan_humidity(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate fan humidity configuration to the handler."""
-        return await self.fan_controller_handler.async_step_configure_fan_humidity(user_input)
+        return await self.fan_controller_handler.async_step_configure_fan_humidity(
+            user_input
+        )
 
     async def async_step_configure_fan_temperature(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate fan temperature configuration to the handler."""
-        return await self.fan_controller_handler.async_step_configure_fan_temperature(user_input)
+        return await self.fan_controller_handler.async_step_configure_fan_temperature(
+            user_input
+        )
 
     async def async_step_configure_fan_wind(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate fan wind configuration to the handler."""
-        return await self.fan_controller_handler.async_step_configure_fan_wind(user_input)
+        return await self.fan_controller_handler.async_step_configure_fan_wind(
+            user_input
+        )
 
     async def async_step_configure_advanced_bayesian(
         self, user_input: dict[str, Any] | None = None
@@ -485,7 +497,11 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate sensor placement configuration to the handler."""
-        return await self.bayesian_advanced_handler.async_step_configure_sensor_placement(user_input)
+        return (
+            await self.bayesian_advanced_handler.async_step_configure_sensor_placement(
+                user_input
+            )
+        )
 
     async def async_step_save_and_finish(
         self, user_input: dict[str, Any] | None = None

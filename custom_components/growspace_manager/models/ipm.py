@@ -23,9 +23,9 @@ class IPMType(StrEnum):
 class IPMPresetItem(TypedDict, total=False):
     """A single item in an IPM preset recipe."""
 
-    name: str  # type: ignore[assignment]
-    dose_amount: float  # type: ignore[assignment]
-    dose_unit: str  # type: ignore[assignment]
+    name: str
+    dose_amount: float
+    dose_unit: str
     phi_days: int  # Pre-harvest interval in days, default 0
 
 

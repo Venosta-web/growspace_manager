@@ -18,13 +18,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
 
 
-class BaseVpdSensor(SensorEntity):  # type: ignore[misc]
+class BaseVpdSensor(SensorEntity):
     """Base class for VPD sensors providing common functionality."""
 
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "kPa"
 
-    @override  # type: ignore[misc]
+    @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         if self.entities_to_track:
@@ -52,7 +52,7 @@ class BaseVpdSensor(SensorEntity):  # type: ignore[misc]
         if state and state.state not in ["unknown", "unavailable"]:
             try:
                 return float(state.state)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 pass
         return None
 
@@ -106,7 +106,7 @@ class VpdSensor(BaseVpdSensor):
         return tracking
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
         temp = None
@@ -184,7 +184,7 @@ class CalculatedVpdSensor(BaseVpdSensor):
         return lst_offset
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return the calculated VPD value in kPa."""
         temp = self._get_float_state(self._temp_sensor)
@@ -197,7 +197,7 @@ class CalculatedVpdSensor(BaseVpdSensor):
         return None
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         return {

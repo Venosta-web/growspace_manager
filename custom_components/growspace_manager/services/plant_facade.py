@@ -620,7 +620,7 @@ class PlantFacade:
                     phenotype=call.data.get(ATTR_PHENOTYPE, ""),
                     seed_batch_id=seed_batch_id,
                     generation=batch.generation if batch else "",
-                    **parsed_dates,  # type: ignore[arg-type]
+                    **parsed_dates,
                 )
                 plant_id = plant.plant_id
             except GrowspaceError as err:
@@ -728,7 +728,7 @@ class PlantFacade:
                         phenotype=phenotype,
                         seed_batch_id=seed_batch_id,
                         generation=batch_generation,
-                        **parsed_dates,  # type: ignore[arg-type]
+                        **parsed_dates,
                     )
                     plants_added_count += 1
                 except GrowspaceError as err:
