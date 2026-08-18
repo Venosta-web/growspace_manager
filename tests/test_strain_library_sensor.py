@@ -52,6 +52,24 @@ def test_strain_library_sensor_state_counts_only_catalogued_strains() -> None:
     assert sensor.native_value == 1
 
 
+def test_strain_library_sensor_native_value_no_library() -> None:
+    """native_value returns 0 when the strain library hasn't loaded yet."""
+    coordinator = MagicMock()
+    coordinator.services.config.strain_library = None
+    sensor = StrainLibrarySensor.__new__(StrainLibrarySensor)
+    sensor.coordinator = coordinator
+    assert sensor.native_value == 0
+
+
+def test_strain_library_sensor_extra_attrs_no_library() -> None:
+    """extra_state_attributes returns {} when the strain library hasn't loaded yet."""
+    coordinator = MagicMock()
+    coordinator.services.config.strain_library = None
+    sensor = StrainLibrarySensor.__new__(StrainLibrarySensor)
+    sensor.coordinator = coordinator
+    assert sensor.extra_state_attributes == {}
+
+
 def test_strain_library_sensor_uses_dedicated_device() -> None:
     """The Strain Library sensor uses the same dedicated device identifier."""
     coordinator = MagicMock()

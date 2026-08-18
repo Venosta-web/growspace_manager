@@ -7,6 +7,10 @@ from typing import Any
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.tank_depletion_predictor import (
+    TankDepletionPredictor,
+)
+from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -17,7 +21,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 
-class TankDepletionSensor(CoordinatorEntity, SensorEntity):
+class TankDepletionSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor predicting time until tank needs refill.
 
     Uses sliding window linear regression to predict when an irrigation tank
@@ -35,7 +39,7 @@ class TankDepletionSensor(CoordinatorEntity, SensorEntity):
         coordinator: GrowspaceCoordinator,
         growspace_id: str,
         tank_name: str,
-        predictor: Any,  # TankDepletionPredictor
+        predictor: TankDepletionPredictor,
     ) -> None:
         """Initialize the tank depletion sensor."""
         super().__init__(coordinator)
@@ -45,10 +49,10 @@ class TankDepletionSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = f"Tank Depletion {tank_name}"
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_tank_depletion_{tank_name}"
 
-        growspace = coordinator.growspaces.get(growspace_id, {})
+        growspace = coordinator.growspaces.get(growspace_id)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
-            name=getattr(growspace, "name", growspace_id),
+            name=growspace.name if growspace else growspace_id,
             model="Growspace",
             manufacturer="Growspace Manager",
         )
@@ -130,7 +134,7 @@ def _should_create_derived_water_sensor(
     )
 
 
-class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
+class TankDerivedWaterSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor reporting water consumption inferred from tank level changes.
 
     Used as a fallback when no dedicated irrigation flow or drain volume
@@ -159,7 +163,7 @@ class TankDerivedWaterSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_tank_derived_water_{tank_slug}"
 
     @property
-    def _tracker(self) -> Any:
+    def _tracker(self) -> TankWaterTracker | None:
         """Return the TankWaterTracker for this tank, or None."""
         return self.coordinator.services.growspaces.get_tank_tracker(
             self._growspace_id, self._tank.sensor_entity

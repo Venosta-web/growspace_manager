@@ -52,7 +52,10 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @override
     def native_value(self) -> int:
         """Return the number of catalogued strains in the library."""
-        strains = self.coordinator.services.config.strain_library.get_all()
+        strain_library = self.coordinator.services.config.strain_library
+        if strain_library is None:
+            return 0
+        strains = strain_library.get_all()
         catalogued_count, _, _ = self._strain_counts(strains)
         return catalogued_count
 
@@ -60,8 +63,11 @@ class StrainLibrarySensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return strain analytics as state attributes."""
-        analytics = self.coordinator.services.config.strain_library.get_analytics()
-        strains = self.coordinator.services.config.strain_library.get_all()
+        strain_library = self.coordinator.services.config.strain_library
+        if strain_library is None:
+            return {}
+        analytics = strain_library.get_analytics()
+        strains = strain_library.get_all()
         catalogued_count, ancestor_count, total_count = self._strain_counts(strains)
         catalogued_strains = {
             name
