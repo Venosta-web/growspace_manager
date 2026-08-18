@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 if TYPE_CHECKING:
+    from custom_components.growspace_manager.config_flow import OptionsFlowHandler
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 # NOTE: Handler imports moved to bottom of file to avoid circular import
@@ -33,28 +34,43 @@ class BaseConfigHandler(ABC, Generic[T]):
     """Base class for configuration handlers."""
 
     config_entry: ConfigEntry | None = None
+    _flow: OptionsFlowHandler | None = None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize the handler."""
         if len(args) == 1 and hasattr(args[0], "hass"):
             # Orchestrator style
-            self.flow = args[0]
+            self._flow = args[0]
             self.hass = args[0].hass
             self.config_entry = getattr(args[0], "config_entry", None)
         elif len(args) >= 2 and isinstance(args[0], HomeAssistant):
             # Traditional/Test style
-            self.flow = None
+            self._flow = None
             self.hass = args[0]
             self.config_entry = args[1]
         else:
             # Fallback
-            self.flow = kwargs.get("flow")
-            if self.flow:
-                self.hass = self.flow.hass
-                self.config_entry = getattr(self.flow, "config_entry", None)
+            self._flow = kwargs.get("flow")
+            if self._flow:
+                self.hass = self._flow.hass
+                self.config_entry = getattr(self._flow, "config_entry", None)
             else:
                 self.hass = kwargs.get("hass")
                 self.config_entry = kwargs.get("config_entry")
+
+    @property
+    def flow(self) -> OptionsFlowHandler:
+        """Return the owning options flow.
+
+        Only unset in the traditional/test construction style, which never
+        drives steps that touch it.
+        """
+        assert self._flow is not None
+        return self._flow
+
+    @flow.setter
+    def flow(self, value: OptionsFlowHandler | None) -> None:
+        self._flow = value
 
     def get_coordinator(self) -> GrowspaceCoordinator:
         """Get coordinator with validation.
