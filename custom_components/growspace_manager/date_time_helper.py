@@ -11,7 +11,7 @@ from homeassistant.util import dt as dt_util
 from .utils import parse_date_field
 
 if TYPE_CHECKING:
-    from .const import DateInput
+    from .integration_types import DateInput
 
 _LOGGER = logging.getLogger(__name__)
 

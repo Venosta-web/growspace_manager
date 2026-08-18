@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from collections.abc import Callable, Coroutine
+from datetime import date, datetime, timedelta
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import now as ha_now
@@ -12,8 +13,6 @@ from homeassistant.util.dt import now as ha_now
 from .const import NotificationTier
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 
     from .coordinator import GrowspaceCoordinator
@@ -91,7 +90,9 @@ class PhotoperiodFlipChecker:
         for growspace_id in self.coordinator.growspaces:
             self.schedule_growspace(growspace_id)
 
-    def _create_callback(self, growspace_id: str):
+    def _create_callback(
+        self, growspace_id: str
+    ) -> Callable[[datetime], Coroutine[Any, Any, None]]:
         """Return a one-shot midnight callback that checks and reschedules."""
 
         async def _callback(_now: datetime) -> None:

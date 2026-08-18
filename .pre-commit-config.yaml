@@ -12,7 +12,7 @@ repos:
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=aiport,astroid,checkin,currenty,hass,iif,incomfort,lookin,nam,NotIn,tage
+          - --ignore-words-list=aiport,astroid,checkin,currenty,hass,iif,incomfort,lookin,nam,NotIn,tage,trough
           - --skip="./.*,*.csv,*.json,*.ambr"
           - --quiet-level=2
         exclude_types: [csv, json, html]
@@ -72,9 +72,8 @@ repos:
       - id: mypy
         name: mypy
         entry: ../../.venv/bin/mypy
-        args: [custom_components/growspace_manager/]
+        args: [--follow-imports=silent]
         language: system
-        pass_filenames: false
         require_serial: true
         types_or: [python, pyi]
         files: ^custom_components/.+\.(py|pyi)$

@@ -88,7 +88,7 @@ def _fill_buckets(
     for ev in events:
         try:
             ev_dt = _parse_ts(ev["timestamp"])
-        except (KeyError, ValueError, TypeError):
+        except KeyError, ValueError, TypeError:
             continue  # skip events with missing/invalid timestamps
         if ev_dt < first_start or ev_dt >= last_end:
             continue
@@ -268,10 +268,9 @@ class TankWaterTracker:
         elif delta_from_trough >= TANK_NOISE_FLOOR_PCT:
             # Minor rise from trough: queue as pending peak candidate.
             # Only queue if the level is higher than the already-confirmed peak
-            # (to avoid redundantly re-queuing a level we already track).
-            if level_pct > peak and (
-                self._pending_peak is None or level_pct > self._pending_peak
-            ):
+            # (the pending peak was already reset to None above, so there is
+            # nothing else to compare against here).
+            if level_pct > peak:
                 self._pending_peak = level_pct
             return
 
@@ -316,7 +315,7 @@ class TankWaterTracker:
         local_ref = dt_util.as_local(ref_dt)
         day_start = local_ref.replace(hour=0, minute=0, second=0, microsecond=0)
         return sum(
-            ev["liters"]
+            float(ev["liters"])
             for ev in self.tank.water_history.events
             if ev["event_type"] == "consumption"
             and dt_util.as_local(_parse_ts(ev["timestamp"])) >= day_start
@@ -330,7 +329,7 @@ class TankWaterTracker:
         """
         if not cycle_start_date:
             return sum(
-                ev["liters"]
+                float(ev["liters"])
                 for ev in self.tank.water_history.events
                 if ev["event_type"] == "consumption"
             )
@@ -341,14 +340,14 @@ class TankWaterTracker:
             cycle_start_local = dt_util.as_local(
                 _datetime(d.year, d.month, d.day, 0, 0, 0)
             )
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return sum(
-                ev["liters"]
+                float(ev["liters"])
                 for ev in self.tank.water_history.events
                 if ev["event_type"] == "consumption"
             )
         return sum(
-            ev["liters"]
+            float(ev["liters"])
             for ev in self.tank.water_history.events
             if ev["event_type"] == "consumption"
             and dt_util.as_local(_parse_ts(ev["timestamp"])) >= cycle_start_local
@@ -378,7 +377,7 @@ class TankWaterTracker:
         local_ref = dt_util.as_local(ref_dt)
         window_start = local_ref - timedelta(days=7)
         return sum(
-            ev["liters"]
+            float(ev["liters"])
             for ev in self.tank.water_history.events
             if ev["event_type"] == "consumption"
             and dt_util.as_local(_parse_ts(ev["timestamp"])) >= window_start
@@ -408,7 +407,7 @@ class TankWaterTracker:
                 return
             try:
                 level_pct = float(new_state.state)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 _LOGGER.debug(
                     "TankWaterTracker(%s) received invalid state: %s",
                     self.tank.sensor_entity,

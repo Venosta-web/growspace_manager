@@ -202,7 +202,9 @@ class ExhaustFanCoordinator:
         elif mode == FanRegulationMode.VPD:
             sensors = self._env_config.vpd_sensors
         else:
-            return None
+            # Defends against a stale/invalid regulation_mode in stored config
+            # (mypy sees this as unreachable since the enum above is exhaustive).
+            return None  # type: ignore[unreachable]
 
         return self._read_entity_value(sensors[0]) if sensors else None
 

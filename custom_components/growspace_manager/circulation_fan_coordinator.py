@@ -75,8 +75,7 @@ class CirculationFanCoordinator:
         return bool(
             env
             and (
-                env.circulation_fan_entities
-                or env.circulation_fan_ac_infinity_devices
+                env.circulation_fan_entities or env.circulation_fan_ac_infinity_devices
             )
         )
 
@@ -102,9 +101,7 @@ class CirculationFanCoordinator:
         self._remove_tick = async_track_time_interval(
             self.hass, self._on_tick, _TICK_INTERVAL
         )
-        _LOGGER.info(
-            "CirculationFanCoordinator started for %s", self.growspace_id
-        )
+        _LOGGER.info("CirculationFanCoordinator started for %s", self.growspace_id)
 
     @callback
     def _on_tick(self, _now: object) -> None:
@@ -144,7 +141,9 @@ class CirculationFanCoordinator:
             )
         elif cfg.regulation_mode == FanRegulationMode.VPD:
             if cfg.stage_vpd_enabled:
-                light_sensors = self._env_config.light_sensors if self._env_config else []
+                light_sensors = (
+                    self._env_config.light_sensors if self._env_config else []
+                )
                 is_day = self._day_night.determine(self.hass, light_sensors)
                 effective_vpd_target = self._get_stage_vpd_target(cfg, is_day)
             else:
@@ -173,7 +172,9 @@ class CirculationFanCoordinator:
                         )
                     )
         else:
-            return
+            # Defends against a stale/invalid regulation_mode in stored config
+            # (mypy sees this as unreachable since the enum above is exhaustive).
+            return  # type: ignore[unreachable]
 
         if cfg.wind_enabled:
             elapsed = time.monotonic() - self._start_time
@@ -205,6 +206,8 @@ class CirculationFanCoordinator:
 
     def _read_sensor(self, mode: FanRegulationMode) -> float | None:
         """Read the first available sensor value for the given regulation mode."""
+        if self._env_config is None:
+            return None
         if mode == FanRegulationMode.HUMIDITY:
             sensors = self._env_config.humidity_sensors
         elif mode == FanRegulationMode.TEMPERATURE:
@@ -212,7 +215,9 @@ class CirculationFanCoordinator:
         elif mode == FanRegulationMode.VPD:
             sensors = self._env_config.vpd_sensors
         else:
-            return None
+            # Defends against a stale/invalid regulation_mode in stored config
+            # (mypy sees this as unreachable since the enum above is exhaustive).
+            return None  # type: ignore[unreachable]
 
         if not sensors:
             return None
