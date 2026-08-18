@@ -393,6 +393,7 @@ def apply_environment_patch(
     for name, ownership in ENVIRONMENT_FIELD_OWNERSHIP.items():
         if not ownership.item_runtime_fields or name not in patch.values:
             continue
+        assert ownership.item_identity is not None
         existing_by_id = {
             getattr(item, ownership.item_identity): item for item in getattr(base, name)
         }

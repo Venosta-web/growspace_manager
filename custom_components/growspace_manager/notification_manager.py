@@ -631,9 +631,10 @@ class NotificationManager:
 
         if days_in_stage >= day_to_trigger:
             notification_key = f"timed_{notification_id}"
-            if not self.coordinator.notification_state.sent.get(plant.plant_id, {}).get(
-                notification_key, False
-            ):
+            # This bucket is keyed by notification_key -> bool for timed notifications,
+            # unlike the stage -> day -> bool shape used elsewhere for this field.
+            sent: dict[str, Any] = self.coordinator.notification_state.sent
+            if not sent.get(plant.plant_id, {}).get(notification_key, False):
                 _LOGGER.info(
                     "Triggering timed notification for plant %s in %s",
                     plant.plant_id,
@@ -649,9 +650,5 @@ class NotificationManager:
                     message,
                 )
 
-                if plant.plant_id not in self.coordinator.notification_state.sent:
-                    self.coordinator.notification_state.sent[plant.plant_id] = {}
-                self.coordinator.notification_state.sent[plant.plant_id][
-                    notification_key
-                ] = True
+                sent.setdefault(plant.plant_id, {})[notification_key] = True
                 await self.coordinator.async_commit()

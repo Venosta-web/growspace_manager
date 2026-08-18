@@ -24,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def _safe_filename_part(s: str) -> str:
     """Replace URL-unsafe characters in a filename segment with underscores."""
-    return re.sub(r'[#%?&=+]', '_', s)
+    return re.sub(r"[#%?&=+]", "_", s)
 
 
 class ImageManager:
@@ -123,8 +123,7 @@ class ImageManager:
                     continue
 
                 try:
-                    # Image.open returns Image.Image (no cast needed)
-                    img = Image.open(jpg_path)
+                    img: Image.Image = Image.open(jpg_path)
 
                     # Convert to RGB if needed
                     if img.mode not in ("RGB", "RGBA"):
@@ -147,7 +146,7 @@ class ImageManager:
                         "Migrated %s to WebP format (full + thumbnail)", jpg_path.name
                     )
 
-                except Exception as e :  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001
                     _LOGGER.warning(
                         "Failed to migrate %s to WebP: %s", jpg_path.name, e
                     )
@@ -157,7 +156,7 @@ class ImageManager:
                     "Auto-migration complete: converted %d image(s) to WebP", migrated
                 )
 
-        except Exception as e :  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             _LOGGER.error("Error during auto-migration to WebP: %s", e)
 
     async def _update_db_paths(self, db_connection: Any) -> int:
@@ -202,7 +201,7 @@ class ImageManager:
             if updated > 0:
                 _LOGGER.info("Updated %d database path(s) from .jpg to .webp", updated)
 
-        except Exception as e :  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             _LOGGER.error("Error updating database paths: %s", e)
             return 0
         else:
@@ -238,7 +237,7 @@ class ImageManager:
                 image_base64 = image_base64.split(",")[1]
 
             image_data = base64.b64decode(image_base64)
-            image = Image.open(BytesIO(image_data))
+            image: Image.Image = Image.open(BytesIO(image_data))
 
             # Convert to RGB (WebP supports RGBA, but RGB is safer for photos)
             if image.mode not in ("RGB", "RGBA"):
@@ -280,7 +279,15 @@ class ImageManager:
             # Return absolute path as string
             return str(file_path.absolute())
 
-        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, OSError, UnidentifiedImageError) as e:
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+            OSError,
+            UnidentifiedImageError,
+        ) as e:
             _LOGGER.error("Error saving strain image: %s", e)
             raise
 
@@ -318,7 +325,7 @@ class ImageManager:
                 image_base64 = image_base64.split(",")[1]
 
             image_data = base64.b64decode(image_base64)
-            image = Image.open(BytesIO(image_data))
+            image: Image.Image = Image.open(BytesIO(image_data))
 
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGB")
@@ -350,7 +357,15 @@ class ImageManager:
 
             return str(file_path.absolute())
 
-        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError, OSError, UnidentifiedImageError) as e:
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+            OSError,
+            UnidentifiedImageError,
+        ) as e:
             _LOGGER.error("Error saving timeline image: %s", e)
             raise
 
@@ -420,7 +435,7 @@ class ImageManager:
                 base64_data = base64_data.split(",")[1]
 
             image_data = base64.b64decode(base64_data)
-            image = Image.open(BytesIO(image_data))
+            image: Image.Image = Image.open(BytesIO(image_data))
 
             # Convert to RGB (WebP supports RGBA, but RGB is safer for photos)
             if image.mode not in ("RGB", "RGBA"):

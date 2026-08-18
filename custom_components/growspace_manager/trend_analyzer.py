@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 import itertools
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
@@ -14,12 +14,16 @@ from homeassistant.util.dt import utcnow
 
 from .exceptions import GrowspaceError
 
+if TYPE_CHECKING:
+    from homeassistant.components.recorder import Recorder
+
 _LOGGER = logging.getLogger(__name__)
 
 
-def get_recorder_instance(hass: HomeAssistant):
+def get_recorder_instance(hass: HomeAssistant) -> Recorder:
     """Get the recorder instance (deferred import)."""
     from homeassistant.helpers.recorder import get_instance  # noqa: PLC0415
+
     return get_instance(hass)
 
 
@@ -69,7 +73,7 @@ class TrendAnalyzer:
                         continue
                     try:
                         numeric_states.append(float(s.state))
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         continue
 
                 # Calculate trend
@@ -82,7 +86,13 @@ class TrendAnalyzer:
 
                 results[sensor_id] = {"trend": trend, "crossed_threshold": crossed}
 
-        except (AttributeError, KeyError, ValueError, ServiceValidationError, GrowspaceError):
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
             _LOGGER.exception("Error analyzing bulk sensor history")
             return {
                 sid: {"trend": "unknown", "crossed_threshold": False}

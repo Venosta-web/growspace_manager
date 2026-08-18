@@ -363,7 +363,7 @@ class SubstrateTracker:
         events = self.get_incycle_drybacks_today(reference_ts)
         if not events:
             return None
-        return round(sum(e["dryback"] for e in events) / len(events), 4)
+        return float(round(sum(e["dryback"] for e in events) / len(events), 4))
 
     def get_shot_count_today(self, reference_ts: str | None = None) -> int:
         """Return the number of P2 in-cycle dryback shot-pairs recorded today.

@@ -12,7 +12,12 @@ from .const import NotificationTier
 from .presentation import EntityQueries
 
 if TYPE_CHECKING:
-    from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant
+    from homeassistant.core import (
+        CALLBACK_TYPE,
+        Event,
+        EventStateChangedData,
+        HomeAssistant,
+    )
 
     from .coordinator import GrowspaceCoordinator
 
@@ -46,11 +51,13 @@ class TankLevelMonitor:
             for tank in growspace.environment_config.irrigation_tanks:
                 self._subscribe_tank(growspace.id, growspace.name, tank)
 
-    def _subscribe_tank(self, growspace_id: str, growspace_name: str, tank: Any) -> None:
+    def _subscribe_tank(
+        self, growspace_id: str, growspace_name: str, tank: Any
+    ) -> None:
         """Register a state-change listener for a single tank sensor."""
         entity_queries = self._entity_queries
 
-        async def _on_state_change(event: Event) -> None:
+        async def _on_state_change(event: Event[EventStateChangedData]) -> None:
             new_state = event.data.get("new_state")
             if new_state is None:
                 return

@@ -188,9 +188,11 @@ async def async_evaluate_stress_trend(
                 local_trends[trend_key] = "rising"
                 gradient = trend_state.attributes.get("gradient", 0)
                 prob = (
-                    env_config.get(CONF_PROB_TREND_FAST_RISE, PROB_TREND_FAST_RISE)
+                    env_config_dict.get(CONF_PROB_TREND_FAST_RISE, PROB_TREND_FAST_RISE)
                     if gradient > TREND_GRADIENT_FAST_THRESHOLD
-                    else env_config.get(CONF_PROB_TREND_SLOW_RISE, PROB_TREND_SLOW_RISE)
+                    else env_config_dict.get(
+                        CONF_PROB_TREND_SLOW_RISE, PROB_TREND_SLOW_RISE
+                    )
                 )
                 local_obs.append(prob)
                 reason_suffix = (
