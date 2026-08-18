@@ -237,7 +237,9 @@ async def test_options_flow_manage_growspaces_remove_error(
 ) -> None:
     """Test error handling when removing growspace."""
     # Given
-    mock_coordinator.services.growspaces.remove_growspace.side_effect = Exception("Test error")
+    mock_coordinator.services.growspaces.remove_growspace.side_effect = Exception(
+        "Test error"
+    )
     mock_coordinator.growspaces = {"gs1": Mock(name="Test Growspace")}
     config_entry = await setup_test_environment(hass, mock_coordinator)
 
@@ -373,7 +375,9 @@ async def test_options_flow_add_growspace_error(
 ) -> None:
     """Test error handling when adding growspace."""
     # Given
-    mock_coordinator.services.growspaces.add_growspace.side_effect = Exception("Test error")
+    mock_coordinator.services.growspaces.add_growspace.side_effect = Exception(
+        "Test error"
+    )
     config_entry = await setup_test_environment(hass, mock_coordinator)
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
@@ -446,7 +450,7 @@ async def test_options_flow_update_growspace_success(
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_growspaces"
     mock_coordinator.services.growspaces.update_growspace.assert_called_once_with(
-        "gs1", {"name": "New Name", "rows": 5}
+        "gs1", name="New Name", rows=5
     )
 
 
@@ -481,7 +485,9 @@ async def test_options_flow_update_growspace_error(
     mock_growspace.plants_per_row = 4
     mock_growspace.notification_target = None
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator.services.growspaces.update_growspace.side_effect = Exception("Test error")
+    mock_coordinator.services.growspaces.update_growspace.side_effect = Exception(
+        "Test error"
+    )
     config_entry = await setup_test_environment(hass, mock_coordinator)
     hass.services = Mock()
     hass.services.async_services = Mock(return_value={"notify": {}})
@@ -531,7 +537,10 @@ async def test_options_flow_manage_plants_add(
     mock_coordinator.services.growspaces.get_sorted_growspace_options.return_value = [
         ("test_grow", "Test Growspace")
     ]
-    mock_coordinator.services.config.get_strain_options.return_value = ["Strain A", "Strain B"]
+    mock_coordinator.services.config.get_strain_options.return_value = [
+        "Strain A",
+        "Strain B",
+    ]
     config_entry = await setup_test_environment(hass, mock_coordinator)
     config_entry.runtime_data.store = mock_store
 
@@ -555,7 +564,10 @@ async def test_options_flow_manage_plants_update(
     """Test update plant action."""
     # Given
     mock_coordinator.growspaces = {"test_grow": Mock(name="Test Growspace")}
-    mock_coordinator.services.config.get_strain_options.return_value = ["Strain A", "Strain B"]
+    mock_coordinator.services.config.get_strain_options.return_value = [
+        "Strain A",
+        "Strain B",
+    ]
     config_entry = await setup_test_environment(hass, mock_coordinator)
     config_entry.runtime_data.store = mock_store
 

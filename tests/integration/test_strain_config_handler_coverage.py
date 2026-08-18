@@ -44,8 +44,8 @@ def mock_coordinator():
     strain_service.remove_strain = AsyncMock()
     strain_service.import_library_from_zip = AsyncMock()
     strain_service.export_library_to_zip = AsyncMock()
-    strain_service.async_add_strain = AsyncMock()
-    strain_service.async_load = AsyncMock()
+    strain_service.add_strain = AsyncMock()
+    strain_service.load = AsyncMock()
 
     # Default data returns
     strain_service.get_all.return_value = {}
@@ -370,7 +370,7 @@ async def test_async_step_add_strain_success(handler: StrainConfigHandler) -> No
     }
     result = await handler.async_step_add_strain(user_input)
     assert result["type"] == FlowResultType.FORM
-    strain_service.async_add_strain.assert_awaited_once()
+    strain_service.add_strain.assert_awaited_once()
 
 
 async def test_async_step_add_strain_no_entry(mock_hass: MagicMock) -> None:

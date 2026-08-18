@@ -68,9 +68,10 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             coordinator = self.get_coordinator()
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
-        growspace = coordinator.services.growspaces.get_growspace(
-            self.flow.selected_growspace_id
-        )
+        growspace_id = self.flow.selected_growspace_id
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -86,9 +87,10 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             coordinator = self.get_coordinator()
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
-        growspace = coordinator.services.growspaces.get_growspace(
-            self.flow.selected_growspace_id
-        )
+        growspace_id = self.flow.selected_growspace_id
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
@@ -109,13 +111,13 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             # helpers the set_irrigation_strategy service uses, so the form and the
             # service share one write path and one validation rule (ADR-0011).
             _build_substrate_profile_update(user_input)
-            _validate_volume_mode_selection(
-                coordinator, self.flow.selected_growspace_id, user_input
-            )
+            _validate_volume_mode_selection(coordinator, growspace_id, user_input)
             await coordinator.services.growspaces.update_irrigation_config(
-                self.flow.selected_growspace_id, user_input
+                growspace_id, user_input
             )
 
+            if self.config_entry is None:
+                return self.flow.async_abort(reason="setup_error")
             # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
             return self.flow.async_create_entry(
                 title="",
@@ -124,9 +126,7 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             )
 
         # Describe schema to pass ALL data to the Lovelace component
-        schema = self.get_irrigation_overview_schema(
-            irrigation_options, self.flow.selected_growspace_id
-        )
+        schema = self.get_irrigation_overview_schema(irrigation_options, growspace_id)
 
         return self.flow.async_show_form(
             step_id="irrigation_overview",

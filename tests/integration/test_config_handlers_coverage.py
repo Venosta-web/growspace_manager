@@ -371,7 +371,9 @@ async def test_plant_handler_async_operations(mock_hass, mock_config_entry) -> N
 
     # Harvest
     await handler.async_harvest_plant("p1", 50.0)
-    coordinator.services.plants.transition_plant.assert_awaited_with("p1", wet_weight=50.0)
+    coordinator.services.plants.transition_plant.assert_awaited_with(
+        "p1", wet_weight=50.0
+    )
 
     # Destroy
     await handler.async_destroy_plant("p1")
@@ -572,9 +574,8 @@ async def test_growspace_handler_flow_update_step(mock_hass, mock_config_entry) 
 
     await handler.async_step_update_growspace(user_input)
 
-    # FIX: Matches the actual call signature (id, dict_of_input)
     coordinator.services.growspaces.update_growspace.assert_awaited_with(
-        "gs1", user_input
+        "gs1", **user_input
     )
 
 

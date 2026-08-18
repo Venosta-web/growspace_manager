@@ -26,7 +26,9 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the growspace management menu."""
-        growspace_options = coordinator.services.growspaces.get_sorted_growspace_options()
+        growspace_options = (
+            coordinator.services.growspaces.get_sorted_growspace_options()
+        )
 
         schema: dict[Any, Any] = {
             vol.Required("action", default="add"): selector.SelectSelector(
@@ -219,6 +221,8 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
         growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
@@ -362,7 +366,11 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         update_data = {k: v for k, v in user_input.items() if v}
 
         # Handle dimensions update if present
-        if "length" in update_data and "width" in update_data and "height" in update_data:
+        if (
+            "length" in update_data
+            and "width" in update_data
+            and "height" in update_data
+        ):
             dimensions = {
                 "length": update_data.pop("length"),
                 "width": update_data.pop("width"),
@@ -371,7 +379,9 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
             }
             update_data["dimensions"] = dimensions
 
-        await coordinator.services.growspaces.update_growspace(growspace_id, **update_data)
+        await coordinator.services.growspaces.update_growspace(
+            growspace_id, **update_data
+        )
 
     async def async_step_update_growspace(
         self, user_input: dict[str, Any] | None = None
@@ -382,6 +392,8 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
         growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
@@ -389,7 +401,9 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         if user_input is not None:
             try:
-                await coordinator.services.growspaces.update_growspace(growspace_id, user_input)
+                await coordinator.services.growspaces.update_growspace(
+                    growspace_id, **user_input
+                )
                 return await self.async_step_manage_growspaces()
             except Exception:
                 _LOGGER.exception("Error updating growspace")

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -41,10 +41,16 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 self.flow.selected_strain_id = user_input.get("strain_id")
                 return await self.async_step_edit_strain()
             if action == "delete_strain":
-                try:
-                    await coordinator.services.config.strain_library.remove_strain(
-                        user_input.get("strain_id")
+                strain_id = user_input.get("strain_id")
+                strain_library = coordinator.services.config.strain_library
+                if strain_id is None or strain_library is None:
+                    return self.flow.async_show_form(
+                        step_id="manage_strain_library",
+                        data_schema=self._get_strain_library_menu_schema(coordinator),
+                        errors={"base": "delete_failed"},
                     )
+                try:
+                    await strain_library.remove_strain(strain_id)
                 except StrainReferenceError as err:
                     return self.flow.async_show_form(
                         step_id="manage_strain_library",
@@ -91,16 +97,20 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
             else:
                 try:
                     coordinator = self.config_entry.runtime_data
-                    file_path = user_input["file_path"]
+                    strain_library = coordinator.services.config.strain_library
+                    if strain_library is None:
+                        errors["base"] = "setup_error"
+                    else:
+                        file_path = user_input["file_path"]
 
-                    await coordinator.services.config.strain_library.import_library_from_zip(
-                        file_path, merge=True
-                    )
+                        await strain_library.import_library_from_zip(
+                            file_path, merge=True
+                        )
 
-                    # Reload strains to reflect changes
-                    await coordinator.services.config.strain_library.async_load()
+                        # Reload strains to reflect changes
+                        await strain_library.load()
 
-                    return await self.async_step_manage_strain_library()
+                        return await self.async_step_manage_strain_library()
                 except FileNotFoundError:
                     errors["base"] = "file_not_found"
                 except ValueError:
@@ -132,16 +142,15 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if self.config_entry is None:
             return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
+        strain_library = coordinator.services.config.strain_library
+        if strain_library is None:
+            return self.flow.async_abort(reason="setup_error")
 
         # Default export location
         export_dir = self.flow.hass.config.path("exports")
 
         try:
-            zip_path = (
-                await coordinator.services.config.strain_library.export_library_to_zip(
-                    export_dir
-                )
-            )
+            zip_path = await strain_library.export_library_to_zip(export_dir)
             return self.flow.async_show_form(
                 step_id="export_strain_library",
                 description_placeholders={"path": zip_path},
@@ -211,21 +220,24 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if self.config_entry is None:
             return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
+        strain_library = coordinator.services.config.strain_library
 
         if user_input is not None:
-            await coordinator.services.config.strain_library.async_add_strain(
-                name=user_input["strain"],
+            if strain_library is None:
+                return self.flow.async_abort(reason="setup_error")
+            await strain_library.add_strain(
+                strain=user_input["strain"],
                 breeder=user_input.get("breeder"),
                 strain_type=user_input.get("type"),
                 sex=user_input.get("sex"),
                 description=user_input.get("description"),
-                flowering_days=user_input.get("flower_days_max"),
+                flower_days_max=user_input.get("flower_days_max"),
             )
             return await self.async_step_manage_strain_library()
 
         return self.flow.async_show_form(
             step_id="add_strain",
-            data_schema=ADD_STRAIN_SCHEMA,
+            data_schema=cast("vol.Schema", ADD_STRAIN_SCHEMA),
         )
 
     async def async_step_edit_strain(
@@ -237,7 +249,7 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         return self.flow.async_show_form(
             step_id="edit_strain",
-            data_schema=ADD_STRAIN_SCHEMA,
+            data_schema=cast("vol.Schema", ADD_STRAIN_SCHEMA),
         )
 
     async def async_step_manage_breeder_blacklist(

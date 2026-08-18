@@ -92,7 +92,7 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     # --- config sub-facade ---
     cfg_facade = MagicMock()
     cfg_facade.strain_library = MagicMock()
-    cfg_facade.strain_library.async_load = AsyncMock()
+    cfg_facade.strain_library.load = AsyncMock()
     cfg_facade.strain_library.import_library_from_zip = AsyncMock()
     cfg_facade.strain_library.export_library_to_zip = AsyncMock(
         return_value=str(tmp_path / "export.zip")
@@ -2442,7 +2442,7 @@ async def test_options_flow_add_strain_success(
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.config.strain_library.async_add_strain = AsyncMock()
+    mock_coordinator.services.config.strain_library.add_strain = AsyncMock()
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -2456,7 +2456,7 @@ async def test_options_flow_add_strain_success(
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "manage_strain_library"
-    mock_coordinator.services.config.strain_library.async_add_strain.assert_called_once()
+    mock_coordinator.services.config.strain_library.add_strain.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -2607,7 +2607,7 @@ async def test_options_flow_import_strain_library_submit(
     config_entry.add_to_hass(hass)
 
     config_entry.runtime_data = mock_coordinator
-    mock_coordinator.services.config.strain_library.async_load = AsyncMock()
+    mock_coordinator.services.config.strain_library.load = AsyncMock()
     mock_coordinator.services.config.strain_library.import_library_from_zip = (
         AsyncMock()
     )

@@ -105,6 +105,8 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
         growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if user_input is not None:
@@ -119,6 +121,8 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     veg_start=user_input.get("veg_start"),
                     flower_start=user_input.get("flower_start"),
                 )
+                if self.config_entry is None:
+                    return self.flow.async_abort(reason="setup_error")
                 return self.flow.async_create_entry(
                     title="", data=self.config_entry.options
                 )
@@ -144,6 +148,8 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         plant_id = self.flow.selected_plant_id
+        if plant_id is None:
+            return self.flow.async_abort(reason="plant_not_found")
         plant = coordinator.services.plants.get_plant(plant_id)
 
         if not plant:
@@ -154,6 +160,8 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 # Filter out empty values
                 update_data = {k: v for k, v in user_input.items() if v}
                 await self.async_update_plant(plant_id, **update_data)
+                if self.config_entry is None:
+                    return self.flow.async_abort(reason="setup_error")
                 return self.flow.async_create_entry(
                     title="", data=self.config_entry.options
                 )
@@ -178,7 +186,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
             selector.SelectOptionDict(
                 value=p_id, label=f"{p.strain} ({p.growspace_id} R{p.row}C{p.col})"
             )
-            for p_id, p in coordinator.services.plants.items()
+            for p_id, p in coordinator.plants.items()
         ]
 
         schema_dict: dict[vol.Optional | vol.Required, Any] = {
@@ -323,6 +331,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         ]
 
         # Use autocomplete selector if we have strains, otherwise text input
+        strain_selector: selector.Selector[Any]
         if strain_options:
             strain_selector = selector.SelectSelector(
                 selector.SelectSelectorConfig(

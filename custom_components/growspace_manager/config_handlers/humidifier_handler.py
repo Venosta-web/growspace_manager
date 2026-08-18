@@ -31,6 +31,8 @@ class HumidifierHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
         growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
@@ -43,7 +45,7 @@ class HumidifierHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         if user_input is not None:
-            env_config = self.flow.env_config_step1.copy()
+            env_config = dict(self.flow.env_config_step1 or {})
             env_config["humidifier_thresholds"] = parse_stage_thresholds(user_input)
 
             if env_config.get(CONF_CONFIGURE_ADVANCED):
