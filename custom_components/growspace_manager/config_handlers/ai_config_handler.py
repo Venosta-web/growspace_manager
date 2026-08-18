@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any
 
 import voluptuous as vol
 
@@ -129,9 +129,7 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 CONF_BRIEFING_TRIGGER_ENTITIES,
                 default=current_settings.get(CONF_BRIEFING_TRIGGER_ENTITIES, []),
             )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(multiple=True)
-        )
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(multiple=True))
 
         return vol.Schema(schema)
 
@@ -189,4 +187,4 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
         # Save to storage
         await coordinator.services.save()
 
-        return cast(dict[str, Any], new_options)
+        return new_options

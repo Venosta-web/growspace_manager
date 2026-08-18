@@ -88,6 +88,8 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
         notification_id = self.flow.selected_notification_id
+        if notification_id is None:
+            return self.flow.async_abort(reason="notification_not_found")
         notification = next(
             (
                 n
@@ -125,6 +127,8 @@ class NotificationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
         notification_id = self.flow.selected_notification_id
+        if notification_id is None:
+            return self.flow.async_abort(reason="notification_not_found")
 
         if user_input is not None:
             await coordinator.services.notifications.async_remove_timed_notification(

@@ -6,10 +6,10 @@ from abc import ABC
 import logging
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 if TYPE_CHECKING:
+    from custom_components.growspace_manager import GrowspaceConfigEntry
     from custom_components.growspace_manager.config_flow import OptionsFlowHandler
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
@@ -33,7 +33,7 @@ class AbortFlow(Exception):
 class BaseConfigHandler(ABC, Generic[T]):
     """Base class for configuration handlers."""
 
-    config_entry: ConfigEntry | None = None
+    config_entry: GrowspaceConfigEntry | None = None
     _flow: OptionsFlowHandler | None = None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

@@ -66,13 +66,15 @@ class BayesianAdvancedHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
         growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
 
         if user_input is not None:
-            env_config = self.flow.env_config_step1.copy()
+            env_config = dict(self.flow.env_config_step1 or {})
             env_config.pop("configure_advanced", None)
 
             try:
@@ -92,12 +94,12 @@ class BayesianAdvancedHandler(BaseConfigHandler[dict[str, Any]]):
 
                 self.flow.env_config_step1 = env_config
 
-            except (ValueError, SyntaxError, TypeError):
+            except ValueError, SyntaxError, TypeError:
                 _LOGGER.warning("Invalid tuple format submitted", exc_info=True)
                 return self.flow.async_show_form(
                     step_id="configure_advanced_bayesian",
                     data_schema=self.get_advanced_bayesian_schema(
-                        self.flow.env_config_step1
+                        self.flow.env_config_step1 or {}
                     ),
                     errors={"base": "invalid_tuple_format"},
                     description_placeholders={"growspace_name": growspace.name},
@@ -107,7 +109,9 @@ class BayesianAdvancedHandler(BaseConfigHandler[dict[str, Any]]):
 
         return self.flow.async_show_form(
             step_id="configure_advanced_bayesian",
-            data_schema=self.get_advanced_bayesian_schema(self.flow.env_config_step1),
+            data_schema=self.get_advanced_bayesian_schema(
+                self.flow.env_config_step1 or {}
+            ),
             description_placeholders={"growspace_name": growspace.name},
         )
 
@@ -120,12 +124,16 @@ class BayesianAdvancedHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
         growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
 
         env_config = self.flow.env_config_step1
+        if env_config is None:
+            return self.flow.async_abort(reason="setup_error")
 
         sensors_to_configure, sensors_allowed_outside = (
             self._collect_sensors_to_configure(env_config, growspace)

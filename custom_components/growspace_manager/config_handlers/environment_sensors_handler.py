@@ -110,6 +110,8 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
         growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
@@ -245,6 +247,8 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
         self, growspace: Any, env_config: dict[str, Any]
     ) -> ConfigFlowResult:
         """Apply the assembled form dict through the Environment Patch seam."""
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
 
         await async_commit_environment_patch(
@@ -699,27 +703,22 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
             )
         )
 
-        trend_configs = {
-            "vpd": {
-                "threshold": CONF_TREND_VPD_THRESHOLD,
-                "duration": CONF_TREND_VPD_DURATION,
-                "sensitivity": CONF_TREND_VPD_SENSITIVITY,
-                "default": 1.2,
-            },
-            "temperature": {
-                "threshold": CONF_TREND_TEMPERATURE_THRESHOLD,
-                "duration": CONF_TREND_TEMPERATURE_DURATION,
-                "sensitivity": CONF_TREND_TEMPERATURE_SENSITIVITY,
-                "default": 26.0,
-            },
-        }
+        trend_configs: list[tuple[str, str, str, float]] = [
+            (
+                CONF_TREND_VPD_THRESHOLD,
+                CONF_TREND_VPD_DURATION,
+                CONF_TREND_VPD_SENSITIVITY,
+                1.2,
+            ),
+            (
+                CONF_TREND_TEMPERATURE_THRESHOLD,
+                CONF_TREND_TEMPERATURE_DURATION,
+                CONF_TREND_TEMPERATURE_SENSITIVITY,
+                26.0,
+            ),
+        ]
 
-        for config in trend_configs.values():
-            threshold_key = config["threshold"]
-            duration_key = config["duration"]
-            sensitivity_key = config["sensitivity"]
-            default_val = config["default"]
-
+        for threshold_key, duration_key, sensitivity_key, default_val in trend_configs:
             schema_dict[
                 vol.Optional(
                     threshold_key,
@@ -807,11 +806,12 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
             (CONF_ENERGY_SENSORS, "energy"),
         ]:
             suggested_val = growspace_options.get(key, [])
-            selector_config = selector.EntitySelectorConfig(
-                domain=["sensor", "input_number", "number"],
-                multiple=True,
-                device_class=device_class or None,
-            )
+            selector_config: selector.EntitySelectorConfig = {
+                "domain": ["sensor", "input_number", "number"],
+                "multiple": True,
+            }
+            if device_class:
+                selector_config["device_class"] = device_class
 
             schema_dict[
                 vol.Optional(key, description={"suggested_value": suggested_val})
