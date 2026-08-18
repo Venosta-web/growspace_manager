@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from typing import Any, override
+from typing import Any, cast, override
 
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
@@ -687,7 +687,11 @@ class LightCycleVerificationSensor(
         stage_key = self._get_current_stage_key(stage_info)
 
         env_config_dict = self.env_config.to_dict()
-        conf_key = STAGE_PHOTOPERIOD_KEYS.get(stage_key, CONF_VEG_DAY_HOURS)
+        # stage_key is a BayesianStage value; StrEnum compares by string value
+        # so the PlantStage-keyed lookup still resolves (or safely misses) at runtime.
+        conf_key = STAGE_PHOTOPERIOD_KEYS.get(
+            cast(PlantStage, stage_key), CONF_VEG_DAY_HOURS
+        )
         default_hours = (
             DEFAULT_VEG_DAY_HOURS
             if stage_key == PlantStage.VEG
@@ -817,7 +821,11 @@ class LightCycleVerificationSensor(
 
         # Get configured day hours for the current stage
         env_config_dict = self.env_config.to_dict()
-        conf_key = STAGE_PHOTOPERIOD_KEYS.get(stage_key, CONF_VEG_DAY_HOURS)
+        # stage_key is a BayesianStage value; StrEnum compares by string value
+        # so the PlantStage-keyed lookup still resolves (or safely misses) at runtime.
+        conf_key = STAGE_PHOTOPERIOD_KEYS.get(
+            cast(PlantStage, stage_key), CONF_VEG_DAY_HOURS
+        )
         default_hours = (
             DEFAULT_VEG_DAY_HOURS
             if stage_key == PlantStage.VEG
