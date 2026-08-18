@@ -33,6 +33,12 @@ def mock_coordinator():
     coordinator._subsystem_manager.get_growlight_controller = MagicMock(
         return_value=None
     )
+    coordinator._subsystem_manager.get_dehumidifier_controller = MagicMock(
+        return_value=None
+    )
+    coordinator._subsystem_manager.get_humidifier_controller = MagicMock(
+        return_value=None
+    )
     return coordinator
 
 

@@ -29,6 +29,8 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _CONTROLLER_ACCESSORS = {
+    "dehumidifier": "get_dehumidifier_controller",
+    "humidifier": "get_humidifier_controller",
     "circulation_fan": "get_circulation_fan_controller",
     "exhaust_fan": "get_exhaust_fan_controller",
     "growlight": "get_growlight_controller",

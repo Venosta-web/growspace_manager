@@ -324,6 +324,33 @@ async def test_unload(coordinator) -> None:
     assert len(coordinator._remove_listeners) == 0
 
 
+async def test_async_restart_picks_up_a_control_flag_flipped_after_construction(
+    mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
+) -> None:
+    """The coordinator is constructed once at HA startup and caches
+    ``control_enabled`` from that snapshot. Toggling the config-dialog checkbox
+    later mutates the same live ``growspace.environment_config`` object, but
+    without ``async_restart`` the coordinator never re-reads it, so it never
+    starts controlling the device — this pins that gap closed.
+    """
+    mock_growspace.environment_config.control_dehumidifier = False
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+    assert coord.control_enabled is False
+    assert len(coord._remove_listeners) == 0
+
+    # The equivalent of set_dehumidifier_control(enabled=True): the backend
+    # patch seam mutates the live environment_config in place.
+    mock_growspace.environment_config.control_dehumidifier = True
+    await coord.async_restart()
+
+    assert coord.control_enabled is True
+    assert len(coord._remove_listeners) > 0
+
+
 async def test_min_runtime_prevents_early_turnoff(coordinator, mock_hass) -> None:
     """Test that min runtime prevents turning off too early."""
     # Simulate: Dehumidifier is ON, was turned on 60 seconds ago

@@ -57,6 +57,8 @@ async def test_configure_dehumidifier_thresholds(
     )
     mock_coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = None
     mock_coordinator._subsystem_manager.get_growlight_controller.return_value = None
+    mock_coordinator._subsystem_manager.get_dehumidifier_controller.return_value = None
+    mock_coordinator._subsystem_manager.get_humidifier_controller.return_value = None
 
     entry.runtime_data = mock_coordinator
     entry.add_to_hass(hass)

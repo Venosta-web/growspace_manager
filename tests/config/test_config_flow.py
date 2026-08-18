@@ -65,6 +65,8 @@ def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
     coordinator._subsystem_manager.get_circulation_fan_controller.return_value = None
     coordinator._subsystem_manager.get_exhaust_fan_controller.return_value = None
     coordinator._subsystem_manager.get_growlight_controller.return_value = None
+    coordinator._subsystem_manager.get_dehumidifier_controller.return_value = None
+    coordinator._subsystem_manager.get_humidifier_controller.return_value = None
 
     # --- growspaces sub-facade ---
     gs_facade = MagicMock()
