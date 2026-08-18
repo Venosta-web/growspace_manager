@@ -319,7 +319,7 @@ class StrainLibrary:
                 "SELECT phenotype_id, image_path, image_crop_meta FROM phenotypes"
                 " WHERE image_path IS NOT NULL AND images IS NULL"
             ) as cursor:
-                rows = await cursor.fetchall()
+                rows = list(await cursor.fetchall())
         except aiosqlite.OperationalError:
             # images column not yet present — migration will run after ALTER TABLE
             return
@@ -1105,7 +1105,7 @@ class StrainLibrary:
         normalized = phenotype_name or "default"
 
         def _thumbnail_from(pheno_data: dict[str, Any]) -> dict[str, Any] | None:
-            imgs = pheno_data.get("images")
+            imgs: list[dict[str, Any]] | None = pheno_data.get("images")
             if not imgs:
                 return None
             for img in imgs:

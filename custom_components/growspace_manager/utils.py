@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -121,7 +121,7 @@ class VPDCalculator:
         return 0.61094 * math.exp((17.625 * temperature_c) / (243.04 + temperature_c))
 
     @staticmethod
-    def calculate_vpd(temperature_c: float, humidity_rh: float) -> float | None:
+    def calculate_vpd(temperature_c: Any, humidity_rh: Any) -> float | None:
         """Calculate Vapor Pressure Deficit (VPD) in kPa.
 
         Args:
@@ -143,7 +143,7 @@ class VPDCalculator:
 
     @staticmethod
     def calculate_vpd_with_lst_offset(
-        air_temperature_c: float, humidity_rh: float, lst_offset: float = -2.0
+        air_temperature_c: Any, humidity_rh: Any, lst_offset: Any = -2.0
     ) -> float | None:
         """Calculate Vapor Pressure Deficit (VPD) with Leaf Surface Temperature offset.
 

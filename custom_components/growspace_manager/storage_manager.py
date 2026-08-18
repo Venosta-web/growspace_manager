@@ -164,7 +164,7 @@ class StorageManager:
         """Gather configuration data for storage."""
         # Use nutrient manager for serialization data
         nutrient_data = self.nutrient_manager.get_serialization_data()
-        genetics_data = self.genetics_manager.get_serialization_data()
+        genetics_data = self._get_genetics_data()
 
         config = {
             "growspaces": {
@@ -253,7 +253,8 @@ class StorageManager:
             eid: PollinationEvent.from_dict(e)
             for eid, e in data.get("pollination_events", {}).items()
         }
-        self.genetics_manager.load_data(seed_batches, pollination_events)
+        if self.genetics_manager is not None:
+            self.genetics_manager.load_data(seed_batches, pollination_events)
 
         # Load notification tracking
         if self.notification_state is not None:

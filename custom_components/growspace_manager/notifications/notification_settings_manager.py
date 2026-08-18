@@ -12,8 +12,8 @@ import uuid
 from .timed import normalize_timed_notification_trigger, normalize_timed_notifications
 
 if TYPE_CHECKING:
-    from .custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-    from .custom_components.growspace_manager.models import Growspace
+    from ..coordinator import GrowspaceCoordinator
+    from ..models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
 
