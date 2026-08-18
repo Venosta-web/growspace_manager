@@ -342,7 +342,7 @@ class PlantFacade:
 
     async def apply_ipm(
         self,
-        preset_id: str | None = None,
+        preset_id: str,
         growspace_id: str | None = None,
         plant_ids: list[str] | None = None,
         notes: str | None = None,

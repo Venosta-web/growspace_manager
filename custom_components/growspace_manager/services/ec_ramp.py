@@ -52,7 +52,9 @@ async def handle_save_ec_ramp_curve(
         curve_id=curve_id,
     )
 
-    _LOGGER.info("Saved EC ramp curve '%s' for stage %s with %d points", name, stage, len(points))
+    _LOGGER.info(
+        "Saved EC ramp curve '%s' for stage %s with %d points", name, stage, len(points)
+    )
 
 
 @handle_service_errors
@@ -70,7 +72,9 @@ async def handle_remove_ec_ramp_curve(
     """
     curve_id: str = call.data[ATTR_CURVE_ID]
 
-    await coordinator.services.config.remove_ec_ramp_curve(curve_id=curve_id)
+    await coordinator.services.config.remove_ec_ramp_curve(
+        growspace_id=None, curve_id=curve_id
+    )
 
     _LOGGER.info("Removed EC ramp curve %s", curve_id)
 

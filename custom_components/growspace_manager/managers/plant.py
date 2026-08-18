@@ -1044,9 +1044,14 @@ class PlantManager(BaseService):
         await self.transition_plant_stage(plant_id, PlantStage.FLOWER)
         return self.repository.require_plant(plant_id)
 
-    async def start_drying(self, plant_id: str) -> Plant:
+    async def start_drying(
+        self, plant_id: str, transition_date: DateInput = None
+    ) -> Plant:
         """Transition a plant to the 'drying' stage, starting now."""
-        await self.transition_plant_stage(plant_id, PlantStage.DRY)
+        if transition_date is None:
+            await self.transition_plant_stage(plant_id, PlantStage.DRY)
+        else:
+            await self.transition_plant_stage(plant_id, PlantStage.DRY, transition_date)
         return self.repository.require_plant(plant_id)
 
     async def start_curing(self, plant_id: str) -> Plant:
@@ -1054,9 +1059,9 @@ class PlantManager(BaseService):
         await self.transition_plant_stage(plant_id, PlantStage.CURE)
         return self.repository.require_plant(plant_id)
 
-    async def harvest(self, plant_id: str) -> Plant:
+    async def harvest(self, plant_id: str, transition_date: DateInput = None) -> Plant:
         """Quick harvest."""
-        return await self.start_drying(plant_id)
+        return await self.start_drying(plant_id, transition_date)
 
     async def promote_clone(
         self,
