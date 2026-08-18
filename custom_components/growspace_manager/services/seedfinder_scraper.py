@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 import aiohttp
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from homeassistant.core import HomeAssistant
@@ -16,6 +16,22 @@ _LOGGER = logging.getLogger(__name__)
 
 BASE_URL = "https://seedfinder.eu"
 SEARCH_URL = f"{BASE_URL}/en/search/results/"
+
+
+def _attr_str(tag: Tag, name: str) -> str | None:
+    """Return a bs4 tag attribute as a plain string.
+
+    bs4 types multi-valued attributes (e.g. class) as AttributeValueList; the
+    attributes scraped here (href, src, x-data, :src) are always single
+    strings in practice, so collapse that case defensively instead of
+    assuming it away.
+    """
+    value = tag.get(name)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return " ".join(value)
+    return None
 
 
 class SeedfinderScraper:
@@ -29,7 +45,9 @@ class SeedfinderScraper:
         """Fetch HTML content from a URL."""
         session = async_get_clientsession(self.hass)
         try:
-            async with session.get(url, timeout=15) as response:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=15)
+            ) as response:
                 if response.status == 403:
                     _LOGGER.warning(
                         "Seedfinder fetch blocked (403) — the site is behind bot "
@@ -57,13 +75,15 @@ class SeedfinderScraper:
 
     async def async_search_strains(
         self, query: str, blacklist: list[str] | None = None
-    ):
+    ) -> list[dict[str, Any]]:
         """Search for strains on Seedfinder."""
         session = async_get_clientsession(self.hass)
         params = {"search": query}
 
         try:
-            async with session.get(SEARCH_URL, params=params, timeout=10) as response:
+            async with session.get(
+                SEARCH_URL, params=params, timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
                 if response.status == 403:
                     _LOGGER.warning(
                         "Seedfinder search blocked (403) — the site is behind bot "
@@ -82,12 +102,14 @@ class SeedfinderScraper:
                     BeautifulSoup, html, "html.parser"
                 )
 
-                results = []
+                results: list[dict[str, Any]] = []
                 # Search results are typically in a table or list
                 # Based on inspection, we look for links containing /strain-info/
                 for link in soup.find_all("a", href=re.compile(r"/strain-info/")):
                     name = link.text.strip()
-                    url = link.get("href")
+                    url = _attr_str(link, "href")
+                    if not url:
+                        continue
                     if not url.startswith("http"):
                         url = BASE_URL + url
 
@@ -141,12 +163,14 @@ class SeedfinderScraper:
             _LOGGER.error("Unexpected error searching Seedfinder: %s", err)
             return []
 
-    async def async_get_strain_details(self, url: str):
+    async def async_get_strain_details(self, url: str) -> dict[str, Any] | None:
         """Get strain details from Seedfinder."""
         session = async_get_clientsession(self.hass)
 
         try:
-            async with session.get(url, timeout=10) as response:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
                 if response.status != 200:
                     _LOGGER.error(
                         "Error fetching Seedfinder details: %s", response.status
@@ -263,8 +287,8 @@ class SeedfinderScraper:
         3. Single-image fallback via _parse_image.
         """
         # Strategy 1: Alpine.js x-data (supports both JSON and JS object literal syntax)
-        for tag in soup.find_all(attrs={"x-data": True}):
-            x_data_raw = tag.get("x-data", "")
+        for tag in soup.find_all(lambda t: t.has_attr("x-data")):
+            x_data_raw = _attr_str(tag, "x-data") or ""
             urls = []
             for match in re.finditer(r'"?big"?:\s*["\']([^"\']+)["\']', x_data_raw):
                 url = match.group(1)
@@ -283,7 +307,7 @@ class SeedfinderScraper:
         seen: set[str] = set()
         galerie_urls: list[str] = []
         for img in soup.find_all("img", src=re.compile(r"/storage/pics/galerie/")):
-            url = img.get("src")
+            url = _attr_str(img, "src")
             if not url or "=404" in url:
                 continue
             if not url.startswith("http"):
@@ -306,7 +330,7 @@ class SeedfinderScraper:
         # The expression is: selectedIndex === -1 ? 'URL' : images[selectedIndex].big
         alpine_img = soup.find("img", attrs={":src": True})
         if alpine_img:
-            src_expr = alpine_img.get(":src", "")
+            src_expr = _attr_str(alpine_img, ":src") or ""
             match = re.search(r"selectedIndex === -1 \? '([^']+)'", src_expr)
             if match:
                 image_url = match.group(1)
@@ -319,7 +343,7 @@ class SeedfinderScraper:
         # Fallback: first gallery image with a real src attribute
         img_tag = soup.find("img", src=re.compile(r"/storage/pics/"))
         if img_tag:
-            image_url = img_tag.get("src")
+            image_url = _attr_str(img_tag, "src")
             if not image_url or "=404" in image_url:
                 return None
             if not image_url.startswith("http"):
@@ -345,7 +369,12 @@ class SeedfinderScraper:
                 )
             )
 
-        data = {"sativa": None, "indica": None, "flowering_time": None, "yield": None}
+        data: dict[str, Any] = {
+            "sativa": None,
+            "indica": None,
+            "flowering_time": None,
+            "yield": None,
+        }
         if not basic_info_h2:
             return data
 
@@ -399,7 +428,7 @@ class SeedfinderScraper:
 
     def _parse_metrics(self, soup: BeautifulSoup) -> dict[str, Any]:
         """Extract metrics like yield, height, and cannabinoids."""
-        metrics = {}
+        metrics: dict[str, Any] = {}
 
         # Use anchored patterns so we only match label text nodes, not prose containing these words
         # Flowering time
@@ -538,7 +567,7 @@ class SeedfinderScraper:
                 header = soup.find(
                     lambda tag, p=pattern: (
                         tag.name in ["h2", "h3", "h4"]
-                        and re.search(p, tag.get_text(), re.IGNORECASE)
+                        and bool(re.search(p, tag.get_text(), re.IGNORECASE))
                     )
                 )
             if header:
@@ -580,7 +609,7 @@ class SeedfinderScraper:
                 awards = [li.get_text().strip() for li in awards_list.find_all("li")]
         return awards
 
-    def _parse_lineage_to_tree(self, li: BeautifulSoup) -> dict[str, Any] | None:
+    def _parse_lineage_to_tree(self, li: Tag) -> dict[str, Any] | None:
         """Recursive helper to parse lineage tree from UL/LI structure."""
         # The root li has a direct bold link (the strain itself); child lis wrap the
         # strain link in a colored span. Direct-child plain links are »»» derivation
@@ -613,7 +642,7 @@ class SeedfinderScraper:
                 .replace(" \u00bb\u00bb\u00bb", "")
                 .replace("\u00bb\u00bb\u00bb", "")
             )
-            url = main_link.get("href")
+            url = _attr_str(main_link, "href")
 
         # Clean up name
         name = re.sub(r"\s*\[.*?\]", "", name)
@@ -639,13 +668,13 @@ class SeedfinderScraper:
                         .replace("\u00bb\u00bb\u00bb", "")
                         .strip()
                     )
-                    url = link.get("href")
+                    url = _attr_str(link, "href")
                     break
 
         if url and url.startswith("/"):
             url = f"https://seedfinder.eu{url}"
 
-        node = {"name": name, "url": url, "parents": []}
+        node: dict[str, Any] = {"name": name, "url": url, "parents": []}
 
         # Look for nested UL which contains the parents
         nested_ul = li.find("ul")
@@ -661,7 +690,7 @@ class SeedfinderScraper:
 
     def _parse_sensory(self, soup: BeautifulSoup) -> dict[str, list[str]]:
         """Extract sensory data from Degustation section."""
-        sensory = {"effects": [], "aroma": [], "taste": []}
+        sensory: dict[str, list[str]] = {"effects": [], "aroma": [], "taste": []}
 
         sensory_map = {
             "effects": ["Effect/Effectiveness", "Wirkung", "Wirksamkeit"],
@@ -700,7 +729,7 @@ class SeedfinderScraper:
                     break
         return sensory
 
-    def _parse_recursive(self, lineage: str):
+    def _parse_recursive(self, lineage: str) -> dict[str, Any]:
         """Recursively parse lineage string."""
         lineage = lineage.strip()
 
