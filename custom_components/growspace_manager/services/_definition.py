@@ -6,10 +6,9 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
-import voluptuous as vol
-
 from custom_components.growspace_manager.const import GrowspaceService
 from homeassistant.core import SupportsResponse
+from homeassistant.helpers.typing import VolSchemaType
 
 
 @dataclass
@@ -18,6 +17,6 @@ class ServiceDefinition:
 
     name: GrowspaceService
     handler: Callable[..., Coroutine[Any, Any, Any]]
-    schema: vol.Schema | None = None
+    schema: VolSchemaType | None = None
     needs_strain_lib: bool = False
     supports_response: SupportsResponse | None = None

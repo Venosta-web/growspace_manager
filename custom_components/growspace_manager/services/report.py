@@ -65,8 +65,10 @@ async def handle_export_grow_report(
     try:
         report_data: dict[str, Any]
         if plant_id:
+            assert plant is not None
             report_data = await _aggregate_plant_data(hass, coordinator, plant)
         else:
+            assert growspace_id is not None
             report_data = await _aggregate_growspace_data(
                 hass, coordinator, growspace_id
             )
@@ -269,12 +271,17 @@ async def _get_plant_environmental_stats(
             s_start = dt_util.as_utc(parsed_start)
 
             s_end = end_time
-            if stage.get("end"):
-                parsed_end = dt_util.parse_datetime(stage["end"])
+            stage_end = stage.get("end")
+            if stage_end:
+                parsed_end = dt_util.parse_datetime(stage_end)
                 if parsed_end:
                     s_end = dt_util.as_utc(parsed_end)
 
-            stage_stats = {"temperature": None, "humidity": None, "vpd": None}
+            stage_stats: dict[str, float | None] = {
+                "temperature": None,
+                "humidity": None,
+                "vpd": None,
+            }
 
             # Map sensors to keys
             sensor_map = {

@@ -79,5 +79,6 @@ async def test_handle_remove_ec_ramp_curve(coordinator) -> None:
     await handle_remove_ec_ramp_curve(MagicMock(), coordinator, call)
 
     coordinator.services.config.remove_ec_ramp_curve.assert_awaited_once_with(
+        growspace_id=None,
         curve_id="curve-xyz-456",
     )

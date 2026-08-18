@@ -84,7 +84,7 @@ def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
         image_data = base64.b64decode(encoded)
 
         # Load image
-        img = Image.open(BytesIO(image_data))
+        img: Image.Image = Image.open(BytesIO(image_data))
 
         # Size constraint for Niimbot print label (100x100)
         img.thumbnail((100, 100))
@@ -209,7 +209,7 @@ async def handle_import_strain_library(
                 temp_file_path = tmp.name
                 file_path = tmp.name  # Use this temp path for import
 
-        except (binascii.Error, OSError):
+        except binascii.Error, OSError:
             _LOGGER.exception("Failed to process uploaded zip file")
             create_notification(
                 hass, "Failed to process uploaded file.", title="Import Error"
@@ -481,7 +481,7 @@ async def handle_print_label(
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
     call: ServiceCall,
-) -> None:
+) -> dict[str, Any] | None:
     """Handle the print_label service call."""
     plant_id = call.data.get("plant_id")
     device_id = call.data.get("device_id")
@@ -532,7 +532,7 @@ async def handle_print_label(
     breeder_logo = breeder_logo or strain_meta.get(ATTR_BREEDER_LOGO)
 
     # Construct Niimbot payload based on the "Perfect Label" mockup
-    payload = []
+    payload: list[dict[str, Any]] = []
 
     # 1. Main Header: Strain Name (Large and Bold)
     payload.append(
@@ -564,7 +564,11 @@ async def handle_print_label(
 
     # 3. Multiline Info (Pheno, Breeder, Lineage) — each line respects its field flag
     info_lines = []
-    if fields.get("phenotype", True) and phenotype_name and phenotype_name not in ("-", "–"):
+    if (
+        fields.get("phenotype", True)
+        and phenotype_name
+        and phenotype_name not in ("-", "–")
+    ):
         info_lines.append(phenotype_name)
     if fields.get("breeder", True) and breeder and breeder not in ("-", "–"):
         info_lines.append(breeder)

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.cache.cache_manager import CacheManager
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.services.utils import (
     get_validated_coordinator,
@@ -86,7 +87,8 @@ async def test_handle_service_errors_generic_exception(
 async def test_invalidates_cache_kwarg() -> None:
     """Test invalidates_cache with growspace_id in kwargs."""
     mock_coordinator = MagicMock()
-    mock_coordinator.cache = {"growspace_1": "data"}
+    mock_coordinator.cache = CacheManager()
+    mock_coordinator.cache.set("growspace_1", {"data": "data"})
 
     @invalidates_cache()
     async def mock_mutation(coordinator: Any, growspace_id: str | None = None) -> str:
@@ -100,7 +102,8 @@ async def test_invalidates_cache_kwarg() -> None:
 async def test_invalidates_cache_args_dict() -> None:
     """Test invalidates_cache with growspace_id in args[1] dictionary."""
     mock_coordinator = MagicMock()
-    mock_coordinator.cache = {"growspace_1": "data"}
+    mock_coordinator.cache = CacheManager()
+    mock_coordinator.cache.set("growspace_1", {"data": "data"})
 
     @invalidates_cache()
     async def mock_mutation(coordinator: Any, call_data: dict[str, Any]) -> str:
@@ -114,7 +117,8 @@ async def test_invalidates_cache_args_dict() -> None:
 async def test_invalidates_cache_custom_kwarg() -> None:
     """Test invalidates_cache with a custom kwarg name."""
     mock_coordinator = MagicMock()
-    mock_coordinator.cache = {"growspace_1": "data"}
+    mock_coordinator.cache = CacheManager()
+    mock_coordinator.cache.set("growspace_1", {"data": "data"})
 
     @invalidates_cache("custom_id")
     async def mock_mutation(coordinator: Any, custom_id: str | None = None) -> str:
@@ -128,7 +132,8 @@ async def test_invalidates_cache_custom_kwarg() -> None:
 async def test_invalidates_cache_missing_id() -> None:
     """Test invalidates_cache when no growspace_id is provided."""
     mock_coordinator = MagicMock()
-    mock_coordinator.cache = {"growspace_1": "data"}
+    mock_coordinator.cache = CacheManager()
+    mock_coordinator.cache.set("growspace_1", {"data": "data"})
 
     @invalidates_cache()
     async def mock_mutation(coordinator: Any) -> str:

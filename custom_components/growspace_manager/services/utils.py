@@ -26,7 +26,9 @@ WS_ERR_INTERNAL_ERROR = "internal_error"
 WS_ERR_RATE_LIMITED = "rate_limited"
 
 
-def get_validated_coordinator(config_entry: ConfigEntry) -> GrowspaceCoordinator:
+def get_validated_coordinator(
+    config_entry: ConfigEntry[GrowspaceCoordinator],
+) -> GrowspaceCoordinator:
     """Get and validate coordinator from config entry.
 
     Args:
@@ -98,7 +100,7 @@ def invalidates_cache(growspace_id_kwarg: str = "growspace_id") -> Callable[...,
             if growspace_id:
                 try:
                     coordinator: GrowspaceCoordinator = args[0]
-                    coordinator.cache.pop(growspace_id, None)
+                    coordinator.cache.invalidate(growspace_id)
                 except AttributeError, IndexError:
                     pass
             return result
