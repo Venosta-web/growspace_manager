@@ -9,7 +9,10 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.exceptions import PlantNotFoundError
+from custom_components.growspace_manager.exceptions import (
+    CoordinatorNotReadyError,
+    PlantNotFoundError,
+)
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
@@ -86,6 +89,8 @@ async def websocket_get_strain_lineage_tree(
 ) -> dict[str, Any]:
     """Handle get_strain_lineage_tree command."""
     strain_library = coordinator.services.config.strain_library
+    if strain_library is None:
+        raise CoordinatorNotReadyError("Strain library not initialized")
     return strain_library.get_strain_lineage_tree(msg["strain_name"])
 
 
@@ -94,6 +99,8 @@ async def websocket_update_strain_lineage_tree(
 ) -> dict[str, Any]:
     """Handle update_strain_lineage_tree command."""
     strain_library = coordinator.services.config.strain_library
+    if strain_library is None:
+        raise CoordinatorNotReadyError("Strain library not initialized")
     flat_lineage = await strain_library.update_strain_lineage_tree(
         msg["strain_name"], msg["parents"]
     )
@@ -105,6 +112,8 @@ async def websocket_import_strain_lineage_tree(
 ) -> dict[str, Any]:
     """Import a full seedfinder lineage tree, creating ancestor stubs as needed."""
     strain_library = coordinator.services.config.strain_library
+    if strain_library is None:
+        raise CoordinatorNotReadyError("Strain library not initialized")
     await strain_library.async_import_seedfinder_lineage_tree(
         msg["strain_name"], msg["tree"], scraper=coordinator.seedfinder_scraper
     )

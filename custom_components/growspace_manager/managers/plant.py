@@ -739,7 +739,7 @@ class PlantManager(BaseService):
             updates[stage_map[new_stage]] = trans_date_str
 
         plant = self.repository.get_plant(plant_id)
-        if hasattr(plant, "stage_history"):  # Check just in case
+        if plant is not None and hasattr(plant, "stage_history"):  # Check just in case
             new_history = [dict(item) for item in plant.stage_history]
             for item in reversed(new_history):
                 if item.get("end") is None:
@@ -809,8 +809,9 @@ class PlantManager(BaseService):
         # PHI safety check - prevent harvest before pre-harvest interval clears
         if plant.phi_clearance_date:
             today = dt_util.now().date()
-            phi_date = dt_util.parse_datetime(plant.phi_clearance_date).date()
-            if today < phi_date:
+            phi_datetime = dt_util.parse_datetime(plant.phi_clearance_date)
+            phi_date = phi_datetime.date() if phi_datetime else None
+            if phi_date and today < phi_date:
                 days_remaining = (phi_date - today).days
                 from custom_components.growspace_manager.const import (  # noqa: PLC0415
                     DOMAIN,
@@ -1150,29 +1151,29 @@ class PlantManager(BaseService):
         """Alias for remove_plant."""
         return await self.remove_plant(*args, **kwargs)
 
-    async def async_move_plant(self, *args: Any, **kwargs: Any) -> Plant:
+    async def async_move_plant(self, *args: Any, **kwargs: Any) -> None:
         """Alias for move_plant."""
-        return await self.move_plant(*args, **kwargs)
+        await self.move_plant(*args, **kwargs)
 
-    async def async_switch_plants(self, *args: Any, **kwargs: Any) -> list[Plant]:
+    async def async_switch_plants(self, *args: Any, **kwargs: Any) -> None:
         """Alias for switch_plants."""
-        return await self.switch_plants(*args, **kwargs)
+        await self.switch_plants(*args, **kwargs)
 
     async def async_take_clones(self, *args: Any, **kwargs: Any) -> list[Plant]:
         """Alias for take_clones."""
         return await self.take_clones(*args, **kwargs)
 
-    async def async_transition_plant_stage(self, *args: Any, **kwargs: Any) -> Plant:
+    async def async_transition_plant_stage(self, *args: Any, **kwargs: Any) -> None:
         """Alias for transition_plant_stage."""
-        return await self.transition_plant_stage(*args, **kwargs)
+        await self.transition_plant_stage(*args, **kwargs)
 
     async def async_transition_plant(self, *args: Any, **kwargs: Any) -> None:
         """Alias for transition_plant."""
         await self.transition_plant(*args, **kwargs)
 
-    async def async_promote_clone(self, *args: Any, **kwargs: Any) -> Plant:
+    async def async_promote_clone(self, *args: Any, **kwargs: Any) -> None:
         """Alias for promote_clone."""
-        return await self.promote_clone(*args, **kwargs)
+        await self.promote_clone(*args, **kwargs)
 
     async def handle_clone_creation(self, **kwargs: Any) -> str:
         """Compatibility wrapper for add_plant as a clone."""
@@ -1203,17 +1204,17 @@ class PlantManager(BaseService):
         else:
             await self.transition_plant(*args, **kwargs)
 
-    async def handle_move_plant(self, *args: Any, **kwargs: Any) -> Plant:
+    async def handle_move_plant(self, *args: Any, **kwargs: Any) -> None:
         """Alias for move_plant."""
-        return await self.move_plant(*args, **kwargs)
+        await self.move_plant(*args, **kwargs)
 
     async def handle_take_clone(self, *args: Any, **kwargs: Any) -> list[Plant]:
         """Alias for take_clones."""
         return await self.take_clones(*args, **kwargs)
 
-    async def handle_transition_plant_stage(self, *args: Any, **kwargs: Any) -> Plant:
+    async def handle_transition_plant_stage(self, *args: Any, **kwargs: Any) -> None:
         """Alias for transition_plant_stage."""
-        return await self.transition_plant_stage(*args, **kwargs)
+        await self.transition_plant_stage(*args, **kwargs)
 
     async def handle_update_plant(self, *args: Any, **kwargs: Any) -> Plant:
         """Alias for update_plant."""
@@ -1223,6 +1224,6 @@ class PlantManager(BaseService):
         """Alias for remove_plant."""
         await self.remove_plant(*args, **kwargs)
 
-    async def handle_switch_plants(self, *args: Any, **kwargs: Any) -> list[Plant]:
+    async def handle_switch_plants(self, *args: Any, **kwargs: Any) -> None:
         """Alias for switch_plants."""
-        return await self.switch_plants(*args, **kwargs)
+        await self.switch_plants(*args, **kwargs)

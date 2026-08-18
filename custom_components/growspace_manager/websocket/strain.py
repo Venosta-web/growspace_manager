@@ -6,12 +6,15 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from aiohttp import ClientTimeout
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS, DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.strain_library import StrainLibrary
+from custom_components.growspace_manager.exceptions import (
+    CoordinatorNotReadyError,
+    GrowspaceError,
+)
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -73,7 +76,9 @@ def websocket_get_strain_library(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> dict[str, Any]:
     """Handle get strain library command via WebSocket."""
-    strain_library: StrainLibrary = coordinator.services.config.strain_library
+    strain_library = coordinator.services.config.strain_library
+    if strain_library is None:
+        raise CoordinatorNotReadyError("Strain library not initialized")
     all_strains = strain_library.get_all()
     return {
         "strains": all_strains,
@@ -85,7 +90,10 @@ async def websocket_upload_strain_image(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> dict[str, Any]:
     """Upload a strain image to disk and return its local path."""
-    image_manager = coordinator.services.config.strain_library.image_manager
+    strain_library = coordinator.services.config.strain_library
+    if strain_library is None:
+        raise CoordinatorNotReadyError("Strain library not initialized")
+    image_manager = strain_library.image_manager
     abs_path = await image_manager.save_strain_image(
         slugify(msg["strain"]), slugify(msg["phenotype"]), msg["image_base64"]
     )
@@ -100,7 +108,10 @@ async def websocket_download_strain_image(
     import base64 as _base64  # noqa: PLC0415
 
     url = msg["url"]
-    image_manager = coordinator.services.config.strain_library.image_manager
+    strain_library = coordinator.services.config.strain_library
+    if strain_library is None:
+        raise CoordinatorNotReadyError("Strain library not initialized")
+    image_manager = strain_library.image_manager
 
     session = async_get_clientsession(hass)
     headers = {
@@ -109,7 +120,11 @@ async def websocket_download_strain_image(
         "Referer": "https://en.seedfinder.eu/",
     }
     async with session.get(
-        url, timeout=15, headers=headers, allow_redirects=True, max_redirects=20
+        url,
+        timeout=ClientTimeout(total=15),
+        headers=headers,
+        allow_redirects=True,
+        max_redirects=20,
     ) as response:
         if response.status != 200:
             raise GrowspaceError(f"Image download failed: HTTP {response.status}")
@@ -129,6 +144,8 @@ async def websocket_query_external_strain(
 ) -> Any:
     """Query external strain database."""
     scraper = coordinator.seedfinder_scraper
+    if scraper is None:
+        raise CoordinatorNotReadyError("Seedfinder scraper not initialized")
 
     blacklist = []
     try:
@@ -146,6 +163,8 @@ async def websocket_get_external_strain_details(
     import re  # noqa: PLC0415
 
     scraper = coordinator.seedfinder_scraper
+    if scraper is None:
+        raise CoordinatorNotReadyError("Seedfinder scraper not initialized")
 
     raw = await scraper.async_get_strain_details(msg["url"])
     if raw is None:
