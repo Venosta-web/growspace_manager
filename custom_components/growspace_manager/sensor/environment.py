@@ -17,7 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 
-class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """A sensor that provides an air exchange recommendation for a growspace."""
 
     _attr_has_entity_name = True
@@ -39,7 +39,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity): 
         )
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> str:
         """Return the current recommended air exchange action."""
         return self.coordinator.data.get("air_exchange_recommendations", {}).get(  # type: ignore[no-any-return]
@@ -47,7 +47,7 @@ class AirExchangeSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity): 
         )
 
 
-class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor tracking Daily Light Integral (mol/m2/day) for a growspace."""
 
     _attr_has_entity_name = True
@@ -93,13 +93,13 @@ class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type:
         return None
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return current day's accumulated DLI."""
         return round(self._accumulated_mol, 1) if self._accumulated_mol > 0 else 0.0
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return DLI attributes."""
         growspace = self.coordinator.growspaces.get(self._growspace_id)
@@ -152,7 +152,7 @@ class DLISensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type:
         super()._handle_coordinator_update()
 
 
-class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor showing current EC target from an EC ramp curve."""
 
     _attr_has_entity_name = True
@@ -216,7 +216,7 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
         return week
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return current target EC midpoint."""
         curve = self._get_active_curve()
@@ -228,7 +228,7 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # 
         return round((band[0] + band[1]) / 2, 2)
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return EC target details."""
         curve = self._get_active_curve()

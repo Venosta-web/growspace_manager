@@ -12,7 +12,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 
-class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor calculating a vegetative-to-generative crop steering score."""
 
     _attr_has_entity_name = True
@@ -39,14 +39,14 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         )
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return the crop steering score (-1.0 to 1.0)."""
         state = get_crop_steering_state(self.coordinator, self._growspace_id)
         return round(state.score, 2) if state else None
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return crop steering details."""
         state = get_crop_steering_state(self.coordinator, self._growspace_id)

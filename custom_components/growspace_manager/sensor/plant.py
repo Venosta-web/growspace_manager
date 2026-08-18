@@ -16,7 +16,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 
-class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """A sensor representing a single plant in a growspace.
 
     The state of this sensor is the plant's current growth stage (e.g., 'veg',
@@ -46,7 +46,7 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
         )
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> str:
         """Return the current growth stage of the plant."""
         plant = self.coordinator.plants.get(self._plant.plant_id)
@@ -60,7 +60,7 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
         return stage
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the plant."""
         plant = self.coordinator.plants.get(self._plant.plant_id)
@@ -69,7 +69,7 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # typ
 
         return PlantViewModelBuilder.build_attributes(plant)
 
-    @override  # type: ignore[misc]
+    @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()

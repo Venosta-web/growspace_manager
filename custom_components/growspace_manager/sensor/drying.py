@@ -17,7 +17,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 
-class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor tracking daily drying weight for a plant."""
 
     _attr_has_entity_name = True
@@ -45,7 +45,7 @@ class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         return self.coordinator.services.plants.get_plant(self._plant_id)
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return the latest logged weight in grams."""
         plant = self._get_plant()
@@ -54,7 +54,7 @@ class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         return plant.drying_data.weight_log[-1].weight_grams
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return weight_lost_pct and days_to_target."""
         plant = self._get_plant()
@@ -64,12 +64,14 @@ class DryingWeightSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         log = plant.drying_data.weight_log
         current = log[-1].weight_grams if log else None
         return {
-            "weight_lost_pct": compute_weight_lost_pct(wet_weight, current) if current is not None else None,
+            "weight_lost_pct": compute_weight_lost_pct(wet_weight, current)
+            if current is not None
+            else None,
             "days_to_target": compute_days_to_target(wet_weight, log),
         }
 
 
-class DryingMoistureSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class DryingMoistureSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor tracking daily moisture meter readings for a plant."""
 
     _attr_has_entity_name = True
@@ -97,7 +99,7 @@ class DryingMoistureSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity
         return self.coordinator.services.plants.get_plant(self._plant_id)
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> float | None:
         """Return the latest logged moisture percent."""
         plant = self._get_plant()
@@ -106,7 +108,9 @@ class DryingMoistureSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity
         return plant.drying_data.moisture_log[-1].moisture_percent
 
 
-class DryingReadyForCureSensor(CoordinatorEntity[GrowspaceCoordinator], BinarySensorEntity):  # type: ignore[misc]
+class DryingReadyForCureSensor(
+    CoordinatorEntity[GrowspaceCoordinator], BinarySensorEntity
+):
     """Binary sensor that is on when a plant's moisture is at or below the cure threshold."""
 
     _attr_has_entity_name = True
@@ -130,7 +134,7 @@ class DryingReadyForCureSensor(CoordinatorEntity[GrowspaceCoordinator], BinarySe
         )
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def is_on(self) -> bool:
         """Return True when the latest moisture reading is at or below the cure threshold."""
         plant = self._get_plant(self._plant_id)

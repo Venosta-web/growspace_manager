@@ -11,7 +11,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 
-class VisionCheckupSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class VisionCheckupSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor showing the latest AI vision checkup result for a growspace."""
 
     _attr_has_entity_name = True
@@ -50,14 +50,14 @@ class VisionCheckupSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         return None
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> str | None:
         """Return the severity of the latest checkup."""
         result = self._latest_result
         return result.severity if result else None
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed attributes from the latest checkup."""
         result = self._latest_result

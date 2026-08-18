@@ -186,7 +186,7 @@ def _extract_ts(state_obj: Any) -> datetime:
         return _EPOCH_SENTINEL
     if isinstance(ts_raw, str):
         parsed = dt_util.parse_datetime(ts_raw)
-        return parsed or _EPOCH_SENTINEL  # type: ignore[no-any-return]
+        return parsed or _EPOCH_SENTINEL
     if isinstance(ts_raw, datetime):
         return ts_raw
     return _EPOCH_SENTINEL
@@ -232,7 +232,7 @@ def _merge_logbook_event(
                             dict.fromkeys(last_evt["reasons"] + data_dict["reasons"])
                         )
                         last_evt["reasons"] = comb[:5]
-                    return True  # type: ignore[no-any-return]
+                    return True
         except ValueError, TypeError, KeyError:
             pass
     return False

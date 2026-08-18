@@ -18,7 +18,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 
-class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):  # type: ignore[misc]
+class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """A sensor that provides an overview of a single growspace.
 
     The state of this sensor is the number of plants in the growspace. Its
@@ -66,7 +66,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
             manufacturer="Growspace Manager",
         )
 
-    @override  # type: ignore[misc]
+    @override
     async def async_added_to_hass(self) -> None:
         """Register callbacks when the entity is added to Home Assistant."""
         await super().async_added_to_hass()
@@ -103,14 +103,16 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         self.async_write_ha_state()
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> int:
         """Return the number of plants in the growspace."""
-        plants = self.coordinator.services.growspaces.get_growspace_plants(self.growspace_id)
+        plants = self.coordinator.services.growspaces.get_growspace_plants(
+            self.growspace_id
+        )
         return len(plants)
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the detailed state attributes for the growspace."""
         if not self.coordinator.data:
@@ -127,7 +129,7 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
         return attributes  # type: ignore[no-any-return]
 
 
-class GrowspaceListSensor(SensorEntity):  # type: ignore[misc]
+class GrowspaceListSensor(SensorEntity):
     """A sensor that exposes the list of all configured growspaces."""
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
@@ -163,14 +165,14 @@ class GrowspaceListSensor(SensorEntity):  # type: ignore[misc]
         }
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def native_value(self) -> int:
         """Return the total number of growspaces."""
         self._update_growspaces()
         return len(self._growspaces)
 
     @property
-    @override  # type: ignore[misc]
+    @override
     def extra_state_attributes(self) -> dict[str, dict[str, Any]]:
         """Return the list of growspaces as a state attribute."""
         return {"growspaces": self._growspaces}

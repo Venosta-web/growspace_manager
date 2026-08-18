@@ -69,7 +69,7 @@ async def handle_export_grow_report(
         else:
             report_data = await _aggregate_growspace_data(
                 hass, coordinator, growspace_id
-            )  # type: ignore[arg-type]
+            )
 
         output_dir = Path(hass.config.path("www", "growspace_manager", "reports"))
         await hass.async_add_executor_job(output_dir.mkdir, 511, True, True)
@@ -291,7 +291,7 @@ async def _get_plant_environmental_stats(
                         if s_start.isoformat() <= p["lu"] <= s_end.isoformat()
                     ]
                     if points:
-                        stage_stats[key] = round(sum(points) / len(points), 2)  # type: ignore[reassigned]
+                        stage_stats[key] = round(sum(points) / len(points), 2)
 
             averages[stage_name] = stage_stats
 

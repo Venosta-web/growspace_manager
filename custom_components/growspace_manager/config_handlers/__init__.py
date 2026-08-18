@@ -86,7 +86,7 @@ class BaseConfigHandler(ABC, Generic[T]):
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise AbortFlow("setup_error")
-        return coordinator  # type: ignore[return-value]
+        return coordinator
 
     async def websocket_get_event_log(
         self, hass: HomeAssistant, connection: Any, msg: dict[str, Any]

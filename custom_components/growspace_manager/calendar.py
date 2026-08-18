@@ -48,7 +48,7 @@ async def async_setup_entry(
     async_add_entities(calendars, True)
 
 
-class GrowspaceCalendar(CalendarEntity):  # type: ignore[misc]
+class GrowspaceCalendar(CalendarEntity):
     """A calendar entity for a growspace.
 
     This calendar displays events that are generated from the user-configured
