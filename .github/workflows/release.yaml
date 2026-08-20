@@ -21,7 +21,8 @@ jobs:
           echo "Updating version to $VERSION"
           cd custom_components/growspace_manager
           # Use jq to reliably update the version
-          if ! jq --arg v "$VERSION" '.version = $v' manifest.json > manifest.json.tmp; then
+          if ! jq --arg v "$VERSION" '.version = $v' manifest.json \
+            > manifest.json.tmp; then
             echo "jq command failed"
             exit 1
           fi
