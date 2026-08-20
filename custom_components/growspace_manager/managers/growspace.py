@@ -43,7 +43,7 @@ from custom_components.growspace_manager.services.context import (
 from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util, slugify
 
 if TYPE_CHECKING:
@@ -173,13 +173,22 @@ class GrowspaceManager(BaseService):
             # Remove notification state
             self.notification_state.enabled.pop(growspace_id, None)
 
-            # Remove device from registry
+            # Remove registry entities before their parent device. Home Assistant
+            # keeps a device visible while entity-registry entries still refer to
+            # it, even after the growspace has disappeared from domain storage.
             try:
                 dev_reg = dr.async_get(self.hass)
                 device = dev_reg.async_get_device(identifiers={(DOMAIN, growspace_id)})
                 if device:
+                    entity_reg = er.async_get(self.hass)
+                    for entry in er.async_entries_for_device(
+                        entity_reg, device.id, include_disabled_entities=True
+                    ):
+                        entity_reg.async_remove(entry.entity_id)
                     dev_reg.async_remove_device(device.id)
-                    _LOGGER.debug("Removed device for growspace %s", growspace_id)
+                    _LOGGER.debug(
+                        "Removed device and entities for growspace %s", growspace_id
+                    )
             except Exception:
                 _LOGGER.exception(
                     "Error removing device for growspace %s", growspace_id
