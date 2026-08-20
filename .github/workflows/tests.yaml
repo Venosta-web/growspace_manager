@@ -8,15 +8,36 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-python@v6.2.0
         name: Setup Python
         with:
-          python-version: 3.13
+          python-version: "3.14"
+          cache: "pip"
+      - name: Cache pip
+        uses: actions/cache@v5.0.5
+        with:
+          path: ~/.cache/pip
+          # The cache key depends on the OS and the contents of requirements.txt
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
       - name: update pip
         run: python -m pip install --upgrade pip setuptools wheel
+      # Resolve Home Assistant-owned packages against HA's constraints.
+      # An unconstrained install allowed hassil to break test collection.
       - name: install dependencies
-        run: pip install --upgrade -r requirements.txt
+        run: |
+          # Install HA first so its constraints file is available.
+          pip install "$(grep '^homeassistant==' requirements.txt)"
+          HA_PATH="$(
+            python -c 'import homeassistant as h; print(h.__path__[0])'
+          )"
+          pip install -r requirements.txt \
+            -c "$HA_PATH/package_constraints.txt"
+      # Record the resolved set for future dependency debugging.
+      - name: record resolved dependency set
+        run: pip freeze
       - name: Run Unit Tests
         env:
           PYTHONPATH: .
