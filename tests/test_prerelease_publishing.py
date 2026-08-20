@@ -1,5 +1,6 @@
 """Regression tests for the active prerelease publishing channel."""
 
+import json
 from pathlib import Path
 import runpy
 
@@ -9,6 +10,7 @@ import yaml
 REPO_ROOT = Path(__file__).parents[1]
 WORKFLOW_PATH = REPO_ROOT / ".github/workflows/prerelease.yaml"
 STABLE_WORKFLOW_PATH = REPO_ROOT / ".github/workflows/release.yaml"
+MANIFEST_PATH = REPO_ROOT / "custom_components/growspace_manager/manifest.json"
 VERSION_SCRIPT = REPO_ROOT / ".github/scripts/prerelease_version.py"
 
 
@@ -57,6 +59,7 @@ def test_stable_publishing_contract() -> None:
     """A main push must publish and verify the next stable patch release."""
     version_module = runpy.run_path(VERSION_SCRIPT)
     assert version_module["next_stable_version"]("1.2.1") == "1.2.2"
+    assert json.loads(MANIFEST_PATH.read_text())["version"] == "1.2.2"
 
     workflow = yaml.safe_load(STABLE_WORKFLOW_PATH.read_text())
     assert workflow["on"] == {
@@ -71,10 +74,9 @@ def test_stable_publishing_contract() -> None:
     steps = workflow["jobs"]["build"]["steps"]
     release = next(step for step in steps if step.get("name") == "Create Release")
     assert release["with"]["tag_name"] == "v${{ steps.version_step.outputs.version }}"
-    assert (
-        release["with"]["target_commitish"] == "${{ steps.stable_commit.outputs.sha }}"
-    )
+    assert release["with"]["target_commitish"] == "${{ github.sha }}"
     assert release["with"]["fail_on_unmatched_files"] is True
+    assert not any(step.get("name") == "Commit stable version" for step in steps)
 
     verification = next(
         step for step in steps if step.get("name") == "Verify release tag"

@@ -26,36 +26,13 @@ jobs:
         id: version_step
         run: |
           MANIFEST="custom_components/growspace_manager/manifest.json"
-          BASE_VERSION="$(jq -r .version "$MANIFEST")"
-          VERSION="$(
-            python3 .github/scripts/prerelease_version.py \
-              --stable "$BASE_VERSION"
-          )"
-          echo "Updating version to $VERSION"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          cd custom_components/growspace_manager
-          # Use jq to reliably update the version
-          if ! jq --arg v "$VERSION" '.version = $v' manifest.json \
-            > manifest.json.tmp; then
-            echo "jq command failed"
+          VERSION="$(jq -r .version "$MANIFEST")"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected stable X.Y.Z manifest version, got $VERSION" >&2
             exit 1
           fi
-          mv manifest.json.tmp manifest.json
-          cd ../..
-
-      - name: Commit stable version
-        id: stable_commit
-        env:
-          VERSION: ${{ steps.version_step.outputs.version }}
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add custom_components/growspace_manager/manifest.json
-          if ! git diff --staged --quiet; then
-            git commit -m "chore: bump version to v$VERSION"
-            git push origin HEAD:main
-          fi
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       # 2. Creates the ZIP file
       - name: ZIP Release
@@ -73,7 +50,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.2
         with:
           tag_name: v${{ steps.version_step.outputs.version }}
-          target_commitish: ${{ steps.stable_commit.outputs.sha }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: |
             growspace_manager.zip
@@ -83,7 +60,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: v${{ steps.version_step.outputs.version }}
-          TARGET_SHA: ${{ steps.stable_commit.outputs.sha }}
+          TARGET_SHA: ${{ github.sha }}
         run: |
           tag_sha="$(
             gh api \
