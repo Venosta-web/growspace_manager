@@ -685,11 +685,30 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
     # Setup: add a growspace with plants
     gs = await coordinator._growspace_manager.add_growspace("Test GS", 2, 2)
 
-    # Create a device entry
-    config_entry = MockConfigEntry(domain=DOMAIN, data={}, entry_id="test_entry")
-    config_entry.add_to_hass(coordinator.hass)
-
     dev_reg = dr.async_get(coordinator.hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=coordinator.config_entry.entry_id,
+        identifiers={(DOMAIN, gs.id)},
+        name=gs.name,
+    )
+    entity_reg = er.async_get(coordinator.hass)
+    active_entity = entity_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{gs.id}_overview",
+        config_entry=coordinator.config_entry,
+        device_id=device.id,
+        suggested_object_id=f"{gs.id}_overview",
+    )
+    disabled_entity = entity_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{gs.id}_disabled",
+        config_entry=coordinator.config_entry,
+        device_id=device.id,
+        suggested_object_id=f"{gs.id}_disabled",
+        disabled_by=er.RegistryEntryDisabler.USER,
+    )
 
     plant1 = await coordinator._plant_manager.add_plant(gs.id, "StrainA", row=1, col=1)
     plant2 = await coordinator._plant_manager.add_plant(gs.id, "StrainB", row=2, col=2)
@@ -724,6 +743,8 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
 
     # Verify device removed
     assert dev_reg.async_get_device(identifiers={(DOMAIN, gs.id)}) is None
+    assert entity_reg.async_get(active_entity.entity_id) is None
+    assert entity_reg.async_get(disabled_entity.entity_id) is None
 
 
 @pytest.mark.asyncio
@@ -1620,7 +1641,9 @@ async def test_async_move_plant(hass: HomeAssistant) -> None:
     gs = await coordinator._growspace_manager.add_growspace(
         "Test GS", rows=2, plants_per_row=2
     )
-    plant = await coordinator._plant_manager.add_plant(gs.id, "Test Plant", row=1, col=1)
+    plant = await coordinator._plant_manager.add_plant(
+        gs.id, "Test Plant", row=1, col=1
+    )
 
     await coordinator._plant_manager.move_plant(plant.plant_id, 2, 2)
 
