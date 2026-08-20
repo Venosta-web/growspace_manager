@@ -35,7 +35,7 @@ async def test_websocket_history_missing_last_updated(hass: HomeAssistant) -> No
             return_value=history_data,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -49,9 +49,7 @@ async def test_websocket_history_missing_last_updated(hass: HomeAssistant) -> No
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Verify success - we should get a result even if keys were missing (fallback)
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result

@@ -2,8 +2,6 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from custom_components.growspace_manager import (
     _async_remove_dynamic_entities,
     async_register_sidebar_panel,
@@ -12,6 +10,7 @@ from custom_components.growspace_manager import (
 )
 from custom_components.growspace_manager.const import CONF_SHOW_SIDEBAR, DOMAIN
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry
 
 
 async def test_async_setup_entry_pending_growspace_success(hass: HomeAssistant) -> None:
@@ -35,14 +34,19 @@ async def test_async_setup_entry_pending_growspace_success(hass: HomeAssistant) 
     mock_coordinator.async_initialize_sub_coordinators = AsyncMock()
     mock_coordinator.async_config_entry_first_refresh = AsyncMock()
 
-    # Mock growspace_service
-    mock_coordinator.growspace_service = MagicMock()
-    mock_coordinator.growspace_service.add_growspace = AsyncMock()
+    # Mock services.growspaces facade
+    mock_coordinator.services = MagicMock()
+    mock_coordinator.services.growspaces = MagicMock()
+    mock_coordinator.services.growspaces.add_growspace = AsyncMock()
 
     mock_strain_lib = MagicMock()
     mock_strain_lib.async_setup = AsyncMock()
 
-    hass.data[DOMAIN] = {"strain_library": mock_strain_lib}
+    mock_scraper = MagicMock()
+    hass.data[DOMAIN] = {
+        "strain_library": mock_strain_lib,
+        "seedfinder_scraper": mock_scraper,
+    }
     hass.http = MagicMock()
     hass.http.async_register_static_paths = AsyncMock()
 
@@ -68,7 +72,7 @@ async def test_async_setup_entry_pending_growspace_success(hass: HomeAssistant) 
         assert await async_setup_entry(hass, entry) is True
 
         # Verify pending_growspace was processed and entry updated
-        mock_coordinator.growspace_service.add_growspace.assert_called_once()
+        mock_coordinator.services.growspaces.add_growspace.assert_called_once()
         mock_update.assert_called_once()
         assert "pending_growspace" not in mock_update.call_args[1]["data"]
 
@@ -131,17 +135,15 @@ async def test_async_register_sidebar_panel_remove(hass: HomeAssistant) -> None:
     """Test unregistering the sidebar panel (Line 185-191)."""
     entry = MockConfigEntry(domain=DOMAIN, options={CONF_SHOW_SIDEBAR: False})
 
-    # Mock frontend component
-    hass.components = MagicMock()
-    hass.components.frontend = MagicMock()
-    hass.components.frontend.async_remove_panel = MagicMock()
-
     # Set up panel in hass.data
     hass.data["frontend_panels"] = {DOMAIN: MagicMock()}
 
-    await async_register_sidebar_panel(hass, entry)
+    with patch(
+        "custom_components.growspace_manager.frontend_async_remove_panel"
+    ) as mock_remove_panel:
+        await async_register_sidebar_panel(hass, entry)
 
-    hass.components.frontend.async_remove_panel.assert_called_once_with(DOMAIN)
+    mock_remove_panel.assert_called_once_with(hass, DOMAIN)
 
 
 async def test_async_unload_entry_domain_checks(hass: HomeAssistant) -> None:
@@ -182,13 +184,13 @@ async def test_async_unload_entry_removes_panel(hass: HomeAssistant) -> None:
     # Actually line 229: if DOMAIN in hass.data.get("frontend_panels", {}):
     hass.data["frontend_panels"] = {DOMAIN: MagicMock()}
 
-    # Mock frontend component
-    hass.components = MagicMock()
-    hass.components.frontend = MagicMock()
-    hass.components.frontend.async_remove_panel = MagicMock()
-
-    with patch.object(hass.config_entries, "async_unload_platforms", return_value=True):
+    with (
+        patch.object(hass.config_entries, "async_unload_platforms", return_value=True),
+        patch(
+            "custom_components.growspace_manager.frontend_async_remove_panel"
+        ) as mock_remove_panel,
+    ):
         assert await async_unload_entry(hass, entry) is True
 
     # Verify remove_panel was called
-    hass.components.frontend.async_remove_panel.assert_called_once_with(DOMAIN)
+    mock_remove_panel.assert_called_once_with(hass, DOMAIN)

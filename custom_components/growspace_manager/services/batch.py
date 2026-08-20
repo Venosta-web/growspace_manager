@@ -9,9 +9,13 @@ from custom_components.growspace_manager.const import (
     ATTR_STAGE,
     ATTR_TARGET_GROWSPACE_ID,
     ATTR_TRANSITION_DATE,
+    GrowspaceService,
 )
+from custom_components.growspace_manager.schemas import BATCH_ACTION_SCHEMA
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+
+from ._definition import ServiceDefinition
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -38,20 +42,20 @@ async def handle_batch_action(
     for entity_id in entity_ids:
         try:
             if action == "transition":
-                await coordinator._plant_service.transition_plant_stage(
+                await coordinator.services.plants.transition_plant_stage(
                     plant_id=entity_id,
                     new_stage=data[ATTR_STAGE],
                     transition_date=data.get(ATTR_TRANSITION_DATE),
                 )
             elif action == "harvest":
-                await coordinator.async_harvest_plant(
+                await coordinator.services.plants.transition_plant(
                     plant_id=entity_id,
                     target_growspace_id=data.get(ATTR_TARGET_GROWSPACE_ID),
                     target_growspace_name=None,
                     transition_date=data.get(ATTR_TRANSITION_DATE),
                 )
             elif action == "remove":
-                await coordinator.async_remove_plant(plant_id=entity_id)
+                await coordinator.services.plants.remove_plant(plant_id=entity_id)
             else:
                 msg = f"Unknown or unsupported batch action: {action}"
                 _LOGGER.warning(msg)
@@ -60,7 +64,7 @@ async def handle_batch_action(
                 # Better to just log. But since it repeats for all, break.
                 break
 
-        except Exception as err:  # noqa: BLE001
+        except Exception as err :  # noqa: BLE001
             _LOGGER.error("Error processing batch action for %s: %s", entity_id, err)
             errors.append(str(err))
 
@@ -70,3 +74,12 @@ async def handle_batch_action(
         raise ServiceValidationError(
             f"Batch action '{action}' failed for {error_count} entities. First error: {errors[0]}"
         )
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.BATCH_ACTION,
+        handle_batch_action,
+        BATCH_ACTION_SCHEMA,
+    ),
+]

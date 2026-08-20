@@ -6,8 +6,7 @@ extracted from the coordinator to reduce complexity.
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Callable
+from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid
@@ -17,6 +16,8 @@ from custom_components.growspace_manager.models import IPMPreset, Plant
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from .context import BaseService, ServiceContext
+
 if TYPE_CHECKING:
     from custom_components.growspace_manager.data_access.growspace_repository import (
         GrowspaceRepository,
@@ -25,34 +26,19 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class IPMService:
+class IPMService(BaseService):
     """Handles all IPM operations."""
 
     def __init__(
         self,
+        ctx: ServiceContext,
         hass: HomeAssistant,
         repository: GrowspaceRepository,
-        save_callback: Callable[[], Awaitable[None]],
-        lock: asyncio.Lock,
-        add_event_callback: Callable[[str, GrowspaceEvent], None],
-        invalidate_cache_callback: Callable[[str | None], None],
     ) -> None:
-        """Initialize the IPM service.
-
-        Args:
-            hass: Home Assistant instance.
-            repository: Data repository.
-            save_callback: Callback to save data.
-            lock: Async lock for thread safety.
-            add_event_callback: Callback to add events to logbook.
-            invalidate_cache_callback: Callback to invalidate cache.
-        """
+        """Initialise the IPM service with context, hass, and repository."""
+        super().__init__(ctx)
         self.hass = hass
         self.repository = repository
-        self.save_callback = save_callback
-        self.lock = lock
-        self.add_event = add_event_callback
-        self.invalidate_cache = invalidate_cache_callback
         self.ipm_presets: dict[str, IPMPreset] = {}
 
     async def async_save_ipm_preset(
@@ -97,7 +83,7 @@ class IPMService:
             )
             self.ipm_presets[pid] = preset
 
-        await self.save_callback()
+        await self._save()
 
         _LOGGER.info("Saved IPM preset '%s' (%s) with %d items", name, type, len(items))
         return preset
@@ -116,7 +102,7 @@ class IPMService:
 
         preset_name = self.ipm_presets[preset_id].name
         del self.ipm_presets[preset_id]
-        await self.save_callback()
+        await self._save()
         _LOGGER.info("Removed IPM preset '%s' (id=%s)", preset_name, preset_id)
 
     async def async_apply_ipm(
@@ -148,10 +134,27 @@ class IPMService:
         now = dt_util.now().isoformat()
         target_plants = self._get_target_plants(growspace_id, plant_ids)
 
+        # Calculate max PHI from preset items
+        max_phi_days = max(
+            (item.get("phi_days", 0) for item in preset.items), default=0
+        )
+
         # Update plant state
         for plant in target_plants:
             plant.last_ipm = now
             plant.last_ipm_type = preset.type
+
+            # Update PHI clearance date if this preset has phi_days
+            if max_phi_days > 0:
+                clearance = (
+                    dt_util.now().date() + timedelta(days=max_phi_days)
+                ).isoformat()
+                # Only update if new clearance is later than existing
+                if (
+                    not plant.phi_clearance_date
+                    or clearance > plant.phi_clearance_date
+                ):
+                    plant.phi_clearance_date = clearance
 
         # Group by growspace for event logging
         affected_gids = {p.growspace_id for p in target_plants}
@@ -165,13 +168,13 @@ class IPMService:
             event = EventBuilder.create_ipm_event(
                 gid, preset, notes, plant_ids, affected_in_gid, all_growspace_plants
             )
-            self.add_event(gid, event)
+            self._emit(gid, event)
 
         # Invalidate cache for affected growspaces
         for gid in affected_gids:
-            self.invalidate_cache(gid)
+            self._invalidate(gid)
 
-        await self.save_callback()
+        await self._save()
 
         return [p.plant_id for p in target_plants]
 
@@ -181,9 +184,9 @@ class IPMService:
         """Resolve target plants from IDs or growspace ID."""
         if plant_ids:
             return [
-                self.repository.plants[pid]
+                self.repository.require_plant(pid)
                 for pid in plant_ids
-                if pid in self.repository.plants
+                if self.repository.has_plant(pid)
             ]
         if growspace_id:
             return self.repository.get_growspace_plants(growspace_id)

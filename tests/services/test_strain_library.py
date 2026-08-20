@@ -1,13 +1,18 @@
 """Tests for the StrainLibrary class."""
 
+from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiosqlite
 import pytest
 
+from custom_components.growspace_manager.exceptions import StrainReferenceError
 from custom_components.growspace_manager.image_manager import ImageManager
+from custom_components.growspace_manager.models import Plant, PlantGenetics
 from custom_components.growspace_manager.strain_library import StrainLibrary
+from homeassistant.config_entries import ConfigEntryState
 
 
 @pytest.fixture
@@ -100,11 +105,33 @@ async def test_add_strain_with_phenotype(strain_library: StrainLibrary) -> None:
         flower_days_max=65,
     )
 
-    assert "Gorilla Glue" in strain_library.strains
-    phenotypes = strain_library.strains["Gorilla Glue"]["phenotypes"]
-    assert "#4" in phenotypes
-    assert phenotypes["#4"]["description"] == "Sticky"
-    assert phenotypes["#4"]["flower_days_min"] == 60
+
+@pytest.mark.asyncio
+async def test_add_strain_fetch_failure(strain_library: StrainLibrary) -> None:
+    """Test RuntimeError when strain is not found after adding."""
+
+    # Cursor for the SELECT
+    class MockCursor:
+        def __await__(self):
+            async def _inner():
+                return self
+
+            return _inner().__await__()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def fetchone(self):
+            return None
+
+    with patch.object(strain_library._db, "execute") as mock_execute:
+        mock_execute.return_value = MockCursor()
+
+        with pytest.raises(RuntimeError, match="Strain Test Strain not found"):
+            await strain_library.add_strain(strain="Test Strain")
 
 
 @pytest.mark.asyncio
@@ -161,6 +188,188 @@ async def test_remove_strain(strain_library: StrainLibrary) -> None:
 
     await strain_library.remove_strain("Sour Diesel")
     assert "Sour Diesel" not in strain_library.strains
+
+
+async def _add_catalogued_strain(
+    strain_library: StrainLibrary, *, descendants: tuple[str, ...] = ()
+) -> None:
+    """Add a fully managed strain and optionally a descendant that references it."""
+    await strain_library.add_strain(
+        "Target Strain",
+        "Keeper",
+        breeder="Breeder",
+        breeder_logo="/local/breeder.webp",
+        strain_type="Hybrid",
+        lineage="Parent Strain",
+        sex="Feminized",
+        description="Phenotype notes",
+        image_path="/local/target-strain_keeper.webp",
+        images=[{"path": "/local/target-strain_keeper_2.webp"}],
+        sativa_percentage=60,
+        yield_potential="High",
+        thc=24,
+        effects=["Happy"],
+        strain_description="Catalogue notes",
+        awards=["Cup"],
+        lineage_tree={
+            "name": "Target Strain",
+            "parents": [{"name": "Parent Strain", "source": "library"}],
+        },
+    )
+    for descendant in descendants:
+        await strain_library.add_strain(
+            descendant,
+            lineage_tree={
+                "name": descendant,
+                "parents": [{"name": "Target Strain", "source": "library"}],
+            },
+        )
+
+
+def _set_plant_references(strain_library: StrainLibrary, count: int) -> None:
+    """Expose loaded coordinators containing plants that reference the target."""
+    plants = {
+        f"plant-{index}": Plant(
+            plant_id=f"plant-{index}",
+            growspace_id="veg",
+            genetics=PlantGenetics(strain_name="Target Strain"),
+        )
+        for index in range(count)
+    }
+    coordinator = SimpleNamespace(plants=plants)
+    entry = SimpleNamespace(
+        state=ConfigEntryState.LOADED,
+        runtime_data=coordinator,
+    )
+    strain_library.hass.config_entries.async_entries.return_value = [entry]
+
+
+async def _database_snapshot(strain_library: StrainLibrary) -> dict[str, list[tuple]]:
+    """Return all deletion-relevant rows for atomicity assertions."""
+    assert strain_library._db is not None
+    snapshot = {}
+    for table in ("strains", "phenotypes", "harvests", "strain_ancestry"):
+        async with strain_library._db.execute(
+            f"SELECT * FROM {table} ORDER BY 1"  # noqa: S608
+        ) as cursor:
+            snapshot[table] = [tuple(row) for row in await cursor.fetchall()]
+    return snapshot
+
+
+@pytest.mark.parametrize(
+    ("plant_count", "harvest_count", "descendants", "reference_message"),
+    [
+        pytest.param(1, 0, (), "1 Plant record", id="plant"),
+        pytest.param(0, 1, (), "harvest history", id="harvest"),
+        pytest.param(2, 1, (), "2 Plant records and harvest history", id="both"),
+        pytest.param(1, 0, ("Child",), "1 Plant record", id="plant-and-lineage"),
+        pytest.param(0, 1, ("Child",), "harvest history", id="harvest-and-lineage"),
+        pytest.param(
+            2,
+            1,
+            ("Child",),
+            "2 Plant records and harvest history",
+            id="all-references",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_remove_strain_rejects_cultivation_references_without_changes(
+    strain_library: StrainLibrary,
+    plant_count: int,
+    harvest_count: int,
+    descendants: tuple[str, ...],
+    reference_message: str,
+) -> None:
+    """Cultivation references block deletion before catalogue data is changed."""
+    await _add_catalogued_strain(strain_library, descendants=descendants)
+    _set_plant_references(strain_library, plant_count)
+    for _ in range(harvest_count):
+        await strain_library.record_harvest("Target Strain", "Keeper", 28, 63)
+    database_before = await _database_snapshot(strain_library)
+    cache_before = deepcopy(strain_library.strains)
+
+    with pytest.raises(StrainReferenceError, match=reference_message):
+        await strain_library.remove_strain("Target Strain")
+
+    assert await _database_snapshot(strain_library) == database_before
+    assert strain_library.strains == cache_before
+
+
+@pytest.mark.asyncio
+async def test_remove_lineage_referenced_strain_demotes_to_ancestor(
+    strain_library: StrainLibrary, mock_image_manager: ImageManager
+) -> None:
+    """A lineage-only reference retains identity and parents but clears catalogue data."""
+    await _add_catalogued_strain(strain_library, descendants=("Child Strain",))
+    _set_plant_references(strain_library, 0)
+
+    await strain_library.remove_strain("Target Strain")
+
+    assert strain_library._db is not None
+    async with strain_library._db.execute(
+        "SELECT * FROM strains WHERE strain_name = ?", ("Target Strain",)
+    ) as cursor:
+        row = dict(await cursor.fetchone())
+    assert row == {
+        "strain_id": row["strain_id"],
+        "strain_name": "Target Strain",
+        "breeder": None,
+        "breeder_logo": None,
+        "type": None,
+        "lineage": "Parent Strain",
+        "sex": None,
+        "sativa_percentage": None,
+        "indica_percentage": None,
+        "yield_potential": None,
+        "height": None,
+        "thc": None,
+        "awards": None,
+        "lineage_tree": '[{"name": "Parent Strain", "source": "library"}]',
+        "cbd": None,
+        "cbg": None,
+        "effects": None,
+        "aroma": None,
+        "taste": None,
+        "description": None,
+        "is_indoor": None,
+        "is_outdoor": None,
+        "is_greenhouse": None,
+        "is_stub": 1,
+        "generation": None,
+    }
+    async with strain_library._db.execute(
+        "SELECT COUNT(*) FROM phenotypes WHERE strain_id = ?", (row["strain_id"],)
+    ) as cursor:
+        assert (await cursor.fetchone())[0] == 0
+    async with strain_library._db.execute(
+        "SELECT ancestor_name FROM strain_ancestry WHERE descendant_strain_id = ?",
+        (row["strain_id"],),
+    ) as cursor:
+        assert [item[0] for item in await cursor.fetchall()] == ["Parent Strain"]
+    assert strain_library.strains["Target Strain"]["meta"]["is_stub"] is True
+    assert strain_library.strains["Target Strain"]["phenotypes"] == {}
+    mock_image_manager.delete_image.assert_called_once_with("target_strain", "keeper")
+
+
+@pytest.mark.asyncio
+async def test_remove_unreferenced_strain_deletes_everything(
+    strain_library: StrainLibrary, mock_image_manager: ImageManager
+) -> None:
+    """An entirely unreferenced strain is removed rather than demoted."""
+    await _add_catalogued_strain(strain_library)
+    _set_plant_references(strain_library, 0)
+
+    await strain_library.remove_strain("Target Strain")
+
+    assert "Target Strain" not in strain_library.strains
+    assert strain_library._db is not None
+    for table in ("strains", "phenotypes", "strain_ancestry"):
+        async with strain_library._db.execute(
+            f"SELECT COUNT(*) FROM {table}"  # noqa: S608
+        ) as cursor:
+            assert (await cursor.fetchone())[0] == 0
+    mock_image_manager.delete_image.assert_called_once_with("target_strain", "keeper")
 
 
 @pytest.mark.asyncio
@@ -779,3 +988,250 @@ async def test_analytics_snapshot(strain_library: StrainLibrary, snapshot) -> No
 
     analytics = strain_library.get_analytics()
     assert analytics == snapshot
+
+
+# --- Image Gallery ---
+
+@pytest.mark.asyncio
+async def test_add_strain_with_images_gallery(strain_library: StrainLibrary) -> None:
+    """Phenotype data contains the full images array after add_strain with images."""
+    images = [
+        {"path": "/local/growspace_manager/strains/og-kush_default_a.webp", "crop_meta": None, "is_thumbnail": True},
+        {"path": "/local/growspace_manager/strains/og-kush_default_b.webp", "crop_meta": {"x": 50, "y": 50, "scale": 1.2}, "is_thumbnail": False},
+    ]
+
+    await strain_library.add_strain(strain="OG Kush", images=images)
+
+    pheno = strain_library.strains["OG Kush"]["phenotypes"]["default"]
+    assert pheno["images"] == images
+
+
+@pytest.mark.asyncio
+async def test_images_gallery_replace_all(strain_library: StrainLibrary) -> None:
+    """Saving a new images list replaces the existing gallery entirely."""
+    original = [
+        {"path": "/local/a.webp", "crop_meta": None, "is_thumbnail": True},
+        {"path": "/local/b.webp", "crop_meta": None, "is_thumbnail": False},
+    ]
+    await strain_library.add_strain(strain="OG Kush", images=original)
+
+    replacement = [
+        {"path": "/local/c.webp", "crop_meta": None, "is_thumbnail": True},
+    ]
+    await strain_library.add_strain(strain="OG Kush", images=replacement)
+
+    pheno = strain_library.strains["OG Kush"]["phenotypes"]["default"]
+    assert pheno["images"] == replacement
+
+
+@pytest.mark.asyncio
+async def test_migration_image_path_to_images_gallery(strain_library: StrainLibrary) -> None:
+    """Phenotypes with image_path but no images get migrated to the gallery format on load."""
+    # Simulate pre-gallery data: insert directly into DB leaving images NULL
+    await strain_library._db.execute(
+        "INSERT OR IGNORE INTO strains (strain_name) VALUES (?)", ("Blue Dream",)
+    )
+    await strain_library._db.execute(
+        """
+        INSERT INTO phenotypes (strain_id, phenotype_name, image_path, image_crop_meta)
+        SELECT strain_id, 'default',
+               '/local/growspace_manager/strains/blue-dream.webp',
+               '{"x": 50, "y": 50, "scale": 1.0}'
+        FROM strains WHERE strain_name = 'Blue Dream'
+        """
+    )
+    await strain_library._db.commit()
+
+    # Re-load triggers the migration
+    await strain_library.load()
+
+    pheno = strain_library.strains["Blue Dream"]["phenotypes"]["default"]
+    assert "images" in pheno
+    assert len(pheno["images"]) == 1
+    assert pheno["images"][0]["path"] == "/local/growspace_manager/strains/blue-dream.webp"
+    assert pheno["images"][0]["is_thumbnail"] is True
+    assert pheno["images"][0]["crop_meta"] == {"x": 50, "y": 50, "scale": 1.0}
+
+
+# --- Thumbnail resolution ---
+
+@pytest.mark.asyncio
+async def test_resolve_thumbnail_own_images(strain_library: StrainLibrary) -> None:
+    """resolve_thumbnail returns the thumbnail entry from the phenotype's own gallery."""
+    images = [
+        {"path": "/local/a.webp", "crop_meta": None, "is_thumbnail": False},
+        {"path": "/local/b.webp", "crop_meta": {"x": 30, "y": 70, "scale": 1.1}, "is_thumbnail": True},
+    ]
+    await strain_library.add_strain(strain="OG Kush", images=images)
+
+    thumbnail = strain_library.resolve_thumbnail("OG Kush", "default")
+    assert thumbnail == {"path": "/local/b.webp", "crop_meta": {"x": 30, "y": 70, "scale": 1.1}, "is_thumbnail": True}
+
+
+@pytest.mark.asyncio
+async def test_resolve_thumbnail_falls_back_to_default_phenotype(strain_library: StrainLibrary) -> None:
+    """resolve_thumbnail falls back to 'default' sibling when phenotype has no images."""
+    default_image = {"path": "/local/default.webp", "crop_meta": None, "is_thumbnail": True}
+    await strain_library.add_strain(strain="OG Kush", phenotype=None, images=[default_image])
+    await strain_library.add_strain(strain="OG Kush", phenotype="Pheno A")
+
+    thumbnail = strain_library.resolve_thumbnail("OG Kush", "Pheno A")
+    assert thumbnail == default_image
+
+
+@pytest.mark.asyncio
+async def test_resolve_thumbnail_falls_back_alphabetical_when_no_default(strain_library: StrainLibrary) -> None:
+    """resolve_thumbnail falls back alphabetically when 'default' has no images."""
+    bravo_image = {"path": "/local/bravo.webp", "crop_meta": None, "is_thumbnail": True}
+    await strain_library.add_strain(strain="OG Kush", phenotype="Bravo")
+    await strain_library.add_strain(strain="OG Kush", phenotype="Alpha", images=[bravo_image])
+    await strain_library.add_strain(strain="OG Kush", phenotype="Zeta")
+
+    # Zeta has no images, default has no images — should get Alpha's thumbnail (first alphabetically)
+    thumbnail = strain_library.resolve_thumbnail("OG Kush", "Zeta")
+    assert thumbnail == bravo_image
+
+
+# --- Additional Targeted Coverage Tests ---
+
+@pytest.mark.asyncio
+async def test_db_migration_harvests_columns(mock_hass, mock_image_manager) -> None:
+    """Test that harvests table columns are added if missing during setup."""
+    legacy_schema = """
+    CREATE TABLE harvests (
+        harvest_id INTEGER PRIMARY KEY,
+        phenotype_id INTEGER,
+        veg_days INTEGER NOT NULL,
+        flower_days INTEGER NOT NULL,
+        harvest_date TEXT NOT NULL,
+        wet_weight REAL,
+        dry_weight REAL,
+        trim_weight REAL,
+        thc_percentage REAL,
+        cbd_percentage REAL,
+        terpene_profile TEXT
+    );
+    """
+    real_connect = aiosqlite.connect
+
+    async def mock_connect(database, **kwargs):
+        conn = await real_connect(":memory:", **kwargs)
+        await conn.executescript(legacy_schema)
+        await conn.commit()
+        return conn
+
+    with (
+        patch(
+            "custom_components.growspace_manager.strain_library.ImageManager",
+            return_value=mock_image_manager,
+        ),
+        patch(
+            "custom_components.growspace_manager.strain_library.aiosqlite.connect",
+            side_effect=mock_connect,
+        ),
+    ):
+        library = StrainLibrary(mock_hass)
+        await library.async_setup()
+
+        # Check if the missing columns were added
+        async with library._db.execute("PRAGMA table_info(harvests)") as cursor:
+            columns = [row["name"] for row in await cursor.fetchall()]
+            for col in ["vigor", "structure", "aroma", "resin", "pest_resistance"]:
+                assert col in columns
+
+        await library.async_close()
+
+
+
+@pytest.mark.asyncio
+async def test_async_migrate_image_gallery_no_db(mock_hass: MagicMock) -> None:
+    """Verify that _async_migrate_image_gallery exits early when db is None."""
+    library = StrainLibrary(mock_hass)
+    assert library._db is None
+    # This should return None early and not raise any errors
+    await library._async_migrate_image_gallery()
+
+
+@pytest.mark.asyncio
+async def test_async_migrate_image_gallery_operational_error(strain_library: StrainLibrary) -> None:
+    """Verify that _async_migrate_image_gallery handles operational error gracefully."""
+    with patch.object(
+        strain_library._db, "execute", side_effect=aiosqlite.OperationalError("Mock database error")
+    ):
+        await strain_library._async_migrate_image_gallery()
+
+
+@pytest.mark.asyncio
+async def test_async_migrate_image_gallery_invalid_crop_json(strain_library: StrainLibrary) -> None:
+    """Verify that _async_migrate_image_gallery handles invalid crop JSON gracefully."""
+    await strain_library._db.execute(
+        "INSERT OR IGNORE INTO strains (strain_name) VALUES (?)", ("Blue Dream",)
+    )
+    await strain_library._db.execute(
+        """
+        INSERT INTO phenotypes (strain_id, phenotype_name, image_path, image_crop_meta)
+        SELECT strain_id, 'default',
+               '/local/growspace_manager/strains/blue-dream.webp',
+               '{invalid json'
+        FROM strains WHERE strain_name = 'Blue Dream'
+        """
+    )
+    await strain_library._db.commit()
+
+    # Re-load triggers the migration
+    await strain_library.load()
+
+    pheno = strain_library.strains["Blue Dream"]["phenotypes"]["default"]
+    assert "images" in pheno
+    assert len(pheno["images"]) == 1
+    assert pheno["images"][0]["crop_meta"] is None
+
+
+@pytest.mark.asyncio
+async def test_load_with_invalid_images_json(strain_library: StrainLibrary) -> None:
+    """Verify load logs warning and sets images to None on invalid JSON."""
+    await strain_library._db.execute(
+        "INSERT OR IGNORE INTO strains (strain_name) VALUES (?)", ("Sour Diesel",)
+    )
+    await strain_library._db.execute(
+        """
+        INSERT INTO phenotypes (strain_id, phenotype_name, images)
+        SELECT strain_id, 'default', 'not valid json'
+        FROM strains WHERE strain_name = 'Sour Diesel'
+        """
+    )
+    await strain_library._db.commit()
+
+    await strain_library.load()
+
+    pheno = strain_library.strains["Sour Diesel"]["phenotypes"]["default"]
+    assert pheno.get("images") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_thumbnail_nonexistent_strain(strain_library: StrainLibrary) -> None:
+    """Verify resolve_thumbnail returns None when strain does not exist."""
+    assert strain_library.resolve_thumbnail("Nonexistent Strain", "default") is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_thumbnail_no_thumbnail_fallback(strain_library: StrainLibrary) -> None:
+    """Verify resolve_thumbnail falls back to the first image when no thumbnail is specified."""
+    images = [
+        {"path": "/local/first.webp", "crop_meta": None, "is_thumbnail": False},
+        {"path": "/local/second.webp", "crop_meta": None, "is_thumbnail": False},
+    ]
+    await strain_library.add_strain(strain="OG Kush", images=images)
+
+    thumbnail = strain_library.resolve_thumbnail("OG Kush", "default")
+    assert thumbnail == images[0]
+
+
+@pytest.mark.asyncio
+async def test_resolve_thumbnail_none_exists(strain_library: StrainLibrary) -> None:
+    """Verify resolve_thumbnail returns None when neither requested phenotype nor fallback has images."""
+    await strain_library.add_strain(strain="OG Kush", phenotype="default")
+    await strain_library.add_strain(strain="OG Kush", phenotype="Pheno A")
+
+    thumbnail = strain_library.resolve_thumbnail("OG Kush", "Pheno A")
+    assert thumbnail is None

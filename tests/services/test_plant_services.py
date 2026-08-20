@@ -13,17 +13,20 @@ from custom_components.growspace_manager.exceptions import (
     PlantNotFoundError,
     ValidationChangeError,
 )
-from custom_components.growspace_manager.services.plant import (
-    handle_add_plant,
-    handle_harvest_plant,
+from custom_components.growspace_manager.services.plant_cloning import (
     handle_move_clone,
-    handle_move_plant,
-    handle_remove_plant,
-    handle_switch_plants,
     handle_take_clone,
-    handle_transition_plant_stage,
-    handle_update_plant,
 )
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
+from custom_components.growspace_manager.services.plant_lifecycle import (
+    handle_harvest_plant,
+    handle_transition_plant_stage,
+)
+from custom_components.growspace_manager.services.plant_spatial import (
+    handle_move_plant,
+    handle_switch_plants,
+)
+from custom_components.growspace_manager.utils import parse_date_field
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
@@ -54,10 +57,12 @@ async def test_add_plant_success(
         },
     )
 
-    await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.add_plant_from_call(
+        hass, mock_strain_library, call
+    )
     await hass.async_block_till_done()
 
-    mock_coordinator._plant_service.add_plant.assert_called_once()
+    mock_coordinator._plant_manager.add_plant.assert_called_once()
     # async_save/async_request_refresh are called inside async_add_plant or implicitly not needed
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -84,14 +89,16 @@ async def test_add_plant_growspace_not_found(
 
     # Patch the notification function
     with pytest.raises(ServiceValidationError, match="not found"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.add_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
     # Assert no plant was added
-    mock_coordinator._plant_service.add_plant.assert_not_called()
+    mock_coordinator._plant_manager.add_plant.assert_not_called()
 
     # Optionally, check that async_save / async_request_refresh were not called
-    mock_coordinator.async_save.assert_not_called()
-    mock_coordinator.async_request_refresh.assert_not_called()
+    mock_coordinator.services.save.assert_not_called()
+    mock_coordinator.services.request_refresh.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -114,15 +121,17 @@ async def test_add_plant_position_out_of_bounds(
     )
 
     # Configure mock to raise ValidationChangeError (simulating coordinator validation)
-    mock_coordinator._plant_service.add_plant.side_effect = ValidationChangeError(
+    mock_coordinator._plant_manager.add_plant.side_effect = ValidationChangeError(
         "Position (10,10) is outside growspace 'gs1' bounds."
     )
 
     with pytest.raises(ServiceValidationError, match="outside growspace"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.add_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
     # Ensure the coordinator was called
-    mock_coordinator._plant_service.add_plant.assert_called_once()
+    mock_coordinator._plant_manager.add_plant.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -152,14 +161,16 @@ async def test_add_plant_position_occupied(
     )
 
     # Configure mock to raise ValidationChangeError (simulating occupied position)
-    mock_coordinator._plant_service.add_plant.side_effect = ValidationChangeError(
+    mock_coordinator._plant_manager.add_plant.side_effect = ValidationChangeError(
         "Position (2,3) in growspace 'gs1' is already occupied."
     )
 
     with pytest.raises(ServiceValidationError, match="occupied"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.add_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
-    mock_coordinator._plant_service.add_plant.assert_called_once()
+    mock_coordinator._plant_manager.add_plant.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -184,9 +195,11 @@ async def test_add_plant_with_dates(
         },
     )
 
-    await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.add_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
-    call_kwargs = mock_coordinator._plant_service.add_plant.call_args.kwargs
+    call_kwargs = mock_coordinator._plant_manager.add_plant.call_args.kwargs
     assert call_kwargs["veg_start"] == as_local(datetime(2024, 1, 15, 0, 0))
     assert call_kwargs["flower_start"] == as_local(datetime(2024, 1, 15, 0, 0))
 
@@ -210,9 +223,11 @@ async def test_add_plant_mother_growspace_auto_date(
         },
     )
 
-    await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.add_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
-    call_kwargs = mock_coordinator._plant_service.add_plant.call_args.kwargs
+    call_kwargs = mock_coordinator._plant_manager.add_plant.call_args.kwargs
     # Service converts date.today() to datetime via parse_date_field
     assert call_kwargs["mother_start"].date() == date.today()
 
@@ -223,7 +238,7 @@ async def test_add_plant_exception(
 ) -> None:
     """Test exception handling in add_plant."""
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator._plant_service.add_plant.side_effect = Exception("Test error")
+    mock_coordinator._plant_manager.add_plant.side_effect = GrowspaceError("Test error")
 
     call = ServiceCall(
         hass,
@@ -237,8 +252,10 @@ async def test_add_plant_exception(
         },
     )
 
-    with pytest.raises(Exception, match="Test error"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+    with pytest.raises(ServiceValidationError, match="Failed to add plant: Test error"):
+        await mock_coordinator.services.plants.add_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
 
 # ============================================================================
@@ -273,8 +290,8 @@ async def test_take_clone_success(
     await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
     # Assertions
-    assert mock_coordinator.async_take_clones.call_count == 1
-    call_args = mock_coordinator.async_take_clones.call_args.kwargs
+    assert mock_coordinator.services.plants.take_clones.call_count == 1
+    call_args = mock_coordinator.services.plants.take_clones.call_args.kwargs
     assert call_args["num_clones"] == 2
 
 
@@ -295,13 +312,13 @@ async def test_take_clone_mother_not_found(
     )
 
     # Configure mock to raise GrowspaceNotFoundError
-    mock_coordinator.async_take_clones.side_effect = GrowspaceNotFoundError(
+    mock_coordinator.services.plants.take_clones.side_effect = GrowspaceNotFoundError(
         "Mother plant nonexistent not found"
     )
 
     with pytest.raises(ServiceValidationError, match="not found"):
         await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
-    mock_coordinator.async_take_clones.assert_not_called()
+    mock_coordinator.services.plants.take_clones.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -328,14 +345,14 @@ async def test_take_clone_no_space(
     )
 
     # Configure mock to raise GrowspaceError (simulating no space)
-    mock_coordinator.async_take_clones.side_effect = GrowspaceError(
+    mock_coordinator.services.plants.take_clones.side_effect = GrowspaceError(
         "Failed to add any clones"
     )
 
     with pytest.raises(ServiceValidationError, match="Failed to add any clones"):
         await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
-    mock_coordinator.async_save.assert_not_called()
+    mock_coordinator.services.save.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -365,11 +382,10 @@ async def test_take_clone_with_transition_date(
 
     await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
-    call_kwargs = mock_coordinator.async_take_clones.call_args.kwargs
-    # test_date is already a datetime object from the service call, but handle_take_clone converts it.
-    # We should update test to pass date if needed or rely on converter.
-    # handle_take_clone converts it to date.
-    assert call_kwargs["transition_date"] == test_date
+    call_kwargs = mock_coordinator.services.plants.take_clones.call_args.kwargs
+    # Lifecycle Timestamp (ADR-0013): the supplied date is promoted to a
+    # midnight-local datetime, no longer truncated to a date object.
+    assert call_kwargs["transition_date"] == as_local(datetime(2024, 1, 15, 0, 0))
 
 
 @pytest.mark.asyncio
@@ -394,11 +410,13 @@ async def test_take_clone_invalid_num_clones(
         },
     )
 
-    await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+    with pytest.raises(
+        ServiceValidationError,
+        match="num_clones must be an integer, got: 'invalid'",
+    ):
+        await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
-    # Should default to 1 clone
-    mock_coordinator.async_take_clones.assert_called_once()
-    assert mock_coordinator.async_take_clones.call_args.kwargs["num_clones"] == 1
+    mock_coordinator.services.plants.take_clones.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -414,7 +432,7 @@ async def test_take_clone_partial_failure(
     mock_coordinator.growspaces = {"clone": mock_growspace}
 
     # First clone succeeds, second one raises an error
-    mock_coordinator.async_add_plant = AsyncMock(
+    mock_coordinator.services.plants.add_plant = AsyncMock(
         side_effect=[AsyncMock(return_value="clone_1"), Exception("Test error")]
     )
 
@@ -461,7 +479,7 @@ async def test_move_clone_success(
     # Setup
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
-    mock_coordinator.async_add_plant = AsyncMock(return_value="plant_2")
+    mock_coordinator.services.plants.add_plant = AsyncMock(return_value="plant_2")
 
     call = ServiceCall(
         hass,
@@ -479,8 +497,8 @@ async def test_move_clone_success(
     await hass.async_block_till_done()
 
     # Capture events
-    mock_coordinator.async_promote_clone.assert_called_once()
-    call_args = mock_coordinator.async_promote_clone.call_args.kwargs
+    mock_coordinator.services.plants.promote_clone.assert_called_once()
+    call_args = mock_coordinator.services.plants.promote_clone.call_args.kwargs
     assert call_args["clone_id"] == "clone_1"
     assert call_args["target_growspace_id"] == "veg"
 
@@ -521,7 +539,7 @@ async def test_move_clone_plant_not_found(
     )
 
     # Configure mock to raise PlantNotFoundError
-    mock_coordinator.async_promote_clone.side_effect = PlantNotFoundError(
+    mock_coordinator.services.plants.promote_clone.side_effect = PlantNotFoundError(
         "Plant nonexistent does not exist"
     )
 
@@ -553,14 +571,14 @@ async def test_move_clone_no_space(
     )
 
     # Configure mock to raise ValidationChangeError
-    mock_coordinator.async_promote_clone.side_effect = ValidationChangeError(
+    mock_coordinator.services.plants.promote_clone.side_effect = ValidationChangeError(
         "Could not find position"
     )
 
     with pytest.raises(ServiceValidationError, match="Could not find position"):
         await handle_move_clone(hass, mock_coordinator, mock_strain_library, call)
 
-    mock_coordinator._plant_service.add_plant.assert_not_called()
+    mock_coordinator._plant_manager.add_plant.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -590,10 +608,11 @@ async def test_move_clone_invalid_date(
 
     # Should default to today's date
     # Should default to today's date
-    mock_coordinator.async_promote_clone.assert_called_once()
+    mock_coordinator.services.plants.promote_clone.assert_called_once()
     # Logic in service: transitions invalid date string to today
-    kwargs = mock_coordinator.async_promote_clone.call_args_list[0].kwargs
-    assert kwargs["transition_date"] == datetime.now().date()
+    kwargs = mock_coordinator.services.plants.promote_clone.call_args_list[0].kwargs
+    # Unparseable date falls back to now as a full datetime (ADR-0013).
+    assert kwargs["transition_date"].date() == datetime.now(UTC).date()
 
 
 @pytest.mark.asyncio
@@ -608,7 +627,7 @@ async def test_move_clone_exception_finding_position(
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
     mock_coordinator._find_first_available_position = Mock(
-        side_effect=Exception("Test error")
+        side_effect=ValueError("Test error")
     )
 
     call = ServiceCall(
@@ -622,7 +641,7 @@ async def test_move_clone_exception_finding_position(
     )
 
     # We simulate the failure directly on the coordinator method.
-    mock_coordinator.async_promote_clone.side_effect = ValidationChangeError(
+    mock_coordinator.services.plants.promote_clone.side_effect = ValidationChangeError(
         "Could not find position"
     )
 
@@ -641,7 +660,9 @@ async def test_move_clone_exception_during_move(
     """Test exception during clone move."""
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
-    mock_coordinator.async_promote_clone.side_effect = Exception("Test error")
+    mock_coordinator.services.plants.promote_clone.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -682,10 +703,12 @@ async def test_update_plant_success(
     )
 
     # Act
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
     await hass.async_block_till_done()
 
-    mock_coordinator._plant_service.update_plant.assert_called_once()
+    mock_coordinator._plant_manager.update_plant.assert_called_once()
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
 
@@ -708,10 +731,14 @@ async def test_update_plant_not_found(
     )
 
     # The service should catch the PlantNotFoundError and re-raise as ServiceValidationError
-    with pytest.raises(ServiceValidationError, match="does not exist"):
-        await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    with pytest.raises(
+        ServiceValidationError, match="Failed to update plant: 'nonexistent'"
+    ):
+        await mock_coordinator.services.plants.update_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
-    mock_coordinator._plant_service.update_plant.assert_not_called()
+    mock_coordinator._plant_manager.update_plant.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -733,9 +760,11 @@ async def test_update_plant_with_dates(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
-    call_kwargs = mock_coordinator._plant_service.update_plant.call_args.kwargs
+    call_kwargs = mock_coordinator._plant_manager.update_plant.call_args.kwargs
     assert call_kwargs["veg_start"] == as_local(datetime(2024, 1, 15, 0, 0))
     assert call_kwargs["flower_start"] == as_local(datetime(2024, 1, 15, 0, 0))
 
@@ -758,9 +787,11 @@ async def test_update_plant_with_date_strings(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
-    call_kwargs = mock_coordinator._plant_service.update_plant.call_args.kwargs
+    call_kwargs = mock_coordinator._plant_manager.update_plant.call_args.kwargs
     # Date strings are parsed to datetime objects with local timezone
     assert call_kwargs["veg_start"] == as_local(datetime(2024, 1, 15, 0, 0))
     # ISO datetime with timezone is parsed with tzinfo
@@ -786,9 +817,11 @@ async def test_update_plant_invalid_date(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
-    call_kwargs = mock_coordinator._plant_service.update_plant.call_args[1]
+    call_kwargs = mock_coordinator._plant_manager.update_plant.call_args[1]
     assert call_kwargs["veg_start"] is None
 
 
@@ -810,9 +843,11 @@ async def test_update_plant_none_values(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
-    call_kwargs = mock_coordinator._plant_service.update_plant.call_args[1]
+    call_kwargs = mock_coordinator._plant_manager.update_plant.call_args[1]
     assert "strain" not in call_kwargs  # None values should be skipped
     assert call_kwargs["phenotype"] == "Valid"
 
@@ -833,9 +868,11 @@ async def test_update_plant_no_update_fields(
         },
     )
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
 
-    mock_coordinator._plant_service.update_plant.assert_not_called()
+    mock_coordinator._plant_manager.update_plant.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -844,7 +881,9 @@ async def test_update_plant_exception(
 ) -> None:
     """Test exception handling in update_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator._plant_service.update_plant.side_effect = Exception("Test error")
+    mock_coordinator._plant_manager.update_plant.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -857,7 +896,9 @@ async def test_update_plant_exception(
     )
 
     with pytest.raises(Exception, match="Test error"):
-        await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.update_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
 
 # ============================================================================
@@ -884,13 +925,13 @@ async def test_remove_plant_success(
 
     # Assert
     # Act
-    await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+    facade = PlantFacade(mock_coordinator)
+    facade.remove_plant = mock_coordinator.services.plants.remove_plant
+    await facade.remove_plant_from_call(hass, mock_strain_library, call)
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator.async_remove_plant.assert_called_once_with("plant_1")
-    # mock_coordinator.async_save.assert_called_once()
-    # mock_coordinator.async_request_refresh.assert_called_once()
+    mock_coordinator.services.plants.remove_plant.assert_called_once_with("plant_1")
 
 
 @pytest.mark.asyncio
@@ -910,7 +951,9 @@ async def test_remove_plant_not_found(
     )
 
     with pytest.raises(ServiceValidationError, match="not found"):
-        await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+        await mock_coordinator.services.plants.remove_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
 
 @pytest.mark.asyncio
@@ -919,7 +962,9 @@ async def test_remove_plant_exception(
 ) -> None:
     """Test exception handling in remove_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.async_remove_plant.side_effect = Exception("Test error")
+    mock_coordinator.services.plants.remove_plant.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -930,8 +975,10 @@ async def test_remove_plant_exception(
         },
     )
 
+    facade = PlantFacade(mock_coordinator)
+    facade.remove_plant = mock_coordinator.services.plants.remove_plant
     with pytest.raises(Exception, match="Test error"):
-        await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+        await facade.remove_plant_from_call(hass, mock_strain_library, call)
 
 
 # ============================================================================
@@ -973,7 +1020,7 @@ async def test_switch_plants_success(
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator._plant_service.switch_plants.assert_called_once_with(
+    mock_coordinator._plant_manager.switch_plants.assert_called_once_with(
         "plant_1", "plant_2"
     )
     # mock_coordinator.async_save.assert_called_once()
@@ -997,9 +1044,11 @@ async def test_switch_plants_first_not_found(
         },
     )
 
-    with pytest.raises(ServiceValidationError, match="does not exist"):
+    with pytest.raises(
+        ServiceValidationError, match="Plant nonexistent does not exist."
+    ):
         await handle_switch_plants(hass, mock_coordinator, mock_strain_library, call)
-    mock_coordinator._plant_service.switch_plants.assert_not_called()
+    mock_coordinator._plant_manager.switch_plants.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1020,9 +1069,11 @@ async def test_switch_plants_second_not_found(
         },
     )
 
-    with pytest.raises(ServiceValidationError, match="does not exist"):
+    with pytest.raises(
+        ServiceValidationError, match="Plant nonexistent does not exist."
+    ):
         await handle_switch_plants(hass, mock_coordinator, mock_strain_library, call)
-    mock_coordinator._plant_service.switch_plants.assert_not_called()
+    mock_coordinator._plant_manager.switch_plants.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1036,7 +1087,9 @@ async def test_switch_plants_exception(
     plant2.strain = "Strain 2"
 
     mock_coordinator.plants = {"plant_1": plant1, "plant_2": plant2}
-    mock_coordinator._plant_service.switch_plants.side_effect = Exception("Test error")
+    mock_coordinator._plant_manager.switch_plants.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -1074,14 +1127,16 @@ async def test_update_plant_adds_to_strain_library_if_new(
     )
 
     # Act
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
     await hass.async_block_till_done()
 
     # Assert
     mock_strain_library.add_strain.assert_called_once_with(
         strain="New Strain", phenotype="New Pheno"
     )
-    mock_coordinator._plant_service.update_plant.assert_called_once()
+    mock_coordinator._plant_manager.update_plant.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1116,7 +1171,7 @@ async def test_move_plant_to_empty_position(
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator._plant_service.move_plant.assert_called_once_with("plant_1", 3, 3)
+    mock_coordinator._plant_manager.move_plant.assert_called_once_with("plant_1", 3, 3)
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
 
@@ -1155,7 +1210,7 @@ async def test_move_plant_out_of_bounds(
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     # Simulate validator behavior which raises ValidationChangeError for out of bounds
-    mock_coordinator._plant_service.move_plant.side_effect = ValidationChangeError(
+    mock_coordinator._plant_manager.move_plant.side_effect = ValidationChangeError(
         "outside growspace"
     )
 
@@ -1174,7 +1229,7 @@ async def test_move_plant_out_of_bounds(
         await handle_move_plant(hass, mock_coordinator, mock_strain_library, call)
 
     # Verify the coordinator was called (and raised)
-    mock_coordinator._plant_service.move_plant.assert_called_once()
+    mock_coordinator._plant_manager.move_plant.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1188,7 +1243,7 @@ async def test_move_plant_exception(
     """Test exception handling in move_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator._plant_service.move_plant.side_effect = Exception("Test error")
+    mock_coordinator._plant_manager.move_plant.side_effect = GrowspaceError("Test error")
     mock_coordinator.get_growspace_plants = Mock(return_value=[mock_plant])
 
     call = ServiceCall(
@@ -1219,11 +1274,6 @@ async def test_transition_plant_stage_success(
     # Arrange
     mock_coordinator.plants = {"plant_1": mock_plant}
 
-    # Make async methods AsyncMock
-    mock_coordinator.async_transition_plant_stage = AsyncMock()
-    mock_coordinator.async_save = AsyncMock()
-    mock_coordinator.async_request_refresh = AsyncMock()
-
     call = ServiceCall(
         hass,
         domain=DOMAIN,
@@ -1242,12 +1292,12 @@ async def test_transition_plant_stage_success(
     await hass.async_block_till_done()
 
     # Assert
-    _args, kwargs = mock_coordinator._plant_service.transition_plant_stage.call_args
-    assert kwargs["plant_id"] == "plant_1"
-    assert kwargs["new_stage"] == "flower"
-    # Compare dates with tolerance or just timezone equality
     expected_dt = as_local(datetime(2024, 1, 15, 0, 0))
-    assert kwargs["transition_date"] == expected_dt
+    mock_coordinator.services.plants.transition_plant_stage.assert_called_once_with(
+        plant_id="plant_1",
+        new_stage="flower",
+        transition_date=expected_dt,
+    )
 
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -1274,8 +1324,12 @@ async def test_transition_plant_stage_without_date(
         hass, mock_coordinator, mock_strain_library, call
     )
 
-    call_kwargs = mock_coordinator._plant_service.transition_plant_stage.call_args[1]
-    assert call_kwargs["transition_date"] is None
+    # Assert
+    mock_coordinator.services.plants.transition_plant_stage.assert_called_once_with(
+        plant_id="plant_1",
+        new_stage="flower",
+        transition_date=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -1299,7 +1353,7 @@ async def test_transition_plant_stage_not_found(
         await handle_transition_plant_stage(
             hass, mock_coordinator, mock_strain_library, call
         )
-    mock_coordinator._plant_service.transition_plant_stage.assert_not_called()
+    mock_coordinator._plant_manager.transition_plant_stage.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1324,7 +1378,7 @@ async def test_transition_plant_stage_invalid_date(
         await handle_transition_plant_stage(
             hass, mock_coordinator, mock_strain_library, call
         )
-    mock_coordinator._plant_service.transition_plant_stage.assert_not_called()
+    mock_coordinator._plant_manager.transition_plant_stage.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1349,16 +1403,13 @@ async def test_transition_plant_stage_with_timezone(
         hass, mock_coordinator, mock_strain_library, call
     )
 
-    call_kwargs = (
-        mock_coordinator._plant_service.transition_plant_stage.call_args.kwargs
+    # Assert
+    expected_dt = parse_date_field("2024-01-15T12:00:00Z")
+    mock_coordinator.services.plants.transition_plant_stage.assert_called_once_with(
+        plant_id="plant_1",
+        new_stage="flower",
+        transition_date=expected_dt,
     )
-    # Date strings are parsed to datetime objects. Input was 12:00:00Z.
-    # We strip tzinfo for comparison as the test fixture might not have timezone setup perfectly or we want to compare naive.
-    # Actually, let's just compare with what we expect: 12:00:00
-    actual_dt_str = call_kwargs["transition_date"]
-    # handle_transition_plant_stage converts to isoformat string
-    # Input was 12:00:00Z, so output should be 2024-01-15T12:00:00+00:00
-    assert actual_dt_str.isoformat() == "2024-01-15T12:00:00+00:00"
 
 
 @pytest.mark.asyncio
@@ -1367,7 +1418,7 @@ async def test_transition_plant_stage_exception(
 ) -> None:
     """Test exception handling in transition_plant_stage."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator._plant_service.transition_plant_stage.side_effect = Exception(
+    mock_coordinator._plant_manager.transition_plant_stage.side_effect = GrowspaceError(
         "Test error"
     )
 
@@ -1381,7 +1432,10 @@ async def test_transition_plant_stage_exception(
         },
     )
 
-    with pytest.raises(Exception, match="Test error"):
+    with pytest.raises(
+        ServiceValidationError,
+        match="Failed to transition plant stage for plant_1: Test error",
+    ):
         await handle_transition_plant_stage(
             hass, mock_coordinator, mock_strain_library, call
         )
@@ -1400,11 +1454,6 @@ async def test_harvest_plant_success(
 
     mock_coordinator.plants = {"plant_1": mock_plant}
 
-    # Make async methods AsyncMock
-    mock_coordinator.async_harvest_plant = AsyncMock()
-    mock_coordinator.async_save = AsyncMock()
-    mock_coordinator.async_request_refresh = AsyncMock()
-
     call = ServiceCall(
         hass,
         domain=DOMAIN,
@@ -1420,11 +1469,17 @@ async def test_harvest_plant_success(
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator.async_harvest_plant.assert_called_once_with(
+    mock_coordinator.services.plants.transition_plant.assert_called_once_with(
         plant_id="plant_1",
         target_growspace_id="dry",
         target_growspace_name=None,
         transition_date="2024-01-15",
+        wet_weight=None,
+        dry_weight=None,
+        trim_weight=None,
+        thc_percentage=None,
+        cbd_percentage=None,
+        terpene_profile=None,
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -1477,11 +1532,17 @@ async def test_harvest_plant_entity_id_resolution(
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator.async_harvest_plant.assert_called_once_with(
+    mock_coordinator.services.plants.transition_plant.assert_called_once_with(
         plant_id="plant_1",
         target_growspace_id="dry",
         target_growspace_name=None,
         transition_date=None,
+        wet_weight=None,
+        dry_weight=None,
+        trim_weight=None,
+        thc_percentage=None,
+        cbd_percentage=None,
+        terpene_profile=None,
     )
     # mock_coordinator.async_save.assert_called_once()
     # mock_coordinator.async_request_refresh.assert_called_once()
@@ -1527,7 +1588,7 @@ async def test_harvest_plant_not_found_reload_attempt(
     async def mock_load():
         mock_coordinator.plants = {"plant_1": mock_plant}
 
-    mock_coordinator.async_load = mock_load
+    mock_coordinator.async_load = AsyncMock(side_effect=mock_load)
 
     call = ServiceCall(
         hass,
@@ -1541,7 +1602,7 @@ async def test_harvest_plant_not_found_reload_attempt(
 
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
-    mock_coordinator.async_harvest_plant.assert_called_once()
+    mock_coordinator.services.plants.transition_plant.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -1565,7 +1626,7 @@ async def test_harvest_plant_not_found_after_reload(
         ServiceValidationError, match="not found and could not be reloaded"
     ):
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
-    mock_coordinator.async_harvest_plant.assert_not_called()
+    mock_coordinator.services.plants.transition_plant.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1574,7 +1635,7 @@ async def test_harvest_plant_reload_error(
 ) -> None:
     """Test harvest when reload fails."""
     mock_coordinator.plants = {}
-    mock_coordinator.async_load.side_effect = Exception("Load error")
+    mock_coordinator.async_load.side_effect = GrowspaceError("Load error")
 
     call = ServiceCall(
         hass,
@@ -1612,7 +1673,7 @@ async def test_harvest_plant_invalid_date(
 
     with pytest.raises(ServiceValidationError, match="Invalid transition_date format"):
         await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
-    mock_coordinator.async_harvest_plant.assert_not_called()
+    mock_coordinator.services.plants.transition_plant.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1635,7 +1696,7 @@ async def test_harvest_plant_with_timezone(
 
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
-    call_kwargs = mock_coordinator.async_harvest_plant.call_args.kwargs
+    call_kwargs = mock_coordinator.services.plants.transition_plant.call_args.kwargs
     # handle_harvest_plant converts datetime to date then to isoformat string
     assert call_kwargs["transition_date"] == "2024-01-15"
 
@@ -1659,7 +1720,7 @@ async def test_harvest_plant_without_date(
 
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
-    call_kwargs = mock_coordinator.async_harvest_plant.call_args[1]
+    call_kwargs = mock_coordinator.services.plants.transition_plant.call_args[1]
     assert call_kwargs["transition_date"] is None
 
 
@@ -1669,7 +1730,9 @@ async def test_harvest_plant_exception(
 ) -> None:
     """Test exception handling in harvest_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.async_harvest_plant.side_effect = Exception("Test error")
+    mock_coordinator.services.plants.transition_plant.side_effect = GrowspaceError(
+        "Test error"
+    )
 
     call = ServiceCall(
         hass,
@@ -1694,7 +1757,7 @@ async def test_harvest_plant_entity_id_resolution_error(
 
     # Mock entity state but cause exception during resolution
     hass.states = Mock()
-    hass.states.get = Mock(side_effect=Exception("State error"))
+    hass.states.get = Mock(side_effect=ValueError("State error"))
 
     call = ServiceCall(
         hass,
@@ -1772,12 +1835,14 @@ async def test_update_plant_moves_to_free_space_if_occupied(
     )
 
     # Act
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    await mock_coordinator.services.plants.update_plant_from_call(
+        hass, mock_strain_library, call
+    )
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator._plant_service.update_plant.assert_called_once()
-    update_kwargs = mock_coordinator._plant_service.update_plant.call_args[1]
+    mock_coordinator._plant_manager.update_plant.assert_called_once()
+    update_kwargs = mock_coordinator._plant_manager.update_plant.call_args[1]
     assert update_kwargs.get("row") == 3
     assert update_kwargs.get("col") == 3
 
@@ -1822,7 +1887,7 @@ async def test_move_plant_switch_with_occupant(
     await hass.async_block_till_done()
 
     # Assert
-    mock_coordinator._plant_service.switch_plants.assert_called_once_with(
+    mock_coordinator._plant_manager.switch_plants.assert_called_once_with(
         "plant_1", "plant_2"
     )
     # mock_coordinator.async_save.assert_called_once()
@@ -1851,11 +1916,13 @@ async def test_take_clone_negative_clones(
         },
     )
 
-    await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+    with pytest.raises(
+        ServiceValidationError,
+        match="num_clones must be positive, got: -5",
+    ):
+        await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
-    # Should default to 1
-    mock_coordinator.async_take_clones.assert_called_once()
-    assert mock_coordinator.async_take_clones.call_args.kwargs["num_clones"] == 1
+    mock_coordinator.services.plants.take_clones.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -1869,7 +1936,7 @@ async def test_move_clone_default_transition_date(
     """Test move clone with no transition date (should use today)."""
     mock_coordinator.plants = {"clone_1": mock_plant}
     mock_coordinator.growspaces = {"veg": mock_growspace}
-    mock_coordinator.async_add_plant = AsyncMock(return_value="plant_2")
+    mock_coordinator.services.plants.add_plant = AsyncMock(return_value="plant_2")
 
     call = ServiceCall(
         hass,
@@ -1886,10 +1953,10 @@ async def test_move_clone_default_transition_date(
     # Moving a clone calls async_add_plant (new plant) and async_remove_plant (old clone)
     # It does NOT call async_move_plant. The transition date is passed as veg_start.
     # Moving a clone calls async_promote_clone.
-    mock_coordinator.async_promote_clone.assert_called_once()
-    kwargs = mock_coordinator.async_promote_clone.call_args.kwargs
-    # Should default to today's date as date object
-    assert kwargs["transition_date"] == date.today()
+    mock_coordinator.services.plants.promote_clone.assert_called_once()
+    kwargs = mock_coordinator.services.plants.promote_clone.call_args.kwargs
+    # Defaults to now as a full datetime (ADR-0013), not a date object.
+    assert kwargs["transition_date"].date() == date.today()
 
 
 @pytest.mark.asyncio
@@ -1914,11 +1981,13 @@ async def test_take_clone_zero_clones(
         },
     )
 
-    await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
+    with pytest.raises(
+        ServiceValidationError,
+        match="num_clones must be positive, got: 0",
+    ):
+        await handle_take_clone(hass, mock_coordinator, mock_strain_library, call)
 
-    # Should default to 1
-    mock_coordinator.async_take_clones.assert_called_once()
-    assert mock_coordinator.async_take_clones.call_args.kwargs["num_clones"] == 1
+    mock_coordinator.services.plants.take_clones.assert_not_called()
 
 
 # ============================================================================
@@ -1970,10 +2039,12 @@ async def test_resolve_position_conflict_no_space(
         "plant_1": mock_plant,
     }  # plant_1 occupies 2,3
 
-    await handle_update_plant(hass, mock_coordinator, mock_strain_library, call)
+    facade = PlantFacade(mock_coordinator)
+    facade.update_plant = mock_coordinator.services.plants.update_plant
+    await facade.update_plant_from_call(hass, mock_strain_library, call)
 
     # Verify row/col were popped from update data (not updated)
-    update_call_args = mock_coordinator._plant_service.update_plant.call_args.kwargs
+    update_call_args = mock_coordinator.services.plants.update_plant.call_args.kwargs
     assert "row" not in update_call_args
     assert "col" not in update_call_args
     assert update_call_args["notes"] == "Test notes"
@@ -2002,9 +2073,10 @@ async def test_resolve_plant_id_entity(
     await handle_harvest_plant(hass, mock_coordinator, mock_strain_library, call)
 
     # Verify it resolved to plant_123
-    mock_coordinator.async_harvest_plant.assert_called_once()
+    mock_coordinator.services.plants.transition_plant.assert_called_once()
     assert (
-        mock_coordinator.async_harvest_plant.call_args.kwargs["plant_id"] == "plant_123"
+        mock_coordinator.services.plants.transition_plant.call_args.kwargs["plant_id"]
+        == "plant_123"
     )
 
 
@@ -2014,14 +2086,18 @@ async def test_remove_plant_growspace_error(
 ) -> None:
     """Test error handling in remove plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.async_remove_plant.side_effect = GrowspaceError("Remove failed")
+    mock_coordinator.services.plants.remove_plant.side_effect = GrowspaceError(
+        "Remove failed"
+    )
 
     call = ServiceCall(
         hass, domain=DOMAIN, service="remove_plant", data={"plant_id": "plant_1"}
     )
 
+    facade = PlantFacade(mock_coordinator)
+    facade.remove_plant = mock_coordinator.services.plants.remove_plant
     with pytest.raises(ServiceValidationError, match="Remove failed"):
-        await handle_remove_plant(hass, mock_coordinator, mock_strain_library, call)
+        await facade.remove_plant_from_call(hass, mock_strain_library, call)
 
 
 @pytest.mark.asyncio
@@ -2030,7 +2106,7 @@ async def test_switch_plants_growspace_error(
 ) -> None:
     """Test error handling in switch plants."""
     mock_coordinator.plants = {"plant_1": mock_plant, "plant_2": Mock()}
-    mock_coordinator._plant_service.switch_plants.side_effect = GrowspaceError(
+    mock_coordinator.services.plants.switch_plants.side_effect = GrowspaceError(
         "Switch failed"
     )
 
@@ -2051,8 +2127,8 @@ async def test_transition_plant_stage_growspace_error(
 ) -> None:
     """Test error handling in transition plant stage."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator._plant_service.transition_plant_stage.side_effect = GrowspaceError(
-        "Transition failed"
+    mock_coordinator.services.plants.transition_plant_stage.side_effect = (
+        GrowspaceError("Transition failed")
     )
 
     call = ServiceCall(
@@ -2074,7 +2150,9 @@ async def test_harvest_plant_growspace_error(
 ) -> None:
     """Test error handling in harvest plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
-    mock_coordinator.async_harvest_plant.side_effect = GrowspaceError("Harvest failed")
+    mock_coordinator.services.plants.transition_plant.side_effect = GrowspaceError(
+        "Harvest failed"
+    )
 
     call = ServiceCall(
         hass, domain=DOMAIN, service="harvest_plant", data={"plant_id": "plant_1"}

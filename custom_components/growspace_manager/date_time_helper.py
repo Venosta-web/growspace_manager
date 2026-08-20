@@ -6,10 +6,12 @@ from datetime import date, datetime
 import logging
 from typing import TYPE_CHECKING
 
+from homeassistant.util import dt as dt_util
+
 from .utils import parse_date_field
 
 if TYPE_CHECKING:
-    from .const import DateInput
+    from .integration_types import DateInput
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,7 +62,7 @@ class DateTimeHelper:
         if not start_dt:
             return 0
 
-        target_date = date.today()
+        target_date = dt_util.now().date()
 
         if end_date:
             end_dt = DateTimeHelper.to_date(end_date)

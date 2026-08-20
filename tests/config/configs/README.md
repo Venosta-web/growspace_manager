@@ -5,6 +5,7 @@ This directory contains configuration for a second, independent Home Assistant i
 ## Overview
 
 The test instance runs alongside your main development instance with:
+
 - **Separate configuration volume**: `ha-config-test`
 - **Separate port**: `8124` (vs. `8123` for dev instance)
 - **Shared custom components**: Both instances use the same `./custom_components` directory
@@ -22,6 +23,7 @@ Run the setup script to automatically configure the test instance:
 ```
 
 This script will:
+
 1. Create the `www` directory in the test instance
 2. Copy the Lovelace card JavaScript file
 3. Create necessary theme directories
@@ -36,6 +38,7 @@ The test instance has the Lovelace resource pre-configured. For the dev instance
 ```
 
 Or add manually via **Settings → Dashboards → Resources**:
+
 - URL: `/local/growspace-manager-card.js`
 - Type: JavaScript Module
 
@@ -56,6 +59,7 @@ This starts both `homeassistant-dev` (port 8123) and `homeassistant-test` (port 
 ### Accessing the Test Instance
 
 Open your browser to:
+
 ```
 http://localhost:8124
 ```
@@ -100,6 +104,7 @@ Or use the provided script:
 ## Configuration
 
 The test instance uses the configuration file at:
+
 ```
 tests/configs/configuration.yaml
 ```
@@ -108,20 +113,21 @@ tests/configs/configuration.yaml
 
 The configuration includes template sensors that simulate a grow environment:
 
-| Sensor | Entity ID | Type | Range | Notes |
-|--------|-----------|------|-------|-------|
-| Temperature | `sensor.test_temperature` | °C | 22-28°C | Random variation |
-| Humidity | `sensor.test_humidity` | % | 55-70% | Random variation |
-| VPD | `sensor.test_vpd` | kPa | 1.0-1.5 kPa | Calculated range |
-| CO2 | `sensor.test_co2` | ppm | 800-1200 ppm | Random variation |
-| PPFD (Light) | `sensor.test_ppfd` | µmol/m²/s | 0-600 | Simulates day/night cycle (6am-10pm) |
-| Soil Moisture | `sensor.test_soil_moisture` | % | 40-70% | Random variation |
+| Sensor        | Entity ID                   | Type      | Range        | Notes                                |
+| ------------- | --------------------------- | --------- | ------------ | ------------------------------------ |
+| Temperature   | `sensor.test_temperature`   | °C        | 22-28°C      | Random variation                     |
+| Humidity      | `sensor.test_humidity`      | %         | 55-70%       | Random variation                     |
+| VPD           | `sensor.test_vpd`           | kPa       | 1.0-1.5 kPa  | Calculated range                     |
+| CO2           | `sensor.test_co2`           | ppm       | 800-1200 ppm | Random variation                     |
+| PPFD (Light)  | `sensor.test_ppfd`          | µmol/m²/s | 0-600        | Simulates day/night cycle (6am-10pm) |
+| Soil Moisture | `sensor.test_soil_moisture` | %         | 40-70%       | Random variation                     |
 
 These sensors update automatically and can be used to configure the Growspace Manager integration.
 
 ### Lovelace Resources
 
 The dashboard is pre-configured with the Growspace Manager card resource:
+
 - **URL**: `/local/growspace-manager-card.js`
 - **Type**: Module
 - **Mode**: Storage (UI-managed dashboards)
@@ -129,6 +135,7 @@ The dashboard is pre-configured with the Growspace Manager card resource:
 ### Customization
 
 You can modify the configuration to add:
+
 - Custom integrations for testing
 - Specific test entities
 - Mock devices
@@ -142,13 +149,13 @@ docker compose restart homeassistant-test
 
 ## Key Differences from Dev Instance
 
-| Feature | Dev Instance | Test Instance |
-|---------|-------------|---------------|
-| Container Name | `homeassistant-dev` | `homeassistant-test` |
-| Port | `8123` | `8124` |
-| Volume | `ha-config` | `ha-config-test` |
-| Config Source | `./config/configuration.yaml` | `./tests/configs/configuration.yaml` |
-| Custom Components | `./custom_components` (shared) | `./custom_components` (shared) |
+| Feature           | Dev Instance                   | Test Instance                        |
+| ----------------- | ------------------------------ | ------------------------------------ |
+| Container Name    | `homeassistant-dev`            | `homeassistant-test`                 |
+| Port              | `8123`                         | `8124`                               |
+| Volume            | `ha-config`                    | `ha-config-test`                     |
+| Config Source     | `./config/configuration.yaml`  | `./tests/configs/configuration.yaml` |
+| Custom Components | `./custom_components` (shared) | `./custom_components` (shared)       |
 
 ## Testing Workflow
 

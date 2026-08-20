@@ -116,3 +116,22 @@ custom_components/hacs/
 docs/plans/*
 
 gha-creds-*.json
+# Test outputs
+snapshot_diff.txt
+snapshot_output.txt
+test_output.txt
+tests/output.txt
+full_output.txt
+output.txt
+socket_check.txt
+*.log
+.coverage
+uv.lock
+=4.15.0
+
+# pytest cache
+tests/core/snapshots/
+tests/integration/snapshots/*
+custom_components/growspace_manager/ruff_check_full.txt
+
+scratch/

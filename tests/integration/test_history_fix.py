@@ -35,7 +35,7 @@ async def test_websocket_history_handles_dicts(hass: HomeAssistant):
             return_value=history_data,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -49,7 +49,7 @@ async def test_websocket_history_handles_dicts(hass: HomeAssistant):
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # If it fails with AttributeError, send_result wont be called (validation)
         # or it will raise uncaught exception depending on test harness.
@@ -63,7 +63,5 @@ async def test_websocket_history_handles_dicts(hass: HomeAssistant):
         # If the code uses try/except generic, it will catch it and send_error.
         # We want to verify it SUCCEEDS.
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result
         assert len(result["sensor.test"]) > 0

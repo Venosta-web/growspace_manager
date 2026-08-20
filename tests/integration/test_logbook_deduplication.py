@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 @pytest.mark.asyncio
 async def test_websocket_event_log_merging(hass: HomeAssistant) -> None:
     """Test that consecutive identical alerts are merged."""
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 1, "limit": 10}
 
     # Setup mocks
@@ -75,11 +75,11 @@ async def test_websocket_event_log_merging(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.session_scope",
+            "custom_components.growspace_manager.websocket.logbook.session_scope",
             return_value=context_manager_mock,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as get_instance_mock,
     ):
         instance = get_instance_mock.return_value
@@ -89,11 +89,7 @@ async def test_websocket_event_log_merging(hass: HomeAssistant) -> None:
 
         instance.async_add_executor_job.side_effect = fake_executor
 
-        await websocket_get_event_log(hass, connection, msg)
-
-        # Verify result
-        connection.send_result.assert_called()
-        result_data = connection.send_result.call_args[0][1]
+        result_data = await websocket_get_event_log(hass, MagicMock(), msg)
 
         events = result_data["g1"]
         # Expected:

@@ -1,12 +1,11 @@
 """Tests for the ImageManager."""
 
+import base64
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-import json
-import base64
-import binascii
-from io import BytesIO
 
+from freezegun import freeze_time
 from PIL import Image, UnidentifiedImageError
 import pytest
 from syrupy.assertion import SnapshotAssertion
@@ -72,6 +71,7 @@ async def test_initialization(mock_hass: MagicMock, tmp_path: Path) -> None:
     assert storage_dir.is_dir()
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_save_strain_image_success(
     image_manager: ImageManager, tmp_path: Path, snapshot: SnapshotAssertion
@@ -135,6 +135,7 @@ async def test_save_strain_image_grayscale(
         assert saved_img.mode == "RGB"
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_save_strain_image_with_phenotype(
     image_manager: ImageManager, tmp_path: Path, snapshot: SnapshotAssertion
@@ -317,6 +318,7 @@ async def test_delete_image_with_phenotype(
     assert not file_path.exists()
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_save_timeline_image_success(
     image_manager: ImageManager, tmp_path: Path, snapshot: SnapshotAssertion
@@ -389,6 +391,7 @@ async def test_save_timeline_image_error(image_manager: ImageManager) -> None:
             await image_manager.save_timeline_image("p1", "bad_data")
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 @pytest.mark.asyncio
 async def test_save_breeder_logo_success(
     image_manager: ImageManager, tmp_path: Path, snapshot: SnapshotAssertion
@@ -486,14 +489,14 @@ async def test_webp_migration_error(
 ) -> None:
     """Test error handling during migration (per file)."""
     (tmp_path / "error.jpg").touch()
-    with patch("PIL.Image.open", side_effect=Exception("Disk full")):
+    with patch("PIL.Image.open", side_effect=OSError("Disk full")):
         await image_manager.async_migrate_to_webp()
 
 
 @pytest.mark.asyncio
 async def test_webp_migration_error_sync(image_manager: ImageManager) -> None:
     """Test error in the sync migration part (triggers line 152)."""
-    with patch("pathlib.Path.glob", side_effect=Exception("Sync error")):
+    with patch("pathlib.Path.glob", side_effect=OSError("Sync error")):
         # Should not raise because of try-except in _migrate_to_webp_sync
         await image_manager.async_migrate_to_webp()
 
@@ -556,7 +559,7 @@ async def test_update_db_paths_no_rows(image_manager: ImageManager) -> None:
 async def test_update_db_paths_error(image_manager: ImageManager) -> None:
     """Test error handling in DB path update."""
     mock_db = MagicMock()
-    mock_db.execute.side_effect = Exception("DB Error")
+    mock_db.execute.side_effect = OSError("DB Error")
 
     updated = await image_manager._update_db_paths(mock_db)
     assert updated == 0
@@ -582,3 +585,28 @@ async def test_async_migrate_with_db(
 
     processed = await image_manager.async_migrate_to_webp(mock_db)
     assert processed is True
+
+
+@pytest.mark.asyncio
+async def test_save_strain_image_duplicate_collision(
+    image_manager: ImageManager, tmp_path: Path
+) -> None:
+    """Test duplicate image save collision suffix numbering."""
+    strain_id = "strain_collision"
+    image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+    path1 = await image_manager.save_strain_image(strain_id, None, image_base64)
+    expected_path1 = tmp_path / f"{strain_id}.webp"
+    assert path1 == str(expected_path1.absolute())
+    assert expected_path1.exists()
+
+    path2 = await image_manager.save_strain_image(strain_id, None, image_base64)
+    expected_path2 = tmp_path / f"{strain_id}_2.webp"
+    expected_small_path2 = tmp_path / f"{strain_id}_2_small.webp"
+
+    assert path2 == str(expected_path2.absolute())
+    assert expected_path2.exists()
+    assert expected_small_path2.exists()
+
+    assert "strain_collision_2.webp" in image_manager._image_cache
+    assert "strain_collision_2_small.webp" in image_manager._image_cache

@@ -1,9 +1,9 @@
 """Nutrient Inventory Service."""
 
-from datetime import datetime
 import logging
 
 from custom_components.growspace_manager.models import NutrientInventory, NutrientStock
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,7 +20,16 @@ class NutrientInventoryService:
         return self._inventory
 
     def update_stock(
-        self, nutrient_id: str, name: str, current_ml: float, initial_ml: float
+        self,
+        nutrient_id: str,
+        name: str,
+        current_ml: float,
+        initial_ml: float,
+        brand: str = "",
+        type: str = "base",
+        npk: str = "",
+        dose_ml_l: float = 0.0,
+        notes: str = "",
     ) -> None:
         """Update or create a nutrient stock."""
         self._inventory.stocks[nutrient_id] = NutrientStock(
@@ -28,7 +37,12 @@ class NutrientInventoryService:
             name=name,
             current_ml=current_ml,
             initial_ml=initial_ml,
-            last_updated=datetime.now().isoformat(),
+            last_updated=dt_util.utcnow().isoformat(),
+            brand=brand,
+            type=type,
+            npk=npk,
+            dose_ml_l=dose_ml_l,
+            notes=notes,
         )
         _LOGGER.debug(
             "Updated stock for %s (%s): %s/%s ml",
@@ -38,32 +52,23 @@ class NutrientInventoryService:
             initial_ml,
         )
 
-    def deduct_usage(self, nutrient_name: str, amount_ml: float) -> None:
-        """Deduct nutrient usage from stock.
-
-        Matches by name since watering events use preset names.
-        """
-        # Find ID by name
-        target_id = None
-        for stock in self._inventory.stocks.values():
-            if stock.name.lower() == nutrient_name.lower():
-                target_id = stock.nutrient_id
-                break
-
-        if target_id:
-            stock = self._inventory.stocks[target_id]
+    def deduct_usage(self, nutrient_id: str, amount_ml: float) -> None:
+        """Deduct nutrient usage from stock by nutrient_id."""
+        stock = self._inventory.stocks.get(nutrient_id)
+        if stock is not None:
             stock.current_ml = max(0.0, stock.current_ml - amount_ml)
-            stock.last_updated = datetime.now().isoformat()
+            stock.last_updated = dt_util.utcnow().isoformat()
             _LOGGER.debug(
-                "Deducted %s ml from %s. Remaining: %s ml",
+                "Deducted %s ml from %s (%s). Remaining: %s ml",
                 amount_ml,
-                nutrient_name,
+                stock.name,
+                nutrient_id,
                 stock.current_ml,
             )
         else:
             _LOGGER.warning(
-                "Could not find stock for nutrient %s to deduct %s ml",
-                nutrient_name,
+                "Could not find stock for nutrient_id %s to deduct %s ml",
+                nutrient_id,
                 amount_ml,
             )
 

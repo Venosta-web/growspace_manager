@@ -12,16 +12,34 @@ from custom_components.growspace_manager.bayesian_data import (
 from custom_components.growspace_manager.bayesian_evaluator import (
     async_evaluate_mold_risk_trend,
 )
-from custom_components.growspace_manager.utils import (
-    calculate_stage_transition,
-    interpolate_value,
+from custom_components.growspace_manager.domain.stage import (
+    BayesianStage,
+    StageClassification,
+    StageDays,
+    classify_stages,
 )
+from custom_components.growspace_manager.utils import interpolate_value
 
 from .evaluator_strategy import BayesianEvaluatorStrategy
 
 if TYPE_CHECKING:
-    from custom_components.growspace_manager.bayesian_evaluator import ObservationList
+    from custom_components.growspace_manager.bayesian_evaluator import (
+        ObservationList,
+        ReasonList,
+    )
     from custom_components.growspace_manager.models import EnvironmentState
+
+
+def _classify_mold(state: EnvironmentState) -> StageClassification:
+    return classify_stages(StageDays(
+        veg=state.veg_days,
+        flower=state.flower_days,
+        dry=state.dry_days,
+        cure=state.cure_days,
+        seedling=state.seedling_days,
+        clone=state.clone_days,
+        mother=state.mother_days,
+    ))
 
 
 class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
@@ -47,9 +65,9 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         self._evaluate_humidifier_risk(state, observations, reasons)
 
         # 4. Trends
-        if self.sensor.env_config.humidity_sensor:
+        if self.env_config.humidity_sensor:
             obs_list, rsn_list, _ = await async_evaluate_mold_risk_trend(
-                self.sensor, state
+                self.env_config, self._get_state, self._analyze_trend, state
             )
             observations.extend(obs_list)
             reasons.extend(rsn_list)
@@ -63,13 +81,12 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         reasons: list[tuple[float, str]],
     ) -> None:
         """Evaluate mold risk based on humidity and growth stage."""
-        if state.humidity is None:
-            return
 
         # Use transition logic for smoother mold risk thresholds
-        stage_a, stage_b, factor = calculate_stage_transition(
-            state.flower_days, state.veg_days, state.seedling_days, state.clone_days
-        )
+        sc = _classify_mold(state)
+        if sc.stage_a == BayesianStage.EMPTY:
+            return
+        stage_a, stage_b, factor = sc.stage_a, sc.stage_b, sc.factor
 
         crit_a = CRITICAL_HUMIDITY_THRESHOLDS[stage_a]["critical"]
         crit_b = CRITICAL_HUMIDITY_THRESHOLDS[stage_b]["critical"]
@@ -79,26 +96,22 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         critical_humidity = interpolate_value(crit_a, crit_b, factor)
         high_humidity = interpolate_value(high_a, high_b, factor)
 
-        is_early_stage = stage_a in (
-            "seedling",
-            "clone",
-            "seedling_standard",
-            "clone_standard",
-        ) or stage_b in (
-            "seedling",
-            "clone",
-            "seedling_standard",
-            "clone_standard",
+        early_stages = (
+            BayesianStage.SEEDLING,
+            BayesianStage.CLONE,
+            BayesianStage.SEEDLING_STANDARD,
+            BayesianStage.CLONE_STANDARD,
         )
+        is_early_stage = stage_a in early_stages or stage_b in early_stages
 
-        if not is_early_stage and state.humidity > 90.0:
+        if not is_early_stage and state.humidity is not None and state.humidity > 90.0:
             # Extra penalty for extremely high humidity in non-early stages
             observations.append((0.99, 0.01))
             reasons.append((0.95, f"Extreme humidity risk: {state.humidity}%"))
-        elif state.humidity >= critical_humidity:
+        elif state.humidity is not None and state.humidity >= critical_humidity:
             observations.append((0.95, 0.05))
             reasons.append((0.9, f"Critical humidity: {state.humidity}%"))
-        elif state.humidity >= high_humidity:
+        elif state.humidity is not None and state.humidity >= high_humidity:
             observations.append((0.8, 0.2))
             reasons.append((0.7, f"High humidity: {state.humidity}%"))
 
@@ -113,9 +126,10 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
             return
 
         # Define thresholds based on growth stage
-        stage_a, stage_b, factor = calculate_stage_transition(
-            state.flower_days, state.veg_days, state.seedling_days, state.clone_days
-        )
+        sc = _classify_mold(state)
+        if sc.stage_a == BayesianStage.EMPTY:
+            return
+        stage_a, stage_b, factor = sc.stage_a, sc.stage_b, sc.factor
 
         # Use high humidity threshold as a safe point for air circulation
         thr_a = CRITICAL_HUMIDITY_THRESHOLDS[stage_a]["high"]
@@ -144,9 +158,10 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
             return
 
         # Define thresholds based on growth stage
-        stage_a, stage_b, factor = calculate_stage_transition(
-            state.flower_days, state.veg_days, state.seedling_days, state.clone_days
-        )
+        sc = _classify_mold(state)
+        if sc.stage_a == BayesianStage.EMPTY:
+            return
+        stage_a, stage_b, factor = sc.stage_a, sc.stage_b, sc.factor
 
         # Use critical humidity threshold
         thr_a = CRITICAL_HUMIDITY_THRESHOLDS[stage_a]["critical"]
@@ -170,16 +185,14 @@ class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):
         reasons.append((prob[0], f"Humidifier On: Humidity is {state.humidity}%"))
 
     def get_notification_title_message(
-        self, new_state_on: bool
+        self, new_state_on: bool, reasons: ReasonList
     ) -> tuple[str, str] | None:
         """Notify on rising edge of mold risk."""
         if new_state_on:
-            growspace = self.sensor.coordinator.growspaces.get(self.sensor.growspace_id)
+            growspace = self._get_growspace()
             if not growspace:
                 return None
             name = growspace.name
-            message = self.sensor.generate_notification_message(
-                "High mold risk detected"
-            )
+            message = self._get_notification_message("High mold risk detected", reasons)
             return (f"High Mold Risk in {name}", message)
         return None

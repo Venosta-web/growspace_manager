@@ -69,12 +69,14 @@ class EnvironmentReporter:
 
         @callback
         def _light_state_listener(event: Event[EventStateChangedData]) -> None:
-            self.hass.async_create_task(
+            self.coordinator.config_entry.async_create_background_task(
+                self.hass,
                 self._handle_light_change(
                     growspace_id,
                     event.data.get("old_state"),
                     event.data.get("new_state"),
-                )
+                ),
+                f"light_change_{growspace_id}",
             )
 
         self._unsub_listeners[growspace_id] = async_track_state_change_event(
@@ -216,6 +218,7 @@ class EnvironmentReporter:
                 "reasons": stats_summary,
                 "severity": 0,
                 "start_time": end_time.isoformat(),
+                "timestamp": dt_util.now().isoformat(),
             },
         )
         _LOGGER.info(

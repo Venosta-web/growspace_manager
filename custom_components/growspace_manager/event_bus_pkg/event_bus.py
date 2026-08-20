@@ -13,7 +13,7 @@ EVENT_GROWSPACE_LOG_ENTRY = "growspace_manager_log_entry"
 EVENT_GROWSPACE_UPDATED = "growspace_manager_updated"
 
 if TYPE_CHECKING:
-    from ..models import GrowspaceEvent
+    from custom_components.growspace_manager.models import GrowspaceEvent
 
 _LOGGER = logging.getLogger(__name__)
 

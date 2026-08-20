@@ -11,7 +11,11 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
+from .crop_steering import get_crop_steering_state
+from .domain.stage import StageDays
+from .domain.water_aggregation import compute_growspace_water
 from .models import Plant
+from .notifications.timed import normalize_timed_notifications
 from .presentation import GrowspaceViewModelBuilder
 from .utils import calculate_days_since
 
@@ -56,12 +60,12 @@ class ViewModelBuilder:
     @property
     def notifications_sent(self) -> dict[str, dict[str, dict[str, bool]]]:
         """Get notifications sent from coordinator."""
-        return self.coordinator.notifications_sent
+        return self.coordinator.notification_state.sent
 
     @property
     def notifications_enabled(self) -> dict[str, bool]:
         """Get notifications enabled from coordinator."""
-        return self.coordinator.notifications_enabled
+        return self.coordinator.notification_state.enabled
 
     def build_serialized_growspace(
         self, growspace_id: str, preloaded_plants: list[Plant] | None = None
@@ -76,9 +80,14 @@ class ViewModelBuilder:
         Returns:
             Serialized growspace data with timestamp and cached result.
         """
-        # Check cache first
-        if cached := self.coordinator.cache.get(growspace_id):
-            return cached
+        current_time = dt_util.utcnow().timestamp()
+
+        # Check cache first with a 30-second TTL
+        cached_entry = self.coordinator.cache.get(growspace_id)
+        if isinstance(cached_entry, tuple) and len(cached_entry) == 2:
+            cached_time, cached_data = cached_entry
+            if current_time - cached_time < 30.0:  # 30-second TTL
+                return cached_data
 
         growspace = self.growspaces[growspace_id]
 
@@ -86,7 +95,9 @@ class ViewModelBuilder:
         if preloaded_plants is not None:
             plants = preloaded_plants
         else:
-            plants = self.coordinator.get_growspace_plants(growspace_id)
+            plants = self.coordinator.services.growspaces.get_growspace_plants(
+                growspace_id
+            )
 
         # Calculate aggregated stats for the growspace
         stage_attr_map = {
@@ -107,7 +118,7 @@ class ViewModelBuilder:
                     for p in plants
                     if getattr(p, attr)
                 ),
-                default=0,
+                default=-1,
             )
             for attr, target_var in stage_attr_map.items()
         }
@@ -117,31 +128,48 @@ class ViewModelBuilder:
         max_dry_days = max_days["max_dry_days"]
         max_cure_days = max_days["max_cure_days"]
 
-        # Calculate biological metrics via EnvironmentAnalyzer (View Model assembly)
+        stage_days = StageDays(
+            veg=max_days["max_veg_days"],
+            flower=max_days["max_flower_days"],
+            dry=max_days["max_dry_days"],
+            cure=max_days["max_cure_days"],
+            seedling=max_days["max_seedling_days"],
+            clone=max_days["max_clone_days"],
+            mother=max_days["max_mother_days"],
+        )
         biological_metrics = (
-            self.coordinator.environment_analyzer.calculate_biological_metrics(
+            self.coordinator.services.growspaces.calculate_biological_metrics(
+                growspace_id,
                 growspace,
-                max_days["max_veg_days"],
-                max_days["max_flower_days"],
-                max_days["max_dry_days"],
-                max_days["max_cure_days"],
-                max_days["max_seedling_days"],
-                max_days["max_clone_days"],
-                max_days["max_mother_days"],
+                stage_days,
             )
         )
 
-        # Fetch active events from irrigation sub-coordinators
+        # Fetch active events and cycle telemetry from irrigation sub-coordinators
         active_events = {}
-        if (
-            self.coordinator.subsystem_manager
-            and growspace_id
-            in self.coordinator.subsystem_manager.irrigation_coordinators
-        ):
-            irr_coord = self.coordinator.subsystem_manager.irrigation_coordinators[
-                growspace_id
-            ]
+        last_cycle_timestamp: str | None = None
+        next_scheduled_cycle: str | None = None
+        projected_shot_window: dict[str, str] | None = None
+        cycles_today: int = 0
+        volume_dispensed_today: float = 0.0
+        irr_coord = self.coordinator.services.growspaces.get_irrigation_coordinator(
+            growspace_id
+        )
+        if irr_coord is not None:
             active_events = irr_coord.active_events
+            last_cycle_timestamp = irr_coord.last_cycle_timestamp
+            next_scheduled_cycle = irr_coord.next_scheduled_cycle
+            projected_shot_window = irr_coord.projected_shot_window
+            cycles_today = irr_coord.cycles_today
+            volume_dispensed_today = irr_coord.volume_dispensed_today
+
+        # Canonical [[Aggregate Water Use]] for today (ADR-0017): manual +
+        # (tank-derived in tank mode, else pump-estimate). The shared helper owns
+        # all source selection, so this path no longer branches on sensor config.
+        trackers = self.coordinator.services.growspaces.get_all_trackers_for_growspace(
+            growspace_id
+        )
+        liters_today = compute_growspace_water(growspace, trackers.values()).today
 
         # Use presentation layer to build rich growspace payload
         serialized = self._growspace_builder.build(
@@ -153,13 +181,74 @@ class ViewModelBuilder:
             max_dry_days=max_dry_days,
             max_cure_days=max_cure_days,
             active_events=active_events,
+            liters_today=liters_today,
         )
 
-        # Inject timestamp for efficient frontend equality checks (change detection)
-        serialized["_ts"] = int(dt_util.utcnow().timestamp() * 1000)
+        # Inject irrigation cycle telemetry into the irrigation sub-object
+        serialized["irrigation"]["last_cycle_timestamp"] = last_cycle_timestamp
+        serialized["irrigation"]["next_scheduled_cycle"] = next_scheduled_cycle
+        serialized["irrigation"]["projected_shot_window"] = projected_shot_window
+        serialized["irrigation"]["cycles_today"] = cycles_today
+        serialized["irrigation"]["volume_dispensed_today"] = volume_dispensed_today
 
-        # Cache the serialized data
-        self.coordinator.cache.set(growspace_id, serialized)
+        # Surface the measured steering readout alongside the tracker-derived
+        # substrate metrics. The score, its Measured Classification, and the
+        # Intent Deviation live on the CropSteeringState (computed with the
+        # coordinator's live VWC) — not reachable from the presentation builder,
+        # which only has hass — so they are injected here next to the telemetry.
+        # None throughout when the strategy is disabled / no reading yet, so the
+        # card can lock the score panel rather than show a synthetic value.
+        steering_state = get_crop_steering_state(self.coordinator, growspace_id)
+        substrate = serialized["irrigation"]["substrate"]
+        substrate["score"] = (
+            round(steering_state.score, 2) if steering_state is not None else None
+        )
+        substrate["measured_classification"] = (
+            steering_state.measured_classification
+            if steering_state is not None
+            else None
+        )
+        substrate["intent_deviation"] = (
+            steering_state.intent_deviation if steering_state is not None else None
+        )
+        substrate["runoff_score"] = (
+            steering_state.runoff_score if steering_state is not None else None
+        )
+
+        # Shot Size Composition is runtime state on the VWC coordinator (base ×
+        # VWC factor × EC modulation), absent on time-based irrigation.
+        substrate["shot_composition"] = (
+            irr_coord.shot_composition_payload()
+            if irr_coord is not None and hasattr(irr_coord, "shot_composition_payload")
+            else None
+        )
+
+        # EC State: the reconciled feed/pore EC view (ADR-0015), only on the VWC
+        # coordinator. None on time-based irrigation so the card can lock the panel.
+        serialized["irrigation"]["ec_state"] = (
+            irr_coord.ec_state_payload()
+            if irr_coord is not None and hasattr(irr_coord, "ec_state_payload")
+            else None
+        )
+
+        # Global notification settings ride every growspace payload so the card's
+        # Config Dialog (which seeds from the device payload) can round-trip saved
+        # values. They are global, not per-growspace, but mirror notifications_enabled
+        # in being duplicated across payloads.
+        options = self.coordinator.config_entry.options
+        serialized["notification_settings"] = options.get("notification_settings", {})
+        serialized["ai_auto_alerts"] = options.get("ai_settings", {}).get(
+            "ai_auto_alerts", True
+        )
+        serialized["timed_notifications"] = normalize_timed_notifications(
+            options.get("timed_notifications", [])
+        )
+
+        # Top-level timestamp for efficient frontend equality checks (change detection)
+        serialized["_ts"] = int(current_time * 1000)
+
+        # Cache the serialized data as a tuple: (timestamp, data)
+        self.coordinator.cache.set(growspace_id, (current_time, serialized))
         return serialized
 
     def build_data_property(
@@ -189,7 +278,13 @@ class ViewModelBuilder:
         # Pre-calculate plant distribution to avoid O(N*M) lookups
         # Build plants_by_growspace index - O(N) where N = number of plants
         plants_by_growspace: dict[str, list[Plant]] = defaultdict(list)
-        for plant in self.plants.values():
+        for plant_id, plant in self.plants.items():
+            if plant.growspace_id not in self.growspaces:
+                _LOGGER.warning(
+                    "Orphaned plant detected: Plant '%s' refers to non-existent growspace '%s'. It will be excluded from the view",
+                    plant_id,
+                    plant.growspace_id,
+                )
             plants_by_growspace[plant.growspace_id].append(plant)
 
         for growspace_id in self.growspaces:
@@ -200,11 +295,16 @@ class ViewModelBuilder:
                 growspace_id, preloaded_plants=plants
             )
 
+        options = self.coordinator.config_entry.options
         return {
             "growspaces": self.growspaces,
             "plants": self.plants,
             "notifications_sent": self.notifications_sent,
             "notifications_enabled": self.notifications_enabled,
+            "notification_settings": options.get("notification_settings", {}),
+            "timed_notifications": normalize_timed_notifications(
+                options.get("timed_notifications", [])
+            ),
             "_version": dt_util.now().isoformat(),
             "serialized_growspaces": serialized_growspaces,
             "air_exchange_recommendations": recs,

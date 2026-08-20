@@ -6,27 +6,22 @@ from datetime import datetime
 import math
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.util.dt import as_local, now
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.core import HomeAssistant
+from homeassistant.util.dt import now
 
-from .bayesian_constants import ACCLIMATION_END_DAYS, ACCLIMATION_START_DAYS
 from .const import DOMAIN
 from .domain.date_logic import (
     calculate_days_since as calculate_days_since_logic,
     format_date as format_date_logic,
     parse_date_field,
+    to_lifecycle_timestamp as to_lifecycle_timestamp_logic,
 )
-from .domain.stage import (
-    DEFAULT_FLOWER_EARLY_DAYS,
-    SPECIAL_GROWSPACE_STAGES,
-    STAGES_ORDERED,
-    TRANSITION_WINDOW,
-    BayesianStage,
-    PlantStage,
-)
-from .types import DateInput
+from .domain.stage import SPECIAL_GROWSPACE_STAGES, STAGES_ORDERED, PlantStage
+from .integration_types import DateInput
 
 if TYPE_CHECKING:
-    from .models import Growspace, Plant
+    from .models import EnvironmentConfig, Growspace, GrowspaceType, Plant
 
 
 # =========================================================================
@@ -51,6 +46,11 @@ def format_date(date_value: DateInput) -> str | None:
     return format_date_logic(date_value)
 
 
+def to_lifecycle_timestamp(supplied: DateInput = None) -> str:
+    """Return the ISO datetime string to store for a Lifecycle Timestamp."""
+    return to_lifecycle_timestamp_logic(supplied)
+
+
 def days_to_week(days: int) -> int:
     """Convert a number of days into a week number (1-indexed).
 
@@ -73,15 +73,7 @@ def days_to_week(days: int) -> int:
 def find_first_free_position(
     growspace: Growspace, occupied_positions: set[tuple[int, int]]
 ) -> tuple[int | None, int | None]:
-    """_Returns the first col/row thats free in growspace.
-
-    Args:
-        growspace (dict): _description_
-        occupied_positions (set[tuple[int, int]]): _description_
-
-    Returns:
-        tuple[int, int]: _description_
-    """
+    """Return the first (row, col) position not in occupied_positions, or the last cell if all are taken."""
 
     total_rows = int(growspace.rows)
     total_cols = int(growspace.plants_per_row)
@@ -129,7 +121,7 @@ class VPDCalculator:
         return 0.61094 * math.exp((17.625 * temperature_c) / (243.04 + temperature_c))
 
     @staticmethod
-    def calculate_vpd(temperature_c: float, humidity_rh: float) -> float | None:
+    def calculate_vpd(temperature_c: Any, humidity_rh: Any) -> float | None:
         """Calculate Vapor Pressure Deficit (VPD) in kPa.
 
         Args:
@@ -151,7 +143,7 @@ class VPDCalculator:
 
     @staticmethod
     def calculate_vpd_with_lst_offset(
-        air_temperature_c: float, humidity_rh: float, lst_offset: float = -2.0
+        air_temperature_c: Any, humidity_rh: Any, lst_offset: Any = -2.0
     ) -> float | None:
         """Calculate Vapor Pressure Deficit (VPD) with Leaf Surface Temperature offset.
 
@@ -233,99 +225,6 @@ def _get_stage_from_growspace(plant: Plant) -> str | None:
     return None
 
 
-def calculate_stage_transition(
-    flower_days: int = 0,
-    veg_days: int = 0,
-    seedling_days: int = 0,
-    clone_days: int = 0,
-    dry_days: int = 0,
-    cure_days: int = 0,
-    mother_days: int = 0,
-) -> tuple[BayesianStage, BayesianStage, float]:
-    """Calculate the current stage transition and interpolation factor."""
-    # Post-harvest stages — no interpolation needed
-    if cure_days > 0:
-        return BayesianStage.CURE, BayesianStage.CURE, 0.0
-    if dry_days > 0:
-        return BayesianStage.DRY, BayesianStage.DRY, 0.0
-
-    # Mother plants — perpetual vegetative, no sub-stage interpolation
-    if mother_days > 0:
-        return BayesianStage.MOTHER, BayesianStage.MOTHER, 0.0
-
-    # Primary progression: Flower takes precedence
-    if flower_days > 0:
-        b1 = DEFAULT_FLOWER_EARLY_DAYS
-        b2 = DEFAULT_FLOWER_EARLY_DAYS + 21
-
-        if flower_days <= b1:
-            if flower_days < b1 - TRANSITION_WINDOW:
-                return BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_EARLY, 0.0
-            factor = (flower_days - (b1 - TRANSITION_WINDOW)) / TRANSITION_WINDOW
-            return (
-                BayesianStage.FLOWER_EARLY,
-                BayesianStage.FLOWER_MID,
-                round(float(factor), 2),
-            )
-
-        if flower_days <= b2:
-            if flower_days < b2 - TRANSITION_WINDOW:
-                return BayesianStage.FLOWER_MID, BayesianStage.FLOWER_MID, 0.0
-            factor = (flower_days - (b2 - TRANSITION_WINDOW)) / TRANSITION_WINDOW
-            return (
-                BayesianStage.FLOWER_MID,
-                BayesianStage.FLOWER_LATE,
-                round(float(factor), 2),
-            )
-
-        return BayesianStage.FLOWER_LATE, BayesianStage.FLOWER_LATE, 0.0
-
-    if veg_days > 0:
-        if veg_days < TRANSITION_WINDOW:
-            # Transition from seedling/clone standard to veg
-            factor = veg_days / TRANSITION_WINDOW
-            return (
-                BayesianStage.SEEDLING_STANDARD,
-                BayesianStage.VEG,
-                round(float(factor), 2),
-            )
-        return BayesianStage.VEG, BayesianStage.VEG, 0.0
-
-    if seedling_days > 0:
-        ac_start = ACCLIMATION_START_DAYS
-        ac_end = ACCLIMATION_END_DAYS
-        if seedling_days <= ac_end:
-            if seedling_days <= ac_start:
-                return BayesianStage.SEEDLING, BayesianStage.SEEDLING, 0.0
-
-            window = ac_end - ac_start
-            factor = (seedling_days - ac_start) / window
-            return (
-                BayesianStage.SEEDLING,
-                BayesianStage.SEEDLING_STANDARD,
-                round(float(factor), 2),
-            )
-        return BayesianStage.SEEDLING_STANDARD, BayesianStage.SEEDLING_STANDARD, 0.0
-
-    if clone_days > 0:
-        ac_start = ACCLIMATION_START_DAYS
-        ac_end = ACCLIMATION_END_DAYS
-        if clone_days <= ac_end:
-            if clone_days <= ac_start:
-                return BayesianStage.CLONE, BayesianStage.CLONE, 0.0
-
-            window = ac_end - ac_start
-            factor = (clone_days - ac_start) / window
-            return (
-                BayesianStage.CLONE,
-                BayesianStage.CLONE_STANDARD,
-                round(float(factor), 2),
-            )
-        return BayesianStage.CLONE_STANDARD, BayesianStage.CLONE_STANDARD, 0.0
-
-    return BayesianStage.VEG, BayesianStage.VEG, 0.0
-
-
 def interpolate_value(val_a: float, val_b: float, factor: float) -> float:
     """Linearly interpolate between two values based on a factor."""
     if factor <= 0:
@@ -333,6 +232,122 @@ def interpolate_value(val_a: float, val_b: float, factor: float) -> float:
     if factor >= 1:
         return val_b
     return round(float(val_a) + (float(val_b) - float(val_a)) * float(factor), 3)
+
+
+# =========================================================================
+# HA STATE MACHINE SENSOR READERS
+# =========================================================================
+
+
+def read_sensor_value(hass: HomeAssistant, sensor_id: str | None) -> float | None:
+    """Safely read a numeric value from an HA sensor entity."""
+    if not sensor_id:
+        return None
+    state = hass.states.get(sensor_id)
+    if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return None
+    try:
+        return float(state.state)
+    except ValueError, TypeError:
+        return None
+
+
+def is_light_sensor_on(hass: HomeAssistant, sensor_id: str) -> tuple[bool, bool]:
+    """Return (is_on, is_valid) for a light sensor.
+
+    Numeric `sensor.` domain entities (e.g. power-consumption sensors) are
+    considered on when their value is greater than zero. Binary-style entities
+    (binary_sensor, switch, etc.) are considered on when their state is "on".
+    Unavailable/unknown/missing entities are reported as invalid.
+    """
+    state = hass.states.get(sensor_id)
+    if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        return False, False
+
+    if state.domain == "sensor":
+        value = read_sensor_value(hass, sensor_id)
+        return value is not None and value > 0, value is not None
+
+    return state.state == "on", True
+
+
+def any_light_sensor_on(hass: HomeAssistant, sensor_ids: list[str]) -> bool | None:
+    """OR-aggregate light sensor states; None when no sensor has a valid reading."""
+    any_on = False
+    any_valid = False
+    for sensor_id in sensor_ids:
+        is_on, valid = is_light_sensor_on(hass, sensor_id)
+        if valid:
+            any_valid = True
+            if is_on:
+                any_on = True
+    return any_on if any_valid else None
+
+
+def read_aggregated_sensor_value(
+    hass: HomeAssistant, sensor_ids: list[str]
+) -> float | None:
+    """Read the average value from a list of HA sensor entity IDs."""
+    values = [read_sensor_value(hass, sid) for sid in sensor_ids]
+    valid = [v for v in values if v is not None]
+    return sum(valid) / len(valid) if valid else None
+
+
+def read_environment_vpd(
+    hass: HomeAssistant,
+    env_config: EnvironmentConfig,
+    growspace_type: GrowspaceType | None = None,
+) -> float | None:
+    """Return the current VPD for a growspace from HA sensor states.
+
+    Prefers a directly configured VPD sensor; falls back to calculation from
+    temperature + humidity when none is configured.  DRY/CURE spaces use
+    lst_offset=0 because leaf-surface temperature correction is irrelevant
+    for post-harvest environments.
+    """
+    from .models import GrowspaceType as _GrowspaceType  # noqa: PLC0415
+
+    sensor_ids = list(
+        dict.fromkeys(
+            s for s in [env_config.vpd_sensor, *env_config.vpd_sensors] if s is not None
+        )
+    )
+    vpd = read_aggregated_sensor_value(hass, sensor_ids)
+    if vpd is not None:
+        return vpd
+
+    temp = read_aggregated_sensor_value(
+        hass,
+        list(
+            dict.fromkeys(
+                s
+                for s in [
+                    env_config.temperature_sensor,
+                    *env_config.temperature_sensors,
+                ]
+                if s is not None
+            )
+        ),
+    )
+    humidity = read_aggregated_sensor_value(
+        hass,
+        list(
+            dict.fromkeys(
+                s
+                for s in [env_config.humidity_sensor, *env_config.humidity_sensors]
+                if s is not None
+            )
+        ),
+    )
+    if temp is None or humidity is None:
+        return None
+
+    lst_offset = (
+        0.0
+        if growspace_type in (_GrowspaceType.DRY, _GrowspaceType.CURE)
+        else env_config.lst_offset
+    )
+    return VPDCalculator.calculate_vpd_with_lst_offset(temp, humidity, lst_offset)
 
 
 # =========================================================================
@@ -346,6 +361,31 @@ def generate_vpd_sensor_unique_id(growspace_id: str, index: int | None = None) -
     return f"{DOMAIN}_{growspace_id}_calculated_vpd{suffix}"
 
 
+def generate_subarea_vpd_sensor_unique_id(
+    growspace_id: str, subarea_id: str, index: int | None = None
+) -> str:
+    """Generate a consistent unique ID for a subarea calculated VPD sensor."""
+    suffix = f"_{index}" if index is not None else ""
+    return f"{DOMAIN}_{growspace_id}_subarea_{subarea_id}_calculated_vpd{suffix}"
+
+
 def generate_growspace_overview_unique_id(growspace_id: str) -> str:
     """Generate a consistent unique ID for a growspace overview sensor."""
     return f"{DOMAIN}_{growspace_id}"
+
+
+def strip_markdown_fence(text: str) -> str:
+    """Strip a leading ```[lang] / trailing ``` markdown code fence from *text*.
+
+    LLMs commonly wrap JSON output in fences; this normalises the string so
+    callers can pass the result directly to ``json.loads``.
+    """
+    triple_backtick = "`" * 3
+    stripped = text.strip()
+    if stripped.startswith(triple_backtick):
+        first_newline = stripped.find("\n")
+        if first_newline != -1:
+            stripped = stripped[first_newline:].strip()
+        if stripped.endswith(triple_backtick):
+            stripped = stripped[:-3].strip()
+    return stripped

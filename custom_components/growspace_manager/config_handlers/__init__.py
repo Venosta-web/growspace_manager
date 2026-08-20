@@ -6,10 +6,11 @@ from abc import ABC
 import logging
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 if TYPE_CHECKING:
+    from custom_components.growspace_manager import GrowspaceConfigEntry
+    from custom_components.growspace_manager.config_flow import OptionsFlowHandler
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 # NOTE: Handler imports moved to bottom of file to avoid circular import
@@ -32,29 +33,44 @@ class AbortFlow(Exception):
 class BaseConfigHandler(ABC, Generic[T]):
     """Base class for configuration handlers."""
 
-    config_entry: ConfigEntry | None = None
+    config_entry: GrowspaceConfigEntry | None = None
+    _flow: OptionsFlowHandler | None = None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize the handler."""
         if len(args) == 1 and hasattr(args[0], "hass"):
             # Orchestrator style
-            self.flow = args[0]
+            self._flow = args[0]
             self.hass = args[0].hass
             self.config_entry = getattr(args[0], "config_entry", None)
         elif len(args) >= 2 and isinstance(args[0], HomeAssistant):
             # Traditional/Test style
-            self.flow = None
+            self._flow = None
             self.hass = args[0]
             self.config_entry = args[1]
         else:
             # Fallback
-            self.flow = kwargs.get("flow")
-            if self.flow:
-                self.hass = self.flow.hass
-                self.config_entry = getattr(self.flow, "config_entry", None)
+            self._flow = kwargs.get("flow")
+            if self._flow:
+                self.hass = self._flow.hass
+                self.config_entry = getattr(self._flow, "config_entry", None)
             else:
                 self.hass = kwargs.get("hass")
                 self.config_entry = kwargs.get("config_entry")
+
+    @property
+    def flow(self) -> OptionsFlowHandler:
+        """Return the owning options flow.
+
+        Only unset in the traditional/test construction style, which never
+        drives steps that touch it.
+        """
+        assert self._flow is not None
+        return self._flow
+
+    @flow.setter
+    def flow(self, value: OptionsFlowHandler | None) -> None:
+        self._flow = value
 
     def get_coordinator(self) -> GrowspaceCoordinator:
         """Get coordinator with validation.
@@ -70,7 +86,7 @@ class BaseConfigHandler(ABC, Generic[T]):
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise AbortFlow("setup_error")
-        return coordinator  # type: ignore[return-value]
+        return coordinator
 
     async def websocket_get_event_log(
         self, hass: HomeAssistant, connection: Any, msg: dict[str, Any]
@@ -101,8 +117,13 @@ class BaseConfigHandler(ABC, Generic[T]):
 
 # Import handlers AFTER BaseConfigHandler is defined to avoid circular import
 from .ai_config_handler import AIConfigHandler  # noqa: E402
+from .bayesian_advanced_handler import BayesianAdvancedHandler  # noqa: E402
+from .dehumidifier_handler import DehumidifierHandler  # noqa: E402
 from .environment_config_handler import EnvironmentConfigHandler  # noqa: E402
+from .environment_sensors_handler import EnvironmentSensorsHandler  # noqa: E402
+from .fan_controller_handler import FanControllerHandler  # noqa: E402
 from .growspace_config_handler import GrowspaceConfigHandler  # noqa: E402
+from .humidifier_handler import HumidifierHandler  # noqa: E402
 from .irrigation_config_handler import IrrigationConfigHandler  # noqa: E402
 from .notification_config_handler import NotificationConfigHandler  # noqa: E402
 from .plant_config_handler import PlantConfigHandler  # noqa: E402
@@ -111,8 +132,13 @@ from .strain_config_handler import StrainConfigHandler  # noqa: E402
 __all__ = [
     "AIConfigHandler",
     "BaseConfigHandler",
+    "BayesianAdvancedHandler",
+    "DehumidifierHandler",
     "EnvironmentConfigHandler",
+    "EnvironmentSensorsHandler",
+    "FanControllerHandler",
     "GrowspaceConfigHandler",
+    "HumidifierHandler",
     "IrrigationConfigHandler",
     "NotificationConfigHandler",
     "PlantConfigHandler",

@@ -1,32 +1,64 @@
 """Tests for the NotificationManager."""
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
-    CONF_NOTIFICATION_PERSONALITY,
+    MIN_STRESS_DURATION_SECONDS,
+    NOTIFICATION_CHANNEL,
+    NOTIFICATION_GROUP,
+    NOTIFICATION_ICON,
     NotificationTier,
 )
-from custom_components.growspace_manager.models import (
-    EnvironmentConfig,
-    Growspace,
-    IrrigationTank,
-)
+from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.notification_manager import (
     NotificationManager,
     PendingAlert,
 )
+from custom_components.growspace_manager.notifications.evaluation_snapshot import (
+    EvaluationSnapshot,
+)
+from custom_components.growspace_manager.services.facade import ServiceFacade
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+
+from .common import create_plant
 
 GROWSPACE_ID = "test_growspace"
 GROWSPACE_NAME = "Test Growspace"
 NOTIFICATION_TARGET = "notify.mobile_app_test"
+
+
+def make_snapshot(
+    sensor_type: str = "stress",
+    *,
+    is_on: bool = True,
+    probability: float = 0.75,
+    sensor_name: str = "Stress Sensor",
+    reasons: list[tuple[float, str]] | None = None,
+    sensor_states: dict | None = None,
+    notification_title: str | None = None,
+    notification_message: str | None = None,
+    growspace_id: str = GROWSPACE_ID,
+) -> EvaluationSnapshot:
+    """Build an EvaluationSnapshot for notification-manager tests."""
+    return EvaluationSnapshot(
+        growspace_id=growspace_id,
+        sensor_type=sensor_type,
+        sensor_name=sensor_name,
+        probability=probability,
+        threshold=0.7,
+        is_on=is_on,
+        reasons=reasons if reasons is not None else [],
+        sensor_states=sensor_states if sensor_states is not None else {},
+        lights_on=None,
+        notification_title=notification_title,
+        notification_message=notification_message,
+    )
 
 
 @pytest.fixture
@@ -42,7 +74,29 @@ def mock_coordinator() -> MagicMock:
     }
     coordinator.options = {}
     coordinator.async_save = AsyncMock()
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
+    coordinator.async_commit = AsyncMock()
+
+    # Initialize query methods
+    coordinator.get_growspace_plants = MagicMock(
+        name="get_growspace_plants",
+        side_effect=lambda gid: [
+            p for p in coordinator.plants.values() if p.growspace_id == gid
+        ],
+    )
+    coordinator.get_plant = MagicMock(
+        name="get_plant", side_effect=lambda pid: coordinator.plants.get(pid)
+    )
+    coordinator.get_growspace = MagicMock(
+        name="get_growspace", side_effect=lambda gid: coordinator.growspaces.get(gid)
+    )
+
+    # Initialize ServiceFacade and wrap it in a MagicMock
+    facade = ServiceFacade(coordinator)
+    coordinator.services = MagicMock(wraps=facade)
+
+    # Add config_entry with background task support
+    coordinator.config_entry = MagicMock()
+    coordinator.config_entry.async_create_background_task = MagicMock()
     return coordinator
 
 
@@ -52,7 +106,6 @@ def mock_hass() -> MagicMock:
     hass = MagicMock(spec=HomeAssistant)
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
-    hass.async_create_task = MagicMock()
     hass.data = {}
     hass.config = MagicMock()
     hass.config.config_dir = "/tmp"
@@ -61,9 +114,19 @@ def mock_hass() -> MagicMock:
 
 
 @pytest.fixture
-def manager(mock_hass: MagicMock, mock_coordinator: MagicMock) -> NotificationManager:
+def mock_ai_rewriter() -> MagicMock:
+    """Mock AINotificationRewriter that returns messages unchanged by default."""
+    rewriter = MagicMock()
+    rewriter.async_rewrite = AsyncMock(side_effect=lambda msg, *_a, **_kw: msg)
+    return rewriter
+
+
+@pytest.fixture
+def manager(
+    mock_hass: MagicMock, mock_coordinator: MagicMock, mock_ai_rewriter: MagicMock
+) -> NotificationManager:
     """Fixture for NotificationManager."""
-    return NotificationManager(mock_hass, mock_coordinator)
+    return NotificationManager(mock_hass, mock_coordinator, mock_ai_rewriter)
 
 
 def test_initialization(
@@ -94,7 +157,16 @@ async def test_async_send_notification_success(
     mock_hass.services.async_call.assert_awaited_once_with(
         "notify",
         "mobile_app_test",
-        {"message": "Test Message", "title": "Test Title"},
+        {
+            "message": "Test Message",
+            "title": "Test Title",
+            "data": {
+                "group": NOTIFICATION_GROUP,
+                "channel": NOTIFICATION_CHANNEL,
+                "notification_icon": NOTIFICATION_ICON,
+                "push": {"thread-id": NOTIFICATION_GROUP},
+            },
+        },
         blocking=False,
     )
 
@@ -137,7 +209,9 @@ async def test_async_send_notification_disabled(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
     """Test sending notification when disabled."""
-    mock_coordinator.is_notifications_enabled.return_value = False
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = (
+        False
+    )
 
     await manager.async_send_notification(GROWSPACE_ID, "Test Title", "Test Message")
 
@@ -145,37 +219,38 @@ async def test_async_send_notification_disabled(
 
 
 async def test_async_send_notification_ai_rewrite(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+    manager: NotificationManager,
+    mock_coordinator: MagicMock,
+    mock_hass: MagicMock,
+    mock_ai_rewriter: MagicMock,
 ) -> None:
-    """Test sending notification with AI rewrite."""
+    """Test that NotificationManager uses the rewritten message from AINotificationRewriter."""
     mock_coordinator.options = {
         "ai_settings": {
             CONF_AI_ENABLED: True,
             CONF_ASSISTANT_ID: "test_agent",
-            CONF_NOTIFICATION_PERSONALITY: "Pirate",
         }
     }
+    mock_ai_rewriter.async_rewrite.side_effect = None
+    mock_ai_rewriter.async_rewrite.return_value = "Ahoy! Test Message Rewrite"
 
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        mock_result = MagicMock()
-        mock_result.response.speech = {
-            "plain": {"speech": "Ahoy! Test Message Rewrite"}
-        }
-        mock_converse.return_value = mock_result
+    await manager.async_send_notification(GROWSPACE_ID, "Test Title", "Test Message")
 
-        await manager.async_send_notification(
-            GROWSPACE_ID, "Test Title", "Test Message"
-        )
-
-        mock_hass.services.async_call.assert_awaited_once_with(
-            "notify",
-            "mobile_app_test",
-            {"message": "Ahoy! Test Message Rewrite", "title": "Test Title"},
-            blocking=False,
-        )
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "notify",
+        "mobile_app_test",
+        {
+            "message": "Ahoy! Test Message Rewrite",
+            "title": "Test Title",
+            "data": {
+                "group": NOTIFICATION_GROUP,
+                "channel": NOTIFICATION_CHANNEL,
+                "notification_icon": NOTIFICATION_ICON,
+                "push": {"thread-id": NOTIFICATION_GROUP},
+            },
+        },
+        blocking=False,
+    )
 
 
 async def test_async_check_timed_notifications(
@@ -201,7 +276,7 @@ async def test_async_check_timed_notifications(
     )
     mock_coordinator.plants = {"plant_1": plant}
     mock_coordinator.get_growspace_plants.return_value = [plant]
-    mock_coordinator.notifications_sent = {"plant_1": {}}
+    mock_coordinator.notification_state.sent = {"plant_1": {}}
 
     with patch(
         "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
@@ -210,8 +285,42 @@ async def test_async_check_timed_notifications(
         await manager.async_check_timed_notifications()
 
     mock_hass.services.async_call.assert_awaited()
-    assert mock_coordinator.notifications_sent["plant_1"]["timed_notify_1"]
-    mock_coordinator.async_save.assert_awaited()
+    assert mock_coordinator.notification_state.sent["plant_1"]["timed_notify_1"]
+    mock_coordinator.async_commit.assert_awaited()
+
+
+async def test_async_check_timed_notifications_normalizes_legacy_trigger(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test a legacy stored trigger fires against its normalized stage."""
+    mock_coordinator.options = {
+        "timed_notifications": [
+            {
+                "id": "legacy_notify",
+                "trigger_type": "days_since_flip",
+                "day": 10,
+                "message": "Flower Day 10",
+                "growspace_ids": [GROWSPACE_ID],
+            }
+        ]
+    }
+    plant = create_plant(
+        plant_id="plant_1",
+        growspace_id=GROWSPACE_ID,
+        strain="Strain A",
+    )
+    mock_coordinator.plants = {"plant_1": plant}
+    mock_coordinator.notification_state.sent = {"plant_1": {}}
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+        return_value=10,
+    ) as calculate_days:
+        await manager.async_check_timed_notifications()
+
+    calculate_days.assert_called_once_with(plant, "flower")
+    mock_hass.services.async_call.assert_awaited()
+    assert mock_coordinator.notification_state.sent["plant_1"]["timed_legacy_notify"]
 
 
 def test_generate_notification_message_truncation(manager: NotificationManager) -> None:
@@ -237,180 +346,6 @@ async def test_async_send_notification_exception(
 
     # Should not raise exception
     await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
-
-
-async def test_rewrite_with_ai_personalities(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test AI rewrite with different personalities."""
-    personalities = ["Scientific", "Chill Stoner", "Strict Coach", "Pirate", "Standard"]
-
-    for personality in personalities:
-        mock_coordinator.options = {
-            "ai_settings": {
-                CONF_AI_ENABLED: True,
-                CONF_ASSISTANT_ID: "test_agent",
-                CONF_NOTIFICATION_PERSONALITY: personality,
-            }
-        }
-
-        # Reset notification cooldown for each test
-        manager._last_notification_sent.clear()
-
-        with patch(
-            "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-            new_callable=AsyncMock,
-        ) as mock_converse:
-            mock_result = MagicMock()
-            mock_result.response.speech = {
-                "plain": {"speech": f"Rewritten as {personality}"}
-            }
-            mock_converse.return_value = mock_result
-
-            await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
-
-            # Verify prompt contains personality context
-            # We need to check the call args of the mock
-            assert mock_converse.call_count == 1
-            call_args = mock_converse.call_args
-            prompt = call_args[1]["text"]
-
-            if personality == "Scientific":
-                assert "precise technical terminology" in prompt
-            elif personality == "Chill Stoner":
-                assert "laid-back and friendly" in prompt
-            elif personality == "Strict Coach":
-                assert "direct and authoritative" in prompt
-            elif personality == "Pirate":
-                assert "Write like a pirate" in prompt
-            else:  # Standard
-                assert "clear, professional, and helpful" in prompt
-
-            # Reset for next iteration
-            mock_hass.services.async_call.reset_mock()
-
-
-async def test_rewrite_with_ai_sensor_formatting(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test AI rewrite with sensor data formatting."""
-    mock_coordinator.options = {
-        "ai_settings": {
-            CONF_AI_ENABLED: True,
-            CONF_ASSISTANT_ID: "test_agent",
-        }
-    }
-
-    sensor_states = {"temp": 25, "humidity": 60, "fan": True, "light": None}
-
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        mock_result = MagicMock()
-        mock_result.response.speech = {"plain": {"speech": "Rewritten"}}
-        mock_converse.return_value = mock_result
-
-        await manager.async_send_notification(
-            GROWSPACE_ID, "Title", "Message", sensor_states=sensor_states
-        )
-
-        # Verify prompt contains formatted sensor data
-        call_args = mock_converse.call_args
-        prompt = call_args[1]["text"]
-        assert "temp: 25" in prompt
-        assert "humidity: 60" in prompt
-        assert "fan: True" not in prompt  # bools are excluded
-        assert "light: None" not in prompt  # None is excluded
-
-
-async def test_rewrite_with_ai_truncation(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test AI response truncation."""
-    mock_coordinator.options = {
-        "ai_settings": {
-            CONF_AI_ENABLED: True,
-            CONF_ASSISTANT_ID: "test_agent",
-            "max_response_length": 10,
-        }
-    }
-
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        # Case 1: Truncate
-        result1 = MagicMock()
-        long_response = "This is a long response"  # 23 chars. 10 < 23 < 60.
-        result1.response.speech = {"plain": {"speech": long_response}}
-
-        # Case 2: Too long, use default
-        result2 = MagicMock()
-        very_long_response = "A" * 70  # 70 chars >= 10 + 50
-        result2.response.speech = {"plain": {"speech": very_long_response}}
-
-        mock_converse.side_effect = [result1, result2]
-
-        # Test Case 1
-        await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
-        args = mock_hass.services.async_call.call_args[0]
-        assert args[2]["message"].endswith("...")
-
-        # Reset cooldown for second test
-        manager._last_notification_sent.clear()
-
-        # Test Case 2
-        await manager.async_send_notification(GROWSPACE_ID, "Title", "Original Message")
-        args = mock_hass.services.async_call.call_args[0]
-        assert args[2]["message"] == "Original Message"
-
-
-async def test_rewrite_with_ai_empty_response(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test AI returning empty response."""
-    mock_coordinator.options = {
-        "ai_settings": {
-            CONF_AI_ENABLED: True,
-            CONF_ASSISTANT_ID: "test_agent",
-        }
-    }
-
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-    ) as mock_converse:
-        mock_result = MagicMock()
-        mock_result.response.speech = {}  # Empty speech
-        mock_converse.return_value = mock_result
-
-        await manager.async_send_notification(GROWSPACE_ID, "Title", "Original Message")
-
-        args = mock_hass.services.async_call.call_args[0]
-        assert args[2]["message"] == "Original Message"
-
-
-async def test_rewrite_with_ai_exception(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test exception during AI rewrite."""
-    mock_coordinator.options = {
-        "ai_settings": {
-            CONF_AI_ENABLED: True,
-            CONF_ASSISTANT_ID: "test_agent",
-        }
-    }
-
-    with patch(
-        "custom_components.growspace_manager.notification_manager.conversation.async_converse",
-        new_callable=AsyncMock,
-        side_effect=Exception("AI Error"),
-    ):
-        await manager.async_send_notification(GROWSPACE_ID, "Title", "Original Message")
-
-        args = mock_hass.services.async_call.call_args[0]
-        assert args[2]["message"] == "Original Message"
 
 
 async def test_async_check_timed_notifications_empty_config(
@@ -459,15 +394,10 @@ async def test_async_schedule_notification_cancel(manager: NotificationManager) 
 async def test_async_send_batched_notification_sensor_name_fallback(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
-    """Test sensor name fallback to entity_id when name attribute is missing."""
-    sensor = MagicMock()
-    del sensor.name
-    sensor.entity_id = "sensor.no_name"
-    sensor.is_on = True
-    sensor.sensor_states = {}
-    sensor.reasons = []
-
-    manager.attach_sensor(GROWSPACE_ID, sensor)
+    """Test that the snapshot's sensor name appears in the single-sensor title."""
+    manager._latest_snapshots[(GROWSPACE_ID, "stress")] = make_snapshot(
+        sensor_name="sensor.no_name"
+    )
 
     with patch.object(
         manager, "async_send_notification", new_callable=AsyncMock
@@ -478,67 +408,22 @@ async def test_async_send_batched_notification_sensor_name_fallback(
         assert "sensor.no_name" in args[1]
 
 
-async def test_async_check_tank_levels(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test checking tank levels."""
-
-    # CASE 1: Low level triggers notification
-    tank = IrrigationTank(
-        sensor_entity="sensor.tank1", name="Water Tank", warning_level=30.0
-    )
-    gs = mock_coordinator.growspaces[GROWSPACE_ID]
-    gs.environment_config = EnvironmentConfig(irrigation_tanks=[tank])
-
-    mock_state = MagicMock()
-    mock_state.state = "10.0 %"
-    mock_hass.states = MagicMock()
-    mock_hass.states.get.return_value = mock_state
-
-    with patch(
-        "custom_components.growspace_manager.presentation.entity_queries.EntityQueries"
-    ) as mock_queries:
-        mock_instance = mock_queries.return_value
-        mock_instance.parse_tank_level.return_value = 10.0
-        with patch.object(
-            manager, "async_send_notification", new_callable=AsyncMock
-        ) as mock_send:
-            await manager.async_check_tank_levels()
-            mock_send.assert_awaited_once()
-            # It uses keyword arguments
-            assert "Low Irrigation Tank Level" in mock_send.call_args[1]["title"]
-
-    # CASE 2: No environment config (skip)
-    gs.environment_config = None
-    mock_send.reset_mock()
-    await manager.async_check_tank_levels()
-    mock_send.assert_not_awaited()
-
-
 async def test_async_send_batched_notification_multiple_sensors(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
     """Test batched notification with multiple active sensors."""
-    s1 = MagicMock(entity_id="sensor.s1")
-    s1.name = "Sensor 1"
-    s1.is_on = True
-    s1.sensor_states = {}
-    s1.reasons = []
-
-    s2 = MagicMock(entity_id="sensor.s2")
-    s2.name = "Sensor 2"
-    s2.is_on = True
-    s2.sensor_states = {}
-    s2.reasons = []
-
-    manager.attach_sensor(GROWSPACE_ID, s1)
-    manager.attach_sensor(GROWSPACE_ID, s2)
+    manager._latest_snapshots[(GROWSPACE_ID, "stress")] = make_snapshot(
+        "stress", sensor_name="Sensor 1"
+    )
+    manager._latest_snapshots[(GROWSPACE_ID, "mold")] = make_snapshot(
+        "mold", sensor_name="Sensor 2"
+    )
 
     with patch.object(
         manager, "async_send_notification", new_callable=AsyncMock
     ) as mock_send:
         await manager._async_send_batched_notification(GROWSPACE_ID)
-        # Line 139-140 path
+        # Multiple-sensor path
         args = mock_send.call_args[0]
         assert "Multiple Critical" in args[1]
         assert "Sensor 1" in args[2]
@@ -548,24 +433,17 @@ async def test_async_send_batched_notification_multiple_sensors(
 async def test_async_send_batched_notification_specialized_title(
     manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
 ) -> None:
-    """Test batched notification with specialized title from sensor."""
-    sensor = MagicMock()
-    sensor.name = "S1"
-    sensor.is_on = True
-    sensor.sensor_states = {}
-    sensor.reasons = []
-    sensor.get_notification_title_message.return_value = (
-        "Special Title",
-        "Special Base",
+    """Test batched notification with the snapshot's precomputed title/message."""
+    manager._latest_snapshots[(GROWSPACE_ID, "stress")] = make_snapshot(
+        notification_title="Special Title",
+        notification_message="Special Base",
     )
-
-    manager.attach_sensor(GROWSPACE_ID, sensor)
 
     with patch.object(
         manager, "async_send_notification", new_callable=AsyncMock
     ) as mock_send:
         await manager._async_send_batched_notification(GROWSPACE_ID)
-        # Line 134 path
+        # Single-sensor path uses the snapshot's precomputed title/message
         args = mock_send.call_args[0]
         assert args[1] == "Special Title"
         assert "Special Base" in args[2]
@@ -575,18 +453,14 @@ async def test_async_send_batched_notification_unique_reasons(
     manager: NotificationManager, mock_coordinator: MagicMock
 ) -> None:
     """Test aggregation of unique reasons in batched notification."""
-    s1 = MagicMock(entity_id="sensor.s1", is_on=True)
-    s1.name = "S1"
-    s1.sensor_states = {}
-    s1.reasons = [(0.9, "Reason 1"), (0.8, "Reason 2")]
-
-    s2 = MagicMock(entity_id="sensor.s2", is_on=True)
-    s2.name = "S2"
-    s2.sensor_states = {}
-    s2.reasons = [(0.7, "Reason 1")]  # Duplicate reason
-
-    manager.attach_sensor(GROWSPACE_ID, s1)
-    manager.attach_sensor(GROWSPACE_ID, s2)
+    manager._latest_snapshots[(GROWSPACE_ID, "stress")] = make_snapshot(
+        "stress", sensor_name="S1", reasons=[(0.9, "Reason 1"), (0.8, "Reason 2")]
+    )
+    manager._latest_snapshots[(GROWSPACE_ID, "mold")] = make_snapshot(
+        "mold",
+        sensor_name="S2",
+        reasons=[(0.7, "Reason 1")],  # Duplicate reason
+    )
 
     with patch.object(
         manager, "async_send_notification", new_callable=AsyncMock
@@ -634,12 +508,14 @@ async def test_async_send_notification_disabled_cases(
 ) -> None:
     """Test notification disabled cases (lines 44-45, 49-50)."""
     # CASE: Notifications disabled for growspace
-    mock_coordinator.is_notifications_enabled.return_value = False
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = (
+        False
+    )
     await manager.async_send_notification(GROWSPACE_ID, "T", "M")
     mock_hass.services.async_call.assert_not_called()
 
     # CASE: No target
-    mock_coordinator.is_notifications_enabled.return_value = True
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = True
     mock_coordinator.growspaces[GROWSPACE_ID].notification_target = None
     await manager.async_send_notification(GROWSPACE_ID, "T", "M")
     mock_hass.services.async_call.assert_not_called()
@@ -663,6 +539,7 @@ def test_pending_alert_creation() -> None:
     assert alert.notified is False
     assert alert.escalated is False
     assert alert.notified_as_critical is False
+    assert alert.notification_timer is None
 
 
 def test_pending_alert_duration() -> None:
@@ -695,11 +572,17 @@ async def test_tier_cooldown_critical(manager: NotificationManager) -> None:
         manager._set_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL)
 
     # Critical should be blocked
-    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=5))
+    assert manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=5)
+    )
     # Warning should NOT be blocked by critical cooldown
-    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(minutes=5))
+    assert not manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(minutes=5)
+    )
     # Critical should expire after 30 min
-    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=31))
+    assert not manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.CRITICAL, now + timedelta(minutes=31)
+    )
 
 
 async def test_tier_cooldown_warning(manager: NotificationManager) -> None:
@@ -712,24 +595,21 @@ async def test_tier_cooldown_warning(manager: NotificationManager) -> None:
         manager._set_cooldown(GROWSPACE_ID, NotificationTier.WARNING)
 
     # Warning blocked at 1 hour
-    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=1))
+    assert manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=1)
+    )
     # Warning expires after 2 hours
-    assert not manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=2, minutes=1))
+    assert not manager._is_on_cooldown(
+        GROWSPACE_ID, NotificationTier.WARNING, now + timedelta(hours=2, minutes=1)
+    )
 
 
 # --- Task 4: update_pending_alert tests ---
 
 
 async def test_update_pending_alert_creates_entry(manager: NotificationManager) -> None:
-    """Test that update_pending_alert creates a new entry when sensor turns on."""
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.75
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
-    manager.update_pending_alert(GROWSPACE_ID, sensor)
+    """Test that report_evaluation creates a new entry when sensor turns on."""
+    manager.report_evaluation(make_snapshot(probability=0.75))
 
     alert_key = f"{GROWSPACE_ID}_stress"
     assert alert_key in manager._pending_alerts
@@ -740,7 +620,9 @@ async def test_update_pending_alert_creates_entry(manager: NotificationManager) 
     assert alert.notified is False
 
 
-async def test_update_pending_alert_updates_existing(manager: NotificationManager) -> None:
+async def test_update_pending_alert_updates_existing(
+    manager: NotificationManager,
+) -> None:
     """Test that update_pending_alert updates peak probability on existing entry."""
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
@@ -752,21 +634,16 @@ async def test_update_pending_alert_updates_existing(manager: NotificationManage
         sensor_name="Stress Sensor",
     )
 
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.85
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
-    manager.update_pending_alert(GROWSPACE_ID, sensor)
+    manager.report_evaluation(make_snapshot(probability=0.85))
 
     alert = manager._pending_alerts[alert_key]
     assert alert.last_probability == 0.85
     assert alert.peak_probability == 0.85
 
 
-async def test_update_pending_alert_removes_on_off(manager: NotificationManager) -> None:
+async def test_update_pending_alert_removes_on_off(
+    manager: NotificationManager,
+) -> None:
     """Test that update_pending_alert removes entry when sensor turns off."""
     now = dt_util.utcnow()
     alert_key = f"{GROWSPACE_ID}_stress"
@@ -778,41 +655,80 @@ async def test_update_pending_alert_removes_on_off(manager: NotificationManager)
         sensor_name="Stress Sensor",
     )
 
-    sensor = MagicMock()
-    sensor.is_on = False
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.3
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
-    manager.update_pending_alert(GROWSPACE_ID, sensor)
+    manager.report_evaluation(make_snapshot(is_on=False, probability=0.3))
 
     assert alert_key not in manager._pending_alerts
 
 
-async def test_update_pending_alert_critical_immediate_notification(
+async def test_update_pending_alert_critical_schedules_delayed_timer(
     manager: NotificationManager, mock_hass: MagicMock
 ) -> None:
-    """Test that critical probability triggers immediate notification via debounced batch."""
-    sensor = MagicMock()
-    sensor.is_on = True
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.95
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-    sensor.reasons = [(0.95, "Extreme heat")]
-    sensor.sensor_states = {"temp": 40.0}
-    sensor.get_notification_title_message.return_value = None
+    """Test that critical probability schedules a delayed timer, not an immediate notification."""
+    snapshot = make_snapshot(
+        probability=0.95,
+        reasons=[(0.95, "Extreme heat")],
+        sensor_states={"temp": 40.0},
+    )
 
-    manager.attach_sensor(GROWSPACE_ID, sensor)
+    callback_fn = None
 
-    with patch.object(manager, "async_schedule_notification") as mock_schedule:
-        manager.update_pending_alert(GROWSPACE_ID, sensor)
-        mock_schedule.assert_called_once_with(GROWSPACE_ID)
+    def capture_call_later(hass, delay, fn):
+        nonlocal callback_fn
+        assert delay == MIN_STRESS_DURATION_SECONDS
+        callback_fn = fn
+        return MagicMock()
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.async_call_later",
+            side_effect=capture_call_later,
+        ),
+        patch.object(manager, "async_schedule_notification") as mock_schedule,
+    ):
+        manager.report_evaluation(snapshot)
+        # Not scheduled immediately
+        mock_schedule.assert_not_called()
 
     alert_key = f"{GROWSPACE_ID}_stress"
     alert = manager._pending_alerts[alert_key]
+    # Not yet marked as critical — timer is pending
+    assert alert.notified_as_critical is False
+    assert alert.notification_timer is not None
+
+    # Simulate the timer firing
+    with patch.object(manager, "async_schedule_notification") as mock_schedule:
+        callback_fn(dt_util.utcnow())
+        mock_schedule.assert_called_once_with(GROWSPACE_ID)
+
     assert alert.notified_as_critical is True
+    assert alert.notification_timer is None
+
+
+async def test_update_pending_alert_timer_cancelled_on_resolve(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that resolving stress before the min-duration timer cancels it without notifying."""
+    cancel_mock = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later",
+        return_value=cancel_mock,
+    ):
+        manager.report_evaluation(make_snapshot(probability=0.95))
+
+    alert_key = f"{GROWSPACE_ID}_stress"
+    assert alert_key in manager._pending_alerts
+    assert manager._pending_alerts[alert_key].notification_timer is cancel_mock
+
+    # Now sensor turns off before 180s
+    with patch.object(manager, "_schedule_recovery") as mock_recovery:
+        manager.report_evaluation(make_snapshot(is_on=False))
+        # Timer should be cancelled
+        cancel_mock.assert_called_once()
+        # No recovery because notified_as_critical was never set
+        mock_recovery.assert_not_called()
+
+    assert alert_key not in manager._pending_alerts
 
 
 # --- Task 5: async_check_pending_alerts tests ---
@@ -837,7 +753,9 @@ async def test_check_pending_alerts_warning_persistence_not_met(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_not_awaited()
@@ -862,7 +780,9 @@ async def test_check_pending_alerts_warning_persistence_met(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_awaited_once()
@@ -893,7 +813,9 @@ async def test_check_pending_alerts_skip_already_notified(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_not_awaited()
@@ -921,7 +843,9 @@ async def test_check_pending_alerts_escalation(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_awaited_once()
@@ -953,7 +877,9 @@ async def test_check_pending_alerts_no_escalation_if_dropped_to_warning(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_not_awaited()
@@ -981,7 +907,9 @@ async def test_check_pending_alerts_no_double_escalation(
             "custom_components.growspace_manager.notification_manager.utcnow",
             return_value=now,
         ),
-        patch.object(manager, "async_send_notification", new_callable=AsyncMock) as mock_send,
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
     ):
         await manager.async_check_pending_alerts()
         mock_send.assert_not_awaited()
@@ -1006,15 +934,8 @@ async def test_recovery_notification_on_critical_resolve(
         notified_as_critical=True,
     )
 
-    sensor = MagicMock()
-    sensor.is_on = False
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.3
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
     with patch.object(manager, "_schedule_recovery") as mock_recovery:
-        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        manager.report_evaluation(make_snapshot(is_on=False, probability=0.3))
         mock_recovery.assert_called_once()
 
     assert alert_key not in manager._pending_alerts
@@ -1036,47 +957,9 @@ async def test_no_recovery_for_warning_resolve(
         notified_as_critical=False,
     )
 
-    sensor = MagicMock()
-    sensor.is_on = False
-    sensor.name = "Stress Sensor"
-    sensor._probability = 0.3
-    sensor.entity_description = MagicMock()
-    sensor.entity_description.sensor_type = "stress"
-
     with patch.object(manager, "_schedule_recovery") as mock_recovery:
-        manager.update_pending_alert(GROWSPACE_ID, sensor)
+        manager.report_evaluation(make_snapshot(is_on=False, probability=0.3))
         mock_recovery.assert_not_called()
-
-
-async def test_tank_level_uses_critical_tier(
-    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
-) -> None:
-    """Test that tank level alerts use critical tier."""
-    tank = IrrigationTank(
-        sensor_entity="sensor.tank1", name="Water Tank", warning_level=30.0
-    )
-    gs = mock_coordinator.growspaces[GROWSPACE_ID]
-    gs.environment_config = EnvironmentConfig(irrigation_tanks=[tank])
-
-    mock_state = MagicMock()
-    mock_state.state = "10.0 %"
-    mock_hass.states = MagicMock()
-    mock_hass.states.get.return_value = mock_state
-
-    with (
-        patch(
-            "custom_components.growspace_manager.presentation.entity_queries.EntityQueries"
-        ) as mock_queries,
-        patch.object(
-            manager, "async_send_notification", new_callable=AsyncMock
-        ) as mock_send,
-    ):
-        mock_instance = mock_queries.return_value
-        mock_instance.parse_tank_level.return_value = 10.0
-        await manager.async_check_tank_levels()
-        mock_send.assert_awaited_once()
-        call_kwargs = mock_send.call_args[1]
-        assert call_kwargs.get("tier") == "critical"
 
 
 async def test_send_recovery_notification(
@@ -1104,3 +987,426 @@ async def test_send_recovery_notification(
         assert "\u2705" in title
         assert "resolved" in message.lower()
         assert "45 minutes" in message
+
+
+async def test_schedule_recovery(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test scheduling recovery notification."""
+    alert = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=dt_util.utcnow(),
+        last_probability=0.9,
+        peak_probability=0.95,
+        sensor_name="Test Sensor",
+    )
+
+    with patch.object(manager, "_async_send_recovery", new_callable=AsyncMock):
+        manager._schedule_recovery(GROWSPACE_ID, alert)
+        manager.coordinator.config_entry.async_create_background_task.assert_called_once()
+        # Verify call arguments if needed
+        # args = mock_hass.async_create_task.call_args[0]
+        # assert args[0] == mock_send_recovery.return_value
+
+
+async def test_async_send_recovery_cooldown(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test recovery notification cooldown."""
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now - timedelta(minutes=10),
+        last_probability=0.9,
+        peak_probability=0.95,
+        sensor_name="Test Sensor",
+    )
+
+    # Set recovery cooldown
+    manager._set_cooldown(GROWSPACE_ID, "recovery")
+
+    with patch.object(
+        manager, "async_send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        await manager._async_send_recovery(GROWSPACE_ID, alert)
+        mock_send.assert_not_awaited()
+
+
+async def test_timer_not_rescheduled_while_active(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that a second critical update does not schedule a second timer."""
+    cancel_mock = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later",
+        return_value=cancel_mock,
+    ) as mock_later:
+        manager.report_evaluation(make_snapshot(probability=0.95))
+        # Second update at same probability
+        manager.report_evaluation(make_snapshot(probability=0.95))
+        # Timer should only be scheduled once
+        assert mock_later.call_count == 1
+
+
+async def test_timer_cancelled_when_probability_drops_below_threshold(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that the pending timer is cancelled if probability drops below critical."""
+    cancel_mock = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later",
+        return_value=cancel_mock,
+    ):
+        manager.report_evaluation(make_snapshot(probability=0.95))
+
+    alert_key = f"{GROWSPACE_ID}_stress"
+    assert manager._pending_alerts[alert_key].notification_timer is cancel_mock
+
+    # Probability drops below threshold — timer should be cancelled
+    manager.report_evaluation(make_snapshot(probability=0.70))
+    cancel_mock.assert_called_once()
+    assert manager._pending_alerts[alert_key].notification_timer is None
+
+
+def test_report_evaluation_clears_snapshot_on_resolve(
+    manager: NotificationManager,
+) -> None:
+    """A resolved snapshot is removed from the latest-snapshot store."""
+    manager.report_evaluation(make_snapshot("optimal", is_on=True))
+    assert (GROWSPACE_ID, "optimal") in manager._latest_snapshots
+
+    manager.report_evaluation(make_snapshot("optimal", is_on=False))
+    assert (GROWSPACE_ID, "optimal") not in manager._latest_snapshots
+
+
+def test_optimal_high_probability_creates_no_pending_alert(
+    manager: NotificationManager,
+) -> None:
+    """A triggered optimal snapshot is stored but never creates a pending alert."""
+    manager.report_evaluation(make_snapshot("optimal", is_on=True, probability=0.99))
+
+    assert (GROWSPACE_ID, "optimal") in manager._latest_snapshots
+    assert manager._pending_alerts == {}
+
+
+# --- Step 4: light-flip cooldown migration ---
+
+
+def _snapshot_with_lights(
+    sensor_type: str, lights_on: bool | None
+) -> EvaluationSnapshot:
+    """Build a resolved snapshot carrying the given light state."""
+    return EvaluationSnapshot(
+        growspace_id=GROWSPACE_ID,
+        sensor_type=sensor_type,
+        sensor_name=sensor_type,
+        probability=0.0,
+        threshold=0.7,
+        is_on=False,
+        reasons=[],
+        sensor_states={},
+        lights_on=lights_on,
+        notification_title=None,
+        notification_message=None,
+    )
+
+
+def test_light_flip_on_off_on_triggers_two_cooldowns(
+    manager: NotificationManager,
+) -> None:
+    """An on->off->on light sequence triggers the cooldown exactly twice."""
+    with patch.object(manager, "trigger_cooldown") as mock_cooldown:
+        manager.report_evaluation(_snapshot_with_lights("stress", True))
+        manager.report_evaluation(_snapshot_with_lights("stress", False))
+        manager.report_evaluation(_snapshot_with_lights("stress", True))
+
+    assert mock_cooldown.call_count == 2
+    mock_cooldown.assert_called_with(GROWSPACE_ID)
+
+
+def test_light_flip_deduped_across_sensor_types(
+    manager: NotificationManager,
+) -> None:
+    """Three same-wave snapshots (one physical flip) trigger one cooldown."""
+    # Establish the prior state (lights on) without a flip.
+    manager.report_evaluation(_snapshot_with_lights("stress", True))
+
+    with patch.object(manager, "trigger_cooldown") as mock_cooldown:
+        # All three sensor types observe the same off-transition.
+        manager.report_evaluation(_snapshot_with_lights("stress", False))
+        manager.report_evaluation(_snapshot_with_lights("mold", False))
+        manager.report_evaluation(_snapshot_with_lights("optimal", False))
+
+    mock_cooldown.assert_called_once_with(GROWSPACE_ID)
+
+
+def test_light_flip_none_reading_ignored(manager: NotificationManager) -> None:
+    """A None light reading neither triggers a cooldown nor clears prior state."""
+    manager.report_evaluation(_snapshot_with_lights("stress", True))
+
+    with patch.object(manager, "trigger_cooldown") as mock_cooldown:
+        manager.report_evaluation(_snapshot_with_lights("stress", None))
+        # Still considered "on"; a subsequent off then triggers exactly one.
+        manager.report_evaluation(_snapshot_with_lights("stress", False))
+
+    mock_cooldown.assert_called_once_with(GROWSPACE_ID)
+
+
+def test_trigger_cooldown(manager: NotificationManager) -> None:
+    """Test manually triggering cooldown."""
+    now = dt_util.utcnow()
+    with patch(
+        "custom_components.growspace_manager.notification_manager.utcnow",
+        return_value=now,
+    ):
+        manager.trigger_cooldown(GROWSPACE_ID)
+
+    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL, now)
+    assert manager._is_on_cooldown(GROWSPACE_ID, NotificationTier.WARNING, now)
+    assert manager._last_notification_sent[GROWSPACE_ID] == now
+
+
+async def test_async_schedule_notification_execution(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test that scheduled notification callback executes."""
+    # We need to simulate the callback execution
+    callback_func = None
+
+    def mock_call_later(hass, delay, action):
+        nonlocal callback_func
+        callback_func = action
+        return MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later",
+        side_effect=mock_call_later,
+    ):
+        manager.async_schedule_notification(GROWSPACE_ID)
+
+    assert callback_func is not None
+
+    with patch.object(
+        manager, "_async_send_batched_notification", new_callable=AsyncMock
+    ):
+        # Execute the callback
+        callback_func(dt_util.utcnow())
+        manager.coordinator.config_entry.async_create_background_task.assert_called_once()
+
+
+async def test_async_send_notification_tier_cooldown_debug(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test debug logging when tier cooldown is active."""
+    manager._set_cooldown(GROWSPACE_ID, NotificationTier.CRITICAL)
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager._LOGGER.debug"
+    ) as mock_debug:
+        await manager.async_send_notification(
+            GROWSPACE_ID, "Title", "Message", tier=NotificationTier.CRITICAL
+        )
+        mock_debug.assert_called_with(
+            "Tier %s cooldown active for %s, skipping notification",
+            NotificationTier.CRITICAL,
+            GROWSPACE_ID,
+        )
+
+
+async def test_async_send_notification_with_tier_sets_cooldown(
+    manager: NotificationManager, mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """Test sending notification with tier sets the cooldown."""
+    with patch.object(manager, "_set_cooldown") as mock_set_cooldown:
+        await manager.async_send_notification(
+            GROWSPACE_ID, "Title", "Message", tier=NotificationTier.WARNING
+        )
+        mock_set_cooldown.assert_called_with(GROWSPACE_ID, NotificationTier.WARNING)
+
+
+async def test_check_and_trigger_plant_notification_init(
+    manager: NotificationManager, mock_coordinator: MagicMock
+) -> None:
+    """Test initialization of notifications_sent dict for new plant."""
+    plant = MagicMock()
+    plant.plant_id = "new_plant"
+    growspace = MagicMock()
+    growspace.id = GROWSPACE_ID
+    growspace.name = GROWSPACE_NAME
+
+    # Ensure plant not in notifications_sent
+    mock_coordinator.notification_state.sent = {}
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+            return_value=10,
+        ),
+        patch.object(manager, "async_send_notification", new_callable=AsyncMock),
+    ):
+        await manager._check_and_trigger_plant_notification(
+            plant, growspace, "notify_1", "veg", 10, "Message"
+        )
+
+    assert "new_plant" in mock_coordinator.notification_state.sent
+    assert (
+        mock_coordinator.notification_state.sent["new_plant"]["timed_notify_1"] is True
+    )
+
+    # Test fallback to growspace.growspace_id if id not present
+    del growspace.id
+    growspace.growspace_id = GROWSPACE_ID + "_alt"
+
+    mock_coordinator.notification_state.sent = {}  # Reset
+
+    with (
+        patch(
+            "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+            return_value=10,
+        ),
+        patch.object(
+            manager, "async_send_notification", new_callable=AsyncMock
+        ) as mock_send,
+    ):
+        await manager._check_and_trigger_plant_notification(
+            plant, growspace, "notify_1", "veg", 10, "Message"
+        )
+        mock_send.assert_awaited()
+        assert mock_send.call_args[0][0] == GROWSPACE_ID + "_alt"
+
+
+# --- Missing coverage tests ---
+
+
+def test_shutdown_cancels_batch_timers_and_pending_alerts(
+    manager: NotificationManager,
+) -> None:
+    """Test shutdown cancels batch timers and pending alert timers (lines 79-87)."""
+    batch_timer = MagicMock()
+    manager._batch_timers[GROWSPACE_ID] = batch_timer
+
+    alert_timer = MagicMock()
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now,
+        last_probability=0.9,
+        peak_probability=0.9,
+        sensor_name="Sensor",
+        notification_timer=alert_timer,
+    )
+    manager._pending_alerts[f"{GROWSPACE_ID}_stress"] = alert
+
+    manager.shutdown()
+
+    batch_timer.assert_called_once()
+    assert manager._batch_timers == {}
+    alert_timer.assert_called_once()
+    assert alert.notification_timer is None
+    assert manager._pending_alerts == {}
+
+
+def test_shutdown_with_alert_timer_none(manager: NotificationManager) -> None:
+    """Test shutdown handles pending alerts without a timer (lines 83-87)."""
+    now = dt_util.utcnow()
+    alert = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now,
+        last_probability=0.9,
+        peak_probability=0.9,
+        sensor_name="Sensor",
+        notification_timer=None,
+    )
+    manager._pending_alerts[f"{GROWSPACE_ID}_stress"] = alert
+
+    manager.shutdown()
+
+    assert manager._pending_alerts == {}
+
+
+def test_update_pending_alert_no_plants_cancels_timer(
+    manager: NotificationManager, mock_coordinator: MagicMock
+) -> None:
+    """Test update_pending_alert early-exits when growspace has no plants (lines 121-127)."""
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = []
+
+    cancel_mock = MagicMock()
+    alert_key = f"{GROWSPACE_ID}_stress"
+    now = dt_util.utcnow()
+    manager._pending_alerts[alert_key] = PendingAlert(
+        growspace_id=GROWSPACE_ID,
+        first_triggered=now,
+        last_probability=0.8,
+        peak_probability=0.8,
+        sensor_name="Stress Sensor",
+        notification_timer=cancel_mock,
+    )
+
+    manager.report_evaluation(make_snapshot(probability=0.8))
+
+    cancel_mock.assert_called_once()
+    assert alert_key not in manager._pending_alerts
+
+
+def test_update_pending_alert_no_plants_no_existing_alert(
+    manager: NotificationManager, mock_coordinator: MagicMock
+) -> None:
+    """Test update_pending_alert when no plants and no pending alert (line 121)."""
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = []
+
+    # Should not raise
+    manager.report_evaluation(make_snapshot(probability=0.5))
+    assert f"{GROWSPACE_ID}_stress" not in manager._pending_alerts
+
+
+async def test_fire_critical_timer_alert_removed_before_firing(
+    manager: NotificationManager, mock_hass: MagicMock
+) -> None:
+    """Test _fire_critical returns early if alert is removed before timer fires (line 168)."""
+    callback_fn = None
+
+    def capture_call_later(hass, delay, fn):
+        nonlocal callback_fn
+        callback_fn = fn
+        return MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.notification_manager.async_call_later",
+        side_effect=capture_call_later,
+    ):
+        manager.report_evaluation(make_snapshot(probability=0.95))
+
+    # Remove the alert before the timer fires
+    manager._pending_alerts.clear()
+
+    with patch.object(manager, "async_schedule_notification") as mock_schedule:
+        callback_fn(dt_util.utcnow())
+        mock_schedule.assert_not_called()
+
+
+async def test_async_send_batched_notification_pops_existing_timer(
+    manager: NotificationManager, mock_coordinator: MagicMock
+) -> None:
+    """Test _async_send_batched_notification cancels lingering batch timer (line 264)."""
+    batch_timer = MagicMock()
+    manager._batch_timers[GROWSPACE_ID] = batch_timer
+
+    # No active sensors so it returns early after popping the timer
+    await manager._async_send_batched_notification(GROWSPACE_ID)
+
+    batch_timer.assert_called_once()
+    assert GROWSPACE_ID not in manager._batch_timers
+
+
+async def test_async_send_notification_no_plants_skips(
+    manager: NotificationManager, mock_coordinator: MagicMock, mock_hass: MagicMock
+) -> None:
+    """Test notification is skipped when growspace has no plants (lines 367-371)."""
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = []
+    mock_coordinator.services.notifications.is_notifications_enabled.return_value = True
+
+    await manager.async_send_notification(GROWSPACE_ID, "Title", "Message")
+
+    mock_hass.services.async_call.assert_not_awaited()

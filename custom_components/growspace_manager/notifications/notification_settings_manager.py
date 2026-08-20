@@ -9,9 +9,11 @@ import logging
 from typing import TYPE_CHECKING, Any
 import uuid
 
+from .timed import normalize_timed_notification_trigger, normalize_timed_notifications
+
 if TYPE_CHECKING:
-    from .custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-    from .custom_components.growspace_manager.models import Growspace
+    from ..coordinator import GrowspaceCoordinator
+    from ..models import Growspace
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ class NotificationSettingsManager:
     @property
     def notifications_enabled(self) -> dict[str, bool]:
         """Get notification enabled state from coordinator."""
-        return self.coordinator.notifications_enabled
+        return self.coordinator.notification_state.enabled
 
     @property
     def config_entry(self) -> Any:
@@ -97,7 +99,9 @@ class NotificationSettingsManager:
         Returns:
             List of timed notification configurations
         """
-        return self.config_entry.options.get("timed_notifications", [])  # type: ignore[no-any-return]
+        return normalize_timed_notifications(
+            self.config_entry.options.get("timed_notifications", [])
+        )
 
     def create_timed_notification(
         self,
@@ -120,7 +124,7 @@ class NotificationSettingsManager:
         return {
             "id": str(uuid.uuid4()),
             "message": message,
-            "trigger_type": trigger_type,
+            "trigger_type": normalize_timed_notification_trigger(trigger_type),
             "day": int(day),
             "growspace_ids": growspace_ids or [],
         }
@@ -150,7 +154,9 @@ class NotificationSettingsManager:
         for notification in notifications:
             if notification["id"] == notification_id:
                 notification["message"] = message
-                notification["trigger_type"] = trigger_type
+                notification["trigger_type"] = normalize_timed_notification_trigger(
+                    trigger_type
+                )
                 notification["day"] = int(day)
                 notification["growspace_ids"] = growspace_ids or []
                 return True

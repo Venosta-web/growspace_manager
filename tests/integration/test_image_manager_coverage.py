@@ -262,9 +262,9 @@ async def test_save_timeline_image_grayscale_conversion(
     path = await image_manager.save_timeline_image("plant_gray", img_str)
 
     assert Path(path).exists()
-    # Check saved image is valid WebP
-    saved_img = PILImage.open(path)
-    assert saved_img.format == "WEBP"
+    # Check saved image is valid WebP — use context manager to avoid resource leak
+    with PILImage.open(path) as saved_img:
+        assert saved_img.format == "WEBP"
 
 
 async def test_save_timeline_image_exception_handling(

@@ -12,18 +12,27 @@ from typing import TYPE_CHECKING, Any
 from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
+    GrowspaceService,
     PlantStage,
 )
 from custom_components.growspace_manager.domain import calculate_days_in_stage
-from homeassistant.components import conversation
+from custom_components.growspace_manager.domain.moisture_band import (
+    interpret_moisture_reading,
+)
+from custom_components.growspace_manager.schemas import (
+    ANALYZE_ALL_GROWSPACES_SCHEMA,
+    ASK_GROW_ADVICE_SCHEMA,
+    STRAIN_RECOMMENDATION_SCHEMA,
+)
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
-from homeassistant.core import Context, HomeAssistant, ServiceCall
+from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 
+from ._definition import ServiceDefinition
 from .strain_library import StrainLibrary
 
 if TYPE_CHECKING:
-    from .coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,7 +69,7 @@ class GrowAssistant:
 
     def gather_growspace_data(self, growspace_id: str) -> dict[str, Any]:
         """Gather comprehensive data about a growspace for AI analysis."""
-        growspace = self.coordinator.growspaces.get(growspace_id)
+        growspace = self.coordinator._data_repository.get_growspace(growspace_id)
         if not growspace:
             raise ServiceValidationError(f"Growspace {growspace_id} not found.")
 
@@ -68,6 +77,7 @@ class GrowAssistant:
         env_config = getattr(growspace, "environment_config", None)
         sensor_data = {}
         sensor_states = {}
+        moisture_interpretation: dict[str, Any] | None = None
 
         if env_config:
             # Map of context key -> attribute name in EnvironmentConfig
@@ -79,7 +89,6 @@ class GrowAssistant:
                 ("co2_sensor", "co2_sensor"),
                 ("light_sensor", "light_sensor"),
                 ("circulation_fan", "circulation_fan_entity"),
-                ("soil_moisture_sensor", "soil_moisture_sensor"),
             ]
 
             for context_key, attr_name in sensor_map:
@@ -101,11 +110,39 @@ class GrowAssistant:
                             "attributes": dict(state.attributes),
                         }
 
+            moisture_entity_id = (
+                env_config.get("soil_moisture_sensor")
+                if isinstance(env_config, dict)
+                else getattr(env_config, "soil_moisture_sensor", None)
+            )
+            if moisture_entity_id:
+                moisture_state = self.hass.states.get(moisture_entity_id)
+                if moisture_state and moisture_state.state not in (
+                    STATE_UNAVAILABLE,
+                    STATE_UNKNOWN,
+                ):
+                    unit = moisture_state.attributes.get("unit_of_measurement")
+                    minimum = (
+                        env_config.get("soil_moisture_min")
+                        if isinstance(env_config, dict)
+                        else getattr(env_config, "soil_moisture_min", None)
+                    )
+                    maximum = (
+                        env_config.get("soil_moisture_max")
+                        if isinstance(env_config, dict)
+                        else getattr(env_config, "soil_moisture_max", None)
+                    )
+                    interpretation = interpret_moisture_reading(
+                        moisture_state.state, unit, minimum, maximum
+                    )
+                    if interpretation is not None:
+                        moisture_interpretation = interpretation.to_dict()
+
         # Bayesian sensor analysis
         bayesian_data = self._gather_bayesian_sensor_data(growspace_id)
 
         # Plant data
-        plants = self.coordinator.get_growspace_plants(growspace_id)
+        plants = self.coordinator._data_repository.get_growspace_plants(growspace_id)
         plant_summary = self._summarize_plants(plants)
 
         # Strain analytics
@@ -121,6 +158,7 @@ class GrowAssistant:
             "environment": {
                 "sensors": sensor_data,
                 "raw_states": sensor_states,
+                "soil_moisture": moisture_interpretation,
             },
             "analysis": bayesian_data,
             "plants": plant_summary,
@@ -189,9 +227,7 @@ class GrowAssistant:
             "strains": list(strains),
             "max_veg_days": max(
                 (
-                    calculate_days_in_stage(
-                        p, PlantStage.VEG
-                    )
+                    calculate_days_in_stage(p, PlantStage.VEG)
                     for p in plants
                     if p.veg_start
                 ),
@@ -199,9 +235,7 @@ class GrowAssistant:
             ),
             "max_flower_days": max(
                 (
-                    calculate_days_in_stage(
-                        p, PlantStage.FLOWER
-                    )
+                    calculate_days_in_stage(p, PlantStage.FLOWER)
                     for p in plants
                     if p.flower_start
                 ),
@@ -343,6 +377,8 @@ class GrowAssistant:
 
         # Add sensor readings
         lines.extend(self._format_sensor_data(data["environment"]["sensors"]))
+        if moisture := data["environment"].get("soil_moisture"):
+            lines.extend(self._format_moisture_data(moisture))
         lines.append("")
 
         # Add Bayesian analysis
@@ -353,7 +389,9 @@ class GrowAssistant:
 
         # Add strain-specific context (breeder notes, preferences)
         if data["plants"]["count"] > 0:
-            plants = self.coordinator.get_growspace_plants(data["growspace"]["id"])
+            plants = self.coordinator._data_repository.get_growspace_plants(
+                data["growspace"]["id"]
+            )
             strain_context = self._get_strain_specific_context(plants)
             if strain_context:
                 lines.append("STRAIN-SPECIFIC GUIDANCE:")
@@ -377,6 +415,44 @@ class GrowAssistant:
         for sensor, reading in sensors.items():
             sensor_name = sensor.replace("_sensor", "").replace("_", " ").title()
             lines.append(f"  {sensor_name}: {reading}")
+        return lines
+
+    def _format_moisture_data(self, moisture: dict[str, Any]) -> list[str]:
+        """Format the canonical Acceptable Moisture Band interpretation."""
+        reading = float(moisture["reading"])
+        band = moisture["band"]
+        minimum = float(band["min"])
+        maximum = float(band["max"])
+        source = "custom" if band["is_custom"] else "inherited default"
+        classification = moisture["classification"]
+
+        lines = [
+            "  Soil Moisture:",
+            f"    Raw reading: {reading:g}%",
+            f"    Effective Acceptable Moisture Band: {minimum:g}–{maximum:g}% ({source}, inclusive)",
+        ]
+        if classification == "too_dry":
+            lines.extend(
+                (
+                    "    Classification: below the acceptable band (too dry)",
+                    f"    Interpretation: {reading:g}% is below the effective minimum of {minimum:g}%.",
+                )
+            )
+        elif classification == "too_wet":
+            lines.extend(
+                (
+                    "    Classification: above the acceptable band (too wet)",
+                    f"    Interpretation: {reading:g}% is above the effective maximum of {maximum:g}%.",
+                )
+            )
+        else:
+            lines.extend(
+                (
+                    "    Classification: within the acceptable band",
+                    "    Interpretation: This reading is inside the inclusive band. "
+                    "The absolute reading alone is not evidence of overwatering or underwatering.",
+                )
+            )
         return lines
 
     def _format_analysis_data(self, analysis: dict[str, Any]) -> list[str]:
@@ -488,8 +564,18 @@ class GrowAssistant:
 
         except ServiceValidationError:
             raise
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             _LOGGER.error("Error getting AI advice: %s", err)
+            if any(
+                m in str(err)
+                for m in (
+                    "429",
+                    "Too Many Requests",
+                    "RESOURCE_EXHAUSTED",
+                    "resource_exhausted",
+                )
+            ):
+                raise ServiceValidationError("rate_limited") from err
             # Fallback to context if AI fails
             return f"AI Assistant Error: {err}\n\nRaw Data:\n\n{context}"
 
@@ -513,6 +599,8 @@ class GrowAssistant:
         self, full_prompt: str, agent_id: str, max_length: int | None, growspace_id: str
     ) -> str:
         """Execute the conversation and process the response."""
+        from homeassistant.components import conversation  # noqa: PLC0415
+
         if not agent_id:
             # Should be caught above, but double check
             raise ServiceValidationError(
@@ -527,21 +615,33 @@ class GrowAssistant:
             agent_id=agent_id,
         )
 
-        if (
-            result
-            and result.response
-            and result.response.speech
-            and result.response.speech.get("plain")
-            and result.response.speech["plain"].get("speech")
-        ):
-            response = result.response.speech["plain"]["speech"]
+        if result and result.response:
+            speech_text = (
+                result.response.speech.get("plain", {}).get("speech", "")
+                if result.response.speech
+                else ""
+            )
+            err_code = getattr(result.response, "error_code", "") or ""
+            if any(
+                m in speech_text or m.lower() in err_code.lower()
+                for m in (
+                    "429",
+                    "Too Many Requests",
+                    "RESOURCE_EXHAUSTED",
+                    "resource_exhausted",
+                )
+            ):
+                raise ServiceValidationError("rate_limited")
 
-            # Enforce max length truncation if specified
-            if max_length and len(response) > max_length:
-                response = response[:max_length].rsplit(" ", 1)[0] + "..."
+            if speech_text:
+                response = speech_text
+                if max_length and len(response) > max_length:
+                    response = response[:max_length].rsplit(" ", 1)[0] + "..."
+                _LOGGER.info(
+                    "AI assistant provided advice for growspace %s", growspace_id
+                )
+                return response
 
-            _LOGGER.info("AI assistant provided advice for growspace %s", growspace_id)
-            return str(response)
         raise ServiceValidationError("AI assistant returned an empty response")
 
 
@@ -578,6 +678,8 @@ async def handle_analyze_all_growspaces(
 
     This service scans all active growspaces and provides prioritized recommendations.
     """
+    from homeassistant.components import conversation  # noqa: PLC0415
+
     assistant = GrowAssistant(hass, coordinator, strain_library)
     ai_settings = assistant.get_ai_settings()
     agent_id = None
@@ -593,7 +695,9 @@ async def handle_analyze_all_growspaces(
     all_data = []
     issues_found = []
 
-    for growspace_id in coordinator.growspaces:
+    for growspace_id in (
+        gs.id for gs in coordinator._data_repository.get_all_growspaces()
+    ):
         try:
             data = assistant.gather_growspace_data(growspace_id)
             all_data.append(data)
@@ -729,6 +833,8 @@ async def handle_strain_recommendation(
 
     This service analyzes the strain library and suggests strains for the next grow.
     """
+    from homeassistant.components import conversation  # noqa: PLC0415
+
     assistant = GrowAssistant(hass, coordinator, strain_library)
     ai_settings = assistant.get_ai_settings()
     agent_id = None
@@ -803,9 +909,9 @@ async def handle_strain_recommendation(
             }
 
     except Exception as err:  # noqa: BLE001
-        _LOGGER.error("Error getting strain recommendations: %s", err)
+        _LOGGER.error("Error getting strain recommendation: %s", err)
         return {
-            "response": f"Error getting recommendations: {err}\n\nStrain Data:\n\n{context}",
+            "response": f"Error getting strain recommendation: {err}\n\nStrain Data:\n\n{context}",
             "strains_analyzed": len(all_strains),
         }
 
@@ -813,7 +919,8 @@ async def handle_strain_recommendation(
         return recommendation_result
 
     return {
-        "response": f"Error getting recommendations: AI assistant returned an empty response. Strain Data:\n\n{context}",
+        "response": "AI assistant returned an empty response. Strain Data:\n\n"
+        + context,
         "strains_analyzed": len(all_strains),
     }
 
@@ -923,3 +1030,28 @@ def _build_strain_performance_summary(
         strain_info += "\n  History: No harvests recorded yet"
 
     return strain_info
+
+
+SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.ASK_GROW_ADVICE,
+        handle_ask_grow_advice,
+        ASK_GROW_ADVICE_SCHEMA,
+        needs_strain_lib=True,
+        supports_response=SupportsResponse.ONLY,
+    ),
+    ServiceDefinition(
+        GrowspaceService.STRAIN_RECOMMENDATION,
+        handle_strain_recommendation,
+        STRAIN_RECOMMENDATION_SCHEMA,
+        needs_strain_lib=True,
+        supports_response=SupportsResponse.ONLY,
+    ),
+    ServiceDefinition(
+        GrowspaceService.ANALYZE_ALL_GROWSPACES,
+        handle_analyze_all_growspaces,
+        ANALYZE_ALL_GROWSPACES_SCHEMA,
+        needs_strain_lib=True,
+        supports_response=SupportsResponse.ONLY,
+    ),
+]

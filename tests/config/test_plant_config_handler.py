@@ -2,7 +2,6 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from common import create_plant
 import pytest
 import voluptuous as vol
 
@@ -13,6 +12,9 @@ from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.models import Growspace
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+
+from .common import create_plant
 
 ENTRY_ID = "test_entry_id"
 GROWSPACE_ID = "test_growspace"
@@ -22,9 +24,8 @@ GROWSPACE_ID = "test_growspace"
 def mock_coordinator() -> MagicMock:
     """Mock the GrowspaceCoordinator."""
     coordinator = MagicMock()
-    coordinator.get_sorted_growspace_options.return_value = [
-        (GROWSPACE_ID, "Test Growspace")
-    ]
+
+    # Data
     coordinator.growspaces = {
         GROWSPACE_ID: Growspace(
             id=GROWSPACE_ID,
@@ -33,23 +34,44 @@ def mock_coordinator() -> MagicMock:
             plants_per_row=5,
         )
     }
-    coordinator.get_strain_options.return_value = ["Strain A", "Strain B"]
+    coordinator.plants = {}
 
-    # Services
-    coordinator._growspace_service = MagicMock()
-    coordinator._growspace_service.add_growspace = AsyncMock()
-    coordinator._growspace_service.update_growspace = AsyncMock()
+    # Build sub-facades
+    gs_facade = MagicMock()
+    gs_facade.get_growspace = MagicMock(
+        side_effect=lambda gsid: coordinator.growspaces.get(gsid)
+    )
+    gs_facade.get_sorted_growspace_options = MagicMock(
+        return_value=[(GROWSPACE_ID, "Test Growspace")]
+    )
+    gs_facade.add_growspace = AsyncMock()
+    gs_facade.update_growspace = AsyncMock()
+    gs_facade.remove_growspace = AsyncMock()
 
-    coordinator._plant_service = MagicMock()
-    coordinator._plant_service.add_plant = AsyncMock()
-    coordinator._plant_service.remove_plant = AsyncMock()
-    coordinator._plant_service.harvest_plant = AsyncMock()
-    coordinator._plant_service.update_plant = AsyncMock()
+    pl_facade = MagicMock()
+    pl_facade.get_plant = MagicMock(side_effect=lambda pid: coordinator.plants.get(pid))
+    pl_facade.add_plant = AsyncMock()
+    pl_facade.update_plant = AsyncMock()
+    pl_facade.remove_plant = AsyncMock()
+    pl_facade.transition_plant = AsyncMock()
+    pl_facade.async_transition_plant = pl_facade.transition_plant
 
-    coordinator.async_harvest_plant = AsyncMock()
-    coordinator.async_remove_plant = AsyncMock()
-    coordinator.async_add_plant = AsyncMock()
-    coordinator.async_update_plant = AsyncMock()
+    cfg_facade = MagicMock()
+    cfg_facade.get_strain_options = MagicMock(return_value=["Strain A", "Strain B"])
+
+    facade = MagicMock()
+    facade.growspaces = gs_facade
+    facade.plants = pl_facade
+    facade.config = cfg_facade
+    coordinator.services = facade
+
+    # Legacy support
+    coordinator.get_sorted_growspace_options = gs_facade.get_sorted_growspace_options
+    coordinator.get_strain_options = cfg_facade.get_strain_options
+    coordinator.async_transition_plant = pl_facade.transition_plant
+    coordinator.async_remove_plant = pl_facade.remove_plant
+    coordinator.async_add_plant = pl_facade.add_plant
+    coordinator.async_update_plant = pl_facade.update_plant
 
     return coordinator
 
@@ -66,6 +88,7 @@ def mock_hass(mock_coordinator) -> MagicMock:
 def mock_config_entry(mock_coordinator) -> MagicMock:
     """Mock Config Entry."""
     entry = MagicMock(spec=ConfigEntry)
+    entry.options = {}
     entry.entry_id = ENTRY_ID
     entry.runtime_data = MagicMock()
     entry.runtime_data = mock_coordinator
@@ -88,13 +111,13 @@ async def test_async_steps_no_coordinator(
     # Use a real handler with None entry
     handler_no_entry = PlantConfigHandler(mock_hass, None)
     handler_no_entry.flow = handler.flow
-    handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
+    handler.flow.async_abort = MagicMock(return_value=FlowResultType.ABORT)
 
-    assert await handler_no_entry.async_step_manage_plants() == {"type": "abort"}
-    assert await handler_no_entry.async_step_add_plant() == {"type": "abort"}
+    assert await handler_no_entry.async_step_manage_plants() == FlowResultType.ABORT
+    assert await handler_no_entry.async_step_add_plant() == FlowResultType.ABORT
     # update_plant checks coordinator after checking plant existence
     # but it checks config_entry first.
-    assert await handler_no_entry.async_step_update_plant() == {"type": "abort"}
+    assert await handler_no_entry.async_step_update_plant() == FlowResultType.ABORT
 
 
 def test_initialization(
@@ -112,17 +135,16 @@ def test_get_plant_management_schema(
     schema = handler.get_plant_management_schema(mock_coordinator)
     assert isinstance(schema, vol.Schema)
     # Trigger line 80 or similar
-    handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
-    # No, wait, I'll just add a test that triggers the missing line.
+    handler.flow.async_show_form = MagicMock(return_value=FlowResultType.FORM)
 
 
 async def test_async_harvest_plant(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
 ) -> None:
     """Test harvesting a plant."""
-    await handler.async_harvest_plant(GROWSPACE_ID, "plant_1", 100.5)
-    mock_coordinator.async_harvest_plant.assert_awaited_once_with(
-        GROWSPACE_ID, "plant_1", 100.5
+    await handler.async_harvest_plant("plant_1", 100.5)
+    mock_coordinator.services.plants.transition_plant.assert_awaited_once_with(
+        "plant_1", wet_weight=100.5
     )
 
 
@@ -130,8 +152,8 @@ async def test_async_destroy_plant(
     handler: PlantConfigHandler, mock_coordinator: MagicMock
 ) -> None:
     """Test destroying a plant."""
-    await handler.async_destroy_plant(GROWSPACE_ID, "plant_1")
-    mock_coordinator.async_remove_plant.assert_awaited_once_with("plant_1")
+    await handler.async_destroy_plant("plant_1")
+    mock_coordinator.services.plants.remove_plant.assert_awaited_once_with("plant_1")
 
 
 async def test_async_add_plant(
@@ -147,7 +169,7 @@ async def test_async_add_plant(
         veg_start="2023-01-01",
         flower_start="2023-02-01",
     )
-    mock_coordinator.async_add_plant.assert_awaited_once_with(
+    mock_coordinator.services.plants.add_plant.assert_awaited_once_with(
         growspace_id=GROWSPACE_ID,
         strain="Strain A",
         row=1,
@@ -163,7 +185,7 @@ async def test_async_update_plant(
 ) -> None:
     """Test updating a plant."""
     await handler.async_update_plant("plant_1", strain="New Strain")
-    mock_coordinator.async_update_plant.assert_awaited_once_with(
+    mock_coordinator.services.plants.update_plant.assert_awaited_once_with(
         "plant_1", strain="New Strain"
     )
 
@@ -192,7 +214,7 @@ def test_get_add_plant_schema(
     # With coordinator (strains available)
     schema = handler.get_add_plant_schema(growspace, mock_coordinator)
     assert isinstance(schema, vol.Schema)
-    mock_coordinator.get_strain_options.assert_called_once()
+    mock_coordinator.services.config.get_strain_options.assert_called_once()
 
     # Without coordinator
     schema_no_coord = handler.get_add_plant_schema(growspace)
@@ -213,7 +235,7 @@ def test_get_update_plant_schema(
 
     schema = handler.get_update_plant_schema(plant, mock_coordinator)
     assert isinstance(schema, vol.Schema)
-    mock_coordinator.get_strain_options.assert_called()
+    mock_coordinator.services.config.get_strain_options.assert_called()
 
 
 @pytest.mark.asyncio
@@ -223,7 +245,7 @@ async def test_error_aborts(
     """Test aborts when config context is missing."""
     mock_flow = MagicMock()
     mock_flow.async_abort = MagicMock(
-        side_effect=lambda reason: {"type": "abort", "reason": reason}
+        side_effect=lambda reason: {"type": FlowResultType.ABORT, "reason": reason}
     )
     handler.flow = mock_flow
 
@@ -255,9 +277,9 @@ async def test_helper_value_errors(
     # Test None config_entry
     handler.config_entry = None
     with pytest.raises(ValueError, match="Coordinator not found"):
-        await handler.async_harvest_plant("gs1", "p1", 1.0)
+        await handler.async_harvest_plant("p1", 1.0)
     with pytest.raises(ValueError, match="Coordinator not found"):
-        await handler.async_destroy_plant("gs1", "p1")
+        await handler.async_destroy_plant("p1")
     with pytest.raises(ValueError, match="Coordinator not found"):
         await handler.async_add_plant("gs1", "s1", 1, 1)
     with pytest.raises(ValueError, match="Coordinator not found"):
@@ -282,21 +304,23 @@ async def test_async_step_manage_plants_actions(
 
     # Action: add
     with patch.object(
-        handler, "async_step_select_growspace_for_plant", return_value={"type": "form"}
+        handler,
+        "async_step_select_growspace_for_plant",
+        return_value=FlowResultType.FORM,
     ) as mock_step:
         await handler.async_step_manage_plants({"action": "add"})
         mock_step.assert_called_once()
 
     # Action: update
     with patch.object(
-        handler, "async_step_update_plant", return_value={"type": "form"}
+        handler, "async_step_update_plant", return_value=FlowResultType.FORM
     ) as mock_step:
         await handler.async_step_manage_plants({"action": "update", "plant_id": "p1"})
         assert handler.flow.selected_plant_id == "p1"
         mock_step.assert_called_once()
 
     # Action: back
-    mock_flow.async_step_init = AsyncMock(return_value={"type": "form"})
+    mock_flow.async_step_init = AsyncMock(return_value=FlowResultType.FORM)
     await handler.async_step_manage_plants({"action": "back"})
     mock_flow.async_step_init.assert_called_once()
 
@@ -307,7 +331,7 @@ async def test_async_step_manage_plants_actions(
         handler, "async_destroy_plant", new_callable=AsyncMock
     ) as mock_destroy:
         await handler.async_step_manage_plants({"action": "remove", "plant_id": "p1"})
-        mock_destroy.assert_called_once_with("gs1", "p1")
+        mock_destroy.assert_called_once_with("p1")
 
 
 @pytest.mark.asyncio
@@ -319,7 +343,7 @@ async def test_async_step_select_growspace_for_plant(
     handler.flow = mock_flow
 
     with patch.object(
-        handler, "async_step_add_plant", return_value={"type": "form"}
+        handler, "async_step_add_plant", return_value=FlowResultType.FORM
     ) as mock_step:
         await handler.async_step_select_growspace_for_plant({"growspace_id": "gs1"})
         assert handler.flow.selected_growspace_id == "gs1"
@@ -332,7 +356,9 @@ async def test_async_step_add_plant_success(
 ) -> None:
     """Test add plant step success."""
     mock_flow = MagicMock()
-    mock_flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+    mock_flow.async_create_entry = MagicMock(
+        side_effect=lambda title, data: {"type": FlowResultType.CREATE_ENTRY, "title": title, "data": data}
+    )
     handler.flow = mock_flow
     handler.flow.selected_growspace_id = "gs1"
 
@@ -345,10 +371,9 @@ async def test_async_step_add_plant_success(
         "flower_start": "2023-02-01",
     }
 
-    with patch.object(handler, "async_add_plant", new_callable=AsyncMock) as mock_add:
-        result = await handler.async_step_add_plant(user_input)
-        assert result["type"] == "create_entry"
-        mock_add.assert_called_once()
+    result = await handler.async_step_add_plant(user_input)
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    mock_coordinator.services.plants.add_plant.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -357,7 +382,9 @@ async def test_async_step_update_plant_success(
 ) -> None:
     """Test update plant step success."""
     mock_flow = MagicMock()
-    mock_flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+    mock_flow.async_create_entry = MagicMock(
+        side_effect=lambda title, data: {"type": FlowResultType.CREATE_ENTRY, "title": title, "data": data}
+    )
     handler.flow = mock_flow
     handler.flow.selected_plant_id = "p1"
 
@@ -370,7 +397,7 @@ async def test_async_step_update_plant_success(
         handler, "async_update_plant", new_callable=AsyncMock
     ) as mock_update:
         result = await handler.async_step_update_plant(user_input)
-        assert result["type"] == "create_entry"
+        assert result["type"] == FlowResultType.CREATE_ENTRY
         mock_update.assert_called_once()
 
 
@@ -381,17 +408,15 @@ async def test_async_step_add_plant_error(
     """Test add plant step error path."""
     mock_flow = MagicMock()
     mock_flow.async_show_form = MagicMock(
-        side_effect=lambda **kwargs: {"type": "form", **kwargs}
+        side_effect=lambda **kwargs: {"type": FlowResultType.FORM, **kwargs}
     )
     handler.flow = mock_flow
     handler.flow.selected_growspace_id = "gs1"
 
-    with patch.object(handler, "async_add_plant", side_effect=Exception("Failed")):
-        result = await handler.async_step_add_plant(
-            {"strain": "S1", "row": 1, "col": 1}
-        )
-        assert result["type"] == "form"
-        assert result["errors"] == {"base": "Failed"}
+    mock_coordinator.services.plants.add_plant.side_effect = Exception("Failed")
+    result = await handler.async_step_add_plant({"strain": "S1", "row": 1, "col": 1})
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "add_failed"}
 
 
 @pytest.mark.asyncio
@@ -401,10 +426,10 @@ async def test_async_step_update_plant_errors(
     """Test update plant step error paths."""
     mock_flow = MagicMock()
     mock_flow.async_abort = MagicMock(
-        side_effect=lambda reason: {"type": "abort", "reason": reason}
+        side_effect=lambda reason: {"type": FlowResultType.ABORT, "reason": reason}
     )
     mock_flow.async_show_form = MagicMock(
-        side_effect=lambda **kwargs: {"type": "form", **kwargs}
+        side_effect=lambda **kwargs: {"type": FlowResultType.FORM, **kwargs}
     )
     handler.flow = mock_flow
 
@@ -412,7 +437,7 @@ async def test_async_step_update_plant_errors(
     handler.flow.selected_plant_id = "missing"
     mock_coordinator.plants = {}
     result = await handler.async_step_update_plant()
-    assert result["type"] == "abort"
+    assert result["type"] == FlowResultType.ABORT
     assert result["reason"] == "plant_not_found"
 
     # CASE: Update failure
@@ -421,8 +446,8 @@ async def test_async_step_update_plant_errors(
     handler.flow.selected_plant_id = "p1"
     with patch.object(handler, "async_update_plant", side_effect=Exception("Failed")):
         result = await handler.async_step_update_plant({"strain": "New"})
-        assert result["type"] == "form"
-        assert result["errors"] == {"base": "Failed"}
+        assert result["type"] == FlowResultType.FORM
+        assert result["errors"] == {"base": "update_failed"}
 
 
 @pytest.mark.asyncio
@@ -450,7 +475,7 @@ async def test_async_step_manage_plants_remove_error(
     """Test error during plant removal action."""
     mock_flow = MagicMock()
     mock_flow.async_show_form = MagicMock(
-        side_effect=lambda **kwargs: {"type": "form", **kwargs}
+        side_effect=lambda **kwargs: {"type": FlowResultType.FORM, **kwargs}
     )
     handler.flow = mock_flow
 
@@ -461,7 +486,7 @@ async def test_async_step_manage_plants_remove_error(
         result = await handler.async_step_manage_plants(
             {"action": "remove", "plant_id": "p1"}
         )
-        assert result["type"] == "form"
+        assert result["type"] == FlowResultType.FORM
         assert result["errors"] == {"base": "remove_failed"}
 
 
@@ -472,7 +497,7 @@ async def test_initial_step_forms(
     """Test initial form display for various steps."""
     mock_flow = MagicMock()
     mock_flow.async_show_form = MagicMock(
-        side_effect=lambda **kwargs: {"type": "form", **kwargs}
+        side_effect=lambda **kwargs: {"type": FlowResultType.FORM, **kwargs}
     )
     handler.flow = mock_flow
 

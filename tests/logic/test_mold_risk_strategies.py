@@ -17,10 +17,25 @@ def mock_sensor():
     return measure_type
 
 
+def _make_mold_strategy(mock_sensor: MagicMock) -> MoldRiskEvaluatorStrategy:
+    """Create a MoldRiskEvaluatorStrategy with injected test dependencies."""
+    from unittest.mock import AsyncMock
+
+    mock_growspace = MagicMock()
+    mock_growspace.name = "Test Growspace"
+    return MoldRiskEvaluatorStrategy(
+        env_config=mock_sensor.env_config,
+        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        get_state=MagicMock(return_value=None),
+        get_growspace=MagicMock(return_value=mock_growspace),
+        get_notification_message=MagicMock(return_value="msg"),
+    )
+
+
 @pytest.mark.asyncio
 async def test_mold_risk_humidity_none(mock_sensor) -> None:
     """Test early return when humidity is None."""
-    strategy = MoldRiskEvaluatorStrategy(mock_sensor)
+    strategy = _make_mold_strategy(mock_sensor)
     state = MagicMock(spec=EnvironmentState)
     state.humidity = None
 
@@ -32,13 +47,16 @@ async def test_mold_risk_humidity_none(mock_sensor) -> None:
 @pytest.mark.asyncio
 async def test_evaluate_humidity_risk_branches(mock_sensor) -> None:
     """Test specific branches in _evaluate_humidity_risk."""
-    strategy = MoldRiskEvaluatorStrategy(mock_sensor)
+    strategy = _make_mold_strategy(mock_sensor)
     state = MagicMock(spec=EnvironmentState)
     state.humidity = 87.0
-    state.seedling_days = 0
-    state.clone_days = 0
-    state.veg_days = 0
+    state.seedling_days = -1
+    state.clone_days = -1
+    state.veg_days = -1
     state.flower_days = 43  # Late flower
+    state.dry_days = -1
+    state.cure_days = -1
+    state.mother_days = -1
 
     # Late flower critical humidity is 65.0, high is 60.0
     # 87.0 is way above critical
@@ -47,7 +65,8 @@ async def test_evaluate_humidity_risk_branches(mock_sensor) -> None:
     # but we need to hit specific stage branches.
 
     # Test explicit "Veg" branch with high humidity but not extreme
-    state.flower_days = 0
+    state.flower_days = -1
+    state.veg_days = 10  # must be non-empty to evaluate veg thresholds
     state.humidity = 82.0  # High > 80, Critical > 85
     # Should hit "High humidity" branch
     obs_list = []
@@ -60,18 +79,21 @@ async def test_evaluate_humidity_risk_branches(mock_sensor) -> None:
 @pytest.mark.asyncio
 async def test_evaluate_circulation_risk_branches(mock_sensor) -> None:
     """Test circulation risk thresholds."""
-    strategy = MoldRiskEvaluatorStrategy(mock_sensor)
+    strategy = _make_mold_strategy(mock_sensor)
     state = MagicMock(spec=EnvironmentState)
     state.fan_off = True
     # Initialize all stage attributes to integers to avoid MagicMock comparison errors
-    state.seedling_days = 0
-    state.clone_days = 0
-    state.veg_days = 0
-    state.flower_days = 0
+    state.seedling_days = -1
+    state.clone_days = -1
+    state.veg_days = -1
+    state.flower_days = -1
+    state.dry_days = -1
+    state.cure_days = -1
+    state.mother_days = -1
 
     # 1. Early stage threshold (Acclimation: 100.0)
     state.seedling_days = 1
-    state.flower_days = 0
+    state.flower_days = -1
     state.humidity = 95.0  # Below 100
     obs = []
     reasons = []
@@ -83,8 +105,9 @@ async def test_evaluate_circulation_risk_branches(mock_sensor) -> None:
     assert len(obs) == 1
 
     # 2. Veg threshold (80.0)
-    state.seedling_days = 0
-    state.flower_days = 0
+    state.seedling_days = -1
+    state.flower_days = -1
+    state.veg_days = 10  # must be non-empty to evaluate veg thresholds
     state.humidity = 79.0
     obs = []
     strategy._evaluate_circulation_risk(state, obs, [])
@@ -98,26 +121,29 @@ async def test_evaluate_circulation_risk_branches(mock_sensor) -> None:
 @pytest.mark.asyncio
 async def test_evaluate_humidifier_risk_branches(mock_sensor) -> None:
     """Test humidifier risk logic branches."""
-    strategy = MoldRiskEvaluatorStrategy(mock_sensor)
+    strategy = _make_mold_strategy(mock_sensor)
     state = MagicMock(spec=EnvironmentState)
     state.humidifier_on = True
     # Initialize all stage attributes to integers
-    state.seedling_days = 0
-    state.clone_days = 0
-    state.veg_days = 0
-    state.flower_days = 0
+    state.seedling_days = -1
+    state.clone_days = -1
+    state.veg_days = -1
+    state.flower_days = -1
+    state.dry_days = -1
+    state.cure_days = -1
+    state.mother_days = -1
 
     # 1. Early stage safe zone (< 90)
     state.seedling_days = 1
-    state.flower_days = 0
+    state.flower_days = -1
     state.humidity = 89.0
     obs = []
     strategy._evaluate_humidifier_risk(state, obs, [])
     assert len(obs) == 0
 
     # 2. Veg safe zone (< 85)
-    state.seedling_days = 0
-    state.flower_days = 0
+    state.seedling_days = -1
+    state.flower_days = -1
     state.humidity = 84.0
     obs = []
     strategy._evaluate_humidifier_risk(state, obs, [])
@@ -141,16 +167,23 @@ async def test_evaluate_humidifier_risk_branches(mock_sensor) -> None:
 @pytest.mark.asyncio
 async def test_notification_title_generation(mock_sensor) -> None:
     """Test notification title generation."""
-    strategy = MoldRiskEvaluatorStrategy(mock_sensor)
-    mock_sensor.coordinator.growspaces = {"gs1": MagicMock(name="GTent")}
-    mock_sensor.growspace_id = "gs1"
-    mock_sensor.generate_notification_message.return_value = "msg"
+    mock_growspace = MagicMock()
+    mock_growspace.name = "GTent"
+    from unittest.mock import AsyncMock
+
+    strategy = MoldRiskEvaluatorStrategy(
+        env_config=mock_sensor.env_config,
+        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        get_state=MagicMock(return_value=None),
+        get_growspace=lambda: mock_growspace,
+        get_notification_message=MagicMock(return_value="msg"),
+    )
 
     # Rising edge
-    title_msg = strategy.get_notification_title_message(True)
+    title_msg = strategy.get_notification_title_message(True, [])
     assert title_msg is not None
     assert "High Mold Risk" in title_msg[0]
 
     # Falling edge (None)
-    title_msg = strategy.get_notification_title_message(False)
+    title_msg = strategy.get_notification_title_message(False, [])
     assert title_msg is None

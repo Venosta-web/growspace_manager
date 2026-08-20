@@ -1,14 +1,15 @@
 """Test the Growspace Manager WebSocket API."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import json
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.exceptions import CoordinatorNotReadyError
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.websocket import (
     _EPOCH_SENTINEL,
@@ -30,10 +31,22 @@ from custom_components.growspace_manager.websocket import (
     _merge_logbook_event,
     async_register_websocket_api,
 )
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from tests.common import MockConfigEntry
 
 WebSocketGenerator = Any
+
+
+@pytest.fixture(autouse=True)
+def _any_coordinator_available():
+    """resolve="any" commands need a loaded coordinator under the lifecycle."""
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator.get_any",
+        return_value=MagicMock(),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -51,7 +64,23 @@ def mock_strain_library():
 def mock_coordinator():
     """Mock coordinator."""
     coord = MagicMock()
-    coord.get_growspace_data.return_value = {"id": "gs1", "name": "Growspace 1"}
+    # Correctly mock services.get_growspace_data to return serializable data
+    coord.services = MagicMock()
+    coord.services.growspaces.get_growspace_data.return_value = {
+        "id": "gs1",
+        "name": "Growspace 1",
+    }
+
+    # WebSocket handlers await these service calls
+    coord.services.add_timeline_note = AsyncMock()
+    coord.services.growspaces.add_subarea = AsyncMock()
+    coord.services.growspaces.update_subarea = AsyncMock()
+    coord.services.growspaces.remove_subarea = AsyncMock()
+
+    # Coordinator level awaitables
+    coord.async_commit = AsyncMock()
+    coord.async_request_refresh = AsyncMock()
+
     return coord
 
 
@@ -59,19 +88,32 @@ async def test_websocket_get_strain_library(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator, mock_strain_library
 ) -> None:
     """Test getting strain library via WebSocket."""
-    hass.data[DOMAIN] = {"strain_library": mock_strain_library}
+    # Setup mock entry and coordinator to replace legacy direct hass.data access
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={}, options={}, state=ConfigEntryState.LOADED
+    )
+    entry.add_to_hass(hass)
+
+    mock_coord = MagicMock()
+    mock_coord._strain_library = mock_strain_library
+    mock_coord.services.config.strain_library = mock_strain_library
+    entry.runtime_data = mock_coord
 
     async_register_websocket_api(hass)
     client = await hass_ws_client(hass)
 
-    await client.send_json(
-        {
-            "id": 1,
-            "type": WS_TYPE_GET_STRAIN_LIBRARY,
-        }
-    )
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator.get_any",
+        return_value=mock_coord,
+    ):
+        await client.send_json(
+            {
+                "id": 1,
+                "type": WS_TYPE_GET_STRAIN_LIBRARY,
+            }
+        )
 
-    response = await client.receive_json()
+        response = await client.receive_json()
     assert response["success"]
     assert len(response["result"]["strains"]) == 2
     assert "Strain A" in response["result"]["strain_list"]
@@ -81,23 +123,25 @@ async def test_websocket_get_strain_library_not_loaded(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator
 ) -> None:
     """Test getting strain library when not loaded."""
-    # Ensure DOMAIN not in hass.data or strain_library missing
-    if DOMAIN in hass.data:
-        del hass.data[DOMAIN]
-
     async_register_websocket_api(hass)
     client = await hass_ws_client(hass)
 
-    await client.send_json(
-        {
-            "id": 1,
-            "type": WS_TYPE_GET_STRAIN_LIBRARY,
-        }
-    )
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator.get_any",
+        side_effect=CoordinatorNotReadyError(
+            "No Growspace Manager instance is currently loaded."
+        ),
+    ):
+        await client.send_json(
+            {
+                "id": 1,
+                "type": WS_TYPE_GET_STRAIN_LIBRARY,
+            }
+        )
 
-    response = await client.receive_json()
+        response = await client.receive_json()
     assert not response["success"]
-    assert response["error"]["code"] == "not_loaded"
+    assert response["error"]["code"] == "coordinator_not_ready"
 
 
 async def test_websocket_get_growspace_data(
@@ -142,7 +186,7 @@ async def test_websocket_get_growspace_data_error(
 
         response = await client.receive_json()
         assert not response["success"]
-        assert response["error"]["code"] == "unknown_error"
+        assert response["error"]["code"] == "internal_error"
 
 
 async def test_websocket_get_event_log(
@@ -154,7 +198,7 @@ async def test_websocket_get_event_log(
 
     # Mock recorder query
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.logbook.get_instance"
     ) as mock_recorder:
         mock_instance = MagicMock()
         mock_recorder.return_value = mock_instance
@@ -184,10 +228,10 @@ async def test_websocket_get_alerts(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -239,10 +283,10 @@ async def test_websocket_get_log_filters_spam(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -295,7 +339,7 @@ async def test_websocket_get_history_stats(
 
     # Test fallback to binary search (short interval)
     with patch(
-        "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample",
+        "custom_components.growspace_manager.websocket.environment._get_history_with_binary_search_downsample",
         return_value={"sensor.test": [{"s": "10", "lu": "time"}]},
     ):
         await client.send_json(
@@ -314,7 +358,7 @@ async def test_websocket_get_history_stats(
 
     # Test statistics API (long interval)
     with patch(
-        "custom_components.growspace_manager.websocket._get_statistics_data",
+        "custom_components.growspace_manager.websocket.environment._get_statistics_data",
         return_value={"sensor.test": [{"s": "10", "lu": "time"}]},
     ):
         await client.send_json(
@@ -426,7 +470,7 @@ async def test_websocket_get_presets(
     nutrient_presets_data = {"p1": {"name": "Nutrient Preset"}}
     ipm_presets_data = {"i1": {"name": "IPM Preset"}}
 
-    mock_coordinator.nutrient_manager.get_serialization_data.return_value = {
+    mock_coordinator.services.config.get_nutrient_serialization_data.return_value = {
         "nutrient_presets": nutrient_presets_data,
         "ipm_presets": ipm_presets_data,
     }
@@ -462,9 +506,6 @@ async def test_websocket_timeline_notes(
             "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
             return_value=mock_coordinator,
         ),
-        patch(
-            "custom_components.growspace_manager.websocket.async_add_timeline_note"
-        ) as mock_add,
     ):
         async_register_websocket_api(hass)
         client = await hass_ws_client(hass)
@@ -479,7 +520,7 @@ async def test_websocket_timeline_notes(
         )
         response = await client.receive_json()
         assert response["success"]
-        mock_add.assert_called_once()
+        mock_coordinator.services.add_timeline_note.assert_called_once()
 
 
 async def test_websocket_remove_timeline_event(
@@ -491,10 +532,10 @@ async def test_websocket_remove_timeline_event(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.timeline.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.timeline.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -525,10 +566,10 @@ async def test_websocket_get_event_log_internals(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -585,7 +626,7 @@ async def test_websocket_get_history_stats_long_interval(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats"
+        "custom_components.growspace_manager.websocket.environment.recorder_stats"
     ) as mock_stats_module:
 
         async def mock_async_stats(*args, **kwargs):
@@ -630,7 +671,7 @@ async def test_websocket_get_history_stats_day_interval(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats"
+        "custom_components.growspace_manager.websocket.environment.recorder_stats"
     ) as mock_stats_module:
 
         async def mock_async_stats(*args, **kwargs):
@@ -664,10 +705,10 @@ async def test_websocket_get_history_stats_fallback(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats"
+            "custom_components.growspace_manager.websocket.environment.recorder_stats"
         ) as mock_stats_module,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_recorder,
     ):
         # Stats API raises exception
@@ -715,7 +756,7 @@ async def test_websocket_get_event_log_no_growspace_id(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.logbook.get_instance"
     ) as mock_recorder:
 
         async def mock_executor(func, *args, **kwargs):
@@ -752,7 +793,7 @@ async def test_websocket_get_history_stats_short_interval(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.environment.get_instance"
     ) as mock_recorder:
         # Mock history data extraction
         state1 = MagicMock()
@@ -812,7 +853,32 @@ async def test_websocket_get_growspace_data_validation_error(
 
         response = await client.receive_json()
         assert not response["success"]
-        assert response["error"]["code"] == "invalid_args"
+        assert response["error"]["code"] == "validation_failed"
+
+
+async def test_websocket_get_vision_history_validation_error(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Test getting vision history with validation error (not loaded)."""
+
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+        side_effect=ServiceValidationError("Integration not loaded"),
+    ):
+        async_register_websocket_api(hass)
+        client = await hass_ws_client(hass)
+
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "growspace_manager/get_vision_history",
+                "growspace_id": "tent1",
+            }
+        )
+
+        response = await client.receive_json()
+        assert not response["success"]
+        assert response["error"]["code"] == "validation_failed"
 
 
 async def test_websocket_get_event_log_internals_no_type(
@@ -824,10 +890,10 @@ async def test_websocket_get_event_log_internals_no_type(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -857,10 +923,10 @@ async def test_websocket_get_event_log_bad_date_merge(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -925,7 +991,7 @@ async def test_websocket_get_history_stats_fallback_empty(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.environment.get_instance"
     ) as mock_recorder:
         # History Mock returns empty list for entity
         async def mock_history_executor(func, *args, **kwargs):
@@ -961,10 +1027,10 @@ async def test_websocket_get_event_log_filtering(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()
@@ -985,7 +1051,9 @@ async def test_websocket_get_event_log_filtering(
         # 3. Valid Row
         evt3 = MagicMock(time_fired_ts=800, event_id=3)
         data3 = MagicMock(
-            shared_data=json.dumps({"growspace_id": "gs1", "category": "normal"})
+            shared_data=json.dumps(
+                {"growspace_id": "gs1", "category": "normal", "sensor_type": "moisture"}
+            )
         )
 
         # Mock query chain - account for SQL filtering
@@ -1017,7 +1085,7 @@ async def test_websocket_get_history_stats_sentinel(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.environment.get_instance"
     ) as mock_recorder:
         # State with None last_updated (triggers sentinel)
         state1 = MagicMock()
@@ -1049,10 +1117,10 @@ async def test_websocket_get_history_stats_sentinel(
             )
             response = await client.receive_json()
         assert response["success"]
-        # state1 should be skipped (at 12:00)
-        # 12:00 skipped. 12:05 to 13:00 (inclusive) = 12 points
-        assert len(response["result"]["sensor.test"]) == 12
-        assert response["result"]["sensor.test"][0]["lu"] == "2023-01-01T12:05:00+00:00"
+        # Sparse path (2 states <= 200): sentinel state is skipped, valid state preserved
+        # with its original timestamp unchanged
+        assert len(response["result"]["sensor.test"]) == 1
+        assert response["result"]["sensor.test"][0]["lu"] == "2023-01-01T12:04:00+00:00"
         assert response["result"]["sensor.test"][0]["s"] == "11"
 
 
@@ -1064,7 +1132,7 @@ async def test_websocket_get_event_log_limits(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.logbook.get_instance"
     ) as mock_recorder:
         # With SQL-level filtering, spam events don't reach Python
         # Test that we correctly return limited results and handle bad JSON
@@ -1077,7 +1145,11 @@ async def test_websocket_get_event_log_limits(
                     MagicMock(time_fired_ts=3000 + i, event_id=i),
                     MagicMock(
                         shared_data=json.dumps(
-                            {"growspace_id": "gs1", "category": "normal"}
+                            {
+                                "growspace_id": "gs1",
+                                "category": "normal",
+                                "sensor_type": "moisture",
+                            }
                         )
                     ),
                 )
@@ -1102,7 +1174,7 @@ async def test_websocket_get_event_log_limits(
         async def mock_executor(func, *args, **kwargs):
             # Mock the internal query manually
             with patch(
-                "custom_components.growspace_manager.websocket.session_scope"
+                "custom_components.growspace_manager.websocket.logbook.session_scope"
             ) as mock_scope:
                 mock_session = MagicMock()
                 mock_scope.return_value.__enter__.return_value = mock_session
@@ -1133,49 +1205,23 @@ async def test_websocket_get_event_log_limits(
 async def test_websocket_nutrient_inventory_service_not_ready(
     hass: HomeAssistant, hass_ws_client: WebSocketGenerator, mock_coordinator
 ) -> None:
-    """Test nutrient inventory when service is not initialized."""
-    # Remove service from coordinator to simulate not initialized
-    # Use explicit deletion if the property is set, or set to None
-    mock_coordinator.nutrient_inventory_service = None
+    """Test nutrient inventory returns empty stocks when inventory facade returns None."""
+    # Route all inventory calls through the facade, with no inventory configured
+    mock_coordinator.services.config.get_inventory.return_value = None
 
     hass.data[DOMAIN] = {"coordinator": mock_coordinator}
     async_register_websocket_api(hass)
     client = await hass_ws_client(hass)
 
-    # We must patch get_for_service_call to return our modified mock_coordinator
-    # otherwise it tries to run real logic and fails validation
     with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
         return_value=mock_coordinator,
     ):
-        # 1. Get Inventory - returns empty
+        # Get Inventory returns empty stocks when facade returns None
         await client.send_json({"id": 1, "type": WS_TYPE_GET_NUTRIENT_INVENTORY})
         response = await client.receive_json()
         assert response["success"]
         assert response["result"]["stocks"] == {}
-
-        # 2. Update Stock - returns error
-        await client.send_json(
-            {
-                "id": 2,
-                "type": WS_TYPE_UPDATE_NUTRIENT_STOCK,
-                "nutrient_id": "n1",
-                "name": "N1",
-                "current_ml": 10,
-                "initial_ml": 20,
-            }
-        )
-        response = await client.receive_json()
-        assert not response["success"]
-        assert response["error"]["code"] == "not_initialized"
-
-        # 3. Remove Stock - returns error
-        await client.send_json(
-            {"id": 3, "type": WS_TYPE_REMOVE_NUTRIENT_STOCK, "nutrient_id": "n1"}
-        )
-        response = await client.receive_json()
-        assert not response["success"]
-        assert response["error"]["code"] == "not_initialized"
 
 
 async def test_websocket_exceptions(
@@ -1186,9 +1232,15 @@ async def test_websocket_exceptions(
     client = await hass_ws_client(hass)
 
     # Mock coordinator raising exception
-    with patch(
-        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("Boom"),
+    with (
+        patch(
+            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_for_service_call",
+            side_effect=Exception("Boom"),
+        ),
+        patch(
+            "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+            side_effect=Exception("Boom"),
+        ),
     ):
         commands = [
             {"id": 1, "type": WS_TYPE_GET_NUTRIENT_INVENTORY},
@@ -1209,31 +1261,43 @@ async def test_websocket_exceptions(
                 ATTR_PLANT_ID: "p1",
                 ATTR_NOTES: "n",
             },
-            {"id": 7, "type": WS_TYPE_GET_DATA, "growspace_id": "g1"},
         ]
 
         for cmd in commands:
             await client.send_json(cmd)
             resp = await client.receive_json()
             assert not resp["success"]
-            assert resp["error"]["code"] == "unknown_error"
+            assert resp["error"]["code"] == "internal_error"
+
+        # get_data uses typed error codes
+        await client.send_json(
+            {"id": 7, "type": WS_TYPE_GET_DATA, "growspace_id": "g1"}
+        )
+        resp = await client.receive_json()
+        assert not resp["success"]
+        assert resp["error"]["code"] == "internal_error"
 
     # Strain library exception
     # Create a mock library instance that raises on get_all
     mock_lib = MagicMock()
     mock_lib.get_all.side_effect = Exception("Lib Boom")
 
-    # Inject it into hass.data
-    hass.data[DOMAIN] = {}
-    with patch.dict(hass.data, {DOMAIN: {"strain_library": mock_lib}}):
+    # Inject it via a mock coordinator
+    mock_coord = MagicMock()
+    mock_coord._strain_library = mock_lib
+    mock_coord.services.config.strain_library = mock_lib
+    with patch(
+        "custom_components.growspace_manager.websocket.GrowspaceCoordinator.get_any",
+        return_value=mock_coord,
+    ):
         await client.send_json({"id": 8, "type": WS_TYPE_GET_STRAIN_LIBRARY})
         resp = await client.receive_json()
         assert not resp["success"]
-        assert resp["error"]["code"] == "unknown_error"
+        assert resp["error"]["code"] == "internal_error"
 
     # History Stats exception
     with patch(
-        "custom_components.growspace_manager.websocket._get_statistics_data",
+        "custom_components.growspace_manager.websocket.environment._get_statistics_data",
         side_effect=Exception("Stats Boom"),
     ):
         await client.send_json(
@@ -1247,7 +1311,7 @@ async def test_websocket_exceptions(
         )
         resp = await client.receive_json()
         assert not resp["success"]
-        assert resp["error"]["code"] == "unknown_error"
+        assert resp["error"]["code"] == "internal_error"
 
 
 async def test_websocket_history_stats_missing_start(
@@ -1269,7 +1333,7 @@ async def test_websocket_history_stats_missing_start(
     )
     resp = await client.receive_json()
     assert not resp["success"]
-    assert resp["error"]["code"] == "invalid_args"
+    assert resp["error"]["code"] == "validation_failed"
 
 
 async def test_websocket_statistics_edge_cases(
@@ -1280,7 +1344,7 @@ async def test_websocket_statistics_edge_cases(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.recorder_stats"
+        "custom_components.growspace_manager.websocket.environment.recorder_stats"
     ) as mock_stats_module:
         # 1. Interval too small (<60) - returns None (which triggers fallback in caller, but we want to cover the line)
         # We can call the internal function directly or rely on the fallback logic triggering binary search
@@ -1344,7 +1408,7 @@ async def test_websocket_downsample_dict_state(
     client = await hass_ws_client(hass)
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.environment.get_instance"
     ) as mock_recorder:
         state_dict = {"last_updated": "2023-01-01T12:00:00+00:00", "state": "25"}
 
@@ -1369,3 +1433,169 @@ async def test_websocket_downsample_dict_state(
             resp = await client.receive_json()
             assert resp["success"]
             assert resp["result"]["sensor.test"][0]["s"] == "25"
+
+
+async def test_sparse_entity_passthrough_returns_all_transitions(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Sparse entities (<=200 changes) return every valid transition unsampled."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with patch(
+        "custom_components.growspace_manager.websocket.environment.get_instance"
+    ) as mock_recorder:
+        sparse_states = [
+            {"last_updated": "2023-01-01T10:00:00+00:00", "state": "on"},
+            {"last_updated": "2023-01-01T10:08:00+00:00", "state": "off"},
+            {"last_updated": "2023-01-01T10:45:00+00:00", "state": "on"},
+            {"last_updated": "2023-01-01T10:53:00+00:00", "state": "off"},
+        ]
+
+        async def mock_executor(func, *args, **kwargs):
+            if func.__name__ == "_get_history":
+                return {"switch.pump": sparse_states}
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        with patch("homeassistant.components.recorder.history.get_significant_states"):
+            await client.send_json(
+                {
+                    "id": 1,
+                    "type": WS_TYPE_GET_HISTORY_STATS,
+                    "entity_ids": ["switch.pump"],
+                    "start_time": "2023-01-01T10:00:00+00:00",
+                    "end_time": "2023-01-01T11:00:00+00:00",
+                    "interval_minutes": 30,
+                }
+            )
+            resp = await client.receive_json()
+            assert resp["success"]
+            result = resp["result"]["switch.pump"]
+            assert len(result) == 4
+            assert result[0]["s"] == "on"
+            assert result[1]["s"] == "off"
+            assert result[2]["s"] == "on"
+            assert result[3]["s"] == "off"
+            assert "2023-01-01T10:08:00" in result[1]["lu"]
+
+
+async def test_sparse_entity_passthrough_filters_invalid_states(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Sparse entity passthrough excludes unknown/unavailable states."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with patch(
+        "custom_components.growspace_manager.websocket.environment.get_instance"
+    ) as mock_recorder:
+        states_with_invalid = [
+            {"last_updated": "2023-01-01T10:00:00+00:00", "state": "unknown"},
+            {"last_updated": "2023-01-01T10:01:00+00:00", "state": "on"},
+            {"last_updated": "2023-01-01T10:05:00+00:00", "state": "unavailable"},
+            {"last_updated": "2023-01-01T10:10:00+00:00", "state": "off"},
+        ]
+
+        async def mock_executor(func, *args, **kwargs):
+            if func.__name__ == "_get_history":
+                return {"switch.pump": states_with_invalid}
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        with patch("homeassistant.components.recorder.history.get_significant_states"):
+            await client.send_json(
+                {
+                    "id": 2,
+                    "type": WS_TYPE_GET_HISTORY_STATS,
+                    "entity_ids": ["switch.pump"],
+                    "start_time": "2023-01-01T10:00:00+00:00",
+                    "end_time": "2023-01-01T11:00:00+00:00",
+                    "interval_minutes": 30,
+                }
+            )
+            resp = await client.receive_json()
+            assert resp["success"]
+            result = resp["result"]["switch.pump"]
+            assert len(result) == 2
+            assert result[0]["s"] == "on"
+            assert result[1]["s"] == "off"
+
+
+async def test_dense_entity_uses_downsampler(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Entities with >200 state changes continue using the binary-search downsampler."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with patch(
+        "custom_components.growspace_manager.websocket.environment.get_instance"
+    ) as mock_recorder:
+        base = datetime(2023, 1, 1, 0, 0, 0, tzinfo=UTC)
+        dense_states = [
+            {
+                "last_updated": (base + timedelta(minutes=i)).isoformat(),
+                "state": "22.0",
+            }
+            for i in range(201)
+        ]
+
+        async def mock_executor(func, *args, **kwargs):
+            if func.__name__ == "_get_history":
+                return {"sensor.temp": dense_states}
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        with patch("homeassistant.components.recorder.history.get_significant_states"):
+            await client.send_json(
+                {
+                    "id": 3,
+                    "type": WS_TYPE_GET_HISTORY_STATS,
+                    "entity_ids": ["sensor.temp"],
+                    "start_time": base.isoformat(),
+                    "end_time": (base + timedelta(minutes=200)).isoformat(),
+                    "interval_minutes": 30,
+                }
+            )
+            resp = await client.receive_json()
+            assert resp["success"]
+            result = resp["result"]["sensor.temp"]
+            assert len(result) < 201
+
+
+async def test_sparse_entity_empty_states_returns_empty(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Empty state list returns empty result regardless of threshold."""
+    async_register_websocket_api(hass)
+    client = await hass_ws_client(hass)
+
+    with patch(
+        "custom_components.growspace_manager.websocket.environment.get_instance"
+    ) as mock_recorder:
+
+        async def mock_executor(func, *args, **kwargs):
+            if func.__name__ == "_get_history":
+                return {"switch.pump": []}
+            return func()
+
+        mock_recorder.return_value.async_add_executor_job.side_effect = mock_executor
+
+        with patch("homeassistant.components.recorder.history.get_significant_states"):
+            await client.send_json(
+                {
+                    "id": 4,
+                    "type": WS_TYPE_GET_HISTORY_STATS,
+                    "entity_ids": ["switch.pump"],
+                    "start_time": "2023-01-01T10:00:00+00:00",
+                    "end_time": "2023-01-01T11:00:00+00:00",
+                    "interval_minutes": 30,
+                }
+            )
+            resp = await client.receive_json()
+            assert resp["success"]
+            assert resp["result"]["switch.pump"] == []

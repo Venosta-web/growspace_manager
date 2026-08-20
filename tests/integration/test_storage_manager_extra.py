@@ -4,10 +4,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.models import (
-    Growspace,
-    Plant,
-)
 from custom_components.growspace_manager.storage_manager import StorageManager
 from homeassistant.core import HomeAssistant
 
@@ -28,9 +24,15 @@ def nutrient_manager_mock():
 
 
 @pytest.fixture
-def storage(hass: HomeAssistant, repository_mock, nutrient_manager_mock):
+def genetics_manager_mock():
+    """Mock the GeneticsManager."""
+    return MagicMock()
+
+
+@pytest.fixture
+def storage(hass: HomeAssistant, repository_mock, nutrient_manager_mock, genetics_manager_mock):
     """Provide a StorageManager instance."""
-    return StorageManager(hass, repository_mock, nutrient_manager_mock)
+    return StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock)
 
 
 def test_load_plants_generic_exception(storage, repository_mock) -> None:

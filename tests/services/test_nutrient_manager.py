@@ -6,6 +6,8 @@ import pytest
 
 from custom_components.growspace_manager.managers.nutrient import NutrientManager
 from custom_components.growspace_manager.models import (
+    ECRampCurve,
+    ECRampPoint,
     IPMPreset,
     NutrientInventory,
     NutrientPreset,
@@ -16,7 +18,7 @@ from custom_components.growspace_manager.models import (
 def repository_mock():
     """Mock the GrowspaceRepository."""
     mock = MagicMock()
-    mock.plants = {}
+    mock.get_plant.return_value = None
     return mock
 
 
@@ -58,10 +60,22 @@ async def test_load_data(manager) -> None:
 
 
 @pytest.mark.asyncio
+async def test_load_data_with_ec_ramp_curves(manager) -> None:
+    """Test that ec_ramp_curves are loaded when provided."""
+    curves = {
+        "c1": ECRampCurve(id="c1", name="Curve 1", stage="veg", created_at="2024-01-01")
+    }
+
+    manager.load_data({}, {}, None, ec_ramp_curves=curves)
+
+    assert manager.ec_ramp_curves == curves
+
+
+@pytest.mark.asyncio
 async def test_save_nutrient_preset_new(manager, save_callback_mock) -> None:
     preset = await manager.async_save_nutrient_preset(
         name="New Preset",
-        nutrients=[{"name": "N1", "dose_ml_l": 2.0}],
+        nutrients=[{"nutrient_id": "id-n1", "dose_ml_l": 2.0}],
         stage="veg",
         min_days_in_stage=5,
     )
@@ -83,7 +97,7 @@ async def test_save_nutrient_preset_update(manager, save_callback_mock) -> None:
     await manager.async_save_nutrient_preset(
         preset_id="p1",
         name="New Name",
-        nutrients=[{"name": "N1", "dose_ml_l": 3.0}],
+        nutrients=[{"nutrient_id": "id-n1", "dose_ml_l": 3.0}],
         stage="flower",
     )
 
@@ -172,7 +186,7 @@ def test_get_applicable_presets(manager, repository_mock) -> None:
     plant.stage = "veg"
     plant.veg_start = "2024-01-01"
     plant.growspace_id = "gs1"
-    repository_mock.plants["plant1"] = plant
+    repository_mock.get_plant.return_value = plant
 
     # Setup presets
     # 1. Matches stage (veg)
@@ -219,29 +233,28 @@ def test_get_applicable_presets_plant_not_found(manager) -> None:
 
 
 def test_resolve_nutrient_mix(manager) -> None:
-    # Setup preset
     p1 = NutrientPreset(
         id="p1",
         name="Base",
-        items=[{"name": "A", "dose_ml_l": 2.0}],
+        items=[{"nutrient_id": "id-a", "dose_ml_l": 2.0}],
         created_at="2024-01-01",
     )
     manager.nutrient_presets = {"p1": p1}
 
     # 1. Preset only
     mix, name = manager.resolve_nutrient_mix(None, "p1")
-    assert mix == {"A": 2.0}
+    assert mix == {"id-a": 2.0}
     assert name == "Base"
 
     # 2. Preset + Override
-    mix, name = manager.resolve_nutrient_mix({"B": 1.0, "A": 3.0}, "p1")
-    assert mix["A"] == 3.0  # Override
-    assert mix["B"] == 1.0
+    mix, name = manager.resolve_nutrient_mix({"id-b": 1.0, "id-a": 3.0}, "p1")
+    assert mix["id-a"] == 3.0
+    assert mix["id-b"] == 1.0
     assert name == "Base"
 
     # 3. No preset
-    mix, name = manager.resolve_nutrient_mix({"C": 5.0}, None)
-    assert mix == {"C": 5.0}
+    mix, name = manager.resolve_nutrient_mix({"id-c": 5.0}, None)
+    assert mix == {"id-c": 5.0}
     assert name is None
 
 
@@ -292,6 +305,77 @@ def test_get_serialization_data(manager) -> None:
     assert "p1" in data["nutrient_presets"]
     assert "i1" in data["ipm_presets"]
     assert "stocks" in data["nutrient_inventory"]
+
+
+@pytest.mark.asyncio
+async def test_save_ec_ramp_curve_new(manager, save_callback_mock) -> None:
+    """Test creating a new EC ramp curve."""
+    curve = await manager.async_save_ec_ramp_curve(
+        name="Bloom EC",
+        stage="flower",
+        points=[{"week": 1, "ec_min": 1.2, "ec_max": 1.6}],
+    )
+
+    assert curve.id in manager.ec_ramp_curves
+    assert curve.name == "Bloom EC"
+    assert curve.stage == "flower"
+    assert len(curve.points) == 1
+    assert curve.points[0].week == 1
+    assert curve.points[0].ec_min == 1.2
+    assert curve.points[0].ec_max == 1.6
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_save_ec_ramp_curve_update(manager, save_callback_mock) -> None:
+    """Test updating an existing EC ramp curve."""
+    existing = ECRampCurve(
+        id="c1",
+        name="Old Curve",
+        stage="veg",
+        points=[ECRampPoint(week=1, ec_min=0.8, ec_max=1.0)],
+        created_at="2024-01-01",
+    )
+    manager.ec_ramp_curves = {"c1": existing}
+
+    curve = await manager.async_save_ec_ramp_curve(
+        curve_id="c1",
+        name="Updated Curve",
+        stage="flower",
+        points=[{"week": 2, "ec_min": 1.4, "ec_max": 1.8}],
+    )
+
+    assert curve is existing
+    assert curve.name == "Updated Curve"
+    assert curve.stage == "flower"
+    assert len(curve.points) == 1
+    assert curve.points[0].week == 2
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_remove_ec_ramp_curve(manager, save_callback_mock) -> None:
+    """Test removing an existing EC ramp curve."""
+    existing = ECRampCurve(
+        id="c1",
+        name="My Curve",
+        stage="veg",
+        points=[],
+        created_at="2024-01-01",
+    )
+    manager.ec_ramp_curves = {"c1": existing}
+
+    await manager.async_remove_ec_ramp_curve("c1")
+
+    assert "c1" not in manager.ec_ramp_curves
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_remove_ec_ramp_curve_not_found(manager) -> None:
+    """Test that removing a non-existent EC ramp curve raises KeyError."""
+    with pytest.raises(KeyError):
+        await manager.async_remove_ec_ramp_curve("missing")
 
 
 @pytest.mark.asyncio

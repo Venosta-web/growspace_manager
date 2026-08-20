@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Final
 
-from .domain.stage import PLANT_STAGES, PlantStage
+from .domain.stage import PLANT_STAGES, PlantStage  # noqa: F401
 
 DOMAIN: Final = "growspace_manager"
 STORAGE_VERSION: Final = 1
@@ -11,8 +11,12 @@ VERSION: Final = "0.3.5"
 STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
 STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
 STORAGE_KEY_PLANTS: Final = f"{DOMAIN}.plants"
+STORAGE_KEY_GENETICS: Final = f"{DOMAIN}.genetics"
+STORAGE_KEY_AI_BRIEFING: Final = f"{DOMAIN}.ai_briefing"
+STORAGE_KEY_AI_CONVERSATIONS: Final = f"{DOMAIN}.ai_conversations"
 PLATFORMS: Final[list[str]] = [
     "binary_sensor",
+    "calendar",
     "sensor",
     "switch",
 ]
@@ -29,6 +33,8 @@ ALERT_LOG_LOOKBACK_DAYS = 120  # Days to look back for environmental alerts
 # Dehumidifier Control Timing Defaults
 DEFAULT_DEHUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds
 DEFAULT_DEHUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
+DEFAULT_HUMIDIFIER_MIN_RUNTIME = 300  # 5 minutes in seconds
+DEFAULT_HUMIDIFIER_MIN_OFFTIME = 300  # 5 minutes in seconds
 DEFAULT_VPD_HYSTERESIS = 0.2  # kPa (fallback if not using stage thresholds)
 
 DEFAULT_NAME = "Growspace Manager"
@@ -60,12 +66,242 @@ CONF_HUMIDIFIER_ENTITY = "humidifier_entity"
 CONF_SOIL_MOISTURE_SENSOR = "soil_moisture_sensor"
 CONF_IRRIGATION_TANK_SENSORS = "irrigation_tank_sensors"
 CONF_IRRIGATION_TANK_WARNING_LEVEL = "irrigation_tank_warning_level"
+CONF_IRRIGATION_TANK_VOLUME = "irrigation_tank_volume"  # litres
 CONF_CONTROL_DEHUMIDIFIER = "control_dehumidifier"
+CONF_CONTROL_HUMIDIFIER = "control_humidifier"
+CONF_HUMIDIFIER_THRESHOLDS = "humidifier_thresholds"
+CONF_BLACKLIST_BREEDERS = "blacklist_breeders"
+
+# Tank water inference service attributes
+ATTR_TANK_ENTITY = "tank_entity"
+ATTR_VOLUME_LITERS = "volume_liters"
+
+# DLI Tracking Defaults
+DEFAULT_DLI_TARGET_VEG: Final = 30.0
+DEFAULT_DLI_TARGET_FLOWER: Final = 45.0
+
+# Substrate Temperature Thresholds
+SUBSTRATE_TEMP_OPTIMAL_MIN: Final = 18.0
+SUBSTRATE_TEMP_OPTIMAL_MAX: Final = 22.0
+SUBSTRATE_TEMP_STRESS_LOW: Final = 15.0
+SUBSTRATE_TEMP_STRESS_HIGH: Final = 26.0
+
+# Drain EC Defaults
+DEFAULT_MAX_EC_DELTA: Final = 0.7
+DEFAULT_TARGET_RUNOFF_PERCENT: Final = 20.0
+
+# Multi-Device Config Keys (new)
+CONF_SUBSTRATE_TEMP_SENSORS = "substrate_temperature_sensors"
+CONF_CAMERA_ENTITIES = "camera_entities"
+CONF_LUNG_ROOM_TEMP_SENSORS = "lung_room_temp_sensors"
+CONF_SNAPSHOT_INTERVAL = "snapshot_interval_hours"
+CONF_POWER_SENSORS = "power_sensors"
+CONF_ENERGY_SENSORS = "energy_sensors"
+CONF_ELECTRICITY_COST = "electricity_cost_per_kwh"
+
+# Photoperiod Config Keys
+CONF_SEEDLING_DAY_HOURS = "seedling_day_hours"
+CONF_CLONE_DAY_HOURS = "clone_day_hours"
+CONF_MOTHER_DAY_HOURS = "mother_day_hours"
+CONF_VEG_DAY_HOURS = "veg_day_hours"
+CONF_FLOWER_EARLY_DAY_HOURS = "flower_early_day_hours"
+CONF_FLOWER_MID_DAY_HOURS = "flower_mid_day_hours"
+CONF_FLOWER_LATE_DAY_HOURS = "flower_late_day_hours"
+
+STAGE_PHOTOPERIOD_KEYS: Final[dict[PlantStage, str]] = {
+    PlantStage.SEEDLING: CONF_SEEDLING_DAY_HOURS,
+    PlantStage.CLONE: CONF_CLONE_DAY_HOURS,
+    PlantStage.MOTHER: CONF_MOTHER_DAY_HOURS,
+    PlantStage.VEG: CONF_VEG_DAY_HOURS,
+    PlantStage.FLOWER_EARLY: CONF_FLOWER_EARLY_DAY_HOURS,
+    PlantStage.FLOWER_MID: CONF_FLOWER_MID_DAY_HOURS,
+    PlantStage.FLOWER_LATE: CONF_FLOWER_LATE_DAY_HOURS,
+}
+
+# Trend Analysis Constants
+CONF_TREND_VPD_THRESHOLD = "trend_vpd_threshold"
+CONF_TREND_TEMPERATURE_THRESHOLD = "trend_temperature_threshold"
+CONF_TREND_TEMP_THRESHOLD = (
+    CONF_TREND_TEMPERATURE_THRESHOLD  # Alias for backward compatibility
+)
+CONF_TREND_HUMIDITY_THRESHOLD = "trend_humidity_threshold"
+CONF_TREND_VPD_DURATION = "trend_vpd_duration"
+CONF_TREND_TEMPERATURE_DURATION = "trend_temperature_duration"
+CONF_TREND_TEMP_DURATION = CONF_TREND_TEMPERATURE_DURATION  # Alias
+CONF_TREND_HUMIDITY_DURATION = "trend_humidity_duration"
+CONF_TREND_VPD_SENSITIVITY = "trend_vpd_sensitivity"
+CONF_TREND_TEMPERATURE_SENSITIVITY = "trend_temperature_sensitivity"
+CONF_TREND_TEMP_SENSITIVITY = CONF_TREND_TEMPERATURE_SENSITIVITY  # Alias
+CONF_TREND_HUMIDITY_SENSITIVITY = "trend_humidity_sensitivity"
+
+CONF_TEMPERATURE_TREND_SENSOR = "temperature_trend_sensor"
+CONF_HUMIDITY_TREND_SENSOR = "humidity_trend_sensor"
+CONF_VPD_TREND_SENSOR = "vpd_trend_sensor"
+CONF_TEMPERATURE_STATS_SENSOR = "temperature_stats_sensor"
+CONF_HUMIDITY_STATS_SENSOR = "humidity_stats_sensor"
+CONF_VPD_STATS_SENSOR = "vpd_stats_sensor"
+
+CONF_TEMP_TREND_THRESHOLD_RAW = "temp_trend_threshold"  # Legacy/Special case
+
+# Threshold Keys
+CONF_ON = "on"
+CONF_OFF = "off"
+CONF_DAY = "day"
+CONF_NIGHT = "night"
+
+# Environment Config Keys
+CONF_MIN_SOURCE_AIR_TEMP = "minimum_source_air_temperature"
+CONF_CONFIGURE_DEHUMIDIFIER = "configure_dehumidifier"
+CONF_CONFIGURE_HUMIDIFIER = "configure_humidifier"
+CONF_CONFIGURE_ADVANCED = "configure_advanced"
+CONF_CONFIGURE_FAN_CONTROLLER = "configure_fan_controller"
+CONF_LST_OFFSET = "lst_offset"
+
+# Mappings for Bayesian Evaluator
+CONF_SENSOR_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TEMP_SENSOR,
+    "humidity": CONF_HUMIDITY_SENSOR,
+    "vpd": CONF_VPD_SENSOR,
+}
+
+CONF_TREND_SENSOR_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TEMPERATURE_TREND_SENSOR,
+    "humidity": CONF_HUMIDITY_TREND_SENSOR,
+    "vpd": CONF_VPD_TREND_SENSOR,
+}
+
+CONF_STATS_SENSOR_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TEMPERATURE_STATS_SENSOR,
+    "humidity": CONF_HUMIDITY_STATS_SENSOR,
+    "vpd": CONF_VPD_STATS_SENSOR,
+}
+
+CONF_TREND_DURATION_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TREND_TEMPERATURE_DURATION,
+    "humidity": CONF_TREND_HUMIDITY_DURATION,
+    "vpd": CONF_TREND_VPD_DURATION,
+}
+
+CONF_TREND_THRESHOLD_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TREND_TEMPERATURE_THRESHOLD,
+    "humidity": CONF_TREND_HUMIDITY_THRESHOLD,
+    "vpd": CONF_TREND_VPD_THRESHOLD,
+}
+
+CONF_TREND_SENSITIVITY_MAP: Final[dict[str, str]] = {
+    "temperature": CONF_TREND_TEMPERATURE_SENSITIVITY,
+    "humidity": CONF_TREND_HUMIDITY_SENSITIVITY,
+    "vpd": CONF_TREND_VPD_SENSITIVITY,
+}
+
+# Bayesian Probability Config Keys
+CONF_PROB_HUMIDITY_HIGH_VEG_EARLY = "prob_humidity_high_veg_early"
+CONF_PROB_HUMIDITY_HIGH_VEG_LATE = "prob_humidity_high_veg_late"
+CONF_PROB_HUMIDITY_TOO_HUMID_FLOWER = "prob_humidity_too_humid_flower"
+CONF_PROB_HUMIDITY_HIGH_FLOWER = "prob_humidity_high_flower"
+
+# Bayesian VPD Stress Probability Config Keys
+CONF_PROB_VPD_STRESS_SEEDLING_ACCLIMATION = "prob_vpd_stress_seedling_acclimation"
+CONF_PROB_VPD_MILD_STRESS_SEEDLING_ACCLIMATION = (
+    "prob_vpd_mild_stress_seedling_acclimation"
+)
+CONF_PROB_VPD_STRESS_SEEDLING = "prob_vpd_stress_seedling"
+CONF_PROB_VPD_MILD_STRESS_SEEDLING = "prob_vpd_mild_stress_seedling"
+CONF_PROB_VPD_STRESS_CLONE_ACCLIMATION = "prob_vpd_stress_clone_acclimation"
+CONF_PROB_VPD_MILD_STRESS_CLONE_ACCLIMATION = "prob_vpd_mild_stress_clone_acclimation"
+CONF_PROB_VPD_STRESS_CLONE = "prob_vpd_stress_clone"
+CONF_PROB_VPD_MILD_STRESS_CLONE = "prob_vpd_mild_stress_clone"
+CONF_PROB_VPD_STRESS_VEG = "prob_vpd_stress_veg"
+CONF_PROB_VPD_MILD_STRESS_VEG = "prob_vpd_mild_stress_veg"
+CONF_PROB_VPD_STRESS_VEG_EARLY = "prob_vpd_stress_veg_early"
+CONF_PROB_VPD_MILD_STRESS_VEG_EARLY = "prob_vpd_mild_stress_veg_early"
+CONF_PROB_VPD_STRESS_VEG_LATE = "prob_vpd_stress_veg_late"
+CONF_PROB_VPD_MILD_STRESS_VEG_LATE = "prob_vpd_mild_stress_veg_late"
+CONF_PROB_VPD_STRESS_MOTHER = "prob_vpd_stress_mother"
+CONF_PROB_VPD_MILD_STRESS_MOTHER = "prob_vpd_mild_stress_mother"
+CONF_PROB_VPD_STRESS_FLOWER_EARLY = "prob_vpd_stress_flower_early"
+CONF_PROB_VPD_MILD_STRESS_FLOWER_EARLY = "prob_vpd_mild_stress_flower_early"
+CONF_PROB_VPD_STRESS_FLOWER_MID = "prob_vpd_stress_flower_mid"
+CONF_PROB_VPD_MILD_STRESS_FLOWER_MID = "prob_vpd_mild_stress_flower_mid"
+CONF_PROB_VPD_STRESS_FLOWER_LATE = "prob_vpd_stress_flower_late"
+CONF_PROB_VPD_MILD_STRESS_FLOWER_LATE = "prob_vpd_mild_stress_flower_late"
+CONF_PROB_VPD_STRESS_DRY = "prob_vpd_stress_dry"
+CONF_PROB_VPD_MILD_STRESS_DRY = "prob_vpd_mild_stress_dry"
+CONF_PROB_VPD_STRESS_CURE = "prob_vpd_stress_cure"
+CONF_PROB_VPD_MILD_STRESS_CURE = "prob_vpd_mild_stress_cure"
+
+# Bayesian Temperature Probabilities
+CONF_PROB_TEMP_EXTREME_HEAT = "prob_temp_extreme_heat"
+CONF_PROB_TEMP_HIGH_HEAT = "prob_temp_high_heat"
+CONF_PROB_TEMP_WARM = "prob_temp_warm"
+CONF_PROB_TEMP_EXTREME_COLD = "prob_temp_extreme_cold"
+CONF_PROB_TEMP_COLD = "prob_temp_cold"
+CONF_PROB_NIGHT_TEMP_HIGH = "prob_night_temp_high"
+
+# Bayesian Humidity/Mold Probabilities
+CONF_PROB_HUMIDITY_TOO_DRY = "prob_humidity_too_dry"
+CONF_PROB_MOLD_TEMP_DANGER_ZONE = "prob_mold_temp_danger_zone"
+CONF_PROB_MOLD_HUMIDITY_HIGH_NIGHT = "prob_mold_humidity_high_night"
+CONF_PROB_MOLD_VPD_LOW_NIGHT = "prob_mold_vpd_low_night"
+CONF_PROB_MOLD_LIGHTS_OFF = "prob_mold_lights_off"
+CONF_PROB_MOLD_HUMIDITY_HIGH_DAY = "prob_mold_humidity_high_day"
+CONF_PROB_MOLD_VPD_LOW_DAY = "prob_mold_vpd_low_day"
+CONF_PROB_MOLD_FAN_OFF = "prob_mold_fan_off"
+
+# Bayesian Trend Probabilities
+CONF_PROB_TREND_FAST_RISE = "prob_trend_fast_rise"
+CONF_PROB_TREND_SLOW_RISE = "prob_trend_slow_rise"
 
 # Tank Depletion Predictor Defaults
 DEFAULT_PREDICTION_WINDOW_HOURS = 72
 DEPLETION_DEADBAND_THRESHOLD = 0.1  # %/hour
 VPD_WEIGHTING_BASE = 1.2  # kPa threshold for multiplier
+
+# Tank water tracker thresholds (capacity limits and detection)
+TANK_MAX_SNAPSHOTS = 2016  # 7d * 24h * 12 readings/h (5-min updates)
+TANK_MAX_EVENTS = 500  # rolling event window
+TANK_REFILL_THRESHOLD_PCT = 3.0  # % rise → classified as refill
+TANK_NOISE_FLOOR_PCT = 1.0  # % change too small to record
+
+# Substrate tracker thresholds (measured dryback detection)
+SUBSTRATE_MAX_EVENTS = 200  # rolling dryback event window
+SUBSTRATE_NOISE_FLOOR_PCT = 0.5  # VWC change too small to move a peak/trough
+# Deadband for the daily pore-EC trend: a day-start-to-current EC delta whose
+# magnitude is at or below this many EC units (mS/cm) reads "stable" rather than
+# flapping rising<->falling on sensor noise. 0.2 mS/cm is a conservative default
+# below the typical day-to-day drift of substrate EC probes.
+SUBSTRATE_EC_TREND_DEADBAND = 0.2
+# Deadband for the Infiltration slope (ADR-0031): a VWC rate whose magnitude is
+# at or below this many percentage points per minute reads "settled" rather than
+# flapping infiltrating<->drying on probe noise. PROVISIONAL — unlike the values
+# above it cannot be derived from SUBSTRATE_NOISE_FLOOR_PCT, which is a
+# magnitude rather than a rate; validating it against real coco and rockwool
+# traces is what the measurement-only slice exists to enable.
+SUBSTRATE_INFILTRATION_DEADBAND_PP_PER_MIN = 0.05
+# How far back the Infiltration slope may reach. Samples older than this many
+# minutes before the newest one are dropped, so a lone fresh reading beside a
+# stale one reads "unknown" rather than manufacturing a near-zero slope across
+# the gap. Sized to span several updates of a 5-minute probe.
+SUBSTRATE_INFILTRATION_WINDOW_MINUTES = 15.0
+
+# EC Modulation bounds and response (see CONTEXT.md "EC Modulation",
+# "Pore EC Target Band", "Shot Size Composition"). The modulation factor scales
+# the P2 maintenance shot volume based on how far measured pore EC sits outside
+# the configured target band: above the band the factor rises (>1.0) to induce
+# runoff and flush; below the band it falls (<1.0) to stack EC. Within the band
+# the factor is exactly 1.0. This is the system's only EC actuation — there is
+# no dosing hardware (CONTEXT.md), so it is deliberately gentle and bounded.
+#
+# The response is proportional to the EC excursion past the nearest band edge,
+# normalised by EC_MODULATION_FULL_SCALE_DELTA: an excursion of that magnitude
+# (or more) saturates the factor at the bound. ±25% (0.75–1.25) keeps a single
+# shot from ever swinging volume hard enough to overrun a dryback or a cap.
+EC_MODULATION_MIN_FACTOR = 0.75
+EC_MODULATION_MAX_FACTOR = 1.25
+# Pore-EC excursion (mS/cm) past the band edge that saturates the factor at a
+# bound. 1.0 mS/cm is roughly one full feed-strength step, a sensible "this is
+# clearly out of band, react fully" scale for substrate EC probes.
+EC_MODULATION_FULL_SCALE_DELTA = 1.0
 
 
 # Multi-Device Config Keys
@@ -77,6 +313,13 @@ CONF_EXHAUST_FAN_ENTITIES = "exhaust_fan_entities"
 CONF_TEMP_SENSORS = "temperature_sensors"
 CONF_HUMIDITY_SENSORS = "humidity_sensors"
 CONF_VPD_SENSORS = "vpd_sensors"
+CONF_PH_SENSORS = "ph_sensors"
+CONF_FEED_EC_SENSORS = "feed_ec_sensors"
+CONF_BULK_EC_SENSORS = "bulk_ec_sensors"
+CONF_PORE_EC_SENSORS = "pore_ec_sensors"
+CONF_RUNOFF_EC_SENSORS = "runoff_ec_sensors"
+CONF_DRAIN_VOLUME_SENSORS = "drain_volume_sensors"
+CONF_IRRIGATION_FLOW_SENSORS = "irrigation_flow_sensors"
 
 # Metric Names
 METRIC_STRESS = "stress"
@@ -93,6 +336,7 @@ METRIC_HUMIDITY = "humidity"
 # Attributes
 ATTR_GROWSPACE_ID = "growspace_id"
 ATTR_PLANT_ID = "plant_id"
+ATTR_PLANT_IDS = "plant_ids"
 ATTR_STRAIN = "strain"
 ATTR_PHENOTYPE = "phenotype"
 ATTR_BREEDER = "breeder"
@@ -107,6 +351,90 @@ ATTR_TARGET_GROWSPACE_ID = "target_growspace_id"
 ATTR_NUM_CLONES = "num_clones"
 
 ATTR_TOTAL_DAYS = "total_days"
+
+# Plant Scores
+ATTR_VIGOR = "vigor"
+ATTR_STRUCTURE = "structure"
+ATTR_AROMA = "aroma"
+ATTR_RESIN = "resin"
+ATTR_PEST_RESISTANCE = "pest_resistance"
+
+# Harvest Yield & Lab Results
+ATTR_WET_WEIGHT = "wet_weight"
+ATTR_DRY_WEIGHT = "dry_weight"
+ATTR_TRIM_WEIGHT = "trim_weight"
+ATTR_THC_PERCENTAGE = "thc_percentage"
+ATTR_CBD_PERCENTAGE = "cbd_percentage"
+ATTR_TERPENE_PROFILE = "terpene_profile"
+
+# DLI Attributes
+ATTR_DLI = "dli"
+ATTR_DLI_TARGET = "target_dli"
+ATTR_DLI_PERCENTAGE = "percentage_of_target"
+ATTR_DLI_ESTIMATED_FINAL = "estimated_final_dli"
+ATTR_PPFD_CURRENT = "ppfd_current"
+
+# PHI Attributes
+ATTR_PHI_CLEARANCE_DATE = "phi_clearance_date"
+ATTR_PHI_DAYS_REMAINING = "phi_days_remaining"
+
+# Substrate Temperature
+ATTR_SUBSTRATE_TEMP = "substrate_temp"
+
+# Crop Steering Attributes
+ATTR_DRYBACK_PERCENT = "dryback_percent"
+ATTR_PEAK_VWC = "peak_vwc"
+ATTR_TROUGH_VWC = "trough_vwc"
+ATTR_STEERING_MODE = "steering_mode"
+ATTR_EC_TREND = "ec_trend"
+
+# Drain EC Attributes
+ATTR_FEED_EC = "feed_ec"
+ATTR_DRAIN_EC = "drain_ec"
+ATTR_DRAIN_VOLUME_ML = "drain_volume_ml"
+ATTR_FEED_VOLUME_ML = "feed_volume_ml"
+ATTR_MAX_EC_DELTA = "max_ec_delta"
+ATTR_TARGET_RUNOFF_PERCENT = "target_runoff_percent"
+
+# Energy Monitoring Attributes
+ATTR_DAILY_KWH = "daily_kwh"
+ATTR_COST_TOTAL = "cost_total"
+ATTR_COST_PER_GRAM = "cost_per_gram"
+ATTR_CYCLE_START_DATE = "cycle_start_date"
+
+# Water Usage Attributes
+ATTR_LITERS_PER_PLANT_PER_DAY = "liters_per_plant_per_day"
+ATTR_LITERS_TODAY = "liters_today"
+ATTR_WATER_EFFICIENCY = "water_efficiency"
+
+# EC Ramp Curve Attributes
+ATTR_EC_MIN = "ec_min"
+ATTR_EC_MAX = "ec_max"
+
+# EC Target Range Attributes
+ATTR_FEED_EC_MIN = "feed_ec_min"
+ATTR_FEED_EC_MAX = "feed_ec_max"
+ATTR_CURRENT_WEEK = "current_week"
+ATTR_CURVE_NAME = "curve_name"
+ATTR_LAST_MEASURED_EC = "last_measured_ec"
+ATTR_DEVIATION = "deviation"
+ATTR_CURVE_ID = "curve_id"
+ATTR_POINTS = "points"
+
+# Genetics & Seed Attributes
+ATTR_ACQUISITION_DATE = "acquisition_date"
+ATTR_GENERATION = "generation"
+ATTR_DONOR_PLANT_ID = "donor_plant_id"
+ATTR_RECEIVER_PLANT_ID = "receiver_plant_id"
+ATTR_EVENT_ID = "event_id"
+ATTR_BATCH_ID = "batch_id"
+ATTR_SEED_BATCH_ID = "seed_batch_id"
+ATTR_STRAIN_NAME = "strain_name"
+ATTR_DATE = "date"
+ATTR_QUANTITY = "quantity"
+ATTR_WEIGHT_GRAMS = "weight_grams"
+ATTR_MOISTURE_PERCENT = "moisture_percent"
+ATTR_VISUAL_TAG = "visual_tag"
 
 ATTR_PROBABILITY = "probability"
 ATTR_THRESHOLD = "threshold"
@@ -169,6 +497,18 @@ CONF_AI_ENABLED = "ai_enabled"
 CONF_ASSISTANT_ID = "assistant_id"
 CONF_NOTIFICATION_PERSONALITY = "notification_personality"
 CONF_AI_AUTO_ALERTS = "ai_auto_alerts"
+CONF_BRIEFING_INTERVAL_MINUTES = "briefing_interval_minutes"
+CONF_BRIEFING_TRIGGER_ENTITIES = "briefing_trigger_entities"
+DEFAULT_BRIEFING_INTERVAL_MINUTES = 30
+
+# Vision Checkup Constants
+CONF_VISION_CHECKUP_ENABLED = "vision_checkup_enabled"
+CONF_AI_TASK_ENTITY_ID = "ai_task_entity_id"
+CONF_VISION_DEBUG_ENABLED = "vision_debug_enabled"
+DEFAULT_VISION_EARLY_OFFSET_MINUTES = 60
+DEFAULT_VISION_MID_CHECK_HOURS = 6
+DEFAULT_VISION_LATE_OFFSET_MINUTES = 60
+DEFAULT_VISION_HISTORY_LIMIT = 10
 
 # Notification Defaults
 DEFAULT_COOLDOWN_MINUTES = 5
@@ -186,6 +526,7 @@ WARNING_COOLDOWN_MINUTES: Final = 120
 """Cooldown after sending a warning notification (per growspace)."""
 
 RECOVERY_COOLDOWN_MINUTES: Final = 10
+PHOTOPERIOD_FLIP_COOLDOWN_MINUTES: Final = 23 * 60
 """Cooldown after sending a recovery notification (per growspace)."""
 
 ESCALATION_DELAY_MINUTES: Final = 30
@@ -224,9 +565,9 @@ DEFAULT_NOTIFICATION_EVENTS = {
 DEHUMIDIFIER_STAGES: Final = [
     PlantStage.SEEDLING.value,
     PlantStage.VEG.value,
-    "early_flower",
-    "mid_flower",
-    "late_flower",
+    PlantStage.FLOWER_EARLY.value,
+    PlantStage.FLOWER_MID.value,
+    PlantStage.FLOWER_LATE.value,
     PlantStage.DRY.value,
     PlantStage.CURE.value,
 ]
@@ -238,6 +579,7 @@ class NotificationTier(StrEnum):
     CRITICAL = "critical"
     WARNING = "warning"
     INFO = "info"
+    PHOTOPERIOD_FLIP = "photoperiod_flip"
 
 
 class GrowspaceSensorType(StrEnum):
@@ -248,6 +590,11 @@ class GrowspaceSensorType(StrEnum):
     OPTIMAL = "optimal"
     DRYING = "drying"
     CURING = "curing"
+    DLI = "dli"
+    CROP_STEERING = "crop_steering"
+    ENERGY_USAGE = "energy_usage"
+    WATER_USAGE = "water_usage"
+    EC_TARGET = "ec_target"
 
 
 class GrowspaceService(StrEnum):
@@ -266,24 +613,33 @@ class GrowspaceService(StrEnum):
     MOVE_CLONE = "move_clone"
     TRANSITION_PLANT_STAGE = "transition_plant_stage"
     HARVEST_PLANT = "harvest_plant"
+    UPDATE_HARVEST_METRICS = "update_harvest_metrics"
+    SCORE_PLANT = "score_plant"
     ADD_STRAIN = "add_strain"
     REMOVE_STRAIN = "remove_strain"
     UPDATE_STRAIN_META = "update_strain_meta"
     IMPORT_STRAIN_LIBRARY = "import_strain_library"
     EXPORT_STRAIN_LIBRARY = "export_strain_library"
+    EXPORT_GROW_REPORT = "export_grow_report"
     CLEAR_STRAIN_LIBRARY = "clear_strain_library"
     STRAIN_RECOMMENDATION = "strain_recommendation"
     ASK_GROW_ADVICE = "ask_grow_advice"
     ANALYZE_ALL_GROWSPACES = "analyze_all_growspaces"
     PRINT_LABEL = "print_label"
     CONFIGURE_ENVIRONMENT = "configure_environment"
+    CONFIGURE_CIRCULATION_FAN = "configure_circulation_fan"
+    CONFIGURE_EXHAUST_FAN = "configure_exhaust_fan"
     REMOVE_ENVIRONMENT = "remove_environment"
     SET_DEHUMIDIFIER_CONTROL = "set_dehumidifier_control"
+    SET_HUMIDIFIER_CONTROL = "set_humidifier_control"
     SET_IRRIGATION_SETTINGS = "set_irrigation_settings"
+    SET_IRRIGATION_STRATEGY = "set_irrigation_strategy"
+    APPLY_STEERING_MODE = "apply_steering_mode"
     ADD_IRRIGATION_TIME = "add_irrigation_time"
     REMOVE_IRRIGATION_TIME = "remove_irrigation_time"
     ADD_DRAIN_TIME = "add_drain_time"
     REMOVE_DRAIN_TIME = "remove_drain_time"
+    RUN_IRRIGATION_CYCLE = "run_irrigation_cycle"
     DEBUG_LIST_GROWSPACES = "debug_list_growspaces"
     DEBUG_RESET_SPECIAL_GROWSPACES = "debug_reset_special_growspaces"
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL = "debug_consolidate_duplicate_special"
@@ -304,6 +660,79 @@ class GrowspaceService(StrEnum):
     APPLY_IPM = "apply_ipm"
     BATCH_ACTION = "batch_action"
     ADD_TIMELINE_NOTE = "add_timeline_note"
+    # Drain EC Services
+    LOG_DRAIN_READING = "log_drain_reading"
+    CONFIGURE_DRAIN_MONITORING = "configure_drain_monitoring"
+    # Water Tracking Services
+    RESET_WATER_TRACKING = "reset_water_tracking"
+    RESET_PLANT_LAST_WATERED = "reset_plant_last_watered"
+    # EC Ramp Curve Services
+    SAVE_EC_RAMP_CURVE = "save_ec_ramp_curve"
+    REMOVE_EC_RAMP_CURVE = "remove_ec_ramp_curve"
+    # EC Target Range Services
+    SET_EC_TARGET_RANGE = "set_ec_target_range"
+    # Vision Checkup Services
+    TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
+    # Tank Configuration Services
+    CONFIGURE_TANK = "configure_tank"
+    # Drying & Curing Services
+    LOG_DRYING_WEIGHT = "log_drying_weight"
+    LOG_MOISTURE_READING = "log_moisture_reading"
+    SET_VISUAL_TAG = "set_visual_tag"
+    # Genetics Services
+    ADD_SEED_BATCH = "add_seed_batch"
+    UPDATE_SEED_BATCH = "update_seed_batch"
+    LOG_POLLINATION = "log_pollination"
+    SCORE_PHENOTYPE = "score_phenotype"
+    HARVEST_SEEDS = "harvest_seeds"
+    UPDATE_POLLINATION = "update_pollination"
+    DELETE_POLLINATION = "delete_pollination"
+    SOW_SEED = "sow_seed"
+    SET_PLANT_SEX = "set_plant_sex"
+    UNLINK_SEED_BATCH = "unlink_seed_batch"
+
+
+class FanRegulationMode(StrEnum):
+    """Regulation variable for the circulation fan controller."""
+
+    HUMIDITY = "humidity"
+    TEMPERATURE = "temperature"
+    VPD = "vpd"
+
+
+class SubstrateMediaType(StrEnum):
+    """Growing-medium type for a growspace's Substrate Profile."""
+
+    COCO = "coco"
+    ROCKWOOL = "rockwool"
+    SOIL = "soil"
+
+
+class ShotSizingMode(StrEnum):
+    """How steering shot size is expressed.
+
+    SECONDS is the default, first-class behavior (raw pump seconds). VOLUME is
+    an opt-in mode expressing shot size as a percentage of substrate volume,
+    converted to pump seconds via the substrate profile and pump flow rate.
+    """
+
+    SECONDS = "seconds"
+    VOLUME = "volume"
+
+
+class SteeringMode(StrEnum):
+    """The grower's declared steering intent for a growspace.
+
+    Selecting a mode is a preset *stamp*: it writes the mode's recommended
+    setpoints into the ordinary editable strategy fields once and records the
+    mode as the declared intent. The coordinator never reads the mode — only
+    the explicit fields (see CONTEXT.md "Steering Mode", ADR-0012). Distinct
+    from the score-derived Measured Classification, which is a measurement.
+    """
+
+    VEGETATIVE = "vegetative"
+    BALANCED = "balanced"
+    GENERATIVE = "generative"
 
 
 class TrainingTechnique(StrEnum):
@@ -323,14 +752,44 @@ ATTR_TECHNIQUE = "technique"
 ATTR_NOTES = "notes"
 ATTR_ITEMS = "items"
 ATTR_TYPE = "type"
+
+# Genetics Attributes
+ATTR_STRAIN_NAME = "strain_name"
+ATTR_BREEDER = "breeder"
+ATTR_QUANTITY = "quantity"
+ATTR_ACQUISITION_DATE = "acquisition_date"
+ATTR_HEIGHT = "height"
+ATTR_AWARDS = "awards"
+ATTR_LINEAGE_TREE = "lineage_tree"
+ATTR_GENERATION = "generation"
+ATTR_LINEAGE = "lineage"
+ATTR_PARENT_1_STRAIN = "parent_1_strain"
+ATTR_PARENT_1_PHENOTYPE = "parent_1_phenotype"
+ATTR_PARENT_2_STRAIN = "parent_2_strain"
+ATTR_PARENT_2_PHENOTYPE = "parent_2_phenotype"
+ATTR_DONOR_PLANT_ID = "donor_plant_id"
+ATTR_RECEIVER_PLANT_ID = "receiver_plant_id"
+ATTR_EVENT_ID = "event_id"
+ATTR_DATE = "date"
+ATTR_SEX = "sex"
+# PhenotypeScore rubric fields (1-10 scale)
+ATTR_INTERNODAL_SPACING = "internodal_spacing"
+ATTR_TERPENE_INTENSITY = "terpene_intensity"
+ATTR_MOLD_RESISTANCE = "mold_resistance"
+ATTR_YIELD_POTENTIAL = "yield_potential"
+ATTR_KEEPER = "keeper"
 CATEGORY_TRAINING = "training"
 CATEGORY_IPM = "ipm"
 CATEGORY_NOTE = "note"
 CATEGORY_WATERING = "watering"
+CATEGORY_DEHUMIDIFIER = "dehumidifier"
+CATEGORY_HUMIDIFIER = "humidifier"
+CATEGORY_MILESTONE = "milestone"
+CATEGORY_ALERT = "alert"
+CATEGORY_IRRIGATION_ERROR = "irrigation_error"
 
 
 # Plant stages
-PLANT_STAGES = [stage.value for stage in PlantStage]
 VALID_STAGES = [stage.value for stage in PlantStage]
 
 # Existing DATE_FIELDS - Ensure consistency with schema definitions if adding more
@@ -404,6 +863,21 @@ MAX_NOTIFICATION_LENGTH: Final = 240
 
 NOTIFICATION_DEBOUNCE_SECONDS: Final = 5
 """Debounce time for batched notifications in seconds."""
+
+MIN_STRESS_DURATION_SECONDS: Final = 180
+"""Minimum seconds a stress event must persist before any notification is sent."""
+
+SENSOR_SETTLING_DELAY_CAP_SECONDS: Final = 15
+"""Upper bound on how long to wait for a moisture sensor to settle after a cycle."""
+
+NOTIFICATION_GROUP: Final = "growspace-manager"
+"""Notification group/thread identifier for grouping on Android and iOS."""
+
+NOTIFICATION_CHANNEL: Final = "Growspace Manager"
+"""Android notification channel name."""
+
+NOTIFICATION_ICON: Final = "mdi:sprout"
+"""Default Android status bar icon for growspace notifications."""
 
 # WebSocket constants
 MERGE_ALERT_GAP_SECONDS: Final = 600

@@ -5,6 +5,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import DEFAULT_FLOWER_EARLY_DAYS
+from custom_components.growspace_manager.domain.stage import (
+    BayesianStage,
+    StageDays,
+    classify_stages,
+)
 from custom_components.growspace_manager.environment_analyzer import EnvironmentAnalyzer
 from custom_components.growspace_manager.models import EnvironmentConfig
 from homeassistant.const import STATE_ON
@@ -41,44 +46,17 @@ def mock_growspace():
     return gs
 
 
-def test_determine_granular_stage(analyzer: EnvironmentAnalyzer) -> None:
-    """Test determining the granular growth stage."""
-    # Cure
-    assert analyzer.determine_granular_stage(0, 0, 0, 5) == "cure"
-    # Dry
-    assert analyzer.determine_granular_stage(0, 0, 5, 0) == "dry"
-    # Flower Early
-    assert (
-        analyzer.determine_granular_stage(0, DEFAULT_FLOWER_EARLY_DAYS, 0, 0)
-        == "flower_early"
-    )
-    # Flower Mid
-    assert (
-        analyzer.determine_granular_stage(0, DEFAULT_FLOWER_EARLY_DAYS + 5, 0, 0)
-        == "flower_mid"
-    )
-    # Flower Late
-    assert (
-        analyzer.determine_granular_stage(0, DEFAULT_FLOWER_EARLY_DAYS + 30, 0, 0)
-        == "flower_late"
-    )
-    # Veg Early
-    assert analyzer.determine_granular_stage(10, 0, 0, 0) == "veg"
-    # Veg Late
-    assert analyzer.determine_granular_stage(30, 0, 0, 0) == "veg"
-    # Seedling
-    assert analyzer.determine_granular_stage(0, 0, 0, 0, 5, 0) == "seedling"
-    # Clone
-    assert analyzer.determine_granular_stage(0, 0, 0, 0, 0, 5) == "clone"
-
-    # Case _ (Line 187) - Trigger with non-bool comparison
-    class NonBool:
-        def __gt__(self, other):
-            return "not_a_bool"
-
-    assert analyzer.determine_granular_stage(0, 0, 0, NonBool()) == "empty"
-    # Default Veg Early (all 0)
-    assert analyzer.determine_granular_stage(0, 0, 0, 0) == "empty"
+def test_classify_stages_display_stage_via_domain() -> None:
+    """Test that classify_stages produces the correct display_stage for all branches."""
+    assert classify_stages(StageDays(cure=5)).display_stage == BayesianStage.CURE
+    assert classify_stages(StageDays(dry=5)).display_stage == BayesianStage.DRY
+    assert classify_stages(StageDays(flower=10)).display_stage == BayesianStage.FLOWER_EARLY
+    assert classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 5)).display_stage == BayesianStage.FLOWER_MID
+    assert classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 30)).display_stage == BayesianStage.FLOWER_LATE
+    assert classify_stages(StageDays(veg=10)).display_stage == BayesianStage.VEG
+    assert classify_stages(StageDays(seedling=5)).display_stage == BayesianStage.SEEDLING
+    assert classify_stages(StageDays(clone=5)).display_stage == BayesianStage.CLONE
+    assert classify_stages(StageDays()).display_stage == BayesianStage.EMPTY
 
 
 def test_determine_is_day(
@@ -111,11 +89,13 @@ def test_calculate_biological_metrics(
     hass.states.async_set("sensor.vpd", "1.3")
     hass.states.async_set("sensor.light", "on")  # Day
 
-    # Veg Early Day
-    metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, 0, 0, 0)
-    assert metrics["granular_stage"] == "veg"
+    veg_days = StageDays(veg=5)
+
+    # Veg Day
+    metrics = analyzer.calculate_biological_metrics(mock_growspace, veg_days)
+    assert metrics["granular_stage"] == BayesianStage.VEG
     assert metrics["is_day"] is True
-    # veg_early day mild is (0.6, 1.2), stress is (0.4, 1.4).
+    # veg day mild is (0.6, 1.2), stress is (0.4, 1.4).
     # 1.3 is > 1.2 (mild max) but <= 1.4 (stress max). So warning.
     assert metrics["vpd_status"] == "warning"
 
@@ -124,20 +104,25 @@ def test_calculate_biological_metrics(
     assert "day_vpd_target_max" in metrics
     assert "night_vpd_target_min" in metrics
     assert "night_vpd_target_max" in metrics
-    # Default values check (assuming default config)
     assert metrics["day_vpd_target_min"] == 0.6  # veg mild min
     assert metrics["day_vpd_target_max"] == 1.2  # veg mild max
 
     # Test Danger
-    hass.states.async_set("sensor.vpd", "1.5")  # > 1.0
-    metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, 0, 0, 0)
+    hass.states.async_set("sensor.vpd", "1.5")
+    metrics = analyzer.calculate_biological_metrics(mock_growspace, veg_days)
     assert metrics["vpd_status"] == "danger"
 
     # Test Optimal
-    # veg mild: (0.4, 0.8)
     hass.states.async_set("sensor.vpd", "0.6")
-    metrics = analyzer.calculate_biological_metrics(mock_growspace, 5, 0, 0, 0)
+    metrics = analyzer.calculate_biological_metrics(mock_growspace, veg_days)
     assert metrics["vpd_status"] == "optimal"
+
+    # Empty growspace: VPD monitoring off regardless of sensor value
+    hass.states.async_set("sensor.vpd", "9.9")
+    metrics = analyzer.calculate_biological_metrics(mock_growspace, StageDays())
+    assert metrics["granular_stage"] == BayesianStage.EMPTY
+    assert metrics["vpd_status"] == "unknown"
+    assert metrics["vpd_target_min"] is None
 
 
 def test_determine_is_day_invalid_state(

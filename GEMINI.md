@@ -118,16 +118,19 @@ When running tests, always use the virtual environment's pytest executable to en
 **Test Execution Guidelines:**
 
 1. **After bug fixes**: Run the specific test file related to the bug
+
    ```bash
    ./venv/bin/pytest tests/test_<module>.py -v
    ```
 
 2. **After feature additions**: Run all affected test files
+
    ```bash
    ./venv/bin/pytest tests/test_<module1>.py tests/test_<module2>.py -v
    ```
 
 3. **Before completing any task**: Run the full test suite
+
    ```bash
    ./venv/bin/pytest tests/
    ```

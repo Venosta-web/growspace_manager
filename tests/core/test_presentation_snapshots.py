@@ -1,7 +1,8 @@
 """Snapshot tests for Growspace Manager presentation view models."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
+from freezegun import freeze_time
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -25,6 +26,7 @@ def builder(hass: HomeAssistant) -> GrowspaceViewModelBuilder:
     return GrowspaceViewModelBuilder(hass)
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 def test_growspace_view_model_snapshot(
     hass: HomeAssistant, builder: GrowspaceViewModelBuilder, snapshot: SnapshotAssertion
 ) -> None:
@@ -78,13 +80,14 @@ def test_growspace_view_model_snapshot(
             plants=plants,
             biological_metrics={"daily_avg_temp": 24.5, "daily_avg_hum": 55.0},
             max_veg_days=15,
-            max_flower_days=0,
+            max_flower_days=-1,
         )
 
         # Sort keys or exclude timestamp if it were here (it's not yet)
         assert result == snapshot
 
 
+@freeze_time("2024-01-01 12:00:00", tz_offset=0)
 def test_plant_view_model_snapshot(
     hass: HomeAssistant, builder: GrowspaceViewModelBuilder, snapshot: SnapshotAssertion
 ) -> None:

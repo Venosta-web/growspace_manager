@@ -1,6 +1,6 @@
 """Tests for environment configuration service."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -24,8 +24,24 @@ def mock_coordinator():
     """Fixture for a mock GrowspaceCoordinator instance."""
     coordinator = MagicMock()
     coordinator.growspaces = {}
-    coordinator.async_save = AsyncMock()
-    coordinator.async_refresh = AsyncMock()
+    coordinator.services = MagicMock()
+    coordinator.services.save = AsyncMock()
+    coordinator.services.request_refresh = AsyncMock()
+    _fan_coord_mock = MagicMock()
+    _fan_coord_mock.async_restart = AsyncMock()
+    coordinator._subsystem_manager = MagicMock()
+    coordinator._subsystem_manager.get_circulation_fan_controller = MagicMock(
+        return_value=_fan_coord_mock
+    )
+    coordinator._subsystem_manager.get_growlight_controller = MagicMock(
+        return_value=None
+    )
+    coordinator._subsystem_manager.get_dehumidifier_controller = MagicMock(
+        return_value=None
+    )
+    coordinator._subsystem_manager.get_humidifier_controller = MagicMock(
+        return_value=None
+    )
     return coordinator
 
 
@@ -35,6 +51,16 @@ def mock_call():
     call = MagicMock(spec=ServiceCall)
     call.context = Context()
     return call
+
+
+@pytest.fixture(autouse=True)
+def mock_exhaust_migration():
+    """Patch the migration repair helper (it needs a real issue registry)."""
+    with patch(
+        "custom_components.growspace_manager.services.environment_patch_commit"
+        ".evaluate_exhaust_migration_issues"
+    ) as mock_eval:
+        yield mock_eval
 
 
 @pytest.mark.asyncio
@@ -71,8 +97,8 @@ async def test_handle_configure_environment_with_coordinates_and_tanks(
     await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
 
     # Verify coordinator save and refresh were called
-    mock_coordinator.async_save.assert_awaited_once()
-    mock_coordinator.async_refresh.assert_awaited_once()
+    mock_coordinator.services.save.assert_awaited_once()
+    mock_coordinator.services.request_refresh.assert_awaited_once()
 
     # Verify environment config was updated correctly
     updated_config = mock_gs.environment_config
@@ -93,3 +119,50 @@ async def test_handle_configure_environment_with_coordinates_and_tanks(
     assert updated_config.irrigation_tanks[0].sensor_entity == "sensor.tank_a_level"
     assert updated_config.irrigation_tanks[1].name == "Tank B"
     assert updated_config.irrigation_tanks[1].sensor_entity == "sensor.tank_b_level"
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_persists_lst_offset(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test that configure_environment stores the lst_offset from the service call."""
+    growspace_id = "gs1"
+
+    mock_gs = MagicMock()
+    mock_gs.name = "Test Growspace"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+        "lst_offset": -3.5,
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert mock_gs.environment_config.lst_offset == -3.5
+
+
+@pytest.mark.asyncio
+async def test_handle_configure_environment_defaults_lst_offset(
+    mock_hass: HomeAssistant,
+    mock_coordinator: MagicMock,
+    mock_call: MagicMock,
+) -> None:
+    """Test that configure_environment defaults lst_offset to -2.0 when not provided."""
+    growspace_id = "gs1"
+
+    mock_gs = MagicMock()
+    mock_gs.name = "Test Growspace"
+    mock_gs.environment_config = EnvironmentConfig()
+    mock_coordinator.growspaces = {growspace_id: mock_gs}
+
+    mock_call.data = {
+        "growspace_id": growspace_id,
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert mock_gs.environment_config.lst_offset == -2.0

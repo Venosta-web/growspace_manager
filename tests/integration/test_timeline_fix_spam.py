@@ -4,6 +4,8 @@ import json
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from custom_components.growspace_manager.websocket import (
     WS_TYPE_GET_ALERTS,
     WS_TYPE_GET_LOG,
@@ -12,6 +14,16 @@ from custom_components.growspace_manager.websocket import (
 from homeassistant.core import HomeAssistant
 
 WebSocketGenerator = Any
+
+
+@pytest.fixture(autouse=True)
+def _any_coordinator_available():
+    """resolve="any" commands need a loaded coordinator under the lifecycle."""
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator.get_any",
+        return_value=MagicMock(),
+    ):
+        yield
 
 
 async def test_websocket_get_log_filters_new_spam_categories(
@@ -23,13 +35,13 @@ async def test_websocket_get_log_filters_new_spam_categories(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
         patch(
-            "custom_components.growspace_manager.websocket.EventData"
+            "custom_components.growspace_manager.websocket.logbook.EventData"
         ) as mock_event_data,
     ):
         mock_session = MagicMock()
@@ -91,6 +103,7 @@ async def test_websocket_get_log_filters_new_spam_categories(
             {
                 "growspace_id": "gs1",
                 "category": "training",
+                "sensor_type": "training",
                 "timestamp": "2023-01-01T12:02:00+00:00",
             }
         )
@@ -189,10 +202,10 @@ async def test_websocket_get_alerts_includes_new_cats(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_recorder,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_scope,
     ):
         mock_session = MagicMock()

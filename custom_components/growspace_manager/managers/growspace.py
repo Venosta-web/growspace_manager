@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Callable
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid
@@ -19,22 +17,41 @@ from custom_components.growspace_manager.const import (
     DOMAIN,
     PlantStage,
 )
+from custom_components.growspace_manager.domain.ec_state import record_drain_reading
 from custom_components.growspace_manager.events import (
     EVENT_GROWSPACE_ADDED,
     EVENT_GROWSPACE_REMOVED,
     EVENT_GROWSPACE_UPDATED,
     async_fire_growspace_event,
+    async_fire_plant_layout_changed_event,
 )
-from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
-from custom_components.growspace_manager.models import Growspace, GrowspaceType
+from custom_components.growspace_manager.exceptions import (
+    GrowspaceNotFoundError,
+    ValidationChangeError,
+)
+from custom_components.growspace_manager.models import (
+    EnvironmentConfig,
+    Growspace,
+    GrowspaceType,
+    Subarea,
+    WaterUsageData,
+)
+from custom_components.growspace_manager.services.context import (
+    BaseService,
+    ServiceContext,
+)
 from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
-from homeassistant.util import slugify
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.util import dt as dt_util, slugify
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.data_access.growspace_repository import (
         GrowspaceRepository,
+    )
+    from custom_components.growspace_manager.data_access.notification_state import (
+        NotificationState,
     )
     from custom_components.growspace_manager.growspace_validator import (
         GrowspaceValidator,
@@ -43,25 +60,25 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class GrowspaceManager:
+class GrowspaceManager(BaseService):
     """Handles all growspace CRUD operations and management logic."""
 
     def __init__(
         self,
+        ctx: ServiceContext,
         hass: HomeAssistant,
         repository: GrowspaceRepository,
+        notification_state: NotificationState,
         validator: GrowspaceValidator,
         view_model_builder: ViewModelBuilder,
-        save_callback: Callable[[], Awaitable[None]],
-        lock: asyncio.Lock,
     ) -> None:
         """Initialize the growspace manager."""
+        super().__init__(ctx)
         self.hass = hass
         self.repository = repository
+        self.notification_state = notification_state
         self.validator = validator
         self.view_model_builder = view_model_builder
-        self.save_callback = save_callback
-        self.lock = lock
         self.cache: Any = None  # To be injected if needed
 
     async def add_growspace(
@@ -77,7 +94,7 @@ class GrowspaceManager:
         irrigation_config: dict[str, Any] | None = None,
     ) -> Growspace:
         """Add a new growspace."""
-        async with self.lock:
+        async with self._lock:
             # Normalize notification target
             if not notification_target or notification_target in ("None", "none", ""):
                 _LOGGER.debug(
@@ -105,13 +122,13 @@ class GrowspaceManager:
             if irrigation_config is not None:
                 growspace_kwargs["irrigation_config"] = irrigation_config
 
-            growspace = Growspace(**growspace_kwargs)
-            self.repository.growspaces[growspace_id] = growspace
+            growspace = Growspace.from_dict(growspace_kwargs)
+            self.repository.add_growspace(growspace)
 
             # Enable notifications by default for new growspace
-            self.repository.notifications_enabled[growspace_id] = True
+            self.notification_state.enabled[growspace_id] = True
 
-            await self.save_callback()
+            await self._save()
 
             # Delegate device registration to here or keep in coordinator?
             # Original service didn't do device registry. Coordinator did.
@@ -126,42 +143,58 @@ class GrowspaceManager:
             async_fire_growspace_event(self.hass, EVENT_GROWSPACE_ADDED, growspace)
             return growspace
 
-    async def remove_growspace(self, growspace_id: str) -> None:
-        """Remove a growspace and all plants contained within it."""
-        async with self.lock:
+    async def remove_growspace(
+        self, growspace_id: str, *, delete_plants: bool = True
+    ) -> None:
+        """Remove a growspace and all plants contained within it.
+
+        `delete_plants=False` leaves the contained plants in the plant store,
+        still referencing the removed growspace. Only the special-growspace
+        reset uses it: it removes and recreates the canonical growspace, then
+        re-places the detached plants on it through the plant manager.
+        """
+        async with self._lock:
             self.validator.validate_growspace_exists(growspace_id)
 
-            # Remove all plants in this growspace
-            plants_to_remove = [
-                plant_id
-                for plant_id, plant in self.repository.plants.items()
-                if plant.growspace_id == growspace_id
-            ]
+            plants_to_remove = (
+                [p.plant_id for p in self.repository.get_growspace_plants(growspace_id)]
+                if delete_plants
+                else []
+            )
 
             for plant_id in plants_to_remove:
-                self.repository.plants.pop(plant_id, None)
-                self.repository.notifications_sent.pop(plant_id, None)
+                self.repository.remove_plant(plant_id)
+                self.notification_state.sent.pop(plant_id, None)
 
-            growspace = self.repository.growspaces[growspace_id]
+            growspace = self.repository.require_growspace(growspace_id)
             growspace_name = growspace.name
-            self.repository.growspaces.pop(growspace_id, None)
+            self.repository.remove_growspace(growspace_id)
 
             # Remove notification state
-            self.repository.notifications_enabled.pop(growspace_id, None)
+            self.notification_state.enabled.pop(growspace_id, None)
 
-            # Remove device from registry
+            # Remove registry entities before their parent device. Home Assistant
+            # keeps a device visible while entity-registry entries still refer to
+            # it, even after the growspace has disappeared from domain storage.
             try:
                 dev_reg = dr.async_get(self.hass)
                 device = dev_reg.async_get_device(identifiers={(DOMAIN, growspace_id)})
                 if device:
+                    entity_reg = er.async_get(self.hass)
+                    for entry in er.async_entries_for_device(
+                        entity_reg, device.id, include_disabled_entities=True
+                    ):
+                        entity_reg.async_remove(entry.entity_id)
                     dev_reg.async_remove_device(device.id)
-                    _LOGGER.debug("Removed device for growspace %s", growspace_id)
+                    _LOGGER.debug(
+                        "Removed device and entities for growspace %s", growspace_id
+                    )
             except Exception:
                 _LOGGER.exception(
                     "Error removing device for growspace %s", growspace_id
                 )
 
-            await self.save_callback()
+            await self._save()
 
             _LOGGER.info(
                 "Removed growspace %s (%s) and %d plants",
@@ -171,16 +204,33 @@ class GrowspaceManager:
             )
             async_fire_growspace_event(self.hass, EVENT_GROWSPACE_REMOVED, growspace)
 
-    async def update_growspace(
-        self, growspace_id: str, **kwargs: dict[str, Any]
-    ) -> None:
+    async def update_growspace(self, growspace_id: str, **kwargs: Any) -> Growspace:
         """Update a growspace."""
-        async with self.lock:
-            if growspace_id not in self.repository.growspaces:
+        async with self._lock:
+            if not self.repository.has_growspace(growspace_id):
                 raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
-            growspace = self.repository.growspaces[growspace_id]
+            growspace = self.repository.require_growspace(growspace_id)
             changes: list[str] = []
+            new_rows = int(kwargs.get("rows", growspace.rows))
+            new_plants_per_row = int(
+                kwargs.get("plants_per_row", growspace.plants_per_row)
+            )
+            grid_changed = (
+                new_rows != growspace.rows
+                or new_plants_per_row != growspace.plants_per_row
+            )
+            if grid_changed:
+                stranded = [
+                    plant.plant_id
+                    for plant in self.repository.get_growspace_plants(growspace_id)
+                    if plant.row > new_rows or plant.col > new_plants_per_row
+                ]
+                if stranded:
+                    raise ValidationChangeError(
+                        "Cannot reduce the growspace grid while it would strand "
+                        f"plant {min(stranded)}"
+                    )
 
             # Update structure
             struct_updated = self._update_growspace_structure(
@@ -199,20 +249,60 @@ class GrowspaceManager:
                     ", ".join(changes),
                 )
 
-                # Validate plants if grid changed
-                if "rows" in kwargs or "plants_per_row" in kwargs:
-                    await self._validate_plants_after_growspace_resize(
-                        growspace_id,
-                        growspace.rows,
-                        growspace.plants_per_row,
-                    )
+                if grid_changed:
+                    growspace.layout_revision += 1
 
-                await self.save_callback()
+                await self._save()
                 async_fire_growspace_event(
                     self.hass, EVENT_GROWSPACE_UPDATED, growspace
                 )
             else:
                 _LOGGER.debug("No changes detected for growspace %s", growspace_id)
+
+            return growspace
+
+    async def add_subarea(self, growspace_id: str, name: str) -> Subarea:
+        """Add a named subarea to a growspace."""
+        async with self._lock:
+            if not self.repository.has_growspace(growspace_id):
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            subarea = Subarea(id=str(uuid.uuid4()), name=name.strip())
+            self.repository.require_growspace(growspace_id).subareas.append(subarea)
+            await self._save()
+            return subarea
+
+    async def update_subarea(
+        self, growspace_id: str, subarea_id: str, environment_config: dict[str, Any]
+    ) -> Subarea:
+        """Update a subarea's environment config."""
+        async with self._lock:
+            if not self.repository.has_growspace(growspace_id):
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            growspace = self.repository.require_growspace(growspace_id)
+            subarea = next((s for s in growspace.subareas if s.id == subarea_id), None)
+            if not subarea:
+                raise ServiceValidationError(f"Subarea {subarea_id} not found")
+            subarea.environment_config = EnvironmentConfig.from_dict(environment_config)
+            await self._save()
+            return subarea
+
+    async def remove_subarea(self, growspace_id: str, subarea_id: str) -> None:
+        """Remove a subarea from a growspace."""
+        async with self._lock:
+            if not self.repository.has_growspace(growspace_id):
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            growspace = self.repository.require_growspace(growspace_id)
+            before = len(growspace.subareas)
+            growspace.subareas = [s for s in growspace.subareas if s.id != subarea_id]
+            if len(growspace.subareas) == before:
+                raise ServiceValidationError(f"Subarea {subarea_id} not found")
+            await self._save()
+
+    def get_subareas(self, growspace_id: str) -> list[Subarea]:
+        """Return all subareas for a growspace."""
+        if not self.repository.has_growspace(growspace_id):
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+        return list(self.repository.require_growspace(growspace_id).subareas)
 
     def _update_growspace_structure(
         self, growspace: Growspace, kwargs: dict[str, Any], changes: list[str]
@@ -272,43 +362,11 @@ class GrowspaceManager:
 
         return updated
 
-    async def _validate_plants_after_growspace_resize(
-        self, growspace_id: str, new_rows: int, new_plants_per_row: int
-    ) -> None:
-        """Log a warning if any plants are outside the new grid boundaries after a resize."""
-        # Get all plants in this growspace
-        plants_to_check = [
-            p for p in self.repository.plants.values() if p.growspace_id == growspace_id
-        ]
-        invalid_plants = []
-
-        invalid_plants = [
-            plant
-            for plant in plants_to_check
-            if int(plant.row) > new_rows or int(plant.col) > new_plants_per_row
-        ]
-
-        if invalid_plants:
-            _LOGGER.warning(
-                "Growspace %s resized to %dx%d. Found %d plants outside new grid boundaries:",
-                growspace_id,
-                new_rows,
-                new_plants_per_row,
-                len(invalid_plants),
-            )
-
-            for plant in invalid_plants:
-                _LOGGER.warning(
-                    "  - Plant %s (%s) at position (%d,%d) is outside new grid",
-                    plant.plant_id,
-                    plant.strain,
-                    plant.row,
-                    plant.col,
-                )
-
     def generate_unique_name(self, base_name: str) -> str:
         """Generate a unique growspace name."""
-        existing_names = {gs.name.lower() for gs in self.repository.growspaces.values()}
+        existing_names = {
+            gs.name.lower() for gs in self.repository.get_all_growspaces()
+        }
         name = base_name
         counter = 1
 
@@ -320,20 +378,34 @@ class GrowspaceManager:
 
     def get_growspace_options(self) -> dict[str, str]:
         """Return growspaces for dropdown selection."""
-        return {
-            gs_id: getattr(gs, "name", gs_id)
-            for gs_id, gs in self.repository.growspaces.items()
-        }
+        return self.repository.get_growspace_options()
 
     def get_sorted_growspace_options(self) -> list[tuple[str, str]]:
         """Return a sorted list of growspaces for dropdown selection."""
-        return sorted(
-            (
-                (gs_id, getattr(gs, "name", gs_id))
-                for gs_id, gs in self.repository.growspaces.items()
-            ),
-            key=lambda x: x[1].lower(),
-        )
+        return self.repository.get_sorted_growspace_options()
+
+    async def carry_forward_layout_revision(
+        self, growspace_id: str, previous_revision: int
+    ) -> int:
+        """Advance a Layout Revision past the value a repair discarded.
+
+        A special-growspace reset removes and recreates the canonical
+        growspace, which would otherwise restart its revision at `0` and let a
+        draft captured before the reset apply against the repaired layout.
+        """
+        async with self._lock:
+            growspace = self.repository.get_growspace(growspace_id)
+            if not growspace:
+                raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+            growspace.layout_revision = (
+                max(growspace.layout_revision, previous_revision) + 1
+            )
+            revision = growspace.layout_revision
+            self._invalidate(growspace_id)
+            await self._save()
+
+        async_fire_plant_layout_changed_event(self.hass, growspace_id, revision)
+        return revision
 
     def ensure_special_growspace(
         self,
@@ -357,23 +429,21 @@ class GrowspaceManager:
         elif growspace_id.lower() in ["veg", "vegetative"]:
             canonical_id = "veg"
 
-        if canonical_id not in self.repository.growspaces:
+        if not self.repository.has_growspace(canonical_id):
             self._create_special_growspace(
                 canonical_id, name, rows, plants_per_row, growspace_type
             )
-            self.repository.notifications_enabled[canonical_id] = True
+            self.notification_state.enabled[canonical_id] = True
             if self.cache:
                 self.cache.invalidate(canonical_id)
         else:
             self._update_special_growspace_name(canonical_id, name)
-            start_type = self.repository.growspaces[canonical_id].growspace_type
-            if start_type != growspace_type:
-                self.repository.growspaces[canonical_id].growspace_type = growspace_type
+            gs = self.repository.require_growspace(canonical_id)
+            if gs.growspace_type != growspace_type:
+                gs.growspace_type = growspace_type
             if self.cache:
                 self.cache.invalidate(canonical_id)
 
-        if update_data:
-            self.repository.data = self.view_model_builder.build_data_property()
         return canonical_id
 
     def _create_special_growspace(
@@ -385,12 +455,14 @@ class GrowspaceManager:
         growspace_type: GrowspaceType,
     ) -> None:
         """Create a new special growspace."""
-        self.repository.growspaces[canonical_id] = Growspace(
-            id=canonical_id,
-            name=canonical_name,
-            rows=rows,
-            plants_per_row=plants_per_row,
-            growspace_type=growspace_type,
+        self.repository.add_growspace(
+            Growspace(
+                id=canonical_id,
+                name=canonical_name,
+                rows=rows,
+                plants_per_row=plants_per_row,
+                growspace_type=growspace_type,
+            )
         )
         _LOGGER.info(
             "Created canonical growspace: %s with name '%s'",
@@ -402,12 +474,12 @@ class GrowspaceManager:
         self, canonical_id: str, canonical_name: str
     ) -> None:
         """Update the name of an existing special growspace."""
-        if canonical_id not in self.repository.growspaces:
+        if not self.repository.has_growspace(canonical_id):
             _LOGGER.debug(
                 "Special growspace %s not found, skipping name update", canonical_id
             )
             return
-        existing = self.repository.growspaces[canonical_id]
+        existing = self.repository.require_growspace(canonical_id)
         if existing.name != canonical_name:
             existing.name = canonical_name
             _LOGGER.info(
@@ -468,11 +540,12 @@ class GrowspaceManager:
                 update_data=False,
             )
 
-        self.repository.data = self.view_model_builder.build_data_property()
+        if self.view_model_builder is not None:
+            self.view_model_builder.build_data_property()
 
     def ensure_calculated_sensors(self) -> None:
         """Ensure default calculated sensors are configured."""
-        for growspace in list(self.repository.growspaces.values()):
+        for growspace in self.repository.get_all_growspaces():
             env_config = growspace.environment_config
             if not env_config:
                 continue
@@ -480,7 +553,7 @@ class GrowspaceManager:
             updated = False
             temps = env_config.temperature_sensors
             hums = env_config.humidity_sensors
-            vpds = env_config.vpd_sensors
+            vpds: list[str | None] = list(env_config.vpd_sensors)
 
             if not temps and env_config.temperature_sensor:
                 temps = [env_config.temperature_sensor]
@@ -500,10 +573,11 @@ class GrowspaceManager:
                 vpds.append(None)
 
             for i in range(num_pairs):
+                vpd_entry = vpds[i]
                 if (
                     temps[i]
                     and hums[i]
-                    and (vpds[i] is None or "calculated_vpd" in vpds[i])
+                    and (vpd_entry is None or "calculated_vpd" in vpd_entry)
                 ):
                     suffix = f" {i + 1}" if num_pairs > 1 else ""
                     calc_name = f"{growspace.name} Calculated VPD{suffix}"
@@ -519,7 +593,7 @@ class GrowspaceManager:
                         )
 
             if updated:
-                env_config.vpd_sensors = vpds
+                env_config.vpd_sensors = [v if v is not None else "" for v in vpds]
                 if len(vpds) > 0:
                     env_config.vpd_sensor = vpds[0]
                 if self.cache:
@@ -544,13 +618,128 @@ class GrowspaceManager:
             return "clone", "Clone Room"
         if gs_id in {"mother", "mother_room"}:
             return "mother", "Mother Room"
-        growspace = self.repository.growspaces.get(gs_id)
+        growspace = self.repository.get_growspace(gs_id)
         if growspace:
             return gs_id, growspace.name
         return gs_id, gs_id
 
     # Aliases for compatibility
-    async_add_growspace = add_growspace
-    async_remove_growspace = remove_growspace
-    async_update_growspace = update_growspace
-    ensure_special_growspaces = ensure_default_growspaces
+    async def async_add_growspace(self, *args: Any, **kwargs: Any) -> Growspace:
+        """Alias for add_growspace."""
+        return await self.add_growspace(*args, **kwargs)
+
+    async def async_remove_growspace(self, growspace_id: str) -> None:
+        """Alias for remove_growspace."""
+        await self.remove_growspace(growspace_id)
+
+    async def async_update_growspace(self, *args: Any, **kwargs: Any) -> Growspace:
+        """Alias for update_growspace."""
+        return await self.update_growspace(*args, **kwargs)
+
+    async def async_log_drain_reading(
+        self,
+        growspace_id: str,
+        feed_ec: float,
+        drain_ec: float,
+        drain_volume_ml: float | None = None,
+        feed_volume_ml: float | None = None,
+    ) -> None:
+        """Log a drain EC reading for a growspace."""
+        growspace = self.repository.get_growspace(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(growspace_id)
+
+        drain_config = growspace.drain_config
+        record = record_drain_reading(
+            drain_config, feed_ec, drain_ec, drain_volume_ml, feed_volume_ml
+        )
+
+        await self._save()
+
+        # Fire alert if drain EC delta exceeds threshold. GrowspaceManager has no
+        # notification manager, so it fires an event (its own transport).
+        if record.alert:
+            _LOGGER.warning(
+                "Drain EC alert for %s: drain=%.2f, feed=%.2f, delta=%.2f exceeds threshold %.2f",
+                growspace_id,
+                drain_ec,
+                feed_ec,
+                record.ec_delta,
+                drain_config.max_ec_delta,
+            )
+            self.hass.bus.async_fire(
+                "growspace_manager_drain_ec_alert",
+                {
+                    "growspace_id": growspace_id,
+                    "growspace_name": growspace.name,
+                    "ec_delta": record.ec_delta,
+                    "drain_ec": drain_ec,
+                    "feed_ec": feed_ec,
+                    "threshold": drain_config.max_ec_delta,
+                },
+            )
+
+    async def async_configure_drain_monitoring(
+        self,
+        growspace_id: str,
+        enabled: bool | None = None,
+        max_ec_delta: float | None = None,
+        target_runoff_percent: float | None = None,
+    ) -> None:
+        """Configure drain EC monitoring settings for a growspace."""
+        growspace = self.repository.get_growspace(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(growspace_id)
+
+        drain_config = growspace.drain_config
+        if enabled is not None:
+            drain_config.enabled = enabled
+        if max_ec_delta is not None:
+            drain_config.max_ec_delta = max_ec_delta
+        if target_runoff_percent is not None:
+            drain_config.target_runoff_percent = target_runoff_percent
+
+        await self._save()
+
+    async def async_reset_water_tracking(self, growspace_id: str) -> None:
+        """Reset water usage counters for a growspace."""
+        growspace = self.repository.get_growspace(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(growspace_id)
+
+        growspace.water_usage = WaterUsageData(
+            cycle_start_date=dt_util.now().date().isoformat()
+        )
+        await self._save()
+        _LOGGER.info("Reset water tracking for growspace %s", growspace_id)
+
+    async def async_configure_tank(
+        self,
+        growspace_id: str,
+        tank_entity: str,
+        *,
+        volume_liters: float | None = None,
+    ) -> None:
+        """Update runtime configuration for an irrigation tank."""
+        growspace = self.repository.get_growspace(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(growspace_id)
+
+        tank = next(
+            (
+                t
+                for t in growspace.environment_config.irrigation_tanks
+                if t.sensor_entity == tank_entity
+            ),
+            None,
+        )
+        if tank is None:
+            return
+
+        if volume_liters is not None:
+            tank.volume_liters = volume_liters
+            await self._save()
+
+    async def ensure_special_growspaces(self) -> None:
+        """Alias for ensure_default_growspaces."""
+        await self.ensure_default_growspaces()

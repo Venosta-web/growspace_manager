@@ -40,11 +40,11 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 return await self.async_step_update_plant()
             if action == "remove" and user_input.get("plant_id"):
                 try:
-                    plant = coordinator.plants.get(user_input["plant_id"])
+                    plant = coordinator.services.plants.get_plant(
+                        user_input["plant_id"]
+                    )
                     if plant:
-                        await self.async_destroy_plant(
-                            plant.growspace_id, plant.plant_id
-                        )
+                        await self.async_destroy_plant(plant.plant_id)
                 except Exception:
                     _LOGGER.exception("Error removing plant")
                     return self.flow.async_show_form(
@@ -73,7 +73,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
             self.flow.selected_growspace_id = user_input["growspace_id"]
             return await self.async_step_add_plant()
 
-        growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
+        growspace_options = (
+            coordinator.services.growspaces.get_sorted_growspace_options()
+        )
         if not growspace_options:
             return self.flow.async_abort(reason="no_growspaces")
 
@@ -103,11 +105,14 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.growspaces.get(growspace_id)
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if user_input is not None:
             try:
-                await self.async_add_plant(
+                coordinator = self.get_coordinator()
+                await coordinator.services.plants.add_plant(
                     growspace_id=growspace_id,
                     strain=user_input["strain"],
                     row=user_input["row"],
@@ -116,13 +121,17 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     veg_start=user_input.get("veg_start"),
                     flower_start=user_input.get("flower_start"),
                 )
-                return self.flow.async_create_entry(title="", data={})
-            except Exception as err:
+                if self.config_entry is None:
+                    return self.flow.async_abort(reason="setup_error")
+                return self.flow.async_create_entry(
+                    title="", data=self.config_entry.options
+                )
+            except Exception:
                 _LOGGER.exception("Error adding plant")
                 return self.flow.async_show_form(
                     step_id="add_plant",
                     data_schema=self.get_add_plant_schema(growspace, coordinator),
-                    errors={"base": str(err)},
+                    errors={"base": "add_failed"},
                 )
 
         return self.flow.async_show_form(
@@ -139,7 +148,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         plant_id = self.flow.selected_plant_id
-        plant = coordinator.plants.get(plant_id)
+        if plant_id is None:
+            return self.flow.async_abort(reason="plant_not_found")
+        plant = coordinator.services.plants.get_plant(plant_id)
 
         if not plant:
             return self.flow.async_abort(reason="plant_not_found")
@@ -149,13 +160,17 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 # Filter out empty values
                 update_data = {k: v for k, v in user_input.items() if v}
                 await self.async_update_plant(plant_id, **update_data)
-                return self.flow.async_create_entry(title="", data={})
-            except Exception as err:
+                if self.config_entry is None:
+                    return self.flow.async_abort(reason="setup_error")
+                return self.flow.async_create_entry(
+                    title="", data=self.config_entry.options
+                )
+            except Exception:
                 _LOGGER.exception("Error updating plant")
                 return self.flow.async_show_form(
                     step_id="update_plant",
                     data_schema=self.get_update_plant_schema(plant, coordinator),
-                    errors={"base": str(err)},
+                    errors={"base": "update_failed"},
                 )
 
         return self.flow.async_show_form(
@@ -215,7 +230,9 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     break
 
             if growspace_id:
-                growspace_obj = coordinator.growspaces.get(growspace_id)
+                growspace_obj = coordinator.services.growspaces.get_growspace(
+                    growspace_id
+                )
                 rows = getattr(growspace_obj, "rows", "?")
                 plants_per_row = getattr(growspace_obj, "plants_per_row", "?")
 
@@ -249,7 +266,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         # Get strain options for autocomplete
         strain_options = []
         if coordinator:
-            strain_list = coordinator.get_strain_options()
+            strain_list = coordinator.services.config.get_strain_options()
             strain_options = [
                 selector.SelectOptionDict(value=strain, label=strain)
                 for strain in strain_list
@@ -286,8 +303,8 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Optional("veg_start"): selector.DateSelector(),
-                vol.Optional("flower_start"): selector.DateSelector(),
+                vol.Optional("veg_start"): selector.DateTimeSelector(),
+                vol.Optional("flower_start"): selector.DateTimeSelector(),
             }
         )
 
@@ -295,7 +312,11 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, plant: Plant | None, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the update plant form."""
-        growspace = coordinator.growspaces.get(plant.growspace_id) if plant else None
+        growspace = (
+            coordinator.services.growspaces.get_growspace(plant.growspace_id)
+            if plant
+            else None
+        )
 
         # Ensure rows and plants_per_row are integers
         rows = int(growspace.rows) if growspace else 10
@@ -303,13 +324,14 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         # Get strain options for autocomplete
         strain_options = []
-        strain_list = coordinator.get_strain_options()
+        strain_list = coordinator.services.config.get_strain_options()
         strain_options = [
             selector.SelectOptionDict(value=strain, label=strain)
             for strain in strain_list
         ]
 
         # Use autocomplete selector if we have strains, otherwise text input
+        strain_selector: selector.Selector[Any]
         if strain_options:
             strain_selector = selector.SelectSelector(
                 selector.SelectSelectorConfig(
@@ -348,26 +370,30 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         min=1, max=max_col, mode=selector.NumberSelectorMode.BOX
                     )
                 ),
-                vol.Optional("veg_start"): selector.DateSelector(),
-                vol.Optional("flower_start"): selector.DateSelector(),
+                vol.Optional("veg_start"): selector.DateTimeSelector(),
+                vol.Optional("flower_start"): selector.DateTimeSelector(),
             }
         )
 
-    async def async_harvest_plant(
-        self, growspace_id: str, plant_id: str, harvest_weight: float
-    ) -> None:
+    async def async_harvest_plant(self, plant_id: str, harvest_weight: float) -> None:
         """Harvest a plant."""
         if self.config_entry is None:
             raise ValueError("Coordinator not found")
         coordinator = self.config_entry.runtime_data
-        await coordinator.async_harvest_plant(growspace_id, plant_id, harvest_weight)
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
+        await coordinator.services.plants.transition_plant(
+            plant_id, wet_weight=harvest_weight
+        )
 
-    async def async_destroy_plant(self, growspace_id: str, plant_id: str) -> None:
+    async def async_destroy_plant(self, plant_id: str) -> None:
         """Destroy a plant."""
         if self.config_entry is None:
             raise ValueError("Coordinator not found")
         coordinator = self.config_entry.runtime_data
-        await coordinator.async_remove_plant(plant_id)
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
+        await coordinator.services.plants.remove_plant(plant_id)
 
     async def async_add_plant(
         self,
@@ -385,7 +411,7 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
-        await coordinator.async_add_plant(
+        await coordinator.services.plants.add_plant(
             growspace_id=growspace_id,
             strain=strain,
             row=row,
@@ -402,4 +428,4 @@ class PlantConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
-        await coordinator.async_update_plant(plant_id, **kwargs)
+        await coordinator.services.plants.update_plant(plant_id, **kwargs)

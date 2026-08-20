@@ -3,9 +3,7 @@
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from common import create_plant
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
@@ -16,10 +14,10 @@ from custom_components.growspace_manager.const import (
     TrainingTechnique,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
-from custom_components.growspace_manager.services.training import (
-    handle_log_training_event,
-)
 from homeassistant.core import HomeAssistant, ServiceCall
+from tests.common import MockConfigEntry
+
+from .common import create_plant
 
 
 @pytest.fixture
@@ -51,15 +49,15 @@ def mock_coordinator(hass: HomeAssistant, mock_plants):
     # Use real coordinator instead of MagicMock to support delegation to services
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
-    coordinator = GrowspaceCoordinator(hass, entry, data={}, strain_library=MagicMock())
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
 
     # Set up plants
-    coordinator.data_repository.plants = mock_plants
-    coordinator.async_save = AsyncMock()  # type: ignore[method-assign]
-    # Mock save callback on training service
-    coordinator._training_service.save_callback = coordinator.async_save
-    coordinator.add_event = MagicMock()
-    coordinator._training_service.add_event = coordinator.add_event
+    coordinator._data_repository.load_plants(mock_plants)
+    coordinator.services.save = AsyncMock()  # type: ignore[method-assign]
+    coordinator.training_service._ctx.save_callback = coordinator.services.save
+    mock_add_event = MagicMock()
+    coordinator.add_event = mock_add_event
+    coordinator.training_service._ctx.add_event = mock_add_event
 
     return coordinator
 
@@ -76,7 +74,7 @@ async def test_log_training_single_plant(
     with patch(
         "homeassistant.util.dt.now", return_value=datetime(2023, 1, 1, 12, 0, 0)
     ):
-        await mock_coordinator.async_log_training_event(
+        await mock_coordinator.services.plants.log_training_event(
             growspace_id=None, technique=technique, notes=notes, plant_ids=["plant_1"]
         )
 
@@ -106,7 +104,7 @@ async def test_log_training_growspace_all(
     with patch(
         "homeassistant.util.dt.now", return_value=datetime(2023, 1, 1, 12, 0, 0)
     ):
-        await mock_coordinator.async_log_training_event(
+        await mock_coordinator.services.plants.log_training_event(
             growspace_id="gs_1", technique=technique
         )
 
@@ -131,7 +129,7 @@ async def test_log_training_subset(mock_coordinator: GrowspaceCoordinator) -> No
     plant_ids = ["plant_1"]
     technique = "lst"
 
-    await mock_coordinator.async_log_training_event(
+    await mock_coordinator.services.plants.log_training_event(
         growspace_id=None, technique=technique, plant_ids=plant_ids
     )
 
@@ -165,9 +163,9 @@ async def test_handle_log_training_event_service(
     )
 
     with patch.object(
-        mock_coordinator, "async_log_training_event", new_callable=AsyncMock
+        mock_coordinator.services.plants, "log_training_event", new_callable=AsyncMock
     ) as mock_method:
-        await handle_log_training_event(hass, mock_coordinator, call)
+        await mock_coordinator.services.plants.log_training_event_from_call(hass, call)
 
         mock_method.assert_awaited_once_with(
             growspace_id="gs_1",
@@ -183,7 +181,7 @@ async def test_log_training_empty_growspace(
 ) -> None:
     """Test logging training for a growspace with no plants."""
     # Create a growspace with no plants (gs_none)
-    await mock_coordinator.async_log_training_event(
+    await mock_coordinator.services.plants.log_training_event(
         growspace_id="empty_gs", technique="testing"
     )
 
@@ -202,6 +200,6 @@ async def test_log_training_missing_params_error(
     with pytest.raises(
         ValueError, match="Either growspace_id or plant_ids must be provided"
     ):
-        await mock_coordinator.async_log_training_event(
+        await mock_coordinator.services.plants.log_training_event(
             growspace_id=None, technique="testing", plant_ids=None
         )

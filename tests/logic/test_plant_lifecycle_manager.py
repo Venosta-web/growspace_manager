@@ -11,6 +11,7 @@ from custom_components.growspace_manager.exceptions import (
 )
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.services.context import ServiceContext
 from homeassistant.core import HomeAssistant
 
 
@@ -77,14 +78,19 @@ def manager(
 ):
     """Fixture for PlantManager."""
     return PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback_mock,
+            lock=lock_mock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository_mock,
+        notification_state=MagicMock(),
         validator=validator_mock,
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback_mock,
-        lock=lock_mock,
     )
 
 
@@ -107,9 +113,9 @@ async def test_handle_clone_creation(
     )
 
     assert plant_id is not None
-    # Check that a plant was added to repository.plants
-    assert len(repository_mock.plants) == 1
-    added_plant = list(repository_mock.plants.values())[0]
+    # Check that add_plant was called on the repository
+    repository_mock.add_plant.assert_called_once()
+    added_plant = repository_mock.add_plant.call_args[0][0]
 
     assert added_plant.growspace_id == "clone_tent"
     assert added_plant.strain == "OG Kush"
@@ -195,8 +201,8 @@ async def test_move_to_dry_growspace_device_id_ghosting(
     gs_service_mock.ensure_special_growspace.return_value = "dry_gs"
     mock_dry_gs = MagicMock()
     mock_dry_gs.device_id = None  # Crucial: destination has no device
-    repository_mock.growspaces = {"dry_gs": mock_dry_gs, "gs1": MagicMock()}
-    repository_mock.plants = {"p1": plant}
+    repository_mock.get_growspace.side_effect = lambda gid: {"dry_gs": mock_dry_gs, "gs1": MagicMock()}.get(gid)
+    repository_mock.get_plant.return_value = plant
 
     await manager.move_to_dry_growspace("p1", plant, "2023-01-01")
 
@@ -209,64 +215,88 @@ async def test_move_to_dry_growspace_device_id_ghosting(
 
 
 @pytest.mark.asyncio
-async def test_handle_harvest_logic_fallthrough(manager, repository_mock) -> None:
+async def test_handle_transition_logic_fallthrough(manager, repository_mock) -> None:
     """Test that invalid target_growspace_id raises ValueError and does not fall through."""
     plant = MagicMock(spec=Plant)
     plant.plant_id = "p1"
+    plant.phi_clearance_date = None
     # Mock growspaces not containing 'invalid_gs'
-    repository_mock.growspaces = {"valid_gs": MagicMock()}
+    repository_mock.has_growspace.side_effect = lambda gid: gid == "valid_gs"
 
     with pytest.raises(
         GrowspaceNotFoundError, match="Target growspace invalid_gs not found"
     ):
-        await manager.handle_harvest_logic(
+        await manager.handle_transition_logic(
             "p1", plant, "invalid_gs", "Invalid Name", "2023-01-01"
         )
 
 
 @pytest.mark.asyncio
+async def test_update_plant_preserves_lifecycle_datetime_time(
+    manager, repository_mock
+) -> None:
+    """update_plant stores a lifecycle datetime with its time intact (ADR-0013).
+
+    Previously DATE_FIELDS were run through format_date, truncating to date-only;
+    the time the user picked was silently discarded on the way to storage.
+    """
+    plant = Plant(plant_id="p1", growspace_id="gs1")
+    repository_mock.get_plant.return_value = plant
+
+    await manager.update_plant("p1", flower_start="2026-03-01T14:30:00+00:00")
+
+    # Stored as a full datetime string, not truncated to "2026-03-01".
+    assert "T14:30" in plant.flower_start
+
+
+@pytest.mark.asyncio
+async def test_transition_plant_stage_preserves_supplied_datetime(
+    manager, repository_mock
+) -> None:
+    """A stage transition stamps the start field with the supplied datetime's time."""
+    plant = Plant(plant_id="p1", growspace_id="gs1")
+    repository_mock.get_plant.return_value = plant
+
+    await manager.transition_plant_stage(
+        "p1", PlantStage.FLOWER, "2026-03-01T14:30:00+00:00"
+    )
+
+    assert "T14:30" in plant.flower_start
+
+
+@pytest.mark.asyncio
 async def test_remove_plant_not_found(manager, repository_mock) -> None:
     """Test remove_plant returns False when plant does not exist."""
-    repository_mock.plants = {}
+    repository_mock.get_plant.return_value = None
     result = await manager.remove_plant("non_existent_plant")
     assert result is False
 
 
 @pytest.mark.asyncio
-async def test_remove_plant_race_condition(manager, repository_mock) -> None:
+async def test_remove_plant_race_condition(
+    manager: PlantManager, repository_mock: MagicMock
+) -> None:
     """Test remove_plant returns False if plant disappears before lock acquisition."""
     plant_id = "race_plant"
     plant = MagicMock()
 
-    # Initially present for the first check
-    repository_mock.plants = {plant_id: plant}
+    # The plant exists until the shared mutation lock is acquired.
+    repository_mock.get_plant.return_value = plant
 
-    # Define a side effect for the lock that removes the plant
-    original_lock = manager.lock
+    async def side_effect_enter() -> None:
+        repository_mock.get_plant.return_value = None
 
-    async def side_effect_enter():
-        # Remove plant from repository when lock is acquired
-        if plant_id in repository_mock.plants:
-            del repository_mock.plants[plant_id]
-
-    # We need to mock the lock so we can inject the side effect
-    # But manager.lock is already a MagicMock from fixture 'lock_mock'
-    # The fixture mock.__aenter__ returns None.
-    manager.lock.__aenter__.side_effect = side_effect_enter
-
-    # We also need to ensure the initial get works (it uses repository_mock.plants.get which references the dict)
-    # The dict is updated in place, so the initial check will pass if we set it up right.
+    manager._ctx.lock.__aenter__.side_effect = side_effect_enter
 
     result = await manager.remove_plant(plant_id)
     assert result is False
 
-    # Verify the fallback path was taken (line 229) logic
-
 
 @pytest.mark.asyncio
-async def test_harvest_plant_defensive_check(manager, repository_mock) -> None:
-    """Test harvest_plant handles invalid plant objects gracefully."""
+async def test_transition_plant_defensive_check(manager, repository_mock) -> None:
+    """Test transition_plant handles invalid plant objects gracefully."""
     plant = MagicMock()
+    plant.phi_clearance_date = None
     # Explicitly remove growspace_id to trigger the defensive check
     del plant.growspace_id
     repository_mock.plants = {"p1": plant}
@@ -285,7 +315,7 @@ async def test_harvest_plant_defensive_check(manager, repository_mock) -> None:
     ):
         mock_harvest_flow.return_value = True
 
-        await manager.harvest_plant("p1", plant=plant)
+        await manager.transition_plant("p1", plant=plant)
 
         # Should still proceed to call the flow
         mock_harvest_flow.assert_awaited()
@@ -298,7 +328,7 @@ async def test_promote_clone_target_full(manager, repository_mock) -> None:
     clone_plant.stage = PlantStage.CLONE
     clone_plant.plant_id = "c1"
 
-    repository_mock.plants = {"c1": clone_plant}
+    repository_mock.get_plant.return_value = clone_plant
 
     # Mock find_first_available_position returning (None, None)
     manager.validator.find_first_available_position.return_value = (None, None)
@@ -314,10 +344,10 @@ async def test_promote_clone_target_full(manager, repository_mock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_harvest_logic_kwargs(manager) -> None:
-    """Test handle_harvest_logic passes through kwargs correctly."""
-    with patch.object(manager, "harvest_plant", new_callable=AsyncMock) as mock_harvest:
+async def test_handle_transition_logic_kwargs(manager) -> None:
+    """Test handle_transition_logic passes through kwargs correctly."""
+    with patch.object(manager, "transition_plant", new_callable=AsyncMock) as mock_harvest:
         # Call with keyword args only
-        await manager.handle_harvest_logic(plant_id="p1", custom_arg=True)
+        await manager.handle_transition_logic(plant_id="p1", custom_arg=True)
 
         mock_harvest.assert_awaited_with(plant_id="p1", custom_arg=True)

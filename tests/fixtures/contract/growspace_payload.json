@@ -1,0 +1,794 @@
+{
+  "_ts": 1786449600000,
+  "ai_auto_alerts": false,
+  "capabilities": {
+    "atomic_plant_layout": true
+  },
+  "environment": {
+    "active_events": {},
+    "bulk_ec_sensors": ["sensor.contract_bulk_ec"],
+    "camera_entities": ["camera.contract"],
+    "circulation_fan_ac_infinity_devices": [
+      {
+        "mode_entity": "select.contract_circulation_mode",
+        "on_speed": 7,
+        "speed_entity": "number.contract_circulation_speed"
+      }
+    ],
+    "circulation_fan_config": {
+      "critical_temp_high": 33.0,
+      "critical_temp_hysteresis": 1.5,
+      "critical_temp_low": 17.0,
+      "enabled": true,
+      "humidity_target": 62.0,
+      "humidity_tolerance": 4.0,
+      "max_speed": 90,
+      "min_speed": 20,
+      "regulation_mode": "humidity",
+      "stage_vpd_enabled": true,
+      "stage_vpd_overrides": {
+        "flower": {
+          "day": 1.3,
+          "night": 1.1
+        }
+      },
+      "temperature_target": 25.5,
+      "temperature_tolerance": 1.5,
+      "vpd_target": 1.15,
+      "vpd_tolerance": 0.15,
+      "wind_amplitude_pct": 15,
+      "wind_enabled": true,
+      "wind_period_seconds": 90
+    },
+    "circulation_fan_entities": ["fan.contract_circulation"],
+    "circulation_fan_entity": "fan.contract_circulation",
+    "circulation_fan_state": "on",
+    "co2_sensor": "sensor.contract_co2",
+    "dehumidifier_ac_infinity_devices": [
+      {
+        "mode_entity": "select.contract_dehumidifier_mode",
+        "on_speed": 5,
+        "speed_entity": "number.contract_dehumidifier_speed"
+      }
+    ],
+    "dehumidifier_control_enabled": true,
+    "dehumidifier_current_humidity": 58,
+    "dehumidifier_entities": ["humidifier.contract_dehumidifier"],
+    "dehumidifier_entity": "humidifier.contract_dehumidifier",
+    "dehumidifier_humidity": 52,
+    "dehumidifier_mode": "auto",
+    "dehumidifier_state": "off",
+    "dehumidifier_thresholds": {
+      "flower": {
+        "target": 52.0,
+        "tolerance": 3.0
+      }
+    },
+    "drain_pump_state": "off",
+    "drain_volume_sensors": ["sensor.contract_drain_volume"],
+    "electricity_cost_per_kwh": 0.32,
+    "energy_sensors": ["sensor.contract_energy"],
+    "exhaust_entity": "fan.contract_exhaust",
+    "exhaust_fan_ac_infinity_devices": [
+      {
+        "mode_entity": "select.contract_exhaust_mode",
+        "on_speed": 8,
+        "speed_entity": "number.contract_exhaust_speed"
+      }
+    ],
+    "exhaust_fan_config": {
+      "critical_temp_high": 34.0,
+      "critical_temp_hysteresis": 2.0,
+      "critical_temp_low": 16.0,
+      "enabled": true,
+      "humidity_target": 58.0,
+      "humidity_tolerance": 5.0,
+      "max_speed": 85,
+      "min_speed": 15,
+      "stage_vpd_enabled": true,
+      "stage_vpd_overrides": {
+        "veg": {
+          "day": 1.0,
+          "night": 0.8
+        }
+      },
+      "temperature_target": 26.0,
+      "temperature_tolerance": 2.5,
+      "vpd_target": 1.2,
+      "vpd_tolerance": 0.2
+    },
+    "exhaust_fan_entities": ["fan.contract_exhaust"],
+    "exhaust_state": "on",
+    "feed_ec_sensors": ["sensor.contract_feed_ec"],
+    "growlight_ac_infinity_devices": [
+      {
+        "mode_entity": "select.contract_growlight_mode",
+        "off_time_entity": "time.contract_growlight_off",
+        "on_time_entity": "time.contract_growlight_on",
+        "power_entity": "number.contract_growlight_power",
+        "sunrise_duration_entity": "number.contract_growlight_sunrise_duration",
+        "sunrise_switch_entity": "switch.contract_growlight_sunrise"
+      }
+    ],
+    "growlight_config": {
+      "enabled": true,
+      "power": 80,
+      "sunrise_enabled": true,
+      "sunrise_minutes": 30
+    },
+    "growlight_entities": ["light.contract_growlight"],
+    "humidifier_ac_infinity_devices": [
+      {
+        "mode_entity": "select.contract_humidifier_mode",
+        "on_speed": 6,
+        "speed_entity": "number.contract_humidifier_speed"
+      }
+    ],
+    "humidifier_control_enabled": true,
+    "humidifier_entities": ["humidifier.contract"],
+    "humidifier_entity": "humidifier.contract",
+    "humidifier_state": "on",
+    "humidifier_thresholds": {
+      "veg": {
+        "target": 68.0,
+        "tolerance": 4.0
+      }
+    },
+    "humidity": "58.0",
+    "humidity_sensor": "sensor.contract_humidity",
+    "humidity_sensors": [
+      "sensor.contract_humidity",
+      "sensor.contract_humidity_2"
+    ],
+    "irrigation_flow_sensors": ["sensor.contract_irrigation_flow"],
+    "irrigation_pump_state": "off",
+    "irrigation_tanks": [
+      {
+        "depletion_status": "normal",
+        "fill_level": 72.0,
+        "hours_remaining": 36.5,
+        "is_warning": false,
+        "name": "nutrient_tank",
+        "sensor_entity": "sensor.contract_tank",
+        "volume_liters": 120.0,
+        "warning_level": 25.0,
+        "water_history": {
+          "buckets_24h": [
+            {
+              "liters": 4.5,
+              "ts": "2026-08-11T09:00:00+00:00"
+            }
+          ],
+          "daily_7d": [
+            {
+              "consumed": 0.0,
+              "date": "2026-08-10",
+              "refilled": 30.0
+            },
+            {
+              "consumed": 4.5,
+              "date": "2026-08-11",
+              "refilled": 0.0
+            }
+          ],
+          "recent_refills": [
+            {
+              "event_type": "refill",
+              "liters": 30.0,
+              "pct_delta": 25.0,
+              "timestamp": "2026-08-10T18:00:00+00:00"
+            }
+          ]
+        }
+      }
+    ],
+    "light_sensor": "sensor.contract_light",
+    "light_sensors": ["sensor.contract_light"],
+    "lst_offset": -2.5,
+    "lung_room_temp_sensors": ["sensor.contract_lung_temperature"],
+    "mold_threshold": 0.8,
+    "ph_sensors": ["sensor.contract_ph"],
+    "pore_ec_sensors": ["sensor.contract_pore_ec"],
+    "power_sensors": ["sensor.contract_power"],
+    "runoff_ec_sensors": ["sensor.contract_runoff_ec"],
+    "soil_moisture_band": {
+      "is_custom": true,
+      "max": 54.0,
+      "min": 32.5
+    },
+    "soil_moisture_band_compatible": true,
+    "soil_moisture_max": 54.0,
+    "soil_moisture_min": 32.5,
+    "soil_moisture_sensor": "sensor.contract_soil_moisture",
+    "soil_moisture_unit": "%",
+    "soil_moisture_value": "56.0",
+    "stress_threshold": 0.65,
+    "substrate_ec_delta": 0.4,
+    "substrate_temperature_sensors": ["sensor.contract_substrate_temperature"],
+    "temperature": "25.4",
+    "temperature_sensor": "sensor.contract_temperature",
+    "temperature_sensors": [
+      "sensor.contract_temperature",
+      "sensor.contract_temperature_2"
+    ],
+    "vision_checkup_config": {
+      "early_check_offset_minutes": 45,
+      "enabled": true,
+      "history_limit": 20,
+      "late_check_offset_minutes": 30,
+      "mid_check_hours": 5
+    },
+    "vpd": "1.25",
+    "vpd_optimal_overrides": {
+      "flower": {
+        "day": {
+          "high": 1.5,
+          "low": 1.1
+        },
+        "night": {
+          "high": 1.2,
+          "low": 0.8
+        }
+      }
+    },
+    "vpd_sensor": "sensor.contract_vpd",
+    "vpd_sensors": ["sensor.contract_vpd", "sensor.contract_vpd_2"]
+  },
+  "grid": {
+    "dimensions": {
+      "depth": 120.0,
+      "height": 220.0,
+      "unit": "cm",
+      "width": 240.0
+    },
+    "grid": {
+      "position_1_1": {
+        "clone_days": 17,
+        "clone_start": "2026-01-15",
+        "col": 1,
+        "cure_days": 10,
+        "cure_start": "2026-08-01",
+        "days_since_last_watering": 1,
+        "days_to_target": 0.08050847457627118,
+        "dry_days": 12,
+        "dry_start": "2026-07-20",
+        "drying_moisture": 11.5,
+        "drying_ready_for_cure": true,
+        "drying_weight": 260.0,
+        "entity_id": null,
+        "flower_days": 110,
+        "flower_early_days": 0,
+        "flower_late_days": 0,
+        "flower_mid_days": 0,
+        "flower_start": "2026-04-01",
+        "growspace_id": "contract_growspace",
+        "harvest_metrics": {
+          "cbd_percentage": 0.8,
+          "dry_weight": 210.0,
+          "terpene_profile": "citrus, pine",
+          "thc_percentage": 24.5,
+          "trim_weight": 45.0,
+          "wet_weight": 850.0
+        },
+        "last_ipm": "2026-07-01",
+        "last_ipm_type": "beneficial_insects",
+        "last_trained": "2026-03-15",
+        "last_training_technique": "low_stress_training",
+        "last_watered": "2026-08-10",
+        "mother_days": 215,
+        "mother_start": "2026-01-08",
+        "phenotype": "Keeper A",
+        "phenotype_score": {
+          "internodal_spacing": 8,
+          "keeper": true,
+          "mold_resistance": 8,
+          "notes": "Contract phenotype notes",
+          "resin": 9,
+          "terpene_intensity": 10,
+          "total_score": 8.833333333333334,
+          "updated_at": "2026-08-01T12:00:00+00:00",
+          "vigor": 9,
+          "yield_potential": 9
+        },
+        "phi_clearance_date": "2026-08-15",
+        "phi_days_remaining": 4,
+        "plant_id": "contract-plant",
+        "position": "(1,1)",
+        "row": 1,
+        "seedling_days": 31,
+        "seedling_start": "2026-01-01",
+        "stage": "cure",
+        "strain": "Contract Cultivar",
+        "updated_at": "2026-08-11",
+        "veg_days": 59,
+        "veg_early_days": 0,
+        "veg_late_days": 0,
+        "veg_start": "2026-02-01",
+        "visual_tag": "stems_snap",
+        "weight_lost_pct": 69.41176470588235
+      },
+      "position_1_2": null,
+      "position_2_1": null,
+      "position_2_2": null
+    },
+    "plants_per_row": 2,
+    "rows": 2,
+    "total_plants": 1
+  },
+  "identity": {
+    "growspace_id": "contract_growspace",
+    "name": "Contract Growspace",
+    "notification_target": "notify.mobile_app_grower",
+    "overview_entity_id": null,
+    "type": "normal"
+  },
+  "irrigation": {
+    "cycles_today": 0,
+    "drain_config": {
+      "enabled": true,
+      "max_ec_delta": 0.6,
+      "max_readings": 150,
+      "readings": [
+        {
+          "drain_ec": 2.4,
+          "drain_volume_ml": 450.0,
+          "feed_ec": 2.0,
+          "feed_volume_ml": 2500.0,
+          "timestamp": "2026-08-11T10:00:00+00:00"
+        }
+      ],
+      "target_runoff_percent": 18.0
+    },
+    "ec_state": null,
+    "irrigation_config": {
+      "active_steering_phase": "p2",
+      "auto_advance_p1_to_p2": true,
+      "auto_advance_p2_to_p3": true,
+      "daily_volume_cap_liters": 18.0,
+      "drain_duration": 30,
+      "drain_pump_entity": "switch.contract_drain_pump",
+      "drain_times": [
+        {
+          "duration": 30,
+          "time": "07:00"
+        }
+      ],
+      "ec_target_ranges": [
+        {
+          "feed_ec_max": 2.2,
+          "feed_ec_min": 1.8,
+          "stage": "flower"
+        }
+      ],
+      "halt_on_runoff_ec_threshold": 2.8,
+      "irrigation_duration": 45,
+      "irrigation_pump_entity": "switch.contract_irrigation_pump",
+      "irrigation_times": [
+        {
+          "duration": 45,
+          "time": "06:30"
+        }
+      ],
+      "log_to_logbook": true,
+      "max_cycles_per_day": 12,
+      "pause_on_low_tank": true,
+      "phase_changed_at": "2026-08-11T06:00:00+00:00",
+      "pump_flow_rate_ml_per_sec": 25.0,
+      "skip_during_dark": true,
+      "soil_trigger_percent": 42.0,
+      "veg_day_hours": 18
+    },
+    "irrigation_strategy": {
+      "auto_light_tracking": true,
+      "declared_steering_mode": "generative",
+      "detected_lights_on_time": "05:58:00",
+      "dynamic_aggressiveness": 1.2,
+      "dynamic_interval_ceiling": 1.8,
+      "dynamic_recovery": 0.15,
+      "dynamic_shot_enabled": true,
+      "dynamic_shot_size_floor": 0.6,
+      "ec_modulation_enabled": true,
+      "enabled": true,
+      "lights_on_time": "06:00:00",
+      "maintenance_dryback_percent": 3.5,
+      "p0_duration_minutes": 90,
+      "p1_shot_duration_seconds": 12,
+      "p1_shot_interval_minutes": 20,
+      "p1_shot_volume_percent": 4.5,
+      "p2_shot_duration_seconds": 9,
+      "p2_shot_interval_minutes": 30,
+      "p2_shot_volume_percent": 3.0,
+      "p2_stop_before_lights_off_minutes": 75,
+      "pore_ec_target_max": 2.8,
+      "pore_ec_target_min": 2.1,
+      "shot_duration_seconds": 12,
+      "shot_interval_minutes": 20,
+      "shot_sizing_mode": "volume",
+      "substrate_profile": {
+        "liters_per_pot": 7.5,
+        "media_type": "rockwool"
+      },
+      "target_vwc_percent": 58.0
+    },
+    "last_cycle_timestamp": null,
+    "next_scheduled_cycle": null,
+    "projected_shot_window": null,
+    "substrate": {
+      "ec_trend": "rising",
+      "ec_trend_available": true,
+      "ec_trend_detail": {
+        "current_ec": 2.5,
+        "day_start_ec": 2.2,
+        "delta": 0.3,
+        "trend": "rising"
+      },
+      "incycle_dryback_avg": 4.0,
+      "incycle_dryback_count": 1,
+      "intent_deviation": null,
+      "latest_overnight_event": {
+        "dryback": 9.0,
+        "event_type": "overnight",
+        "peak_timestamp": "2026-08-10T18:00:00+00:00",
+        "peak_vwc": 61.0,
+        "trough_timestamp": "2026-08-11T05:55:00+00:00",
+        "trough_vwc": 52.0
+      },
+      "measured_classification": "balanced",
+      "overnight_dryback": 9.0,
+      "runoff_score": 0.0,
+      "score": 0.0,
+      "shot_composition": null
+    },
+    "volume_dispensed_today": 0.0,
+    "volume_mode_capable": true,
+    "water_usage": {
+      "cycle_start_date": "2026-08-01",
+      "daily_readings": [
+        {
+          "date": "2026-08-11",
+          "liters": 6.25,
+          "source": "manual"
+        }
+      ],
+      "liters_today": 6.25,
+      "max_daily_readings": 400,
+      "total_liters": 88.5
+    }
+  },
+  "layout_revision": 0,
+  "metrics": {
+    "air_exchange": null,
+    "cure_week": 2,
+    "day_vpd_danger_max": 1.1,
+    "day_vpd_danger_min": 0.5,
+    "day_vpd_target_max": 0.9,
+    "day_vpd_target_min": 0.7,
+    "dry_week": 4,
+    "energy_tracking": {
+      "cycle_start_date": "2026-08-01",
+      "cycle_start_kwh": 1024.5,
+      "last_kwh_reading": 1108.75
+    },
+    "flower_week": 19,
+    "granular_stage": "cure",
+    "is_day": true,
+    "max_cure_days": 10,
+    "max_dry_days": 22,
+    "max_flower_days": 132,
+    "max_stage_summary": "Cure: 10d (W2)",
+    "max_veg_days": 191,
+    "night_vpd_danger_max": 1.1,
+    "night_vpd_danger_min": 0.5,
+    "night_vpd_target_max": 0.9,
+    "night_vpd_target_min": 0.7,
+    "transition_factor": 0.0,
+    "transition_stages": ["cure", "cure"],
+    "veg_week": 28,
+    "vpd_danger_max": 1.1,
+    "vpd_danger_min": 0.5,
+    "vpd_status": "danger",
+    "vpd_target_max": 0.9,
+    "vpd_target_min": 0.7
+  },
+  "notification_settings": {
+    "criticalCooldownMinutes": 8,
+    "escalationDelayMinutes": 20,
+    "minStressDurationSeconds": 180,
+    "recoveryCooldownMinutes": 12,
+    "warningCooldownMinutes": 45,
+    "warningPersistenceMinutes": 15
+  },
+  "sensors": {
+    "sensor_coordinates": {
+      "sensor.contract_humidity": {
+        "x": 0.75,
+        "y": 0.5,
+        "z": 1.0
+      },
+      "sensor.contract_temperature": {
+        "x": 0.25,
+        "y": 0.5,
+        "z": 1.25
+      }
+    },
+    "sensor_groups": [
+      {
+        "humidity_sensors": ["sensor.contract_humidity"],
+        "id": "contract-canopy",
+        "name": "Canopy",
+        "temperature_sensors": ["sensor.contract_temperature"],
+        "vpd_sensors": ["sensor.contract_vpd"],
+        "x": 0.5,
+        "y": 0.5,
+        "z": 1.2
+      }
+    ],
+    "sensor_types": {
+      "fan.contract_circulation": "circulation",
+      "fan.contract_exhaust": "exhaust",
+      "humidifier.contract": "humidifier",
+      "humidifier.contract_dehumidifier": "dehumidifier",
+      "sensor.contract_co2": "co2",
+      "sensor.contract_humidity": "humidity",
+      "sensor.contract_humidity_2": "humidity",
+      "sensor.contract_light": "light",
+      "sensor.contract_soil_moisture": "soil_moisture",
+      "sensor.contract_tank": "irrigation_tank",
+      "sensor.contract_temperature": "temperature",
+      "sensor.contract_temperature_2": "temperature",
+      "sensor.contract_vpd": "vpd",
+      "sensor.contract_vpd_2": "vpd",
+      "switch.contract_drain_pump": "drain_pump",
+      "switch.contract_irrigation_pump": "irrigation_pump"
+    }
+  },
+  "subareas": [
+    {
+      "environment_config": {
+        "bayesian_options": {
+          "min_probability": 0.75,
+          "observations": 4
+        },
+        "bulk_ec_sensors": ["sensor.subarea_bulk_ec"],
+        "camera_entities": ["camera.subarea"],
+        "circulation_fan_ac_infinity_devices": [
+          {
+            "mode_entity": "select.subarea_circulation_mode",
+            "on_speed": 7,
+            "speed_entity": "number.subarea_circulation_speed"
+          }
+        ],
+        "circulation_fan_config": {
+          "critical_temp_high": 33.0,
+          "critical_temp_hysteresis": 1.5,
+          "critical_temp_low": 17.0,
+          "enabled": true,
+          "humidity_target": 62.0,
+          "humidity_tolerance": 4.0,
+          "max_speed": 90,
+          "min_speed": 20,
+          "regulation_mode": "humidity",
+          "stage_vpd_enabled": true,
+          "stage_vpd_overrides": {
+            "flower": {
+              "day": 1.3,
+              "night": 1.1
+            }
+          },
+          "temperature_target": 25.5,
+          "temperature_tolerance": 1.5,
+          "vpd_target": 1.15,
+          "vpd_tolerance": 0.15,
+          "wind_amplitude_pct": 15,
+          "wind_enabled": true,
+          "wind_period_seconds": 90
+        },
+        "circulation_fan_entities": ["fan.subarea_circulation"],
+        "co2_sensor": "sensor.subarea_co2",
+        "control_dehumidifier": true,
+        "control_humidifier": true,
+        "dehumidifier_ac_infinity_devices": [
+          {
+            "mode_entity": "select.subarea_dehumidifier_mode",
+            "on_speed": 5,
+            "speed_entity": "number.subarea_dehumidifier_speed"
+          }
+        ],
+        "dehumidifier_entities": ["humidifier.subarea_dehumidifier"],
+        "dehumidifier_thresholds": {
+          "flower": {
+            "target": 52.0,
+            "tolerance": 3.0
+          }
+        },
+        "dli_target_flower": 44.0,
+        "dli_target_veg": 32.0,
+        "drain_volume_sensors": ["sensor.subarea_drain_volume"],
+        "electricity_cost_per_kwh": 0.32,
+        "energy_sensors": ["sensor.subarea_energy"],
+        "exhaust_fan_ac_infinity_devices": [
+          {
+            "mode_entity": "select.subarea_exhaust_mode",
+            "on_speed": 8,
+            "speed_entity": "number.subarea_exhaust_speed"
+          }
+        ],
+        "exhaust_fan_config": {
+          "critical_temp_high": 34.0,
+          "critical_temp_hysteresis": 2.0,
+          "critical_temp_low": 16.0,
+          "enabled": true,
+          "humidity_target": 58.0,
+          "humidity_tolerance": 5.0,
+          "max_speed": 85,
+          "min_speed": 15,
+          "stage_vpd_enabled": true,
+          "stage_vpd_overrides": {
+            "veg": {
+              "day": 1.0,
+              "night": 0.8
+            }
+          },
+          "temperature_target": 26.0,
+          "temperature_tolerance": 2.5,
+          "vpd_target": 1.2,
+          "vpd_tolerance": 0.2
+        },
+        "exhaust_fan_entities": ["fan.subarea_exhaust"],
+        "feed_ec_sensors": ["sensor.subarea_feed_ec"],
+        "flower_day_hours": 12,
+        "growlight_ac_infinity_devices": [
+          {
+            "mode_entity": "select.subarea_growlight_mode",
+            "off_time_entity": "time.subarea_growlight_off",
+            "on_time_entity": "time.subarea_growlight_on",
+            "power_entity": "number.subarea_growlight_power",
+            "sunrise_duration_entity": "number.subarea_growlight_sunrise_duration",
+            "sunrise_switch_entity": "switch.subarea_growlight_sunrise"
+          }
+        ],
+        "growlight_config": {
+          "enabled": true,
+          "power": 80,
+          "sunrise_enabled": true,
+          "sunrise_minutes": 30
+        },
+        "growlight_entities": ["light.subarea_growlight"],
+        "humidifier_ac_infinity_devices": [
+          {
+            "mode_entity": "select.subarea_humidifier_mode",
+            "on_speed": 6,
+            "speed_entity": "number.subarea_humidifier_speed"
+          }
+        ],
+        "humidifier_entities": ["humidifier.subarea"],
+        "humidifier_thresholds": {
+          "veg": {
+            "target": 68.0,
+            "tolerance": 4.0
+          }
+        },
+        "humidity_sensor": "sensor.subarea_humidity",
+        "humidity_sensors": [
+          "sensor.subarea_humidity",
+          "sensor.subarea_humidity_2"
+        ],
+        "irrigation_flow_sensors": ["sensor.subarea_irrigation_flow"],
+        "irrigation_tanks": [
+          {
+            "enable_lights_bias": true,
+            "enable_prediction": true,
+            "enable_vpd_weighting": true,
+            "last_recorded_level": 72.0,
+            "name": "nutrient_tank",
+            "peak_level": 95.0,
+            "sensor_entity": "sensor.subarea_tank",
+            "volume_liters": 120.0,
+            "warning_level": 25.0,
+            "water_history": {
+              "events": [
+                {
+                  "event_type": "consumption",
+                  "liters": 4.5,
+                  "pct_delta": -3.75,
+                  "timestamp": "2026-08-11T09:00:00+00:00"
+                },
+                {
+                  "event_type": "refill",
+                  "liters": 30.0,
+                  "pct_delta": 25.0,
+                  "timestamp": "2026-08-10T18:00:00+00:00"
+                }
+              ],
+              "snapshots": [
+                {
+                  "level_pct": 75.0,
+                  "timestamp": "2026-08-11T08:00:00+00:00"
+                }
+              ]
+            }
+          }
+        ],
+        "light_sensors": ["sensor.subarea_light"],
+        "lst_offset": -2.5,
+        "lung_room_temp_sensors": ["sensor.subarea_lung_temperature"],
+        "minimum_source_air_temperature": 17.5,
+        "mold_threshold": 0.8,
+        "ph_sensors": ["sensor.subarea_ph"],
+        "pore_ec_sensors": ["sensor.subarea_pore_ec"],
+        "power_sensors": ["sensor.subarea_power"],
+        "runoff_ec_sensors": ["sensor.subarea_runoff_ec"],
+        "sensor_coordinates": {
+          "sensor.subarea_humidity": {
+            "x": 0.75,
+            "y": 0.5,
+            "z": 1.0
+          },
+          "sensor.subarea_temperature": {
+            "x": 0.25,
+            "y": 0.5,
+            "z": 1.25
+          }
+        },
+        "sensor_groups": [
+          {
+            "humidity_sensors": ["sensor.subarea_humidity"],
+            "id": "subarea-canopy",
+            "name": "Canopy",
+            "temperature_sensors": ["sensor.subarea_temperature"],
+            "vpd_sensors": ["sensor.subarea_vpd"],
+            "x": 0.5,
+            "y": 0.5,
+            "z": 1.2
+          }
+        ],
+        "snapshot_interval_hours": 6,
+        "soil_moisture_max": 54.0,
+        "soil_moisture_min": 32.5,
+        "soil_moisture_sensor": "sensor.subarea_soil_moisture",
+        "stress_threshold": 0.65,
+        "substrate_temperature_sensors": [
+          "sensor.subarea_substrate_temperature"
+        ],
+        "temperature_sensor": "sensor.subarea_temperature",
+        "temperature_sensors": [
+          "sensor.subarea_temperature",
+          "sensor.subarea_temperature_2"
+        ],
+        "veg_day_hours": 18,
+        "vision_checkup_config": {
+          "early_check_offset_minutes": 45,
+          "enabled": true,
+          "history_limit": 20,
+          "late_check_offset_minutes": 30,
+          "mid_check_hours": 5
+        },
+        "vpd_optimal_overrides": {
+          "flower": {
+            "day": {
+              "high": 1.5,
+              "low": 1.1
+            },
+            "night": {
+              "high": 1.2,
+              "low": 0.8
+            }
+          }
+        },
+        "vpd_sensor": "sensor.subarea_vpd",
+        "vpd_sensors": ["sensor.subarea_vpd", "sensor.subarea_vpd_2"]
+      },
+      "id": "contract-subarea",
+      "name": "Propagation Shelf"
+    }
+  ],
+  "timed_notifications": [
+    {
+      "day": 14,
+      "growspace_ids": ["contract_growspace"],
+      "id": "contract-notification",
+      "message": "Inspect irrigation runoff",
+      "trigger_type": "flower"
+    }
+  ]
+}

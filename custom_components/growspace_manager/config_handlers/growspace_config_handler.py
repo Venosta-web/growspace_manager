@@ -26,7 +26,9 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the growspace management menu."""
-        growspace_options = coordinator.growspace_service.get_sorted_growspace_options()
+        growspace_options = (
+            coordinator.services.growspaces.get_sorted_growspace_options()
+        )
 
         schema: dict[Any, Any] = {
             vol.Required("action", default="add"): selector.SelectSelector(
@@ -167,14 +169,14 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
     ) -> ConfigFlowResult:
         """Show the form for adding a new growspace."""
         try:
-            coordinator = self.get_coordinator()
+            self.get_coordinator()
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 
         if user_input is not None:
             try:
                 await self.async_add_growspace(user_input)
-                return self.flow.async_create_entry(title="", data={})
+                return await self.async_step_manage_growspaces()
             except Exception:
                 _LOGGER.exception("Error adding growspace")
                 return self.flow.async_show_form(
@@ -197,7 +199,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
             raise ValueError("Coordinator not found")
 
         # Use coordinator to add growspace
-        await coordinator.async_add_growspace(
+        await coordinator.services.growspaces.add_growspace(
             name=user_input["name"],
             rows=user_input["rows"],
             plants_per_row=user_input["plants_per_row"],
@@ -219,15 +221,18 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.growspaces.get(growspace_id)
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
 
         if user_input is not None:
             try:
-                await self.async_remove_growspace(growspace_id)
-                return self.flow.async_create_entry(title="", data={})
+                coordinator = self.get_coordinator()
+                await coordinator.services.growspaces.remove_growspace(growspace_id)
+                return await self.async_step_manage_growspaces()
             except Exception:
                 _LOGGER.exception("Error removing growspace")
                 return self.flow.async_show_form(
@@ -345,7 +350,7 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator = self.config_entry.runtime_data
         if coordinator is None:
             raise ValueError("Coordinator not found")
-        await coordinator.async_remove_growspace(growspace_id)
+        await coordinator.services.growspaces.remove_growspace(growspace_id)
 
     async def async_update_growspace(
         self, growspace_id: str, user_input: dict[str, Any]
@@ -361,16 +366,22 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         update_data = {k: v for k, v in user_input.items() if v}
 
         # Handle dimensions update if present
-        if "length" in user_input and "width" in user_input and "height" in user_input:
+        if (
+            "length" in update_data
+            and "width" in update_data
+            and "height" in update_data
+        ):
             dimensions = {
-                "length": user_input.pop("length"),
-                "width": user_input.pop("width"),
-                "height": user_input.pop("height"),
+                "length": update_data.pop("length"),
+                "width": update_data.pop("width"),
+                "height": update_data.pop("height"),
                 "unit": "cm",
             }
             update_data["dimensions"] = dimensions
 
-        await coordinator.async_update_growspace(growspace_id, **update_data)
+        await coordinator.services.growspaces.update_growspace(
+            growspace_id, **update_data
+        )
 
     async def async_step_update_growspace(
         self, user_input: dict[str, Any] | None = None
@@ -381,15 +392,19 @@ class GrowspaceConfigHandler(BaseConfigHandler[dict[str, Any]]):
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
         growspace_id = self.flow.selected_growspace_id
-        growspace = coordinator.growspaces.get(growspace_id)
+        if growspace_id is None:
+            return self.flow.async_abort(reason="growspace_not_found")
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
 
         if not growspace:
             return self.flow.async_abort(reason="growspace_not_found")
 
         if user_input is not None:
             try:
-                await self.async_update_growspace(growspace_id, user_input)
-                return self.flow.async_create_entry(title="", data={})
+                await coordinator.services.growspaces.update_growspace(
+                    growspace_id, **user_input
+                )
+                return await self.async_step_manage_growspaces()
             except Exception:
                 _LOGGER.exception("Error updating growspace")
                 return self.flow.async_show_form(

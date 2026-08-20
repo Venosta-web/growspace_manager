@@ -6,10 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
-from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.models import ACInfinityDevice, Plant
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -19,6 +20,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 
 @pytest.fixture
@@ -37,6 +39,12 @@ def mock_hass():
 
     hass.async_create_task = MagicMock(side_effect=mock_create_task)
     hass.data = {}
+
+    # async_call_later uses hass.loop internally
+    mock_loop = MagicMock()
+    mock_loop.time.return_value = 0.0
+    hass.loop = mock_loop
+
     return hass
 
 
@@ -44,7 +52,7 @@ def mock_hass():
 def mock_track_state_change_event():
     """Mock async_track_state_change_event."""
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.async_track_state_change_event"
+        "custom_components.growspace_manager.vpd_on_off_controller.async_track_state_change_event"
     ) as mock:
         yield mock
 
@@ -54,8 +62,7 @@ def mock_main_coordinator():
     """Mock the main GrowspaceCoordinator."""
     coordinator = MagicMock()
     coordinator.growspaces = {}
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
+    coordinator.services.growspaces.get_growspace_plants = MagicMock(return_value=[])
     return coordinator
 
 
@@ -81,14 +88,16 @@ def mock_growspace():
 
 
 @pytest.fixture
-def coordinator(
+async def coordinator(
     mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
 ):
     """Create a DehumidifierCoordinator instance."""
     mock_main_coordinator.growspaces = {"gs1": mock_growspace}
-    return DehumidifierCoordinator(
+    coord = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
+    return coord
 
 
 async def test_initialization(
@@ -97,13 +106,12 @@ async def test_initialization(
     """Test successful initialization."""
     assert coordinator.vpd_sensor == "sensor.vpd"
     assert coordinator.light_sensors == ["sensor.light"]
-    assert coordinator.dehumidifier_entities == ["switch.dehumidifier"]
-    assert coordinator.control_dehumidifier is True
+    assert coordinator._get_all_controlled_entities() == ["switch.dehumidifier"]
+    assert coordinator.control_enabled is True
 
     # Verify listener setup
     assert len(coordinator._remove_listeners) > 0
     mock_track_state_change_event.assert_called_once()
-    mock_hass.async_create_task.assert_called_once()
 
 
 async def test_initialization_disabled(
@@ -116,9 +124,10 @@ async def test_initialization_disabled(
     coord = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
     setattr(coord, "async_check_and_control", MagicMock())
 
-    assert coord.control_dehumidifier is False
+    assert coord.control_enabled is False
     assert len(coord._remove_listeners) == 0
     mock_track_state_change_event.assert_not_called()
     mock_hass.async_create_task.assert_not_called()
@@ -134,6 +143,7 @@ async def test_initialization_missing_entities(
     coord = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coord.async_setup()
     setattr(coord, "async_check_and_control", MagicMock())
 
     assert len(coord._remove_listeners) == 0
@@ -219,47 +229,50 @@ async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> Non
     """Test correct growth stage detection based on plant days."""
     plant1 = MagicMock(spec=Plant)
     plant2 = MagicMock(spec=Plant)
-    mock_main_coordinator.get_growspace_plants.return_value = [plant1, plant2]
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        plant1,
+        plant2,
+    ]
 
     # Case 1: Veg
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
-            "veg": 10,
-            "flower": 0,
+            PlantStage.VEG: 10,
+            PlantStage.FLOWER: 0,
         }.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "veg"
+        assert coordinator._get_growth_stage().value == "veg"
 
     # Case 2: Early Flower
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
-            "veg": 30,
-            "flower": 10,
+            PlantStage.VEG: 30,
+            PlantStage.FLOWER: 10,
         }.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "early_flower"
+        assert coordinator._get_growth_stage().value == "flower_early"
 
     # Case 3: Mid Flower
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
-            "veg": 30,
-            "flower": 30,
+            PlantStage.VEG: 30,
+            PlantStage.FLOWER: 30,
         }.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "mid_flower"
+        assert coordinator._get_growth_stage().value == "flower_mid"
 
     # Case 4: Late Flower
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
         side_effect=lambda p, stage: {
-            "veg": 30,
-            "flower": 60,
+            PlantStage.VEG: 30,
+            PlantStage.FLOWER: 60,
         }.get(stage, 0),
     ):
-        assert coordinator._get_growth_stage() == "late_flower"
+        assert coordinator._get_growth_stage().value == "flower_late"
 
 
 async def test_user_threshold_override(coordinator, mock_hass, mock_growspace) -> None:
@@ -309,6 +322,33 @@ async def test_unload(coordinator) -> None:
 
     remove_mock.assert_called_once()
     assert len(coordinator._remove_listeners) == 0
+
+
+async def test_async_restart_picks_up_a_control_flag_flipped_after_construction(
+    mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
+) -> None:
+    """The coordinator is constructed once at HA startup and caches
+    ``control_enabled`` from that snapshot. Toggling the config-dialog checkbox
+    later mutates the same live ``growspace.environment_config`` object, but
+    without ``async_restart`` the coordinator never re-reads it, so it never
+    starts controlling the device — this pins that gap closed.
+    """
+    mock_growspace.environment_config.control_dehumidifier = False
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+    assert coord.control_enabled is False
+    assert len(coord._remove_listeners) == 0
+
+    # The equivalent of set_dehumidifier_control(enabled=True): the backend
+    # patch seam mutates the live environment_config in place.
+    mock_growspace.environment_config.control_dehumidifier = True
+    await coord.async_restart()
+
+    assert coord.control_enabled is True
+    assert len(coord._remove_listeners) > 0
 
 
 async def test_min_runtime_prevents_early_turnoff(coordinator, mock_hass) -> None:
@@ -420,7 +460,7 @@ def test_init_missing_growspace(
             mock_hass, MagicMock(), "nonexistent", mock_main_coordinator
         )
 
-    assert "Growspace nonexistent not found" in caplog.text
+    assert "growspace nonexistent not found" in caplog.text.lower()
 
 
 @pytest.mark.asyncio
@@ -432,6 +472,7 @@ async def test_on_sensor_change(
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
     # Mock async_check_and_control to verify it's awaited
     coordinator.async_check_and_control = AsyncMock()  # type: ignore[method-assign]
@@ -450,6 +491,7 @@ async def test_check_and_control_missing_entities(
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
     # Force vpd_sensor to None after init
     coordinator.vpd_sensor = None
@@ -469,6 +511,7 @@ async def test_binary_light_sensor(
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
     # Setup states
     mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
@@ -480,7 +523,7 @@ async def test_binary_light_sensor(
     coordinator._get_current_thresholds = MagicMock(  # type: ignore[method-assign]
         return_value={"on": 1.0, "off": 2.0}
     )
-    coordinator._control_dehumidifier = AsyncMock()  # type: ignore[method-assign]
+    coordinator._control_devices = AsyncMock()  # type: ignore[method-assign]
 
     await coordinator.async_check_and_control()
 
@@ -511,9 +554,10 @@ async def test_generic_domain_control(
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
     # Manually invoke control
-    await coordinator._control_dehumidifier(True)
+    await coordinator._control_devices(True)
 
     # Should call input_boolean.turn_on
     mock_hass.services.async_call.assert_awaited_with(
@@ -529,42 +573,52 @@ async def test_growth_stage_detection_cure_dry_seedling(
 ) -> None:
     """Test detection of cure, dry, and seedling stages."""
     plant = MagicMock(spec=Plant)
-    mock_main_coordinator.get_growspace_plants.return_value = [plant]
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        plant
+    ]
 
     # Test Cure
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == "cure" else 0,
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
+        side_effect=lambda p, stage: 1 if stage == PlantStage.CURE else 0,
     ):
-        assert coordinator._get_growth_stage() == "cure"
+        assert coordinator._get_growth_stage() == PlantStage.CURE
 
     # Test Dry
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == "dry" else 0,
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
+        side_effect=lambda p, stage: 1 if stage == PlantStage.DRY else 0,
     ):
-        assert coordinator._get_growth_stage() == "dry"
+        assert coordinator._get_growth_stage() == PlantStage.DRY
 
     # Test Seedling
     with patch(
-        "custom_components.growspace_manager.dehumidifier_coordinator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == "seedling" else 0,
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
+        side_effect=lambda p, stage: 1 if stage == PlantStage.SEEDLING else 0,
     ):
-        assert coordinator._get_growth_stage() == "seedling"
+        assert coordinator._get_growth_stage() == PlantStage.SEEDLING
+
+    # Test Mother
+    with patch(
+        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
+        side_effect=lambda p, stage: 1 if stage == PlantStage.MOTHER else 0,
+    ):
+        assert coordinator._get_growth_stage() == PlantStage.MOTHER
 
 
 async def test_control_domain_fallback(
     mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
 ) -> None:
-    """Test domain fallback in _control_dehumidifier."""
+    """Test domain fallback in _control_devices."""
     mock_growspace.environment_config.dehumidifier_entities = ["light.dehumidifier"]
     mock_main_coordinator.growspaces = {"gs1": mock_growspace}
 
     coordinator = DehumidifierCoordinator(
         mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
     )
+    await coordinator.async_setup()
 
-    await coordinator._control_dehumidifier(True)
+    await coordinator._control_devices(True)
 
     # light is not in the list of recognized domains, so should fallback to homeassistant
     mock_hass.services.async_call.assert_awaited_with(
@@ -578,13 +632,13 @@ async def test_control_domain_fallback(
 async def test_control_device_exception(
     coordinator, mock_hass, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Test exception handling in _control_dehumidifier."""
-    mock_hass.services.async_call.side_effect = Exception("Service failure")
+    """Test exception handling in _control_devices."""
+    mock_hass.services.async_call.side_effect = HomeAssistantError("Service failure")
 
     with caplog.at_level(logging.WARNING):
-        await coordinator._control_dehumidifier(True)
+        await coordinator._control_devices(True)
 
-    assert "Failed to control device" in caplog.text
+    assert "Failed to call" in caplog.text
 
 
 async def test_get_current_vpd_missing_sensor(
@@ -595,19 +649,244 @@ async def test_get_current_vpd_missing_sensor(
     assert coordinator._get_current_vpd() is None
 
 
-async def test_determine_is_device_on_exhaust_fans(coordinator, mock_hass) -> None:
-    """Test _determine_is_device_on checks exhaust fans."""
-    coordinator.dehumidifier_entities = []
-    coordinator.exhaust_fan_entities = ["fan.exhaust"]
+async def test_logbook_event_fired_on_turn_on(coordinator, mock_hass) -> None:
+    """Test that a logbook event is fired when dehumidifier turns on."""
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.5"),
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_OFF),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    coordinator.main_coordinator.add_event.assert_called_once()
+    call_args = coordinator.main_coordinator.add_event.call_args
+    growspace_id, event = call_args[0]
+    assert growspace_id == "gs1"
+    assert event.category == "dehumidifier"
+    assert "Turned ON" in event.reasons
+    assert any("VPD:" in r for r in event.reasons)
+    assert any("Stage:" in r for r in event.reasons)
+
+
+async def test_logbook_event_fired_on_turn_off(coordinator, mock_hass) -> None:
+    """Test that a logbook event is fired when dehumidifier turns off."""
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.8"),
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_ON),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    coordinator.main_coordinator.add_event.assert_called_once()
+    call_args = coordinator.main_coordinator.add_event.call_args
+    growspace_id, event = call_args[0]
+    assert growspace_id == "gs1"
+    assert event.category == "dehumidifier"
+    assert "Turned OFF" in event.reasons
+    assert any("VPD:" in r for r in event.reasons)
+
+
+async def test_logbook_event_not_fired_when_no_action(coordinator, mock_hass) -> None:
+    """Test that no logbook event is fired when VPD is in deadband."""
+    mock_hass.states.get.side_effect = lambda entity_id: {
+        "sensor.vpd": MagicMock(state="0.65"),
+        "sensor.light": MagicMock(state="100"),
+        "switch.dehumidifier": MagicMock(state=STATE_OFF),
+    }.get(entity_id)
+
+    await coordinator.async_check_and_control()
+
+    coordinator.main_coordinator.add_event.assert_not_called()
+
+
+async def test_determine_is_day_all_sensors_unavailable_uses_cached_state(
+    mock_hass: MagicMock,
+    mock_main_coordinator: MagicMock,
+    mock_growspace: MagicMock,
+    mock_track_state_change_event: MagicMock,
+) -> None:
+    """Test that all-unavailable sensors fall back to last known state, not True."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+
+    # Prime the cache with night state (sensor reports 0 lux)
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(state="0")
+    assert coord._day_night.determine(coord.hass, coord.light_sensors) is False
+    assert coord._day_night._last_known_is_day is False
+
+    # Now all sensors become unavailable
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
+        state=STATE_UNAVAILABLE
+    )
+    # Should return cached False, not True
+    assert coord._day_night.determine(coord.hass, coord.light_sensors) is False
+    assert coord._day_night._sensors_unavailable_since is not None
+
+
+async def test_determine_is_day_all_sensors_unavailable_no_cache_defaults_true(
+    mock_hass: MagicMock,
+    mock_main_coordinator: MagicMock,
+    mock_growspace: MagicMock,
+    mock_track_state_change_event: MagicMock,
+) -> None:
+    """Test that all-unavailable sensors with no cache default to True."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
+        state=STATE_UNAVAILABLE
+    )
+    # No prior cache — should still default to True (safe fallback)
+    assert coord._day_night.determine(coord.hass, coord.light_sensors) is True
+    assert coord._day_night._sensors_unavailable_since is not None
+
+
+async def test_determine_is_day_valid_read_clears_unavailability_timer(
+    mock_hass: MagicMock,
+    mock_main_coordinator: MagicMock,
+    mock_growspace: MagicMock,
+    mock_track_state_change_event: MagicMock,
+) -> None:
+    """Test that a valid sensor read clears the unavailability timer and updates cache."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+
+    # Simulate prior unavailability
+    coord._day_night._sensors_unavailable_since = time.monotonic() - 100
+
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(state="500")
+    result = coord._day_night.determine(coord.hass, coord.light_sensors)
+
+    assert result is True
+    assert coord._day_night._last_known_is_day is True
+    assert coord._day_night._sensors_unavailable_since is None
+
+
+async def test_determine_is_day_prolonged_unavailability_logs_warning(
+    mock_hass: MagicMock,
+    mock_main_coordinator: MagicMock,
+    mock_growspace: MagicMock,
+    mock_track_state_change_event: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that a warning is logged after sensors are unavailable for over 5 minutes."""
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coord.async_setup()
+
+    coord._day_night._last_known_is_day = True
+    coord._day_night._sensors_unavailable_since = time.monotonic() - 400  # > 300 s
+
+    mock_hass.states.get.side_effect = lambda entity_id: MagicMock(
+        state=STATE_UNAVAILABLE
+    )
+
+    with caplog.at_level(logging.WARNING):
+        coord._day_night.determine(coord.hass, coord.light_sensors)
+
+    assert any("unavailable" in r.message.lower() for r in caplog.records)
+
+
+async def test_exhaust_fans_not_controlled(coordinator, mock_hass) -> None:
+    """Exhaust fans are owned by the ExhaustFanController, not the dehumidifier.
+
+    Per ADR-0019 the dehumidifier coordinator controls only
+    ``dehumidifier_entities``; an exhaust fan is never part of its controlled set
+    and never influences ``_is_device_on``.
+    """
+    coordinator.growspace.environment_config.dehumidifier_entities = []
+    coordinator.growspace.environment_config.exhaust_fan_entities = ["fan.exhaust"]
+
+    assert coordinator._get_all_controlled_entities() == []
 
     mock_hass.states.get.side_effect = lambda entity_id: {
         "fan.exhaust": MagicMock(state=STATE_ON),
     }.get(entity_id)
 
-    assert coordinator._determine_is_device_on() is True
+    # An exhaust fan running does not register as the dehumidifier being on.
+    assert coordinator._is_device_on() is False
 
-    mock_hass.states.get.side_effect = lambda entity_id: {
-        "fan.exhaust": MagicMock(state=STATE_OFF),
-    }.get(entity_id)
 
-    assert coordinator._determine_is_device_on() is False
+async def test_controlled_set_excludes_exhaust_when_both_configured(
+    coordinator,
+) -> None:
+    """Only dehumidifier entities are returned even when exhaust fans are set."""
+    coordinator.growspace.environment_config.dehumidifier_entities = [
+        "switch.dehumidifier"
+    ]
+    coordinator.growspace.environment_config.exhaust_fan_entities = ["fan.exhaust"]
+
+    assert coordinator._get_all_controlled_entities() == ["switch.dehumidifier"]
+
+
+# ---------------------------------------------------------------------------
+# AC Infinity dehumidifier devices (ADR-0022)
+# ---------------------------------------------------------------------------
+
+
+async def test_ac_infinity_dehumidifier_turn_on(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """The dehumidifier override drives its AC Infinity port mode On + on-speed."""
+    growspace = MagicMock()
+    growspace.id = "gs1"
+    growspace.name = "Test Growspace"
+    env_config = MagicMock()
+    env_config.vpd_sensor = "sensor.vpd"
+    env_config.light_sensors = []
+    env_config.dehumidifier_entities = []
+    env_config.exhaust_fan_entities = []
+    env_config.dehumidifier_ac_infinity_devices = [
+        ACInfinityDevice(
+            mode_entity="select.dehum_mode",
+            speed_entity="number.dehum_speed",
+            on_speed=9,
+        )
+    ]
+    env_config.control_dehumidifier = True
+    env_config.dehumidifier_thresholds = {}
+    growspace.environment_config = env_config
+    growspace.dehumidifier_config = {}
+    mock_main_coordinator.growspaces = {"gs1": growspace}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    mock_hass.services.async_call.reset_mock()
+    await coord._control_devices(True)
+    mock_hass.services.async_call.assert_any_await(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.dehum_mode", "option": "On"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.dehum_speed", "value": 9},
+        blocking=False,
+    )
+
+
+async def test_get_ac_infinity_devices_no_growspace(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """With no growspace, the AC Infinity bundle accessor returns an empty list."""
+    mock_main_coordinator.growspaces = {}
+    coord = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "missing", mock_main_coordinator
+    )
+    assert coord._get_ac_infinity_devices() == []
+    assert coord._get_all_controlled_entities() == []

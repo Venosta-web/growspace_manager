@@ -7,10 +7,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.bayesian_constants import (
+    PROB_SUBSTRATE_TEMP_EXTREME,
+    PROB_SUBSTRATE_TEMP_STRESS,
+)
 from custom_components.growspace_manager.bayesian_evaluator import (
     _async_evaluate_external_mold_trend_sensor,
     _async_evaluate_fallback_mold_trend_analysis,
     async_evaluate_mold_risk_trend,
+    evaluate_substrate_temp_stress,
 )
 from custom_components.growspace_manager.binary_sensor import BayesianEnvironmentSensor
 from custom_components.growspace_manager.models import (
@@ -36,7 +41,7 @@ def mock_sensor_instance(hass: HomeAssistant) -> MagicMock:
 def mock_env_state() -> MagicMock:
     """Fixture for EnvironmentState."""
     state = MagicMock(spec=EnvironmentState)
-    state.flower_days = 0  # Default to Veg
+    state.flower_days = -1  # Default to Veg
     state.temp = 25.0
     state.humidity = 60.0
     state.vpd = 1.0
@@ -49,7 +54,7 @@ async def test_fallback_mold_trend_vpd_falling_veg_danger(
     mock_sensor_instance: MagicMock, mock_env_state: MagicMock
 ) -> None:
     """Test VPD falling trend in Veg stage approaching danger zone."""
-    mock_env_state.flower_days = 0  # Veg
+    mock_env_state.flower_days = -1  # Veg
     mock_env_state.vpd = 0.4  # Below 0.5 danger zone
 
     # Mock analysis returning "falling"
@@ -63,7 +68,6 @@ async def test_fallback_mold_trend_vpd_falling_veg_danger(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        mock_sensor_instance,
         mock_sensor_instance.env_config.to_dict(),
         "vpd",
         "vpd_trend",
@@ -84,7 +88,7 @@ async def test_fallback_mold_trend_vpd_falling_veg_safe(
     mock_sensor_instance: MagicMock, mock_env_state: MagicMock
 ) -> None:
     """Test VPD falling trend in Veg stage in safe zone."""
-    mock_env_state.flower_days = 0  # Veg
+    mock_env_state.flower_days = -1  # Veg
     mock_env_state.vpd = 0.8  # Above 0.5 danger zone
 
     async def mock_analyze(
@@ -97,7 +101,6 @@ async def test_fallback_mold_trend_vpd_falling_veg_safe(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        mock_sensor_instance,
         mock_sensor_instance.env_config.to_dict(),
         "vpd",
         "vpd_trend",
@@ -130,7 +133,6 @@ async def test_fallback_mold_trend_vpd_falling_flower_danger(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_fallback_mold_trend_analysis(
-        mock_sensor_instance,
         mock_sensor_instance.env_config.to_dict(),
         "vpd",
         "vpd_trend",
@@ -158,7 +160,7 @@ async def test_external_mold_trend_sensor_humidity_rising(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
-        mock_sensor_instance,
+        hass.states.get,
         env_config,
         "humidity",
         "humidity_trend",
@@ -189,7 +191,7 @@ async def test_external_mold_stats_sensor_vpd_falling(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
-        mock_sensor_instance,
+        hass.states.get,
         env_config,
         "vpd",
         "vpd_trend",
@@ -210,7 +212,7 @@ async def test_async_evaluate_mold_risk_trend_integration(
 ) -> None:
     """Test the full evaluation function ignores humidity trends but passes VPD."""
     # Setup mocks
-    mock_env_state.flower_days = 0
+    mock_env_state.flower_days = -1
     mock_env_state.vpd = 0.4  # Danger
 
     async def mock_analyze(
@@ -230,7 +232,10 @@ async def test_async_evaluate_mold_risk_trend_integration(
     # or let it run (it won't find external sensors in default config)
 
     obs, reasons, trends = await async_evaluate_mold_risk_trend(
-        mock_sensor_instance, mock_env_state
+        mock_sensor_instance.env_config,
+        lambda _: None,
+        mock_analyze,
+        mock_env_state,
     )
 
     # Humidity trend should be rising in trends map...
@@ -258,7 +263,7 @@ async def test_external_mold_trend_sensor_vpd_falling_safe(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
-        mock_sensor_instance,
+        hass.states.get,
         env_config,
         "vpd",
         "vpd_trend",
@@ -289,7 +294,7 @@ async def test_external_mold_stats_sensor_vpd_falling_safe(
     trend_states: dict[str, Any] = {}
 
     await _async_evaluate_external_mold_trend_sensor(
-        mock_sensor_instance,
+        hass.states.get,
         env_config,
         "vpd",
         "vpd_trend",
@@ -302,3 +307,46 @@ async def test_external_mold_stats_sensor_vpd_falling_safe(
     # Should be ignored due to gating
     assert len(observations) == 0
     assert len(reasons) == 0
+
+
+def test_evaluate_substrate_temp_stress_none() -> None:
+    """Test evaluate_substrate_temp_stress when substrate_temp is None."""
+    state = MagicMock(spec=EnvironmentState, substrate_temp=None)
+    observations, reasons = evaluate_substrate_temp_stress(state, {})
+    assert observations == []
+    assert reasons == []
+
+
+@pytest.mark.parametrize(
+    ("substrate_temp", "expected_prob", "expected_reason_substring"),
+    [
+        # Critically low: temp < 15 → EXTREME
+        (10.0, PROB_SUBSTRATE_TEMP_EXTREME, "critically low"),
+        # Below optimal: 15 <= temp < 18 → STRESS
+        (16.0, PROB_SUBSTRATE_TEMP_STRESS, "below optimal"),
+        # Critically high: temp > 26 → EXTREME
+        (30.0, PROB_SUBSTRATE_TEMP_EXTREME, "critically high"),
+        # Above optimal: 22 < temp <= 26 → STRESS
+        (24.0, PROB_SUBSTRATE_TEMP_STRESS, "above optimal"),
+    ],
+)
+def test_evaluate_substrate_temp_stress_branches(
+    substrate_temp: float,
+    expected_prob: tuple[float, float],
+    expected_reason_substring: str,
+) -> None:
+    """Test all stress branches of evaluate_substrate_temp_stress."""
+    state = MagicMock(spec=EnvironmentState, substrate_temp=substrate_temp)
+    observations, reasons = evaluate_substrate_temp_stress(state, {})
+    assert len(observations) == 1
+    assert observations[0] == expected_prob
+    assert len(reasons) == 1
+    assert expected_reason_substring in reasons[0][1]
+
+
+def test_evaluate_substrate_temp_stress_optimal_no_observations() -> None:
+    """Test evaluate_substrate_temp_stress produces no observations when temp is in optimal range."""
+    state = MagicMock(spec=EnvironmentState, substrate_temp=20.0)  # 18 <= 20 <= 22
+    observations, reasons = evaluate_substrate_temp_stress(state, {})
+    assert observations == []
+    assert reasons == []

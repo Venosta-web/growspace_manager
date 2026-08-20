@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers import entity_registry as er
 
-from .bayesian_data import VPD_STRESS_THRESHOLDS
-from .const import DEFAULT_FLOWER_EARLY_DAYS, DOMAIN
-from .utils import VPDCalculator, calculate_stage_transition, interpolate_value
+from .const import DOMAIN
+from .domain.environmental_targets import StageEnvironmentalTargets
+from .domain.stage import BayesianStage, StageDays, classify_stages
+from .utils import VPDCalculator
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -37,70 +38,52 @@ class EnvironmentAnalyzer:
     def calculate_biological_metrics(
         self,
         growspace: Growspace,
-        max_veg: int,
-        max_flower: int,
-        max_dry: int,
-        max_cure: int,
-        max_seedling: int = 0,
-        max_clone: int = 0,
-        max_mother: int = 0,
+        days: StageDays,
     ) -> dict[str, Any]:
         """Calculate biological target metrics for the growspace.
 
-        Args:
-             growspace: The growspace object.
-             max_veg: Max days in veg stage.
-             max_flower: Max days in flower stage.
-             max_dry: Max days in dry stage.
-             max_cure: Max days in cure stage.
-             max_seedling: Max days in seedling stage.
-             max_clone: Max days in clone stage.
-             max_mother: Max days in mother stage.
-
-        Returns:
-            Dictionary containing stage-specific VPD targets and status.
+        Returns a dict with vpd_status="unknown" and None targets when no plants
+        are present (days is all -1 / EMPTY), so empty growspaces don't fire alerts.
         """
-        granular_stage = self.determine_granular_stage(
-            max_veg, max_flower, max_dry, max_cure, max_seedling, max_clone, max_mother
-        )
+        classification = classify_stages(days)
+
+        if classification.stage_a == BayesianStage.EMPTY:
+            return {
+                "granular_stage": BayesianStage.EMPTY,
+                "is_day": self.determine_is_day(growspace),
+                "vpd_target_min": None,
+                "vpd_target_max": None,
+                "vpd_danger_min": None,
+                "vpd_danger_max": None,
+                "vpd_status": "unknown",
+                "day_vpd_target_min": None,
+                "day_vpd_target_max": None,
+                "day_vpd_danger_min": None,
+                "day_vpd_danger_max": None,
+                "night_vpd_target_min": None,
+                "night_vpd_target_max": None,
+                "night_vpd_danger_min": None,
+                "night_vpd_danger_max": None,
+                "transition_factor": 0.0,
+                "transition_stages": (BayesianStage.EMPTY, BayesianStage.EMPTY),
+            }
+
+        granular_stage = classification.display_stage
         is_day = self.determine_is_day(growspace)
 
-        # Use transition factor for flower stages
-        stage_a, stage_b, factor = calculate_stage_transition(
-            max_flower, max_veg, max_seedling, max_clone, max_dry, max_cure, max_mother
-        )
+        stage_a = classification.stage_a
+        stage_b = classification.stage_b
+        factor = classification.factor
 
-        # Get thresholds for both stages
-        thr_a = VPD_STRESS_THRESHOLDS.get(stage_a, VPD_STRESS_THRESHOLDS["veg"])
-        thr_b = VPD_STRESS_THRESHOLDS.get(stage_b, VPD_STRESS_THRESHOLDS["veg"])
-
-        # Interpolate targets specifically for Day and Night
-        def interpolate_targets(data_a, data_b, f):
-            stress_a = data_a.get("stress", (0.8, 1.4))
-            stress_b = data_b.get("stress", (0.8, 1.4))
-            mild_a = data_a.get("mild", (1.0, 1.2))
-            mild_b = data_b.get("mild", (1.0, 1.2))
-
-            return (
-                interpolate_value(stress_a[0], stress_b[0], f),
-                interpolate_value(stress_a[1], stress_b[1], f),
-                interpolate_value(mild_a[0], mild_b[0], f),
-                interpolate_value(mild_a[1], mild_b[1], f),
-            )
-
-        # Day Targets
-        day_a = thr_a.get("day", thr_a["day"])
-        day_b = thr_b.get("day", thr_b["day"])
-        d_danger_min, d_danger_max, d_target_min, d_target_max = interpolate_targets(
-            day_a, day_b, factor
-        )
-
-        # Night Targets
-        night_a = thr_a.get("night", thr_a["day"])
-        night_b = thr_b.get("night", thr_b["day"])
-        n_danger_min, n_danger_max, n_target_min, n_target_max = interpolate_targets(
-            night_a, night_b, factor
-        )
+        display = StageEnvironmentalTargets(stage_a, stage_b, factor).vpd_display_targets()
+        d_danger_min = display.day_danger_min
+        d_danger_max = display.day_danger_max
+        d_target_min = display.day_target_min
+        d_target_max = display.day_target_max
+        n_danger_min = display.night_danger_min
+        n_danger_max = display.night_danger_max
+        n_target_min = display.night_target_min
+        n_target_max = display.night_target_max
 
         # Determine current active targets based on is_day
         danger_min = d_danger_min if is_day else n_danger_min
@@ -144,54 +127,6 @@ class EnvironmentAnalyzer:
             "transition_factor": factor,
             "transition_stages": (stage_a, stage_b),
         }
-
-    def determine_granular_stage(
-        self,
-        max_veg: int,
-        max_flower: int,
-        max_dry: int,
-        max_cure: int,
-        max_seedling: int = 0,
-        max_clone: int = 0,
-        max_mother: int = 0,
-    ) -> str:
-        """Determine granular growth stage based on days using pattern matching.
-
-        Args:
-            max_veg: Max days in veg stage.
-            max_flower: Max days in flower stage.
-            max_dry: Max days in dry stage.
-            max_cure: Max days in cure stage.
-            max_seedling: Max days in seedling stage.
-            max_clone: Max days in clone stage.
-            max_mother: Max days in mother stage.
-
-        Returns:
-            Detailed stage string (e.g. 'veg_early', 'flower_late').
-        """
-        match (max_cure > 0, max_dry > 0, max_flower > 0):
-            case (True, _, _):
-                return "cure"
-            case (False, True, _):
-                return "dry"
-            case (False, False, True):
-                if max_flower <= DEFAULT_FLOWER_EARLY_DAYS:
-                    return "flower_early"
-                if max_flower <= (DEFAULT_FLOWER_EARLY_DAYS + 21):
-                    return "flower_mid"
-                return "flower_late"
-            case (False, False, False):
-                if max_mother > 0:
-                    return "mother"
-                if max_veg > 0:
-                    return "veg"
-                if max_seedling > 0:
-                    return "seedling"
-                if max_clone > 0:
-                    return "clone"
-                return "empty"
-            case _:
-                return "empty"
 
     def determine_is_day(self, growspace: Growspace) -> bool:
         """Determine if it is currently day or night in the growspace.

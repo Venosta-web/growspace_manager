@@ -1,0 +1,127 @@
+"""Tests for the save_notification_settings WebSocket command."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+
+@pytest.fixture
+def mock_connection() -> MagicMock:
+    conn = MagicMock()
+    conn.send_result = MagicMock()
+    conn.send_error = MagicMock()
+    return conn
+
+
+@pytest.mark.asyncio
+async def test_save_notification_settings_writes_settings_and_ai_auto_alerts(
+    mock_connection: MagicMock,
+) -> None:
+    """save_notification_settings writes notification_settings and ai_auto_alerts atomically."""
+    from custom_components.growspace_manager.websocket.notifications import (
+        websocket_save_notification_settings,
+    )
+
+    coordinator = MagicMock()
+    coordinator.config_entry.options = {
+        "ai_settings": {"ai_enabled": True, "assistant_id": "agent.x"},
+        "other": "kept",
+    }
+    coordinator.async_commit = AsyncMock()
+
+    settings = {
+        "critical_cooldown_minutes": 10,
+        "warning_cooldown_minutes": 90,
+        "recovery_cooldown_minutes": 5,
+        "escalation_delay_minutes": 20,
+        "min_stress_duration_seconds": 120,
+        "warning_persistence_minutes": 15,
+    }
+
+    mock_hass = MagicMock()
+    if True:
+        msg = {
+            "id": 1,
+            "type": "growspace_manager/save_notification_settings",
+            "notification_settings": settings,
+            "ai_auto_alerts": False,
+        }
+        result = await websocket_save_notification_settings(mock_hass, coordinator, msg)
+
+    mock_hass.config_entries.async_update_entry.assert_called_once()
+    saved_options = mock_hass.config_entries.async_update_entry.call_args[1]["options"]
+
+    assert saved_options["notification_settings"] == settings
+    assert saved_options["other"] == "kept"
+    assert saved_options["ai_settings"]["ai_enabled"] is True
+    assert saved_options["ai_settings"]["assistant_id"] == "agent.x"
+    assert saved_options["ai_settings"]["ai_auto_alerts"] is False
+    assert result == {"success": True}
+
+
+@pytest.mark.asyncio
+async def test_save_notification_settings_persists_timed_notifications(
+    mock_connection: MagicMock,
+) -> None:
+    """A timed_notifications list in the message is persisted into options."""
+    from custom_components.growspace_manager.websocket.notifications import (
+        websocket_save_notification_settings,
+    )
+
+    coordinator = MagicMock()
+    coordinator.config_entry.options = {"timed_notifications": [{"id": "old"}]}
+    coordinator.async_commit = AsyncMock()
+
+    timed = [
+        {
+            "id": "n1",
+            "message": "Feed me",
+            "trigger_type": "veg_start",
+            "day": 3,
+            "growspace_ids": ["gs1"],
+        }
+    ]
+
+    mock_hass = MagicMock()
+    if True:
+        msg = {
+            "id": 2,
+            "type": "growspace_manager/save_notification_settings",
+            "notification_settings": {},
+            "ai_auto_alerts": True,
+            "timed_notifications": timed,
+        }
+        await websocket_save_notification_settings(mock_hass, coordinator, msg)
+
+    saved_options = mock_hass.config_entries.async_update_entry.call_args[1]["options"]
+    assert saved_options["timed_notifications"] == timed
+
+
+@pytest.mark.asyncio
+async def test_save_notification_settings_leaves_timed_notifications_untouched_when_absent(
+    mock_connection: MagicMock,
+) -> None:
+    """Omitting timed_notifications preserves the existing stored list."""
+    from custom_components.growspace_manager.websocket.notifications import (
+        websocket_save_notification_settings,
+    )
+
+    coordinator = MagicMock()
+    existing = [{"id": "keep"}]
+    coordinator.config_entry.options = {"timed_notifications": existing}
+    coordinator.async_commit = AsyncMock()
+
+    mock_hass = MagicMock()
+    if True:
+        msg = {
+            "id": 3,
+            "type": "growspace_manager/save_notification_settings",
+            "notification_settings": {},
+            "ai_auto_alerts": True,
+        }
+        await websocket_save_notification_settings(mock_hass, coordinator, msg)
+
+    saved_options = mock_hass.config_entries.async_update_entry.call_args[1]["options"]
+    assert saved_options["timed_notifications"] == existing

@@ -1,7 +1,10 @@
 # serializer version: 1
 # name: test_add_growspace_no_notification_target
+  typing.Any
+# ---
+# name: test_add_growspace_no_notification_target.1
   dict({
-    'created_at': '2026-01-12T12:00:00',
+    'created_at': '2024-01-01T12:00:00+00:00',
     'dehumidifier_config': dict({
     }),
     'device_id': None,
@@ -11,72 +14,254 @@
       'unit': 'cm',
       'width': 120,
     }),
+    'drain_config': dict({
+      'enabled': False,
+      'max_ec_delta': 0.7,
+      'max_readings': 100,
+      'readings': list([
+      ]),
+      'target_runoff_percent': 20.0,
+    }),
+    'energy_tracking': dict({
+      'cycle_start_date': '',
+      'cycle_start_kwh': 0.0,
+      'last_kwh_reading': 0.0,
+    }),
     'environment_config': dict({
       'bayesian_options': dict({
+      }),
+      'bulk_ec_sensors': list([
+      ]),
+      'camera_entities': list([
+      ]),
+      'circulation_fan_ac_infinity_devices': list([
+      ]),
+      'circulation_fan_config': dict({
+        'critical_temp_high': None,
+        'critical_temp_hysteresis': 1.0,
+        'critical_temp_low': None,
+        'enabled': False,
+        'humidity_target': 60.0,
+        'humidity_tolerance': 5.0,
+        'max_speed': 100,
+        'min_speed': 0,
+        'regulation_mode': 'vpd',
+        'stage_vpd_enabled': False,
+        'stage_vpd_overrides': dict({
+        }),
+        'temperature_target': 25.0,
+        'temperature_tolerance': 2.0,
+        'vpd_target': 1.0,
+        'vpd_tolerance': 0.2,
+        'wind_amplitude_pct': 10,
+        'wind_enabled': False,
+        'wind_period_seconds': 60,
       }),
       'circulation_fan_entities': list([
       ]),
       'co2_sensor': None,
       'control_dehumidifier': False,
+      'control_humidifier': False,
+      'dehumidifier_ac_infinity_devices': list([
+      ]),
       'dehumidifier_entities': list([
       ]),
       'dehumidifier_thresholds': dict({
       }),
+      'dli_target_flower': 45.0,
+      'dli_target_veg': 30.0,
+      'drain_volume_sensors': list([
+      ]),
+      'electricity_cost_per_kwh': 0.0,
+      'energy_sensors': list([
+      ]),
+      'exhaust_fan_ac_infinity_devices': list([
+      ]),
+      'exhaust_fan_config': dict({
+        'critical_temp_high': None,
+        'critical_temp_hysteresis': 1.0,
+        'critical_temp_low': None,
+        'enabled': False,
+        'humidity_target': 60.0,
+        'humidity_tolerance': 5.0,
+        'max_speed': 100,
+        'min_speed': 0,
+        'stage_vpd_enabled': False,
+        'stage_vpd_overrides': dict({
+        }),
+        'temperature_target': 25.0,
+        'temperature_tolerance': 2.0,
+        'vpd_target': 1.0,
+        'vpd_tolerance': 0.2,
+      }),
       'exhaust_fan_entities': list([
       ]),
+      'feed_ec_sensors': list([
+      ]),
       'flower_day_hours': 12,
+      'growlight_ac_infinity_devices': list([
+      ]),
+      'growlight_config': dict({
+        'enabled': False,
+        'power': 100,
+        'sunrise_enabled': False,
+        'sunrise_minutes': 0,
+      }),
+      'growlight_entities': list([
+      ]),
+      'humidifier_ac_infinity_devices': list([
+      ]),
       'humidifier_entities': list([
       ]),
+      'humidifier_thresholds': dict({
+      }),
       'humidity_sensor': None,
       'humidity_sensors': list([
+      ]),
+      'irrigation_flow_sensors': list([
       ]),
       'irrigation_tanks': list([
       ]),
       'light_sensors': list([
       ]),
       'lst_offset': -2.0,
+      'lung_room_temp_sensors': list([
+      ]),
       'minimum_source_air_temperature': 18.0,
       'mold_threshold': 0.75,
+      'ph_sensors': list([
+      ]),
+      'pore_ec_sensors': list([
+      ]),
+      'power_sensors': list([
+      ]),
+      'runoff_ec_sensors': list([
+      ]),
       'sensor_coordinates': dict({
       }),
       'sensor_groups': list([
       ]),
+      'snapshot_interval_hours': 24,
+      'soil_moisture_max': None,
+      'soil_moisture_min': None,
       'soil_moisture_sensor': None,
       'stress_threshold': 0.7,
+      'substrate_temperature_sensors': list([
+      ]),
       'temperature_sensor': None,
       'temperature_sensors': list([
       ]),
       'veg_day_hours': 18,
+      'vision_checkup_config': dict({
+        'early_check_offset_minutes': 60,
+        'enabled': False,
+        'history_limit': 10,
+        'late_check_offset_minutes': 60,
+        'mid_check_hours': 6,
+      }),
+      'vpd_optimal_overrides': dict({
+      }),
       'vpd_sensor': None,
       'vpd_sensors': list([
       ]),
     }),
     'growspace_type': 'flower',
+    'humidifier_config': dict({
+    }),
     'id': 'test-uuid',
     'irrigation_config': dict({
+      'active_steering_phase': 'p2',
+      'auto_advance_p1_to_p2': False,
+      'auto_advance_p2_to_p3': False,
+      'daily_volume_cap_liters': None,
       'drain_duration': None,
       'drain_pump_entity': None,
       'drain_times': list([
       ]),
+      'ec_target_ranges': list([
+      ]),
+      'halt_on_runoff_ec_threshold': None,
       'irrigation_duration': None,
       'irrigation_pump_entity': None,
       'irrigation_times': list([
       ]),
+      'log_to_logbook': True,
+      'max_cycles_per_day': None,
+      'pause_on_low_tank': True,
+      'phase_changed_at': None,
+      'pump_flow_rate_ml_per_sec': 0.0,
+      'skip_during_dark': False,
+      'soil_trigger_percent': None,
       'veg_day_hours': 12,
     }),
     'irrigation_strategy': dict({
+      'auto_light_tracking': False,
+      'declared_steering_mode': None,
+      'detected_lights_on_time': None,
+      'dynamic_aggressiveness': 1.0,
+      'dynamic_interval_ceiling': 1.5,
+      'dynamic_recovery': 0.1,
+      'dynamic_shot_enabled': True,
+      'dynamic_shot_size_floor': 0.5,
+      'ec_modulation_enabled': False,
       'enabled': False,
       'lights_on_time': '06:00:00',
       'maintenance_dryback_percent': 2.0,
       'p0_duration_minutes': 60,
+      'p1_shot_duration_seconds': 10,
+      'p1_shot_interval_minutes': 15,
+      'p1_shot_volume_percent': 4.0,
+      'p2_shot_duration_seconds': 10,
+      'p2_shot_interval_minutes': 15,
+      'p2_shot_volume_percent': 4.0,
       'p2_stop_before_lights_off_minutes': 120,
+      'pore_ec_target_max': None,
+      'pore_ec_target_min': None,
       'shot_duration_seconds': 10,
       'shot_interval_minutes': 15,
+      'shot_sizing_mode': 'seconds',
+      'substrate_profile': dict({
+        'liters_per_pot': 0.0,
+        'media_type': 'coco',
+      }),
       'target_vwc_percent': 55.0,
     }),
+    'layout_revision': 0,
     'name': 'Test',
     'notification_target': None,
     'plants_per_row': 4,
     'rows': 4,
+    'subareas': list([
+    ]),
+    'substrate_history': dict({
+      'current_day': None,
+      'ec_day_start_ts': None,
+      'ec_day_start_value': None,
+      'ec_latest_ts': None,
+      'ec_latest_value': None,
+      'ec_trend_day': None,
+      'events': list([
+      ]),
+      'lit_period_max': None,
+      'lit_period_max_ts': None,
+      'pending_incycle_peak': None,
+      'pending_incycle_peak_ts': None,
+      'pending_incycle_trough': None,
+      'pending_incycle_trough_ts': None,
+      'pending_overnight_peak': None,
+      'pending_overnight_peak_ts': None,
+      'pending_overnight_trough': None,
+      'pending_overnight_trough_ts': None,
+      'shots_today': 0,
+    }),
+    'vision_checkup_history': list([
+    ]),
+    'water_usage': dict({
+      'cycle_start_date': '',
+      'daily_readings': list([
+      ]),
+      'max_daily_readings': 365,
+      'total_liters': 0.0,
+    }),
   })
 # ---

@@ -16,10 +16,7 @@ from custom_components.growspace_manager.services.irrigation_watering import (
     handle_water_growspace,
     handle_water_plant,
 )
-from custom_components.growspace_manager.services.plant import (
-    handle_add_plant,
-    handle_add_plants,
-)
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
@@ -45,7 +42,7 @@ async def test_handle_add_plant_wraps_error(
 ) -> None:
     """Test handle_add_plant wraps generic exceptions."""
     # Setup - simulate generic exception
-    mock_coordinator._plant_service.add_plant.side_effect = Exception("Boom")
+    mock_coordinator.services.plants.add_plant = AsyncMock(side_effect=Exception("Boom"))
 
     call = MagicMock()
     call.data = {
@@ -55,16 +52,19 @@ async def test_handle_add_plant_wraps_error(
         ATTR_COL: 1,
     }
 
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+
     with pytest.raises(ServiceValidationError, match="Failed to add plant: Boom"):
-        await handle_add_plant(hass, mock_coordinator, mock_strain_library, call)
+        await facade.add_plant_from_call(hass, mock_strain_library, call)
 
 
 async def test_handle_add_plants_wraps_error(
     hass: HomeAssistant, mock_coordinator, mock_strain_library
 ) -> None:
     """Test handle_add_plants wraps generic exceptions."""
-    # Setup - simulate exception
-    mock_coordinator._plant_service.add_plant.side_effect = Exception("Boom Batch")
+    # Setup - simulate exception in the loop (add_plant is called by add_plants)
+    mock_coordinator.services.plants.add_plant = AsyncMock(side_effect=Exception("Boom Batch"))
     # Need to mock find_first_available_position to prevent early exit
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
 
@@ -75,10 +75,13 @@ async def test_handle_add_plants_wraps_error(
         ATTR_AMOUNT: 3,
     }
 
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+
     with pytest.raises(
         ServiceValidationError, match="Failed to batch add plants: Boom Batch"
     ):
-        await handle_add_plants(hass, mock_coordinator, mock_strain_library, call)
+        await facade.add_plants_from_call(hass, mock_strain_library, call)
 
 
 async def test_handle_water_plant_wraps_growspace_error(
@@ -86,7 +89,7 @@ async def test_handle_water_plant_wraps_growspace_error(
 ) -> None:
     """Test handle_water_plant wraps GrowspaceError."""
     # Setup
-    mock_coordinator.async_water_plant.side_effect = GrowspaceError("Not Found")
+    mock_coordinator.services.plants.water_plant = AsyncMock(side_effect=GrowspaceError("Not Found"))
 
     call = MagicMock()
     call.data = {"plant_id": "p1", "amount": 1.0}
@@ -100,7 +103,7 @@ async def test_handle_water_plant_wraps_generic_error(
 ) -> None:
     """Test handle_water_plant wraps generic exceptions."""
     # Setup
-    mock_coordinator.async_water_plant.side_effect = Exception("Pump Failure")
+    mock_coordinator.services.plants.water_plant = AsyncMock(side_effect=Exception("Pump Failure"))
 
     call = MagicMock()
     call.data = {"plant_id": "p1", "amount": 1.0}
@@ -114,7 +117,7 @@ async def test_handle_water_growspace_wraps_error(
 ) -> None:
     """Test handle_water_growspace wraps exceptions."""
     # Setup
-    mock_coordinator.async_water_growspace.side_effect = Exception("Valve Error")
+    mock_coordinator.services.growspaces.water_growspace = AsyncMock(side_effect=Exception("Valve Error"))
 
     call = MagicMock()
     call.data = {"growspace_id": "gs1", "amount_per_plant": 1.0}

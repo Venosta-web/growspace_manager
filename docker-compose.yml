@@ -21,6 +21,7 @@ services:
       - ./custom_components:/config/custom_components
       # Mount Lovelace card for auto-updates
       - ../lovelace-growspace-manager-card/growspace-manager-card.js:/config/www/growspace-manager-card.js
+      - ./tests/test_camera.png:/config/www/test_camera.png
     ports:
       - "8123:8123"
 
@@ -30,7 +31,7 @@ services:
     volumes:
       - ha-config-test:/config
       # Map your specific test configuration here
-      - ./tests/configs/configuration.yaml:/tmp/configuration.yaml:ro 
+      - ./tests/config/configs/configuration.yaml:/tmp/configuration.yaml:ro
     command: sh -c "[ ! -f /config/configuration.yaml ] && cp /tmp/configuration.yaml /config/ || true; chown -R 1000:1000 /config; chmod -R 755 /config"
 
   homeassistant-test:
@@ -44,10 +45,10 @@ services:
       - TZ=America/Chicago
     volumes:
       - ha-config-test:/config
-      # Shares the same custom_components as the dev instance
-      - ./custom_components:/config/custom_components 
+      # Mount only the integration folder so other custom components in the user's backup are preserved
+      - ./custom_components/growspace_manager:/config/custom_components/growspace_manager
       # Mount Lovelace card for auto-updates
-      - ../lovelace-growspace-manager-card/growspace-manager-card.js:/config/www/growspace-manager-card.js 
+      - ../lovelace-growspace-manager-card/growspace-manager-card.js:/config/www/growspace-manager-card.js
     ports:
       - "8124:8123" # Access this instance via http://localhost:8124
 

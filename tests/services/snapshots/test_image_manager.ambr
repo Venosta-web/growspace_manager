@@ -1,13 +1,25 @@
 # serializer version: 1
 # name: test_save_breeder_logo_success
+  typing.Any
+# ---
+# name: test_save_breeder_logo_success.1
   'breeder_test_breeder.webp'
 # ---
 # name: test_save_strain_image_success
+  typing.Any
+# ---
+# name: test_save_strain_image_success.1
   'strain_123.webp'
 # ---
 # name: test_save_strain_image_with_phenotype
+  typing.Any
+# ---
+# name: test_save_strain_image_with_phenotype.1
   'strain_123_pheno_456.webp'
 # ---
 # name: test_save_timeline_image_success
-  'plant_123_20260112_120000_f829b914.webp'
+  typing.Any
+# ---
+# name: test_save_timeline_image_success.1
+  'plant_123_20240101_120000_f829b914.webp'
 # ---

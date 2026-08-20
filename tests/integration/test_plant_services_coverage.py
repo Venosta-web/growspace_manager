@@ -1,231 +1,63 @@
 """Test plant services coverage."""
 
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.const import (
-    ATTR_IMAGES,
-    ATTR_METADATA,
-    ATTR_NOTES,
-    ATTR_TAGS,
-    EVENT_GROWSPACE_LOG_ENTRY,
-)
+from custom_components.growspace_manager.const import ATTR_NOTES, ATTR_PLANT_ID
 from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.services.plant import (
-    async_add_timeline_note,
-    handle_add_plants,
-    handle_add_timeline_note,
+from custom_components.growspace_manager.services.plant_facade import PlantFacade
+from custom_components.growspace_manager.services.plant_lifecycle import (
     handle_harvest_plant,
 )
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
 
-async def test_add_timeline_note_defaults() -> None:
-    """Test async_add_timeline_note with default arguments."""
+async def test_handle_add_timeline_note_service_call() -> None:
+    """Test handle_add_timeline_note delegates to facade."""
     hass = MagicMock()
     coordinator = MagicMock()
+    coordinator.services = MagicMock()
+    coordinator.services.add_timeline_note = AsyncMock()
     strain_library = MagicMock()
 
-    # Mock plant and growspace
-    plant_mock = MagicMock()
-    plant_mock.growspace_id = "gs1"
-    coordinator.plants = {"plant1": plant_mock}
-    # Ensure get returns None properly if key missing (standard dict behavior)
-    coordinator.growspaces = {}
+    mock_call = MagicMock(spec=ServiceCall)
+    mock_call.data = {
+        ATTR_PLANT_ID: "plant1",
+        ATTR_NOTES: "Service call note"
+    }
 
-    with (
-        patch(
-            "custom_components.growspace_manager.services.plant._ensure_plant_loaded"
-        ),
-        patch(
-            "custom_components.growspace_manager.services.plant._resolve_plant_id",
-            return_value="plant1",
-        ),
+    with patch(
+        "custom_components.growspace_manager.services.plant_facade._ensure_plant_loaded"
+    ), patch(
+        "custom_components.growspace_manager.services.plant_facade._resolve_plant_id",
+        return_value="plant1",
     ):
-        await async_add_timeline_note(
-            hass,
-            coordinator,
-            strain_library,
-            plant_id="plant1",
-            notes="Test note",
+        await PlantFacade(coordinator).add_timeline_note_from_call(
+            hass, strain_library, mock_call
         )
 
-    # Verify event fired with defaults
-    hass.bus.async_fire.assert_called_once()
-    call_args = hass.bus.async_fire.call_args
-    assert call_args[0][0] == EVENT_GROWSPACE_LOG_ENTRY
-    data = call_args[0][1]
-    assert data[ATTR_NOTES] == "Test note"
-    assert data[ATTR_IMAGES] == []
-    assert data[ATTR_TAGS] == []
-    assert data[ATTR_METADATA] == {}
-
-
-async def test_add_timeline_note_sensor_snapshot() -> None:
-    """Test async_add_timeline_note capturing sensor data."""
-    hass = MagicMock()
-    coordinator = MagicMock()
-    strain_library = MagicMock()
-
-    plant_mock = MagicMock()
-    plant_mock.growspace_id = "gs1"
-    coordinator.plants = {"plant1": plant_mock}
-
-    growspace_mock = MagicMock()
-    env_config = MagicMock()
-    env_config.temperature_sensor = "sensor.temp"
-    env_config.humidity_sensor = "sensor.hum"
-    growspace_mock.environment_config = env_config
-    coordinator.growspaces = {"gs1": growspace_mock}
-
-    # Set up states
-    def get_state(entity_id):
-        state = MagicMock()
-        if entity_id == "sensor.temp":
-            state.state = "25.5"
-        elif entity_id == "sensor.hum":
-            state.state = "60.0"
-        else:
-            return None
-        return state
-
-    hass.states.get.side_effect = get_state
-
-    with (
-        patch(
-            "custom_components.growspace_manager.services.plant._ensure_plant_loaded"
-        ),
-        patch(
-            "custom_components.growspace_manager.services.plant._resolve_plant_id",
-            return_value="plant1",
-        ),
-    ):
-        await async_add_timeline_note(
-            hass,
-            coordinator,
-            strain_library,
-            plant_id="plant1",
-            notes="Test sensors",
-        )
-
-    data = hass.bus.async_fire.call_args[0][1]
-    metadata = data[ATTR_METADATA]
-    assert metadata["temperature"] == 25.5
-    assert metadata["humidity"] == 60.0
-    assert metadata["vpd"] is None  # Not set
-
-
-@pytest.mark.asyncio
-async def test_add_timeline_note_images(tmp_path: Path) -> None:
-    """Test async_add_timeline_note image processing."""
-    hass = MagicMock()
-    coordinator = MagicMock()
-
-    strain_library = MagicMock()
-    image_manager = MagicMock()
-    # Configure save_timeline_image as AsyncMock
-    image_manager.save_timeline_image = AsyncMock()
-
-    type(strain_library).image_manager = PropertyMock(return_value=image_manager)
-    strain_library.image_manager = image_manager
-
-    plant_mock = MagicMock()
-    plant_mock.growspace_id = "gs1"
-    coordinator.plants = {"plant1": plant_mock}
-    coordinator.growspaces = {}
-
-    # Case 1: Normal save
-    image_manager.save_timeline_image.return_value = (
-        "/config/growspace/timeline/image.webp"
+    coordinator.services.add_timeline_note.assert_awaited_once_with(
+        plant_id="plant1",
+        notes="Service call note",
+        timestamp=None,
+        images_base64=[],
+        tags=[],
+        ph=None,
+        ec=None,
+        amount_ml=None,
+        external_metadata={},
     )
 
-    hass.bus.async_fire.reset_mock()
-
-    with (
-        patch(
-            "custom_components.growspace_manager.services.plant._ensure_plant_loaded"
-        ),
-        patch(
-            "custom_components.growspace_manager.services.plant._resolve_plant_id",
-            return_value="plant1",
-        ),
-    ):
-        await async_add_timeline_note(
-            hass,
-            coordinator,
-            strain_library,
-            plant_id="plant1",
-            notes="Img note",
-            images_base64=["base64data"],
-        )
-
-    assert hass.bus.async_fire.called
-    data = hass.bus.async_fire.call_args[0][1]
-    assert data[ATTR_IMAGES] == ["timeline/image.webp"]
-
-    # Case 2: Save returns path without /timeline/ (fallback)
-    fallback_path = tmp_path / "image.jpg"
-    image_manager.save_timeline_image.return_value = str(fallback_path)
-    hass.bus.async_fire.reset_mock()
-
-    with (
-        patch(
-            "custom_components.growspace_manager.services.plant._ensure_plant_loaded"
-        ),
-        patch(
-            "custom_components.growspace_manager.services.plant._resolve_plant_id",
-            return_value="plant1",
-        ),
-    ):
-        await async_add_timeline_note(
-            hass,
-            coordinator,
-            strain_library,
-            plant_id="plant1",
-            notes="Img note 2",
-            images_base64=["base64data"],
-        )
-
-    data = hass.bus.async_fire.call_args[0][1]
-    assert data[ATTR_IMAGES] == [f"timeline/{fallback_path.name}"]
-
-    # Case 3: Exception during save
-    image_manager.save_timeline_image.side_effect = Exception("Save failed")
-    hass.bus.async_fire.reset_mock()
-
-    with (
-        patch(
-            "custom_components.growspace_manager.services.plant._ensure_plant_loaded"
-        ),
-        patch(
-            "custom_components.growspace_manager.services.plant._resolve_plant_id",
-            return_value="plant1",
-        ),
-    ):
-        await async_add_timeline_note(
-            hass,
-            coordinator,
-            strain_library,
-            plant_id="plant1",
-            notes="Img failure",
-            images_base64=["base64data"],
-        )
-
-    data = hass.bus.async_fire.call_args[0][1]
-    assert data[ATTR_IMAGES] == []  # Should be empty since save failed
-
 
 @pytest.mark.asyncio
-async def test_handle_add_plants_success(
-    hass: HomeAssistant,
-) -> None:
+async def test_handle_add_plants_success() -> None:
     """Test handle_add_plants service."""
+    hass = MagicMock()
     mock_coordinator = MagicMock()
-    mock_coordinator._plant_service = MagicMock()
-    mock_coordinator._plant_service.add_plant = AsyncMock()
+    mock_coordinator.services = MagicMock()
+    mock_coordinator.services.plants.add_plant = AsyncMock()
     mock_coordinator.growspaces = {"gs1": MagicMock()}
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
 
@@ -239,125 +71,68 @@ async def test_handle_add_plants_success(
         "start_number": 10,
     }
 
-    await handle_add_plants(hass, mock_coordinator, mock_strain_library, mock_call)
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+    await facade.add_plants_from_call(hass, mock_strain_library, mock_call)
 
-    assert mock_coordinator._plant_service.add_plant.call_count == 2
+    assert mock_coordinator.services.plants.add_plant.call_count == 2
     # Check that phenotype uses start_number
-    args = mock_coordinator._plant_service.add_plant.call_args_list[0].kwargs
+    args = mock_coordinator.services.plants.add_plant.call_args_list[0].kwargs
     assert args["phenotype"] == "Strain A #10"
 
 
-@pytest.mark.asyncio
-async def test_add_timeline_note_extra_metadata() -> None:
-    """Test async_add_timeline_note with ph, ec, amount_ml and corrupt sensors."""
-    hass = MagicMock()
-    coordinator = MagicMock()
-    strain_library = MagicMock()
 
-    plant_mock = MagicMock()
-    plant_mock.growspace_id = "gs1"
-    coordinator.plants = {"plant1": plant_mock}
-
-    growspace_mock = MagicMock()
-    env_config = MagicMock()
-    env_config.temperature_sensor = "sensor.temp"
-    env_config.humidity_sensor = None  # Trigger 759
-    growspace_mock.environment_config = env_config
-    coordinator.growspaces = {"gs1": growspace_mock}
-
-    # Mock corrupt state
-    state = MagicMock()
-    state.state = "NOT_A_NUMBER"
-    hass.states.get.return_value = state
-
-    with (
-        patch(
-            "custom_components.growspace_manager.services.plant._ensure_plant_loaded"
-        ),
-        patch(
-            "custom_components.growspace_manager.services.plant._resolve_plant_id",
-            return_value="plant1",
-        ),
-    ):
-        await async_add_timeline_note(
-            hass,
-            coordinator,
-            strain_library,
-            plant_id="plant1",
-            notes="Test extras",
-            ph=6.0,
-            ec=1.2,
-            amount_ml=500.0,
-        )
-
-    data = hass.bus.async_fire.call_args[0][1]
-    metadata = data[ATTR_METADATA]
-    assert metadata["ph"] == 6.0
-    assert metadata["ec"] == 1.2
-    assert metadata["amount_ml"] == 500.0
-    assert metadata["temperature"] is None  # Failed conversion (764-765)
-    assert metadata["humidity"] is None  # Missing sensor (759)
-
-
-@pytest.mark.asyncio
-async def test_handle_add_timeline_note_service() -> None:
-    """Test handle_add_timeline_note service entry point."""
-    hass = MagicMock()
-    coordinator = MagicMock()
-    strain_library = MagicMock()
-
-    mock_call = MagicMock(spec=ServiceCall)
-    mock_call.data = {"plant_id": "plant1", "notes": "Service call note"}
-
-    with patch(
-        "custom_components.growspace_manager.services.plant.async_add_timeline_note"
-    ) as mock_logic:
-        await handle_add_timeline_note(hass, coordinator, strain_library, mock_call)
-        mock_logic.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_handle_harvest_plant_not_loaded() -> None:
-    """Test handle_harvest_plant when plant cannot be loaded."""
+    """Test handle_harvest_plant when plant is not loaded."""
     hass = MagicMock()
     coordinator = MagicMock()
+    coordinator.services = MagicMock()
+    coordinator.services.plants.transition_plant = AsyncMock()
+    coordinator.async_load = AsyncMock()
     strain_library = MagicMock()
 
-    mock_call = MagicMock(spec=ServiceCall)
-    mock_call.data = {"plant_id": "missing_plant"}
+    # Empty plants dict
+    coordinator.plants = {}
 
-    with patch(
-        "custom_components.growspace_manager.services.plant._ensure_plant_loaded",
-        return_value=False,
-    ):
-        result = await handle_harvest_plant(
-            hass, coordinator, strain_library, mock_call
-        )
-        assert result is None
+    call = MagicMock(spec=ServiceCall)
+    call.data = {ATTR_PLANT_ID: "plant1"}
+
+    with pytest.raises(ServiceValidationError, match=".*not found and could not be reloaded.*"):
+        await handle_harvest_plant(hass, coordinator, strain_library, call)
 
 
 @pytest.mark.asyncio
-async def test_handle_add_plants_errors(hass: HomeAssistant) -> None:
+async def test_handle_add_plants_errors() -> None:
     """Test handle_add_plants error paths."""
+    hass = MagicMock()
     mock_coordinator = MagicMock()
+    mock_coordinator.services = MagicMock()
+    mock_coordinator.services.plants.add_plant = AsyncMock()
     mock_coordinator.growspaces = {"gs1": MagicMock()}
     mock_coordinator.validator.find_first_available_position.return_value = (1, 1)
 
     mock_call = MagicMock(spec=ServiceCall)
 
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+
     # 1. Growspace not found (245-246)
     mock_call.data = {"growspace_id": "missing", "strain": "S1", "amount": 1}
     with pytest.raises(ServiceValidationError, match=".*does not exist.*"):
-        await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
+        await facade.add_plants_from_call(hass, MagicMock(), mock_call)
 
     # 2. GrowspaceError during add (297-299)
     mock_call.data = {"growspace_id": "gs1", "strain": "S1", "amount": 2}
-    mock_coordinator._plant_service.add_plant = AsyncMock(
+    mock_coordinator.services.plants.add_plant = AsyncMock(
         side_effect=GrowspaceError("Fail")
     )
-    await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+    await facade.add_plants_from_call(hass, MagicMock(), mock_call)
     assert (
-        mock_coordinator._plant_service.add_plant.call_count == 1
+        mock_coordinator.services.plants.add_plant.call_count == 1
     )  # Stopped after first error
 
     # 3. Unexpected exception (308-310)
@@ -365,23 +140,27 @@ async def test_handle_add_plants_errors(hass: HomeAssistant) -> None:
         "Boom"
     )
     with pytest.raises(ServiceValidationError, match="Failed to batch add plants"):
-        await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
+        await facade.add_plants_from_call(hass, MagicMock(), mock_call)
 
 
 @pytest.mark.asyncio
-async def test_handle_add_plants_full(hass: HomeAssistant) -> None:
+async def test_handle_add_plants_full() -> None:
     """Test handle_add_plants when growspace is full (276-284)."""
+    hass = MagicMock()
     mock_coordinator = MagicMock()
-    mock_coordinator._plant_service = MagicMock()
-    mock_coordinator._plant_service.add_plant = AsyncMock()
+    mock_coordinator.services = MagicMock()
+    mock_coordinator.services.plants.add_plant = AsyncMock()
     mock_coordinator.growspaces = {"gs1": MagicMock()}
     mock_call = MagicMock(spec=ServiceCall)
     mock_call.data = {"growspace_id": "gs1", "strain": "S1", "amount": 2}
 
+    facade = PlantFacade(mock_coordinator)
+    facade.add_plant = mock_coordinator.services.plants.add_plant
+
     # Case: Full from the start (282)
     mock_coordinator.validator.find_first_available_position.return_value = (None, None)
     with pytest.raises(ServiceValidationError, match=".*is full.*"):
-        await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
+        await facade.add_plants_from_call(hass, MagicMock(), mock_call)
 
     # Case: Becomes full during batch (284)
     # 1. find_first_available_position (initial check)
@@ -392,5 +171,5 @@ async def test_handle_add_plants_full(hass: HomeAssistant) -> None:
         (0, 0),
         (None, None),
     ]
-    await handle_add_plants(hass, mock_coordinator, MagicMock(), mock_call)
-    assert mock_coordinator._plant_service.add_plant.call_count == 1
+    await facade.add_plants_from_call(hass, MagicMock(), mock_call)
+    assert mock_coordinator.services.plants.add_plant.call_count == 1

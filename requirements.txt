@@ -1,28 +1,63 @@
+# This file is the CI test environment, not what HACS users install — the shipped
+# dependency ranges live in custom_components/growspace_manager/manifest.json.
+#
+# Pinning policy (ADR-0020, 2026-08-07 amendment): CI must resolve the same set on
+# any given commit regardless of when it runs. Three mechanisms cover that, in order
+# of precedence:
+#
+#   1. HA's own homeassistant/package_constraints.txt, applied as a `-c` constraints
+#      file by the two-phase install in tests.yaml. This governs every dependency
+#      Home Assistant itself pins (Pillow, voluptuous, aiodhcpwatcher, PyTurboJPEG,
+#      pydantic, hassil, home-assistant-intents...) — do not restate those here.
+#   2. pytest-homeassistant-custom-component, which pins homeassistant plus the
+#      pytest stack exactly (pytest, pytest-asyncio, pytest-cov, pytest-xdist,
+#      coverage, freezegun, requests-mock, syrupy, pipdeptree).
+#   3. Explicit `==` pins below, for the remainder that neither of the above covers.
+#
+# Anything left bare would float under a fresh resolve, which is how hassil reached
+# 3.10 (no hassil.fuzzy) and zeroed out test collection on an unchanged commit.
+
 # Home Assistant Core (Minimal)
-homeassistant==2026.1.3
-aiosqlite
+# Kept in lockstep with pytest-homeassistant-custom-component, which pins this exact
+# homeassistant version; bumping one requires bumping the other.
+homeassistant==2026.8.1
+aiosqlite==0.22.1
 Pillow
-python-dateutil
+python-dateutil==2.9.0.post0
 voluptuous
+
+# Integration dependencies
+# manifest.json ships these as ranges (mashumaro>=3.10, beautifulsoup4>=4.12.0);
+# the pins here fix what CI tests against, they do not narrow what users get.
+fpdf2==2.8.7
+mashumaro==3.22
+beautifulsoup4==4.15.0
 
 # Test Dependencies
 aiodhcpwatcher
-pycares<5
-ruff
+pycares==5.0.1
 coverage
-pre-commit
 pydantic
-pylint
 pipdeptree
 pytest-asyncio
-pytest-homeassistant-custom-component>=0.13.80
+pytest-homeassistant-custom-component==0.13.355
 pytest-cov
 pytest
-yamllint
-codespell
+PyTurboJPEG
 pytest-xdist
 freezegun
 requests-mock
-hassil
-home-assistant-intents
+hassil==3.11.0
+home-assistant-intents==2026.7.30
 syrupy>=5.0.0
+
+# Local dev tooling — NOT what the gate runs. CI pins its own copies: ruff and mypy
+# in lint.yaml, and the hook versions in .pre-commit-config.yaml. ruff is pinned to
+# lint.yaml's version so a local `ruff check` agrees with the gate; lint.yaml is the
+# source of truth, so bump it there first.
+ruff==0.15.12
+mypy==1.20.2
+pre-commit
+pylint
+yamllint
+codespell

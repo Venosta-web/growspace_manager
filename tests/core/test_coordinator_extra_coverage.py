@@ -1,12 +1,12 @@
 """Additional tests for GrowspaceCoordinator to reach 100% coverage."""
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
-from test_coordinator import create_test_coordinator
 
 from homeassistant.core import HomeAssistant
+
+from .test_coordinator import create_test_coordinator
 
 
 @pytest.mark.asyncio
@@ -24,7 +24,9 @@ async def test_update_special_growspace_name_fallback(hass: HomeAssistant) -> No
     coordinator._growspace_manager = mock_manager
 
     # Call the method
-    coordinator._update_special_growspace_name("mother", "New Mother Name")
+    coordinator._growspace_manager._update_special_growspace_name(
+        "mother", "New Mother Name"
+    )
 
     # Verify the internal method was called
     mock_manager._update_special_growspace_name.assert_called_once_with(
@@ -38,11 +40,15 @@ async def test_async_update_growspace_returns_gs(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
 
     # Add a growspace
-    gs = await coordinator.async_add_growspace(name="Test GS", rows=2, plants_per_row=2)
+    gs = await coordinator.services.growspaces.add_growspace(
+        name="Test GS", rows=2, plants_per_row=2
+    )
     gs_id = gs.id
 
     # Update it
-    result = await coordinator.async_update_growspace(gs_id, name="Updated GS")
+    result = await coordinator.services.growspaces.update_growspace(
+        gs_id, name="Updated GS"
+    )
 
     # Verify it returns the updated growspace object
     assert result.id == gs_id
@@ -51,42 +57,17 @@ async def test_async_update_growspace_returns_gs(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_validate_plants_after_growspace_resize_task(hass: HomeAssistant) -> None:
-    """Test that _validate_plants_after_growspace_resize creates an asyncio task."""
-    coordinator = create_test_coordinator(hass)
-
-    # Mock growspace_manager method
-    coordinator.growspace_manager._validate_plants_after_growspace_resize = AsyncMock()
-
-    # Call the method
-    # We can't easily mock asyncio.create_task globally, but we can check if the mock was called
-    # Actually, let's just call it and wait a bit to ensure it executes or at least doesn't crash
-    coordinator._validate_plants_after_growspace_resize("gs1", 2, 2)
-
-    # Give it a tiny bit of time to schedule/run
-    await asyncio.sleep(0)
-
-    # Verify the manager method was called (likely scheduled)
-    coordinator.growspace_manager._validate_plants_after_growspace_resize.assert_called_once_with(
-        "gs1", 2, 2
-    )
-
-
-@pytest.mark.asyncio
-async def test_async_update_growspace_fallback(hass: HomeAssistant) -> None:
-    """Test that async_update_growspace raises GrowspaceNotFoundError when GS is not found in repo."""
+async def test_services_update_growspace_fallback(hass: HomeAssistant) -> None:
+    """Test that services.update_growspace raises an error when GS not found."""
     from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 
     coordinator = create_test_coordinator(hass)
 
-    # Mock growspace_manager.update_growspace to not actually add it to repo (or just use a random ID)
-    coordinator.growspace_manager.update_growspace = AsyncMock()
-
     # Call it with an ID that definitely doesn't exist in coordinator.growspaces
-    with pytest.raises(
-        GrowspaceNotFoundError, match="Growspace nonexistent_id not found"
-    ):
-        await coordinator.async_update_growspace("nonexistent_id", name="New Name")
+    with pytest.raises(GrowspaceNotFoundError):
+        await coordinator.services.growspaces.update_growspace(
+            "nonexistent_id", name="New Name"
+        )
 
     # It should not be in the growspaces repo
     assert "nonexistent_id" not in coordinator.growspaces

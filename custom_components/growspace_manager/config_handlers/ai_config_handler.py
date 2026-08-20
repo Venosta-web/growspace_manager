@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any
 
 import voluptuous as vol
 
@@ -11,8 +11,14 @@ from custom_components.growspace_manager.const import (
     AI_PERSONALITIES,
     CONF_AI_AUTO_ALERTS,
     CONF_AI_ENABLED,
+    CONF_AI_TASK_ENTITY_ID,
     CONF_ASSISTANT_ID,
+    CONF_BRIEFING_INTERVAL_MINUTES,
+    CONF_BRIEFING_TRIGGER_ENTITIES,
     CONF_NOTIFICATION_PERSONALITY,
+    CONF_VISION_CHECKUP_ENABLED,
+    CONF_VISION_DEBUG_ENABLED,
+    DEFAULT_BRIEFING_INTERVAL_MINUTES,
 )
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -32,68 +38,17 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
         else:
             current_settings = self.config_entry.options.get("ai_settings", {})
 
-        # Get available conversation entities from the state machine
-        assistants = []
-        try:
-            # Get all conversation entities from the state machine
-            states = self.hass.states.async_all("conversation")
-            assistants = [
-                {
-                    "id": state.entity_id,
-                    "name": state.attributes.get("friendly_name", state.entity_id),
-                }
-                for state in states
-            ]
-            _LOGGER.debug("Found %d conversation entities", len(assistants))
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning("Could not fetch conversation entities: %s", err)
-
-        # Filter to valid assistants with id and name
-        valid_assistants = [
-            a for a in assistants if isinstance(a, dict) and "id" in a and "name" in a
-        ]
-
-        if not valid_assistants:
-            # If no conversation entities found, log a warning
-            _LOGGER.warning(
-                "No conversation entities found. Please add a conversation integration "
-                "(like Google Generative AI, OpenAI, etc.) to Home Assistant"
-            )
-
-        assistant_options = [
-            selector.SelectOptionDict(value=assistant["id"], label=assistant["name"])
-            for assistant in valid_assistants
-        ]
-
         schema: dict[Any, Any] = {
             vol.Required(
                 CONF_AI_ENABLED, default=current_settings.get(CONF_AI_ENABLED, False)
             ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_ASSISTANT_ID,
+                default=current_settings.get(CONF_ASSISTANT_ID),
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="conversation")
+            ),
         }
-
-        if assistant_options:
-            schema[
-                vol.Optional(
-                    CONF_ASSISTANT_ID,
-                    default=current_settings.get(CONF_ASSISTANT_ID),
-                )
-            ] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=assistant_options,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-        else:
-            # Show a text field if no assistants detected
-            schema[
-                vol.Optional(
-                    CONF_ASSISTANT_ID, default=current_settings.get(CONF_ASSISTANT_ID)
-                )
-            ] = selector.TextSelector(
-                selector.TextSelectorConfig(
-                    type=selector.TextSelectorType.TEXT,
-                )
-            )
 
         schema[
             vol.Optional(
@@ -130,6 +85,52 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
             )
         )
 
+        # Add vision checkup toggle
+        schema[
+            vol.Optional(
+                CONF_VISION_CHECKUP_ENABLED,
+                default=current_settings.get(CONF_VISION_CHECKUP_ENABLED, False),
+            )
+        ] = selector.BooleanSelector()
+
+        # Add vision debug toggle
+        schema[
+            vol.Optional(
+                CONF_VISION_DEBUG_ENABLED,
+                default=current_settings.get(CONF_VISION_DEBUG_ENABLED, False),
+            )
+        ] = selector.BooleanSelector()
+
+        schema[
+            vol.Optional(
+                CONF_AI_TASK_ENTITY_ID,
+                default=current_settings.get(CONF_AI_TASK_ENTITY_ID),
+            )
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="ai_task"))
+
+        schema[
+            vol.Optional(
+                CONF_BRIEFING_INTERVAL_MINUTES,
+                default=current_settings.get(
+                    CONF_BRIEFING_INTERVAL_MINUTES, DEFAULT_BRIEFING_INTERVAL_MINUTES
+                ),
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=5,
+                max=1440,
+                step=5,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+
+        schema[
+            vol.Optional(
+                CONF_BRIEFING_TRIGGER_ENTITIES,
+                default=current_settings.get(CONF_BRIEFING_TRIGGER_ENTITIES, []),
+            )
+        ] = selector.EntitySelector(selector.EntitySelectorConfig(multiple=True))
+
         return vol.Schema(schema)
 
     async def async_step_configure_ai(
@@ -137,7 +138,7 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
     ) -> ConfigFlowResult:
         """Show the form for configuring AI settings."""
         try:
-            coordinator = self.get_coordinator()
+            self.get_coordinator()
         except AbortFlow as e:
             return self.flow.async_abort(reason=e.reason)
 
@@ -184,6 +185,6 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
         coordinator.options = new_options
 
         # Save to storage
-        await coordinator.async_save()
+        await coordinator.services.save()
 
-        return cast(dict[str, Any], new_options)
+        return new_options

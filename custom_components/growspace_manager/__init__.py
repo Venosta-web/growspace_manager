@@ -7,10 +7,13 @@ import pathlib
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components import panel_custom
+from homeassistant.components.frontend import (
+    async_remove_panel as frontend_async_remove_panel,
+)
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
@@ -19,7 +22,9 @@ from . import service_registration
 from .const import CONF_SHOW_SIDEBAR, DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
 from .coordinator import GrowspaceCoordinator
 from .coordinator_builder import CoordinatorBuilder
+from .exhaust_migration import evaluate_exhaust_migration_issues
 from .intent import async_setup_intents
+from .services.seedfinder_scraper import SeedfinderScraper
 from .strain_library import StrainLibrary
 from .views import StrainLibraryImageView, StrainLibraryUploadView
 from .websocket import async_register_websocket_api
@@ -27,6 +32,9 @@ from .websocket import async_register_websocket_api
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
+
+_LEGACY_PLANT_MANUFACTURER = "Growspace Manager"
+_LEGACY_PLANT_MODEL_PREFIX = "Plant ("
 
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -47,6 +55,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         "Setting up Growspace Manager integration for entry %s", entry.entry_id
     )
 
+    _async_remove_legacy_plant_devices(hass, entry)
+
     # Initialize Storage and Coordinator
     store = Store[dict[str, Any]](hass, STORAGE_VERSION, STORAGE_KEY)
     data = await store.async_load() or {}
@@ -56,6 +66,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         strain_library_instance = StrainLibrary(hass)
         await strain_library_instance.async_setup()
         hass.data[DOMAIN]["strain_library"] = strain_library_instance
+
+        # Initialize Seedfinder Scraper
+        hass.data[DOMAIN]["seedfinder_scraper"] = SeedfinderScraper(hass)
 
         # Register Views
         hass.http.register_view(StrainLibraryUploadView(hass, strain_library_instance))
@@ -84,8 +97,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
                 ]
             )
 
-    # Retrieve global Strain Library
+    # Retrieve global Strain Library and Scraper
     strain_library_instance = hass.data[DOMAIN]["strain_library"]
+    scraper_instance = hass.data[DOMAIN]["seedfinder_scraper"]
 
     # Use builder to create coordinator with all dependencies
     builder = CoordinatorBuilder(hass, entry)
@@ -93,6 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         data=data,
         options=dict(entry.options),
         strain_library=strain_library_instance,
+        seedfinder_scraper=scraper_instance,
     )
     await coordinator.async_load()  # Load data into the coordinator
 
@@ -104,6 +119,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Register/Unregister Sidebar Panel
     await async_register_sidebar_panel(hass, entry)
 
+    # One-time ADR-0026 cleanup: per-growspace environment blobs in options are
+    # legacy — the growspace store is the single source of truth, and any blob
+    # worth keeping was adopted during coordinator load. Strip them before the
+    # update listener is registered so this options write cannot trigger a
+    # reload.
+    stale_blob_ids = [gid for gid in coordinator.growspaces if gid in entry.options]
+    if stale_blob_ids:
+        new_options = {
+            k: v for k, v in entry.options.items() if k not in stale_blob_ids
+        }
+        hass.config_entries.async_update_entry(entry, options=new_options)
+        _LOGGER.info(
+            "Removed %d legacy per-growspace environment blob(s) from config entry options",
+            len(stale_blob_ids),
+        )
+
     # Listen for options updates
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
@@ -111,7 +142,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     pending = entry.data.get("pending_growspace")
     if pending:
         try:
-            await coordinator.growspace_service.add_growspace(
+            await coordinator.services.growspaces.add_growspace(
                 name=pending["name"],
                 rows=pending["rows"],
                 plants_per_row=pending["plants_per_row"],
@@ -126,7 +157,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             new_data.pop("pending_growspace")
             hass.config_entries.async_update_entry(entry, data=new_data)
 
-        except (KeyError, RuntimeError):
+        except KeyError, RuntimeError:
             _LOGGER.exception(
                 "Failed to create pending growspace %s",
                 pending.get("name", "unknown"),
@@ -151,9 +182,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Perform the first refresh to populate data
     await coordinator.async_config_entry_first_refresh()
 
+    # Raise/clear the exhaust-fan sole-ownership migration repair (ADR-0019)
+    evaluate_exhaust_migration_issues(hass, coordinator)
+
     entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
 
     return True
+
+
+@callback
+def _async_remove_legacy_plant_devices(hass: HomeAssistant, entry: ConfigEntry) -> int:
+    """Remove obsolete per-plant devices owned by this config entry."""
+    device_registry = dr.async_get(hass)
+    legacy_devices = [
+        device
+        for device in dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+        if device.manufacturer == _LEGACY_PLANT_MANUFACTURER
+        and (
+            device.model == "Plant"
+            or (
+                device.model is not None
+                and device.model.startswith(_LEGACY_PLANT_MODEL_PREFIX)
+            )
+        )
+    ]
+    for device in legacy_devices:
+        device_registry.async_update_device(
+            device.id, remove_config_entry_id=entry.entry_id
+        )
+
+    if legacy_devices:
+        _LOGGER.info(
+            "Cleaned up %d legacy Plant device(s) for config entry %s",
+            len(legacy_devices),
+            entry.entry_id,
+        )
+    return len(legacy_devices)
 
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -173,7 +237,7 @@ async def async_register_sidebar_panel(
     # Remove existing panel first to avoid "Overwriting panel" error
     if DOMAIN in hass.data.get("frontend_panels", {}):
         _LOGGER.debug("Removing existing Growspace Manager sidebar panel")
-        hass.components.frontend.async_remove_panel(DOMAIN)
+        frontend_async_remove_panel(hass, DOMAIN)
 
     if show_sidebar:
         _LOGGER.debug("Registering Growspace Manager sidebar panel")
@@ -190,11 +254,8 @@ async def async_register_sidebar_panel(
 
 @callback
 def _async_cancel_coordinators(coordinator: GrowspaceCoordinator) -> None:
-    """Cancel irrigation and dehumidifier listeners."""
-    for irr_coordinator in coordinator.irrigation_coordinators.values():
-        irr_coordinator.async_cancel_listeners()
-    for dehum_coordinator in coordinator.dehumidifier_coordinators.values():
-        dehum_coordinator.unload()
+    """Cancel all sub-coordinator listeners via the subsystem manager."""
+    coordinator.async_cancel_subsystems()
 
 
 @callback
@@ -228,12 +289,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
         # Remove sidebar panel
         if DOMAIN in hass.data.get("frontend_panels", {}):
             _LOGGER.debug("Removing Growspace Manager sidebar panel during unload")
-            hass.components.frontend.async_remove_panel(DOMAIN)
+            frontend_async_remove_panel(hass, DOMAIN)
 
-        # Clean up global Strain Library
-        if DOMAIN in hass.data and "strain_library" in hass.data[DOMAIN]:
-            await hass.data[DOMAIN]["strain_library"].async_close()
-            del hass.data[DOMAIN]["strain_library"]
+        # Clean up global Strain Library and Scraper
+        if DOMAIN in hass.data:
+            if "strain_library" in hass.data[DOMAIN]:
+                await hass.data[DOMAIN]["strain_library"].async_close()
+                del hass.data[DOMAIN]["strain_library"]
+            if "seedfinder_scraper" in hass.data[DOMAIN]:
+                del hass.data[DOMAIN]["seedfinder_scraper"]
 
         _LOGGER.info("Unloaded Growspace Manager for entry %s", entry.entry_id)
         return True

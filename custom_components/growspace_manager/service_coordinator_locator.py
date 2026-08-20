@@ -19,6 +19,7 @@ from .const import (
     ATTR_TARGET_GROWSPACE_ID,
     DOMAIN,
 )
+from .exceptions import CoordinatorNotReadyError
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -72,11 +73,36 @@ class ServiceCoordinatorLocator:
         if len(coordinators) == 1:
             return coordinators[0]
 
-        # Unable to determine which coordinator to use
+        if not coordinators:
+            raise CoordinatorNotReadyError(
+                "No Growspace Manager instance is currently loaded."
+            )
+
+        # Multiple instances and no id matched — the caller must disambiguate.
         raise ServiceValidationError(
             "Could not determine which Growspace Manager instance to use. "
             "Please specify a valid growspace_id or plant_id."
         )
+
+    @staticmethod
+    def get_any(hass: HomeAssistant) -> GrowspaceCoordinator:
+        """Get any loaded coordinator, for commands that don't target a specific entity.
+
+        Args:
+            hass: The Home Assistant instance.
+
+        Returns:
+            Any loaded GrowspaceCoordinator instance.
+
+        Raises:
+            ServiceValidationError: If no coordinator is loaded.
+        """
+        coordinators = ServiceCoordinatorLocator._get_loaded_coordinators(hass)
+        if not coordinators:
+            raise CoordinatorNotReadyError(
+                "No Growspace Manager instance is currently loaded."
+            )
+        return coordinators[0]
 
     @staticmethod
     def _get_loaded_coordinators(hass: HomeAssistant) -> list[GrowspaceCoordinator]:
@@ -120,8 +146,10 @@ class ServiceCoordinatorLocator:
 
     @staticmethod
     def _check_collection(
-        value: str | list[str], collection_name: str, coordinators: list[Any]
-    ) -> Any | None:
+        value: str | list[str],
+        collection_name: str,
+        coordinators: list[GrowspaceCoordinator],
+    ) -> GrowspaceCoordinator | None:
         """Check if value exists in coordinator's collection.
 
         Args:

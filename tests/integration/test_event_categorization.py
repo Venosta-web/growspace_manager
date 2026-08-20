@@ -44,9 +44,6 @@ def create_test_sensor(
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
-        options=coordinator.options,
     )
 
 
@@ -179,9 +176,10 @@ async def test_event_categorization(hass: HomeAssistant, mock_coordinator) -> No
     ):
         await stress_sensor.async_update_and_notify()
 
-    # Verify event
-    mock_coordinator.add_event.assert_called_once()
-    event = mock_coordinator.add_event.call_args[0][1]
-
-    assert event.sensor_type == GrowspaceSensorType.STRESS
-    assert event.category == "alert"
+    # Verify events — rising edge fires one, falling edge fires another
+    assert mock_coordinator.add_event.call_count == 2
+    # Both events share the same sensor_type and category
+    for call in mock_coordinator.add_event.call_args_list:
+        event = call[0][1]
+        assert event.sensor_type == GrowspaceSensorType.STRESS
+        assert event.category == "alert"

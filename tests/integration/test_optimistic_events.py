@@ -1,27 +1,31 @@
 from unittest.mock import AsyncMock, MagicMock
 
-from common import create_plant
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import Growspace
 from homeassistant.core import HomeAssistant
+from tests.common import MockConfigEntry
+
+from .common import create_plant
 
 
 @pytest.fixture
-def mock_coordinator(hass: HomeAssistant):
+def mock_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     entry = MockConfigEntry(domain="growspace_manager", data={}, options={})
     entry.add_to_hass(hass)
 
-    coordinator = GrowspaceCoordinator(hass, entry, data={})
+    coordinator = GrowspaceCoordinator.build(hass, entry, data={})
+    coordinator._data_repository.add_growspace(
+        Growspace(id="test_gs", name="Test Growspace")
+    )
 
-    # Mock lifecycle manager and inject it into the service
-    coordinator.lifecycle_manager = AsyncMock()
-    coordinator._plant_service.lifecycle_manager = coordinator.lifecycle_manager
+    # Mock lifecycle manager
+    coordinator._plant_manager.lifecycle_manager = AsyncMock()
 
     # Mock plant_view_builder behavior
-    coordinator._plant_service.plant_view_builder = MagicMock()
-    coordinator._plant_service.plant_view_builder.build.return_value = {
+    coordinator._plant_manager.plant_view_builder = MagicMock()
+    coordinator._plant_manager.plant_view_builder.build.return_value = {
         "plant_id": "test_plant",
         "stage": "veg",
         "veg_days": 10,
@@ -45,7 +49,9 @@ async def test_async_add_plant_fires_event(
         stage="veg",
         veg_start="2023-01-01",
     )
-    mock_coordinator.lifecycle_manager.async_add_plant.return_value = plant_data
+    mock_coordinator._plant_manager.lifecycle_manager.async_add_plant.return_value = (
+        plant_data
+    )
 
     # Capture events
     fired_events = []
@@ -58,7 +64,7 @@ async def test_async_add_plant_fires_event(
     hass.bus.async_listen("growspace_manager_updated", event_listener)
 
     # Execute
-    await mock_coordinator._plant_service.add_plant(
+    await mock_coordinator._plant_manager.add_plant(
         growspace_id="test_gs", strain="Test Strain"
     )
     await hass.async_block_till_done()
@@ -84,8 +90,10 @@ async def test_async_update_plant_fires_event(
         strain="Test Strain",
         stage="flower",
     )
-    mock_coordinator.plants = {"test_plant": updated_plant}
-    mock_coordinator.lifecycle_manager.async_update_plant.return_value = updated_plant
+    mock_coordinator._data_repository.add_plant(updated_plant)
+    mock_coordinator._plant_manager.lifecycle_manager.async_update_plant.return_value = (
+        updated_plant
+    )
 
     fired_events = []
 
@@ -96,7 +104,7 @@ async def test_async_update_plant_fires_event(
     hass.bus.async_listen("growspace_manager_updated", event_listener)
 
     # Execute
-    await mock_coordinator._plant_service.update_plant(
+    await mock_coordinator._plant_manager.update_plant(
         plant_id="test_plant", stage="flower"
     )
     await hass.async_block_till_done()
@@ -118,8 +126,10 @@ async def test_async_remove_plant_fires_event(
     plant = create_plant(
         plant_id="test_plant", growspace_id="test_gs", strain="Test Strain"
     )
-    mock_coordinator.plants["test_plant"] = plant
-    mock_coordinator.lifecycle_manager.async_remove_plant.return_value = True
+    mock_coordinator._data_repository.add_plant(plant)
+    mock_coordinator._plant_manager.lifecycle_manager.async_remove_plant.return_value = (
+        True
+    )
 
     fired_events = []
 
@@ -130,7 +140,7 @@ async def test_async_remove_plant_fires_event(
     hass.bus.async_listen("growspace_manager_updated", event_listener)
 
     # Execute
-    await mock_coordinator.async_remove_plant("test_plant")
+    await mock_coordinator.services.plants.remove_plant("test_plant")
     await hass.async_block_till_done()
 
     # Verify

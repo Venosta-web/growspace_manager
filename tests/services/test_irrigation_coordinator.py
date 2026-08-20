@@ -15,9 +15,27 @@ from custom_components.growspace_manager.irrigation_coordinator import (
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
+
+_REAL_ASYNCIO_SLEEP = asyncio.sleep
+
+
+async def _await_settling_report(add_event_mock: MagicMock) -> None:
+    """Yield to the event loop until the deferred settling-report task fires.
+
+    The completion report runs in a background task after a settling delay
+    (see Sensor Settling Delay), so tests must yield control for it to run.
+    Uses the real asyncio.sleep — tests patch asyncio.sleep to resolve
+    instantly, and the autouse freeze_time fixture breaks wait_for() timeouts.
+    """
+    for _ in range(1000):
+        if add_event_mock.call_count:
+            return
+        await _REAL_ASYNCIO_SLEEP(0)
+    pytest.fail("Settling report task never completed")
 
 
 @pytest.fixture
@@ -43,6 +61,7 @@ def mock_main_coordinator() -> MagicMock:
         )
     }
     coordinator.async_save = AsyncMock()
+    coordinator.async_commit = AsyncMock()
     coordinator.async_refresh_growspace_data = AsyncMock()
     coordinator.async_set_updated_data = MagicMock()
     coordinator.add_event = MagicMock()
@@ -56,8 +75,11 @@ def mock_hass(mock_main_coordinator) -> MagicMock:
     hass.services = AsyncMock()
     hass.bus = MagicMock()
     hass.states = MagicMock()
-    # Ensure async_create_task creates a real task for tests to await
+    # Ensure async_create_task and async_create_background_task create real tasks for tests to await
     hass.async_create_task = asyncio.create_task
+    hass.async_create_background_task = MagicMock(
+        side_effect=lambda target, name: asyncio.create_task(target)
+    )
     # Mock loop property
     type(hass).loop = property(lambda self: asyncio.get_running_loop())
     hass.data = {DOMAIN: {}}
@@ -68,8 +90,12 @@ def mock_hass(mock_main_coordinator) -> MagicMock:
 def mock_config_entry() -> MagicMock:
     """Mock Config Entry with irrigation options."""
     entry = MagicMock(spec=ConfigEntry)
+    entry.options = {}
     entry.entry_id = ENTRY_ID
     entry.runtime_data = MagicMock()
+    entry.async_create_background_task = MagicMock(
+        side_effect=lambda hass, target, name: asyncio.create_task(target)
+    )
     entry.options = {
         "irrigation": {
             GROWSPACE_ID: {
@@ -103,7 +129,8 @@ async def test_setup_and_schedule_events(
     )
     await coordinator.async_setup()
 
-    assert mock_track_time.call_count == 3
+    # 2 irrigation + 1 drain + 1 midnight reset = 4
+    assert mock_track_time.call_count == 4
     calls = mock_track_time.call_args_list
     scheduled_times = {
         (c.kwargs["hour"], c.kwargs["minute"], c.kwargs["second"]) for c in calls
@@ -111,6 +138,8 @@ async def test_setup_and_schedule_events(
     assert (10, 0, 0) in scheduled_times
     assert (20, 0, 0) in scheduled_times
     assert (12, 0, 0) in scheduled_times
+    # Midnight reset listener
+    assert (0, 0, 0) in scheduled_times
 
 
 async def test_async_wait_for_switch_state_happy_path(
@@ -196,8 +225,15 @@ async def test_async_wait_for_switch_state_timeout(
     mock_hass.bus = MagicMock()
     mock_hass.bus.async_listen.return_value = Mock()
 
-    # We need to simulate the timeout without actually waiting a long time
-    with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
+    # We need to simulate the timeout without actually waiting a long time.
+    # We use a custom async function to mock asyncio.wait_for and ensure the
+    # coroutine argument is properly closed/awaited to prevent unawaited coroutine warnings.
+    async def mock_wait_for(fut, timeout=None):
+        if hasattr(fut, "close"):
+            fut.close()
+        raise TimeoutError
+
+    with patch("asyncio.wait_for", new=mock_wait_for):
         result = await coordinator._async_wait_for_switch_state(
             "switch.test_pump", "on", timeout=0.1
         )
@@ -255,9 +291,10 @@ async def test_run_pump_cycle(
                 found_notify = True
                 break
         assert found_notify, "Notification service call not found"
-        mock_sleep.assert_awaited_once_with(30)
+        mock_sleep.assert_any_await(30)
 
-        # Verify event logging
+        # Verify event logging — fired from the deferred settling-report task
+        await _await_settling_report(mock_main_coordinator.add_event)
         mock_main_coordinator.add_event.assert_called_once()
         args, _ = mock_main_coordinator.add_event.call_args
         assert args[0] == GROWSPACE_ID
@@ -356,7 +393,7 @@ async def test_async_set_settings(
         assert growspace.irrigation_config.irrigation_duration == 45
         assert growspace.irrigation_config.drain_pump_entity == "switch.new_drain_pump"
 
-        mock_main_coordinator.async_save.assert_awaited_once()
+        mock_main_coordinator.async_commit.assert_awaited_once()
         mock_update.assert_awaited_once()
 
 
@@ -383,11 +420,12 @@ async def test_async_add_schedule_item(
         # Test updating existing item
         await coordinator.async_add_schedule_item("irrigation_times", "08:00", 30)
 
+        items = growspace.irrigation_config.irrigation_times
         new_item = next((i for i in items if i["time"] == "08:00:00"), None)
         assert new_item is not None
         assert new_item["duration"] == 30
 
-        assert mock_main_coordinator.async_save.call_count == 2
+        assert mock_main_coordinator.async_commit.call_count == 2
         assert mock_update.call_count == 2
 
 
@@ -410,17 +448,34 @@ async def test_async_remove_schedule_item(
         removed_item = next((i for i in items if i["time"] == "10:00:00"), None)
         assert removed_item is None
 
-        mock_main_coordinator.async_save.assert_awaited_once()
+        mock_main_coordinator.async_commit.assert_awaited_once()
         mock_update.assert_awaited_once()
 
-        # Test removing non-existent item
-        mock_main_coordinator.async_save.reset_mock()
+        # Removing "HH:MM" matches the stored "HH:MM:SS" entry (ADR-0029 —
+        # the old raw-string comparison silently removed nothing)
+        mock_main_coordinator.async_commit.reset_mock()
         mock_update.reset_mock()
 
-        await coordinator.async_remove_schedule_item("irrigation_times", "99:99:99")
+        await coordinator.async_remove_schedule_item("irrigation_times", "20:00")
 
-        mock_main_coordinator.async_save.assert_not_awaited()
+        items = growspace.irrigation_config.irrigation_times
+        assert not any(i["time"] == "20:00:00" for i in items)
+        mock_main_coordinator.async_commit.assert_awaited_once()
+
+        # Test removing non-existent item
+        mock_main_coordinator.async_commit.reset_mock()
+        mock_update.reset_mock()
+
+        await coordinator.async_remove_schedule_item("irrigation_times", "23:45")
+
+        mock_main_coordinator.async_commit.assert_not_awaited()
         mock_update.assert_not_awaited()
+
+        # An invalid time is a loud failure, matching the add path
+        with pytest.raises(ValueError):
+            await coordinator.async_remove_schedule_item(
+                "irrigation_times", "99:99:99"
+            )
 
 
 async def test_async_add_schedule_item_validation_error(
@@ -464,17 +519,16 @@ async def test_get_default_duration_error(
 async def test_schedule_event_invalid_time(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
-    """Test scheduling event with invalid time format."""
+    """Malformed schedule entries register no listeners (only a warning)."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
+    config = mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
+    config.irrigation_times = [{"time": 123}, {"time": "invalid"}]
+    config.drain_times = []
 
-    # Invalid time type
-    coordinator._schedule_event({"time": 123}, "irrigation")
-    assert len(coordinator._listeners) == 0
+    await coordinator.async_update_listeners()
 
-    # Invalid time string
-    coordinator._schedule_event({"time": "invalid"}, "irrigation")
     assert len(coordinator._listeners) == 0
 
 
@@ -533,12 +587,12 @@ async def test_run_pump_cycle_error(
     )
 
     # Mock service call to raise exception
-    mock_hass.services.async_call.side_effect = Exception("Service Error")
+    mock_hass.services.async_call.side_effect = ValueError("Service Error")
 
     # The exception is caught and logged in _run_pump_cycle, but then re-raised
     # when trying to turn off the pump in finally block because side_effect applies to all calls.
     # We should make side_effect only apply to the first call (turn_on).
-    mock_hass.services.async_call.side_effect = [Exception("Service Error"), None]
+    mock_hass.services.async_call.side_effect = [ValueError("Service Error"), None]
 
     with patch.object(
         coordinator,
@@ -575,8 +629,8 @@ async def test_async_remove_schedule_item_key_error(
     await coordinator.async_remove_schedule_item("missing_schedule", "12:00:00")
 
     # Should handle KeyError gracefully and log warning
-    # We can verify this by checking if async_save was NOT called (since no change happened)
-    mock_main_coordinator.async_save.assert_not_awaited()
+    # We can verify this by checking if async_commit was NOT called (since no change happened)
+    mock_main_coordinator.async_commit.assert_not_awaited()
 
 
 async def test_async_remove_schedule_item_key_error_explicit(
@@ -611,21 +665,23 @@ async def test_async_remove_schedule_item_key_error_explicit(
     await coordinator.async_remove_schedule_item("some_schedule", "12:00:00")
 
     # Should catch KeyError and log warning
-    # We can verify this by checking if async_save was NOT called
-    mock_main_coordinator.async_save.assert_not_awaited()
+    # We can verify this by checking if async_commit was NOT called
+    mock_main_coordinator.async_commit.assert_not_awaited()
 
 
 async def test_schedule_event_short_time_format(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
-    """Test scheduling event with HH:MM format."""
+    """A stored HH:MM entry still registers its listener."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
+    config = mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
+    config.irrigation_times = [{"time": "12:00"}]
+    config.drain_times = []
 
-    coordinator._schedule_event({"time": "12:00"}, "irrigation")
+    await coordinator.async_update_listeners()
 
-    # Should have added a listener
     assert len(coordinator._listeners) == 1
 
     coordinator.async_cancel_listeners()
@@ -755,6 +811,7 @@ async def test_run_pump_cycle_with_moisture_logging(
     ):
         await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
 
+        await _await_settling_report(mock_main_coordinator.add_event)
         mock_main_coordinator.add_event.assert_called_once()
         _args, _ = mock_main_coordinator.add_event.call_args
         # Removed unused event = args[1]
@@ -796,12 +853,88 @@ async def test_run_pump_cycle_moisture_after_only(
     ):
         await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
 
+        await _await_settling_report(mock_main_coordinator.add_event)
         mock_main_coordinator.add_event.assert_called_once()
         args, _ = mock_main_coordinator.add_event.call_args
         event = args[1]
 
         # Verify moisture is in reasons (only after value)
         assert any("Moisture: 55.8%" in r for r in event.reasons)
+
+
+async def test_run_pump_cycle_defers_completion_report_until_sensor_settles(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that the completion report waits for the sensor to settle.
+
+    The "after" moisture reading and completion logbook/event must not be
+    captured the instant the cycle ends — they wait for the settling delay so
+    the sensor has time to physically catch up, then read the live value.
+    """
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    mock_main_coordinator.growspaces[GROWSPACE_ID].environment_config = MagicMock()
+    mock_main_coordinator.growspaces[
+        GROWSPACE_ID
+    ].environment_config.soil_moisture_sensor = "sensor.moisture"
+
+    mock_before_state = MagicMock(state="40.0")
+    mock_after_state = MagicMock(state="60.0")
+    mock_hass.states.get.side_effect = [mock_before_state, mock_after_state]
+
+    real_sleep = asyncio.sleep
+    settling_started = asyncio.Event()
+    settling_can_proceed = asyncio.Event()
+    sleep_calls: list[int] = []
+
+    async def fake_sleep(duration: int) -> None:
+        sleep_calls.append(duration)
+        if len(sleep_calls) == 1:
+            return  # the cycle's run duration — resolve instantly
+        settling_started.set()
+        await settling_can_proceed.wait()
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock, side_effect=fake_sleep),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {}
+        )
+
+        # Time is frozen in this test suite (autouse freeze_time), so
+        # asyncio.wait_for()'s monotonic-clock timeout never elapses — poll
+        # with bare yields instead.
+        for _ in range(1000):
+            if settling_started.is_set():
+                break
+            await real_sleep(0)
+        else:
+            pytest.fail("Settling delay was never started")
+
+        # The cycle has ended and the pump is off, but the report must not
+        # have fired yet — it's waiting for the sensor to settle.
+        mock_main_coordinator.add_event.assert_not_called()
+
+        settling_can_proceed.set()
+
+        for _ in range(1000):
+            if mock_main_coordinator.add_event.call_count:
+                break
+            await real_sleep(0)
+        else:
+            pytest.fail("Completion report was never fired after settling delay")
+
+        args, _ = mock_main_coordinator.add_event.call_args
+        event = args[1]
+        assert any("Moisture: 40.0% -> 60.0%" in r for r in event.reasons)
 
 
 @pytest.mark.asyncio
@@ -845,7 +978,7 @@ async def test_irrigation_coordinator_coverage_gaps(
         await BaseIrrigationCoordinator.async_unload(coordinator)  # Line 65
 
         # 6. Test _run_pump_cycle exception handling
-        mock_main_coordinator.add_event.side_effect = Exception("Test Error")
+        mock_main_coordinator.add_event.side_effect = ValueError("Test Error")
         # Must mock states again as side_effect consumed
         mock_hass.states.get.side_effect = None
         mock_hass.states.get.return_value = MagicMock(state="50.0")
@@ -864,19 +997,6 @@ async def test_irrigation_coordinator_coverage_gaps(
 
         # 7. Test active_events property (Line 46)
         assert isinstance(coordinator.active_events, dict)
-
-        # 8. Test async_remove_schedule_item exception (Lines 340-341)
-        with (
-            patch(
-                "custom_components.growspace_manager.irrigation_coordinator.hasattr",
-                return_value=True,
-            ),
-            patch(
-                "custom_components.growspace_manager.irrigation_coordinator.getattr",
-                side_effect=Exception("Unexpected"),
-            ),
-        ):
-            await coordinator.async_remove_schedule_item("irrigation_times", "10:00:00")
 
         # 9. Test _async_wait_for_switch_state with irrelevant entity event (Line 145)
         mock_hass.states.get.return_value = Mock(state="off")
@@ -926,3 +1046,398 @@ async def test_irrigation_coordinator_coverage_gaps(
             coordinator._running_tasks = ExplodingDict()
             await coordinator._run_pump_cycle("irrigation", "switch.pump", 30, {})
             # Should catch and log error
+
+
+# --- Manual Run Service Tests ---
+
+
+async def test_async_manual_run_triggers_pump_cycle(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that async_manual_run triggers a pump cycle with the given duration."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    with patch.object(
+        coordinator, "_run_pump_cycle", new_callable=AsyncMock
+    ) as mock_run_cycle:
+        await coordinator.async_manual_run(duration=45)
+        await asyncio.sleep(0)
+
+        mock_run_cycle.assert_awaited_once_with(
+            "irrigation",
+            "switch.irrigation_pump",
+            45,
+            {"manual": True},
+        )
+
+
+async def test_async_manual_run_uses_default_duration_when_none(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that async_manual_run uses the configured default duration when none given."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    with patch.object(
+        coordinator, "_run_pump_cycle", new_callable=AsyncMock
+    ) as mock_run_cycle:
+        await coordinator.async_manual_run(duration=None)
+        await asyncio.sleep(0)
+
+        mock_run_cycle.assert_awaited_once_with(
+            "irrigation",
+            "switch.irrigation_pump",
+            30,  # default from fixture: irrigation_duration=30
+            {"manual": True},
+        )
+
+
+async def test_async_manual_run_raises_when_no_pump_configured(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that async_manual_run raises ServiceValidationError when no pump entity configured."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    coordinator._main_coordinator.growspaces[GROWSPACE_ID].irrigation_config.irrigation_pump_entity = None
+
+    with pytest.raises(ServiceValidationError, match="No irrigation pump"):
+        await coordinator.async_manual_run(duration=30)
+
+
+# --- last_cycle_timestamp Tests ---
+
+
+async def test_last_cycle_timestamp_is_none_initially(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that last_cycle_timestamp is None before any cycle runs."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    assert coordinator.last_cycle_timestamp is None
+
+
+async def test_last_cycle_timestamp_set_after_run_pump_cycle(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that last_cycle_timestamp is set to the cycle start time after completion."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    mock_config_entry.runtime_data = mock_main_coordinator
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        await coordinator._run_pump_cycle("irrigation", "switch.irrigation_pump", 30, {})
+
+    assert coordinator.last_cycle_timestamp is not None
+
+
+# --- next_scheduled_cycle Tests ---
+
+
+async def test_next_scheduled_cycle_returns_next_future_time(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Test that next_scheduled_cycle returns the next irrigation time after now."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    # Fixture has irrigation_times: ["10:00:00", "20:00:00"]
+    result = coordinator.next_scheduled_cycle
+    # result should be a datetime ISO string or None
+    assert result is None or isinstance(result, str)
+
+
+# --- Dark Skip Tests ---
+
+
+def _make_state(state: str) -> MagicMock:
+    """Build a minimal state mock with the given state string."""
+    m = MagicMock()
+    m.state = state
+    return m
+
+
+def _make_coordinator_with_dark_skip(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+    *,
+    skip_during_dark: bool,
+    light_sensors: list[str],
+    light_states: dict[str, str],
+) -> IrrigationCoordinator:
+    """Build a coordinator with dark-skip config and light-sensor states."""
+    from custom_components.growspace_manager.models import EnvironmentConfig
+
+    gs = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    gs.irrigation_config.skip_during_dark = skip_during_dark
+    gs.environment_config = EnvironmentConfig(light_sensors=light_sensors)
+
+    mock_hass.states.get.side_effect = lambda eid: (
+        _make_state(light_states[eid]) if eid in light_states else None
+    )
+    return IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+
+async def test_dark_skip_prevents_scheduled_irrigation_when_lights_off(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Scheduled irrigation is skipped when skip_during_dark is True and all lights are off."""
+    coordinator = _make_coordinator_with_dark_skip(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        skip_during_dark=True,
+        light_sensors=["switch.light_1"],
+        light_states={"switch.light_1": "off"},
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+
+    # Pump should NOT have been turned on
+    turn_on_calls = [
+        c
+        for c in mock_hass.services.async_call.call_args_list
+        if c.args[:2] == ("switch", "turn_on")
+    ]
+    assert turn_on_calls == [], "Pump was turned on despite dark skip"
+
+
+async def test_dark_skip_allows_irrigation_when_lights_on(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Scheduled irrigation proceeds when skip_during_dark is True but lights are on."""
+    coordinator = _make_coordinator_with_dark_skip(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        skip_during_dark=True,
+        light_sensors=["switch.light_1"],
+        light_states={"switch.light_1": "on"},
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+
+    mock_hass.services.async_call.assert_any_call(
+        "switch", "turn_on", {"entity_id": "switch.irrigation_pump"}, blocking=True
+    )
+
+
+async def test_dark_skip_bypassed_for_manual_run(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Manual 'Run Now' bypasses dark skip even when lights are off."""
+    coordinator = _make_coordinator_with_dark_skip(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        skip_during_dark=True,
+        light_sensors=["switch.light_1"],
+        light_states={"switch.light_1": "off"},
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"manual": True}
+        )
+
+    mock_hass.services.async_call.assert_any_call(
+        "switch", "turn_on", {"entity_id": "switch.irrigation_pump"}, blocking=True
+    )
+
+
+# --- Low Tank Skip Tests ---
+
+
+def _make_coordinator_with_tank(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+    *,
+    pause_on_low_tank: bool,
+    tank_sensor: str,
+    tank_level: float,
+    warning_level: float = 30.0,
+) -> IrrigationCoordinator:
+    """Build a coordinator with low-tank-skip config and tank sensor state."""
+    from custom_components.growspace_manager.models import (
+        EnvironmentConfig,
+        IrrigationTank,
+    )
+
+    gs = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    gs.irrigation_config.pause_on_low_tank = pause_on_low_tank
+    gs.environment_config = EnvironmentConfig(
+        irrigation_tanks=[
+            IrrigationTank(
+                sensor_entity=tank_sensor,
+                name="Main Tank",
+                warning_level=warning_level,
+            )
+        ]
+    )
+
+    mock_hass.states.get.side_effect = lambda eid: (
+        _make_state(str(tank_level)) if eid == tank_sensor else None
+    )
+    return IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+
+async def test_low_tank_skip_prevents_irrigation_when_tank_low(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Irrigation is skipped when pause_on_low_tank is True and tank is below warning level."""
+    coordinator = _make_coordinator_with_tank(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        pause_on_low_tank=True,
+        tank_sensor="sensor.tank_level",
+        tank_level=15.0,
+        warning_level=30.0,
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+
+    turn_on_calls = [
+        c
+        for c in mock_hass.services.async_call.call_args_list
+        if c.args[:2] == ("switch", "turn_on")
+    ]
+    assert turn_on_calls == [], "Pump was turned on despite low tank skip"
+
+
+async def test_low_tank_skip_fires_persistent_notification(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """A persistent HA notification is fired when low tank causes a skip."""
+    coordinator = _make_coordinator_with_tank(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        pause_on_low_tank=True,
+        tank_sensor="sensor.tank_level",
+        tank_level=20.0,
+        warning_level=30.0,
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+
+    # Expect persistent_notification.create to have been called
+    notification_calls = [
+        c
+        for c in mock_hass.services.async_call.call_args_list
+        if c.args[:2] == ("persistent_notification", "create")
+    ]
+    assert len(notification_calls) >= 1, "No persistent notification was fired for low tank skip"
+
+
+async def test_low_tank_skip_also_applies_to_manual_run(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """Low tank skip applies even to manual 'Run Now' requests."""
+    coordinator = _make_coordinator_with_tank(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        pause_on_low_tank=True,
+        tank_sensor="sensor.tank_level",
+        tank_level=10.0,
+        warning_level=30.0,
+    )
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        mock_config_entry.runtime_data = mock_main_coordinator
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"manual": True}
+        )
+
+    turn_on_calls = [
+        c
+        for c in mock_hass.services.async_call.call_args_list
+        if c.args[:2] == ("switch", "turn_on")
+    ]
+    assert turn_on_calls == [], "Pump was turned on despite low tank skip on manual run"

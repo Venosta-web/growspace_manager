@@ -16,8 +16,10 @@ def repository_mock():
     mock = MagicMock()
     mock.growspaces = {}
     mock.plants = {}
-    mock.notifications_sent = {}
-    mock.notifications_enabled = {}
+    mock.load_growspaces.side_effect = lambda gs: mock.growspaces.update(gs)
+    mock.load_plants.side_effect = lambda ps: mock.plants.update(ps)
+    mock.get_all_growspaces.side_effect = lambda: list(mock.growspaces.values())
+    mock.get_all_plants.side_effect = lambda: list(mock.plants.values())
     return mock
 
 
@@ -33,9 +35,17 @@ def nutrient_manager_mock():
 
 
 @pytest.fixture
-def storage(hass, repository_mock, nutrient_manager_mock):
+def genetics_manager_mock():
+    """Mock the GeneticsManager."""
+    mock = MagicMock()
+    mock.get_serialization_data.return_value = {}
+    return mock
+
+
+@pytest.fixture
+def storage(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock):
     """Provide a StorageManager instance."""
-    return StorageManager(hass, repository_mock, nutrient_manager_mock)
+    return StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock)
 
 
 @pytest.mark.asyncio

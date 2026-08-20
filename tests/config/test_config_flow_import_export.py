@@ -4,27 +4,41 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager.config_flow import OptionsFlowHandler
 from custom_components.growspace_manager.const import DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture
 def mock_coordinator(hass: HomeAssistant, tmp_path: Path):
-    """Create a mock coordinator with import/export manager."""
+    """Create a mock coordinator with import/export manager and ServiceFacade support."""
     coordinator = MagicMock()
     coordinator.hass = hass
+
     coordinator.import_export_manager = AsyncMock()
-    coordinator.strain_library = MagicMock()
-    coordinator.strain_library.get_all.return_value = {"strain1": {}}
-    coordinator.strain_library.async_load = AsyncMock()
-    coordinator.strain_library.get_all_strains.return_value = []
-    # Explicitly set these as AsyncMock for awaiting
-    coordinator.strain_library.import_library_from_zip = AsyncMock()
-    coordinator.strain_library.export_library_to_zip = AsyncMock()
+
+    # Strain library in config sub-facade
+    strain_lib = MagicMock()
+    strain_lib.get_all.return_value = {"strain1": {}}
+    strain_lib.load = AsyncMock()
+    strain_lib.get_all_strains.return_value = []
+    strain_lib.import_library_from_zip = AsyncMock()
+    strain_lib.export_library_to_zip = AsyncMock()
+    coordinator._strain_library = strain_lib
+
+    cfg_facade = MagicMock()
+    cfg_facade.strain_library = strain_lib
+
+    facade = MagicMock()
+    facade.config = cfg_facade
+    facade.growspaces = MagicMock()
+    facade.plants = MagicMock()
+    facade.notifications = MagicMock()
+    coordinator.services = facade
+
     return coordinator
 
 
@@ -71,8 +85,8 @@ async def test_import_strain_library_success(
         assert result.get("type") == FlowResultType.FORM
         assert result.get("step_id") == "manage_strain_library"
 
-        mock_coordinator.strain_library.import_library_from_zip.assert_awaited_once()
-        mock_coordinator.strain_library.async_load.assert_awaited_once()
+        mock_coordinator.services.config.strain_library.import_library_from_zip.assert_awaited_once()
+        mock_coordinator.services.config.strain_library.load.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -85,9 +99,7 @@ async def test_import_strain_library_file_not_found(
     config_entry.runtime_data = MagicMock()
     config_entry.runtime_data = mock_coordinator
 
-    mock_coordinator.strain_library.import_library_from_zip.side_effect = (
-        FileNotFoundError
-    )
+    mock_coordinator.services.config.strain_library.import_library_from_zip.side_effect = FileNotFoundError
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -110,7 +122,7 @@ async def test_import_strain_library_invalid_zip(
     config_entry.runtime_data = MagicMock()
     config_entry.runtime_data = mock_coordinator
 
-    mock_coordinator.strain_library.import_library_from_zip.side_effect = ValueError
+    mock_coordinator.services.config.strain_library.import_library_from_zip.side_effect = ValueError
 
     flow = OptionsFlowHandler(config_entry)
     flow.hass = hass
@@ -133,7 +145,7 @@ async def test_export_strain_library_success(
     config_entry.runtime_data = MagicMock()
     config_entry.runtime_data = mock_coordinator
 
-    mock_coordinator.strain_library.export_library_to_zip.return_value = str(
+    mock_coordinator.services.config.strain_library.export_library_to_zip.return_value = str(
         tmp_path / "export.zip"
     )
 
@@ -148,7 +160,7 @@ async def test_export_strain_library_success(
         "path": str(tmp_path / "export.zip")
     }
 
-    mock_coordinator.strain_library.export_library_to_zip.assert_awaited_once()
+    mock_coordinator._strain_library.export_library_to_zip.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -161,7 +173,7 @@ async def test_export_strain_library_failure(
     config_entry.runtime_data = MagicMock()
     config_entry.runtime_data = mock_coordinator
 
-    mock_coordinator.strain_library.export_library_to_zip.side_effect = Exception(
+    mock_coordinator._strain_library.export_library_to_zip.side_effect = Exception(
         "Export failed"
     )
 

@@ -1,12 +1,13 @@
 """Tests for the Growspace Manager DataRepository."""
 
-from common import create_plant
 import pytest
 
 from custom_components.growspace_manager.data_access.growspace_repository import (
     GrowspaceRepository as DataRepository,
 )
 from custom_components.growspace_manager.models import Growspace
+
+from .common import create_plant
 
 
 @pytest.fixture
@@ -36,7 +37,9 @@ def test_initialization() -> None:
 
     plants = {"p1": create_plant(plant_id="p1", growspace_id="gs1", strain="Plant 1")}
     growspaces = {"gs1": Growspace(id="gs1", name="Growspace 1")}
-    repo_init = DataRepository(growspaces=growspaces, plants=plants)
+    repo_init = DataRepository()
+    repo_init.load_growspaces(growspaces)
+    repo_init.load_plants(plants)
     assert len(repo_init.get_all_plants()) == 1
     assert len(repo_init.get_all_growspaces()) == 1
 
@@ -44,28 +47,33 @@ def test_initialization() -> None:
 def test_load_data(mock_growspaces, mock_plants) -> None:
     """Test loading data into the repository."""
     repo = DataRepository()
-    repo.load_data(mock_growspaces, mock_plants)
+    repo.load_growspaces(mock_growspaces)
+    repo.load_plants(mock_plants)
     assert len(repo.get_all_plants()) == 3
     assert len(repo.get_all_growspaces()) == 2
 
 
 def test_get_plant(mock_plants) -> None:
     """Test retrieving a single plant."""
-    repo = DataRepository(plants=mock_plants)
+    repo = DataRepository()
+    repo.load_plants(mock_plants)
     assert repo.get_plant("p1") == mock_plants["p1"]
     assert repo.get_plant("nonexistent") is None
 
 
 def test_get_growspace(mock_growspaces) -> None:
     """Test retrieving a single growspace."""
-    repo = DataRepository(growspaces=mock_growspaces)
+    repo = DataRepository()
+    repo.load_growspaces(mock_growspaces)
     assert repo.get_growspace("gs1") == mock_growspaces["gs1"]
     assert repo.get_growspace("nonexistent") is None
 
 
 def test_get_growspace_plants(mock_growspaces, mock_plants) -> None:
     """Test retrieving plants for a specific growspace."""
-    repo = DataRepository(growspaces=mock_growspaces, plants=mock_plants)
+    repo = DataRepository()
+    repo.load_growspaces(mock_growspaces)
+    repo.load_plants(mock_plants)
     gs1_plants = repo.get_growspace_plants("gs1")
     assert len(gs1_plants) == 2
     assert {p.plant_id for p in gs1_plants} == {"p1", "p2"}
@@ -80,7 +88,9 @@ def test_get_growspace_plants(mock_growspaces, mock_plants) -> None:
 
 def test_get_growspace_grid(mock_growspaces, mock_plants) -> None:
     """Test generating a growspace grid."""
-    repo = DataRepository(growspaces=mock_growspaces, plants=mock_plants)
+    repo = DataRepository()
+    repo.load_growspaces(mock_growspaces)
+    repo.load_plants(mock_plants)
 
     # Test valid grid generation
     grid = repo.get_growspace_grid("gs1")
@@ -97,7 +107,8 @@ def test_get_growspace_grid(mock_growspaces, mock_plants) -> None:
 
 def test_get_growspace_options(mock_growspaces) -> None:
     """Test retrieving growspace options."""
-    repo = DataRepository(growspaces=mock_growspaces)
+    repo = DataRepository()
+    repo.load_growspaces(mock_growspaces)
     options = repo.get_growspace_options()
     assert options == {"gs1": "Growspace 1", "gs2": "Growspace 2"}
 
@@ -108,6 +119,7 @@ def test_get_sorted_growspace_options() -> None:
         "b": Growspace(id="b", name="Zebra"),
         "a": Growspace(id="a", name="Apple"),
     }
-    repo = DataRepository(growspaces=unordered_gs)
+    repo = DataRepository()
+    repo.load_growspaces(unordered_gs)
     sorted_options = repo.get_sorted_growspace_options()
     assert sorted_options == [("a", "Apple"), ("b", "Zebra")]

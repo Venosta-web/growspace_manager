@@ -3,14 +3,24 @@
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
-from common import create_plant
 import pytest
 
-from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
+from custom_components.growspace_manager.const import (
+    ATTR_AMOUNT_ML,
+    ATTR_EC,
+    ATTR_IMAGES,
+    ATTR_NOTES,
+    ATTR_PH,
+    ATTR_PLANT_ID,
+    ATTR_TAGS,
+    EVENT_GROWSPACE_LOG_ENTRY,
+)
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import PlantStage
-from custom_components.growspace_manager.services.plant import async_add_timeline_note
-from homeassistant.core import HomeAssistant
+from custom_components.growspace_manager.services.context import ServiceContext
+from homeassistant.core import HomeAssistant, ServiceCall
+
+from .common import create_plant
 
 
 @pytest.fixture
@@ -77,14 +87,19 @@ def manager(
 ):
     """Fixture for PlantManager."""
     return PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback_mock,
+            lock=lock_mock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository_mock,
+        notification_state=MagicMock(),
         validator=validator_mock,
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback_mock,
-        lock=lock_mock,
     )
 
 
@@ -105,7 +120,7 @@ async def test_transition_closes_existing_history(
             {"stage": "veg", "start": "2023-02-01", "end": None},  # Open item
         ],
     )
-    repository_mock.plants[plant_id] = plant
+    repository_mock.get_plant.return_value = plant
 
     # Transition
     today = date.today().isoformat()
@@ -115,26 +130,32 @@ async def test_transition_closes_existing_history(
     assert "stage_history" in plant.to_dict()  # Wait, to_dict/asdict might be used
     history = plant.stage_history
 
-    # Verify previous item closed
+    # Verify previous item closed (Lifecycle Timestamp is a full datetime, ADR-0013)
     assert history[1]["stage"] == "veg"
-    assert history[1]["end"] == today
+    assert history[1]["end"].startswith(today)
 
     # Verify new item added
     assert history[2]["stage"] == PlantStage.FLOWER
-    assert history[2]["start"] == today
+    assert history[2]["start"].startswith(today)
     assert history[2]["end"] is None
 
 
 @pytest.mark.asyncio
 async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
     """Test async_add_timeline_note coverage (ph, ec, amount_ml, entity parsing)."""
+    from custom_components.growspace_manager.services.facade import ServiceFacade
+
     coordinator = MagicMock()
+    coordinator.hass = hass
     coordinator.plants = {}
-    strain_library = MagicMock()
+    coordinator.growspaces = {}
+    coordinator._strain_library = MagicMock()
+    coordinator.services = ServiceFacade(coordinator)
 
     plant_id = "test_plant"
     plant = MagicMock()
     plant.growspace_id = "tent"
+    plant.plant_id = plant_id
     coordinator.plants[plant_id] = plant
 
     growspace = MagicMock()
@@ -160,17 +181,21 @@ async def test_add_timeline_note_coverage(hass: HomeAssistant) -> None:
     hass.bus.async_listen(EVENT_GROWSPACE_LOG_ENTRY, capture_event)
 
     # Call with coverage arguments
-    await async_add_timeline_note(
+    call = MagicMock(spec=ServiceCall)
+    call.data = {
+        ATTR_PLANT_ID: plant_id,
+        ATTR_NOTES: "Coverage test",
+        ATTR_PH: 6.5,
+        ATTR_EC: 1.2,
+        ATTR_AMOUNT_ML: 500.0,
+        ATTR_IMAGES: [],
+        ATTR_TAGS: ["test"],
+    }
+
+    await coordinator.services.plants.add_timeline_note_from_call(
         hass,
-        coordinator,
-        strain_library,
-        plant_id=plant_id,
-        notes="Coverage test",
-        ph=6.5,
-        ec=1.2,
-        amount_ml=500.0,
-        images_base64=None,
-        tags=["test"],
+        coordinator._strain_library,
+        call,
     )
 
     await hass.async_block_till_done()

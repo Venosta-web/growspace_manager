@@ -4,18 +4,27 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime
 import hashlib
 from io import BytesIO
 import logging
 from pathlib import Path
+import re
 from typing import Any, cast
 
 from PIL import Image, UnidentifiedImageError
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util import dt as dt_util
+
+from .exceptions import GrowspaceError
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _safe_filename_part(s: str) -> str:
+    """Replace URL-unsafe characters in a filename segment with underscores."""
+    return re.sub(r"[#%?&=+]", "_", s)
 
 
 class ImageManager:
@@ -114,8 +123,7 @@ class ImageManager:
                     continue
 
                 try:
-                    # Image.open returns Image.Image (no cast needed)
-                    img = Image.open(jpg_path)
+                    img: Image.Image = Image.open(jpg_path)
 
                     # Convert to RGB if needed
                     if img.mode not in ("RGB", "RGBA"):
@@ -229,22 +237,31 @@ class ImageManager:
                 image_base64 = image_base64.split(",")[1]
 
             image_data = base64.b64decode(image_base64)
-            image = Image.open(BytesIO(image_data))
+            image: Image.Image = Image.open(BytesIO(image_data))
 
             # Convert to RGB (WebP supports RGBA, but RGB is safer for photos)
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGB")
 
-            # Generate base filename
-            base_name = f"{strain_id}"
+            # Generate base filename — sanitize to keep filenames URL-safe
+            base_name = _safe_filename_part(strain_id)
             if phenotype_id:
-                base_name += f"_{phenotype_id}"
+                base_name += f"_{_safe_filename_part(phenotype_id)}"
 
             filename = f"{base_name}.webp"
             small_filename = f"{base_name}_small.webp"
 
             file_path = self.storage_dir / filename
             small_file_path = self.storage_dir / small_filename
+
+            # Avoid overwriting an existing image — append _2, _3, … until unique
+            counter = 2
+            while file_path.exists():
+                filename = f"{base_name}_{counter}.webp"
+                small_filename = f"{base_name}_{counter}_small.webp"
+                file_path = self.storage_dir / filename
+                small_file_path = self.storage_dir / small_filename
+                counter += 1
 
             # 1. Save Full Size Optimized WebP
             image.save(file_path, "WEBP", quality=85, method=4)
@@ -262,7 +279,15 @@ class ImageManager:
             # Return absolute path as string
             return str(file_path.absolute())
 
-        except Exception as e:
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+            OSError,
+            UnidentifiedImageError,
+        ) as e:
             _LOGGER.error("Error saving strain image: %s", e)
             raise
 
@@ -300,14 +325,13 @@ class ImageManager:
                 image_base64 = image_base64.split(",")[1]
 
             image_data = base64.b64decode(image_base64)
-            image = Image.open(BytesIO(image_data))
+            image: Image.Image = Image.open(BytesIO(image_data))
 
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGB")
 
-            # Generate unique filename using plant_id and timestamp/hash
             if not timestamp:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
 
             # Simple hash of image data to prevent duplicates in same timestamp
 
@@ -333,15 +357,23 @@ class ImageManager:
 
             return str(file_path.absolute())
 
-        except Exception as e:
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+            OSError,
+            UnidentifiedImageError,
+        ) as e:
             _LOGGER.error("Error saving timeline image: %s", e)
             raise
 
     def get_image_path(self, strain_id: str, phenotype_id: str | None) -> str | None:
         """Get the path to an existing image using the cache."""
-        base_name = f"{strain_id}"
+        base_name = _safe_filename_part(strain_id)
         if phenotype_id:
-            base_name += f"_{phenotype_id}"
+            base_name += f"_{_safe_filename_part(phenotype_id)}"
 
         # 1. Try WebP first
         webp_name = f"{base_name}.webp"
@@ -357,9 +389,9 @@ class ImageManager:
 
     def delete_image(self, strain_id: str, phenotype_id: str | None) -> None:
         """Delete an image and its thumbnail if they exist."""
-        base_name = f"{strain_id}"
+        base_name = _safe_filename_part(strain_id)
         if phenotype_id:
-            base_name += f"_{phenotype_id}"
+            base_name += f"_{_safe_filename_part(phenotype_id)}"
 
         # Define all possible variants to delete
         files_to_delete = [
@@ -403,7 +435,7 @@ class ImageManager:
                 base64_data = base64_data.split(",")[1]
 
             image_data = base64.b64decode(base64_data)
-            image = Image.open(BytesIO(image_data))
+            image: Image.Image = Image.open(BytesIO(image_data))
 
             # Convert to RGB (WebP supports RGBA, but RGB is safer for photos)
             if image.mode not in ("RGB", "RGBA"):

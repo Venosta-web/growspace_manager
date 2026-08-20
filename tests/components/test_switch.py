@@ -70,7 +70,8 @@ async def test_async_setup_entry_creates_entities(mock_hass, mock_coordinator) -
     mock_coordinator.async_save = AsyncMock()
     mock_coordinator.async_set_updated_data = Mock()
 
-    mock_coordinator.is_notifications_enabled = Mock(return_value=True)
+    mock_coordinator.services = Mock()
+    mock_coordinator.services.notifications.is_notifications_enabled = Mock(return_value=True)
 
     await async_setup_entry(
         mock_hass,
@@ -94,8 +95,9 @@ async def test_growspace_notification_switch_on_off(mock_coordinator) -> None:
     growspace = Growspace(id="gs1", name="Growspace 1", notification_target="notify_me")
 
     # Mock coordinator methods
-    mock_coordinator.set_notifications_enabled = AsyncMock()
-    mock_coordinator.is_notifications_enabled = Mock(return_value=True)
+    mock_coordinator.services = Mock()
+    mock_coordinator.services.notifications.set_notifications_enabled = AsyncMock()
+    mock_coordinator.services.notifications.is_notifications_enabled = Mock(return_value=True)
 
     switch = GrowspaceNotificationSwitch(
         mock_coordinator, "gs1", growspace, NOTIFICATION_SWITCH
@@ -108,12 +110,12 @@ async def test_growspace_notification_switch_on_off(mock_coordinator) -> None:
         assert switch.is_on is True
 
         # Turn off
-        mock_coordinator.is_notifications_enabled.return_value = False
+        mock_coordinator.services.notifications.is_notifications_enabled.return_value = False
         await switch.async_turn_off()
         assert switch.is_on is False
 
         # Turn on
-        mock_coordinator.is_notifications_enabled.return_value = True
+        mock_coordinator.services.notifications.is_notifications_enabled.return_value = True
         await switch.async_turn_on()
         assert switch.is_on is True
 

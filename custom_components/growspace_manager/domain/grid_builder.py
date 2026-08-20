@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..models import Growspace, Plant
+    from custom_components.growspace_manager.models import Growspace, Plant
 
 
-def build_position_grid(growspace: Growspace, plants: list[Plant]) -> dict[str, str | None]:
+def build_position_grid(
+    growspace: Growspace, plants: list[Plant]
+) -> dict[str, str | None]:
     """Build a grid mapping positions to plant IDs.
 
     This is a pure function that creates position keys and maps them to plant IDs.

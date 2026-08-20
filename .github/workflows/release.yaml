@@ -12,39 +12,41 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 
+        uses: actions/checkout@v6.0.2
 
       - name: Update version in manifest.json
-        id: vars
         run: |
-          # Strip 'v' from tag (e.g., v1.0.0 -> 1.0.0)
+          # Strip 'v' prefix from tag name
           VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Updating version to $VERSION"
           cd custom_components/growspace_manager
-          jq --arg v "$VERSION" '.version = $v' manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
-          
-      - name: Commit and Push manifest change
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add custom_components/growspace_manager/manifest.json
-          # If nothing changed, don't fail the workflow
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: bump version to ${{ github.ref_name }}" && git push origin HEAD:main)
+          # Use jq to reliably update the version
+          if ! jq --arg v "$VERSION" '.version = $v' manifest.json \
+            > manifest.json.tmp; then
+            echo "jq command failed"
+            exit 1
+          fi
+          mv manifest.json.tmp manifest.json
+          cd ../..
 
+      # 2. Creates the ZIP file
       - name: ZIP Release
         run: |
           cd custom_components/growspace_manager
           zip -r ../../growspace_manager.zip . \
-            -x ".github/*" -x ".coverage" -x ".gitignore" -x "pytest.ini" -x "module.json"
+            -x ".github/*" \
+            -x ".coverage" \
+            -x ".gitignore" \
+            -x "pytest.ini" \
+            -x "module.json"
 
+      # 3. Creates the GitHub Release and attaches the new zip file
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.0
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           tag_name: ${{ github.ref_name }}
-          # Use the specific commit SHA we just pushed instead of 'main'
-          target_commitish: ${{ github.sha }} 
-          files: growspace_manager.zip
           generate_release_notes: true
+          files: |
+            growspace_manager.zip
           fail_on_unmatched_files: true

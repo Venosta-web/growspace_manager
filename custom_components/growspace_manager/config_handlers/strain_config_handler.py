@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 import voluptuous as vol
 
+from custom_components.growspace_manager.const import CONF_BLACKLIST_BREEDERS
+from custom_components.growspace_manager.exceptions import StrainReferenceError
 from custom_components.growspace_manager.schemas import ADD_STRAIN_SCHEMA
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -39,9 +41,25 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 self.flow.selected_strain_id = user_input.get("strain_id")
                 return await self.async_step_edit_strain()
             if action == "delete_strain":
+                strain_id = user_input.get("strain_id")
+                strain_library = coordinator.services.config.strain_library
+                if strain_id is None or strain_library is None:
+                    return self.flow.async_show_form(
+                        step_id="manage_strain_library",
+                        data_schema=self._get_strain_library_menu_schema(coordinator),
+                        errors={"base": "delete_failed"},
+                    )
                 try:
-                    await coordinator.strain_library.remove_strain(
-                        user_input.get("strain_id")
+                    await strain_library.remove_strain(strain_id)
+                except StrainReferenceError as err:
+                    return self.flow.async_show_form(
+                        step_id="manage_strain_library",
+                        data_schema=self._get_strain_library_menu_schema(coordinator),
+                        errors={"base": "strain_delete_blocked"},
+                        description_placeholders={
+                            "strain": err.strain,
+                            "detail": err.detail,
+                        },
                     )
                 except Exception:
                     _LOGGER.exception("Error deleting strain")
@@ -58,6 +76,8 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 return await self.async_step_import_strain_library()
             if action == "export":
                 return await self.async_step_export_strain_library()
+            if action == "manage_blacklist":
+                return await self.async_step_manage_breeder_blacklist()
             if action == "back":
                 return await self.flow.async_step_init()
 
@@ -77,16 +97,20 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
             else:
                 try:
                     coordinator = self.config_entry.runtime_data
-                    file_path = user_input["file_path"]
+                    strain_library = coordinator.services.config.strain_library
+                    if strain_library is None:
+                        errors["base"] = "setup_error"
+                    else:
+                        file_path = user_input["file_path"]
 
-                    await coordinator.strain_library.import_library_from_zip(
-                        file_path, merge=True
-                    )
+                        await strain_library.import_library_from_zip(
+                            file_path, merge=True
+                        )
 
-                    # Reload strains to reflect changes
-                    await coordinator.strain_library.async_load()
+                        # Reload strains to reflect changes
+                        await strain_library.load()
 
-                    return await self.async_step_manage_strain_library()
+                        return await self.async_step_manage_strain_library()
                 except FileNotFoundError:
                     errors["base"] = "file_not_found"
                 except ValueError:
@@ -118,14 +142,15 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if self.config_entry is None:
             return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
+        strain_library = coordinator.services.config.strain_library
+        if strain_library is None:
+            return self.flow.async_abort(reason="setup_error")
 
         # Default export location
         export_dir = self.flow.hass.config.path("exports")
 
         try:
-            zip_path = await coordinator.strain_library.export_library_to_zip(
-                export_dir
-            )
+            zip_path = await strain_library.export_library_to_zip(export_dir)
             return self.flow.async_show_form(
                 step_id="export_strain_library",
                 description_placeholders={"path": zip_path},
@@ -139,10 +164,10 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, coordinator: GrowspaceCoordinator
     ) -> vol.Schema:
         """Build the schema for the strain library menu."""
-        if not coordinator.strain_library:
+        if not coordinator.services.config.strain_library:
             return vol.Schema({})
 
-        strains = list(coordinator.strain_library.get_all().keys())
+        strains = list(coordinator.services.config.strain_library.get_all().keys())
         strain_options = [
             selector.SelectOptionDict(value=name, label=name) for name in strains
         ]
@@ -165,6 +190,9 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
                         ),
                         selector.SelectOptionDict(
                             value="export", label="Export Library"
+                        ),
+                        selector.SelectOptionDict(
+                            value="manage_blacklist", label="Manage Breeder Blacklist"
                         ),
                         selector.SelectOptionDict(
                             value="back", label="Back to Main Menu"
@@ -192,21 +220,24 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
         if self.config_entry is None:
             return self.flow.async_abort(reason="setup_error")
         coordinator = self.config_entry.runtime_data
+        strain_library = coordinator.services.config.strain_library
 
         if user_input is not None:
-            await coordinator.strain_library.async_add_strain(
-                name=user_input["strain"],
+            if strain_library is None:
+                return self.flow.async_abort(reason="setup_error")
+            await strain_library.add_strain(
+                strain=user_input["strain"],
                 breeder=user_input.get("breeder"),
                 strain_type=user_input.get("type"),
                 sex=user_input.get("sex"),
                 description=user_input.get("description"),
-                flowering_days=user_input.get("flower_days_max"),
+                flower_days_max=user_input.get("flower_days_max"),
             )
             return await self.async_step_manage_strain_library()
 
         return self.flow.async_show_form(
             step_id="add_strain",
-            data_schema=ADD_STRAIN_SCHEMA,
+            data_schema=cast("vol.Schema", ADD_STRAIN_SCHEMA),
         )
 
     async def async_step_edit_strain(
@@ -218,5 +249,43 @@ class StrainConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         return self.flow.async_show_form(
             step_id="edit_strain",
-            data_schema=ADD_STRAIN_SCHEMA,
+            data_schema=cast("vol.Schema", ADD_STRAIN_SCHEMA),
+        )
+
+    async def async_step_manage_breeder_blacklist(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the list of blacklisted breeders."""
+        if self.config_entry is None:
+            return self.flow.async_abort(reason="setup_error")
+
+        if user_input is not None:
+            # Save the new blacklist to options
+            new_options = dict(self.config_entry.options)
+            # Input is a list of strings from the selector
+            new_options[CONF_BLACKLIST_BREEDERS] = user_input[CONF_BLACKLIST_BREEDERS]
+
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, options=new_options
+            )
+            return await self.async_step_manage_strain_library()
+
+        current_blacklist = self.config_entry.options.get(CONF_BLACKLIST_BREEDERS, [])
+
+        return self.flow.async_show_form(
+            step_id="manage_breeder_blacklist",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_BLACKLIST_BREEDERS, default=current_blacklist
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[],  # Empty options means user can add custom tags
+                            multiple=True,
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
         )

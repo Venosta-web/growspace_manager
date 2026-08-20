@@ -327,3 +327,25 @@ TREND_SIGNIFICANCE_THRESHOLD = 0.2
 
 TREND_FALLBACK_THRESHOLD = 1.0
 """Fallback threshold for other sensors."""
+
+# =========================================================================
+# SUBSTRATE TEMPERATURE THRESHOLDS AND PROBABILITIES
+# =========================================================================
+
+SUBSTRATE_TEMP_OPTIMAL_MIN = 18
+"""Minimum optimal substrate temperature (°C)."""
+
+SUBSTRATE_TEMP_OPTIMAL_MAX = 22
+"""Maximum optimal substrate temperature (°C)."""
+
+SUBSTRATE_TEMP_STRESS_LOW = 15
+"""Substrate temperature below which stress occurs (°C)."""
+
+SUBSTRATE_TEMP_STRESS_HIGH = 26
+"""Substrate temperature above which stress occurs (°C)."""
+
+PROB_SUBSTRATE_TEMP_STRESS = (0.80, 0.20)
+"""Probability for substrate temperature stress conditions."""
+
+PROB_SUBSTRATE_TEMP_EXTREME = (0.95, 0.08)
+"""Probability for extreme substrate temperature stress."""

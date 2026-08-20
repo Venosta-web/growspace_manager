@@ -155,13 +155,17 @@ async def async_setup_statistics_sensor(
         "max_age": {"hours": 12},
     }
 
-    await async_load_platform(
-        hass,
-        "statistics",  # <-- Platform name
-        "sensor",  # <-- Entity domain
-        config,
-        {DOMAIN: config},
-    )
+    try:
+        await async_load_platform(
+            hass,
+            "statistics",  # <-- Platform name
+            "sensor",  # <-- Entity domain
+            config,
+            {DOMAIN: config},
+        )
+    except Exception as ex:  # noqa: BLE001
+        _LOGGER.error("Failed to setup statistics sensor: %s", ex)
+        return None
     _LOGGER.info("Setting up statistics sensor: %s", name)
 
     # Force entity category to diagnostic

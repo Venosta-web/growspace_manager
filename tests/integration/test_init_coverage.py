@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from aiohttp import web
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
     async_reload_entry,
@@ -24,42 +23,19 @@ from custom_components.growspace_manager.websocket import (
     _downsample_entity_binary_search,
     websocket_add_timeline_note,
     websocket_get_event_log,
-    websocket_get_growspace_data,
     websocket_get_history_stats,
-    websocket_get_ipm_presets,
-    websocket_get_nutrient_presets,
     websocket_remove_timeline_event,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from tests.common import MockConfigEntry
 
 # --- Websocket Tests ---
 
 
-async def test_websocket_commands_errors(hass: HomeAssistant) -> None:
-    """Test websocket command error handling."""
-    connection = MagicMock()
-    msg = {"id": 1, "type": "test"}
-
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("Coord Fail"),
-    ):
-        websocket_get_nutrient_presets(hass, connection, msg)
-        connection.send_error.assert_called_with(1, "unknown_error", "Coord Fail")
-
-    connection.reset_mock()
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("Coord Fail"),
-    ):
-        websocket_get_ipm_presets(hass, connection, msg)
-        connection.send_error.assert_called_with(1, "unknown_error", "Coord Fail")
-
-
 async def test_websocket_add_timeline_note(hass: HomeAssistant) -> None:
     """Test add timeline note websocket command."""
-    connection = MagicMock()
+    MagicMock()
     msg = {
         "id": 1,
         ATTR_PLANT_ID: "plant1",
@@ -68,35 +44,28 @@ async def test_websocket_add_timeline_note(hass: HomeAssistant) -> None:
     }
 
     mock_coordinator = MagicMock()
+    mock_add_note = AsyncMock()
+    mock_coordinator.services.add_timeline_note = mock_add_note
+
     mock_strain_lib = MagicMock()
     hass.data[DOMAIN] = {"strain_library": mock_strain_lib}
 
-    with (
-        patch(
-            "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-            return_value=mock_coordinator,
-        ),
-        patch(
-            "custom_components.growspace_manager.websocket.async_add_timeline_note",
-            new_callable=AsyncMock,
-        ) as mock_add_note,
-    ):
-        await websocket_add_timeline_note(hass, connection, msg)
-        connection.send_result.assert_called_with(1)
+    await websocket_add_timeline_note(hass, mock_coordinator, msg)
+    mock_add_note.assert_awaited_once()
 
-        mock_add_note.side_effect = Exception("Boom")
-        msg["id"] = 3
-        await websocket_add_timeline_note(hass, connection, msg)
-        connection.send_error.assert_called_with(3, "unknown_error", "Boom")
+    mock_add_note.side_effect = Exception("Boom")
+    msg["id"] = 3
+    with pytest.raises(Exception, match="Boom"):
+        await websocket_add_timeline_note(hass, mock_coordinator, msg)
 
 
 async def test_websocket_remove_timeline_event(hass: HomeAssistant) -> None:
     """Test remove timeline event logic."""
-    connection = MagicMock()
+    MagicMock()
     msg = {"id": 1, "event_id": "evt1"}
 
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance"
+        "custom_components.growspace_manager.websocket.timeline.get_instance"
     ) as mock_get_instance:
         mock_recorder = MagicMock()
         mock_get_instance.return_value = mock_recorder
@@ -107,7 +76,7 @@ async def test_websocket_remove_timeline_event(hass: HomeAssistant) -> None:
         mock_recorder.async_add_executor_job.side_effect = async_run_job
 
         with patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.timeline.session_scope"
         ) as mock_scope:
             mock_session = MagicMock()
             mock_scope.return_value.__enter__.return_value = mock_session
@@ -115,8 +84,7 @@ async def test_websocket_remove_timeline_event(hass: HomeAssistant) -> None:
                 mock_session  # chaining
             )
 
-            await websocket_remove_timeline_event(hass, connection, msg)
-            connection.send_result.assert_called_with(1)
+            await websocket_remove_timeline_event(hass, MagicMock(), msg)
             mock_session.delete.assert_called_once()
 
 
@@ -168,33 +136,6 @@ async def test_async_reload_entry(hass: HomeAssistant) -> None:
 # --- Websocket Get Growspace Data Test ---
 
 
-async def test_websocket_get_growspace_data_errors(hass: HomeAssistant) -> None:
-    """Test websocket get growspace data errors."""
-
-    connection = MagicMock()
-    msg = {"id": 1, "growspace_id": "gs1"}
-
-    # 1. ServiceValidationError
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("Invalid"),
-    ):
-        await websocket_get_growspace_data(hass, connection, msg)
-        connection.send_error.assert_called_with(1, "invalid_args", "Invalid")
-
-    # 2. General Exception
-    connection.reset_mock()
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("Boom"),
-    ):
-        await websocket_get_growspace_data(hass, connection, msg)
-        connection.send_error.assert_called_with(1, "unknown_error", "Boom")
-
-
-# --- Pending Growspace Failure Test ---
-
-
 async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) -> None:
     """Test logic when pending growspace creation fails."""
     entry = MockConfigEntry(
@@ -222,13 +163,9 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
     mock_coordinator.async_initialize_sub_coordinators = AsyncMock()
     mock_coordinator.async_config_entry_first_refresh = AsyncMock()
 
-    # Public properties for services
-    type(mock_coordinator).growspace_service = property(
-        lambda self: self._growspace_service
-    )
-
-    mock_coordinator._growspace_service = MagicMock()
-    mock_coordinator._growspace_service.add_growspace = AsyncMock(
+    mock_coordinator.services = MagicMock()
+    mock_coordinator.services.growspaces = MagicMock()
+    mock_coordinator.services.growspaces.add_growspace = AsyncMock(
         side_effect=RuntimeError("Creation failed")
     )
 
@@ -258,6 +195,9 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
             new_callable=AsyncMock,
         ),
         patch(
+            "custom_components.growspace_manager._async_remove_legacy_plant_devices"
+        ) as mock_plant_device_cleanup,
+        patch(
             "custom_components.growspace_manager.async_create_issue"
         ) as mock_create_issue,
         patch.object(
@@ -266,6 +206,7 @@ async def test_async_setup_entry_pending_growspace_failure(hass: HomeAssistant) 
     ):
         assert await async_setup_entry(hass, entry) is True
 
+        mock_plant_device_cleanup.assert_called_once_with(hass, entry)
         mock_create_issue.assert_called_once()
 
 
@@ -280,10 +221,10 @@ async def test_websocket_get_event_log_coverage(hass: HomeAssistant) -> None:
     # 1. Test Event Type Not Found
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.logbook.get_instance"
         ) as mock_get_instance,
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_session_scope,
     ):
         mock_recorder = MagicMock()
@@ -301,28 +242,28 @@ async def test_websocket_get_event_log_coverage(hass: HomeAssistant) -> None:
         # Query for event_type returns None
         mock_session.query.return_value.filter.return_value.first.return_value = None
 
-        await websocket_get_event_log(hass, connection, msg)
+        result = await websocket_get_event_log(hass, MagicMock(), msg)
 
         # Should return empty result for growspace
-        connection.send_result.assert_called_with(1, {"gs1": []})
+        assert result == {"gs1": []}
 
     # 2. Test Recorder Import/Key Error
     connection.reset_mock()
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=ImportError,
     ):
-        await websocket_get_event_log(hass, connection, msg)
-        connection.send_result.assert_called_with(1, {"gs1": []})
+        result = await websocket_get_event_log(hass, MagicMock(), msg)
+        assert result == {"gs1": []}
 
     # 3. Test General Exception
     connection.reset_mock()
     with patch(
-        "custom_components.growspace_manager.websocket.get_instance",
+        "custom_components.growspace_manager.websocket.logbook.get_instance",
         side_effect=ValueError("Boom"),
     ):
-        await websocket_get_event_log(hass, connection, msg)
-        connection.send_error.assert_called_with(1, "unknown_error", "Boom")
+        with pytest.raises(ValueError, match="Boom"):
+            await websocket_get_event_log(hass, MagicMock(), msg)
 
 
 async def test_websocket_history_stats_coverage(hass: HomeAssistant) -> None:
@@ -337,8 +278,8 @@ async def test_websocket_history_stats_coverage(hass: HomeAssistant) -> None:
         "type": "custom_components.growspace_manager/get_history_stats",
     }
 
-    await websocket_get_history_stats(hass, connection, msg_invalid)
-    connection.send_error.assert_called_with(1, "invalid_args", "Invalid start_time")
+    with pytest.raises(ServiceValidationError, match="Invalid start_time"):
+        await websocket_get_history_stats(hass, MagicMock(), msg_invalid)
 
     # Verify fallback when interval is small (handled by logic, but ensuring stats API skipped)
     msg_short = {
@@ -352,18 +293,18 @@ async def test_websocket_history_stats_coverage(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket._get_statistics_data"
+            "custom_components.growspace_manager.websocket.environment._get_statistics_data"
         ) as mock_stats,
         patch(
-            "custom_components.growspace_manager.websocket._get_history_with_binary_search_downsample"
+            "custom_components.growspace_manager.websocket.environment._get_history_with_binary_search_downsample"
         ) as mock_downsample,
     ):
         mock_downsample.return_value = {"sensor.test": []}
-        await websocket_get_history_stats(hass, connection, msg_short)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg_short)
 
         mock_stats.assert_not_called()
         mock_downsample.assert_called_once()
-        connection.send_result.assert_called_with(2, {"sensor.test": []})
+        assert result == {"sensor.test": []}
 
     # Verify exception handling
     connection.reset_mock()
@@ -372,14 +313,14 @@ async def test_websocket_history_stats_coverage(hass: HomeAssistant) -> None:
     # Patch something inside the try block (e.g. _get_statistics_data, but we need to ensure it's called)
     # Or properly patch _get_statistics_data to raise
     with patch(
-        "custom_components.growspace_manager.websocket._get_statistics_data",
+        "custom_components.growspace_manager.websocket.environment._get_statistics_data",
         side_effect=ValueError("Boom"),
     ):
         # Ensure we use a large interval so _get_statistics_data is called
         msg_long = msg_short.copy()
         msg_long["interval_minutes"] = 120
-        await websocket_get_history_stats(hass, connection, msg_long)
-        connection.send_error.assert_called_with(2, "unknown_error", "Boom")
+        with pytest.raises(ValueError, match="Boom"):
+            await websocket_get_history_stats(hass, MagicMock(), msg_long)
 
 
 def test_downsample_binary_search_logic() -> None:

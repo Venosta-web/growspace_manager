@@ -1,13 +1,17 @@
 """Tests for the Strain Library services."""
 
 import base64
+from io import BytesIO
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from PIL import Image
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.services.strain_library import (
+    _downscale_logo_if_needed,
     handle_add_strain,
     handle_clear_strain_library,
     handle_export_strain_library,
@@ -27,6 +31,12 @@ def mock_coordinator() -> MagicMock:
     coordinator = MagicMock()
     coordinator.async_save = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
+
+    coordinator.services = MagicMock()
+    coordinator.services.save = AsyncMock()
+    # FIX: Make request_refresh awaitable
+    coordinator.services.request_refresh = AsyncMock()
+
     return coordinator
 
 
@@ -35,7 +45,10 @@ def mock_strain_library() -> MagicMock:
     """Mock the StrainLibrary."""
     library = MagicMock()
     library.load = AsyncMock()
+
+    # FIX: get_all is synchronous, so it needs to be a standard MagicMock
     library.get_all = MagicMock(return_value={"Strain A": {}})
+
     library.export_library_to_zip = AsyncMock(
         return_value="/config/www/growspace_manager/exports/export.zip"
     )
@@ -95,7 +108,8 @@ async def test_handle_export_strain_library(
         )
 
         mock_strain_library.export_library_to_zip.assert_awaited_once()
-        mock_coordinator.async_save.assert_awaited_once()
+        # FIX: Assert on the services namespace
+        mock_coordinator.services.save.assert_awaited_once()
         mock_hass.bus.async_fire.assert_called_once()
         mock_notify.assert_called_once()
 
@@ -418,8 +432,9 @@ async def test_handle_clear_strain_library(
         )
 
         mock_strain_library.clear.assert_awaited_once()
-        mock_coordinator.async_save.assert_awaited_once()
-        mock_coordinator.async_request_refresh.assert_awaited_once()
+        # FIX: Assert on the services namespace
+        mock_coordinator.services.save.assert_awaited_once()
+        mock_coordinator.services.request_refresh.assert_awaited_once()
         mock_hass.bus.async_fire.assert_called_once()
 
 
@@ -606,8 +621,59 @@ async def test_handle_print_label_default_phenotype(
     ):
         await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
 
-    # Verify that payload values were processed (phenotype became "-")
+    # Verify strain name is in the payload; dash-only info rows are filtered out
+    # so the multiline info block value is empty string, not "-\n-\n-".
     args, _ = mock_hass.services.async_call.call_args
     payload = args[2]["payload"]
     values = [item.get("value") for item in payload]
-    assert "-\n-\n-" in values
+    assert "STRAIN A" in values
+    assert "" in values  # multiline info block is empty when all values are "-"
+
+
+def test_downscale_logo_if_needed_small() -> None:
+    """Test _downscale_logo_if_needed returns early if the string is small."""
+    logo_data = "data:image/png;base64,abc"
+    result = _downscale_logo_if_needed(logo_data)
+    assert result == logo_data
+
+
+def test_downscale_logo_if_needed_not_image() -> None:
+    """Test _downscale_logo_if_needed returns early if the string is not image data URI."""
+    logo_data = "https://example.com/logo.png"
+    result = _downscale_logo_if_needed(logo_data)
+    assert result == logo_data
+
+    result_none = _downscale_logo_if_needed(None)
+    assert result_none is None
+
+
+def test_downscale_logo_if_needed_large_rgba_to_monochrome() -> None:
+    """Test _downscale_logo_if_needed downscales large RGBA image and converts to monochrome."""
+    # Create a 100x100 RGBA image with random bytes to exceed 25000 bytes when encoded
+    img = Image.frombytes("RGBA", (100, 100), os.urandom(100 * 100 * 4))
+    buff = BytesIO()
+    img.save(buff, format="PNG")
+    large_rgba_base64 = f"data:image/png;base64,{base64.b64encode(buff.getvalue()).decode()}"
+
+    # Ensure our constructed image is indeed large enough (> 25000 chars)
+    assert len(large_rgba_base64) >= 25000
+
+    result = _downscale_logo_if_needed(large_rgba_base64)
+
+    assert result.startswith("data:image/png;base64,")
+    _, encoded = result.split(",", 1)
+    decoded_img = Image.open(BytesIO(base64.b64decode(encoded)))
+    # The output should be downscaled and converted to mode "1" (monochrome)
+    assert decoded_img.width <= 100
+    assert decoded_img.height <= 100
+    assert decoded_img.mode == "1"
+
+
+def test_downscale_logo_if_needed_exception_handling() -> None:
+    """Test _downscale_logo_if_needed exception handling."""
+    # Create a base64 string that is large enough (> 25000 characters)
+    large_logo = "data:image/png;base64," + "A" * 25000
+
+    with patch("PIL.Image.open", side_effect=ValueError("Mock ValueError")):
+        result = _downscale_logo_if_needed(large_logo)
+        assert result == large_logo

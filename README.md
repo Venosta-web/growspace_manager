@@ -1,212 +1,164 @@
 # Growspace Manager
 
-**Growspace Manager** is a comprehensive Home Assistant integration for meticulously managing cannabis cultivation environments. It provides a powerful and intuitive way to track plants, organize growspace layouts, monitor environmental conditions, and receive intelligent notifications to ensure your plants thrive.
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
+[![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold-gold.svg?style=for-the-badge)](https://developers.home-assistant.io/docs/integration-quality-scale/)
+[![Version](https://img.shields.io/badge/Version-1.2.1-blue.svg?style=for-the-badge)](https://github.com/Venosta-web/growspace_manager/releases)
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 
-## Features
+**Growspace Manager** is a Home Assistant integration for indoor cultivators to track plants from seed to cure, automate climate and irrigation, and catch environmental problems before they damage your crop.
 
-*   **Detailed Plant Tracking**: Monitor individual plants from seed to cure, tracking their strain, phenotype, position, and key dates (veg, flower, etc.).
-*   **Visual Growspace Layouts**: Organize your plants in a grid system for each growspace. Visualize your entire setup at a glance using the companion Lovelace card.
-*   **AI Assistant**: Built-in AI integration (powered by Home Assistant's conversation agents) provides:
-    *   **Diagnostics**: Analyze sensor data to identify issues like heat stress or VPD imbalances.
-    *   **Optimization**: Get tailored advice on how to improve your environment for the specific growth stage.
-    *   **Planning**: Ask for help with scheduling, training techniques, or harvest timing.
-*   **Advanced Environmental Monitoring**: Utilizes a sophisticated Bayesian inference engine to provide intelligent binary sensors for:
-    *   **Plant Stress**: Detects when conditions like temperature, humidity, or VPD are likely causing stress to your plants.
-    *   **Mold Risk**: Proactively warns you of conditions favorable to mold growth, especially during the critical late-flowering stage.
-    *   **Optimal Conditions**: Confirms when your environmental parameters are within the ideal range for the current growth stage.
-    *   **Light-Aware Logic**: Uses an optional light sensor to apply more accurate day/night thresholds and verifies your light schedule is correct for the plant's growth stage.
-*   **Strain Analytics**: Automatically tracks harvest data to provide average veg and flower times for each strain.
-*   **Task Calendar**: Generates a dedicated calendar for each growspace with scheduled tasks based on your timed notifications.
-*   **Dynamic Entity Creation**: Automatically generates a rich set of sensors and controls for each growspace and plant.
-*   **Notification Control**: Easily toggle notifications for each growspace with a dedicated switch.
-*   **Strain Library**: Automatically catalogs all your unique strains for easy reference.
-*   **Specialized Growspaces**: Comes with pre-configured logical spaces for managing clones, mothers, drying, and curing.
+![Growspace Manager UI Card](images/growspace_manager_card_example.png)
+*Visual facility monitoring via the companion Lovelace card.*
 
-## Advanced Features
+---
 
-### Strain Analytics
-The `StrainLibrarySensor` does more than just list your strains; it automatically compiles harvest data to provide valuable insights. When a plant is moved to the "dry" growspace, its veg and flower durations are recorded. The sensor then calculates and exposes the average veg and flower times for each strain and phenotype, allowing you to refine your cultivation cycles and compare results over time.
+## Core Features
 
-### Task Calendar
-For each growspace, the integration now creates a dedicated Home Assistant calendar entity. This calendar is automatically populated with tasks and reminders based on the timed notifications you configure. For example, if you set a reminder to "Check trichomes" on day 60 of flower, a corresponding all-day event will appear on the calendar, ensuring you never miss a critical task.
+- 🌱 **Detailed Plant Tracking**: Register and track individual plants through their lifecycle stages: `seedling → clone → mother → veg → flower → dry → cure`.
+- 📐 **Visual Grid Layouts**: Arrange your plants in physical rows and columns inside logical growspaces.
+- 💧 **Smart Irrigation & Crop Steering**: Configure vegetative or generative steering profiles (VWC targets, drybacks, shot frequencies) using substrate sensors.
+- ❄️ **Adaptive VPD Control**: Automate dehumidification and HVAC devices to dynamically steer Vapor Pressure Deficit targets based on plant stage and day/night light cycles.
+- 🧠 **Bayesian Environmental Analytics**: Probabilistically assess and report plant stress levels, mold risks, and schedule drift before physical symptoms appear.
+- 🧬 **Genetics & Breeding Log**: Catalog strain lineages, parental crosses, seed inventories, and evaluate/score phenotypes to preserve keeper mother plants.
+- 📦 **Post-Harvest Analytics**: Track daily weight decay curves and stem-moisture levels during drying to pinpoint optimal cure windows.
+- 🖨️ **Niimbot Label Printing**: Connect directly via Bluetooth to print QR-coded plant tags containing strains, breeder logos, and genetic lineage.
+- 💬 **Optional AI Grow Master**: Integrate standard Home Assistant Conversation Agents to inspect camera feeds (vision checkups) and chat with a context-aware Virtual Grow Master.
 
-### Light-Aware Monitoring
-By configuring an optional light sensor for your growspace, you unlock more intelligent environmental monitoring:
-*   **Day/Night Logic**: The Bayesian sensors will automatically switch between day and night thresholds for temperature and VPD, leading to more accurate stress and mold risk detection.
-*   **Schedule Verification**: A `LightCycleVerificationSensor` is created to monitor your light's on/off cycles. It verifies that the light is running for the correct duration for the current growth stage (e.g., 18/6 for veg, 12/12 for flower) and will turn off if the schedule is incorrect, alerting you to potential timer malfunctions.
+---
 
-## Installation
+## Lovelace Dashboard Integration
 
-This integration requires two components: the main integration (installed via HACS) and the Lovelace card (also installed via HACS).
+To interact with your growspaces visually using drag-and-drop grids, batch plant actions, and live graphs, install the companion card:
 
-**Step 1: Install the Lovelace Card**
-1.  Navigate to **HACS** > **Frontend**.
-2.  Click the three dots in the top right and select **Custom repositories**.
-3.  Enter the repository URL: `https://github.com/Venosta-web/lovelace-growspace-manager-card` and select the category **Lovelace**.
-4.  Click **Add**.
-5.  Find the "Growspace Manager Card" in the list and click **Install**.
+* **Repository**: [Lovelace Growspace Manager Card](https://github.com/Venosta-web/lovelace-growspace-manager-card)
+* **Basic Configuration**:
+  ```yaml
+  type: 'custom:growspace-manager-card'
+  default_growspace: flower_tent
+  ```
 
-**Step 2: Install the Growspace Manager Integration**
-1.  Navigate to **HACS** > **Integrations**.
-2.  Click the three dots in the top right and select **Custom repositories**.
-3.  Enter the repository URL: `https://github.com/Venosta-web/growspace_manager` and select the category **Integration**.
-4.  Click **Add**.
-5.  Find "Growspace Manager" in the list and click **Install**.
-6.  Restart Home Assistant when prompted.
+---
 
-## Configuration: A Step-by-Step Guide
+## Installation Walkthrough
 
-### Step 1: Add the Growspace Manager Integration
-1.  Go to **Settings** > **Devices & Services**.
-2.  Click **+ Add Integration** and search for **Growspace Manager**.
-3.  Follow the initial prompt to add the integration.
+### Step 1: Install frontend card via HACS
+1. Go to **HACS** > **Frontend** in Home Assistant.
+2. Click the three vertical dots in the top-right corner and select **Custom repositories**.
+3. Add URL `https://github.com/Venosta-web/lovelace-growspace-manager-card` with category **Lovelace**.
+4. Search for `Growspace Manager Card` and click **Download**.
 
-### Step 2: Create Your First Growspace
-The integration is managed through its configuration menu.
-1.  On the integration's card, click **Configure**.
-2.  You will see three options: "Manage Growspaces", "Manage Plants", and "Configure Environment Sensors". Select **Manage Growspaces** and click **Submit**.
-3.  For the "Action", select **Add Growspace**.
-4.  Fill in the details for your growspace:
-    *   **Name**: e.g., "4x4 Tent"
-    *   **Rows**: The number of plant rows.
-    *   **Plants Per Row**: The number of plants in each row.
-    *   **Notification Target**: (Optional) The notification service you want to use (e.g., `mobile_app_your_phone_name`).
-5.  Click **Submit**.
+### Step 2: Install integration via HACS
+1. Go to **HACS** > **Integrations** in Home Assistant.
+2. Click the three vertical dots in the top-right corner and select **Custom repositories**.
+3. Add URL `https://github.com/Venosta-web/growspace_manager` with category **Integration**.
+4. Search for `Growspace Manager` and click **Download**.
+5. **Restart Home Assistant**.
 
-### Step 3: Add Your First Plant
-1.  Go back to the integration's **Configure** menu.
-2.  Select **Manage Plants** and click **Submit**.
-3.  For the "Action", select **Add New Plant** and click **Submit**.
-4.  First, select the growspace you just created from the dropdown and click **Submit**.
-5.  Now, fill in your plant's details:
-    *   **Strain**: The name of the strain.
-    *   **Row / Col**: The position in the grid.
-    *   **Veg Start / Flower Start**: Set the date when the stage began.
-6.  Click **Submit**.
+---
 
-### Step 4: Configure Environment Sensors
-This is where the magic happens. By linking your existing sensors, you enable the intelligent Bayesian monitoring.
-1.  Go back to the integration's **Configure** menu.
-2.  Select **Configure Environment Sensors** and click **Submit**.
-3.  Select the growspace you want to configure and click **Submit**.
-4.  Link your sensor entities:
-    *   **Required**: Temperature, Humidity, and VPD sensors.
-*   **Optional**: A light or switch to determine if the lights are on/off, a CO2 sensor, and a circulation fan switch. Linking a light sensor enables more accurate day/night logic and activates the `LightCycleVerificationSensor`.
-5.  Click **Submit** to save. The Bayesian binary sensors will be created automatically.
+## Step-by-Step Configuration Guide
 
-### Step 5: Configure AI Assistant (Optional)
-Unlock intelligent insights by connecting a conversation agent.
-1.  Go back to the integration's **Configure** menu.
-2.  Select **Configure AI Assistant** and click **Submit**.
-3.  **Enable AI Assistant**: Toggle this on.
-4.  **Select Assistant**: Choose your preferred conversation agent (e.g., OpenAI, Google Generative AI, or a local LLM).
-5.  **Personality**: Choose a personality style (e.g., "Professional", "Friendly", "Scientist").
-6.  **Max Response Length**: Set a limit for the advice length to keep it concise.
-7.  Click **Submit**.
+1. **Initialize the Integration**: Go to **Settings** > **Devices & Services** > **+ Add Integration**, search for **Growspace Manager**, and install it.
+2. **Define Your Growspaces**: Click **Configure** on the integration card, select **Manage Growspaces**, and choose **Add Growspace** (e.g., set up a 2x4 grid for "Flower Room").
+3. **Configure Environment Sensors**: Bind your temperature, humidity, VPD, light, and circulation fan entities. Toggle **Control Dehumidifier** if you want target VPD-driven automation.
+4. **Bind Irrigation Hardware**: Bind your feed pump and drainage switches under **Configure Irrigation** to enable timers and steering triggers.
+5. **Configure AI (Optional)**: If you wish to use AI briefings and vision checkups, ensure you have set up a Home Assistant **Conversation Agent** (e.g., Google Generative AI or OpenAI) first. Then enable AI features in the integration configuration and bind it to that agent.
 
-### Step 6: Add the Card to Your Dashboard
-1.  Navigate to the dashboard where you want to display your growspace.
-2.  Click the three dots in the top right and select **Edit Dashboard**.
-3.  Click **+ Add Card** and search for the **Custom: Growspace Card**.
-4.  Select the **Growspace Overview Sensor** that corresponds to the growspace you created (e.g., `sensor.4x4_tent`).
-5.  Click **Save**.
+---
 
-Your dashboard should now display a visual grid of your growspace!
+## Real-World Automation Examples
 
-![Growspace Manager Card Example](images/growspace_manager_card_example.png)
-
-
-## Entities Created
-This integration will create the following entities for you:
-
-*   **Growspace Overview Sensor**: (`sensor.<growspace_name>`) The primary sensor for a growspace. Its state is the number of plants, and its attributes contain the grid layout and stage information. This is the entity you use with the Lovelace card.
-*   **Plant Sensor**: (`sensor.<plant_strain>_<row>_<col>`) A detailed sensor for each individual plant. Its state is the current growth stage (e.g., "veg", "flower").
-*   **Notification Switch**: (`switch.<growspace_name>_notifications`) Allows you to enable or disable notifications for a specific growspace.
-*   **Strain Library Sensor**: (`sensor.growspace_strain_library`) A sensor whose state is the number of unique strains and whose attributes contain detailed harvest analytics, including average veg/flower times.
-*   **Growspaces List Sensor**: (`sensor.growspaces_list`) A sensor whose attributes contain a list of all your configured growspaces.
-*   **Task Calendar**: (`calendar.<growspace_name>_tasks`) A calendar entity for each growspace that displays scheduled tasks based on your timed notifications.
-
-### Services
-The integration exposes the following services:
-
-*   **`growspace_manager.ask_grow_advice`**: Ask the AI assistant for advice on a specific growspace.
-    *   **Targets**: A growspace overview sensor (e.g., `sensor.4x4_tent`).
-    *   **Fields**:
-        *   `user_query` (Optional): A specific question to ask. If omitted, the AI provides a general status update.
-        *   `context_type`: The type of advice needed (`general`, `diagnostic`, `optimization`, `planning`).
-        *   `max_length`: Maximum length of the response.
-
-### Environmental Monitoring Sensors
-When you configure environmental sensors for a growspace, the following powerful binary sensors are created:
-
-*   **Plants Under Stress**: (`binary_sensor.<growspace_name>_plants_under_stress`) This sensor turns **ON** when the combination of temperature, humidity, VPD, and other factors indicates a high probability of plant stress. This is your primary indicator that something in the environment needs attention.
-*   **High Mold Risk**: (`binary_sensor.<growspace_name>_high_mold_risk`) This sensor turns **ON** when conditions are favorable for mold and bud rot, particularly during the lights-off period in late flower. It monitors for high humidity, low VPD, and poor air circulation.
-*   **Optimal Conditions**: (`binary_sensor.<growspace_name>_optimal_conditions`) This sensor turns **ON** when your environment is perfectly dialed in for the current growth stage. When this sensor is on, you know your plants are happy. It turns **OFF** as a warning that conditions have drifted out of the ideal range.
-*   **Light Schedule Correct**: (`binary_sensor.<growspace_name>_light_schedule_correct`) An optional sensor (created when a light entity is configured) that turns **ON** if the light's on/off cycle duration is correct for the current growth stage.
-
-## Automation Examples
-
-Maximize the power of Growspace Manager with these automation ideas:
-
-**1. High Heat Alert**
-Send a critical notification to your phone if the "Plant Stress" sensor is triggered for more than 5 minutes.
+### 1. Toggle Automated Dehumidifier Steering
+Turn on/off the integration's built-in target-VPD dehumidifier steering based on whether the growspace has active plants.
 
 ```yaml
+alias: "Dehumidifier: Toggle Active Steering"
+description: "Enable dehumidifier steering only when the growspace is active"
 trigger:
   - platform: state
-    entity_id: binary_sensor.4x4_tent_plants_under_stress
-    to: "on"
-    for: "00:05:00"
+    entity_id: sensor.flower_tent_overview
 action:
-  - service: notify.mobile_app_your_phone
-    data:
-      message: "CRITICAL: Plants in 4x4 Tent are under stress! Check environment immediately."
-      title: "🔥 High Heat Stress"
+  - choose:
+      # If plant count is greater than 0, enable steering
+      - conditions:
+          - condition: numeric_state
+            entity_id: sensor.flower_tent_overview
+            above: 0
+        sequence:
+          - service: growspace_manager.set_dehumidifier_control
+            data:
+              growspace_id: "flower_tent"
+              enabled: true
+      # If growspace is empty, turn off dehumidifier steering
+      - conditions:
+          - condition: numeric_state
+            entity_id: sensor.flower_tent_overview
+            below: 1
+        sequence:
+          - service: growspace_manager.set_dehumidifier_control
+            data:
+              growspace_id: "flower_tent"
+              enabled: false
 ```
 
-**2. Auto-Adjustment for VPD**
-If the "Optimal Conditions" sensor turns off, automatically toggle your humidifier (if connected to a smart plug).
+### 2. High Mold Risk Emergency Mitigation
+Boosts air movement and ventilation when the Bayesian analysis flags high mold risk during dark cycles.
 
 ```yaml
+alias: "IPM: High Mold Risk Mitigation"
 trigger:
   - platform: state
-    entity_id: binary_sensor.4x4_tent_optimal_conditions
-    to: "off"
-    for: "00:10:00"
-condition:
-  - condition: numeric_state
-    entity_id: sensor.4x4_tent_vpd
-    above: 1.5 # Too dry
+    entity_id: binary_sensor.flower_tent_high_mold_risk
+    to: "on"
 action:
+  - service: fan.turn_on
+    target:
+      entity_id: fan.tent_circulation
+    data:
+      percentage: 100
   - service: switch.turn_on
     target:
-      entity_id: switch.humidifier_plug
+      entity_id: switch.tent_exhaust_boost
+  - service: notify.mobile_app_iphone
+    data:
+      title: "⚠️ Mold Risk Alert: Flower Tent"
+      message: "Dew point and humidity thresholds crossed during dark cycle. Exhaust and circulation fans boosted to 100%."
 ```
 
-## Troubleshooting
+### 3. Harvest Cure-Ready Notification
+Sends an alert to your phone when a drying plant's moisture decay curve reaches the cure-ready threshold (≤ 12%).
 
-**Q: My "Plants Under Stress" sensor is stuck on "Unknown".**
-*   **Cause**: One or more of the required source sensors (Temperature, Humidity, VPD) is unavailable or not configured.
-*   **Fix**: Go to **Configure** > **Configure Environment Sensors** and ensure all required sensors are linked and currently providing data.
+```yaml
+alias: "Harvest: Plant Ready for Curing"
+trigger:
+  - platform: state
+    entity_id: binary_sensor.gorilla_glue_4_drying_ready_for_cure
+    to: "on"
+action:
+  - service: notify.mobile_app_iphone
+    data:
+      title: "🍯 Harvest Alert: Cure Ready!"
+      message: "Gorilla Glue #4 stem moisture is under 12%. Ready to transfer from dry rack to curing jars."
+```
 
-**Q: I don't see the "Light Schedule Correct" sensor.**
-*   **Cause**: You haven't linked a light entity to your growspace.
-*   **Fix**: Go to **Configure** > **Configure Environment Sensors** > **Enable Light Monitoring** and select your light entity.
+---
 
-**Q: The AI Assistant isn't responding.**
-*   **Cause**: The notification target might be invalid or the AI agent service is down.
-*   **Fix**: Check your Home Assistant logs for "Growspace Manager" errors. Ensure the correct "Notification Target" service string is used in the growspace configuration.
+## Service API & Developers Reference
 
-## Known Limitations
+All database, plant tracking, environmental setup, and scheduling operations are exposed as standard Home Assistant services.
 
-*   **Manual Entity Deletion**: If you remove a growspace, you may need to manually delete some orphan entities from Home Assistant's entity registry if they were not cleaned up automatically.
-*   **Restart Required**: Renaming a growspace currently requires a Home Assistant restart to fully update all related entity names.
+For a complete description of all services, parameters, and example payloads, see the [Exhaustive Service API Reference](docs/services.md).
 
-## Data Updates
+---
 
-*   **Sensors**: Data from linked environmental sensors (temperature, humidity, etc.) is updated in real-time as Home Assistant receives state changes.
-*   **Bayesian Sensors**: Stress and Mold risk probabilities are recalculated immediately upon any change in the underlying environmental sensors.
-*   **Calculated Sensors**: VPD and other derived metrics are updated whenever their source sensors change.
-*   **Plant Age**: Plant age (days in veg/flower) is recalculated daily at midnight.
+## Troubleshooting & Diagnostics
 
+* **Bayesian environment sensors showing "Unavailable"**: Ensure you have successfully configured and bound valid Temperature, Humidity, and VPD sensors to the growspace environment. The Bayesian model also requires a brief warm-up period to pull initial sensor histories.
+* **Niimbot printer fails to print**: Verify Bluetooth signal strength and range. Consider utilizing a Bluetooth proxy if the Home Assistant server is located away from the grow room.
+* **Database errors after upgrades**: Run the `growspace_manager.debug_cleanup_legacy` service to purge orphaned data tables, and `growspace_manager.debug_reset_special_growspaces` to reconstruct overview zones.
 
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

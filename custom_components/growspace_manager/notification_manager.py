@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from homeassistant.components import conversation
-from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util.dt import utcnow
 
@@ -16,20 +16,28 @@ from .const import (
     ATTR_TRIGGER_TYPE,
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
-    CONF_NOTIFICATION_PERSONALITY,
     CRITICAL_COOLDOWN_MINUTES,
     CRITICAL_PROBABILITY_THRESHOLD,
     DEFAULT_COOLDOWN_MINUTES,
     ESCALATION_DELAY_MINUTES,
-    MAX_NOTIFICATION_LENGTH,
+    MIN_STRESS_DURATION_SECONDS,
+    NOTIFICATION_CHANNEL,
     NOTIFICATION_DEBOUNCE_SECONDS,
+    NOTIFICATION_GROUP,
+    NOTIFICATION_ICON,
+    PHOTOPERIOD_FLIP_COOLDOWN_MINUTES,
     RECOVERY_COOLDOWN_MINUTES,
     WARNING_COOLDOWN_MINUTES,
     WARNING_PERSISTENCE_MINUTES,
+    GrowspaceSensorType,
     NotificationTier,
 )
 from .domain import calculate_days_in_stage
-from .presentation import EntityQueries
+from .exceptions import GrowspaceError
+from .notification_rewriter import AINotificationRewriter
+from .notifications.evaluation_snapshot import EvaluationSnapshot
+from .notifications.formatting import generate_notification_message
+from .notifications.timed import normalize_timed_notifications
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -49,28 +57,90 @@ class PendingAlert:
     notified: bool = False
     escalated: bool = False
     notified_as_critical: bool = False
+    notification_timer: CALLBACK_TYPE | None = None
 
 
 class NotificationManager:
     """Manages notifications for Growspace Manager."""
 
-    def __init__(self, hass: HomeAssistant, coordinator: GrowspaceCoordinator) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        coordinator: GrowspaceCoordinator,
+        ai_rewriter: AINotificationRewriter,
+    ) -> None:
         """Initialize the notification manager."""
         self.hass = hass
         self.coordinator = coordinator
+        self._ai_rewriter = ai_rewriter
         # Legacy cooldown for timed notifications (non-tiered)
         self._last_notification_sent: dict[str, datetime] = {}
         self._notification_cooldown = timedelta(minutes=DEFAULT_COOLDOWN_MINUTES)
-        self._registered_sensors: dict[str, set[Any]] = {}
+        # Latest evaluation snapshot per (growspace_id, sensor_type), used to
+        # build batched notifications without holding live entity references.
+        self._latest_snapshots: dict[tuple[str, str], EvaluationSnapshot] = {}
         self._batch_timers: dict[str, CALLBACK_TYPE] = {}
         self._pending_alerts: dict[str, PendingAlert] = {}
         self._cooldowns: dict[str, dict[str, datetime]] = {}
+        # Last observed light state per growspace, for flip-cooldown dedup
+        # across the multiple sensor types reporting the same growspace.
+        self._last_lights_on: dict[str, bool] = {}
+
+    @callback
+    def shutdown(self) -> None:
+        """Shutdown the notification manager and cancel all timers."""
+        for timer in self._batch_timers.values():
+            timer()
+        self._batch_timers.clear()
+
+        for alert in self._pending_alerts.values():
+            if alert.notification_timer is not None:
+                alert.notification_timer()
+                alert.notification_timer = None
+        self._pending_alerts.clear()
 
     _TIER_COOLDOWNS: ClassVar[dict[str, timedelta]] = {
         NotificationTier.CRITICAL: timedelta(minutes=CRITICAL_COOLDOWN_MINUTES),
         NotificationTier.WARNING: timedelta(minutes=WARNING_COOLDOWN_MINUTES),
-        "recovery": timedelta(minutes=RECOVERY_COOLDOWN_MINUTES),
+        "recovery": timedelta(
+            minutes=RECOVERY_COOLDOWN_MINUTES
+        ),  # TODO: migrate to NotificationTier.RECOVERY
+        NotificationTier.PHOTOPERIOD_FLIP: timedelta(
+            minutes=PHOTOPERIOD_FLIP_COOLDOWN_MINUTES
+        ),
     }
+
+    _TIER_OPTION_KEYS: ClassVar[dict[str, tuple[str, int]]] = {
+        NotificationTier.CRITICAL: (
+            "critical_cooldown_minutes",
+            CRITICAL_COOLDOWN_MINUTES,
+        ),
+        NotificationTier.WARNING: (
+            "warning_cooldown_minutes",
+            WARNING_COOLDOWN_MINUTES,
+        ),
+        "recovery": ("recovery_cooldown_minutes", RECOVERY_COOLDOWN_MINUTES),
+    }
+
+    def _get_notification_option(self, key: str, fallback: int) -> int:
+        """Read a timing/cooldown value from notification_settings options, with fallback."""
+        settings: dict[str, int] = self.coordinator.options.get(
+            "notification_settings", {}
+        )
+        first_word, *remaining_words = key.split("_")
+        camel_case_key = first_word + "".join(word.title() for word in remaining_words)
+        return settings.get(key, settings.get(camel_case_key, fallback))
+
+    def _get_tier_cooldown(self, tier: str) -> timedelta:
+        """Return the cooldown timedelta for a tier, respecting user-configured options."""
+        if tier in self._TIER_OPTION_KEYS:
+            option_key, fallback = self._TIER_OPTION_KEYS[tier]
+            return timedelta(
+                minutes=self._get_notification_option(option_key, fallback)
+            )
+        return self._TIER_COOLDOWNS.get(
+            tier, timedelta(minutes=CRITICAL_COOLDOWN_MINUTES)
+        )
 
     def _set_cooldown(self, growspace_id: str, tier: str) -> None:
         """Set cooldown timestamp for a specific tier and growspace."""
@@ -84,25 +154,55 @@ class NotificationManager:
         last_sent = cooldown_map.get(tier)
         if not last_sent:
             return False
-        cooldown_duration = self._TIER_COOLDOWNS.get(tier, timedelta(minutes=CRITICAL_COOLDOWN_MINUTES))
+        cooldown_duration = self._get_tier_cooldown(tier)
         return (now - last_sent) < cooldown_duration
 
     @callback
-    def update_pending_alert(self, growspace_id: str, sensor: Any) -> None:
-        """Update or create a pending alert based on sensor state.
+    def report_evaluation(self, snapshot: EvaluationSnapshot) -> None:
+        """Process a Bayesian sensor evaluation snapshot.
 
-        Called by sensors on every probability update instead of
-        async_schedule_notification directly.
+        Called by sensors on every probability update. Stores the latest
+        snapshot for batch aggregation and drives the pending-alert lifecycle
+        (for non-optimal sensors).
         """
-        alert_key = f"{growspace_id}_{sensor.entity_description.sensor_type}"
+        growspace_id = snapshot.growspace_id
+        sensor_type = snapshot.sensor_type
+        snap_key = (growspace_id, sensor_type)
 
-        if not sensor.is_on:
-            alert = self._pending_alerts.pop(alert_key, None)
-            if alert and alert.notified_as_critical:
-                self._schedule_recovery(growspace_id, alert)
+        self._handle_light_flip(growspace_id, snapshot.lights_on)
+
+        # Maintain the latest-snapshot store for batched notifications. Only
+        # triggered snapshots are retained; a resolved one is dropped.
+        if snapshot.is_on:
+            self._latest_snapshots[snap_key] = snapshot
+        else:
+            self._latest_snapshots.pop(snap_key, None)
+
+        # The optimal-conditions sensor never participates in pending alerts.
+        if sensor_type == GrowspaceSensorType.OPTIMAL:
             return
 
-        probability = sensor._probability  # noqa: SLF001
+        alert_key = f"{growspace_id}_{sensor_type}"
+
+        if not self.coordinator.services.growspaces.get_growspace_plants(growspace_id):
+            self._latest_snapshots.pop(snap_key, None)
+            alert = self._pending_alerts.pop(alert_key, None)
+            if alert and alert.notification_timer is not None:
+                alert.notification_timer()
+                alert.notification_timer = None
+            return
+
+        if not snapshot.is_on:
+            alert = self._pending_alerts.pop(alert_key, None)
+            if alert:
+                if alert.notification_timer is not None:
+                    alert.notification_timer()
+                    alert.notification_timer = None
+                if alert.notified_as_critical:
+                    self._schedule_recovery(growspace_id, alert)
+            return
+
+        probability = snapshot.probability
         now = utcnow()
 
         if alert_key in self._pending_alerts:
@@ -115,22 +215,48 @@ class NotificationManager:
                 first_triggered=now,
                 last_probability=probability,
                 peak_probability=probability,
-                sensor_name=sensor.name,
+                sensor_name=snapshot.sensor_name,
             )
             self._pending_alerts[alert_key] = alert
 
         if (
             probability >= CRITICAL_PROBABILITY_THRESHOLD
             and not alert.notified_as_critical
+            and alert.notification_timer is None
         ):
-            alert.notified_as_critical = True
-            alert.notified = True
-            self.async_schedule_notification(growspace_id)
+
+            @callback
+            def _fire_critical(_now: datetime) -> None:
+                pending = self._pending_alerts.get(alert_key)
+                if pending is None:
+                    return
+                pending.notification_timer = None
+                pending.notified_as_critical = True
+                pending.notified = True
+                self.async_schedule_notification(growspace_id)
+
+            alert.notification_timer = async_call_later(
+                self.hass,
+                self._get_notification_option(
+                    "min_stress_duration_seconds", MIN_STRESS_DURATION_SECONDS
+                ),
+                _fire_critical,
+            )
+        elif (
+            probability < CRITICAL_PROBABILITY_THRESHOLD
+            and alert.notification_timer is not None
+        ):
+            alert.notification_timer()
+            alert.notification_timer = None
 
     @callback
     def _schedule_recovery(self, growspace_id: str, alert: PendingAlert) -> None:
         """Schedule a recovery notification for a resolved critical alert."""
-        self.hass.async_create_task(self._async_send_recovery(growspace_id, alert))
+        self.coordinator.config_entry.async_create_background_task(
+            self.hass,
+            self._async_send_recovery(growspace_id, alert),
+            f"recovery_notification_{growspace_id}_{alert.sensor_name}",
+        )
 
     async def _async_send_recovery(
         self, growspace_id: str, alert: PendingAlert
@@ -153,17 +279,6 @@ class NotificationManager:
         self._set_cooldown(growspace_id, "recovery")
         await self.async_send_notification(growspace_id, title, message)
 
-    def attach_sensor(self, growspace_id: str, sensor: Any) -> None:
-        """Register a sensor for batch notification tracking."""
-        if growspace_id not in self._registered_sensors:
-            self._registered_sensors[growspace_id] = set()
-        self._registered_sensors[growspace_id].add(sensor)
-
-    def detach_sensor(self, growspace_id: str, sensor: Any) -> None:
-        """Unregister a sensor."""
-        if growspace_id in self._registered_sensors:
-            self._registered_sensors[growspace_id].discard(sensor)
-
     def trigger_cooldown(self, growspace_id: str) -> None:
         """Manually trigger notification cooldown for a growspace (e.g., light switch)."""
         self._set_cooldown(growspace_id, NotificationTier.CRITICAL)
@@ -171,20 +286,31 @@ class NotificationManager:
         self._last_notification_sent[growspace_id] = utcnow()
         _LOGGER.debug("Notification cooldown triggered for %s", growspace_id)
 
+    @callback
+    def _handle_light_flip(self, growspace_id: str, lights_on: bool | None) -> None:
+        """Trigger a cooldown when the growspace light state flips.
+
+        Snapshots from the multiple sensor types covering one growspace are
+        deduped by comparing against the stored value, so a single physical
+        flip triggers exactly one cooldown. ``None`` readings are ignored and
+        never overwrite a known state.
+        """
+        if lights_on is None:
+            return
+        previous = self._last_lights_on.get(growspace_id)
+        self._last_lights_on[growspace_id] = lights_on
+        if previous is not None and previous != lights_on:
+            _LOGGER.debug(
+                "Light switched in %s. Triggering notification cooldown",
+                growspace_id,
+            )
+            self.trigger_cooldown(growspace_id)
+
     def generate_notification_message(
         self, base_message: str, reasons: list[tuple[float, str]]
     ) -> str:
         """Construct a detailed notification message from the list of reasons."""
-        sorted_reasons = sorted(reasons, reverse=True)
-        message = base_message
-
-        # Increased limit from 65 to MAX_NOTIFICATION_LENGTH for modern mobile displays
-        for _, reason in sorted_reasons:
-            if len(message) + len(reason) + 2 < MAX_NOTIFICATION_LENGTH:
-                message += f", {reason}"
-            else:
-                break
-        return message
+        return generate_notification_message(base_message, reasons)
 
     @callback
     def async_schedule_notification(self, growspace_id: str) -> None:
@@ -194,8 +320,10 @@ class NotificationManager:
 
         @callback
         def _send_notification(_: datetime) -> None:
-            self.hass.async_create_task(
-                self._async_send_batched_notification(growspace_id)
+            self.coordinator.config_entry.async_create_background_task(
+                self.hass,
+                self._async_send_batched_notification(growspace_id),
+                f"batched_notification_{growspace_id}",
             )
 
         self._batch_timers[growspace_id] = async_call_later(
@@ -206,7 +334,8 @@ class NotificationManager:
 
     async def _async_send_batched_notification(self, growspace_id: str) -> None:
         """Collect triggered sensors and send a consolidated notification."""
-        self._batch_timers.pop(growspace_id, None)
+        if timer := self._batch_timers.pop(growspace_id, None):
+            timer()
 
         now = utcnow()
 
@@ -218,26 +347,25 @@ class NotificationManager:
             )
             return
 
-        sensors = self._registered_sensors.get(growspace_id, set())
-        active_sensors = [s for s in sensors if s.is_on]
+        active_snapshots = [
+            snap
+            for (gid, _sensor_type), snap in self._latest_snapshots.items()
+            if gid == growspace_id and snap.is_on
+        ]
 
-        if not active_sensors:
+        if not active_snapshots:
             return
 
-        # Aggregate unique reasons across all sensors
+        # Aggregate unique reasons across all triggered sensors
         combined_reasons: list[tuple[float, str]] = []
         seen_reasons: set[str] = set()
         sensor_names: list[str] = []
         all_sensor_states: dict[str, Any] = {}
 
-        for sensor in active_sensors:
-            try:
-                name = sensor.name
-            except AttributeError:
-                name = sensor.entity_id
-            sensor_names.append(name)
-            all_sensor_states.update(sensor.sensor_states)
-            for r_prob, r_text in sensor.reasons:
+        for snap in active_snapshots:
+            sensor_names.append(snap.sensor_name)
+            all_sensor_states.update(snap.sensor_states)
+            for r_prob, r_text in snap.reasons:
                 if r_text not in seen_reasons:
                     combined_reasons.append((r_prob, r_text))
                     seen_reasons.add(r_text)
@@ -246,15 +374,15 @@ class NotificationManager:
         growspace = self.coordinator.growspaces.get(growspace_id)
         gs_name = growspace.name if growspace else growspace_id
 
-        if len(active_sensors) == 1:
-            sensor = active_sensors[0]
-            title_msg = sensor.get_notification_title_message(True)
-            if title_msg and len(title_msg) == 2:
-                title, base_message = title_msg
-            else:
-                title = (
-                    f"\U0001f534 {getattr(sensor, 'name', sensor.entity_id)}: {gs_name}"
+        if len(active_snapshots) == 1:
+            snap = active_snapshots[0]
+            if snap.notification_title and snap.notification_message:
+                title, base_message = (
+                    snap.notification_title,
+                    snap.notification_message,
                 )
+            else:
+                title = f"\U0001f534 {snap.sensor_name}: {gs_name}"
                 base_message = f"Issue detected in {gs_name}"
         else:
             title = f"\U0001f534 Multiple Critical: {gs_name}"
@@ -308,8 +436,17 @@ class NotificationManager:
             )
             return
 
+        if not self.coordinator.services.growspaces.get_growspace_plants(growspace_id):
+            _LOGGER.debug(
+                "Growspace %s has no plants, skipping notification",
+                growspace_id,
+            )
+            return
+
         # Check if notifications are enabled in coordinator
-        if not self.coordinator.is_notifications_enabled(growspace_id):
+        if not self.coordinator.services.notifications.is_notifications_enabled(
+            growspace_id
+        ):
             _LOGGER.debug("Notifications disabled in coordinator for %s", growspace_id)
             return
 
@@ -318,7 +455,7 @@ class NotificationManager:
         ai_settings = self.coordinator.options.get("ai_settings", {})
 
         if ai_settings.get(CONF_AI_ENABLED) and ai_settings.get(CONF_ASSISTANT_ID):
-            final_message = await self._rewrite_with_ai(
+            final_message = await self._ai_rewriter.async_rewrite(
                 message, growspace.name, sensor_states, ai_settings
             )
 
@@ -332,6 +469,12 @@ class NotificationManager:
                 {
                     "message": final_message,
                     "title": title,
+                    "data": {
+                        "group": NOTIFICATION_GROUP,
+                        "channel": NOTIFICATION_CHANNEL,
+                        "notification_icon": NOTIFICATION_ICON,
+                        "push": {"thread-id": NOTIFICATION_GROUP},
+                    },
                 },
                 blocking=False,
             )
@@ -341,134 +484,22 @@ class NotificationManager:
                 title,
                 final_message,
             )
-            # Set cooldown after successful send (not before)
             if tier:
                 self._set_cooldown(growspace_id, tier)
-        except (AttributeError, TypeError, ValueError) as e:
-            _LOGGER.error(
-                "Failed to send notification to %s: %s", notification_service, e
-            )
-
-    async def _rewrite_with_ai(
-        self,
-        original_message: str,
-        growspace_name: str,
-        sensor_states: dict[str, Any] | None,
-        ai_settings: dict[str, Any],
-    ) -> str:
-        """Rewrite the notification message using Home Assistant Assist."""
-        try:
-            personality = ai_settings.get(CONF_NOTIFICATION_PERSONALITY, "Standard")
-            agent_id = ai_settings.get(CONF_ASSISTANT_ID)
-            max_length = ai_settings.get("max_response_length", 250)
-
-            prompt = self._build_rewrite_prompt(
-                original_message,
-                growspace_name,
-                sensor_states,
-                personality,
-                max_length,
-            )
-
-            _LOGGER.debug("Sending notification rewrite prompt to AI assistant")
-
-            result = await conversation.async_converse(
-                self.hass,
-                text=prompt,
-                conversation_id=None,
-                context=Context(),
-                agent_id=agent_id,
-            )
-
-            if (
-                result
-                and result.response
-                and result.response.speech
-                and result.response.speech.get("plain")
-            ):
-                rewritten = result.response.speech["plain"]["speech"]
-                # Validate the response isn't too long
-                if len(rewritten) <= max_length:
-                    _LOGGER.info("AI rewrote notification in %s style", personality)
-                    return cast(str, rewritten)
-                # Try to truncate intelligently if it's close
-                if len(rewritten) < max_length + 50:
-                    _LOGGER.info("AI response truncated to fit length limit")
-                    return cast(str, rewritten[:max_length].rsplit(" ", 1)[0] + "...")
-                _LOGGER.warning(
-                    "AI response too long (%d chars > %d), using default",
-                    len(rewritten),
-                    max_length,
-                )
-            else:
-                _LOGGER.warning("AI returned empty response, using default message")
-
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.error("Failed to process AI notification: %s", err)
-
-        return original_message
-
-    def _build_rewrite_prompt(
-        self,
-        original_message: str,
-        growspace_name: str,
-        sensor_states: dict[str, Any] | None,
-        personality: str,
-        max_length: int,
-    ) -> str:
-        """Build the prompt for the AI to rewrite the notification."""
-        # Format sensor readings for context
-        readings = []
-        if sensor_states:
-            for k, v in sensor_states.items():
-                if v is not None and not isinstance(v, bool):
-                    readings.append(f"{k}: {v}")
-        readings_str = ", ".join(readings)
-
-        # Build a more sophisticated prompt for the AI
-        system_context = (
-            f"You are a {personality} cannabis cultivation assistant. "
-            "Your job is to rewrite alerts in your unique style while keeping them informative.\n\n"
-        )
-
-        if personality.lower() == "scientific":
-            system_context += (
-                "Use precise technical terminology. Be analytical and data-driven. "
-                "Reference specific thresholds and values."
-            )
-        elif personality.lower() == "chill stoner":
-            system_context += (
-                "Be laid-back and friendly, but still helpful. Use casual language. "
-                "Keep the vibe relaxed but don't skip important details."
-            )
-        elif personality.lower() == "strict coach":
-            system_context += (
-                "Be direct and authoritative. Emphasize urgency where appropriate. "
-                "Make it clear what needs to be done immediately."
-            )
-        elif personality.lower() == "pirate":
-            system_context += (
-                "Write like a pirate (arr, matey, etc.) but maintain clarity. "
-                "Make it fun while conveying the essential information."
-            )
-        else:  # Standard
-            system_context += (
-                "Be clear, professional, and helpful. "
-                "Keep the message concise but informative."
-            )
-
-        return (
-            f"{system_context}\n\n"
-            f"Original Alert: {original_message}\n"
-            f"Current Sensor Data: {readings_str}\n"
-            f"Growspace: {growspace_name}\n\n"
-            f"Rewrite this alert in 1-2 sentences. Keep it under {max_length} characters. "
-            "Include specific sensor values if they're relevant to the alert."
-        )
+        except (
+            AttributeError,
+            KeyError,
+            ValueError,
+            ServiceValidationError,
+            GrowspaceError,
+        ):
+            _LOGGER.error("Failed to send notification to %s", notification_service)
 
     async def async_check_timed_notifications(self) -> None:
         """Check all configured timed notifications and send them if the conditions are met."""
-        notifications = self.coordinator.options.get("timed_notifications", [])
+        notifications = normalize_timed_notifications(
+            self.coordinator.options.get("timed_notifications", [])
+        )
         if not notifications:
             return
 
@@ -477,34 +508,6 @@ class NotificationManager:
         for notification in notifications:
             await self._process_notification(notification, plants_by_growspace)
 
-    async def async_check_tank_levels(self) -> None:
-        """Check all irrigation tank levels and notify if below warning threshold."""
-
-        entity_queries = EntityQueries(self.hass)
-
-        for growspace in self.coordinator.growspaces.values():
-            if (
-                not growspace.environment_config
-                or not growspace.environment_config.irrigation_tanks
-            ):
-                continue
-
-            for tank in growspace.environment_config.irrigation_tanks:
-                state_obj = self.hass.states.get(tank.sensor_entity)
-                level = (
-                    entity_queries.parse_tank_level(state_obj.state)
-                    if state_obj
-                    else None
-                )
-
-                if level is not None and level <= tank.warning_level:
-                    await self.async_send_notification(
-                        growspace.id,
-                        title="⚠️ Low Irrigation Tank Level",
-                        message=f"{tank.name} in {growspace.name} is at {level:.0f}% (warning at {tank.warning_level:.0f}%)",
-                        tier=NotificationTier.CRITICAL,
-                    )
-
     async def async_check_pending_alerts(self) -> None:
         """Check all pending alerts for persistence thresholds and escalation.
 
@@ -512,7 +515,7 @@ class NotificationManager:
         """
         now = utcnow()
 
-        for alert_key, alert in list(self._pending_alerts.items()):
+        for _alert_key, alert in list(self._pending_alerts.items()):
             growspace_id = alert.growspace_id
 
             # Escalation check: critical, notified, not yet escalated, 30+ min
@@ -523,7 +526,9 @@ class NotificationManager:
                 and alert.last_probability >= CRITICAL_PROBABILITY_THRESHOLD
             ):
                 elapsed = (now - alert.first_triggered).total_seconds() / 60
-                if elapsed >= ESCALATION_DELAY_MINUTES:
+                if elapsed >= self._get_notification_option(
+                    "escalation_delay_minutes", ESCALATION_DELAY_MINUTES
+                ):
                     if not self._is_on_cooldown(
                         growspace_id, NotificationTier.CRITICAL, now
                     ):
@@ -534,7 +539,9 @@ class NotificationManager:
             # Warning persistence check: not yet notified, persistence met
             if not alert.notified:
                 elapsed = (now - alert.first_triggered).total_seconds() / 60
-                if elapsed >= WARNING_PERSISTENCE_MINUTES:
+                if elapsed >= self._get_notification_option(
+                    "warning_persistence_minutes", WARNING_PERSISTENCE_MINUTES
+                ):
                     if not self._is_on_cooldown(
                         growspace_id, NotificationTier.WARNING, now
                     ):
@@ -624,9 +631,10 @@ class NotificationManager:
 
         if days_in_stage >= day_to_trigger:
             notification_key = f"timed_{notification_id}"
-            if not self.coordinator.notifications_sent.get(plant.plant_id, {}).get(
-                notification_key, False
-            ):
+            # This bucket is keyed by notification_key -> bool for timed notifications,
+            # unlike the stage -> day -> bool shape used elsewhere for this field.
+            sent: dict[str, Any] = self.coordinator.notification_state.sent
+            if not sent.get(plant.plant_id, {}).get(notification_key, False):
                 _LOGGER.info(
                     "Triggering timed notification for plant %s in %s",
                     plant.plant_id,
@@ -642,9 +650,5 @@ class NotificationManager:
                     message,
                 )
 
-                if plant.plant_id not in self.coordinator.notifications_sent:
-                    self.coordinator.notifications_sent[plant.plant_id] = {}
-                self.coordinator.notifications_sent[plant.plant_id][
-                    notification_key
-                ] = True
-                await self.coordinator.async_save()
+                sent.setdefault(plant.plant_id, {})[notification_key] = True
+                await self.coordinator.async_commit()

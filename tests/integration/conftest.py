@@ -1,29 +1,40 @@
 """Global fixtures for integration tests."""
 
-from unittest.mock import AsyncMock, Mock
+import sys
+from unittest.mock import AsyncMock, MagicMock, Mock
 
-from freezegun.api import FrozenDateTimeFactory
+# Mock homeassistant.components.ai_task
+sys.modules["homeassistant.components.ai_task"] = MagicMock()
+
+# Inject Recorder dummy to satisfy Python 3.14 lazy annotation evaluation in recorder.migration
+from homeassistant.components.recorder import migration
+
+if not hasattr(migration, "Recorder"):
+    migration.Recorder = MagicMock()
+
+import freezegun
 import pytest
 
 from custom_components.growspace_manager.date_time_helper import DateTimeHelper
 
-# pytest_plugins = "pytest_homeassistant_custom_component"
-
 
 @pytest.fixture(autouse=True)
-def freeze_time(freezer: FrozenDateTimeFactory) -> None:
+def freeze_time() -> None:
     """Freeze time to a fixed value to avoid off-by-one date errors.
 
     We choose a time in the middle of the day to avoid UTC midnight issues.
     Today is 2026-01-12 according to system context.
     """
-    freezer.move_to("2026-01-12 12:00:00")
+    with freezegun.freeze_time("2026-01-12 12:00:00"):
+        yield
 
 
 @pytest.fixture
 def mock_coordinator():
     """Create a comprehensive mock coordinator with all services mocked."""
-    from unittest.mock import MagicMock
+    from unittest.mock import AsyncMock, MagicMock
+
+    from custom_components.growspace_manager.services.facade import ServiceFacade
 
     coordinator = MagicMock()
     coordinator.hass = MagicMock()
@@ -32,93 +43,106 @@ def mock_coordinator():
     coordinator.data = MagicMock(spec=dict)
     coordinator.options = MagicMock(spec=dict)
 
-    # Mock _plant_service with all its async methods
-    coordinator._plant_service = MagicMock()
+    # 1. Mock Storage Manager
+    coordinator.storage_manager = MagicMock()
+    coordinator.storage_manager.async_commit = AsyncMock()
+    coordinator.storage_manager.async_save = AsyncMock()
+    coordinator.storage_manager.async_force_save = AsyncMock()
+
+    # 2. Mock plant_manager
+    coordinator._plant_manager = MagicMock()
 
     async def _mock_add_plant(growspace_id, strain, **kwargs):
         p = MagicMock()
         p.plant_id = f"plant_{len(coordinator.plants) + 1}"
         p.growspace_id = growspace_id
-        p.strain = strain
+        p.genetics = MagicMock()
+        p.genetics.strain_name = strain
         for k, v in kwargs.items():
             setattr(p, k, v)
         coordinator.plants[p.plant_id] = p
         return p
 
-    coordinator._plant_service.add_plant = AsyncMock(side_effect=_mock_add_plant)
-    coordinator._plant_service.update_plant = AsyncMock()
-    coordinator._plant_service.move_plant = AsyncMock()
-    coordinator._plant_service.switch_plants = AsyncMock()
-    coordinator._plant_service.transition_plant_stage = AsyncMock()
-    coordinator._plant_service.harvest_plant = AsyncMock()
-    coordinator._plant_service.remove_plant = AsyncMock()
+    coordinator._plant_manager.add_plant = AsyncMock(side_effect=_mock_add_plant)
+    coordinator._plant_manager.update_plant = AsyncMock()
+    coordinator._plant_manager.move_plant = AsyncMock()
+    coordinator._plant_manager.switch_plants = AsyncMock()
+    coordinator._plant_manager.transition_plant_stage = AsyncMock()
+    coordinator._plant_manager.transition_plant = AsyncMock()
+    coordinator._plant_manager.remove_plant = AsyncMock()
+    coordinator._plant_manager.harvest = AsyncMock()
+    coordinator._plant_manager.relocate_plants_to_growspace = AsyncMock(return_value=[])
 
-    # Mock _growspace_service with all its methods
-    coordinator._growspace_service = MagicMock()
+    # 3. Mock growspace_manager
+    coordinator._growspace_manager = MagicMock()
 
     async def _mock_add_gs(name, **kwargs):
         g = MagicMock()
         g.id = f"gs_{len(coordinator.growspaces) + 1}"
         g.name = name
+        g.environment_config = MagicMock()
         for k, v in kwargs.items():
             setattr(g, k, v)
         coordinator.growspaces[g.id] = g
         return g
 
-    coordinator._growspace_service.add_growspace = AsyncMock(side_effect=_mock_add_gs)
-    coordinator._growspace_service.update_growspace = AsyncMock()
-    coordinator._growspace_service.ensure_special_growspace = MagicMock(
+    coordinator._growspace_manager.add_growspace = AsyncMock(side_effect=_mock_add_gs)
+    coordinator._growspace_manager.update_growspace = AsyncMock()
+    coordinator._growspace_manager.remove_growspace = AsyncMock()
+    coordinator._growspace_manager.ensure_special_growspace = MagicMock(
         return_value="special_gs"
     )
-    coordinator._growspace_service.get_sorted_growspace_options = MagicMock(
+    coordinator._growspace_manager.get_sorted_growspace_options = MagicMock(
         return_value=[]
     )
+    coordinator._growspace_manager.carry_forward_layout_revision = AsyncMock(
+        return_value=1
+    )
 
-    # Core coordinator-level async methods (Awaited by handlers)
-    coordinator.async_take_clones = AsyncMock(return_value=["clone_1"])
-    coordinator.async_promote_clone = AsyncMock()
-    coordinator.async_remove_plant = AsyncMock()
-    coordinator.async_harvest_plant = AsyncMock()
-    coordinator.async_remove_growspace = AsyncMock()
-    coordinator.async_transition_plant_stage = AsyncMock()
+    # 4. Core coordinator-level async methods
     coordinator.async_save = AsyncMock()
     coordinator.async_commit = AsyncMock()
     coordinator.async_load = AsyncMock()
     coordinator.async_refresh = AsyncMock()
-    coordinator.async_update_irrigation_config = AsyncMock()
-
-    async def _mock_update_env_config(
-        growspace_id: str, environment_data: dict
-    ) -> None:
-        if growspace := coordinator.growspaces.get(growspace_id):
-            for k, v in environment_data.items():
-                if k == "bayesian_options" and isinstance(v, dict):
-                    growspace.environment_config.bayesian_options.update(v)
-                elif hasattr(growspace.environment_config, k):
-                    setattr(growspace.environment_config, k, v)
-
-    coordinator.async_update_environment_config = AsyncMock(
-        side_effect=_mock_update_env_config
-    )
+    coordinator.async_register_devices = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.async_transition_plant_stage = AsyncMock()
+    coordinator.async_update_environment_config = AsyncMock()
     coordinator.async_start_flowering = AsyncMock()
     coordinator.async_start_drying = AsyncMock()
     coordinator.async_start_curing = AsyncMock()
 
-    # Mock components
-    coordinator.cache = MagicMock()
+    # 5. Mock other subsystem services
+    coordinator._subsystem_manager = MagicMock()
+    coordinator._subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
+    _fan_coord_mock = MagicMock()
+    _fan_coord_mock.async_restart = AsyncMock()
+    coordinator._subsystem_manager.circulation_fan_coordinators.get = MagicMock(
+        return_value=_fan_coord_mock
+    )
+
+    coordinator.watering_service = MagicMock()
+    coordinator.watering_service.async_water_growspace = AsyncMock()
+
+    coordinator.training_service = MagicMock()
+    coordinator.ipm_service = MagicMock()
+    coordinator._notification_manager = MagicMock()
+    coordinator.notification_settings = MagicMock()
     coordinator.view_model_builder = MagicMock()
     coordinator.validator = MagicMock()
-    coordinator.notification_manager = MagicMock()
     coordinator.serializer = MagicMock()
+    coordinator._data_repository = MagicMock()
 
-    # Public properties for services
-    type(coordinator).growspace_service = property(lambda self: self._growspace_service)
-    type(coordinator).plant_service = property(lambda self: self._plant_service)
+    # 6. Initialize ServiceFacade
+    coordinator.services = ServiceFacade(coordinator)
 
-    # Utility methods
+    # 7. Utility methods
     coordinator.calculate_days = MagicMock(side_effect=DateTimeHelper.calculate_days)
     coordinator.to_date = MagicMock(side_effect=DateTimeHelper.to_date)
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
+
+    # Public properties for legacy compatibility
+    type(coordinator).growspace_service = property(lambda self: self._growspace_manager)
+    type(coordinator).plant_service = property(lambda self: self._plant_manager)
 
     return coordinator
 

@@ -13,11 +13,13 @@ class CacheManager:
     """Manages serialization cache for growspace data.
 
     The CacheManager provides a simple key-value cache for storing serialized
-    growspace data. It supports per-growspace invalidation and full cache clearing.
+    growspace data alongside the timestamp it was cached at, so callers can
+    apply their own TTL. It supports per-growspace invalidation and full
+    cache clearing.
 
     Example:
         >>> cache = CacheManager()
-        >>> cache.set("growspace_1", {"name": "Main", "plants": []})
+        >>> cache.set("growspace_1", (0.0, {"name": "Main", "plants": []}))
         >>> data = cache.get("growspace_1")
         >>> cache.invalidate("growspace_1")
         >>> cache.get("growspace_1")  # Returns None
@@ -25,25 +27,25 @@ class CacheManager:
 
     def __init__(self) -> None:
         """Initialize an empty cache."""
-        self._cache: dict[str, dict[str, Any]] = {}
+        self._cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
-    def get(self, growspace_id: str) -> dict[str, Any] | None:
-        """Get cached data for a growspace.
+    def get(self, growspace_id: str) -> tuple[float, dict[str, Any]] | None:
+        """Get the cached (timestamp, data) entry for a growspace.
 
         Args:
             growspace_id: The unique identifier for the growspace.
 
         Returns:
-            The cached serialized data if present, None otherwise.
+            The cached (timestamp, data) entry if present, None otherwise.
         """
         return self._cache.get(growspace_id)
 
-    def set(self, growspace_id: str, data: dict[str, Any]) -> None:
-        """Store serialized data in cache.
+    def set(self, growspace_id: str, data: tuple[float, dict[str, Any]]) -> None:
+        """Store a (timestamp, data) entry in cache.
 
         Args:
             growspace_id: The unique identifier for the growspace.
-            data: The serialized growspace data to cache.
+            data: The (timestamp, serialized data) entry to cache.
         """
         self._cache[growspace_id] = data
 
@@ -77,7 +79,7 @@ class CacheManager:
 
         Example:
             >>> cache = CacheManager()
-            >>> cache.set("gs1", {})
+            >>> cache.set("gs1", (0.0, {}))
             >>> "gs1" in cache
             True
             >>> "gs2" in cache
@@ -95,7 +97,7 @@ class CacheManager:
             >>> cache = CacheManager()
             >>> len(cache)
             0
-            >>> cache.set("gs1", {})
+            >>> cache.set("gs1", (0.0, {}))
             >>> len(cache)
             1
         """

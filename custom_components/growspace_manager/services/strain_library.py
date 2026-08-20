@@ -4,30 +4,46 @@ from __future__ import annotations
 
 import base64
 import binascii
-from datetime import datetime
+from io import BytesIO
 import logging
 from pathlib import Path
 import tempfile
 from typing import TYPE_CHECKING, Any
 
-from custom_components.growspace_manager.const import DOMAIN
-from homeassistant.components.persistent_notification import (
-    async_create as create_notification,
-)
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.network import get_url
+from PIL import Image
 
-if TYPE_CHECKING:
-    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.const import (
     ATTR_BREEDER,
     ATTR_BREEDER_LOGO,
     ATTR_LINEAGE,
     ATTR_PHENOTYPE,
     ATTR_STRAIN,
+    DOMAIN,
+    GrowspaceService,
+)
+from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.schemas import (
+    ADD_STRAIN_SCHEMA,
+    CLEAR_STRAIN_LIBRARY_SCHEMA,
+    EXPORT_STRAIN_LIBRARY_SCHEMA,
+    IMPORT_STRAIN_LIBRARY_SCHEMA,
+    PRINT_LABEL_SCHEMA,
+    REMOVE_STRAIN_SCHEMA,
+    UPDATE_STRAIN_META_SCHEMA,
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
+from homeassistant.components.persistent_notification import (
+    async_create as create_notification,
+)
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers.network import get_url
+from homeassistant.util import dt as dt_util
+
+from ._definition import ServiceDefinition
+
+if TYPE_CHECKING:
+    from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +65,65 @@ async def handle_get_strain_library(
     return strains
 
 
+def _downscale_logo_if_needed(logo_data: str | None) -> str | None:
+    """Downscale breeder logo if it's a large base64 string or return as is.
+
+    This prevents hitting the 32KB Home Assistant event bus limit and
+    possible printer buffer issues.
+    """
+    if not logo_data or not logo_data.startswith("data:image/"):
+        return logo_data
+
+    # If the string is already small enough, skip processing
+    if len(logo_data) < 25000:
+        return logo_data
+
+    try:
+        # Extract base64 part
+        _, encoded = logo_data.split(",", 1)
+        image_data = base64.b64decode(encoded)
+
+        # Load image
+        img: Image.Image = Image.open(BytesIO(image_data))
+
+        # Size constraint for Niimbot print label (100x100)
+        img.thumbnail((100, 100))
+
+        # Save back to base64 as PNG (Niimbot handles data URIs)
+        output = BytesIO()
+        img.save(output, format="PNG", optimize=True)
+        new_encoded = base64.b64encode(output.getvalue()).decode("utf-8")
+        result = f"data:image/png;base64,{new_encoded}"
+
+        # If it's still large due to complexity, convert to 1-bit monochrome
+        if len(result) >= 25000:
+            if img.mode in ("RGBA", "LA") or (
+                img.mode == "P" and "transparency" in img.info
+            ):
+                img = img.convert("RGBA")
+                background = Image.new("RGB", img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[3])
+                img = background
+
+            img = img.convert("1")
+            output = BytesIO()
+            img.save(output, format="PNG", optimize=True)
+            new_encoded = base64.b64encode(output.getvalue()).decode("utf-8")
+            result = f"data:image/png;base64,{new_encoded}"
+
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
+        _LOGGER.warning("Failed to downscale breeder logo: %s", err)
+        return logo_data
+    else:
+        return result
+
+
 async def handle_export_strain_library(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -67,7 +142,7 @@ async def handle_export_strain_library(
 
         _LOGGER.info("Exported strain library to %s (web: %s)", zip_path, relative_path)
 
-        await coordinator.async_save()
+        await coordinator.services.save()
 
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_exported",
@@ -84,7 +159,14 @@ async def handle_export_strain_library(
             title="Strain Library Export",
         )
 
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Failed to export strain library")
         create_notification(
             hass,
@@ -127,7 +209,7 @@ async def handle_import_strain_library(
                 temp_file_path = tmp.name
                 file_path = tmp.name  # Use this temp path for import
 
-        except (binascii.Error, OSError):
+        except binascii.Error, OSError:
             _LOGGER.exception("Failed to process uploaded zip file")
             create_notification(
                 hass, "Failed to process uploaded file.", title="Import Error"
@@ -167,7 +249,14 @@ async def handle_import_strain_library(
             title="Strain Library Import",
         )
 
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Failed to import strain library")
         create_notification(
             hass,
@@ -214,6 +303,7 @@ async def handle_add_strain(
 
     image_path = call.data.get("image_path")
     image_crop_meta = call.data.get("image_crop_meta")
+    images = call.data.get("images")
     sativa_percentage = call.data.get("sativa_percentage")
     indica_percentage = call.data.get("indica_percentage")
     breeder_logo = call.data.get("breeder_logo")
@@ -236,6 +326,7 @@ async def handle_add_strain(
             image_base64=image_base64,
             image_path=image_path,
             image_crop_meta=image_crop_meta,
+            images=images,
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
             breeder_logo=breeder_logo,
@@ -275,9 +366,18 @@ async def handle_update_strain_meta(
 
     image_path = call.data.get("image_path")
     image_crop_meta = call.data.get("image_crop_meta")
+    images = call.data.get("images")
     sativa_percentage = call.data.get("sativa_percentage")
     indica_percentage = call.data.get("indica_percentage")
     breeder_logo = call.data.get("breeder_logo")
+
+    yield_potential = call.data.get("yield_potential")
+    height = call.data.get("height")
+    thc = call.data.get("thc")
+    awards = call.data.get("awards")
+    cbd = call.data.get("cbd")
+    cbg = call.data.get("cbg")
+    lineage_tree = call.data.get("lineage_tree")
 
     if not strain:
         _LOGGER.warning(
@@ -299,9 +399,17 @@ async def handle_update_strain_meta(
             image_base64=image_base64,
             image_path=image_path,
             image_crop_meta=image_crop_meta,
+            images=images,
             sativa_percentage=sativa_percentage,
             indica_percentage=indica_percentage,
             breeder_logo=breeder_logo,
+            yield_potential=yield_potential,
+            height=height,
+            thc=thc,
+            cbd=cbd,
+            cbg=cbg,
+            awards=awards,
+            lineage_tree=lineage_tree,
         )
     except ValueError as err:
         raise HomeAssistantError(str(err)) from err
@@ -345,13 +453,20 @@ async def handle_clear_strain_library(
         cleared_count = await strain_library.clear()
 
         _LOGGER.info("Cleared %s strains from library", cleared_count)
-        await coordinator.async_save()
-        await coordinator.async_request_refresh()
+        await coordinator.services.save()
+        await coordinator.services.request_refresh()
 
         hass.bus.async_fire(
             f"{DOMAIN}_strain_library_cleared", {"cleared_count": cleared_count}
         )
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+        Exception,
+    ) as err:
         _LOGGER.exception("Failed to clear strain library")
         create_notification(
             hass,
@@ -366,11 +481,12 @@ async def handle_print_label(
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
     call: ServiceCall,
-) -> None:
+) -> dict[str, Any] | None:
     """Handle the print_label service call."""
     plant_id = call.data.get("plant_id")
     device_id = call.data.get("device_id")
     preview = call.data.get("preview", False)
+    label_size = call.data.get("label_size", "50x30")
 
     strain_name = None
     phenotype_name = None
@@ -393,6 +509,9 @@ async def handle_print_label(
         breeder_logo = call.data.get(ATTR_BREEDER_LOGO)
 
     base_url = call.data.get("base_url")
+    fields: dict[str, bool] = call.data.get("fields") or {}
+    density_key: str = call.data.get("density", "normal")
+    qr_target: str = call.data.get("qr_target", "web")
 
     if not strain_name:
         raise HomeAssistantError(
@@ -413,7 +532,7 @@ async def handle_print_label(
     breeder_logo = breeder_logo or strain_meta.get(ATTR_BREEDER_LOGO)
 
     # Construct Niimbot payload based on the "Perfect Label" mockup
-    payload = []
+    payload: list[dict[str, Any]] = []
 
     # 1. Main Header: Strain Name (Large and Bold)
     payload.append(
@@ -443,8 +562,19 @@ async def handle_print_label(
         }
     )
 
-    # 3. Multiline Info (Pheno, Breeder, Lineage)
-    multiline_value = f"{phenotype_name}\n{breeder}\n{lineage}"
+    # 3. Multiline Info (Pheno, Breeder, Lineage) — each line respects its field flag
+    info_lines = []
+    if (
+        fields.get("phenotype", True)
+        and phenotype_name
+        and phenotype_name not in ("-", "–")
+    ):
+        info_lines.append(phenotype_name)
+    if fields.get("breeder", True) and breeder and breeder not in ("-", "–"):
+        info_lines.append(breeder)
+    if fields.get("lineage", True) and lineage and lineage not in ("-", "–"):
+        info_lines.append(lineage)
+    multiline_value = "\n".join(info_lines)
     payload.append(
         {
             "type": "new_multiline",
@@ -461,52 +591,85 @@ async def handle_print_label(
     )
 
     # 4. Breeder Logo (Framed)
-    if breeder_logo:
+    if breeder_logo and fields.get("logo", True):
+        # Downscale if it's a base64 string to avoid event bus and printer issues.
+        # Run in executor to avoid blocking the event loop on PIL's lazy native lib init.
+        breeder_logo = await hass.async_add_executor_job(
+            _downscale_logo_if_needed, breeder_logo
+        )
+
         payload.append(
             {
                 "type": "dlimg",
                 "url": breeder_logo,
                 "x": 290,
                 "y": 20,
-                "size": 100,
+                "xsize": 100,
+                "ysize": 100,
             }
         )
 
-    # 5. QR Code (Dynamic linking to HA or Strain Info) - Only if plant_id is present
-    if plant_id:
-        qr_data = (
-            f"{base_url}?plantId={plant_id}"
-            if base_url
-            else f"{get_url(hass)}/plant/{plant_id}"
-        )
+    # 5. QR Code — only if plant_id is present and field is enabled
+    if plant_id and fields.get("qr", True):
+        if qr_target == "deeplink":
+            qr_data = f"homeassistant://navigate/growspace/plant/{plant_id}"
+        elif base_url:
+            qr_data = f"{base_url}?plantId={plant_id}"
+        else:
+            qr_data = f"{get_url(hass)}/plant/{plant_id}"
         payload.append(
             {
                 "type": "qrcode",
                 "data": qr_data,
                 "x": 290,
                 "y": 130,
-                "size": 100,
+                "boxsize": 3,
             }
         )
 
     # 6. Small Timestamp (Bottom Right)
-    now = datetime.now().strftime("%d.%m.%Y")
+    now = dt_util.now().strftime("%d.%m.%Y")
     payload.append(
         {
             "type": "text",
             "value": now,
             "x": 290,
-            "y": 232,
+            "y": 224,
             "size": 6,
             "font": "rbm.ttf",
         }
     )
+    _density_map = {"low": 3, "normal": 5, "high": 8}
+    niimbot_density = _density_map.get(density_key, 5)
+
+    _label_sizes: dict[str, tuple[int, int]] = {
+        "50x30": (400, 240),
+        "40x30": (320, 240),
+        "50x50": (400, 400),
+        "50x80": (400, 640),
+        "50x15": (400, 120),
+    }
+    canvas_w, canvas_h = _label_sizes.get(label_size, (400, 240))
+
+    if canvas_w != 400 or canvas_h != 240:
+        scale_x = canvas_w / 400
+        scale_y = canvas_h / 240
+        _x_fields = {"x", "x_end", "x_start", "width", "xsize"}
+        _y_fields = {"y", "y_end", "y_start", "height", "ysize"}
+        for element in payload:
+            for field in _x_fields:
+                if field in element:
+                    element[field] = round(element[field] * scale_x)
+            for field in _y_fields:
+                if field in element:
+                    element[field] = round(element[field] * scale_y)
+
     # Call Niimbot service
     service_data = {
-        "width": 400,
-        "height": 240,
+        "width": canvas_w,
+        "height": canvas_h,
         "rotate": 0,
-        "density": 5,
+        "density": niimbot_density,
         "payload": payload,
         "preview": preview,
     }
@@ -517,10 +680,70 @@ async def handle_print_label(
         response = await hass.services.async_call(
             "niimbot", "print", service_data, blocking=True, return_response=True
         )
-    except Exception as err:
+    except (
+        AttributeError,
+        KeyError,
+        ValueError,
+        ServiceValidationError,
+        GrowspaceError,
+    ) as err:
         _LOGGER.error("Failed to print Niimbot label: %s", err)
         raise HomeAssistantError(f"Failed to print Niimbot label: {err}") from err
     else:
         log_id = plant_id or strain_name
         _LOGGER.info("Sent label to Niimbot for %s", log_id)
         return response
+
+
+SERVICES: list[ServiceDefinition] = [
+    ServiceDefinition(
+        GrowspaceService.ADD_STRAIN,
+        handle_add_strain,
+        ADD_STRAIN_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.REMOVE_STRAIN,
+        handle_remove_strain,
+        REMOVE_STRAIN_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_STRAIN_META,
+        handle_update_strain_meta,
+        UPDATE_STRAIN_META_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.IMPORT_STRAIN_LIBRARY,
+        handle_import_strain_library,
+        IMPORT_STRAIN_LIBRARY_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.EXPORT_STRAIN_LIBRARY,
+        handle_export_strain_library,
+        EXPORT_STRAIN_LIBRARY_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.CLEAR_STRAIN_LIBRARY,
+        handle_clear_strain_library,
+        CLEAR_STRAIN_LIBRARY_SCHEMA,
+        needs_strain_lib=True,
+    ),
+    ServiceDefinition(
+        GrowspaceService.GET_STRAIN_LIBRARY,
+        handle_get_strain_library,
+        None,
+        needs_strain_lib=True,
+        supports_response=SupportsResponse.ONLY,
+    ),
+    ServiceDefinition(
+        GrowspaceService.PRINT_LABEL,
+        handle_print_label,
+        PRINT_LABEL_SCHEMA,
+        needs_strain_lib=True,
+        supports_response=SupportsResponse.OPTIONAL,
+    ),
+]

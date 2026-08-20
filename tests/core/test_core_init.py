@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiohttp import BodyPartReader
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.growspace_manager import (
     _async_cancel_coordinators,
@@ -28,25 +27,39 @@ from custom_components.growspace_manager.schemas import (
     ADD_IRRIGATION_TIME_SCHEMA,
     ADD_PLANT_SCHEMA,
     ADD_PLANTS_SCHEMA,
+    ADD_SEED_BATCH_SCHEMA,
     ADD_STRAIN_SCHEMA,
     ADD_TIMELINE_NOTE_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     APPLY_IPM_SCHEMA,
+    APPLY_STEERING_MODE_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
     BATCH_ACTION_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
+    CONFIGURE_CIRCULATION_FAN_SCHEMA,
+    CONFIGURE_DRAIN_MONITORING_SCHEMA,
     CONFIGURE_ENVIRONMENT_SCHEMA,
+    CONFIGURE_EXHAUST_FAN_SCHEMA,
+    CONFIGURE_TANK_SCHEMA,
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL_SCHEMA,
     DEBUG_LIST_GROWSPACES_SCHEMA,
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
+    DELETE_POLLINATION_SCHEMA,
+    EXPORT_GROW_REPORT_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
     HARVEST_PLANT_SCHEMA,
+    HARVEST_SEEDS_SCHEMA,
     IMPORT_STRAIN_LIBRARY_SCHEMA,
+    LOG_DRAIN_READING_SCHEMA,
+    LOG_DRYING_WEIGHT_SCHEMA,
+    LOG_MOISTURE_READING_SCHEMA,
+    LOG_POLLINATION_SCHEMA,
     LOG_TRAINING_EVENT_SCHEMA,
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
     PRINT_LABEL_SCHEMA,
     REMOVE_DRAIN_TIME_SCHEMA,
+    REMOVE_EC_RAMP_CURVE_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_IPM_PRESET_SCHEMA,
@@ -54,16 +67,33 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_NUTRIENT_PRESET_SCHEMA,
     REMOVE_PLANT_SCHEMA,
     REMOVE_STRAIN_SCHEMA,
+    RESET_PLANT_LAST_WATERED_SCHEMA,
+    RESET_WATER_TRACKING_SCHEMA,
+    RUN_IRRIGATION_CYCLE_SCHEMA,
+    SAVE_EC_RAMP_CURVE_SCHEMA,
     SAVE_IPM_PRESET_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
+    SCORE_PHENOTYPE_SCHEMA,
+    SCORE_PLANT_SCHEMA,
+    SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+    SET_EC_TARGET_RANGE_SCHEMA,
+    SET_HUMIDIFIER_CONTROL_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
+    SET_IRRIGATION_STRATEGY_SCHEMA,
+    SET_PLANT_SEX_SCHEMA,
+    SET_VISUAL_TAG_SCHEMA,
+    SOW_SEED_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
     SWITCH_PLANT_SCHEMA,
     TAKE_CLONE_SCHEMA,
     TRANSITION_PLANT_SCHEMA,
+    UNLINK_SEED_BATCH_SCHEMA,
     UPDATE_GROWSPACE_SCHEMA,
+    UPDATE_HARVEST_METRICS_SCHEMA,
     UPDATE_PLANT_SCHEMA,
+    UPDATE_POLLINATION_SCHEMA,
+    UPDATE_SEED_BATCH_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
     WATER_GROWSPACE_SCHEMA,
     WATER_PLANT_SCHEMA,
@@ -81,6 +111,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture
@@ -153,8 +184,12 @@ async def test_async_setup_entry(hass: HomeAssistant) -> None:
     hass.http.async_register_static_paths = AsyncMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
-    coordinator_mock = AsyncMock()
+    coordinator_mock = MagicMock()
+    coordinator_mock.hass = hass
     coordinator_mock.growspaces = {}
+    coordinator_mock.async_load = AsyncMock()
+    coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
+    coordinator_mock.async_config_entry_first_refresh = AsyncMock()
 
     with (
         patch("homeassistant.helpers.storage.Store") as mock_store_cls,
@@ -224,6 +259,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "take_clone": TAKE_CLONE_SCHEMA,
         "move_clone": MOVE_CLONE_SCHEMA,
         "harvest_plant": HARVEST_PLANT_SCHEMA,
+        "export_grow_report": EXPORT_GROW_REPORT_SCHEMA,
         "export_strain_library": EXPORT_STRAIN_LIBRARY_SCHEMA,
         "import_strain_library": IMPORT_STRAIN_LIBRARY_SCHEMA,
         "clear_strain_library": CLEAR_STRAIN_LIBRARY_SCHEMA,
@@ -237,11 +273,17 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "remove_strain": REMOVE_STRAIN_SCHEMA,
         "update_strain_meta": UPDATE_STRAIN_META_SCHEMA,
         "set_dehumidifier_control": SET_DEHUMIDIFIER_CONTROL_SCHEMA,
+        "set_humidifier_control": SET_HUMIDIFIER_CONTROL_SCHEMA,
+        "configure_circulation_fan": CONFIGURE_CIRCULATION_FAN_SCHEMA,
+        "configure_exhaust_fan": CONFIGURE_EXHAUST_FAN_SCHEMA,
         "set_irrigation_settings": SET_IRRIGATION_SETTINGS_SCHEMA,
+        "set_irrigation_strategy": SET_IRRIGATION_STRATEGY_SCHEMA,
+        "apply_steering_mode": APPLY_STEERING_MODE_SCHEMA,
         "add_irrigation_time": ADD_IRRIGATION_TIME_SCHEMA,
         "remove_irrigation_time": REMOVE_IRRIGATION_TIME_SCHEMA,
         "add_drain_time": ADD_DRAIN_TIME_SCHEMA,
         "remove_drain_time": REMOVE_DRAIN_TIME_SCHEMA,
+        "run_irrigation_cycle": RUN_IRRIGATION_CYCLE_SCHEMA,
         "get_strain_library": None,
         "ask_grow_advice": ASK_GROW_ADVICE_SCHEMA,
         "analyze_all_growspaces": ANALYZE_ALL_GROWSPACES_SCHEMA,
@@ -257,6 +299,30 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "batch_action": BATCH_ACTION_SCHEMA,
         "add_timeline_note": ADD_TIMELINE_NOTE_SCHEMA,
         "print_label": PRINT_LABEL_SCHEMA,
+        "score_plant": SCORE_PLANT_SCHEMA,
+        "update_harvest_metrics": UPDATE_HARVEST_METRICS_SCHEMA,
+        "log_drain_reading": LOG_DRAIN_READING_SCHEMA,
+        "configure_drain_monitoring": CONFIGURE_DRAIN_MONITORING_SCHEMA,
+        "reset_plant_last_watered": RESET_PLANT_LAST_WATERED_SCHEMA,
+        "reset_water_tracking": RESET_WATER_TRACKING_SCHEMA,
+        "save_ec_ramp_curve": SAVE_EC_RAMP_CURVE_SCHEMA,
+        "remove_ec_ramp_curve": REMOVE_EC_RAMP_CURVE_SCHEMA,
+        "set_ec_target_range": SET_EC_TARGET_RANGE_SCHEMA,
+        "trigger_vision_checkup": SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
+        "configure_tank": CONFIGURE_TANK_SCHEMA,
+        "add_seed_batch": ADD_SEED_BATCH_SCHEMA,
+        "update_seed_batch": UPDATE_SEED_BATCH_SCHEMA,
+        "log_pollination": LOG_POLLINATION_SCHEMA,
+        "score_phenotype": SCORE_PHENOTYPE_SCHEMA,
+        "harvest_seeds": HARVEST_SEEDS_SCHEMA,
+        "update_pollination": UPDATE_POLLINATION_SCHEMA,
+        "delete_pollination": DELETE_POLLINATION_SCHEMA,
+        "log_drying_weight": LOG_DRYING_WEIGHT_SCHEMA,
+        "log_moisture_reading": LOG_MOISTURE_READING_SCHEMA,
+        "set_visual_tag": SET_VISUAL_TAG_SCHEMA,
+        "sow_seed": SOW_SEED_SCHEMA,
+        "set_plant_sex": SET_PLANT_SEX_SCHEMA,
+        "unlink_seed_batch": UNLINK_SEED_BATCH_SCHEMA,
     }
 
     # Verify call count
@@ -349,11 +415,14 @@ async def test_async_setup_entry_with_growspaces(hass: HomeAssistant) -> None:
     hass.http.async_register_static_paths = AsyncMock()
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
-    coordinator_mock = AsyncMock()
+    coordinator_mock = MagicMock()
+    coordinator_mock.hass = hass
     mock_gs1 = MagicMock()
     mock_gs1.irrigation_strategy.enabled = False
     coordinator_mock.growspaces = {"gs1": mock_gs1}
+    coordinator_mock.async_load = AsyncMock()
     coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
+    coordinator_mock.async_config_entry_first_refresh = AsyncMock()
 
     with (
         patch("homeassistant.helpers.storage.Store") as mock_store_cls,
@@ -400,20 +469,10 @@ async def test_async_setup_entry_with_growspaces(hass: HomeAssistant) -> None:
 async def test_async_unload_entry_with_coordinators_cleanup(mock_hass) -> None:
     """Test that _async_cancel_coordinators cleans up properly."""
 
-    mock_irrigation = MagicMock()
-    mock_irrigation.async_cancel_listeners = MagicMock()
-
-    mock_dehumidifier = MagicMock()
-    mock_dehumidifier.unload = MagicMock()
-
     coordinator = MagicMock()
-    coordinator.irrigation_coordinators = {"gs1": mock_irrigation}
-    coordinator.dehumidifier_coordinators = {"gs1": mock_dehumidifier}
-
     _async_cancel_coordinators(coordinator)
 
-    mock_irrigation.async_cancel_listeners.assert_called_once()
-    mock_dehumidifier.unload.assert_called_once()
+    coordinator.async_cancel_subsystems.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -569,11 +628,11 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.session_scope"
+            "custom_components.growspace_manager.websocket.logbook.session_scope"
         ) as mock_session_scope,
     ):
         mock_session_scope.return_value.__enter__ = MagicMock(return_value=mock_session)
@@ -585,20 +644,20 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
             "type": f"{DOMAIN}/get_log",
             "growspace_id": "gs1",
         }
-        await websocket_get_event_log(hass, mock_connection, msg)
+        result = await websocket_get_event_log(hass, mock_coordinator, msg)
 
         expected_data = mock_event.data.copy()
         expected_data["event_id"] = 12345
-        mock_connection.send_result.assert_called_with(1, {"gs1": [expected_data]})
+        assert result == {"gs1": [expected_data]}
 
         # Case B: Global (Aggregate)
         msg_global = {
             "id": 2,
             "type": f"{DOMAIN}/get_log",
         }
-        await websocket_get_event_log(hass, mock_connection, msg_global)
+        result = await websocket_get_event_log(hass, mock_coordinator, msg_global)
 
-        mock_connection.send_result.assert_called_with(2, {"gs1": [expected_data]})
+        assert result == {"gs1": [expected_data]}
 
         # Case C: Filtering out unrelated ID - returns empty because query returns gs1 data
         msg_other = {
@@ -606,8 +665,8 @@ async def test_websocket_get_event_log(hass: HomeAssistant, mock_coordinator) ->
             "type": f"{DOMAIN}/get_log",
             "growspace_id": "gs2",
         }
-        await websocket_get_event_log(hass, mock_connection, msg_other)
-        mock_connection.send_result.assert_called_with(3, {"gs2": []})
+        result = await websocket_get_event_log(hass, mock_coordinator, msg_other)
+        assert result == {"gs2": []}
 
 
 @pytest.mark.asyncio
@@ -620,46 +679,20 @@ async def test_websocket_get_growspace_data(
     mock_connection.send_result = MagicMock()
     mock_connection.send_error = MagicMock()
 
-    # 1. Success
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        return_value=mock_coordinator,
-    ):
-        mock_coordinator.get_growspace_data.return_value = {"name": "Test space"}
+    # Resolution failures are mapped by the WS Command Lifecycle and are
+    # covered in test_ws_command_lifecycle.py; the handler is a pure payload
+    # function.
+    mock_coordinator.services.growspaces.get_growspace_data.return_value = {
+        "name": "Test space"
+    }
 
-        msg = {
-            "id": 1,
-            "type": f"{DOMAIN}/get_data",
-            "growspace_id": "gs1",
-        }
-        await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_result.assert_called_with(1, {"name": "Test space"})
-
-    # 2. Error (ServiceValidationError)
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        side_effect=ServiceValidationError("Invalid ID"),
-    ):
-        msg = {
-            "id": 2,
-            "type": f"{DOMAIN}/get_data",
-            "growspace_id": "invalid",
-        }
-        await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(2, "invalid_args", "Invalid ID")
-
-    # 3. Unknown Error
-    with patch(
-        "custom_components.growspace_manager.GrowspaceCoordinator.get_for_service_call",
-        side_effect=Exception("Boom"),
-    ):
-        msg = {
-            "id": 3,
-            "type": f"{DOMAIN}/get_data",
-            "growspace_id": "gs1",
-        }
-        await websocket_get_growspace_data(hass, mock_connection, msg)
-        mock_connection.send_error.assert_called_with(3, "unknown_error", "Boom")
+    msg = {
+        "id": 1,
+        "type": f"{DOMAIN}/get_data",
+        "growspace_id": "gs1",
+    }
+    result = await websocket_get_growspace_data(hass, mock_coordinator, msg)
+    assert result == {"name": "Test space"}
 
 
 @pytest.mark.asyncio
@@ -710,17 +743,11 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
 
         coordinator_mock = MagicMock()
         coordinator_mock.async_config_entry_first_refresh = AsyncMock()
-        coordinator_mock._growspace_service = MagicMock()
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
-
-        # Public properties for services
-        type(coordinator_mock).growspace_service = property(
-            lambda self: self._growspace_service
-        )
-
-        coordinator_mock._growspace_service = MagicMock()
-        coordinator_mock._growspace_service.add_growspace = AsyncMock(
+        coordinator_mock.services = MagicMock()
+        coordinator_mock.services.growspaces = MagicMock()
+        coordinator_mock.services.growspaces.add_growspace = AsyncMock(
             side_effect=RuntimeError("Failed creation")
         )
 
@@ -784,15 +811,11 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
 
         coordinator_mock = MagicMock()
         coordinator_mock.async_config_entry_first_refresh = AsyncMock()
-        coordinator_mock._growspace_service = MagicMock()
-        coordinator_mock._growspace_service.add_growspace = AsyncMock()
         coordinator_mock.async_load = AsyncMock()
         coordinator_mock.async_initialize_sub_coordinators = AsyncMock()
-
-        # Public properties for services
-        type(coordinator_mock).growspace_service = property(
-            lambda self: self._growspace_service
-        )
+        coordinator_mock.services = MagicMock()
+        coordinator_mock.services.growspaces = MagicMock()
+        coordinator_mock.services.growspaces.add_growspace = AsyncMock()
 
         with patch(
             "custom_components.growspace_manager.coordinator.GrowspaceCoordinator",
@@ -801,7 +824,7 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
             await async_setup_entry(hass, entry)
 
             # Verify successful creation logging and data update
-            coordinator_mock._growspace_service.add_growspace.assert_called_once_with(
+            coordinator_mock.services.growspaces.add_growspace.assert_called_once_with(
                 name="Pending", rows=4, plants_per_row=4, notification_target=None
             )
             hass.config_entries.async_update_entry.assert_called_once()
@@ -857,21 +880,19 @@ async def test_websocket_get_event_log_unknown_error(hass: HomeAssistant) -> Non
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.get_instance",
+            "custom_components.growspace_manager.websocket.logbook.get_instance",
             return_value=mock_recorder,
         ),
-        patch("custom_components.growspace_manager.websocket.session_scope"),
+        patch("custom_components.growspace_manager.websocket.logbook.session_scope"),
     ):
         msg = {
             "id": 99,
             "type": f"{DOMAIN}/get_log",
             "growspace_id": "gs_unknown",
         }
-        await websocket_get_event_log(hass, mock_connection, msg)
-
-        mock_connection.send_error.assert_called_with(
-            99, "unknown_error", "Unexpected Error"
-        )
+        # The lifecycle maps this to internal_error; the handler just raises.
+        with pytest.raises(RuntimeError, match="Unexpected Error"):
+            await websocket_get_event_log(hass, MagicMock(), msg)
 
 
 @pytest.mark.asyncio
@@ -895,7 +916,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 15
+        assert mock_reg.call_count == 68
 
 
 @pytest.mark.asyncio
@@ -919,7 +940,7 @@ async def test_websocket_get_history_stats(
             "homeassistant.components.recorder.history.get_significant_states"
         ) as mock_get_history,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -964,10 +985,8 @@ async def test_websocket_get_history_stats(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result
         stats = result["sensor.test"]
         # Expected: T+0, T+15, T+30 -> 3 points
@@ -983,10 +1002,8 @@ async def test_websocket_get_history_stats(
         "interval_minutes": 5,
         "significant_changes_only": True,
     }
-    await websocket_get_history_stats(hass, mock_connection, msg_inv)
-    mock_connection.send_error.assert_called_with(
-        2, "invalid_args", "Invalid start_time"
-    )
+    with pytest.raises(ServiceValidationError, match="Invalid start_time"):
+        await websocket_get_history_stats(hass, MagicMock(), msg_inv)
 
     # 3. Exception Handling
     with (
@@ -995,7 +1012,7 @@ async def test_websocket_get_history_stats(
             side_effect=Exception("DB Error"),
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1007,14 +1024,56 @@ async def test_websocket_get_history_stats(
             "interval_minutes": 5,
             "significant_changes_only": True,
         }
-        await websocket_get_history_stats(hass, mock_connection, msg_err)
-        mock_connection.send_error.assert_called_with(3, "unknown_error", "DB Error")
+        with pytest.raises(Exception, match="DB Error"):
+            await websocket_get_history_stats(hass, MagicMock(), msg_err)
+
+
+@pytest.mark.asyncio
+async def test_websocket_history_stats_preserves_dense_fan_percentage(
+    hass: HomeAssistant,
+) -> None:
+    """Test dense fan history retains percentage attributes when downsampled."""
+    start = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
+
+    class MockState:
+        def __init__(self, index: int) -> None:
+            self.state = "on"
+            self.attributes = {"percentage": index % 100}
+            self.last_updated = start + timedelta(minutes=index)
+
+    states = [MockState(index) for index in range(201)]
+
+    with (
+        patch(
+            "homeassistant.components.recorder.history.get_significant_states",
+            return_value={"fan.circulation": states},
+        ),
+        patch(
+            "custom_components.growspace_manager.websocket.environment.get_instance"
+        ) as mock_get_rec,
+    ):
+        mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
+        result = await websocket_get_history_stats(
+            hass,
+            MagicMock(),
+            {
+                "id": 1,
+                "type": f"{DOMAIN}/get_history_stats",
+                "entity_ids": ["fan.circulation"],
+                "start_time": start.isoformat(),
+                "end_time": (start + timedelta(minutes=200)).isoformat(),
+                "interval_minutes": 5,
+                "significant_changes_only": True,
+            },
+        )
+
+    assert result["fan.circulation"][1]["a"]["percentage"] == 5
 
 
 @pytest.mark.asyncio
 async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> None:
     """Test history stats with empty data or unavailable states."""
-    mock_connection = MagicMock()
+    MagicMock()
 
     start = dt_util.utcnow()
 
@@ -1023,7 +1082,7 @@ async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> N
             "homeassistant.components.recorder.history.get_significant_states"
         ) as mock_get_history,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1049,9 +1108,8 @@ async def test_websocket_history_empty_and_unavailable(hass: HomeAssistant) -> N
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
-        result = mock_connection.send_result.call_args[0][1]
         assert result["sensor.empty"] == []
         # sensor.unavail should produce empty list because we filter out unavailable/unknown
         assert result["sensor.unavail"] == []
@@ -1182,13 +1240,13 @@ async def test_websocket_history_stats_uses_statistics_api_for_long_intervals(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value=stats_data,
             create=True,
         ) as mock_stats,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1203,13 +1261,10 @@ async def test_websocket_history_stats_uses_statistics_api_for_long_intervals(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Should use statistics API
         mock_stats.assert_called_once()
-        mock_connection.send_result.assert_called_once()
-
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result
         assert len(result["sensor.test"]) == 2
         assert result["sensor.test"][0]["s"] == "22.5"
@@ -1233,7 +1288,7 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             side_effect=Exception("Statistics unavailable"),
             create=True,
@@ -1248,7 +1303,7 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
             },
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1263,11 +1318,9 @@ async def test_websocket_history_stats_falls_back_when_statistics_fails(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Should fallback and still succeed
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result
 
 
@@ -1289,7 +1342,7 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             create=True,
         ) as mock_stats,
@@ -1303,7 +1356,7 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
             },
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1318,11 +1371,11 @@ async def test_websocket_history_stats_short_interval_uses_binary_search(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Should NOT call statistics API for short intervals
         mock_stats.assert_not_called()
-        mock_connection.send_result.assert_called_once()
+        assert result is not None
 
 
 @pytest.mark.asyncio
@@ -1344,13 +1397,13 @@ async def test_websocket_history_stats_uses_daily_period_for_large_intervals(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value=stats_data,
             create=True,
         ) as mock_stats,
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1365,7 +1418,7 @@ async def test_websocket_history_stats_uses_daily_period_for_large_intervals(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Verify daily period was used
         mock_stats.assert_called_once()
@@ -1393,13 +1446,13 @@ async def test_websocket_history_stats_statistics_with_state_instead_of_mean(
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value=stats_data,
             create=True,
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1414,9 +1467,8 @@ async def test_websocket_history_stats_statistics_with_state_instead_of_mean(
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
-        result = mock_connection.send_result.call_args[0][1]
         assert result["sensor.test"][0]["s"] == "on"
 
 
@@ -1431,7 +1483,7 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
 
     with (
         patch(
-            "custom_components.growspace_manager.websocket.recorder_stats.async_statistics_during_period",
+            "custom_components.growspace_manager.websocket.environment.recorder_stats.async_statistics_during_period",
             new_callable=AsyncMock,
             return_value={},  # Empty result
             create=True,
@@ -1441,7 +1493,7 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
             return_value={"sensor.test": []},
         ),
         patch(
-            "custom_components.growspace_manager.websocket.get_instance"
+            "custom_components.growspace_manager.websocket.environment.get_instance"
         ) as mock_get_rec,
     ):
         mock_get_rec.return_value.async_add_executor_job = hass.async_add_executor_job
@@ -1456,9 +1508,7 @@ async def test_websocket_history_stats_empty_statistics(hass: HomeAssistant) -> 
             "significant_changes_only": True,
         }
 
-        await websocket_get_history_stats(hass, mock_connection, msg)
+        result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
         # Should fallback to binary search when stats are empty
-        mock_connection.send_result.assert_called_once()
-        result = mock_connection.send_result.call_args[0][1]
         assert "sensor.test" in result

@@ -16,10 +16,23 @@ def mock_sensor():
     return sensor
 
 
+def _make_mold_strategy(mock_sensor: MagicMock) -> MoldRiskEvaluatorStrategy:
+    """Create a MoldRiskEvaluatorStrategy with injected test dependencies."""
+    from unittest.mock import AsyncMock
+
+    return MoldRiskEvaluatorStrategy(
+        env_config=mock_sensor.env_config,
+        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        get_state=MagicMock(return_value=None),
+        get_growspace=MagicMock(return_value=None),
+        get_notification_message=lambda msg, reasons: "msg",
+    )
+
+
 @pytest.mark.asyncio
 async def test_mold_risk_seedling_high_humidity(mock_sensor) -> None:
     """Test that 88% humidity in seedling stage triggers a High humidity warning but with early stage thresholds."""
-    strategy = MoldRiskEvaluatorStrategy(mock_sensor)
+    strategy = _make_mold_strategy(mock_sensor)
 
     # Seedling stage (10 days old)
     state = EnvironmentState(
@@ -27,10 +40,10 @@ async def test_mold_risk_seedling_high_humidity(mock_sensor) -> None:
         humidity=88.0,
         vpd=0.8,
         co2=400,
-        veg_days=0,
-        flower_days=0,
+        veg_days=-1,
+        flower_days=-1,
         seedling_days=10,
-        clone_days=0,
+        clone_days=-1,
         is_lights_on=True,
         fan_off=False,
         dehumidifier_on=False,
@@ -52,7 +65,7 @@ async def test_mold_risk_seedling_high_humidity(mock_sensor) -> None:
 @pytest.mark.asyncio
 async def test_mold_risk_veg_high_humidity(mock_sensor) -> None:
     """Test that 86% humidity triggers a Critical humidity warning in veg stage."""
-    strategy = MoldRiskEvaluatorStrategy(mock_sensor)
+    strategy = _make_mold_strategy(mock_sensor)
 
     # Veg stage (20 days old)
     state = EnvironmentState(
@@ -61,9 +74,9 @@ async def test_mold_risk_veg_high_humidity(mock_sensor) -> None:
         vpd=0.8,
         co2=400,
         veg_days=20,
-        flower_days=0,
-        seedling_days=0,
-        clone_days=0,
+        flower_days=-1,
+        seedling_days=-1,
+        clone_days=-1,
         is_lights_on=True,
         fan_off=False,
         dehumidifier_on=False,
@@ -83,7 +96,7 @@ async def test_mold_risk_veg_high_humidity(mock_sensor) -> None:
 @pytest.mark.asyncio
 async def test_mold_risk_extreme_humidity_penalty(mock_sensor) -> None:
     """Test extra penalty for extreme humidity in non-early stages."""
-    strategy = MoldRiskEvaluatorStrategy(mock_sensor)
+    strategy = _make_mold_strategy(mock_sensor)
 
     # Veg stage, 91% humidity
     state = EnvironmentState(
@@ -92,9 +105,9 @@ async def test_mold_risk_extreme_humidity_penalty(mock_sensor) -> None:
         vpd=0.8,
         co2=400,
         veg_days=20,
-        flower_days=0,
-        seedling_days=0,
-        clone_days=0,
+        flower_days=-1,
+        seedling_days=-1,
+        clone_days=-1,
         is_lights_on=True,
         fan_off=False,
         dehumidifier_on=False,
@@ -110,7 +123,7 @@ async def test_mold_risk_extreme_humidity_penalty(mock_sensor) -> None:
 
     # Seedling stage, 91% humidity -> No extreme penalty (91 < 92)
     state.seedling_days = 10
-    state.veg_days = 0
+    state.veg_days = -1
     _obs, rsn = await strategy.async_evaluate(state)
     has_extreme_reason = any("Extreme humidity risk" in r[1] for r in rsn)
     assert not has_extreme_reason

@@ -13,6 +13,9 @@ from custom_components.growspace_manager.binary_sensor import (
     GrowspaceSensorType,
 )
 from custom_components.growspace_manager.models import EnvironmentConfig, GrowspaceType
+from custom_components.growspace_manager.notifications.formatting import (
+    generate_notification_message,
+)
 from custom_components.growspace_manager.strategies.mold import (
     MoldRiskEvaluatorStrategy,
 )
@@ -26,27 +29,39 @@ def create_test_sensor(
     sensor_type: str,
     strategy_class: type,
     env_config: EnvironmentConfig | None = None,
+    hass: HomeAssistant | None = None,
 ) -> BayesianEnvironmentSensor:
     """Helper to create a BayesianEnvironmentSensor for testing with all dependencies."""
+    from custom_components.growspace_manager.trend_analyzer import TrendAnalyzer
+
     if env_config is None:
         env_config = coordinator.growspaces[growspace_id].environment_config
 
     description = next(d for d in SENSOR_TYPES if d.sensor_type == sensor_type)
 
-    return BayesianEnvironmentSensor(
+    sensor = BayesianEnvironmentSensor(
         coordinator=coordinator,
         growspace_id=growspace_id,
         env_config=env_config,
         description=description,
         strategy_class=strategy_class,
-        # Inject dependencies
         get_growspace=lambda gid: coordinator.growspaces.get(gid),
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
-        notification_manager=coordinator.notification_manager,
-        strain_library=coordinator.strain_library,
-        options=coordinator.options,
     )
+
+    if hass is not None:
+        sensor.hass = hass
+        sensor.trend_analyzer = TrendAnalyzer(hass)
+        sensor.strategy = strategy_class(
+            env_config=sensor.env_config,
+            analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(*args, **kwargs),
+            get_state=hass.states.get,
+            get_growspace=lambda: coordinator.growspaces.get(growspace_id),
+            get_notification_message=generate_notification_message,
+        )
+
+    return sensor
 
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
@@ -126,8 +141,8 @@ async def test_mold_sensor_stage_aware_thresholds(
         GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_mold"
     sensor.platform = MagicMock()
 
@@ -148,13 +163,13 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 1.1: Veg Safe
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ):
             set_sensor_state(hass, "sensor.humidity", 84)
@@ -168,13 +183,13 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 1.2: Veg Danger
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ):
             set_sensor_state(hass, "sensor.humidity", 86)
@@ -190,8 +205,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 2.1: Early Flower Safe
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 30, "flower_days": 10},
         ):
             set_sensor_state(hass, "sensor.humidity", 70)
@@ -203,8 +218,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 2.2: Early Flower Danger
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 30, "flower_days": 10},
         ):
             set_sensor_state(hass, "sensor.humidity", 71)
@@ -219,8 +234,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 3.1: Late Flower Safe
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 60, "flower_days": 45},
         ):
             set_sensor_state(hass, "sensor.humidity", 60)
@@ -232,8 +247,8 @@ async def test_mold_sensor_stage_aware_thresholds(
 
         # Sub-case 3.2: Late Flower Danger
         with patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={"veg_days": 60, "flower_days": 45},
         ):
             set_sensor_state(hass, "sensor.humidity", 61)
@@ -294,13 +309,13 @@ async def test_veg_stage_scenario_false_positive_prevention(
 
     with (
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ),
         patch.object(sensor, "async_analyze_sensor_trend", side_effect=mock_analyze),
@@ -373,9 +388,9 @@ async def test_user_reported_veg_scenario(
 
     with (
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
-            return_value={"veg_days": 34, "flower_days": 0},
+            sensor.assembler,
+            "_growth_stage_info",
+            return_value={"veg_days": 34, "flower_days": -1},
         ),
         patch.object(sensor, "async_analyze_sensor_trend", side_effect=mock_analyze),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
@@ -415,13 +430,13 @@ async def test_veg_fan_off_safe(
 
     with (
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),
@@ -445,8 +460,8 @@ async def test_veg_fan_off_risk(
         GrowspaceSensorType.MOLD,
         MoldRiskEvaluatorStrategy,
         env_config,
+        hass,
     )
-    sensor.hass = hass
     sensor.entity_id = "binary_sensor.test_veg_fan_risk"
     sensor.platform = MagicMock()
     sensor.notification_manager = MagicMock()
@@ -460,13 +475,13 @@ async def test_veg_fan_off_risk(
 
     with (
         patch.object(
-            sensor,
-            "_get_growth_stage_info",
+            sensor.assembler,
+            "_growth_stage_info",
             return_value={
                 "veg_days": 20,
-                "flower_days": 0,
-                "seedling_days": 0,
-                "clone_days": 0,
+                "flower_days": -1,
+                "seedling_days": -1,
+                "clone_days": -1,
             },
         ),
         patch.object(sensor, "async_write_ha_state", new_callable=MagicMock),

@@ -7,6 +7,7 @@ import pytest
 
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.models import Plant
+from custom_components.growspace_manager.services.context import ServiceContext
 from custom_components.growspace_manager.services.watering_service import (
     WateringService,
 )
@@ -45,14 +46,16 @@ def watering_service(
     mock_nutrient_manager,
 ):
     return WateringService(
+        ctx=ServiceContext(
+            save_callback=AsyncMock(),
+            lock=asyncio.Lock(),
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=mock_hass,
         repository=mock_repository,
         validator=mock_validator,
         nutrient_manager=mock_nutrient_manager,
-        save_callback=AsyncMock(),
-        lock=asyncio.Lock(),
-        add_event_callback=MagicMock(),
-        invalidate_cache_callback=MagicMock(),
     )
 
 

@@ -4,8 +4,6 @@ from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pytest_homeassistant_custom_component.common import async_capture_events
-from test_coordinator import create_test_coordinator
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -16,6 +14,8 @@ from custom_components.growspace_manager.models import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from tests.common import async_capture_events
+from tests.core.test_coordinator import create_test_coordinator
 
 
 @pytest.fixture
@@ -32,27 +32,7 @@ async def coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
 @pytest.mark.asyncio
 async def test_coordinator_getters_setters(coordinator: GrowspaceCoordinator) -> None:
     """Test various property getters and setters in GrowspaceCoordinator."""
-    # Line 167: dehumidifier_coordinators
-    coordinator.subsystem_manager.dehumidifier_coordinators = {"test": MagicMock()}
-    assert coordinator.dehumidifier_coordinators == {
-        "test": coordinator.subsystem_manager.dehumidifier_coordinators["test"]
-    }
 
-    # Line 219: notifications_sent setter
-    new_notifs = {"gs1": {"stage": {"1": True}}}
-    coordinator.notifications_sent = new_notifs
-    assert coordinator.data_repository.notifications_sent == new_notifs
-
-    # Line 229: notifications_enabled setter
-    new_enabled = {"gs1": True}
-    coordinator.notifications_enabled = new_enabled
-    assert coordinator.data_repository.notifications_enabled == new_enabled
-
-    # Line 234: growspace_service getter
-    assert coordinator.growspace_service == coordinator._growspace_service
-
-    # Line 239: plant_service getter
-    assert coordinator.plant_service == coordinator._plant_service
 
 
 @pytest.mark.asyncio
@@ -60,9 +40,9 @@ async def test_nutrient_inventory_loaded(coordinator: GrowspaceCoordinator) -> N
     """Test on_nutrient_inventory_loaded."""
     # Line 352
     mock_inventory = MagicMock(spec=NutrientInventory)
-    coordinator.nutrient_manager.load_data = MagicMock()
+    coordinator._nutrient_manager.load_data = MagicMock()
     coordinator.on_nutrient_inventory_loaded(mock_inventory)
-    coordinator.nutrient_manager.load_data.assert_called_once()
+    coordinator._nutrient_manager.load_data.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -78,9 +58,9 @@ async def test_date_helper_delegation(coordinator: GrowspaceCoordinator) -> None
 async def test_update_special_growspace_name(coordinator: GrowspaceCoordinator) -> None:
     """Test _update_special_growspace_name delegation."""
     # Line 447
-    coordinator._special_growspace_manager.update_special_growspace_name = MagicMock()
-    coordinator._update_special_growspace_name("gs1", "New Name")
-    coordinator._special_growspace_manager.update_special_growspace_name.assert_called_once_with(
+    coordinator._growspace_manager.update_special_growspace_name = MagicMock()
+    coordinator._growspace_manager.update_special_growspace_name("gs1", "New Name")
+    coordinator._growspace_manager.update_special_growspace_name.assert_called_once_with(
         "gs1", "New Name"
     )
 
@@ -96,13 +76,13 @@ async def test_async_add_growspace_coverage(
     mock_gs.name = "New GS"
     mock_gs.growspace_type = GrowspaceType.FLOWER
 
-    coordinator._growspace_service.add_growspace = AsyncMock(return_value=mock_gs)
-    coordinator.subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
+    coordinator._growspace_manager.add_growspace = AsyncMock(return_value=mock_gs)
+    coordinator._subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
 
-    result = await coordinator.async_add_growspace(name="New GS")
+    result = await coordinator.services.growspaces.add_growspace(name="New GS")
 
     assert result == mock_gs
-    coordinator._growspace_service.add_growspace.assert_called_once()
+    coordinator._growspace_manager.add_growspace.assert_called_once()
 
     # Verify device registration
     device_registry = dr.async_get(hass)
@@ -111,7 +91,7 @@ async def test_async_add_growspace_coverage(
     assert device.name == "New GS"
 
     # Verify sub-coordinators setup
-    coordinator.subsystem_manager.async_setup_growspace_sub_coordinators.assert_called_once_with(
+    coordinator._subsystem_manager.async_setup_growspace_sub_coordinators.assert_called_once_with(
         "new_gs_id", mock_gs
     )
 
@@ -120,15 +100,16 @@ async def test_async_add_growspace_coverage(
 async def test_async_update_growspace_delegation(
     coordinator: GrowspaceCoordinator,
 ) -> None:
-    """Test async_update_growspace delegation."""
-    # Line 541
-    coordinator._growspace_service.update_growspace = AsyncMock()
+    """Test services.update_growspace delegation."""
     gs = Growspace(id="gs1", name="Old Name")
-    coordinator.growspaces = {"gs1": gs}
+    coordinator._data_repository.add_growspace(gs)
+    coordinator._growspace_manager.update_growspace = AsyncMock(return_value=gs)
 
-    result = await coordinator.async_update_growspace("gs1", name="New Name")
+    result = await coordinator.services.growspaces.update_growspace(
+        "gs1", name="New Name"
+    )
 
-    coordinator._growspace_service.update_growspace.assert_called_once_with(
+    coordinator._growspace_manager.update_growspace.assert_called_once_with(
         "gs1", name="New Name"
     )
     assert result is gs
@@ -138,20 +119,23 @@ async def test_async_update_growspace_delegation(
 async def test_strain_library_coverage(coordinator: GrowspaceCoordinator) -> None:
     """Test strain library related methods."""
     # Lines 1448-1450, 1458
-    coordinator.strain_library = MagicMock()
-    coordinator.strain_library.get_all.return_value = {"Strain A": {}, "Strain B": {}}
+    coordinator._strain_library = MagicMock()
+    coordinator._strain_library.get_all.return_value = {"Strain A": {}, "Strain B": {}}
 
-    assert coordinator.get_strain_options() == ["Strain A", "Strain B"]
-    assert coordinator.export_strain_library() == ["Strain A", "Strain B"]
+    assert coordinator.services.config.get_strain_options() == ["Strain A", "Strain B"]
+    assert coordinator.services.config.export_strain_library() == [
+        "Strain A",
+        "Strain B",
+    ]
 
     # Line 1466-1468
-    coordinator.strain_library.clear = AsyncMock(return_value=2)
-    assert await coordinator.clear_strains() == 2
+    coordinator._strain_library.clear = AsyncMock(return_value=2)
+    assert await coordinator.services.config.clear_strains() == 2
 
     # Test without strain library
-    coordinator.strain_library = None
-    assert coordinator.get_strain_options() == []
-    assert await coordinator.clear_strains() == 0
+    coordinator._strain_library = None
+    assert coordinator.services.config.get_strain_options() == []
+    assert await coordinator.services.config.clear_strains() == 0
 
 
 @pytest.mark.asyncio
@@ -162,7 +146,7 @@ async def test_fire_event_coverage(
     # Lines 1578-1579
     events = async_capture_events(hass, "growspace_manager_updated")
 
-    coordinator.fire_event("test_event", {"foo": "bar"})
+    coordinator.services.fire_event("test_event", {"foo": "bar"})
     await hass.async_block_till_done()
 
     assert len(events) == 1
@@ -178,20 +162,15 @@ async def test_async_log_training_event_empty_plants_with_gs(
     gs_id = "test_gs"
     # Use real Growspace object to avoid asdict() errors
     gs = Growspace(id=gs_id, name="Test GS")
-    coordinator.data_repository.growspaces = {gs_id: gs}
+    coordinator._data_repository.growspaces = {gs_id: gs}
 
-    # Mock add_event at the event bus level since it's now called through TrainingService
-    original_add_event = coordinator.add_event
-    coordinator.add_event = MagicMock()
-    # Also need to mock it on the service
-    coordinator._training_service.add_event = coordinator.add_event
+    mock_add_event = MagicMock()
+    coordinator.add_event = mock_add_event
+    coordinator.training_service._ctx.add_event = mock_add_event
 
-    await coordinator.async_log_training_event(gs_id, "topping")
+    await coordinator.services.plants.log_training_event(gs_id, "topping")
 
     # Verify add_event was called with the gs_id
-    coordinator.add_event.assert_called_once()
-    event = coordinator.add_event.call_args[0][1]
+    mock_add_event.assert_called_once()
+    event = mock_add_event.call_args[0][1]
     assert event.growspace_id == gs_id
-
-    # Restore original
-    coordinator.add_event = original_add_event

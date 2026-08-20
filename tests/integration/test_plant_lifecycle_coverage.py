@@ -3,27 +3,34 @@
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from common import create_plant
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage
+from custom_components.growspace_manager.data_access.notification_state import (
+    NotificationState,
+)
 from custom_components.growspace_manager.exceptions import ValidationChangeError
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.services.context import ServiceContext
+
+from .common import create_plant
+
+
+@pytest.fixture
+def notification_state() -> NotificationState:
+    """Real NotificationState for testing."""
+    return NotificationState()
 
 
 @pytest.fixture
 def repository_mock():
     """Mock the GrowspaceRepository."""
     mock = MagicMock()
-    mock.plants = {}
-    mock.growspaces = {
-        "test_growspace": Growspace(
-            id="test_growspace",
-            name="Test Growspace",
-        )
-    }
-    mock.notifications_sent = {}
+    mock.get_plant.return_value = None
+    mock.has_plant.return_value = False
+    mock.has_growspace.side_effect = lambda gid: gid == "test_growspace"
+    mock.get_growspace.side_effect = lambda gid: Growspace(id=gid, name=gid) if gid == "test_growspace" else None
     return mock
 
 
@@ -70,6 +77,7 @@ def save_callback_mock():
 def manager(
     hass,
     repository_mock,
+    notification_state,
     validator_mock,
     gs_service_mock,
     strain_library_mock,
@@ -78,14 +86,19 @@ def manager(
 ):
     """Fixture for PlantManager."""
     return PlantManager(
+        ctx=ServiceContext(
+            save_callback=save_callback_mock,
+            lock=lock_mock,
+            add_event=MagicMock(),
+            invalidate_cache=MagicMock(),
+        ),
         hass=hass,
         repository=repository_mock,
+        notification_state=notification_state,
         validator=validator_mock,
         growspace_manager=gs_service_mock,
         strain_library=strain_library_mock,
         plant_view_builder=MagicMock(),
-        save_callback=save_callback_mock,
-        lock=lock_mock,
     )
 
 
@@ -102,25 +115,26 @@ async def test_async_remove_plant_not_found(manager, save_callback_mock) -> None
 
 @pytest.mark.asyncio
 async def test_async_remove_plant_with_notifications(
-    manager, repository_mock, save_callback_mock
+    manager, repository_mock, notification_state, save_callback_mock
 ) -> None:
     """Test async_remove_plant removes from notifications_sent dict."""
     # Add a plant and notification
     plant_id = "test_plant_123"
-    repository_mock.plants[plant_id] = create_plant(
+    plant = create_plant(
         plant_id=plant_id,
         growspace_id="test_growspace",
         strain="Test Strain",
     )
-    repository_mock.notifications_sent[plant_id] = True
+    repository_mock.get_plant.return_value = plant
+    repository_mock.has_plant.return_value = True
+    notification_state.sent[plant_id] = True
 
     # Remove the plant
     result = await manager.async_remove_plant(plant_id)
 
     # Should remove from notifications_sent
     assert result is True
-    assert plant_id not in repository_mock.notifications_sent
-    assert plant_id not in repository_mock.plants
+    assert plant_id not in notification_state.sent
     save_callback_mock.assert_awaited_once()
 
 
@@ -151,9 +165,23 @@ async def test_record_analytics_exception_handling(
         # Should not raise, exception is caught and logged
         await manager._record_analytics(plant)
 
-    # Verify record_harvest was called
+    # Verify record_harvest was called with scores (all None since plant has no scores set)
     strain_library_mock.record_harvest.assert_awaited_once_with(
-        "Test Strain", "", 30, 60
+        "Test Strain",
+        "",
+        30,
+        60,
+        None,
+        None,
+        None,
+        None,
+        None,
+        wet_weight=None,
+        dry_weight=None,
+        trim_weight=None,
+        thc_percentage=None,
+        cbd_percentage=None,
+        terpene_profile=None,
     )
 
 
@@ -169,7 +197,15 @@ async def test_transition_plant_stage_to_clone(
         growspace_id="test_growspace",
         strain="Test Strain",
     )
-    repository_mock.plants[plant_id] = plant
+    repository_mock.get_plant.return_value = plant
+    growspaces = {
+        "test_growspace": Growspace(id="test_growspace", name="Test"),
+        "dry": Growspace(id="dry", name="Dry"),
+    }
+    repository_mock.has_growspace.side_effect = lambda growspace_id: (
+        growspace_id in growspaces
+    )
+    repository_mock.get_growspace.side_effect = growspaces.get
 
     # Transition to CLONE stage
     await manager.transition_plant_stage(plant_id, PlantStage.CLONE, date(2024, 1, 15))
@@ -211,7 +247,7 @@ async def test_async_update_plant_genetics(
         strain="Old Strain",
         phenotype="Old Pheno",
     )
-    repository_mock.plants[plant_id] = plant
+    repository_mock.get_plant.return_value = plant
 
     # Update strain and phenotype
     updated_plant = await manager.async_update_plant(

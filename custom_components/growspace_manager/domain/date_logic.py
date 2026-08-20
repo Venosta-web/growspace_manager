@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 from dateutil import parser
 
 from homeassistant.util.dt import as_local, now
 
 if TYPE_CHECKING:
-    from ..models import Plant
+    from custom_components.growspace_manager.models import Plant
 
-DateInput: TypeAlias = date | datetime | str | None
+type DateInput = date | datetime | str | None
 
 
 def parse_date_field(date_value: DateInput) -> datetime | None:
@@ -35,7 +35,7 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
                 try:
                     # Fallback to slower, more robust parser
                     dt = parser.isoparse(date_value)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     return None
 
     if dt is None:
@@ -44,6 +44,32 @@ def parse_date_field(date_value: DateInput) -> datetime | None:
     if dt.tzinfo is None:
         return as_local(dt)
     return dt
+
+
+def to_lifecycle_timestamp(supplied: DateInput = None) -> str:
+    """Return the ISO datetime string to store for a Lifecycle Timestamp.
+
+    The single owner of how a plant stage-start (`seedling_start … cure_start`)
+    is represented on write (see CONTEXT.md "Lifecycle Timestamp", ADR-0013).
+    A supplied value preserves its moment; ``None`` defaults to the current
+    time. Always returns a full timezone-aware ISO 8601 datetime string — never
+    a date-only value — so no write site truncates with ``.date()``. A bare
+    `date` (or a date-only string) is promoted to midnight-local.
+    """
+    parsed = parse_date_field(supplied) if supplied is not None else now()
+    if parsed is None:
+        parsed = now()
+    return parsed.isoformat()
+
+
+def plant_updated_date() -> str:
+    """Return the date-only stamp for a Plant's most recent mutation.
+
+    This is the single owner of the ``Plant.updated_at`` representation (see
+    CONTEXT.md "Plant Updated Date"). Unlike a Lifecycle Timestamp, this field
+    records a calendar day and is always written as ``YYYY-MM-DD``.
+    """
+    return now().date().isoformat()
 
 
 def calculate_days_since(start_date: DateInput, end_date: DateInput = None) -> int:
@@ -77,9 +103,11 @@ def format_date(date_value: DateInput) -> str | None:
 
 def calculate_days_in_stage(plant: Plant, stage: str) -> int:
     """Calculate how many days a plant has been in a specific growth stage."""
-    from .stage import PlantStage
+    from .stage import PlantStage, get_stage_definition  # noqa: PLC0415
 
-    start_date = getattr(plant, f"{stage}_start", None)
+    stage_def = get_stage_definition(stage)
+    start_field = stage_def.start_field if stage_def else f"{stage}_start"
+    start_date = getattr(plant, start_field, None)
 
     # Simplified lookup for common stages
     stage_map = {

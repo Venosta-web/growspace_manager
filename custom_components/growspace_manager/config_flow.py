@@ -20,9 +20,15 @@ from homeassistant.helpers import selector
 import homeassistant.helpers.config_validation as cv
 
 from .config_handlers import (
+    AbortFlow,
     AIConfigHandler,
+    BayesianAdvancedHandler,
+    DehumidifierHandler,
     EnvironmentConfigHandler,
+    EnvironmentSensorsHandler,
+    FanControllerHandler,
     GrowspaceConfigHandler,
+    HumidifierHandler,
     IrrigationConfigHandler,
     NotificationConfigHandler,
     PlantConfigHandler,
@@ -56,7 +62,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     MINOR_VERSION = 1
     integration_name = "Growspace Manager"
 
-    @override  # type: ignore[misc]
+    @override
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -90,14 +96,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=STEP_USER_DATA_SCHEMA,
             )
 
-        except Exception as err:
+        except Exception:
             _LOGGER.exception("Error in async_step_user")
             return self.async_show_form(
                 step_id="user",
                 data_schema=vol.Schema(
                     {vol.Optional("name", default=DEFAULT_NAME): cv.string}
                 ),
-                errors={"base": f"Error: {err}"},
+                errors={"base": "unknown"},
             )
 
     async def async_step_add_growspace(
@@ -132,14 +138,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "pending_growspace": pending_growspace,
                     },
                 )
-            except Exception as err:
+            except Exception:
                 _LOGGER.exception("Error in async_step_add_growspace")
                 return self.async_show_form(
                     step_id="add_growspace",
                     data_schema=GrowspaceConfigHandler(
                         self.hass, None
                     ).get_add_growspace_schema(),
-                    errors={"base": f"Error: {err}"},
+                    errors={"base": "unknown"},
                 )
 
             _LOGGER.debug("Stored pending growspace data in config entry")
@@ -190,9 +196,15 @@ class OptionsFlowHandler(OptionsFlow):
         self.selected_notification_id: str | None = None
         self.selected_growspace_id: str | None = None
         self.env_config_step1: dict[str, Any] | None = None
+        self.fan_config_step1: dict[str, Any] = {}
         self.selected_plant_id: str | None = None
         self.selected_strain_id: str | None = None
         self._env_handler: EnvironmentConfigHandler | None = None
+        self._env_sensors_handler: EnvironmentSensorsHandler | None = None
+        self._dehumidifier_handler: DehumidifierHandler | None = None
+        self._humidifier_handler: HumidifierHandler | None = None
+        self._fan_controller_handler: FanControllerHandler | None = None
+        self._bayesian_advanced_handler: BayesianAdvancedHandler | None = None
         self._irrigation_handler: IrrigationConfigHandler | None = None
         self._notify_handler: NotificationConfigHandler | None = None
         self._strain_handler: StrainConfigHandler | None = None
@@ -220,10 +232,45 @@ class OptionsFlowHandler(OptionsFlow):
 
     @property
     def env_handler(self) -> EnvironmentConfigHandler:
-        """Get the environment config handler."""
+        """Get the legacy environment config handler (kept for compatibility)."""
         if self._env_handler is None:
             self._env_handler = EnvironmentConfigHandler(self)
         return self._env_handler
+
+    @property
+    def env_sensors_handler(self) -> EnvironmentSensorsHandler:
+        """Get the environment sensors handler."""
+        if self._env_sensors_handler is None:
+            self._env_sensors_handler = EnvironmentSensorsHandler(self)
+        return self._env_sensors_handler
+
+    @property
+    def dehumidifier_handler(self) -> DehumidifierHandler:
+        """Get the dehumidifier handler."""
+        if self._dehumidifier_handler is None:
+            self._dehumidifier_handler = DehumidifierHandler(self)
+        return self._dehumidifier_handler
+
+    @property
+    def humidifier_handler(self) -> HumidifierHandler:
+        """Get the humidifier handler."""
+        if self._humidifier_handler is None:
+            self._humidifier_handler = HumidifierHandler(self)
+        return self._humidifier_handler
+
+    @property
+    def fan_controller_handler(self) -> FanControllerHandler:
+        """Get the fan controller handler."""
+        if self._fan_controller_handler is None:
+            self._fan_controller_handler = FanControllerHandler(self)
+        return self._fan_controller_handler
+
+    @property
+    def bayesian_advanced_handler(self) -> BayesianAdvancedHandler:
+        """Get the Bayesian advanced handler."""
+        if self._bayesian_advanced_handler is None:
+            self._bayesian_advanced_handler = BayesianAdvancedHandler(self)
+        return self._bayesian_advanced_handler
 
     @property
     def irrigation_handler(self) -> IrrigationConfigHandler:
@@ -246,7 +293,6 @@ class OptionsFlowHandler(OptionsFlow):
             self._strain_handler = StrainConfigHandler(self)
         return self._strain_handler
 
-    @override  # type: ignore[misc]
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -386,11 +432,59 @@ class OptionsFlowHandler(OptionsFlow):
         """Delegate environment configuration to the handler."""
         return await self.env_handler.async_step_configure_environment(user_input)
 
+    async def async_step_configure_humidifier(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate humidifier configuration to the handler."""
+        return await self.humidifier_handler.async_step_configure_humidifier(user_input)
+
     async def async_step_configure_dehumidifier(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate dehumidifier configuration to the handler."""
-        return await self.env_handler.async_step_configure_dehumidifier(user_input)
+        return await self.dehumidifier_handler.async_step_configure_dehumidifier(
+            user_input
+        )
+
+    async def async_step_configure_fan_controller(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan controller configuration to the handler."""
+        return await self.fan_controller_handler.async_step_configure_fan_controller(
+            user_input
+        )
+
+    async def async_step_configure_fan_vpd(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan VPD configuration to the handler."""
+        return await self.fan_controller_handler.async_step_configure_fan_vpd(
+            user_input
+        )
+
+    async def async_step_configure_fan_humidity(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan humidity configuration to the handler."""
+        return await self.fan_controller_handler.async_step_configure_fan_humidity(
+            user_input
+        )
+
+    async def async_step_configure_fan_temperature(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan temperature configuration to the handler."""
+        return await self.fan_controller_handler.async_step_configure_fan_temperature(
+            user_input
+        )
+
+    async def async_step_configure_fan_wind(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate fan wind configuration to the handler."""
+        return await self.fan_controller_handler.async_step_configure_fan_wind(
+            user_input
+        )
 
     async def async_step_configure_advanced_bayesian(
         self, user_input: dict[str, Any] | None = None
@@ -402,7 +496,33 @@ class OptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Delegate sensor placement configuration to the handler."""
-        return await self.env_handler.async_step_configure_sensor_placement(user_input)
+        return (
+            await self.bayesian_advanced_handler.async_step_configure_sensor_placement(
+                user_input
+            )
+        )
+
+    async def async_step_save_and_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Retrieve growspace from flow state and persist env config."""
+        try:
+            coordinator = self.env_sensors_handler.get_coordinator()
+        except AbortFlow as e:
+            return self.async_abort(reason=e.reason)
+        if not self.selected_growspace_id:
+            return self.async_abort(reason="growspace_not_found")
+        growspace = coordinator.services.growspaces.get_growspace(
+            self.selected_growspace_id
+        )
+        if not growspace:
+            return self.async_abort(reason="growspace_not_found")
+        env_config = dict(self.env_config_step1 or {})
+        # The flow orchestrates its own sensors handler; calling its save helper is
+        # the intended seam, not external private access.
+        return await self.env_sensors_handler._async_save_and_finish(  # noqa: SLF001
+            growspace, env_config
+        )
 
     async def async_step_manage_plants(
         self, user_input: dict[str, Any] | None = None
@@ -472,6 +592,12 @@ class OptionsFlowHandler(OptionsFlow):
         """Delegate strain library export to the handler."""
         return await self.strain_handler.async_step_export_strain_library(user_input)
 
+    async def async_step_manage_breeder_blacklist(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate breeder blacklist management to the handler."""
+        return await self.strain_handler.async_step_manage_breeder_blacklist(user_input)
+
     async def async_step_configure_global(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -536,10 +662,6 @@ class OptionsFlowHandler(OptionsFlow):
                             selector.SelectOptionDict(
                                 value="manage_timed_notifications",
                                 label="Timed Notifications",
-                            ),
-                            selector.SelectOptionDict(
-                                value="manage_strain_library",
-                                label="Manage Strain Library",
                             ),
                             selector.SelectOptionDict(
                                 value="configure_irrigation",

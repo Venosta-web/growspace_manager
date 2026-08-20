@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.models import EnvironmentConfig, IrrigationTank
 from custom_components.growspace_manager.sensor import (
     TankDepletionSensor,
     async_setup_entry,
@@ -51,7 +52,7 @@ class TestTankDepletionSensor:
         assert sensor._growspace_id == "gs1"
         assert sensor._tank_name == "Main Tank"
         assert sensor._predictor == mock_predictor
-        assert sensor.name == "gs1 Tank Depletion Main Tank"
+        assert sensor.name == "Tank Depletion Main Tank"
         assert sensor.unique_id == f"{DOMAIN}_gs1_tank_depletion_Main Tank"
 
     def test_available(self, sensor, mock_coordinator):
@@ -128,13 +129,12 @@ class TestTankDepletionSensor:
 
         # Mock async_write_ha_state to avoid entity registration issues
         sensor.async_write_ha_state = MagicMock()
-        sensor.hass.async_create_task = MagicMock()
 
         # Trigger coordinator update
         sensor._handle_coordinator_update()
 
-        # Verify async_create_task was called (predictor update was scheduled)
-        sensor.hass.async_create_task.assert_called_once()
+        # Verify async_create_background_task was called (predictor update was scheduled)
+        sensor.coordinator.config_entry.async_create_background_task.assert_called_once()
         # Verify async_write_ha_state was called by super()
         sensor.async_write_ha_state.assert_called_once()
 
@@ -146,7 +146,7 @@ async def test_async_setup_entry_with_tanks(hass: HomeAssistant, mock_coordinato
 
     # Mock IrrigationTank class to avoid complex instantiation
     with patch(
-        "custom_components.growspace_manager.sensor.TankDepletionPredictor"
+        "custom_components.growspace_manager.sensor._setup.TankDepletionPredictor"
     ) as mock_predictor_cls:
         mock_predictor_instance = MagicMock()
         mock_predictor_instance.async_update = AsyncMock()
@@ -163,7 +163,9 @@ async def test_async_setup_entry_with_tanks(hass: HomeAssistant, mock_coordinato
         gs_mock = MagicMock()
         gs_mock.id = "gs1"
         gs_mock.name = "Growspace 1"
-        gs_mock.environment_config = {"irrigation_tanks": [tank_data]}
+        gs_mock.environment_config = EnvironmentConfig(
+            irrigation_tanks=[IrrigationTank(**tank_data)]
+        )
 
         mock_coordinator.growspaces = {"gs1": gs_mock}
         mock_coordinator.get_growspace_plants.return_value = []

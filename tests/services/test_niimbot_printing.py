@@ -1,7 +1,11 @@
 """Tests for Niimbot label printing services."""
 
+import base64
+from io import BytesIO
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from PIL import Image
 import pytest
 
 from custom_components.growspace_manager.services.strain_library import (
@@ -21,6 +25,7 @@ def mock_hass():
     hass.config.path = MagicMock(side_effect=lambda *args: "/".join(args))
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
+    hass.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
     return hass
 
 
@@ -66,7 +71,6 @@ async def test_handle_add_strain_with_breeder_logo(
         strain="Test Strain",
         phenotype=None,
         breeder="Test Breeder",
-        breeder_logo="https://example.com/logo.png",
         strain_type=None,
         lineage=None,
         sex=None,
@@ -76,8 +80,10 @@ async def test_handle_add_strain_with_breeder_logo(
         image_base64=None,
         image_path=None,
         image_crop_meta=None,
+        images=None,
         sativa_percentage=None,
         indica_percentage=None,
+        breeder_logo="https://example.com/logo.png",
     )
     mock_coordinator.async_request_refresh.assert_awaited_once()
 
@@ -126,12 +132,19 @@ async def test_handle_print_label(mock_hass, mock_coordinator, strain_library) -
     # Check for core fields in payload
     values = [item["value"] for item in payload if "value" in item]
     assert "BLUE DREAM" in values
-    assert "Berry\nHumboldt\n-" in values
+    assert "Berry\nHumboldt" in values
 
     # Check for breeder logo
     logo_item = next((item for item in payload if item["type"] == "dlimg"), None)
     assert logo_item is not None
     assert logo_item["url"] == "https://example.com/humboldt.png"
+    assert logo_item["xsize"] == 100
+    assert logo_item["ysize"] == 100
+
+    # Check for QR code
+    qr_item = next((item for item in payload if item["type"] == "qrcode"), None)
+    assert qr_item is not None
+    assert qr_item["boxsize"] == 3
 
 
 @pytest.mark.asyncio
@@ -168,7 +181,7 @@ async def test_handle_print_label_service_error(
     call = MagicMock()
     call.data = {"plant_id": plant_id}
     # Mock service call to fail
-    mock_hass.services.async_call.side_effect = Exception("Service error")
+    mock_hass.services.async_call.side_effect = ValueError("Service error")
     with (
         patch(
             "custom_components.growspace_manager.services.strain_library.get_url",
@@ -179,3 +192,57 @@ async def test_handle_print_label_service_error(
         ),
     ):
         await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
+
+
+@pytest.mark.asyncio
+async def test_handle_print_label_with_base64_downscaling(
+    mock_hass, mock_coordinator, strain_library
+) -> None:
+    """Test handle_print_label service downscales large base64 logos."""
+    # Mock plant data
+    plant_id = "plant_1"
+    mock_plant = MagicMock()
+    mock_plant.genetics.strain_name = "Blue Dream"
+    mock_plant.genetics.phenotype_name = "Berry"
+    mock_coordinator.plants = {plant_id: mock_plant}
+
+    # Create a large "image" (mocking base64) that actually exceeds 25000 bytes.
+    # 300x300 random noise will compress poorly and be realistically large.
+    img = Image.frombytes("RGB", (300, 300), os.urandom(300 * 300 * 3))
+    buff = BytesIO()
+    img.save(buff, format="PNG")
+    large_base64 = f"data:image/png;base64,{base64.b64encode(buff.getvalue()).decode()}"
+
+    strain_library.get_all.return_value = {
+        "Blue Dream": {
+            "meta": {
+                "breeder": "Humboldt",
+                "breeder_logo": large_base64,
+            },
+            "phenotypes": {"Berry": {}},
+        }
+    }
+
+    call = MagicMock()
+    call.data = {"plant_id": plant_id}
+
+    with patch(
+        "custom_components.growspace_manager.services.strain_library.get_url",
+        return_value="http://homeassistant.local",
+    ):
+        await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
+
+    # Verify niimbot.print service call
+    args, _ = mock_hass.services.async_call.call_args
+    payload = args[2]["payload"]
+
+    logo_item = next((item for item in payload if item["type"] == "dlimg"), None)
+    assert logo_item is not None
+    assert logo_item["url"].startswith("data:image/png;base64,")
+    assert logo_item["url"] != large_base64  # Should be changed (downscaled)
+
+    # Decode and check size
+    _, encoded = logo_item["url"].split(",", 1)
+    decoded_img = Image.open(BytesIO(base64.b64decode(encoded)))
+    assert decoded_img.width <= 100
+    assert decoded_img.height <= 100

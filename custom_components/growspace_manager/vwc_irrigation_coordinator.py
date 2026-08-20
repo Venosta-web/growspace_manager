@@ -1,24 +1,59 @@
-"""Coordinator for VWC-based crop steering irrigation."""
+"""Coordinator for VWC-based crop steering irrigation.
+
+The per-minute steering *decision* lives in the [[Steering Phase Machine]]
+(``domain/steering_phase.py``, ADR-0023); this coordinator is the effects
+shell: it reads sensors, feeds the SubstrateTracker, and executes whatever the
+[[Steering Tick Verdict]] names — phase writes, logbook events, the composer
+reset, and the pump cycle.
+"""
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
+from dataclasses import asdict
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.util.dt import now, utcnow
+from homeassistant.util.dt import now, parse_datetime
+
+from .const import PlantStage
+from .domain.ec_state import (
+    ECRecommendation,
+    ECState,
+    ECStateResolver,
+    RunoffInputs,
+    ec_modulation_factor_for_reading,
+    resolve_active_feed_ec,
+    resolve_feed_stage_week,
+    runoff_halt,
+)
+from .domain.infiltration import InfiltrationMonitor
+from .domain.shot_composer import FeedbackTuning, ShotComposer
+from .domain.steering_phase import (
+    ShotRequest,
+    SteeringPhaseMachine,
+    SteeringTickInputs,
+    SteeringTickVerdict,
+    phase_boundary_times,
+    resolve_day_hours,
+)
+from .irrigation_coordinator import BaseIrrigationCoordinator
+from .models import Growspace, IrrigationStrategy
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
-from .irrigation_coordinator import BaseIrrigationCoordinator
-from .models import Growspace, GrowspaceEvent, IrrigationStrategy
 
 _LOGGER = logging.getLogger(__name__)
+
+# Plant stages whose plants no longer sit on the irrigation line; excluded from
+# the live plant count that backs per-plant Volume Mode dosing (see ADR-0011).
+_NON_LIVE_STAGES: frozenset[str] = frozenset(
+    {PlantStage.DRY.value, PlantStage.CURE.value}
+)
 
 
 class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
@@ -35,13 +70,31 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         super().__init__(hass, config_entry, growspace_id, main_coordinator)
         self._remove_update_listener: Callable[[], None] | None = None
 
-        # State tracking
-        self._current_phase = "P3"  # Start in safe state
-        self._last_shot_time: datetime | None = None
-        self._target_reached_today = False
+        # Owns the phase state and the per-tick steering decision
+        # (domain/steering_phase.py, ADR-0023). The machine owns the rules
+        # (daily reset guard, P1→P2 detection); this shell owns the triggers
+        # and executes every effect the verdict names.
+        self._machine = SteeringPhaseMachine(growspace_id)
+        # Owns the Adaptive Shot Control factors and the Shot Size Composition
+        # (domain/shot_composer.py). The steering phase machine names its
+        # reset() triggers (lights-on / P1→P2); it never reaches back into
+        # the coordinator.
+        self._composer = ShotComposer()
+        # Measures whether the substrate is still absorbing the last shot
+        # (domain/infiltration.py, ADR-0031). Its state threads into the tick
+        # inputs, where the [[Infiltration Gate]] withholds a shot that would
+        # otherwise compose against a still-climbing reading. It samples on
+        # distinct *sensor* updates rather than on loop ticks, so it needs the
+        # freshness-aware read below.
+        self._infiltration = InfiltrationMonitor()
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
         self._sensor_warning_logged = False
+
+        # Why the last applied verdict withheld a shot, surfaced in the
+        # shot-composition payload (ADR-0031). Diagnostic only — nothing in the
+        # irrigation path reads it.
+        self._last_suppressed_by: str | None = None
 
     @override
     async def async_setup(self) -> None:
@@ -49,6 +102,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         _LOGGER.info(
             "Setting up VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
+        self._register_daily_reset_listener()
         # Check every minute for phase updates and actions
         self._remove_update_listener = async_track_time_interval(
             self.hass, self._update_loop, timedelta(minutes=1)
@@ -72,6 +126,12 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             self._remove_update_listener()
             self._remove_update_listener = None
 
+    @override
+    def _reset_extra_daily_state(self) -> None:
+        """Reset crop-steering target tracking at local midnight."""
+        self._machine.reset()
+        self._composer.reset()
+
     async def _update_loop(self, _now: datetime) -> None:
         """Main update loop triggered every minute."""
         try:
@@ -91,7 +151,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                         self._growspace_id,
                     )
                     self._sensor_warning_logged = True
-                self._set_phase("Disabled (No Sensor)")
+                self._infiltration.reset()
+                self._apply_verdict(self._machine.mark_no_sensor(), strategy)
                 return
 
             # Reset warning flag if sensor is now present
@@ -105,10 +166,32 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                     sensor_entity,
                     self._growspace_id,
                 )
+                self._infiltration.reset()
+                self._apply_verdict(self._machine.mark_sensor_unavailable(), strategy)
                 return
 
-            period = self._determine_time_period(strategy, growspace)
-            self._execute_phase_logic(period, current_vwc, strategy)
+            # Feed the Infiltration Monitor before the EC halt check: the
+            # substrate keeps absorbing whether or not steering is halted, and a
+            # gap in the samples would be indistinguishable from a dropout.
+            self._record_infiltration(sensor_entity, current_vwc)
+
+            if self._is_halted_by_runoff_ec(growspace):
+                return
+
+            # Feed the SubstrateTracker before executing phase logic so the
+            # reading reflects the substrate state going into this tick's
+            # decision (and any shot it fires is recorded against this VWC).
+            self._feed_substrate_reading(current_vwc, growspace)
+
+            verdict = self._machine.tick(
+                self._tick_inputs(current_vwc, strategy, growspace)
+            )
+            self._apply_verdict(verdict, strategy)
+
+            if verdict.phase_changed:
+                self._main_coordinator.async_set_updated_data(
+                    self._main_coordinator.data
+                )
 
         except Exception:
             _LOGGER.exception(
@@ -116,235 +199,437 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 self._growspace_id,
             )
 
-    def _determine_time_period(
-        self, strategy: IrrigationStrategy, growspace: Growspace
-    ) -> str:
-        """Determine the current steering phase based on time of day."""
-
-        # Parse Lights On Time
-        try:
-            lights_on = datetime.strptime(strategy.lights_on_time, "%H:%M:%S").time()
-        except ValueError:
-            # Fallback format check
-            lights_on = datetime.strptime(strategy.lights_on_time, "%H:%M").time()
-
-        # Calculate Lights Off Time (derived from photoperiod settings in config)
-        # Default to 12/12 if not set, or read from growspace options
-        # We need to know the day hours.
-        # Assuming we can access veg_day_hours or flower_day_hours from environment config options via handler logic?
-        # Actually growspace.environment_config has the unified settings.
-        # Let's check stage to decide hours.
-        # For simplicity, if we lack stage info, we assume 12 hours for flowering.
-
-        # Let's check environment config for day lengths.
-        day_hours = 12  # Default
-        if growspace.environment_config:
-            # This is a simplification. A more robust implementation would determine the dominant
-            # plant stage in the growspace and use the corresponding day hours.
-            # For now, we prefer flower hours if available, as steering is often flower-focused.
-            day_hours = getattr(
-                growspace.environment_config,
-                "flower_day_hours",
-                getattr(growspace.environment_config, "veg_day_hours", 12),
-            )
-
-        # Calculate P0 End
-        # We need datetime arithmetic then convert back to time
-        today_start_dt = datetime.combine(now().date(), lights_on, tzinfo=now().tzinfo)
-        current_dt = now()
-
-        # Adjust for wrapping if needed? Assume Lights On is today.
-        # If current time is before lights on, it might be "Night" (P3) from previous cycle or before P0.
-
-        p0_end_dt = today_start_dt + timedelta(minutes=strategy.p0_duration_minutes)
-        p1_start_dt = p0_end_dt
-
-        # Calculate Lights Off
-        lights_off_dt = today_start_dt + timedelta(hours=day_hours)
-
-        # P2 Stop
-        p2_stop_dt = lights_off_dt - timedelta(
-            minutes=strategy.p2_stop_before_lights_off_minutes
+    def _tick_inputs(
+        self, current_vwc: float, strategy: IrrigationStrategy, growspace: Growspace
+    ) -> SteeringTickInputs:
+        """Assemble the plain-value inputs for one steering tick."""
+        config = growspace.irrigation_config
+        return SteeringTickInputs(
+            now=now(),
+            vwc=current_vwc,
+            strategy=strategy,
+            auto_advance_p2_to_p3=config.auto_advance_p2_to_p3,
+            soil_trigger_percent=config.soil_trigger_percent,
+            pump_flow_rate_ml_per_sec=config.pump_flow_rate_ml_per_sec,
+            pump_configured=bool(self._get_pump_entity()),
+            day_hours=resolve_day_hours(growspace.environment_config),
+            live_plant_count=self._live_plant_count(),
+            last_shot=self._last_shot_dt(),
+            interval_factor=self._composer.interval_factor,
+            infiltration=self._infiltration.state,
         )
 
-        if current_dt < today_start_dt:
-            # Before lights on -> P3 (Dry Back) from yesterday
-            return "P3"
-
-        if current_dt < p1_start_dt:
-            # P0 Activation
-            return "P0"
-
-        if current_dt < p2_stop_dt:
-            # P1 or P2 window
-            # We differentiate P1 vs P2 by target achievement, not strictly time.
-            # But the 'Time Period' is "Active Watering Window".
-            return "WINDOW"
-
-        if current_dt < lights_off_dt:
-            # Post-Maintenance, Pre-Lights Off -> P3 starts early effectively (or just stop watering)
-            return "P3"
-
-        # After lights off
-        return "P3"
-
-    def _execute_phase_logic(
-        self, period: str, current_vwc: float, strategy: IrrigationStrategy
+    def _apply_verdict(
+        self, verdict: SteeringTickVerdict, strategy: IrrigationStrategy
     ) -> None:
-        """Execute the logic for the current phase."""
+        """Execute the effects a Steering Tick Verdict names.
 
-        if period == "P3":
-            self._set_phase("P3 - Dry Back")
-            self._target_reached_today = False  # Reset for next day logic?
-            # Strictly speaking, we should reset this at Lights On.
-            # But if we are in P3 (night), we are dry backing.
-            return
+        The verdict records the decision; every effect happens here: the
+        canonical phase write, the P1→P2 composer reset (before any shot
+        composes), logbook events, and the pump cycle.
+        """
+        config = self.growspace.irrigation_config
+        self._last_suppressed_by = verdict.suppressed_by
 
-        if period == "P0":
-            self._set_phase("P0 - Activation")
-            # Reset daily target flag if we are in P0 (start of day)
-            self._target_reached_today = False
-            return
+        if verdict.phase_changed:
+            if verdict.canonical is not None:
+                config.active_steering_phase = verdict.canonical
+                if verdict.canonical == "p3":
+                    config.phase_changed_at = now().isoformat()
 
-        # P1 / P2 WINDOW
-        target = strategy.target_vwc_percent
-
-        if not self._target_reached_today:
-            # We are in P1: Ramp Up
-            self._set_phase("P1 - Ramp Up")
-
-            if current_vwc >= target:
+            if verdict.reset_composer:
                 _LOGGER.info(
-                    "Growspace %s reached target VWC %.1f%%. Switching to P2",
+                    "Growspace %s transitioned from P1 to P2. Resetting feedback scale factors",
                     self._growspace_id,
-                    target,
                 )
-                self._target_reached_today = True
-                # No watering this tick, just switch state
-            else:
-                self._handle_watering(strategy, "P1")
+                self._composer.reset()
 
-        else:
-            # We are in P2: Maintenance
-            self._set_phase("P2 - Maintenance")
-
-            # Check dryback trigger
-            trigger = target - strategy.maintenance_dryback_percent
-            if current_vwc < trigger:
-                _LOGGER.info(
-                    "Growspace %s VWC (%.1f%%) dropped below maintenance trigger (%.1f%%). Pulse watering",
-                    self._growspace_id,
-                    current_vwc,
-                    trigger,
+            if config.log_to_logbook and verdict.transition_message:
+                self._fire_logbook_event(
+                    verdict.transition_message, category="irrigation"
                 )
-                self._handle_watering(strategy, "P2")
 
-    def _handle_watering(self, strategy: IrrigationStrategy, phase: str) -> None:
-        """Handle execution of a shot if interval permits."""
-        now_dt = now()
+        if verdict.volume_change_note and config.log_to_logbook:
+            self._fire_logbook_event(verdict.volume_change_note, category="irrigation")
 
-        if self._last_shot_time:
-            elapsed = (now_dt - self._last_shot_time).total_seconds() / 60.0
-            if elapsed < strategy.shot_interval_minutes:
-                # Waiting for interval
-                return
+        # Edge-triggered by the machine's own latch, so a hold sustained across
+        # many ticks writes one entry and one release (ADR-0031).
+        if verdict.infiltration_note and config.log_to_logbook:
+            self._fire_logbook_event(verdict.infiltration_note, category="irrigation")
 
-        # Fire Shot
+        if verdict.fire is not None:
+            self._fire_shot(strategy, verdict.fire)
+
+    def _fire_shot(self, strategy: IrrigationStrategy, request: ShotRequest) -> None:
+        """Compose and fire a steering shot the tick verdict requested."""
         pump_entity = self._get_pump_entity()
         if not pump_entity:
             return
+        growspace = self.growspace
 
-        duration = strategy.shot_duration_seconds
+        # Shot Size Composition: effective = base × VWC factor × EC factor.
+        # The ShotComposer owns the multiply, the VWC feedback factor, and the
+        # cap-aware ShotComposition record. EC modulation (P2 only) and the
+        # safety-cap check are injected so the EC State seam and downstream
+        # _run_pump_cycle enforcement stay where they are; caps are still applied
+        # LAST, downstream, against this composed duration.
+        composition = self._composer.compose(
+            request.phase,
+            request.base_seconds,
+            lambda: self._compute_ec_modulation(strategy, growspace),
+            lambda secs: self._check_safety_guards(secs) is not None,
+            now().isoformat(),
+        )
+        scaled_duration = composition.composed_seconds
 
         _LOGGER.info(
-            "Firing %s shot for growspace %s. Duration: %ss",
-            phase,
+            "Firing %s shot for growspace %s. Duration: %ss "
+            "(base %ss × VWC %.2f × EC %.2f)",
+            request.phase,
             self._growspace_id,
-            duration,
+            scaled_duration,
+            request.base_seconds,
+            composition.vwc_factor,
+            composition.ec_factor,
         )
 
-        # Schedule the task
-        self.hass.async_create_task(self._run_pump_cycle(pump_entity, duration, phase))
+        existing_task = self._running_tasks.get("irrigation")
+        if existing_task and not existing_task.done():
+            _LOGGER.warning(
+                "Cancelling lingering irrigation task for %s before firing new %s shot",
+                self._growspace_id,
+                request.phase,
+            )
+            existing_task.cancel()
 
-        self._last_shot_time = now_dt
+        # Delegate to base _run_pump_cycle — inherits all safety guards:
+        # pause_on_low_tank, max_cycles_per_day, daily_volume_cap_liters,
+        # skip_during_dark, and log_to_logbook.
+        task = self._config_entry.async_create_background_task(
+            self.hass,
+            self._run_pump_cycle(
+                "irrigation", pump_entity, scaled_duration, {"phase": request.phase}
+            ),
+            f"irrigation_pump_{self._growspace_id}_irrigation",
+        )
+        self._running_tasks["irrigation"] = task
 
-    async def _run_pump_cycle(
-        self, pump_entity: str, duration: int, phase: str
-    ) -> None:
-        """Execute the pump cycle."""
-        # Track active event for frontend animation
-        self._active_events["irrigation"] = {
-            "start": now().isoformat(),
-            "duration": duration,
+        # Bound substrate dryback windows on the shot. The pre-shot VWC is the
+        # trough for the just-closed in-cycle window; the tracker re-arms the
+        # post-shot peak from the readings that follow.
+        self._record_substrate_shot(request.phase)
+
+    def _last_shot_dt(self) -> datetime | None:
+        """Return the last confirmed pump-cycle start time, or None.
+
+        Reads `_last_cycle_timestamp` (set by `_run_pump_cycle` only after the
+        switch is confirmed on) rather than stamping optimistically — a skipped
+        cycle (e.g. dark-period guard) must not silently rate-limit future shots.
+        """
+        if not self._last_cycle_timestamp:
+            return None
+        return parse_datetime(self._last_cycle_timestamp)
+
+    def _live_plant_count(self) -> int:
+        """Return the number of live plants on the growspace's irrigation line.
+
+        "Live" excludes plants in the dry/cure stages, which no longer draw
+        irrigation. This is the per-plant dosing basis for Volume Mode (ADR-0011).
+        """
+        plants = self._main_coordinator.services.growspaces.get_growspace_plants(
+            self._growspace_id
+        )
+        return sum(
+            1 for p in plants if str(getattr(p, "stage", "")) not in _NON_LIVE_STAGES
+        )
+
+    def _record_infiltration(self, sensor_entity: str, current_vwc: float) -> None:
+        """Offer the reading to the Infiltration Monitor with the sensor's own time.
+
+        The existing reading path is freshness-blind — ``_get_sensor_value``
+        discards ``last_updated`` and the substrate tracker stamps readings with
+        the loop's ``now()``, timestamps that are load-bearing for dryback
+        bounding. Rather than retrofit those readers, this reads the state again
+        purely for its timestamp; the monitor dedupes the repeats itself. No
+        ``await`` separates that read from the one that produced ``current_vwc``,
+        so the two cannot straddle a state change. A state carrying no update
+        time yields no distinct-update signal, so it is not a measurement and is
+        skipped.
+        """
+        state = self.hass.states.get(sensor_entity)
+        last_updated = state.last_updated if state else None
+        if last_updated is None:
+            return
+        self._infiltration.record(current_vwc, last_updated)
+
+    def _feed_substrate_reading(self, current_vwc: float, growspace: Growspace) -> None:
+        """Feed the current VWC reading to the growspace's SubstrateTracker.
+
+        ``lit`` marks whether the lit period is active (lights-on to lights-off),
+        which the tracker uses for the zero-shot-day overnight-peak fallback.
+        """
+        tracker = self._main_coordinator.services.growspaces.get_substrate_tracker(
+            self._growspace_id
+        )
+        if tracker is None:
+            return
+        current_dt = now()
+        boundaries = phase_boundary_times(
+            growspace.irrigation_strategy,
+            resolve_day_hours(growspace.environment_config),
+            current_dt.date(),
+            current_dt.tzinfo,
+        )
+        lit = boundaries.lights_on <= current_dt < boundaries.lights_off
+        tracker.record_reading(current_vwc, current_dt.isoformat(), lit=lit)
+
+        # Feed the averaged pore-EC reading for the daily EC trend. Absent
+        # pore-EC sensors, the trend stays unavailable (never "stable").
+        pore_ec = self._average_pore_ec(growspace)
+        if pore_ec is not None:
+            tracker.record_pore_ec(pore_ec, current_dt.isoformat())
+
+    def _average_pore_ec(self, growspace: Growspace) -> float | None:
+        """Average the configured pore-EC sensors, or None if none are usable.
+
+        Skips ``unknown``/``unavailable``/non-numeric states exactly like the
+        VWC reading path, so a partial sensor dropout still yields a value from
+        the remaining sensors and a full dropout yields None (unavailable).
+        """
+        sensors = growspace.environment_config.pore_ec_sensors
+        if not sensors:
+            return None
+        values = [
+            value
+            for sensor in sensors
+            if (value := self._get_sensor_value(sensor)) is not None
+        ]
+        if not values:
+            return None
+        return sum(values) / len(values)
+
+    def shot_composition_payload(self) -> dict[str, Any]:
+        """Return the frontend/diagnostics view of the last shot composition.
+
+        Always carries the current modulation *capability* (whether opt-in,
+        band, and a pore-EC reading are all present) plus the configured band,
+        so the card can explain modulation even before the first shot fires.
+        ``last_shot`` is None until a P2/P1 shot has fired this session.
+
+        ``suppressed_by`` names why the last steering tick withheld a shot (one
+        of the ``SUPPRESSED_BY_*`` reasons), so a growspace that isn't watering
+        is explainable without debug logging; None when the last tick fired or
+        never reached the shot decision.
+        """
+        growspace = self.growspace
+        strategy = growspace.irrigation_strategy
+        _, ec_available = self._compute_ec_modulation(strategy, growspace)
+        composition = self._composer.last_composition
+        return {
+            "ec_modulation_enabled": strategy.ec_modulation_enabled,
+            "ec_modulation_available": ec_available,
+            "pore_ec_target_min": strategy.pore_ec_target_min,
+            "pore_ec_target_max": strategy.pore_ec_target_max,
+            "current_vwc_factor": round(self._composer.size_factor, 3),
+            "current_interval_factor": round(self._composer.interval_factor, 3),
+            "dynamic_shot_enabled": strategy.dynamic_shot_enabled,
+            "infiltration": self._infiltration.state.value,
+            "last_shot": asdict(composition) if composition is not None else None,
+            "suppressed_by": self._last_suppressed_by,
         }
 
-        # Initialize timing variables
-        start_time: datetime | None = None
-        end_time: datetime | None = None
+    def _resolve_feed_target(
+        self, growspace: Growspace
+    ) -> tuple[tuple[float, float] | None, str]:
+        """Resolve the growspace's Active Feed EC Target as ``(band, source)``.
 
-        try:
-            await self.hass.services.async_call(
-                "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
-            )
-
-            # Wait for switch to confirm ON state (critical for Matter smart plugs)
-            await self._async_wait_for_switch_state(pump_entity, "on")
-
-            # Start timing AFTER switch confirms ON
-            start_time = utcnow()
-
-            await asyncio.sleep(duration)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            # Record end time BEFORE turning off (to exclude turn-off latency)
-            end_time = utcnow()
-
-            # Clear active event
-            self._active_events.pop("irrigation", None)
-
-            await self.hass.services.async_call(
-                "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
-            )
-            # Log Event - only if we have a valid start time
-            if start_time:
-                actual_duration = int((end_time - start_time).total_seconds())
-                await self._log_event(phase, actual_duration, start_time, end_time)
-
-    async def _log_event(
-        self, phase: str, duration: int, start_time: datetime, end_time: datetime
-    ) -> None:
-        """Log the irrigation event."""
-        event = GrowspaceEvent(
-            sensor_type="irrigation",
-            growspace_id=self._growspace_id,
-            start_time=start_time.isoformat(),
-            end_time=end_time.isoformat(),
-            duration_sec=duration,
-            severity=0.5,  # Info level
-            category="irrigation",
-            reasons=[f"VWC Steering {phase} Shot"],
+        Reads the growspace's plants (for the furthest-along live stage and its
+        week), the configured EC ramp curves, and the per-stage feed-EC ranges.
+        """
+        plants = self._main_coordinator.services.growspaces.get_growspace_plants(
+            self._growspace_id
         )
-        self._main_coordinator.add_event(self._growspace_id, event)
+        stage, week = resolve_feed_stage_week(plants)
+        ramp_curves = self._main_coordinator.services.config.ec_ramp_curves
+        return resolve_active_feed_ec(
+            stage, week, ramp_curves, growspace.irrigation_config.ec_target_ranges
+        )
+
+    def ec_state(self) -> ECState:
+        """Build the reconciled :class:`ECState` for this growspace.
+
+        The one place EC is reasoned about (ADR-0015): the modulation direction
+        (pore-vs-band) and the Active Feed EC Target, behind a single seam.
+        """
+        growspace = self.growspace
+        return ECStateResolver(
+            growspace.irrigation_strategy,
+            lambda: self._average_pore_ec(growspace),
+            lambda: self._resolve_feed_target(growspace),
+            lambda: self._runoff_inputs(growspace),
+        ).resolve()
+
+    @staticmethod
+    def _runoff_inputs(growspace: Growspace) -> RunoffInputs:
+        """Assemble the runoff inputs the EC State resolver needs."""
+        drain_config = growspace.drain_config
+        return RunoffInputs(
+            readings=drain_config.readings,
+            max_ec_delta=drain_config.max_ec_delta,
+            target_runoff_percent=drain_config.target_runoff_percent,
+            halt_threshold=growspace.irrigation_config.halt_on_runoff_ec_threshold,
+        )
+
+    def ec_state_payload(self) -> dict[str, Any]:
+        """Return the frontend/diagnostics view of the current EC State."""
+        state = self.ec_state()
+        return {
+            "pore_ec": state.pore_ec,
+            "recommendation": state.recommendation.value,
+            "active_feed_ec": (
+                list(state.active_feed_ec) if state.active_feed_ec is not None else None
+            ),
+            "feed_ec_source": state.feed_ec_source,
+            "runoff_ec": state.runoff_ec,
+            "feed_to_runoff_delta": state.feed_to_runoff_delta,
+            "runoff_percent": state.runoff_percent,
+            "runoff_pct_target": state.runoff_pct_target,
+            "halt_irrigation": state.halt_irrigation,
+        }
+
+    def _compute_ec_modulation(
+        self, strategy: IrrigationStrategy, growspace: Growspace
+    ) -> tuple[float, bool]:
+        """Return ``(factor, available)`` for EC modulation on a P2 shot.
+
+        Reads the direction from the [[EC State]] seam: the resolver decides
+        STACK/HOLD/FLUSH/UNAVAILABLE from pore-EC-vs-band, with a sustained
+        over-target runoff delta escalating HOLD→FLUSH (ADR-0016). The resolver is
+        built with pore + runoff inputs but **not** the feed target — feed EC is
+        display-only and never affects modulation, and omitting it keeps this
+        P2-shot hot path off the plant-reading path.
+
+        ``available`` is the modulation *capability* flag — True only when opted
+        in, a valid band is configured, and a measured pore EC exists
+        (recommendation is not UNAVAILABLE). When unavailable the factor is exactly
+        1.0 — distinct in the payload from a measured "within band → 1.0".
+        """
+        state = ECStateResolver(
+            strategy,
+            lambda: self._average_pore_ec(growspace),
+            read_runoff=lambda: self._runoff_inputs(growspace),
+        ).resolve()
+        if (
+            state.recommendation is ECRecommendation.UNAVAILABLE
+            or state.pore_ec is None
+        ):
+            return 1.0, False
+
+        band_min = strategy.pore_ec_target_min
+        band_max = strategy.pore_ec_target_max
+        if band_min is None or band_max is None:
+            return 1.0, False
+        # The flush magnitude reflects whichever EC is driving it, through the one
+        # helper (one explainable factor, ADR-0016): a pore-driven flush/stack uses
+        # pore EC; a runoff-driven flush (pore within band, escalated to FLUSH by
+        # sustained runoff stacking) uses the runoff EC, which sits above the band
+        # when stacking. pore_ec is guaranteed present here.
+        driver_ec = state.pore_ec
+        if (
+            state.recommendation is ECRecommendation.FLUSH
+            and state.pore_ec <= band_max
+            and state.runoff_ec is not None
+        ):
+            driver_ec = state.runoff_ec
+        factor = ec_modulation_factor_for_reading(driver_ec, band_min, band_max)
+        return factor, True
+
+    def _record_substrate_shot(self, phase: str) -> None:
+        """Signal a fired shot to the SubstrateTracker for dryback bounding."""
+        tracker = self._main_coordinator.services.growspaces.get_substrate_tracker(
+            self._growspace_id
+        )
+        if tracker is None:
+            return
+        sensor_entity = self.growspace.environment_config.soil_moisture_sensor
+        vwc = self._get_sensor_value(sensor_entity) if sensor_entity else None
+        if vwc is None:
+            return
+        tracker.record_shot(phase, now().isoformat(), vwc)
+
+    def _is_halted_by_runoff_ec(self, growspace: Growspace) -> bool:
+        """Return True and log a warning when the runoff-EC safety halt is active.
+
+        Reads the single source of truth — ``runoff_halt`` over the same
+        ``RunoffInputs`` that back ``ECState.halt_irrigation`` — so the loop and
+        the payload always agree. The check is independent of EC Modulation
+        (ADR-0016) and deliberately does not build the full EC State (no pore/feed
+        reads) on this safety hot path.
+        """
+        runoff = self._runoff_inputs(growspace)
+        if not runoff_halt(runoff):
+            return False
+        latest_ec = runoff.readings[-1].drain_ec
+        _LOGGER.warning(
+            "Growspace %s: drain EC %.2f exceeds halt threshold %.2f. Suspending irrigation",
+            self._growspace_id,
+            latest_ec,
+            runoff.halt_threshold,
+        )
+        return True
 
     def _get_pump_entity(self) -> str | None:
         """Get configured irrigation pump entity."""
         growspace = self.growspace
         # Ensure we return a string or None, explicitly cast if needed or rely on typed access
-        return (
-            growspace.irrigation_config.irrigation_pump_entity
-            if growspace.irrigation_config.irrigation_pump_entity
-            else None
+        return growspace.irrigation_config.irrigation_pump_entity or None
+
+    @property
+    @override
+    def projected_shot_window(self) -> dict[str, str] | None:
+        """Return the {start, end} ISO range for the next projected crop-steering shot.
+
+        Thin adapter: the projection lives on the Steering Phase Machine so it
+        reads the same boundaries and phase the tick uses and the two can never
+        disagree about windows.
+        """
+        growspace = self.growspace
+        return self._machine.projected_shot_window(
+            growspace.irrigation_strategy,
+            resolve_day_hours(growspace.environment_config),
+            self._last_shot_dt(),
+            self._composer.interval_factor,
+            now(),
         )
 
-    def _set_phase(self, phase: str) -> None:
-        """Update phase state and potentially expose strictly for debugging."""
-        # In a full implementation, we might expose this as a sensor state.
-        if self._current_phase != phase:
-            _LOGGER.debug(
-                "Growspace %s VWC Steering Phase changed: %s -> %s",
-                self._growspace_id,
-                self._current_phase,
-                phase,
-            )
-            self._current_phase = phase
+    @override
+    async def _async_report_cycle_completion(
+        self,
+        *,
+        event_type: str,
+        start_dt: datetime,
+        end_dt: datetime,
+        duration_sec: float,
+        moisture_before: float | None,
+        volume_dispensed_today: float,
+        wait_seconds: float,
+    ) -> None:
+        """Wait for the moisture sensor to settle, report cycle completion, and update dynamic shot scaling."""
+        await super()._async_report_cycle_completion(
+            event_type=event_type,
+            start_dt=start_dt,
+            end_dt=end_dt,
+            duration_sec=duration_sec,
+            moisture_before=moisture_before,
+            volume_dispensed_today=volume_dispensed_today,
+            wait_seconds=wait_seconds,
+        )
+        if event_type == "irrigation":
+            sensor_entity = self.growspace.environment_config.soil_moisture_sensor
+            if sensor_entity:
+                moisture_after = self._get_sensor_value(sensor_entity)
+                self._composer.observe(
+                    moisture_before,
+                    moisture_after,
+                    FeedbackTuning.from_strategy(self.growspace.irrigation_strategy),
+                )

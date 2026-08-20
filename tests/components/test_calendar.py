@@ -19,8 +19,9 @@ from homeassistant.util import dt as dt_util
 @pytest.fixture
 def mock_coordinator() -> Mock:
     """Create a mock GrowspaceCoordinator for calendar testing."""
-    coordinator = Mock()
-    coordinator.hass = Mock()
+    coordinator = MagicMock()
+    coordinator.hass = MagicMock()
+    coordinator.services = MagicMock()
 
     growspace_mock = Mock()
     growspace_mock.name = "Growspace 1"
@@ -55,7 +56,9 @@ def mock_coordinator() -> Mock:
             },
         ]
     }
-    coordinator.get_growspace_plants.return_value = list(coordinator.plants.values())
+    coordinator.services.growspaces.get_growspace_plants.return_value = list(
+        coordinator.plants.values()
+    )
     coordinator.async_add_listener = Mock()
     return coordinator
 
@@ -91,7 +94,7 @@ def test_growspace_calendar_init(mock_coordinator: Mock) -> None:
     """Test the initialization of the GrowspaceCalendar."""
     calendar = GrowspaceCalendar(mock_coordinator, "gs1")
     assert calendar.growspace_id == "gs1"
-    assert calendar.name == "Growspace 1 Tasks"
+    assert calendar.name == "Tasks"
     assert calendar.unique_id == f"{DOMAIN}_gs1_calendar"
 
 
@@ -123,6 +126,28 @@ async def test_growspace_calendar_update_and_get_events(mock_coordinator: Mock) 
     assert any(
         e.summary == "Flower Day 1 (Strain A): First day of flower" for e in events
     )
+
+
+@pytest.mark.asyncio
+async def test_growspace_calendar_normalizes_legacy_trigger(
+    mock_coordinator: Mock,
+) -> None:
+    """Test calendar events use the normalized stage for legacy triggers."""
+    mock_coordinator.options["timed_notifications"] = [
+        {
+            "id": "legacy_flower_reminder",
+            "growspace_ids": ["gs1"],
+            "trigger_type": "days_since_flip",
+            "day": "1",
+            "message": "First day of flower",
+        }
+    ]
+
+    calendar = GrowspaceCalendar(mock_coordinator, "gs1")
+    await calendar.async_update()
+
+    assert len(calendar._events) == 1
+    assert calendar._events[0].summary.startswith("Flower Day 1")
 
 
 @pytest.mark.asyncio
