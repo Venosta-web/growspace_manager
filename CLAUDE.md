@@ -1742,3 +1742,17 @@ This integration follows Home Assistant's development standards. Key requirement
 - Unique IDs for all entities
 - Async-first architecture
 - Comprehensive test coverage (target: >95%)
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are tracked in this repository's GitHub Issues using the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Triage uses the five default canonical labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repository uses a single-context domain-doc layout. See `docs/agents/domain.md`.
