@@ -143,7 +143,6 @@ class Plant(BaseModel):
     cure_start: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
-    transition_date: str | None = None
     source_mother: str | None = None
     seed_batch_id: str | None = None
     sex: str | None = None

@@ -509,7 +509,6 @@
     'stage': 'veg',
     'stage_history': list([
     ]),
-    'transition_date': None,
     'type': 'normal',
     'updated_at': None,
     'veg_start': None,

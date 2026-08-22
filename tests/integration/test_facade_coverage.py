@@ -1,9 +1,7 @@
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.models import DrainConfig, Growspace
 from custom_components.growspace_manager.services.facade import ServiceFacade
 from homeassistant.exceptions import ServiceValidationError
@@ -19,34 +17,6 @@ async def test_update_plant_name_change(mock_coordinator, mock_plant) -> None:
         await facade.plants.update_plant("plant_1", name="New Plant Name")
 
     async_get_registry.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_async_auto_harvest(mock_coordinator, mock_plant) -> None:
-    """Test auto-harvesting plants that reached their transition date."""
-    facade = ServiceFacade(mock_coordinator)
-
-    # Setup plant to be harvested
-    # Today is 2026-01-12 in frozen time (if frozen, otherwise use real date or mock it)
-    # The integration uses datetime.now().date().isoformat()
-    today = datetime.now().date().isoformat()
-
-    mock_plant.plant_id = "p1"
-    mock_plant.transition_date = today
-    mock_plant.stage = PlantStage.FLOWER
-    mock_plant.genetics.strain_name = "Blue Dream"
-    mock_plant.growspace_id = "gs1"
-
-    mock_coordinator.plants = {"p1": mock_plant}
-    mock_coordinator._plant_manager.harvest = AsyncMock()
-    mock_coordinator._notification_manager.async_send_notification = AsyncMock()
-
-    await facade.plants._async_auto_harvest()
-
-    mock_coordinator._plant_manager.harvest.assert_called_once_with(
-        plant_id="p1", transition_date=today
-    )
-    mock_coordinator._notification_manager.async_send_notification.assert_called_once()
 
 
 @pytest.mark.asyncio
