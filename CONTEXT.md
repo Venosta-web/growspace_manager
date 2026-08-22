@@ -31,10 +31,55 @@ The single growspace-level event emitted after an atomic Plant Layout commit. It
 _Avoid_: plants moved, arrangement saved
 
 **PlantStage**
-The lifecycle phase of a Plant. Ordered stages: `seedling → clone → mother → veg → flower → dry → cure`. The `dry` and `cure` stages are fully-fledged lifecycle stages, not post-harvest metadata.
+The lifecycle phase of a Plant. The branching transition graph is `seedling → veg`, `clone → veg`, `veg → mother | flower`, `mother → veg | flower`, `flower → dry | veg` (Reveg), and `dry → cure`; `cure` is terminal. The `dry` and `cure` stages are fully-fledged lifecycle stages, not post-harvest metadata.
 
 **Lifecycle Timestamp**
 The recorded moment a Plant entered a stage: the `seedling_start`, `mother_start`, `clone_start`, `veg_start`, `flower_start`, `dry_start`, `cure_start` fields on `Plant`. Represented end-to-end as a timezone-aware **ISO 8601 datetime string** (date _and_ time), never date-only — see [[ADR-0013]]. The model fields are typed `str | None` and store the ISO string; readers normalise via `parse_date_field` (which promotes any legacy date-only value to midnight-local on read). All write sites — create, stage transitions, cloning, WebSocket update — route through the `to_lifecycle_timestamp()` writer in `domain/date_logic.py`, the single owner of the representation: it preserves a supplied time or defaults to `dt_util.now()` and always returns an ISO string. Distinct from `WeightEntry`/`MoistureEntry` `date` fields (drying observations), which remain date-only.
+
+**Plant Lifecycle**
+The pure, in-process owner of what stage one Plant is in and how it got there, implemented in `domain/plant_lifecycle.py`. It parses and validates [[Stage History]], reconstructs absent history once from legacy lifecycle dates, derives one [[Lifecycle Facts]] snapshot, and proposes [[Lifecycle Transition]] or [[Lifecycle Correction]] values without persistence, events, growspace moves, Home Assistant, or an implicit clock.
+
+**Effective Date**
+The explicit calendar date on which a proposed lifecycle change takes effect. It may be backdated to the current open interval's start, but never before it. Distinct from the [[Observed Date]], when the request is evaluated, and from the full [[Lifecycle Timestamp]] representation used by persistence writers.
+
+**Observed Date**
+The explicit calendar date on which lifecycle data or a transition request is evaluated. A transition whose Effective Date is after its Observed Date is rejected. Supplying this value, rather than reading a clock, keeps Plant Lifecycle deterministic.
+
+**Stage History**
+The ordered sequence of immutable half-open stage intervals (`[start, end)`), with exactly one current open interval at the end. Starts are chronological, intervals do not overlap, and adjacent stage identities must follow the PlantStage transition graph. Present malformed data is never silently replaced with legacy fields: the lifecycle reports [[Unknown Stage]] and [[Lifecycle Repair Warning]] values. Only absent history activates one-time reconstruction from legacy lifecycle dates.
+
+**Unknown Stage**
+The fail-closed Current Stage reported when Stage History cannot be trusted. It is not a persistable PlantStage and never participates in the transition graph; the grower must apply a Lifecycle Correction before another normal transition.
+
+**Lifecycle Facts**
+One internally consistent snapshot returned by `facts(on=...)`: [[Current Stage]], [[Current Stage Age]], [[Lifetime Stage Days]], and [[Cultivation Band]], all evaluated on the same explicit date.
+
+**Current Stage**
+The stage interval containing the Lifecycle Facts date. For a current snapshot this is the final open Stage History interval; invalid or uncovered history reports Unknown Stage.
+
+**Current Stage Age**
+Whole calendar days between the Current Stage interval's start and the Lifecycle Facts date. Day zero is the stage's Effective Date.
+
+**Lifetime Stage Days**
+The cumulative days a Plant has spent in each canonical stage, including repeated intervals such as veg before and after Reveg, up to the Lifecycle Facts date.
+
+**Cultivation Band**
+The stable age classification within the Current Stage: Seedling and Clone are Acclimating on days 0–6 and Established on day 7 onward; Flower is Early on days 0–20, Mid on days 21–41, and Late on day 42 onward. A separate adjacent-band interpolation hint is available in the three days before a boundary, but never changes the reported band identity early.
+
+**Lifecycle Transition**
+An immutable `Applied`, `NoChange`, or `Rejected` proposal. It carries before/after lifecycle values and facts, [[Compatibility Data]], and any Lifecycle Repair Event draft; applying persistence, moves, or events belongs to a separate effect shell.
+
+**Lifecycle Correction**
+An explicit repair proposal that replaces the ambiguous current interval, preserves the maximal trustworthy and graph-compatible earlier prefix, rebuilds Compatibility Data, and drafts a Lifecycle Repair Event. It requires the corrected stage, its start date, the correction date, and a non-empty grower reason.
+
+**Lifecycle Repair Warning**
+A machine-readable diagnosis produced for malformed, overlapping, nonchronological, future-dated, unknown-stage, or graph-invalid lifecycle data. Warnings fail lifecycle facts closed to Unknown Stage rather than activating a legacy fallback.
+
+**Lifecycle Repair Event**
+The immutable event draft produced by Lifecycle Correction, recording the prior/corrected stage, correction and stage-start dates, grower reason, discarded interval count, and warning codes. The domain module drafts it; an outer shell decides whether and where to publish it.
+
+**Compatibility Data**
+The lifecycle-owned projection for legacy Plant consumers: the shadow `stage`, latest per-stage `*_start` values, and Stage History. It is rebuilt from trusted intervals after every Applied transition or Lifecycle Correction so legacy fields cannot disagree with the domain result.
 
 **Photoperiod Flip**
 The calendar day on which a Plant transitions from vegetative to flower stage — specifically, the day `flower_start == today`. The grower must change the light schedule to 12 hours on this day. When `IrrigationStrategy.auto_light_tracking` is enabled on the growspace, the integration will auto-adapt the light schedule from sensor data; otherwise the grower must update it manually. A notification is sent once per day per growspace when any plant's Photoperiod Flip day arrives.
