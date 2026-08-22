@@ -35,9 +35,7 @@ class _TankTracker(Protocol):
 
     def get_total_liters_today(self, reference_ts: str | None = None) -> float: ...
 
-    def get_total_liters_since(
-        self, cycle_start_date: str | None = None
-    ) -> float: ...
+    def get_total_liters_since(self, cycle_start_date: str | None = None) -> float: ...
 
 
 @dataclass(slots=True)
@@ -138,9 +136,7 @@ def compute_growspace_water(
     if is_tank_derived_mode(growspace) and tracker_list:
         cycle_start = usage.cycle_start_date or None
         tank_today = sum(t.get_total_liters_today() for t in tracker_list)
-        tank_cycle = sum(
-            t.get_total_liters_since(cycle_start) for t in tracker_list
-        )
+        tank_cycle = sum(t.get_total_liters_since(cycle_start) for t in tracker_list)
         # Manual lives in WaterUsageData; pump estimates are write-gated out of
         # tank mode, so adding usage_* here adds manual only (per ADR-0017).
         return WaterUseFigures(

@@ -80,7 +80,9 @@ class NutrientManager:
             preset = self.nutrient_presets[preset_id]
             preset.name = name
             preset.items = [
-                NutrientPresetItem(nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"])
+                NutrientPresetItem(
+                    nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"]
+                )
                 for n in nutrients
             ]
             preset.stage = stage
@@ -95,7 +97,9 @@ class NutrientManager:
                 id=pid,
                 name=name,
                 items=[
-                    NutrientPresetItem(nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"])
+                    NutrientPresetItem(
+                        nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"]
+                    )
                     for n in nutrients
                 ],
                 stage=stage,

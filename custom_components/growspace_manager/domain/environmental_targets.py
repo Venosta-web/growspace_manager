@@ -144,7 +144,9 @@ class StageEnvironmentalTargets:
 
     # ── Evaluator interface ──────────────────────────────────────────────────
 
-    def vpd_stress_band(self, time_of_day: str, env_config: dict[str, Any]) -> VpdStressBand:
+    def vpd_stress_band(
+        self, time_of_day: str, env_config: dict[str, Any]
+    ) -> VpdStressBand:
         """Return interpolated VPD stress/mild bands with per-env overridable probabilities.
 
         Uses direct subscript access — callers must ensure stage_a/stage_b are valid keys
@@ -153,8 +155,12 @@ class StageEnvironmentalTargets:
         thr_a = VPD_STRESS_THRESHOLDS[self._stage_a][time_of_day]
         thr_b = VPD_STRESS_THRESHOLDS[self._stage_b][time_of_day]
 
-        stress_low = interpolate_value(thr_a["stress"][0], thr_b["stress"][0], self._factor)
-        stress_high = interpolate_value(thr_a["stress"][1], thr_b["stress"][1], self._factor)
+        stress_low = interpolate_value(
+            thr_a["stress"][0], thr_b["stress"][0], self._factor
+        )
+        stress_high = interpolate_value(
+            thr_a["stress"][1], thr_b["stress"][1], self._factor
+        )
         mild_low = interpolate_value(thr_a["mild"][0], thr_b["mild"][0], self._factor)
         mild_high = interpolate_value(thr_a["mild"][1], thr_b["mild"][1], self._factor)
 
@@ -165,7 +171,9 @@ class StageEnvironmentalTargets:
         prob_stress = env_config.get(prob_stress_key, prob_stress_default)
         prob_mild = env_config.get(prob_mild_key, prob_mild_default)
 
-        return VpdStressBand(stress_low, stress_high, mild_low, mild_high, prob_stress, prob_mild)
+        return VpdStressBand(
+            stress_low, stress_high, mild_low, mild_high, prob_stress, prob_mild
+        )
 
     def vpd_optimal_band(
         self, time_of_day: str, overrides: dict[str, Any]
@@ -192,11 +200,15 @@ class StageEnvironmentalTargets:
         high = interpolate_value(high_a, high_b, self._factor)
 
         if (
-            self._stage_a in (BayesianStage.SEEDLING, BayesianStage.CLONE, BayesianStage.VEG)
+            self._stage_a
+            in (BayesianStage.SEEDLING, BayesianStage.CLONE, BayesianStage.VEG)
             and self._factor < 0.5
         ):
             prob = env_config.get("prob_humidity_high_veg", PROB_HUMIDITY_HIGH_VEG)
-        elif BayesianStage.FLOWER_LATE in (self._stage_a, self._stage_b) and self._factor > 0.5:
+        elif (
+            BayesianStage.FLOWER_LATE in (self._stage_a, self._stage_b)
+            and self._factor > 0.5
+        ):
             prob = PROB_HUMIDITY_FLOWER_LATE_OUT_OF_RANGE
         else:
             prob = PROB_HUMIDITY_FLOWER_MID_OUT_OF_RANGE
@@ -226,8 +238,12 @@ class StageEnvironmentalTargets:
         Uses veg-stage fallback on missing keys — distinct from vpd_stress_band
         which uses direct subscript access and raises on a missing stage.
         """
-        thr_a = VPD_STRESS_THRESHOLDS.get(self._stage_a, VPD_STRESS_THRESHOLDS[BayesianStage.VEG])
-        thr_b = VPD_STRESS_THRESHOLDS.get(self._stage_b, VPD_STRESS_THRESHOLDS[BayesianStage.VEG])
+        thr_a = VPD_STRESS_THRESHOLDS.get(
+            self._stage_a, VPD_STRESS_THRESHOLDS[BayesianStage.VEG]
+        )
+        thr_b = VPD_STRESS_THRESHOLDS.get(
+            self._stage_b, VPD_STRESS_THRESHOLDS[BayesianStage.VEG]
+        )
 
         def _interp(
             data_a: dict[str, Any], data_b: dict[str, Any]

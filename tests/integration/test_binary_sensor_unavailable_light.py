@@ -57,7 +57,9 @@ def create_test_sensor(
         sensor.trend_analyzer = TrendAnalyzer(hass)
         sensor.strategy = strategy_class(
             env_config=sensor.env_config,
-            analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(*args, **kwargs),
+            analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(
+                *args, **kwargs
+            ),
             get_state=hass.states.get,
             get_growspace=lambda: coordinator.growspaces.get(growspace_id),
             get_notification_message=generate_notification_message,

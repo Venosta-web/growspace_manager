@@ -616,8 +616,8 @@ class TestHandleDeletePollination:
         genetics_manager: AsyncMock,
     ) -> None:
         """ServiceValidationError from manager propagates to caller."""
-        genetics_manager.async_delete_pollination.side_effect = (
-            ServiceValidationError("Pollination event 'x' not found")
+        genetics_manager.async_delete_pollination.side_effect = ServiceValidationError(
+            "Pollination event 'x' not found"
         )
         call = _make_call(event_id="x")
         with pytest.raises(ServiceValidationError, match="not found"):
@@ -775,4 +775,3 @@ class TestHandleUnlinkSeedBatch:
         )
         with pytest.raises(ServiceValidationError, match="not found"):
             await handle_unlink_seed_batch(mock_hass, mock_coordinator, call)
-

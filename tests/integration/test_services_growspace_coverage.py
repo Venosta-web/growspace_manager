@@ -169,20 +169,26 @@ async def test_resize_growspace_with_invalid_plants(service, repository_mock) ->
 
 def test_generate_unique_name(service, repository_mock) -> None:
     """Test unique name generation."""
-    _setup_growspaces(repository_mock, {
-        "gs1": Growspace(id="gs1", name="Test"),
-        "gs2": Growspace(id="gs2", name="Test 1"),
-    })
+    _setup_growspaces(
+        repository_mock,
+        {
+            "gs1": Growspace(id="gs1", name="Test"),
+            "gs2": Growspace(id="gs2", name="Test 1"),
+        },
+    )
     assert service.generate_unique_name("Test") == "Test 2"
     assert service.generate_unique_name("New") == "New"
 
 
 def test_get_sorted_growspace_options(service, repository_mock) -> None:
     """Test getting sorted growspace options."""
-    _setup_growspaces(repository_mock, {
-        "gs1": Growspace(id="gs1", name="B"),
-        "gs2": Growspace(id="gs2", name="A"),
-    })
+    _setup_growspaces(
+        repository_mock,
+        {
+            "gs1": Growspace(id="gs1", name="B"),
+            "gs2": Growspace(id="gs2", name="A"),
+        },
+    )
     # Mock repository behavior
     repository_mock.get_sorted_growspace_options.return_value = [
         ("gs2", "A"),

@@ -40,8 +40,8 @@ def handler(mock_coordinator: MagicMock) -> IrrigationConfigHandler:
     coordinator.async_commit = AsyncMock()
     coordinator.async_request_refresh = AsyncMock()
     # The facade's get_growspace delegates to the data repository.
-    coordinator._data_repository.get_growspace.side_effect = (
-        lambda gid: coordinator.growspaces.get(gid)
+    coordinator._data_repository.get_growspace.side_effect = lambda gid: (
+        coordinator.growspaces.get(gid)
     )
 
     config_entry = MagicMock()

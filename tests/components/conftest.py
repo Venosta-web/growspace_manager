@@ -67,8 +67,12 @@ def mock_coordinator():
     coordinator._growspace_manager.async_update_growspace = AsyncMock()
     coordinator._growspace_manager.async_remove_growspace = AsyncMock()
     coordinator._growspace_manager.async_update_environment_config = AsyncMock()
-    coordinator._growspace_manager.ensure_special_growspace = MagicMock(return_value="special_gs")
-    coordinator._growspace_manager.get_sorted_growspace_options = MagicMock(return_value=[])
+    coordinator._growspace_manager.ensure_special_growspace = MagicMock(
+        return_value="special_gs"
+    )
+    coordinator._growspace_manager.get_sorted_growspace_options = MagicMock(
+        return_value=[]
+    )
 
     # Clone manager methods
     coordinator.clone_manager.async_take_clones = AsyncMock(return_value=["clone_1"])

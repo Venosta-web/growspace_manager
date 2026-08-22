@@ -1,4 +1,3 @@
-
 from custom_components.growspace_manager.managers.strain_analytics import (
     StrainAnalyticsManager,
 )
@@ -9,8 +8,18 @@ STRAINS_WITH_HARVESTS = {
         "phenotypes": {
             "Pheno1": {
                 "harvests": [
-                    {"veg_days": 30, "flower_days": 60, "dry_weight": 80.0, "wet_weight": 300.0},
-                    {"veg_days": 28, "flower_days": 63, "dry_weight": 90.0, "wet_weight": 320.0},
+                    {
+                        "veg_days": 30,
+                        "flower_days": 60,
+                        "dry_weight": 80.0,
+                        "wet_weight": 300.0,
+                    },
+                    {
+                        "veg_days": 28,
+                        "flower_days": 63,
+                        "dry_weight": 90.0,
+                        "wet_weight": 320.0,
+                    },
                 ]
             }
         },

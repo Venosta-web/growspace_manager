@@ -33,7 +33,7 @@ def _sanitize_numeric_fields(cls: type, data: dict[str, Any]) -> dict[str, Any]:
             elif f.type == "int" and isinstance(val, (float, str)):
                 try:
                     data[f.name] = int(float(val))
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     # On conversion error, fall back to the field's default or 0.
                     if f.default is not MISSING:
                         data[f.name] = f.default

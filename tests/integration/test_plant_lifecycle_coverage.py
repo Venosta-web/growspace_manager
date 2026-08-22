@@ -30,7 +30,9 @@ def repository_mock():
     mock.get_plant.return_value = None
     mock.has_plant.return_value = False
     mock.has_growspace.side_effect = lambda gid: gid == "test_growspace"
-    mock.get_growspace.side_effect = lambda gid: Growspace(id=gid, name=gid) if gid == "test_growspace" else None
+    mock.get_growspace.side_effect = lambda gid: (
+        Growspace(id=gid, name=gid) if gid == "test_growspace" else None
+    )
     return mock
 
 

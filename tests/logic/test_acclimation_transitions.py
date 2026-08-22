@@ -90,6 +90,7 @@ def test_clone_acclimation_vpd_stress():
 
 def test_stage_transition_logic():
     """Verify the stage transition factors for seedling acclimation."""
+
     def sc(seedling: int) -> tuple[str, str, float]:
         r = classify_stages(StageDays(seedling=seedling))
         return r.stage_a, r.stage_b, r.factor

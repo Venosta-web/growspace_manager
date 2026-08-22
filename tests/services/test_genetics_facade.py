@@ -183,7 +183,9 @@ async def test_async_delete_pollination_delegates() -> None:
 
     await facade.async_delete_pollination("e1")
 
-    coordinator._genetics_manager.async_delete_pollination.assert_awaited_once_with("e1")
+    coordinator._genetics_manager.async_delete_pollination.assert_awaited_once_with(
+        "e1"
+    )
 
 
 @pytest.mark.asyncio

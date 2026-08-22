@@ -1,4 +1,5 @@
 """Tests for Growspace Manager plant metrics services."""
+
 from unittest.mock import AsyncMock, patch
 
 import pytest

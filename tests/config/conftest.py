@@ -64,7 +64,9 @@ def mock_coordinator():
     coordinator._plant_manager.services.plants.add_plant = AsyncMock(
         side_effect=_mock_add_plant
     )
-    coordinator._plant_manager.add_plant = coordinator._plant_manager.services.plants.add_plant
+    coordinator._plant_manager.add_plant = (
+        coordinator._plant_manager.services.plants.add_plant
+    )
 
     for method in plant_methods:
         mock_method = AsyncMock()
@@ -128,6 +130,7 @@ def mock_coordinator():
     coordinator.ipm_service.services = MagicMock()
 
     from custom_components.growspace_manager.services.facade import ServiceFacade
+
     services = ServiceFacade(coordinator)
     services.save = AsyncMock(side_effect=services.save)
     coordinator.services = services

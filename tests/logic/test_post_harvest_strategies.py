@@ -30,7 +30,9 @@ async def test_post_harvest_missing_state_fields(mock_sensor: MagicMock) -> None
 
     strategy = DryingEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=lambda: mock_growspace,
         get_notification_message=MagicMock(return_value="msg"),
@@ -59,11 +61,15 @@ async def test_post_harvest_missing_state_fields(mock_sensor: MagicMock) -> None
 async def test_post_harvest_wrong_growspace_type(mock_sensor: MagicMock) -> None:
     """Test async_evaluate when growspace type does not match."""
     mock_growspace = MagicMock()
-    mock_growspace.growspace_type = GrowspaceType.VEG  # Wrong type for Drying which expects DRY
+    mock_growspace.growspace_type = (
+        GrowspaceType.VEG
+    )  # Wrong type for Drying which expects DRY
 
     strategy = DryingEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=lambda: mock_growspace,
         get_notification_message=MagicMock(return_value="msg"),
@@ -83,7 +89,9 @@ async def test_post_harvest_success(mock_sensor: MagicMock) -> None:
 
     strategy_dry = DryingEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=lambda: mock_growspace_dry,
         get_notification_message=MagicMock(return_value="msg"),
@@ -108,7 +116,9 @@ async def test_post_harvest_success(mock_sensor: MagicMock) -> None:
 
     strategy_cure = CuringEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=lambda: mock_growspace_cure,
         get_notification_message=MagicMock(return_value="msg"),

@@ -57,7 +57,9 @@ def create_test_sensor(
         sensor.trend_analyzer = TrendAnalyzer(hass)
         sensor.strategy = strategy_class(
             env_config=sensor.env_config,
-            analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(*args, **kwargs),
+            analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(
+                *args, **kwargs
+            ),
             get_state=hass.states.get,
             get_growspace=lambda: coordinator.growspaces.get(growspace_id),
             get_notification_message=generate_notification_message,
@@ -345,7 +347,9 @@ async def test_optimal_sensor_event_category_rising_edge(
 
     # Mock strategy to return high probability on update forcing new_state=True
     with patch.object(
-        sensor.strategy, "async_evaluate", AsyncMock(return_value=([(0.9, 0.1)], [("reason", "high")]))
+        sensor.strategy,
+        "async_evaluate",
+        AsyncMock(return_value=([(0.9, 0.1)], [("reason", "high")])),
     ):
         sensor.prior = 0.9
         with patch.object(sensor, "async_write_ha_state"):
@@ -402,4 +406,3 @@ def test_light_verification_update_state_no_sensors(mock_coordinator) -> None:
 
 # NOTE: humidifier ON/OFF/None aggregation moved to the assembler suite
 # (tests/domain/test_environment_state_assembler.py).
-

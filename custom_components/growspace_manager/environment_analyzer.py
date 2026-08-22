@@ -75,7 +75,9 @@ class EnvironmentAnalyzer:
         stage_b = classification.stage_b
         factor = classification.factor
 
-        display = StageEnvironmentalTargets(stage_a, stage_b, factor).vpd_display_targets()
+        display = StageEnvironmentalTargets(
+            stage_a, stage_b, factor
+        ).vpd_display_targets()
         d_danger_min = display.day_danger_min
         d_danger_max = display.day_danger_max
         d_target_min = display.day_target_min
@@ -165,7 +167,7 @@ class EnvironmentAnalyzer:
                         break
                     # If it parses but is 0, it's valid code (night)
                     has_valid_state = True
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     pass
 
         if not has_valid_state:
@@ -188,7 +190,7 @@ class EnvironmentAnalyzer:
         if state and state.state not in ["unknown", "unavailable"]:
             try:
                 return float(state.state)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return None
         return None
 

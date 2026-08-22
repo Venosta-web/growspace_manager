@@ -992,12 +992,21 @@ async def test_analytics_snapshot(strain_library: StrainLibrary, snapshot) -> No
 
 # --- Image Gallery ---
 
+
 @pytest.mark.asyncio
 async def test_add_strain_with_images_gallery(strain_library: StrainLibrary) -> None:
     """Phenotype data contains the full images array after add_strain with images."""
     images = [
-        {"path": "/local/growspace_manager/strains/og-kush_default_a.webp", "crop_meta": None, "is_thumbnail": True},
-        {"path": "/local/growspace_manager/strains/og-kush_default_b.webp", "crop_meta": {"x": 50, "y": 50, "scale": 1.2}, "is_thumbnail": False},
+        {
+            "path": "/local/growspace_manager/strains/og-kush_default_a.webp",
+            "crop_meta": None,
+            "is_thumbnail": True,
+        },
+        {
+            "path": "/local/growspace_manager/strains/og-kush_default_b.webp",
+            "crop_meta": {"x": 50, "y": 50, "scale": 1.2},
+            "is_thumbnail": False,
+        },
     ]
 
     await strain_library.add_strain(strain="OG Kush", images=images)
@@ -1025,7 +1034,9 @@ async def test_images_gallery_replace_all(strain_library: StrainLibrary) -> None
 
 
 @pytest.mark.asyncio
-async def test_migration_image_path_to_images_gallery(strain_library: StrainLibrary) -> None:
+async def test_migration_image_path_to_images_gallery(
+    strain_library: StrainLibrary,
+) -> None:
     """Phenotypes with image_path but no images get migrated to the gallery format on load."""
     # Simulate pre-gallery data: insert directly into DB leaving images NULL
     await strain_library._db.execute(
@@ -1048,31 +1059,50 @@ async def test_migration_image_path_to_images_gallery(strain_library: StrainLibr
     pheno = strain_library.strains["Blue Dream"]["phenotypes"]["default"]
     assert "images" in pheno
     assert len(pheno["images"]) == 1
-    assert pheno["images"][0]["path"] == "/local/growspace_manager/strains/blue-dream.webp"
+    assert (
+        pheno["images"][0]["path"] == "/local/growspace_manager/strains/blue-dream.webp"
+    )
     assert pheno["images"][0]["is_thumbnail"] is True
     assert pheno["images"][0]["crop_meta"] == {"x": 50, "y": 50, "scale": 1.0}
 
 
 # --- Thumbnail resolution ---
 
+
 @pytest.mark.asyncio
 async def test_resolve_thumbnail_own_images(strain_library: StrainLibrary) -> None:
     """resolve_thumbnail returns the thumbnail entry from the phenotype's own gallery."""
     images = [
         {"path": "/local/a.webp", "crop_meta": None, "is_thumbnail": False},
-        {"path": "/local/b.webp", "crop_meta": {"x": 30, "y": 70, "scale": 1.1}, "is_thumbnail": True},
+        {
+            "path": "/local/b.webp",
+            "crop_meta": {"x": 30, "y": 70, "scale": 1.1},
+            "is_thumbnail": True,
+        },
     ]
     await strain_library.add_strain(strain="OG Kush", images=images)
 
     thumbnail = strain_library.resolve_thumbnail("OG Kush", "default")
-    assert thumbnail == {"path": "/local/b.webp", "crop_meta": {"x": 30, "y": 70, "scale": 1.1}, "is_thumbnail": True}
+    assert thumbnail == {
+        "path": "/local/b.webp",
+        "crop_meta": {"x": 30, "y": 70, "scale": 1.1},
+        "is_thumbnail": True,
+    }
 
 
 @pytest.mark.asyncio
-async def test_resolve_thumbnail_falls_back_to_default_phenotype(strain_library: StrainLibrary) -> None:
+async def test_resolve_thumbnail_falls_back_to_default_phenotype(
+    strain_library: StrainLibrary,
+) -> None:
     """resolve_thumbnail falls back to 'default' sibling when phenotype has no images."""
-    default_image = {"path": "/local/default.webp", "crop_meta": None, "is_thumbnail": True}
-    await strain_library.add_strain(strain="OG Kush", phenotype=None, images=[default_image])
+    default_image = {
+        "path": "/local/default.webp",
+        "crop_meta": None,
+        "is_thumbnail": True,
+    }
+    await strain_library.add_strain(
+        strain="OG Kush", phenotype=None, images=[default_image]
+    )
     await strain_library.add_strain(strain="OG Kush", phenotype="Pheno A")
 
     thumbnail = strain_library.resolve_thumbnail("OG Kush", "Pheno A")
@@ -1080,11 +1110,15 @@ async def test_resolve_thumbnail_falls_back_to_default_phenotype(strain_library:
 
 
 @pytest.mark.asyncio
-async def test_resolve_thumbnail_falls_back_alphabetical_when_no_default(strain_library: StrainLibrary) -> None:
+async def test_resolve_thumbnail_falls_back_alphabetical_when_no_default(
+    strain_library: StrainLibrary,
+) -> None:
     """resolve_thumbnail falls back alphabetically when 'default' has no images."""
     bravo_image = {"path": "/local/bravo.webp", "crop_meta": None, "is_thumbnail": True}
     await strain_library.add_strain(strain="OG Kush", phenotype="Bravo")
-    await strain_library.add_strain(strain="OG Kush", phenotype="Alpha", images=[bravo_image])
+    await strain_library.add_strain(
+        strain="OG Kush", phenotype="Alpha", images=[bravo_image]
+    )
     await strain_library.add_strain(strain="OG Kush", phenotype="Zeta")
 
     # Zeta has no images, default has no images — should get Alpha's thumbnail (first alphabetically)
@@ -1093,6 +1127,7 @@ async def test_resolve_thumbnail_falls_back_alphabetical_when_no_default(strain_
 
 
 # --- Additional Targeted Coverage Tests ---
+
 
 @pytest.mark.asyncio
 async def test_db_migration_harvests_columns(mock_hass, mock_image_manager) -> None:
@@ -1142,7 +1177,6 @@ async def test_db_migration_harvests_columns(mock_hass, mock_image_manager) -> N
         await library.async_close()
 
 
-
 @pytest.mark.asyncio
 async def test_async_migrate_image_gallery_no_db(mock_hass: MagicMock) -> None:
     """Verify that _async_migrate_image_gallery exits early when db is None."""
@@ -1153,16 +1187,22 @@ async def test_async_migrate_image_gallery_no_db(mock_hass: MagicMock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_migrate_image_gallery_operational_error(strain_library: StrainLibrary) -> None:
+async def test_async_migrate_image_gallery_operational_error(
+    strain_library: StrainLibrary,
+) -> None:
     """Verify that _async_migrate_image_gallery handles operational error gracefully."""
     with patch.object(
-        strain_library._db, "execute", side_effect=aiosqlite.OperationalError("Mock database error")
+        strain_library._db,
+        "execute",
+        side_effect=aiosqlite.OperationalError("Mock database error"),
     ):
         await strain_library._async_migrate_image_gallery()
 
 
 @pytest.mark.asyncio
-async def test_async_migrate_image_gallery_invalid_crop_json(strain_library: StrainLibrary) -> None:
+async def test_async_migrate_image_gallery_invalid_crop_json(
+    strain_library: StrainLibrary,
+) -> None:
     """Verify that _async_migrate_image_gallery handles invalid crop JSON gracefully."""
     await strain_library._db.execute(
         "INSERT OR IGNORE INTO strains (strain_name) VALUES (?)", ("Blue Dream",)
@@ -1209,13 +1249,17 @@ async def test_load_with_invalid_images_json(strain_library: StrainLibrary) -> N
 
 
 @pytest.mark.asyncio
-async def test_resolve_thumbnail_nonexistent_strain(strain_library: StrainLibrary) -> None:
+async def test_resolve_thumbnail_nonexistent_strain(
+    strain_library: StrainLibrary,
+) -> None:
     """Verify resolve_thumbnail returns None when strain does not exist."""
     assert strain_library.resolve_thumbnail("Nonexistent Strain", "default") is None
 
 
 @pytest.mark.asyncio
-async def test_resolve_thumbnail_no_thumbnail_fallback(strain_library: StrainLibrary) -> None:
+async def test_resolve_thumbnail_no_thumbnail_fallback(
+    strain_library: StrainLibrary,
+) -> None:
     """Verify resolve_thumbnail falls back to the first image when no thumbnail is specified."""
     images = [
         {"path": "/local/first.webp", "crop_meta": None, "is_thumbnail": False},

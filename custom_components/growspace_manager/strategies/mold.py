@@ -31,15 +31,17 @@ if TYPE_CHECKING:
 
 
 def _classify_mold(state: EnvironmentState) -> StageClassification:
-    return classify_stages(StageDays(
-        veg=state.veg_days,
-        flower=state.flower_days,
-        dry=state.dry_days,
-        cure=state.cure_days,
-        seedling=state.seedling_days,
-        clone=state.clone_days,
-        mother=state.mother_days,
-    ))
+    return classify_stages(
+        StageDays(
+            veg=state.veg_days,
+            flower=state.flower_days,
+            dry=state.dry_days,
+            cure=state.cure_days,
+            seedling=state.seedling_days,
+            clone=state.clone_days,
+            mother=state.mother_days,
+        )
+    )
 
 
 class MoldRiskEvaluatorStrategy(BayesianEvaluatorStrategy):

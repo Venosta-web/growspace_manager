@@ -201,7 +201,10 @@ async def test_move_to_dry_growspace_device_id_ghosting(
     gs_service_mock.ensure_special_growspace.return_value = "dry_gs"
     mock_dry_gs = MagicMock()
     mock_dry_gs.device_id = None  # Crucial: destination has no device
-    repository_mock.get_growspace.side_effect = lambda gid: {"dry_gs": mock_dry_gs, "gs1": MagicMock()}.get(gid)
+    repository_mock.get_growspace.side_effect = lambda gid: {
+        "dry_gs": mock_dry_gs,
+        "gs1": MagicMock(),
+    }.get(gid)
     repository_mock.get_plant.return_value = plant
 
     await manager.move_to_dry_growspace("p1", plant, "2023-01-01")
@@ -346,7 +349,9 @@ async def test_promote_clone_target_full(manager, repository_mock) -> None:
 @pytest.mark.asyncio
 async def test_handle_transition_logic_kwargs(manager) -> None:
     """Test handle_transition_logic passes through kwargs correctly."""
-    with patch.object(manager, "transition_plant", new_callable=AsyncMock) as mock_harvest:
+    with patch.object(
+        manager, "transition_plant", new_callable=AsyncMock
+    ) as mock_harvest:
         # Call with keyword args only
         await manager.handle_transition_logic(plant_id="p1", custom_arg=True)
 

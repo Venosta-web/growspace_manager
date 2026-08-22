@@ -291,9 +291,7 @@ async def test_schedule_matches_when_sunrise_disabled_and_switch_off(
         ac_infinity_schedule_matches,
     )
 
-    _hass_with_states(
-        mock_hass, _matching_states() | {"switch.port_sunrise": "off"}
-    )
+    _hass_with_states(mock_hass, _matching_states() | {"switch.port_sunrise": "off"})
     assert (
         ac_infinity_schedule_matches(
             mock_hass,

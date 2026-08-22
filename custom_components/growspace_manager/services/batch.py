@@ -64,7 +64,7 @@ async def handle_batch_action(
                 # Better to just log. But since it repeats for all, break.
                 break
 
-        except Exception as err :  # noqa: BLE001
+        except Exception as err:  # noqa: BLE001
             _LOGGER.error("Error processing batch action for %s: %s", entity_id, err)
             errors.append(str(err))
 

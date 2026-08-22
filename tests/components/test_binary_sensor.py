@@ -144,10 +144,14 @@ def mock_coordinator(mock_growspace):
         return (date.today() - dt).days
 
     # UPDATE: Use a lambda so plant updates in individual tests evaluate dynamically
-    coordinator.services.growspaces.get_all_growspaces.return_value = coordinator.growspaces
-    coordinator.services.growspaces.get_growspace.side_effect = coordinator.growspaces.get
-    coordinator.services.growspaces.get_growspace_plants.side_effect = lambda gid=None: list(
-        coordinator.plants.values()
+    coordinator.services.growspaces.get_all_growspaces.return_value = (
+        coordinator.growspaces
+    )
+    coordinator.services.growspaces.get_growspace.side_effect = (
+        coordinator.growspaces.get
+    )
+    coordinator.services.growspaces.get_growspace_plants.side_effect = lambda gid=None: (
+        list(coordinator.plants.values())
     )
     coordinator.services.plants.get_plant.side_effect = coordinator.plants.get
     coordinator.services.notifications.is_notifications_enabled.return_value = True
@@ -201,7 +205,9 @@ def create_test_sensor(
         sensor.trend_analyzer = TrendAnalyzer(hass)
         sensor.strategy = strategy_class(
             env_config=sensor.env_config,
-            analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(*args, **kwargs),
+            analyze_trend=lambda *args, **kwargs: sensor.async_analyze_sensor_trend(
+                *args, **kwargs
+            ),
             get_state=hass.states.get,
             get_growspace=lambda: coordinator.growspaces.get(growspace_id),
             get_notification_message=generate_notification_message,
@@ -478,7 +484,9 @@ def testgenerate_notification_message_truncation(
         mock_coordinator.growspaces["gs1"].environment_config,
     )
     # Use real NotificationManager to test truncation logic
-    sensor.notification_manager = NotificationManager(hass, mock_coordinator, AINotificationRewriter(hass))
+    sensor.notification_manager = NotificationManager(
+        hass, mock_coordinator, AINotificationRewriter(hass)
+    )
 
     sensor._reasons = [
         (0.9, "VPD out of range"),
@@ -625,9 +633,7 @@ async def test_bayesian_stress_sensor_granular(
             hass, mock_coordinator, AINotificationRewriter(hass)
         )
         manager._latest_snapshots[("gs1", snapshot.sensor_type)] = snapshot
-        with patch.object(
-            manager, "async_send_notification"
-        ) as mock_send_final:
+        with patch.object(manager, "async_send_notification") as mock_send_final:
             await manager._async_send_batched_notification("gs1")
             mock_send_final.assert_awaited_once()
             args, kwargs = mock_send_final.call_args
@@ -1715,7 +1721,9 @@ def test_light_cycle_get_growth_stage_info_scenarios(
         get_plants=mock_coordinator.services.growspaces.get_growspace_plants,
         calculate_days=mock_coordinator.services.calculate_days,
     )
-    mock_coordinator.services.growspaces.get_growspace_plants.side_effect = lambda gid=None: plants
+    mock_coordinator.services.growspaces.get_growspace_plants.side_effect = (
+        lambda gid=None: plants
+    )
 
     mock_coordinator.services.calculate_days.side_effect = lambda date_str: (
         (date(2026, 1, 12) - date.fromisoformat(date_str)).days if date_str else 0
@@ -1892,7 +1900,9 @@ class TestBayesianEnvironmentSensor:
                 get_plants=sensor._get_plants,
             )
 
-            sensor._strategy_class = MagicMock()  # Strategy class for async_added_to_hass
+            sensor._strategy_class = (
+                MagicMock()
+            )  # Strategy class for async_added_to_hass
             sensor.strategy = MagicMock()  # Mock strategy (pre-wired)
             sensor.strategy.async_evaluate = AsyncMock(return_value=([], []))
             # Notification state is handled by notification_manager, not sensor attributes

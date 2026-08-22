@@ -9,10 +9,13 @@ from unittest.mock import MagicMock
 
 try:
     from sqlalchemy.orm import Session
+
     builtins.Session = Session
 except ImportError:
+
     class DummySession:
         pass
+
     builtins.Session = DummySession
 
 # Must precede any imports that pull in these dependencies
@@ -204,6 +207,7 @@ def _stop_scheduler(obj: Any, attr: str) -> None:
     """Helper to safely call async_stop on an attribute."""
     import contextlib
     from unittest.mock import Mock
+
     if hasattr(obj, attr) and (scheduler := getattr(obj, attr)):
         if isinstance(scheduler, Mock):
             return
@@ -217,6 +221,7 @@ def _cancel_debouncer(obj: Any) -> None:
     """Helper to safely cancel a debouncer."""
     import contextlib
     from unittest.mock import Mock
+
     if hasattr(obj, "_debounced_refresh") and (debouncer := obj._debounced_refresh):
         if isinstance(debouncer, Mock):
             return
@@ -230,6 +235,7 @@ def _close_unawaited_coro(mock_func: Any) -> None:
     """Helper to safely close unawaited mocked coroutines."""
     import contextlib
     from unittest.mock import Mock
+
     if isinstance(mock_func, Mock):
         for call in mock_func.call_args_list:
             for arg in call[0]:
@@ -267,14 +273,22 @@ def cleanup_coordinators(request):
     async def shutdown_all():
         for coord in coordinators:
             # 1. Stop all internal schedulers/monitors to release timers immediately
-            for attr in ("briefing_scheduler", "vision_scheduler", "photoperiod_checker", "alert_monitor"):
+            for attr in (
+                "briefing_scheduler",
+                "vision_scheduler",
+                "photoperiod_checker",
+                "alert_monitor",
+            ):
                 _stop_scheduler(coord, attr)
 
             # Cancel debouncer on the main coordinator
             _cancel_debouncer(coord)
 
             # Cancel debouncers and shut down irrigation coordinators
-            if hasattr(coord, "irrigation_coordinators") and coord.irrigation_coordinators:
+            if (
+                hasattr(coord, "irrigation_coordinators")
+                and coord.irrigation_coordinators
+            ):
                 for irr_coord in coord.irrigation_coordinators.values():
                     _cancel_debouncer(irr_coord)
                     with contextlib.suppress(Exception):
@@ -283,7 +297,10 @@ def cleanup_coordinators(request):
             # Cancel debouncers and shut down dehumidifier coordinators
             if hasattr(coord, "subsystem_manager") and coord._subsystem_manager:
                 sub_mgr = coord._subsystem_manager
-                if hasattr(sub_mgr, "dehumidifier_coordinators") and sub_mgr.dehumidifier_coordinators:
+                if (
+                    hasattr(sub_mgr, "dehumidifier_coordinators")
+                    and sub_mgr.dehumidifier_coordinators
+                ):
                     for deh_coord in sub_mgr.dehumidifier_coordinators.values():
                         _cancel_debouncer(deh_coord)
                         with contextlib.suppress(Exception):
@@ -292,7 +309,9 @@ def cleanup_coordinators(request):
             # 2. Close any unawaited coroutines passed to mocked async_create_background_task on the coordinator's entry
             if hasattr(coord, "config_entry") and coord.config_entry:
                 if hasattr(coord.config_entry, "async_create_background_task"):
-                    _close_unawaited_coro(coord.config_entry.async_create_background_task)
+                    _close_unawaited_coro(
+                        coord.config_entry.async_create_background_task
+                    )
 
             # 3. Call full async_shutdown
             with contextlib.suppress(Exception):
@@ -302,15 +321,24 @@ def cleanup_coordinators(request):
         if "hass" in request.fixturenames:
             with contextlib.suppress(Exception):
                 hass_obj = request.getfixturevalue("hass")
-                for attr_name in ("async_create_background_task", "async_create_task", "async_add_job", "async_add_executor_job"):
+                for attr_name in (
+                    "async_create_background_task",
+                    "async_create_task",
+                    "async_add_job",
+                    "async_add_executor_job",
+                ):
                     if hasattr(hass_obj, attr_name):
                         _close_unawaited_coro(getattr(hass_obj, attr_name))
 
         # 5. Clean up any unawaited coroutines created by AsyncMock or any other Mock in gc
         import gc
+
         for obj in list(gc.get_objects()):
             if type(obj).__name__ == "coroutine":
-                if "AsyncMockMixin._execute_mock_call" in str(obj) or "mock" in str(obj).lower():
+                if (
+                    "AsyncMockMixin._execute_mock_call" in str(obj)
+                    or "mock" in str(obj).lower()
+                ):
                     with contextlib.suppress(Exception):
                         obj.close()
 

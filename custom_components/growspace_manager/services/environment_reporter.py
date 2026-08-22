@@ -92,7 +92,7 @@ class EnvironmentReporter:
         try:
             # Handle numeric sensor (brightness or power) treated as light sensor
             return float(state_obj.state) > 0
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return False
 
     async def _handle_light_change(
@@ -159,7 +159,7 @@ class EnvironmentReporter:
             try:
                 if s.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                     values.append(float(s.state))
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 continue
 
         if not values:

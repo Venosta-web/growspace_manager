@@ -1,4 +1,5 @@
 """Tests for GrowspaceManager drain/water/tank methods."""
+
 from __future__ import annotations
 
 import asyncio
@@ -91,7 +92,9 @@ async def test_async_log_drain_reading_enforces_rolling_window(
     gs.drain_config.max_readings = 3
 
     for i in range(5):
-        await manager.async_log_drain_reading("gs1", feed_ec=float(i), drain_ec=float(i) + 0.3)
+        await manager.async_log_drain_reading(
+            "gs1", feed_ec=float(i), drain_ec=float(i) + 0.3
+        )
 
     assert len(gs.drain_config.readings) == 3
     assert gs.drain_config.readings[0].feed_ec == 2.0
@@ -235,9 +238,13 @@ def manager_with_tank() -> GrowspaceManager:
 async def test_async_configure_tank_updates_volume(
     manager_with_tank: GrowspaceManager,
 ) -> None:
-    await manager_with_tank.async_configure_tank("gs1", "sensor.tank1", volume_liters=80.0)
+    await manager_with_tank.async_configure_tank(
+        "gs1", "sensor.tank1", volume_liters=80.0
+    )
 
-    tank = manager_with_tank.repository.require_growspace("gs1").environment_config.irrigation_tanks[0]
+    tank = manager_with_tank.repository.require_growspace(
+        "gs1"
+    ).environment_config.irrigation_tanks[0]
     assert tank.volume_liters == pytest.approx(80.0)
     manager_with_tank._ctx.save_callback.assert_awaited_once()
 
@@ -246,11 +253,17 @@ async def test_async_configure_tank_updates_volume(
 async def test_async_configure_tank_volume_none_is_noop(
     manager_with_tank: GrowspaceManager,
 ) -> None:
-    manager_with_tank.repository.require_growspace("gs1").environment_config.irrigation_tanks[0].volume_liters = 50.0
+    manager_with_tank.repository.require_growspace(
+        "gs1"
+    ).environment_config.irrigation_tanks[0].volume_liters = 50.0
 
-    await manager_with_tank.async_configure_tank("gs1", "sensor.tank1", volume_liters=None)
+    await manager_with_tank.async_configure_tank(
+        "gs1", "sensor.tank1", volume_liters=None
+    )
 
-    tank = manager_with_tank.repository.require_growspace("gs1").environment_config.irrigation_tanks[0]
+    tank = manager_with_tank.repository.require_growspace(
+        "gs1"
+    ).environment_config.irrigation_tanks[0]
     assert tank.volume_liters == pytest.approx(50.0)
     manager_with_tank._ctx.save_callback.assert_not_awaited()
 
@@ -259,7 +272,9 @@ async def test_async_configure_tank_volume_none_is_noop(
 async def test_async_configure_tank_unknown_entity_is_noop(
     manager_with_tank: GrowspaceManager,
 ) -> None:
-    await manager_with_tank.async_configure_tank("gs1", "sensor.missing", volume_liters=100.0)
+    await manager_with_tank.async_configure_tank(
+        "gs1", "sensor.missing", volume_liters=100.0
+    )
 
     manager_with_tank._ctx.save_callback.assert_not_awaited()
 
@@ -269,4 +284,6 @@ async def test_async_configure_tank_unknown_growspace(
     manager_with_tank: GrowspaceManager,
 ) -> None:
     with pytest.raises(GrowspaceNotFoundError):
-        await manager_with_tank.async_configure_tank("no_gs", "sensor.tank1", volume_liters=10.0)
+        await manager_with_tank.async_configure_tank(
+            "no_gs", "sensor.tank1", volume_liters=10.0
+        )

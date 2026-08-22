@@ -90,9 +90,7 @@ def test_valid_pairs_span_the_whole_permitted_range(
         pytest.param(60.1, "too_wet", id="just-above-maximum"),
     ],
 )
-def test_classification_boundaries_are_inclusive(
-    reading: float, expected: str
-) -> None:
+def test_classification_boundaries_are_inclusive(reading: float, expected: str) -> None:
     """A reading exactly on either bound sits inside the band."""
     assert DEFAULT_MOISTURE_BAND.classify(reading) == expected
 

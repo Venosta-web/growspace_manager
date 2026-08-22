@@ -99,15 +99,15 @@ def mock_coordinator(mock_plant, mock_growspace):
     # Link data_repository methods to local mocks so ServiceFacade sees them
     mock_get_growspace_plants = MagicMock(
         name="get_growspace_plants",
-        side_effect=lambda gid: [p for p in coordinator.plants.values() if p.growspace_id == gid]
+        side_effect=lambda gid: [
+            p for p in coordinator.plants.values() if p.growspace_id == gid
+        ],
     )
     mock_get_plant = MagicMock(
-        name="get_plant",
-        side_effect=lambda pid: coordinator.plants.get(pid)
+        name="get_plant", side_effect=lambda pid: coordinator.plants.get(pid)
     )
     mock_get_growspace = MagicMock(
-        name="get_growspace",
-        side_effect=lambda gid: coordinator.growspaces.get(gid)
+        name="get_growspace", side_effect=lambda gid: coordinator.growspaces.get(gid)
     )
     mock_get_subareas = MagicMock(name="get_subareas", return_value=[])
 
@@ -116,7 +116,6 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator._data_repository.get_growspace = mock_get_growspace
     coordinator._growspace_manager.get_subareas = mock_get_subareas
 
-
     # Initialize ServiceFacade, then wrap both the container and each sub-facade in
     # MagicMocks so tests can assert on calls (assert_called_once_with, etc.)
     facade = ServiceFacade(coordinator)
@@ -124,7 +123,9 @@ def mock_coordinator(mock_plant, mock_growspace):
     def _wrap_sub_facade(sub_facade):
         """Wrap a sub-facade so async methods are AsyncMocks."""
         wrapped = MagicMock(wraps=sub_facade)
-        for name, attr in inspect.getmembers(sub_facade, predicate=inspect.iscoroutinefunction):
+        for name, attr in inspect.getmembers(
+            sub_facade, predicate=inspect.iscoroutinefunction
+        ):
             setattr(wrapped, name, AsyncMock(side_effect=attr))
         return wrapped
 
@@ -142,19 +143,36 @@ def mock_coordinator(mock_plant, mock_growspace):
     type(coordinator).growspace_service = property(lambda self: self._growspace_manager)
     type(coordinator).plant_service = property(lambda self: self._plant_manager)
 
+    coordinator._growspace_manager.async_add_growspace = (
+        coordinator._growspace_manager.add_growspace
+    )
+    coordinator._growspace_manager.async_update_growspace = (
+        coordinator._growspace_manager.update_growspace
+    )
+    coordinator._growspace_manager.async_remove_growspace = (
+        coordinator._growspace_manager.remove_growspace
+    )
+    coordinator._growspace_manager.async_update_environment_config = (
+        coordinator._growspace_manager.update_environment_config
+    )
 
-    coordinator._growspace_manager.async_add_growspace = coordinator._growspace_manager.add_growspace
-    coordinator._growspace_manager.async_update_growspace = coordinator._growspace_manager.update_growspace
-    coordinator._growspace_manager.async_remove_growspace = coordinator._growspace_manager.remove_growspace
-    coordinator._growspace_manager.async_update_environment_config = coordinator._growspace_manager.update_environment_config
+    coordinator._nutrient_manager.async_commit_preset = (
+        coordinator._nutrient_manager.async_save_nutrient_preset
+    )
+    coordinator._nutrient_manager.async_remove_preset = (
+        coordinator._nutrient_manager.async_remove_nutrient_preset
+    )
 
-    coordinator._nutrient_manager.async_commit_preset = coordinator._nutrient_manager.async_save_nutrient_preset
-    coordinator._nutrient_manager.async_remove_preset = coordinator._nutrient_manager.async_remove_nutrient_preset
+    coordinator.training_manager.async_record_training = (
+        coordinator.training_service.async_log_training_event
+    )
 
-    coordinator.training_manager.async_record_training = coordinator.training_service.async_log_training_event
-
-    coordinator._growspace_manager.ensure_special_growspace = MagicMock(return_value="special_gs")
-    coordinator._growspace_manager.get_sorted_growspace_options = MagicMock(return_value=[])
+    coordinator._growspace_manager.ensure_special_growspace = MagicMock(
+        return_value="special_gs"
+    )
+    coordinator._growspace_manager.get_sorted_growspace_options = MagicMock(
+        return_value=[]
+    )
 
     # Utility methods
     coordinator.calculate_days = MagicMock(side_effect=DateTimeHelper.calculate_days)
@@ -165,10 +183,7 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator._data_repository.get_plant.return_value = None
     coordinator._data_repository.get_growspace.return_value = None
 
-
-
     return coordinator
-
 
 
 @pytest.fixture

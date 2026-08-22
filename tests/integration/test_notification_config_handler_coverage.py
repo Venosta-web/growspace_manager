@@ -142,7 +142,9 @@ async def test_async_step_edit_timed_notification_not_found(
 ) -> None:
     coordinator = handler.config_entry.runtime_data
     coordinator.services = MagicMock()
-    coordinator.services.notifications.get_timed_notifications = MagicMock(return_value=[])
+    coordinator.services.notifications.get_timed_notifications = MagicMock(
+        return_value=[]
+    )
     handler.flow.async_abort = MagicMock(return_value={"type": "abort"})
     result = await handler.async_step_edit_timed_notification()
     assert result == {"type": "abort"}
