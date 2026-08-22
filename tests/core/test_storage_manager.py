@@ -45,7 +45,9 @@ def genetics_manager_mock():
 @pytest.fixture
 def storage(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock):
     """Provide a StorageManager instance."""
-    return StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock)
+    return StorageManager(
+        hass, repository_mock, nutrient_manager_mock, genetics_manager_mock
+    )
 
 
 @pytest.mark.asyncio

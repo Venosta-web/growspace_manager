@@ -30,9 +30,13 @@ def genetics_manager_mock():
 
 
 @pytest.fixture
-def storage(hass: HomeAssistant, repository_mock, nutrient_manager_mock, genetics_manager_mock):
+def storage(
+    hass: HomeAssistant, repository_mock, nutrient_manager_mock, genetics_manager_mock
+):
     """Provide a StorageManager instance."""
-    return StorageManager(hass, repository_mock, nutrient_manager_mock, genetics_manager_mock)
+    return StorageManager(
+        hass, repository_mock, nutrient_manager_mock, genetics_manager_mock
+    )
 
 
 def test_load_plants_generic_exception(storage, repository_mock) -> None:

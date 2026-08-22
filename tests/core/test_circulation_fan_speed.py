@@ -1,6 +1,5 @@
 """Unit tests for the compute_fan_speed and compute_wind_offset pure functions."""
 
-
 import pytest
 
 from custom_components.growspace_manager.circulation_fan_coordinator import (

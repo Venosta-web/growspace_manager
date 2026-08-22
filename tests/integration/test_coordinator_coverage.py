@@ -34,7 +34,6 @@ async def test_coordinator_getters_setters(coordinator: GrowspaceCoordinator) ->
     """Test various property getters and setters in GrowspaceCoordinator."""
 
 
-
 @pytest.mark.asyncio
 async def test_nutrient_inventory_loaded(coordinator: GrowspaceCoordinator) -> None:
     """Test on_nutrient_inventory_loaded."""

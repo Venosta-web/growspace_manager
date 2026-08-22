@@ -60,15 +60,11 @@ def determine_coordinator_stage(plants: list[Plant]) -> PlantStage:
         max_clone_days = max(
             max_clone_days, calculate_days_in_stage(plant, PlantStage.CLONE)
         )
-        max_veg_days = max(
-            max_veg_days, calculate_days_in_stage(plant, PlantStage.VEG)
-        )
+        max_veg_days = max(max_veg_days, calculate_days_in_stage(plant, PlantStage.VEG))
         max_flower_days = max(
             max_flower_days, calculate_days_in_stage(plant, PlantStage.FLOWER)
         )
-        max_dry_days = max(
-            max_dry_days, calculate_days_in_stage(plant, PlantStage.DRY)
-        )
+        max_dry_days = max(max_dry_days, calculate_days_in_stage(plant, PlantStage.DRY))
         max_cure_days = max(
             max_cure_days, calculate_days_in_stage(plant, PlantStage.CURE)
         )

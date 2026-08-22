@@ -23,7 +23,9 @@ def test_get_inventory_delegates_to_inventory_service() -> None:
     """get_inventory returns the result from inventory_service.get_inventory."""
     inventory = MagicMock()
     coordinator = _make_coordinator()
-    coordinator._nutrient_manager.inventory_service.get_inventory.return_value = inventory
+    coordinator._nutrient_manager.inventory_service.get_inventory.return_value = (
+        inventory
+    )
     facade = ConfigFacade(coordinator)
 
     result = facade.get_inventory()

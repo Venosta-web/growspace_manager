@@ -1243,7 +1243,9 @@ async def test_move_plant_exception(
     """Test exception handling in move_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator._plant_manager.move_plant.side_effect = GrowspaceError("Test error")
+    mock_coordinator._plant_manager.move_plant.side_effect = GrowspaceError(
+        "Test error"
+    )
     mock_coordinator.get_growspace_plants = Mock(return_value=[mock_plant])
 
     call = ServiceCall(

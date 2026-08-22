@@ -50,11 +50,22 @@ def test_classify_stages_display_stage_via_domain() -> None:
     """Test that classify_stages produces the correct display_stage for all branches."""
     assert classify_stages(StageDays(cure=5)).display_stage == BayesianStage.CURE
     assert classify_stages(StageDays(dry=5)).display_stage == BayesianStage.DRY
-    assert classify_stages(StageDays(flower=10)).display_stage == BayesianStage.FLOWER_EARLY
-    assert classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 5)).display_stage == BayesianStage.FLOWER_MID
-    assert classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 30)).display_stage == BayesianStage.FLOWER_LATE
+    assert (
+        classify_stages(StageDays(flower=10)).display_stage
+        == BayesianStage.FLOWER_EARLY
+    )
+    assert (
+        classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 5)).display_stage
+        == BayesianStage.FLOWER_MID
+    )
+    assert (
+        classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 30)).display_stage
+        == BayesianStage.FLOWER_LATE
+    )
     assert classify_stages(StageDays(veg=10)).display_stage == BayesianStage.VEG
-    assert classify_stages(StageDays(seedling=5)).display_stage == BayesianStage.SEEDLING
+    assert (
+        classify_stages(StageDays(seedling=5)).display_stage == BayesianStage.SEEDLING
+    )
     assert classify_stages(StageDays(clone=5)).display_stage == BayesianStage.CLONE
     assert classify_stages(StageDays()).display_stage == BayesianStage.EMPTY
 

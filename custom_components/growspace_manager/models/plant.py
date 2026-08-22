@@ -167,7 +167,7 @@ class Plant(BaseModel):
             if field_name in data:
                 try:
                     data[field_name] = int(float(data[field_name]))
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     data[field_name] = 1  # Safe default
 
         # Migration: old 'scores' dict → new 'phenotype_score' with renamed fields.

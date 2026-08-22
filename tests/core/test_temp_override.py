@@ -8,9 +8,20 @@ from custom_components.growspace_manager.circulation_fan_coordinator import (
 
 
 @pytest.mark.parametrize(
-    ("current_temp", "low", "high", "hysteresis", "active", "direction",
-     "vpd_speed", "min_speed", "max_speed",
-     "expected_speed", "expected_active", "expected_direction"),
+    (
+        "current_temp",
+        "low",
+        "high",
+        "hysteresis",
+        "active",
+        "direction",
+        "vpd_speed",
+        "min_speed",
+        "max_speed",
+        "expected_speed",
+        "expected_active",
+        "expected_direction",
+    ),
     [
         # Both thresholds None → no override, VPD speed unchanged
         (25.0, None, None, 1.0, False, None, 50, 10, 90, 50, False, None),
@@ -64,8 +75,15 @@ def test_evaluate_temp_override(
 ) -> None:
     """Test evaluate_temp_override for all boundary and state transitions."""
     speed, new_active, new_direction = evaluate_temp_override(
-        current_temp, low, high, hysteresis, active, direction,
-        vpd_speed, min_speed, max_speed,
+        current_temp,
+        low,
+        high,
+        hysteresis,
+        active,
+        direction,
+        vpd_speed,
+        min_speed,
+        max_speed,
     )
     assert speed == expected_speed
     assert new_active == expected_active

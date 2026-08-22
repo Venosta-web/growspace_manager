@@ -45,10 +45,12 @@ def test_migration_full_match_resolves_all_items(
     inventory_with_two_stocks: NutrientInventory,
 ) -> None:
     """All name-based items are resolved to nutrient_id when names match inventory."""
-    preset = _make_preset([
-        {"name": "Grow A", "dose_ml_l": 2.0},
-        {"name": "Bloom B", "dose_ml_l": 1.5},
-    ])
+    preset = _make_preset(
+        [
+            {"name": "Grow A", "dose_ml_l": 2.0},
+            {"name": "Bloom B", "dose_ml_l": 1.5},
+        ]
+    )
     presets = {"preset-1": preset}
 
     result = _migrate_preset_items(presets, inventory_with_two_stocks)
@@ -62,10 +64,12 @@ def test_migration_partial_match_preserves_orphan_name(
     inventory_with_two_stocks: NutrientInventory,
 ) -> None:
     """Matched items get nutrient_id; unmatched items keep original name as nutrient_id."""
-    preset = _make_preset([
-        {"name": "Grow A", "dose_ml_l": 2.0},
-        {"name": "Unknown Cal Mag", "dose_ml_l": 0.5},
-    ])
+    preset = _make_preset(
+        [
+            {"name": "Grow A", "dose_ml_l": 2.0},
+            {"name": "Unknown Cal Mag", "dose_ml_l": 0.5},
+        ]
+    )
     presets = {"preset-1": preset}
 
     result = _migrate_preset_items(presets, inventory_with_two_stocks)
@@ -79,10 +83,12 @@ def test_migration_no_match_all_orphaned(
     inventory_with_two_stocks: NutrientInventory,
 ) -> None:
     """When no names match, all items are preserved with original name as nutrient_id."""
-    preset = _make_preset([
-        {"name": "Mystery A", "dose_ml_l": 1.0},
-        {"name": "Mystery B", "dose_ml_l": 2.0},
-    ])
+    preset = _make_preset(
+        [
+            {"name": "Mystery A", "dose_ml_l": 1.0},
+            {"name": "Mystery B", "dose_ml_l": 2.0},
+        ]
+    )
     presets = {"preset-1": preset}
 
     result = _migrate_preset_items(presets, inventory_with_two_stocks)
@@ -96,24 +102,31 @@ def test_migration_already_migrated_items_untouched(
     inventory_with_two_stocks: NutrientInventory,
 ) -> None:
     """Items that already have nutrient_id are not modified."""
-    preset = _make_preset([
-        {"nutrient_id": "uuid-grow-a", "dose_ml_l": 2.0},
-    ])
+    preset = _make_preset(
+        [
+            {"nutrient_id": "uuid-grow-a", "dose_ml_l": 2.0},
+        ]
+    )
     presets = {"preset-1": preset}
 
     result = _migrate_preset_items(presets, inventory_with_two_stocks)
 
-    assert result["preset-1"].items[0] == {"nutrient_id": "uuid-grow-a", "dose_ml_l": 2.0}
+    assert result["preset-1"].items[0] == {
+        "nutrient_id": "uuid-grow-a",
+        "dose_ml_l": 2.0,
+    }
 
 
 def test_migration_case_insensitive_name_match(
     inventory_with_two_stocks: NutrientInventory,
 ) -> None:
     """Name matching is case-insensitive."""
-    preset = _make_preset([
-        {"name": "grow a", "dose_ml_l": 2.0},
-        {"name": "BLOOM B", "dose_ml_l": 1.5},
-    ])
+    preset = _make_preset(
+        [
+            {"name": "grow a", "dose_ml_l": 2.0},
+            {"name": "BLOOM B", "dose_ml_l": 1.5},
+        ]
+    )
     presets = {"preset-1": preset}
 
     result = _migrate_preset_items(presets, inventory_with_two_stocks)

@@ -1,6 +1,5 @@
 """Tests for vpd_optimal_overrides field on EnvironmentConfig."""
 
-
 from custom_components.growspace_manager.models import EnvironmentConfig
 
 
@@ -29,7 +28,10 @@ def test_vpd_optimal_overrides_round_trip() -> None:
 def test_vpd_optimal_overrides_sparse_single_stage() -> None:
     """A single-stage override round-trips correctly."""
     overrides = {
-        "seedling": {"day": {"low": 0.3, "high": 0.7}, "night": {"low": 0.3, "high": 0.6}},
+        "seedling": {
+            "day": {"low": 0.3, "high": 0.7},
+            "night": {"low": 0.3, "high": 0.6},
+        },
     }
     config = EnvironmentConfig(vpd_optimal_overrides=overrides)
     restored = EnvironmentConfig.from_dict(config.to_dict())

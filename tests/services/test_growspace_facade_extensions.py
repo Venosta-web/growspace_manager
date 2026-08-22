@@ -52,7 +52,9 @@ def test_get_dehumidifier_coordinator_returns_coord_when_present() -> None:
     """Returns the dehumidifier coordinator for a known growspace."""
     dehum_coord = MagicMock()
     coordinator = _make_coordinator()
-    coordinator._subsystem_manager.get_dehumidifier_controller.return_value = dehum_coord
+    coordinator._subsystem_manager.get_dehumidifier_controller.return_value = (
+        dehum_coord
+    )
     facade = GrowspaceFacade(coordinator)
 
     result = facade.get_dehumidifier_coordinator("tent1")
@@ -85,7 +87,9 @@ def test_calculate_biological_metrics_delegates_to_environment_analyzer() -> Non
     result = facade.calculate_biological_metrics("tent1", growspace, days)
 
     assert result is metrics
-    coordinator.environment_analyzer.calculate_biological_metrics.assert_called_once_with(growspace, days)
+    coordinator.environment_analyzer.calculate_biological_metrics.assert_called_once_with(
+        growspace, days
+    )
 
 
 def test_calculate_biological_metrics_passes_stage_days_through() -> None:
@@ -98,4 +102,6 @@ def test_calculate_biological_metrics_passes_stage_days_through() -> None:
 
     facade.calculate_biological_metrics("tent1", growspace, days)
 
-    coordinator.environment_analyzer.calculate_biological_metrics.assert_called_once_with(growspace, days)
+    coordinator.environment_analyzer.calculate_biological_metrics.assert_called_once_with(
+        growspace, days
+    )

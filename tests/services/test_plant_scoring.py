@@ -32,7 +32,9 @@ def mock_strain_library():
 
 def test_score_plant_schema_accepts_null_scores():
     """Schema must accept None for score fields (frontend sends null for unset scores)."""
-    result = SCORE_PLANT_SCHEMA({"plant_id": "abc", "vigor": None, "internodal_spacing": None})
+    result = SCORE_PLANT_SCHEMA(
+        {"plant_id": "abc", "vigor": None, "internodal_spacing": None}
+    )
     assert result["vigor"] is None
     assert result["internodal_spacing"] is None
 

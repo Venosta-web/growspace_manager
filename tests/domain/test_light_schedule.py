@@ -67,7 +67,9 @@ def test_photoperiod_hours_follow_entered_flower(
         ("06:30:00", 11.5, "18:00:00"),  # fractional hours
     ],
 )
-def test_resolve_cycle_end_time(lights_on: str, hours: float, expected_end: str) -> None:
+def test_resolve_cycle_end_time(
+    lights_on: str, hours: float, expected_end: str
+) -> None:
     """Cycle end is lights-on plus the photoperiod, wrapping across midnight."""
     assert resolve_cycle_end_time(lights_on, hours) == expected_end
 
@@ -79,7 +81,12 @@ def test_resolve_cycle_end_time(lights_on: str, hours: float, expected_end: str)
         ("06:00:00", "18:00:00", datetime(2026, 7, 3, 20, 0), False),  # post-cutoff
         ("06:00:00", "18:00:00", datetime(2026, 7, 3, 3, 0), False),  # pre-dawn
         ("20:00:00", "14:00:00", datetime(2026, 7, 3, 22, 0), True),  # wrap, after on
-        ("20:00:00", "14:00:00", datetime(2026, 7, 4, 2, 0), True),  # wrap, after midnight
+        (
+            "20:00:00",
+            "14:00:00",
+            datetime(2026, 7, 4, 2, 0),
+            True,
+        ),  # wrap, after midnight
         ("20:00:00", "14:00:00", datetime(2026, 7, 3, 16, 0), False),  # wrap, in gap
     ],
 )

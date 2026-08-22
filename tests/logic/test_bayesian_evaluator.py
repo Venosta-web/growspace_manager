@@ -407,6 +407,7 @@ async def test_async_evaluate_stress_trend(
     expected_reason,
 ) -> None:
     """Test all branches of async_evaluate_stress_trend."""
+
     async def side_effect(sensor_id, duration, threshold):
         if manual_analysis_result and sensor_id == f"sensor.{test_sensor_key}":
             return manual_analysis_result

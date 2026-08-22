@@ -1,4 +1,5 @@
 """Tests for TankWaterTracker."""
+
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -30,6 +31,7 @@ def _tracker(tank: IrrigationTank | None = None) -> TankWaterTracker:
 
 # ── snapshot recording ────────────────────────────────────────────────────────
 
+
 def test_record_first_snapshot_no_event():
     """First reading produces a snapshot but no event (no previous level)."""
     t = _tracker()
@@ -46,7 +48,7 @@ def test_consumption_event_recorded():
     assert len(events) == 1
     ev = events[0]
     assert ev["event_type"] == "consumption"
-    assert abs(ev["liters"] - 200.0 * 2.0 / 100.0) < 0.01   # 4 L
+    assert abs(ev["liters"] - 200.0 * 2.0 / 100.0) < 0.01  # 4 L
     assert ev["pct_delta"] == pytest.approx(-2.0)
 
 
@@ -57,7 +59,7 @@ def test_refill_event_recorded():
     events = t.tank.water_history.events
     assert len(events) == 1
     assert events[0]["event_type"] == "refill"
-    assert abs(events[0]["liters"] - 200.0 * 40.0 / 100.0) < 0.01   # 80 L
+    assert abs(events[0]["liters"] - 200.0 * 40.0 / 100.0) < 0.01  # 80 L
 
 
 def test_noise_below_floor_ignored():
@@ -87,6 +89,7 @@ def test_rolling_event_window_enforced():
 
 
 # ── aggregation helpers ───────────────────────────────────────────────────────
+
 
 def test_get_history_24h_returns_96_buckets():
     """Returns 96 15-minute buckets for the last 24 hours."""
@@ -141,6 +144,7 @@ def test_consumption_placed_in_correct_bucket():
 
 # ── _parse_ts: naive datetime gets UTC tzinfo ────────────────────────────────
 
+
 def test_parse_ts_naive_datetime_gets_utc():
     """_parse_ts must attach UTC tzinfo to naive ISO-8601 strings."""
     dt = _parse_ts("2026-03-22T10:00:00")  # no tzinfo
@@ -149,6 +153,7 @@ def test_parse_ts_naive_datetime_gets_utc():
 
 
 # ── edge cases: no reference_ts (uses datetime.now) ──────────────────────────
+
 
 def test_get_history_24h_no_reference_ts_uses_now():
     """get_history_24h without reference_ts falls back to datetime.now."""
@@ -243,6 +248,7 @@ def test_get_total_liters_7d_no_reference_ts():
 
 # ── small positive change below refill threshold is ignored ──────────────────
 
+
 def test_small_positive_change_below_refill_threshold_ignored():
     """A rise smaller than TANK_REFILL_THRESHOLD_PCT must not emit a refill event."""
     t = _tracker()
@@ -266,11 +272,17 @@ def test_partial_refill_updates_baseline_so_consumption_is_accurate():
     # Partial top-up: +2% — queues a pending peak, no event
     t.record_level(52.0, "2026-03-22T11:00:00+00:00")
     assert t.tank.water_history.events == [], "partial refill must not emit an event"
-    assert t.tank.last_recorded_level == pytest.approx(50.0), "trough must not advance on a minor rise"
+    assert t.tank.last_recorded_level == pytest.approx(50.0), (
+        "trough must not advance on a minor rise"
+    )
     # Second reading at the same level confirms the peak
     t.record_level(52.0, "2026-03-22T11:05:00+00:00")
-    assert t.tank.water_history.events == [], "confirmation reading must not emit an event"
-    assert t.tank.peak_level == pytest.approx(52.0), "peak_level must be confirmed after two readings"
+    assert t.tank.water_history.events == [], (
+        "confirmation reading must not emit an event"
+    )
+    assert t.tank.peak_level == pytest.approx(52.0), (
+        "peak_level must be confirmed after two readings"
+    )
     # Now a drop of 4% from 52% → 48% should record 4% * 200 L = 8 L, not 4 L
     t.record_level(48.0, "2026-03-22T12:00:00+00:00")
     assert len(t.tank.water_history.events) == 1
@@ -280,6 +292,7 @@ def test_partial_refill_updates_baseline_so_consumption_is_accurate():
 
 
 # ── consumption event without volume_liters falls back to pct_delta ──────────
+
 
 def test_consumption_without_volume_liters_uses_pct_delta():
     """When volume_liters is None the event liters field equals abs pct_delta."""
@@ -305,6 +318,7 @@ def test_refill_without_volume_liters_uses_pct_delta():
 
 # ── _fill_buckets edge cases ──────────────────────────────────────────────────
 
+
 def test_fill_buckets_ignores_events_outside_range():
     """Events outside the bucket window must not appear in any bucket."""
     t = _tracker()
@@ -328,10 +342,21 @@ def test_fill_buckets_refill_in_bucket():
 
 def test_fill_buckets_empty_buckets_list_is_safe():
     """_fill_buckets with an empty bucket list must not raise."""
-    _fill_buckets([], [{"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "liters": 5.0}], _BUCKET_15MIN)
+    _fill_buckets(
+        [],
+        [
+            {
+                "timestamp": "2026-03-22T10:00:00+00:00",
+                "event_type": "consumption",
+                "liters": 5.0,
+            }
+        ],
+        _BUCKET_15MIN,
+    )
 
 
 # ── HA subscription: async_setup / async_unsubscribe ─────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_async_setup_subscribes_to_state_changes():
@@ -488,6 +513,7 @@ async def test_async_setup_on_change_not_called_when_none():
 
 # ── Timezone Tests ────────────────────────────────────────────────────────────
 
+
 def test_get_total_liters_today_timezone() -> None:
     """Test get_total_liters_today handles local timezone boundaries correctly.
 
@@ -549,13 +575,32 @@ def test_get_total_liters_7d_timezone() -> None:
 
 # ── stage aggregates ──────────────────────────────────────────────────────────
 
+
 def test_get_stage_aggregates_sums_consumption_by_stage():
     """Consumption events tagged with growth_stage are summed per stage."""
     t = _tracker()
     t.tank.water_history.events = [
-        {"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "pct_delta": -5.0, "liters": 10.0, "growth_stage": "veg"},
-        {"timestamp": "2026-03-22T11:00:00+00:00", "event_type": "consumption", "pct_delta": -3.0, "liters": 6.0, "growth_stage": "veg"},
-        {"timestamp": "2026-03-22T12:00:00+00:00", "event_type": "consumption", "pct_delta": -4.0, "liters": 8.0, "growth_stage": "flower_early"},
+        {
+            "timestamp": "2026-03-22T10:00:00+00:00",
+            "event_type": "consumption",
+            "pct_delta": -5.0,
+            "liters": 10.0,
+            "growth_stage": "veg",
+        },
+        {
+            "timestamp": "2026-03-22T11:00:00+00:00",
+            "event_type": "consumption",
+            "pct_delta": -3.0,
+            "liters": 6.0,
+            "growth_stage": "veg",
+        },
+        {
+            "timestamp": "2026-03-22T12:00:00+00:00",
+            "event_type": "consumption",
+            "pct_delta": -4.0,
+            "liters": 8.0,
+            "growth_stage": "flower_early",
+        },
     ]
     result = t.get_stage_aggregates()
     assert result == {"veg": pytest.approx(16.0), "flower_early": pytest.approx(8.0)}
@@ -565,8 +610,20 @@ def test_get_stage_aggregates_ignores_refill_events():
     """Refill events are excluded from stage aggregates."""
     t = _tracker()
     t.tank.water_history.events = [
-        {"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "pct_delta": -5.0, "liters": 10.0, "growth_stage": "veg"},
-        {"timestamp": "2026-03-22T11:00:00+00:00", "event_type": "refill", "pct_delta": 50.0, "liters": 100.0, "growth_stage": "veg"},
+        {
+            "timestamp": "2026-03-22T10:00:00+00:00",
+            "event_type": "consumption",
+            "pct_delta": -5.0,
+            "liters": 10.0,
+            "growth_stage": "veg",
+        },
+        {
+            "timestamp": "2026-03-22T11:00:00+00:00",
+            "event_type": "refill",
+            "pct_delta": 50.0,
+            "liters": 100.0,
+            "growth_stage": "veg",
+        },
     ]
     result = t.get_stage_aggregates()
     assert result == {"veg": pytest.approx(10.0)}
@@ -576,8 +633,19 @@ def test_get_stage_aggregates_ignores_events_without_stage():
     """Events without growth_stage are excluded from aggregates."""
     t = _tracker()
     t.tank.water_history.events = [
-        {"timestamp": "2026-03-22T10:00:00+00:00", "event_type": "consumption", "pct_delta": -5.0, "liters": 10.0, "growth_stage": "veg"},
-        {"timestamp": "2026-03-22T11:00:00+00:00", "event_type": "consumption", "pct_delta": -3.0, "liters": 6.0},
+        {
+            "timestamp": "2026-03-22T10:00:00+00:00",
+            "event_type": "consumption",
+            "pct_delta": -5.0,
+            "liters": 10.0,
+            "growth_stage": "veg",
+        },
+        {
+            "timestamp": "2026-03-22T11:00:00+00:00",
+            "event_type": "consumption",
+            "pct_delta": -3.0,
+            "liters": 6.0,
+        },
     ]
     result = t.get_stage_aggregates()
     assert result == {"veg": pytest.approx(10.0)}
@@ -590,6 +658,7 @@ def test_get_stage_aggregates_empty_events_returns_empty_dict():
 
 
 # ── stage_resolver tagging ────────────────────────────────────────────────────
+
 
 def test_consumption_event_tagged_with_stage_when_resolver_provided():
     """Consumption events get a growth_stage field when a stage_resolver is set."""

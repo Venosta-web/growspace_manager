@@ -32,7 +32,9 @@ def mock_coordinator(mock_hass: MagicMock) -> MagicMock:
 
     created_coroutines = []
 
-    def async_create_background_task(hass: HomeAssistant, coro: object, name: str) -> MagicMock:
+    def async_create_background_task(
+        hass: HomeAssistant, coro: object, name: str
+    ) -> MagicMock:
         created_coroutines.append(coro)
         return MagicMock()
 
@@ -61,7 +63,9 @@ def _make_growspace(
     gs.notification_target = notification_target
     gs.irrigation_strategy.auto_light_tracking = auto_light_tracking
     gs.environment_config.growlight_config.enabled = growlight_active
-    gs.environment_config.growlight_entities = ["switch.grow"] if growlight_active else []
+    gs.environment_config.growlight_entities = (
+        ["switch.grow"] if growlight_active else []
+    )
     gs.environment_config.growlight_ac_infinity_devices = []
     return gs
 
@@ -110,7 +114,9 @@ async def test_notification_sent_when_flower_start_is_today(
         await _run_immediate_check(mock_coordinator)
 
     mock_coordinator.services.notifications.manager.async_send_notification.assert_called_once()
-    _, kwargs = mock_coordinator.services.notifications.manager.async_send_notification.call_args
+    _, kwargs = (
+        mock_coordinator.services.notifications.manager.async_send_notification.call_args
+    )
     assert kwargs["tier"] == NotificationTier.PHOTOPERIOD_FLIP
 
 
@@ -257,24 +263,30 @@ async def test_midnight_callback_reschedules_for_next_day(
         captured_callback = cb
         return MagicMock()
 
-    with patch(
-        "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time",
-        side_effect=capture_timer,
-    ), patch(
-        "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
-        return_value=TODAY_DT,
+    with (
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time",
+            side_effect=capture_timer,
+        ),
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
+            return_value=TODAY_DT,
+        ),
     ):
         checker.schedule_growspace("tent1")
 
     assert captured_callback is not None
 
     # Fire the midnight callback; it should re-register a new timer
-    with patch(
-        "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time",
-        side_effect=capture_timer,
-    ), patch(
-        "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
-        return_value=TODAY_DT,
+    with (
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time",
+            side_effect=capture_timer,
+        ),
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
+            return_value=TODAY_DT,
+        ),
     ):
         await captured_callback(TODAY_DT)
 
@@ -299,12 +311,15 @@ def test_schedule_all_growspaces_registers_timer_per_growspace(
 
     checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
 
-    with patch(
-        "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time",
-        return_value=MagicMock(),
-    ), patch(
-        "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
-        return_value=TODAY_DT,
+    with (
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
+            return_value=TODAY_DT,
+        ),
     ):
         checker.schedule_all_growspaces()
 
@@ -321,12 +336,15 @@ def test_async_stop_cancels_all_timers(
     unsub = MagicMock()
     checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
 
-    with patch(
-        "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time",
-        return_value=unsub,
-    ), patch(
-        "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
-        return_value=TODAY_DT,
+    with (
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time",
+            return_value=unsub,
+        ),
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
+            return_value=TODAY_DT,
+        ),
     ):
         checker.schedule_all_growspaces()
 
@@ -427,7 +445,9 @@ async def test_midnight_callback_handles_exception(
 
     checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
 
-    with patch.object(checker, "_check_growspace", side_effect=ValueError("Test exception")):
+    with patch.object(
+        checker, "_check_growspace", side_effect=ValueError("Test exception")
+    ):
         callback = checker._create_callback("tent1")
 
         with (

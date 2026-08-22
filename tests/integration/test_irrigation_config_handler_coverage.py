@@ -155,7 +155,9 @@ async def test_async_step_configure_irrigation_errors(
 
     # Restore entry, no growspace
     handler.config_entry = MagicMock()
-    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = None
+    handler.config_entry.runtime_data.services.growspaces.get_growspace.return_value = (
+        None
+    )
     result = await handler.async_step_configure_irrigation()
     assert result == {"type": "abort"}
 

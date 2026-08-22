@@ -148,7 +148,9 @@ async def test_ipm_error_handling(mock_hass, mock_coordinator) -> None:
         await config_facade.remove_ipm_preset_from_call(mock_hass, call)
 
     # Apply IPM - GrowspaceError
-    mock_coordinator.services.plants.apply_ipm.side_effect = GrowspaceError("Apply failed")
+    mock_coordinator.services.plants.apply_ipm.side_effect = GrowspaceError(
+        "Apply failed"
+    )
     with pytest.raises(ServiceValidationError, match="Apply failed"):
         await config_facade.apply_ipm_from_call(mock_hass, call)
 
@@ -167,47 +169,55 @@ async def test_irrigation_error_handling(
     call = MagicMock(spec=ServiceCall)
     call.data = {ATTR_GROWSPACE_ID: "gs1", ATTR_TIME: "08:00:00"}
 
-    mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": mock_irrigation_coordinator}
+    mock_coordinator._subsystem_manager.irrigation_coordinators = {
+        "gs1": mock_irrigation_coordinator
+    }
     # Set Settings - GrowspaceError
-    mock_coordinator.services.growspaces.set_irrigation_settings.side_effect = GrowspaceError(
-        "Set failed"
+    mock_coordinator.services.growspaces.set_irrigation_settings.side_effect = (
+        GrowspaceError("Set failed")
     )
     with pytest.raises(ServiceValidationError, match="Set failed"):
         await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
 
     # Set Settings - Generic Exception
-    mock_coordinator.services.growspaces.set_irrigation_settings.side_effect = Exception("Crash")
+    mock_coordinator.services.growspaces.set_irrigation_settings.side_effect = (
+        Exception("Crash")
+    )
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
 
     # Add Irrigation Time - GrowspaceError
     # Test add_irrigation_schedule_item error
-    mock_coordinator.services.growspaces.add_irrigation_schedule_item.side_effect = GrowspaceError("Add failed")
+    mock_coordinator.services.growspaces.add_irrigation_schedule_item.side_effect = (
+        GrowspaceError("Add failed")
+    )
     with pytest.raises(ServiceValidationError, match="Add failed"):
         await handle_add_irrigation_time(mock_hass, mock_coordinator, call)
 
     # Test remove_irrigation_schedule_item error
-    mock_coordinator.services.growspaces.remove_irrigation_schedule_item.side_effect = GrowspaceError("Remove failed")
+    mock_coordinator.services.growspaces.remove_irrigation_schedule_item.side_effect = (
+        GrowspaceError("Remove failed")
+    )
     with pytest.raises(ServiceValidationError, match="Remove failed"):
         await handle_remove_irrigation_time(mock_hass, mock_coordinator, call)
 
     # Remove Irrigation Time - Generic Exception
-    mock_coordinator.services.growspaces.remove_irrigation_schedule_item.side_effect = Exception(
-        "Crash"
+    mock_coordinator.services.growspaces.remove_irrigation_schedule_item.side_effect = (
+        Exception("Crash")
     )
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_remove_irrigation_time(mock_hass, mock_coordinator, call)
 
     # Add Drain Time - GrowspaceError
-    mock_coordinator.services.growspaces.add_irrigation_schedule_item.side_effect = GrowspaceError(
-        "Add failed"
+    mock_coordinator.services.growspaces.add_irrigation_schedule_item.side_effect = (
+        GrowspaceError("Add failed")
     )
     with pytest.raises(ServiceValidationError, match="Add failed"):
         await handle_add_drain_time(mock_hass, mock_coordinator, call)
 
     # Add Drain Time - Generic Exception
-    mock_coordinator.services.growspaces.add_irrigation_schedule_item.side_effect = Exception(
-        "Crash"
+    mock_coordinator.services.growspaces.add_irrigation_schedule_item.side_effect = (
+        Exception("Crash")
     )
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_add_drain_time(mock_hass, mock_coordinator, call)
@@ -220,8 +230,8 @@ async def test_irrigation_error_handling(
         await handle_remove_drain_time(mock_hass, mock_coordinator, call)
 
     # Remove Drain Time - Generic Exception
-    mock_coordinator.services.growspaces.remove_irrigation_schedule_item.side_effect = Exception(
-        "Crash"
+    mock_coordinator.services.growspaces.remove_irrigation_schedule_item.side_effect = (
+        Exception("Crash")
     )
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_remove_drain_time(mock_hass, mock_coordinator, call)
@@ -241,20 +251,24 @@ async def test_nutrient_error_handling(mock_hass, mock_coordinator) -> None:
         await handle_save_nutrient_preset(mock_hass, mock_coordinator, call)
 
     # Save Nutrient - Generic Exception
-    mock_coordinator.services.config.save_nutrient_preset.side_effect = Exception("Crash")
+    mock_coordinator.services.config.save_nutrient_preset.side_effect = Exception(
+        "Crash"
+    )
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_save_nutrient_preset(mock_hass, mock_coordinator, call)
 
     # Remove Nutrient - GrowspaceError
     call.data = {ATTR_PRESET_ID: "n1"}
-    mock_coordinator.services.config.remove_nutrient_preset.side_effect = GrowspaceError(
-        "Remove failed"
+    mock_coordinator.services.config.remove_nutrient_preset.side_effect = (
+        GrowspaceError("Remove failed")
     )
     with pytest.raises(ServiceValidationError, match="Remove failed"):
         await handle_remove_nutrient_preset(mock_hass, mock_coordinator, call)
 
     # Remove Nutrient - Generic Exception
-    mock_coordinator.services.config.remove_nutrient_preset.side_effect = Exception("Crash")
+    mock_coordinator.services.config.remove_nutrient_preset.side_effect = Exception(
+        "Crash"
+    )
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_remove_nutrient_preset(mock_hass, mock_coordinator, call)
 
@@ -266,7 +280,9 @@ async def test_training_error_handling(mock_hass, mock_coordinator) -> None:
     call.data = {ATTR_TECHNIQUE: "topping"}
 
     plant_facade = PlantFacade(mock_coordinator)
-    plant_facade.log_training_event = mock_coordinator.services.plants.log_training_event
+    plant_facade.log_training_event = (
+        mock_coordinator.services.plants.log_training_event
+    )
 
     # Log Training - GrowspaceError
     mock_coordinator.services.plants.log_training_event.side_effect = GrowspaceError(
@@ -301,7 +317,9 @@ async def test_irrigation_watering_error_handling(mock_hass, mock_coordinator) -
     assert result == {"plants_watered": 5}
 
     # Water Plant - GrowspaceError
-    mock_coordinator.services.plants.water_plant.side_effect = GrowspaceError("Water failed")
+    mock_coordinator.services.plants.water_plant.side_effect = GrowspaceError(
+        "Water failed"
+    )
     with pytest.raises(ServiceValidationError, match="Water failed"):
         await handle_water_plant(mock_hass, mock_coordinator, call)
 
@@ -318,6 +336,8 @@ async def test_irrigation_watering_error_handling(mock_hass, mock_coordinator) -
         await handle_water_growspace(mock_hass, mock_coordinator, call)
 
     # Water Growspace - Generic Exception
-    mock_coordinator.services.growspaces.water_growspace.side_effect = Exception("Crash")
+    mock_coordinator.services.growspaces.water_growspace.side_effect = Exception(
+        "Crash"
+    )
     with pytest.raises(ServiceValidationError, match="Operation failed"):
         await handle_water_growspace(mock_hass, mock_coordinator, call)

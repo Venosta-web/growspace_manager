@@ -447,6 +447,7 @@ async def test_handle_update_strain_meta_value_error(
             mock_hass, mock_coordinator, mock_strain_library, mock_call
         )
 
+
 @pytest.mark.asyncio
 async def test_handle_update_strain_meta_with_none_values(
     mock_hass, mock_coordinator, mock_strain_library, mock_call

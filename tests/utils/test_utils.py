@@ -293,35 +293,80 @@ def test_interpolate_value() -> None:
 
 def test_classify_stages() -> None:
     """Test classify_stages for all branches."""
+
     def sc(days: StageDays) -> tuple[BayesianStage, BayesianStage, float]:
         r = classify_stages(days)
         return r.stage_a, r.stage_b, r.factor
 
     # Flower — early (before transition window)
-    assert sc(StageDays(flower=10)) == (BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_EARLY, 0.0)
+    assert sc(StageDays(flower=10)) == (
+        BayesianStage.FLOWER_EARLY,
+        BayesianStage.FLOWER_EARLY,
+        0.0,
+    )
     # Flower — early→mid transition (window is 3, boundary is 21)
-    assert sc(StageDays(flower=20)) == (BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_MID, 0.67)
+    assert sc(StageDays(flower=20)) == (
+        BayesianStage.FLOWER_EARLY,
+        BayesianStage.FLOWER_MID,
+        0.67,
+    )
     # Flower — mid
-    assert sc(StageDays(flower=25)) == (BayesianStage.FLOWER_MID, BayesianStage.FLOWER_MID, 0.0)
+    assert sc(StageDays(flower=25)) == (
+        BayesianStage.FLOWER_MID,
+        BayesianStage.FLOWER_MID,
+        0.0,
+    )
     # Flower — mid→late transition (boundary is 42)
-    assert sc(StageDays(flower=41)) == (BayesianStage.FLOWER_MID, BayesianStage.FLOWER_LATE, 0.67)
+    assert sc(StageDays(flower=41)) == (
+        BayesianStage.FLOWER_MID,
+        BayesianStage.FLOWER_LATE,
+        0.67,
+    )
     # Flower — late
-    assert sc(StageDays(flower=50)) == (BayesianStage.FLOWER_LATE, BayesianStage.FLOWER_LATE, 0.0)
+    assert sc(StageDays(flower=50)) == (
+        BayesianStage.FLOWER_LATE,
+        BayesianStage.FLOWER_LATE,
+        0.0,
+    )
 
     # Veg — transition from seedling_standard (window is 3)
-    assert sc(StageDays(veg=1)) == (BayesianStage.SEEDLING_STANDARD, BayesianStage.VEG, 0.33)
+    assert sc(StageDays(veg=1)) == (
+        BayesianStage.SEEDLING_STANDARD,
+        BayesianStage.VEG,
+        0.33,
+    )
     # Veg — stable
     assert sc(StageDays(veg=5)) == (BayesianStage.VEG, BayesianStage.VEG, 0.0)
 
     # Seedling — acclimation (start=3, end=7)
-    assert sc(StageDays(seedling=2)) == (BayesianStage.SEEDLING, BayesianStage.SEEDLING, 0.0)
-    assert sc(StageDays(seedling=5)) == (BayesianStage.SEEDLING, BayesianStage.SEEDLING_STANDARD, 0.5)
-    assert sc(StageDays(seedling=8)) == (BayesianStage.SEEDLING_STANDARD, BayesianStage.SEEDLING_STANDARD, 0.0)
+    assert sc(StageDays(seedling=2)) == (
+        BayesianStage.SEEDLING,
+        BayesianStage.SEEDLING,
+        0.0,
+    )
+    assert sc(StageDays(seedling=5)) == (
+        BayesianStage.SEEDLING,
+        BayesianStage.SEEDLING_STANDARD,
+        0.5,
+    )
+    assert sc(StageDays(seedling=8)) == (
+        BayesianStage.SEEDLING_STANDARD,
+        BayesianStage.SEEDLING_STANDARD,
+        0.0,
+    )
 
     # Clone — acclimation
     assert sc(StageDays(clone=2)) == (BayesianStage.CLONE, BayesianStage.CLONE, 0.0)
-    assert sc(StageDays(clone=5)) == (BayesianStage.CLONE, BayesianStage.CLONE_STANDARD, 0.5)
-    assert sc(StageDays(clone=8)) == (BayesianStage.CLONE_STANDARD, BayesianStage.CLONE_STANDARD, 0.0)
+    assert sc(StageDays(clone=5)) == (
+        BayesianStage.CLONE,
+        BayesianStage.CLONE_STANDARD,
+        0.5,
+    )
+    assert sc(StageDays(clone=8)) == (
+        BayesianStage.CLONE_STANDARD,
+        BayesianStage.CLONE_STANDARD,
+        0.0,
+    )
 
     # Empty — no plants at all (was previously VEG fallback)
     assert sc(StageDays()) == (BayesianStage.EMPTY, BayesianStage.EMPTY, 0.0)
@@ -335,17 +380,25 @@ def test_classify_stages() -> None:
 def test_classify_stages_display_stage() -> None:
     """Test display_stage collapses sub-stages and applies factor threshold."""
     # Sub-stage collapsing
-    assert classify_stages(StageDays(seedling=8)).display_stage == BayesianStage.SEEDLING
+    assert (
+        classify_stages(StageDays(seedling=8)).display_stage == BayesianStage.SEEDLING
+    )
     assert classify_stages(StageDays(clone=8)).display_stage == BayesianStage.CLONE
     assert classify_stages(StageDays(veg=5)).display_stage == BayesianStage.VEG
 
     # Factor < 0.5 → display stage_a (collapsed)
-    r = classify_stages(StageDays(seedling=5))  # factor=0.5, stage_a=SEEDLING, stage_b=SEEDLING_STANDARD
+    r = classify_stages(
+        StageDays(seedling=5)
+    )  # factor=0.5, stage_a=SEEDLING, stage_b=SEEDLING_STANDARD
     assert r.factor == 0.5
-    assert r.display_stage == BayesianStage.SEEDLING  # 0.5 >= 0.5 → stage_b, collapsed to SEEDLING
+    assert (
+        r.display_stage == BayesianStage.SEEDLING
+    )  # 0.5 >= 0.5 → stage_b, collapsed to SEEDLING
 
     # Factor >= 0.5 → stage_b
-    r = classify_stages(StageDays(flower=20))  # factor=0.67, stage_a=FLOWER_EARLY, stage_b=FLOWER_MID
+    r = classify_stages(
+        StageDays(flower=20)
+    )  # factor=0.67, stage_a=FLOWER_EARLY, stage_b=FLOWER_MID
     assert r.display_stage == BayesianStage.FLOWER_MID
 
     # Factor < 0.5 → stage_a

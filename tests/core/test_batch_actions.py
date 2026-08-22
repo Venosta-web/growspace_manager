@@ -43,9 +43,7 @@ async def test_batch_transition(
 
     await handle_batch_action(mock_hass, mock_coordinator, call)
 
-    assert (
-        mock_coordinator.services.plants.transition_plant_stage.call_count == 2
-    )
+    assert mock_coordinator.services.plants.transition_plant_stage.call_count == 2
     mock_coordinator.services.plants.transition_plant_stage.assert_any_call(
         plant_id="plant1", new_stage="flower", transition_date="2023-01-01"
     )

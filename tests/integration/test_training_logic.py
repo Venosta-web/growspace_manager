@@ -49,7 +49,9 @@ def mock_coordinator(hass: HomeAssistant, mock_plants):
     # Use real coordinator instead of MagicMock to support delegation to services
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
-    coordinator = GrowspaceCoordinator.build(hass, entry, data={}, strain_library=MagicMock())
+    coordinator = GrowspaceCoordinator.build(
+        hass, entry, data={}, strain_library=MagicMock()
+    )
 
     # Set up plants
     coordinator._data_repository.load_plants(mock_plants)

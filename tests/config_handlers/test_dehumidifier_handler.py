@@ -149,7 +149,9 @@ async def test_configure_dehumidifier_aborts_when_growspace_not_found() -> None:
 
 
 @pytest.mark.asyncio
-async def test_configure_dehumidifier_routes_to_advanced_bayesian_when_flag_set() -> None:
+async def test_configure_dehumidifier_routes_to_advanced_bayesian_when_flag_set() -> (
+    None
+):
     """When configure_advanced is truthy the flow continues to advanced Bayesian step."""
     flow = _make_flow()
     flow.env_config_step1 = {"configure_advanced": True}
@@ -257,7 +259,9 @@ def test_add_dehumidifier_control_toggles_defaults_all_false_when_empty() -> Non
     assert defaults[CONF_CONFIGURE_FAN_CONTROLLER] is False
 
 
-def test_add_dehumidifier_control_toggles_configure_dehumidifier_true_when_thresholds_present() -> None:
+def test_add_dehumidifier_control_toggles_configure_dehumidifier_true_when_thresholds_present() -> (
+    None
+):
     """CONF_CONFIGURE_DEHUMIDIFIER defaults to True when CONF_DEHUMIDIFIER_THRESHOLDS is set."""
     flow = _make_flow()
     handler = DehumidifierHandler(flow)
@@ -271,7 +275,9 @@ def test_add_dehumidifier_control_toggles_configure_dehumidifier_true_when_thres
     assert defaults[CONF_CONFIGURE_DEHUMIDIFIER] is True
 
 
-def test_add_dehumidifier_control_toggles_fan_controller_uses_circulation_fan_config() -> None:
+def test_add_dehumidifier_control_toggles_fan_controller_uses_circulation_fan_config() -> (
+    None
+):
     """CONF_CONFIGURE_FAN_CONTROLLER mirrors circulation_fan_config enabled flag."""
     flow = _make_flow()
     handler = DehumidifierHandler(flow)
@@ -285,7 +291,9 @@ def test_add_dehumidifier_control_toggles_fan_controller_uses_circulation_fan_co
     assert defaults[CONF_CONFIGURE_FAN_CONTROLLER] is True
 
 
-def test_add_dehumidifier_control_toggles_fan_controller_false_for_non_dict_fan_config() -> None:
+def test_add_dehumidifier_control_toggles_fan_controller_false_for_non_dict_fan_config() -> (
+    None
+):
     """A non-dict circulation_fan_config treats fan as not configured."""
     flow = _make_flow()
     handler = DehumidifierHandler(flow)

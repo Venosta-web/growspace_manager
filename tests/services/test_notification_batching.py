@@ -35,7 +35,9 @@ def make_snapshot(
         probability=probability,
         threshold=0.8,
         is_on=is_on,
-        reasons=reasons if reasons is not None else [(0.9, "Reason A"), (0.8, "Reason B")],
+        reasons=reasons
+        if reasons is not None
+        else [(0.9, "Reason A"), (0.8, "Reason B")],
         sensor_states=sensor_states if sensor_states is not None else {"temp": 25.0},
         lights_on=None,
         notification_title=notification_title,
@@ -99,13 +101,19 @@ async def test_multiple_sensors_aggregation(manager, hass: HomeAssistant) -> Non
     _store(
         manager,
         make_snapshot(
-            "stress", sensor_name="Sensor 1", reasons=[(0.9, "Hot")], sensor_states={"temp": 30}
+            "stress",
+            sensor_name="Sensor 1",
+            reasons=[(0.9, "Hot")],
+            sensor_states={"temp": 30},
         ),
     )
     _store(
         manager,
         make_snapshot(
-            "mold", sensor_name="Sensor 2", reasons=[(0.8, "Dry")], sensor_states={"hum": 20}
+            "mold",
+            sensor_name="Sensor 2",
+            reasons=[(0.8, "Dry")],
+            sensor_states={"hum": 20},
         ),
     )
 

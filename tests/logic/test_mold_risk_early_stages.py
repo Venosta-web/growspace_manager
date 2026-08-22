@@ -22,7 +22,9 @@ def _make_mold_strategy(mock_sensor: MagicMock) -> MoldRiskEvaluatorStrategy:
 
     return MoldRiskEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=MagicMock(return_value=None),
         get_notification_message=lambda msg, reasons: "msg",

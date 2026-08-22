@@ -51,7 +51,9 @@ class GeneticsFacade:
 
     async def async_update_seed_batch(self, **kwargs: Any) -> Any:
         """Update an existing seed batch."""
-        return await self._coordinator._genetics_manager.async_update_seed_batch(**kwargs)
+        return await self._coordinator._genetics_manager.async_update_seed_batch(
+            **kwargs
+        )
 
     async def async_log_pollination(self, **kwargs: Any) -> Any:
         """Log a pollination event."""
@@ -67,7 +69,9 @@ class GeneticsFacade:
 
     async def async_update_pollination(self, **kwargs: Any) -> Any:
         """Update an existing pollination event."""
-        return await self._coordinator._genetics_manager.async_update_pollination(**kwargs)
+        return await self._coordinator._genetics_manager.async_update_pollination(
+            **kwargs
+        )
 
     async def async_delete_pollination(self, event_id: str) -> None:
         """Delete a pollination event."""

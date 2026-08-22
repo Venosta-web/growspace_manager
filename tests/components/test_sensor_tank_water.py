@@ -108,7 +108,9 @@ async def test_async_added_to_hass_tracker_none():
         await sensor.async_added_to_hass()
 
     # get_tank_tracker was called and returned None, so early return happened
-    coordinator.services.growspaces.get_tank_tracker.assert_called_once_with("gs_1", "sensor.tank_1")
+    coordinator.services.growspaces.get_tank_tracker.assert_called_once_with(
+        "gs_1", "sensor.tank_1"
+    )
 
 
 @pytest.mark.asyncio

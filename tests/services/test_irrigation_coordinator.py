@@ -473,9 +473,7 @@ async def test_async_remove_schedule_item(
 
         # An invalid time is a loud failure, matching the add path
         with pytest.raises(ValueError):
-            await coordinator.async_remove_schedule_item(
-                "irrigation_times", "99:99:99"
-            )
+            await coordinator.async_remove_schedule_item("irrigation_times", "99:99:99")
 
 
 async def test_async_add_schedule_item_validation_error(
@@ -1102,7 +1100,9 @@ async def test_async_manual_run_raises_when_no_pump_configured(
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    coordinator._main_coordinator.growspaces[GROWSPACE_ID].irrigation_config.irrigation_pump_entity = None
+    coordinator._main_coordinator.growspaces[
+        GROWSPACE_ID
+    ].irrigation_config.irrigation_pump_entity = None
 
     with pytest.raises(ServiceValidationError, match="No irrigation pump"):
         await coordinator.async_manual_run(duration=30)
@@ -1139,7 +1139,9 @@ async def test_last_cycle_timestamp_set_after_run_pump_cycle(
             return_value=True,
         ),
     ):
-        await coordinator._run_pump_cycle("irrigation", "switch.irrigation_pump", 30, {})
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {}
+        )
 
     assert coordinator.last_cycle_timestamp is not None
 
@@ -1404,7 +1406,9 @@ async def test_low_tank_skip_fires_persistent_notification(
         for c in mock_hass.services.async_call.call_args_list
         if c.args[:2] == ("persistent_notification", "create")
     ]
-    assert len(notification_calls) >= 1, "No persistent notification was fired for low tank skip"
+    assert len(notification_calls) >= 1, (
+        "No persistent notification was fired for low tank skip"
+    )
 
 
 async def test_low_tank_skip_also_applies_to_manual_run(

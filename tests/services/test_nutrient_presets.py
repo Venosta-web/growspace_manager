@@ -116,7 +116,8 @@ class TestNutrientPresetCoordinator:
         """Test removing a nutrient preset."""
         # First save a preset
         preset = await preset_coordinator.services.config.save_nutrient_preset(
-            name="To Remove", nutrients=[{"nutrient_id": "id-nutrient", "dose_ml_l": 1.0}]
+            name="To Remove",
+            nutrients=[{"nutrient_id": "id-nutrient", "dose_ml_l": 1.0}],
         )
         preset_id = preset.id
 
@@ -242,7 +243,8 @@ class TestWateringWithPresets:
     ) -> None:
         """Test watering a plant using a nutrient preset."""
         preset = await preset_coordinator.services.config.save_nutrient_preset(
-            name="Test Preset", nutrients=[{"nutrient_id": "id-calmag", "dose_ml_l": 2.0}]
+            name="Test Preset",
+            nutrients=[{"nutrient_id": "id-calmag", "dose_ml_l": 2.0}],
         )
 
         # Water with 2.0L using preset (should result in 4.0ml CalMag)

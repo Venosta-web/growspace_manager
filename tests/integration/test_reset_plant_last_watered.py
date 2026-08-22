@@ -85,7 +85,9 @@ class TestResetLastWateredFacade:
     ) -> None:
         """Unknown plant ID raises ServiceValidationError, not a silent no-op."""
         with pytest.raises(ServiceValidationError):
-            await coordinator_with_plant.services.plants.reset_last_watered("no-such-plant")
+            await coordinator_with_plant.services.plants.reset_last_watered(
+                "no-such-plant"
+            )
 
 
 class TestResetLastWateredHandler:

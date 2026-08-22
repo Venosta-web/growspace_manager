@@ -46,6 +46,7 @@ def _make_coordinator(plant: Plant) -> MagicMock:
 
 # --- DryingWeightSensor ---
 
+
 class TestDryingWeightSensor:
     def test_native_value_returns_latest_weight(self) -> None:
         """State is the most recent weight_log entry."""
@@ -113,6 +114,7 @@ class TestDryingWeightSensor:
 
 # --- DryingMoistureSensor ---
 
+
 class TestDryingMoistureSensor:
     def test_native_value_returns_latest_moisture(self) -> None:
         """State is the most recent moisture_log entry."""
@@ -133,6 +135,7 @@ class TestDryingMoistureSensor:
 
 
 # --- DryingReadyForCureSensor ---
+
 
 class TestDryingReadyForCureSensor:
     def test_is_on_when_moisture_at_threshold(self) -> None:

@@ -25,7 +25,9 @@ def _make_mold_strategy(mock_sensor: MagicMock) -> MoldRiskEvaluatorStrategy:
     mock_growspace.name = "Test Growspace"
     return MoldRiskEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=MagicMock(return_value=mock_growspace),
         get_notification_message=MagicMock(return_value="msg"),
@@ -173,7 +175,9 @@ async def test_notification_title_generation(mock_sensor) -> None:
 
     strategy = MoldRiskEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=lambda: mock_growspace,
         get_notification_message=MagicMock(return_value="msg"),

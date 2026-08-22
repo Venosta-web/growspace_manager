@@ -43,9 +43,7 @@ def _make_flow(growspace: Growspace | None = None) -> MagicMock:
     flow.async_step_configure_sensor_placement = AsyncMock(
         return_value={"type": "form", "step_id": "configure_sensor_placement"}
     )
-    flow.async_step_save_and_finish = AsyncMock(
-        return_value={"type": "create_entry"}
-    )
+    flow.async_step_save_and_finish = AsyncMock(return_value={"type": "create_entry"})
     return flow
 
 
@@ -252,7 +250,9 @@ def test_parse_passthrough_non_string_value() -> None:
     flow = _make_flow()
     handler = BayesianAdvancedHandler(flow)
 
-    result = handler.parse_advanced_bayesian_input({CONF_PROB_TEMP_EXTREME_HEAT: (0.9, 0.1)})
+    result = handler.parse_advanced_bayesian_input(
+        {CONF_PROB_TEMP_EXTREME_HEAT: (0.9, 0.1)}
+    )
 
     assert result[CONF_PROB_TEMP_EXTREME_HEAT] == (0.9, 0.1)
 

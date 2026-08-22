@@ -64,7 +64,9 @@ async def test_switch_plants_raises_when_plant2_missing(coordinator: MagicMock) 
 
 
 @pytest.mark.asyncio
-async def test_move_plant_to_empty_position_delegates_move(coordinator: MagicMock) -> None:
+async def test_move_plant_to_empty_position_delegates_move(
+    coordinator: MagicMock,
+) -> None:
     """When target position is empty, calls move_plant on the facade."""
     plant = MagicMock(row=1, col=1, growspace_id="gs1", strain="Test")
     coordinator.plants = {"p1": plant}

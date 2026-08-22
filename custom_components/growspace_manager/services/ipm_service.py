@@ -150,10 +150,7 @@ class IPMService(BaseService):
                     dt_util.now().date() + timedelta(days=max_phi_days)
                 ).isoformat()
                 # Only update if new clearance is later than existing
-                if (
-                    not plant.phi_clearance_date
-                    or clearance > plant.phi_clearance_date
-                ):
+                if not plant.phi_clearance_date or clearance > plant.phi_clearance_date:
                     plant.phi_clearance_date = clearance
 
         # Group by growspace for event logging

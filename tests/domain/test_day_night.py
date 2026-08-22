@@ -27,8 +27,8 @@ def tracker() -> DayNightTracker:
         ("1.0", True),
         ("0.0", False),
         (STATE_ON, True),
-        (STATE_UNAVAILABLE, True),   # no valid sensors → default True
-        (STATE_UNKNOWN, True),       # no valid sensors → default True
+        (STATE_UNAVAILABLE, True),  # no valid sensors → default True
+        (STATE_UNKNOWN, True),  # no valid sensors → default True
     ],
 )
 def test_determine_reads_light_sensor_state(

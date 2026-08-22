@@ -112,22 +112,40 @@ def classify_stages(days: StageDays) -> StageClassification:
 
         if days.flower <= b1:
             if days.flower < b1 - TRANSITION_WINDOW:
-                return StageClassification(BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_EARLY, 0.0)
+                return StageClassification(
+                    BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_EARLY, 0.0
+                )
             factor = (days.flower - (b1 - TRANSITION_WINDOW)) / TRANSITION_WINDOW
-            return StageClassification(BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_MID, round(float(factor), 2))
+            return StageClassification(
+                BayesianStage.FLOWER_EARLY,
+                BayesianStage.FLOWER_MID,
+                round(float(factor), 2),
+            )
 
         if days.flower <= b2:
             if days.flower < b2 - TRANSITION_WINDOW:
-                return StageClassification(BayesianStage.FLOWER_MID, BayesianStage.FLOWER_MID, 0.0)
+                return StageClassification(
+                    BayesianStage.FLOWER_MID, BayesianStage.FLOWER_MID, 0.0
+                )
             factor = (days.flower - (b2 - TRANSITION_WINDOW)) / TRANSITION_WINDOW
-            return StageClassification(BayesianStage.FLOWER_MID, BayesianStage.FLOWER_LATE, round(float(factor), 2))
+            return StageClassification(
+                BayesianStage.FLOWER_MID,
+                BayesianStage.FLOWER_LATE,
+                round(float(factor), 2),
+            )
 
-        return StageClassification(BayesianStage.FLOWER_LATE, BayesianStage.FLOWER_LATE, 0.0)
+        return StageClassification(
+            BayesianStage.FLOWER_LATE, BayesianStage.FLOWER_LATE, 0.0
+        )
 
     if days.veg >= 0:
         if days.veg < TRANSITION_WINDOW:
             factor = days.veg / TRANSITION_WINDOW
-            return StageClassification(BayesianStage.SEEDLING_STANDARD, BayesianStage.VEG, round(float(factor), 2))
+            return StageClassification(
+                BayesianStage.SEEDLING_STANDARD,
+                BayesianStage.VEG,
+                round(float(factor), 2),
+            )
         return StageClassification(BayesianStage.VEG, BayesianStage.VEG, 0.0)
 
     if days.seedling >= 0:
@@ -135,22 +153,38 @@ def classify_stages(days: StageDays) -> StageClassification:
         ac_end = ACCLIMATION_END_DAYS
         if days.seedling <= ac_end:
             if days.seedling <= ac_start:
-                return StageClassification(BayesianStage.SEEDLING, BayesianStage.SEEDLING, 0.0)
+                return StageClassification(
+                    BayesianStage.SEEDLING, BayesianStage.SEEDLING, 0.0
+                )
             window = ac_end - ac_start
             factor = (days.seedling - ac_start) / window
-            return StageClassification(BayesianStage.SEEDLING, BayesianStage.SEEDLING_STANDARD, round(float(factor), 2))
-        return StageClassification(BayesianStage.SEEDLING_STANDARD, BayesianStage.SEEDLING_STANDARD, 0.0)
+            return StageClassification(
+                BayesianStage.SEEDLING,
+                BayesianStage.SEEDLING_STANDARD,
+                round(float(factor), 2),
+            )
+        return StageClassification(
+            BayesianStage.SEEDLING_STANDARD, BayesianStage.SEEDLING_STANDARD, 0.0
+        )
 
     if days.clone >= 0:
         ac_start = ACCLIMATION_START_DAYS
         ac_end = ACCLIMATION_END_DAYS
         if days.clone <= ac_end:
             if days.clone <= ac_start:
-                return StageClassification(BayesianStage.CLONE, BayesianStage.CLONE, 0.0)
+                return StageClassification(
+                    BayesianStage.CLONE, BayesianStage.CLONE, 0.0
+                )
             window = ac_end - ac_start
             factor = (days.clone - ac_start) / window
-            return StageClassification(BayesianStage.CLONE, BayesianStage.CLONE_STANDARD, round(float(factor), 2))
-        return StageClassification(BayesianStage.CLONE_STANDARD, BayesianStage.CLONE_STANDARD, 0.0)
+            return StageClassification(
+                BayesianStage.CLONE,
+                BayesianStage.CLONE_STANDARD,
+                round(float(factor), 2),
+            )
+        return StageClassification(
+            BayesianStage.CLONE_STANDARD, BayesianStage.CLONE_STANDARD, 0.0
+        )
 
     return StageClassification(BayesianStage.EMPTY, BayesianStage.EMPTY, 0.0)
 
