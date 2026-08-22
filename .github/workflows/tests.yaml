@@ -1,6 +1,7 @@
+---
 name: Tests
 
-on:
+"on":
   push:
   pull_request:
 
@@ -9,6 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v7.0.0
+        name: Setup Node.js
+        with:
+          node-version: "24"
+      - name: Test branch maintenance safeguards
+        run: node --test .github/scripts/branch-cleanup.test.cjs
       - uses: actions/setup-python@v6.2.0
         name: Setup Python
         with:
@@ -24,19 +31,21 @@ jobs:
             ${{ runner.os }}-pip-
       - name: update pip
         run: python -m pip install --upgrade pip setuptools wheel
-      # Two-phase install so every Home-Assistant-owned dependency resolves to the
-      # version this HA release actually supports. Installing requirements.txt in one
-      # unconstrained pass let hassil float past HA 2026.5.4 and zeroed out collection
-      # on a commit that had passed a month earlier (ADR-0020, 2026-08-07 amendment).
+      # Two-phase install so every Home-Assistant-owned dependency resolves to
+      # the version this HA release actually supports. Installing
+      # requirements.txt in one unconstrained pass let hassil float past HA
+      # 2026.5.4 and zeroed out collection on a commit that had passed a month
+      # earlier (ADR-0020, 2026-08-07 amendment).
       - name: install dependencies
+        # yamllint disable rule:line-length
         run: |
-          # Phase 1: HA alone, so its package_constraints.txt is on disk to constrain phase 2.
+          # Phase 1: install HA so its constraints are available for phase 2.
           pip install "$(grep '^homeassistant==' requirements.txt)"
           pip install -r requirements.txt -c "$(
             python -c 'import homeassistant, pathlib; print(pathlib.Path(homeassistant.__file__).parent / "package_constraints.txt")'
           )"
-      # Makes the resolved set visible in the log, so a future "it passed last month"
-      # can be diffed against what actually got installed.
+        # yamllint enable rule:line-length
+      # Expose the resolved set so time-dependent failures can be compared.
       - name: record resolved dependency set
         run: pip freeze
       - name: Run Unit Tests

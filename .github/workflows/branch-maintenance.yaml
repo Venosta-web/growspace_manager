@@ -1,0 +1,75 @@
+---
+name: Branch maintenance
+
+"on":
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report merged branches without deleting them
+        type: boolean
+        default: true
+      merged_grace_days:
+        description: Minimum age of a merged branch before the sweep deletes it
+        type: string
+        default: "7"
+      stale_days:
+        description: Age at which unmerged branches appear in the review report
+        type: string
+        default: "180"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: branch-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain-branches:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    env:
+      DRY_RUN: >-
+        ${{ github.event_name == 'workflow_dispatch' &&
+        inputs.dry_run || 'false' }}
+      MERGED_GRACE_DAYS: ${{ inputs.merged_grace_days || '7' }}
+      STALE_DAYS: ${{ inputs.stale_days || '180' }}
+      # Extend these as the integration model evolves.
+      KEEP_BRANCHES: dev,prerelease,feat-stageAnalyzer,feat-stageAnalyizer
+      KEEP_PREFIXES: release/
+    steps:
+      - name: Check out the trusted default branch
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Delete the merged pull request branch
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const maintenance = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/scripts/branch-cleanup.cjs`
+            );
+            await maintenance.deleteMergedPullRequestBranch({
+              github,
+              context,
+              core,
+            });
+
+      - name: Sweep merged branches and report stale work
+        if: github.event_name != 'pull_request'
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const maintenance = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/scripts/branch-cleanup.cjs`
+            );
+            await maintenance.sweepBranches({ github, context, core });
