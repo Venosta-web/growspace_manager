@@ -28,7 +28,6 @@ from custom_components.growspace_manager.const import (
     CANONICAL_ID_MOTHER,
     DATE_FIELDS,
     GrowspaceService,
-    NotificationTier,
     PlantStage,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceError
@@ -284,34 +283,6 @@ class PlantFacade:
             cbd_percentage=cbd_percentage,
             terpene_profile=terpene_profile,
         )
-
-    async def _async_auto_harvest(self) -> None:
-        """Automatically harvest plants whose transition date has passed."""
-        today = dt_util.now().date().isoformat()
-        plants_to_harvest = [
-            plant
-            for plant in self._coordinator.plants.values()
-            if plant.transition_date
-            and plant.transition_date <= today
-            and plant.stage == PlantStage.FLOWER
-        ]
-        for plant in plants_to_harvest:
-            plant_id = plant.plant_id
-            strain_name = plant.genetics.strain_name
-            gs_id = plant.growspace_id
-            _LOGGER.info(
-                "Auto-harvesting plant %s (%s) in %s", plant_id, strain_name, gs_id
-            )
-            await self._coordinator._plant_manager.harvest(
-                plant_id=plant_id,
-                transition_date=today,
-            )
-            await self._coordinator._notification_manager.async_send_notification(
-                growspace_id=gs_id,
-                title="Auto-harvest complete",
-                message=f"Plant {strain_name} has been auto-harvested",
-                tier=NotificationTier.INFO,
-            )
 
     # -------------------------------------------------------------------------
     # Watering and IPM
@@ -590,10 +561,7 @@ class PlantFacade:
             row = call.data[ATTR_ROW]
             col = call.data[ATTR_COL]
 
-            add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
-            parsed_dates = {
-                f: parse_date_field(call.data.get(f)) for f in add_date_fields
-            }
+            parsed_dates = {f: parse_date_field(call.data.get(f)) for f in DATE_FIELDS}
 
             if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get(
                 "mother_start"
@@ -682,10 +650,7 @@ class PlantFacade:
             )
             batch_generation = batch.generation if batch else ""
 
-            add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
-            parsed_dates = {
-                f: parse_date_field(call.data.get(f)) for f in add_date_fields
-            }
+            parsed_dates = {f: parse_date_field(call.data.get(f)) for f in DATE_FIELDS}
 
             if growspace_id == CANONICAL_ID_MOTHER and not parsed_dates.get(
                 "mother_start"

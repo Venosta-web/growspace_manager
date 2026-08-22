@@ -445,7 +445,6 @@ def _maximal_plant() -> Plant:
         cure_start="2026-08-01T00:00:00+00:00",
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-08-11",
-        transition_date="2026-08-01T00:00:00+00:00",
         source_mother="mother-contract",
         seed_batch_id="batch-contract",
         sex="female",

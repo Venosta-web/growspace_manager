@@ -294,8 +294,7 @@ SCHEMA_WS_PRINT_LABEL = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 
 def _parse_date_kwargs(msg: dict[str, Any]) -> dict[str, Any]:
     """Extract and parse optional date fields from a WS message."""
-    add_date_fields = [f for f in DATE_FIELDS if f != "transition_date"]
-    return {f: parse_date_field(msg[f]) for f in add_date_fields if f in msg}
+    return {f: parse_date_field(msg[f]) for f in DATE_FIELDS if f in msg}
 
 
 async def websocket_water_plant(

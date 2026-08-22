@@ -801,7 +801,6 @@ DATE_FIELDS = [
     "cure_start",
     "mother_start",
     "clone_start",
-    "transition_date",  # Also include transition_date as it's used in some services
 ]
 
 SPECIAL_GROWSPACES = {

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.const import NotificationTier, PlantStage
+from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.models import Plant, PlantGenetics
 from custom_components.growspace_manager.services.plant_facade import PlantFacade
 from homeassistant.exceptions import ServiceValidationError
@@ -292,40 +292,6 @@ async def test_async_harvest_plant(mock_coordinator: MagicMock) -> None:
         thc_percentage=None,
         cbd_percentage=None,
         terpene_profile=None,
-    )
-
-
-@pytest.mark.asyncio
-async def test_async_auto_harvest(mock_coordinator: MagicMock) -> None:
-    """Test _async_auto_harvest auto-harvests eligible flowering plants only."""
-    facade = PlantFacade(mock_coordinator)
-
-    plant1 = Plant(plant_id="plant1", growspace_id="gs1")
-    plant1.genetics = PlantGenetics(strain_name="OG Kush")
-    plant1.transition_date = "2026-01-10"  # before frozen "2026-01-12"
-    plant1.stage = PlantStage.FLOWER
-
-    plant2 = Plant(plant_id="plant2", growspace_id="gs1")
-    plant2.genetics = PlantGenetics(strain_name="LSD")
-    plant2.transition_date = "2026-01-15"  # after frozen
-    plant2.stage = PlantStage.FLOWER
-
-    mock_coordinator.plants = {"plant1": plant1, "plant2": plant2}
-    mock_coordinator._plant_manager.harvest = AsyncMock()
-    mock_coordinator._notification_manager.async_send_notification = AsyncMock()
-
-    # Call private method
-    await facade._async_auto_harvest()
-
-    mock_coordinator._plant_manager.harvest.assert_called_once_with(
-        plant_id="plant1",
-        transition_date="2026-01-12",
-    )
-    mock_coordinator._notification_manager.async_send_notification.assert_called_once_with(
-        growspace_id="gs1",
-        title="Auto-harvest complete",
-        message="Plant OG Kush has been auto-harvested",
-        tier=NotificationTier.INFO,
     )
 
 
