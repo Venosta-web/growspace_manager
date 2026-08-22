@@ -306,7 +306,9 @@ async def test_transition_plant_stage_actual(service, repository_mock) -> None:
         growspace_id="gs1",
         row=1,
         col=1,
-        stage="vegetative",
+        stage=PlantStage.VEG,
+        veg_start="2024-01-01",
+        stage_history=[{"stage": "veg", "start": "2024-01-01", "end": None}],
         type="normal",
     )
     repository_mock.get_plant.return_value = plant

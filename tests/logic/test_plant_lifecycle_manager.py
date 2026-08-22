@@ -194,6 +194,9 @@ async def test_move_to_dry_growspace_device_id_ghosting(
     plant.plant_id = "p1"
     plant.growspace_id = "gs1"
     plant.device_id = "device_1"
+    plant.stage = PlantStage.FLOWER
+    plant.flower_start = "2023-01-01"
+    plant.stage_history = [{"stage": "flower", "start": "2023-01-01", "end": None}]
     plant.strain = "Strain"
     plant.phenotype = "Pheno"
 
@@ -201,7 +204,14 @@ async def test_move_to_dry_growspace_device_id_ghosting(
     gs_service_mock.ensure_special_growspace.return_value = "dry_gs"
     mock_dry_gs = MagicMock()
     mock_dry_gs.device_id = None  # Crucial: destination has no device
-    repository_mock.get_growspace.side_effect = lambda gid: {"dry_gs": mock_dry_gs, "gs1": MagicMock()}.get(gid)
+    repository_mock.get_growspace.side_effect = lambda gid: {
+        "dry_gs": mock_dry_gs,
+        "gs1": MagicMock(),
+    }.get(gid)
+    repository_mock.require_growspace.side_effect = lambda gid: {
+        "dry_gs": mock_dry_gs,
+        "gs1": MagicMock(),
+    }[gid]
     repository_mock.get_plant.return_value = plant
 
     await manager.move_to_dry_growspace("p1", plant, "2023-01-01")
@@ -240,7 +250,19 @@ async def test_update_plant_preserves_lifecycle_datetime_time(
     Previously DATE_FIELDS were run through format_date, truncating to date-only;
     the time the user picked was silently discarded on the way to storage.
     """
-    plant = Plant(plant_id="p1", growspace_id="gs1")
+    plant = Plant(
+        plant_id="p1",
+        growspace_id="gs1",
+        stage=PlantStage.VEG,
+        veg_start="2023-02-01T08:00:00+00:00",
+        stage_history=[
+            {
+                "stage": "veg",
+                "start": "2023-02-01T08:00:00+00:00",
+                "end": None,
+            }
+        ],
+    )
     repository_mock.get_plant.return_value = plant
 
     await manager.update_plant("p1", flower_start="2026-03-01T14:30:00+00:00")
@@ -254,11 +276,23 @@ async def test_transition_plant_stage_preserves_supplied_datetime(
     manager, repository_mock
 ) -> None:
     """A stage transition stamps the start field with the supplied datetime's time."""
-    plant = Plant(plant_id="p1", growspace_id="gs1")
+    plant = Plant(
+        plant_id="p1",
+        growspace_id="gs1",
+        stage=PlantStage.VEG,
+        veg_start="2023-02-01T08:00:00+00:00",
+        stage_history=[
+            {
+                "stage": "veg",
+                "start": "2023-02-01T08:00:00+00:00",
+                "end": None,
+            }
+        ],
+    )
     repository_mock.get_plant.return_value = plant
 
     await manager.transition_plant_stage(
-        "p1", PlantStage.FLOWER, "2026-03-01T14:30:00+00:00"
+        "p1", PlantStage.FLOWER, "2023-03-01T14:30:00+00:00"
     )
 
     assert "T14:30" in plant.flower_start
@@ -327,6 +361,8 @@ async def test_promote_clone_target_full(manager, repository_mock) -> None:
     clone_plant = MagicMock(spec=Plant)
     clone_plant.stage = PlantStage.CLONE
     clone_plant.plant_id = "c1"
+    clone_plant.clone_start = "2023-01-01"
+    clone_plant.stage_history = [{"stage": "clone", "start": "2023-01-01", "end": None}]
 
     repository_mock.get_plant.return_value = clone_plant
 
@@ -346,7 +382,9 @@ async def test_promote_clone_target_full(manager, repository_mock) -> None:
 @pytest.mark.asyncio
 async def test_handle_transition_logic_kwargs(manager) -> None:
     """Test handle_transition_logic passes through kwargs correctly."""
-    with patch.object(manager, "transition_plant", new_callable=AsyncMock) as mock_harvest:
+    with patch.object(
+        manager, "transition_plant", new_callable=AsyncMock
+    ) as mock_harvest:
         # Call with keyword args only
         await manager.handle_transition_logic(plant_id="p1", custom_arg=True)
 

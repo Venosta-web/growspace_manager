@@ -30,7 +30,9 @@ def repository_mock():
     mock.get_plant.return_value = None
     mock.has_plant.return_value = False
     mock.has_growspace.side_effect = lambda gid: gid == "test_growspace"
-    mock.get_growspace.side_effect = lambda gid: Growspace(id=gid, name=gid) if gid == "test_growspace" else None
+    mock.get_growspace.side_effect = lambda gid: (
+        Growspace(id=gid, name=gid) if gid == "test_growspace" else None
+    )
     return mock
 
 
@@ -186,10 +188,10 @@ async def test_record_analytics_exception_handling(
 
 
 @pytest.mark.asyncio
-async def test_transition_plant_stage_to_clone(
+async def test_transition_plant_stage_to_mother(
     manager, repository_mock, validator_mock, gs_service_mock
 ) -> None:
-    """Test transition_plant_stage to CLONE stage."""
+    """Test a graph-valid transition into a special growspace."""
     # Create a plant
     plant_id = "test_plant"
     plant = create_plant(
@@ -197,6 +199,9 @@ async def test_transition_plant_stage_to_clone(
         growspace_id="test_growspace",
         strain="Test Strain",
     )
+    plant.stage = PlantStage.VEG
+    plant.veg_start = "2024-01-01"
+    plant.stage_history = [{"stage": "veg", "start": "2024-01-01", "end": None}]
     repository_mock.get_plant.return_value = plant
     growspaces = {
         "test_growspace": Growspace(id="test_growspace", name="Test"),
@@ -207,10 +212,9 @@ async def test_transition_plant_stage_to_clone(
     )
     repository_mock.get_growspace.side_effect = growspaces.get
 
-    # Transition to CLONE stage
-    await manager.transition_plant_stage(plant_id, PlantStage.CLONE, date(2024, 1, 15))
+    await manager.transition_plant_stage(plant_id, PlantStage.MOTHER, date(2024, 1, 15))
 
-    # Verify move_to_clone_growspace was called via service
+    # The target special growspace is resolved inside the atomic commit.
     gs_service_mock.ensure_special_growspace.assert_called()
 
 

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
@@ -173,8 +174,18 @@ async def test_harvest_plant_with_all_metrics(
         growspace_id=GROWSPACE_ID,
         genetics=PlantGenetics(strain_name="Blue Dream"),
         phi_clearance_date=None,
+        stage=PlantStage.FLOWER,
+        flower_start="2026-01-01",
+        stage_history=[{"stage": "flower", "start": "2026-01-01", "end": None}],
     )
     plant_manager.repository.plants["p2"] = plant
+    plant_manager.repository.get_plant.return_value = plant
+    plant_manager.repository.has_growspace.return_value = True
+    plant_manager.repository.require_growspace.return_value = MagicMock(
+        id="dry", device_id=None, layout_revision=0
+    )
+    plant_manager.validator.find_first_available_position.return_value = (1, 1)
+    plant_manager.growspace_manager.ensure_special_growspace.return_value = "dry"
     plant_manager.repository.get_growspace.return_value = MagicMock(
         id=GROWSPACE_ID, name="Tent", notification_target="notify.x"
     )

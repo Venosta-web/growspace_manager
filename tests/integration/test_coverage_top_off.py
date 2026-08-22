@@ -31,6 +31,7 @@ from custom_components.growspace_manager.dehumidifier_coordinator import (
 from custom_components.growspace_manager.domain.environment_state_assembler import (
     AssembledEnvironment,
 )
+from custom_components.growspace_manager.exceptions import ValidationChangeError
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import (
     BaseModel,
@@ -272,14 +273,10 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
         strain_library=strain_library,
         plant_view_builder=MagicMock(),
     )
-    with patch.object(manager, "update_plant", new_callable=AsyncMock) as mock_update:
-        await manager.transition_plant_stage("p1", "flower")
-        mock_update.assert_called_once()
-        # Verify the history in the call
-        updates = mock_update.call_args.kwargs
-        history = updates["stage_history"]
-        assert len(history) == 2
-        assert history[0]["end"] is not None
+    await manager.transition_plant_stage("p1", "flower")
+    assert plant.stage == PlantStage.FLOWER
+    assert len(plant.stage_history) == 2
+    assert plant.stage_history[0]["end"] is not None
 
 
 # --- Service Plant Coverage ---
@@ -841,6 +838,7 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
         stage_history=[{"stage": "veg", "start": "2024-01-01", "end": None}],
     )
     repository.plants = {"p1": plant}
+    repository.get_plant.return_value = plant
 
     manager = PlantManager(
         ctx=ServiceContext(
@@ -858,19 +856,8 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
         plant_view_builder=MagicMock(),
     )
 
-    manager.async_update_plant = AsyncMock()
-    manager.move_to_dry_growspace = AsyncMock()
-    manager.move_to_cure_growspace = AsyncMock()
-    manager.move_to_clone_growspace = AsyncMock()
+    await manager.transition_plant_stage("p1", PlantStage.FLOWER)
+    assert [item["stage"] for item in plant.stage_history] == ["veg", "flower"]
 
-    # Hit DRY transition
-    await manager.transition_plant_stage("p1", PlantStage.DRY)
-    manager.move_to_dry_growspace.assert_awaited_once()
-
-    # Hit CURE transition
-    await manager.transition_plant_stage("p1", PlantStage.CURE)
-    manager.move_to_cure_growspace.assert_awaited_once()
-
-    # Hit CLONE transition
-    await manager.transition_plant_stage("p1", PlantStage.CLONE)
-    manager.move_to_clone_growspace.assert_awaited_once()
+    with pytest.raises(ValidationChangeError, match="not allowed"):
+        await manager.transition_plant_stage("p1", PlantStage.CLONE)
