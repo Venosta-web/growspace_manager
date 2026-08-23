@@ -114,7 +114,8 @@ async def test_transition_closes_existing_history(
         plant_id=plant_id,
         growspace_id="tent",
         strain="Test Strain",
-        stage=PlantStage.FLOWER,
+        stage=PlantStage.VEG,
+        veg_start="2023-02-01",
         stage_history=[
             {"stage": "seedling", "start": "2023-01-01", "end": "2023-02-01"},
             {"stage": "veg", "start": "2023-02-01", "end": None},  # Open item

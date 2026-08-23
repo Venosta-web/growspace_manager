@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import fields
 from datetime import date
 import logging
 from typing import TYPE_CHECKING, Any
@@ -15,6 +17,14 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.domain.date_logic import plant_updated_date
+from custom_components.growspace_manager.domain.plant_lifecycle import (
+    Applied,
+    LifecycleDecision,
+    LifecycleStage,
+    PlantLifecycle,
+    Rejected,
+)
+from custom_components.growspace_manager.domain.stage import STAGE_REGISTRY
 from custom_components.growspace_manager.domain.stage_calculator import (
     calculate_days_in_stage,
 )
@@ -42,6 +52,7 @@ from custom_components.growspace_manager.models import (
     Plant,
     PlantGenetics,
 )
+from custom_components.growspace_manager.models.types import StageHistoryItem
 from custom_components.growspace_manager.services.context import (
     BaseService,
     ServiceContext,
@@ -68,6 +79,31 @@ if TYPE_CHECKING:
     from custom_components.growspace_manager.strain_library import StrainLibrary
 
 _LOGGER = logging.getLogger(__name__)
+
+_LIFECYCLE_STAGE_ALIASES = {
+    PlantStage.VEG_EARLY.value: LifecycleStage.VEG,
+    PlantStage.VEG_LATE.value: LifecycleStage.VEG,
+    PlantStage.FLOWER_EARLY.value: LifecycleStage.FLOWER,
+    PlantStage.FLOWER_MID.value: LifecycleStage.FLOWER,
+    PlantStage.FLOWER_LATE.value: LifecycleStage.FLOWER,
+}
+_SPECIAL_LIFECYCLE_STAGES = {
+    LifecycleStage.DRY,
+    LifecycleStage.CURE,
+    LifecycleStage.CLONE,
+    LifecycleStage.MOTHER,
+}
+
+
+def _as_lifecycle_stage(stage: str | PlantStage) -> LifecycleStage:
+    """Collapse presentation substages into the canonical lifecycle vocabulary."""
+    value = stage.value if isinstance(stage, PlantStage) else str(stage)
+    if alias := _LIFECYCLE_STAGE_ALIASES.get(value):
+        return alias
+    try:
+        return LifecycleStage(value)
+    except ValueError as err:
+        raise ValidationChangeError(f"Invalid lifecycle stage: {value}") from err
 
 
 class PlantManager(BaseService):
@@ -107,6 +143,259 @@ class PlantManager(BaseService):
         if not growspace:
             raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
         growspace.layout_revision += 1
+
+    @staticmethod
+    def _restore_plant(plant: Plant, snapshot: Plant) -> None:
+        """Restore a mutated Plant object without invalidating caller references."""
+        for model_field in fields(Plant):
+            setattr(
+                plant,
+                model_field.name,
+                deepcopy(getattr(snapshot, model_field.name)),
+            )
+
+    def _plant_lifecycle(self, plant: Plant, *, observed_on: date) -> PlantLifecycle:
+        """Parse a Plant through the lifecycle domain, bootstrapping legacy empties."""
+        raw_stage = plant.stage or calculate_plant_stage(plant)
+        try:
+            current_stage = _as_lifecycle_stage(raw_stage)
+        except ValidationChangeError:
+            current_stage = LifecycleStage.SEEDLING
+
+        legacy_dates = {
+            field: value if isinstance(value, (date, str)) else None
+            for field in DATE_FIELDS
+            if (value := getattr(plant, field, None)) is not None
+        }
+        stored_history = getattr(plant, "stage_history", None)
+        raw_history: list[object] | None = (
+            [dict(item) for item in stored_history]
+            if isinstance(stored_history, list) and stored_history
+            else None
+        )
+
+        # Older in-memory Plant objects cannot distinguish an absent Stage History
+        # key from the dataclass's empty default. Seed those once from their explicit
+        # stage and creation timestamp; all newly created plants are seeded eagerly.
+        if raw_history is None and not any(legacy_dates.values()):
+            created_at = getattr(plant, "created_at", None)
+            started_on = (
+                created_at
+                if isinstance(created_at, (date, str))
+                else observed_on.isoformat()
+            )
+            raw_history = [
+                {
+                    "stage": current_stage.value,
+                    "start": started_on,
+                    "end": None,
+                }
+            ]
+
+        lifecycle = PlantLifecycle.from_data(
+            raw_history,
+            observed_on=observed_on,
+            legacy_dates=legacy_dates,
+            current_stage=current_stage,
+        )
+        if lifecycle.warnings:
+            details = ", ".join(warning.code.value for warning in lifecycle.warnings)
+            raise ValidationChangeError(
+                f"Plant {plant.plant_id} lifecycle requires repair: {details}"
+            )
+        return lifecycle
+
+    @staticmethod
+    def _transition_history(
+        plant: Plant,
+        lifecycle: PlantLifecycle,
+        decision: LifecycleDecision,
+        transition_timestamp: str,
+    ) -> list[dict[str, str | None]]:
+        """Project the accepted proposal while retaining timestamp precision."""
+        projected = decision.compatibility_data.as_dict()["stage_history"]
+        history = [dict(item) for item in projected]
+
+        # The domain deliberately reasons by calendar date. Existing persistence
+        # keeps the full lifecycle timestamp (ADR-0013), so preserve trusted raw
+        # intervals and stamp only the newly created boundary.
+        if isinstance(decision, Applied):
+            if plant.stage_history and len(plant.stage_history) + 1 == len(history):
+                history = [dict(item) for item in plant.stage_history]
+                history[-1]["end"] = transition_timestamp
+                history.append(
+                    {
+                        "stage": decision.after.current_stage.value,
+                        "start": transition_timestamp,
+                        "end": None,
+                    }
+                )
+            else:
+                history[-2]["end"] = transition_timestamp
+                history[-1]["start"] = transition_timestamp
+        elif not history:
+            history = [
+                {
+                    "stage": lifecycle.current_stage.value,
+                    "start": transition_timestamp,
+                    "end": None,
+                }
+            ]
+        return history
+
+    async def _commit_lifecycle_transition(
+        self,
+        plant_id: str,
+        target_stage: str | PlantStage,
+        transition_date: DateInput = None,
+        *,
+        target_growspace_id: str | None = None,
+        move_to_special: bool = False,
+        harvest_metrics: dict[str, Any] | None = None,
+        expected_current_stage: LifecycleStage | None = None,
+    ) -> Plant:
+        """Commit lifecycle and placement through one serialized rollback seam."""
+        canonical_target = _as_lifecycle_stage(target_stage)
+        transition_timestamp = to_lifecycle_timestamp(transition_date)
+
+        async with self._lock:
+            observed_on = dt_util.now().date()
+            plant = self.repository.get_plant(plant_id)
+            if not plant:
+                raise PlantNotFoundError(f"Plant {plant_id} does not exist")
+
+            lifecycle = self._plant_lifecycle(plant, observed_on=observed_on)
+            if (
+                expected_current_stage is not None
+                and lifecycle.current_stage is not expected_current_stage
+            ):
+                raise ValidationChangeError(
+                    f"Plant {plant_id} is not in {expected_current_stage.value} stage "
+                    f"(current: {lifecycle.current_stage.value})"
+                )
+            decision = lifecycle.transition(
+                canonical_target,
+                transition_timestamp,
+                observed_on,
+            )
+            if isinstance(decision, Rejected):
+                raise ValidationChangeError(decision.reason or "Transition rejected")
+
+            plant_snapshot = deepcopy(plant)
+            growspace_snapshots: dict[str, Any | None] = {}
+            notification_enabled = getattr(self.notification_state, "enabled", None)
+            notification_snapshot = (
+                deepcopy(notification_enabled)
+                if isinstance(notification_enabled, dict)
+                else None
+            )
+
+            def snapshot_growspace(growspace_id: str) -> None:
+                if growspace_id not in growspace_snapshots:
+                    growspace_snapshots[growspace_id] = deepcopy(
+                        self.repository.get_growspace(growspace_id)
+                    )
+
+            source_growspace_id = plant.growspace_id
+            snapshot_growspace(source_growspace_id)
+
+            def placement_for(growspace_id: str) -> dict[str, Any]:
+                if not self.repository.has_growspace(growspace_id):
+                    raise GrowspaceNotFoundError(
+                        f"Target growspace {growspace_id} not found"
+                    )
+                snapshot_growspace(growspace_id)
+                if growspace_id == source_growspace_id:
+                    return {}
+                try:
+                    row, col = self.validator.find_first_available_position(
+                        growspace_id
+                    )
+                except ValueError as err:
+                    raise ValidationChangeError(
+                        f"Target growspace {growspace_id} is full"
+                    ) from err
+                if row is None or col is None:
+                    raise ValidationChangeError(
+                        f"Target growspace {growspace_id} is full"
+                    )
+                target_growspace = self.repository.require_growspace(growspace_id)
+                return {
+                    "growspace_id": growspace_id,
+                    "row": row,
+                    "col": col,
+                    "device_id": target_growspace.device_id,
+                }
+
+            resolved_target_id = target_growspace_id
+            try:
+                if move_to_special:
+                    snapshot_growspace(canonical_target.value)
+                    resolved_target_id = (
+                        self.growspace_manager.ensure_special_growspace(
+                            canonical_target.value,
+                            canonical_target.value,
+                        )
+                    )
+                    snapshot_growspace(resolved_target_id)
+
+                placement_updates: dict[str, Any] = {}
+                if resolved_target_id is not None:
+                    placement_updates = placement_for(resolved_target_id)
+
+                updates: dict[str, Any] = {
+                    "stage": canonical_target.value,
+                    "stage_history": self._transition_history(
+                        plant, lifecycle, decision, transition_timestamp
+                    ),
+                    **placement_updates,
+                }
+                if isinstance(decision, Applied):
+                    updates[f"{canonical_target.value}_start"] = transition_timestamp
+
+                # The legacy calculator ranks fields by lifecycle order rather than
+                # timestamp. Clear higher-ranked fields on backward branches (most
+                # importantly flower -> veg) so stale stages cannot resurface.
+                target_definition = STAGE_REGISTRY[PlantStage(canonical_target.value)]
+                for stage_definition in STAGE_REGISTRY.values():
+                    if stage_definition.order > target_definition.order:
+                        updates[stage_definition.start_field] = None
+
+                for key, value in updates.items():
+                    setattr(plant, key, value)
+                if harvest_metrics:
+                    for key, value in harvest_metrics.items():
+                        if value is not None:
+                            setattr(plant.harvest_metrics, key, value)
+                plant.updated_at = plant_updated_date()
+
+                if plant.growspace_id != source_growspace_id:
+                    self._advance_layout_revision(source_growspace_id)
+                    self._advance_layout_revision(plant.growspace_id)
+
+                await self._save()
+            except BaseException:
+                self._restore_plant(plant, plant_snapshot)
+                self.repository.add_plant(plant)
+                for growspace_id, snapshot in growspace_snapshots.items():
+                    if snapshot is None:
+                        self.repository.remove_growspace(growspace_id)
+                    else:
+                        self.repository.add_growspace(snapshot)
+                    self._invalidate(growspace_id)
+                if notification_snapshot is not None and isinstance(
+                    notification_enabled, dict
+                ):
+                    notification_enabled.clear()
+                    notification_enabled.update(notification_snapshot)
+                raise
+
+        self._fire_event(
+            "plant_updated",
+            {"plant": self.plant_view_builder.build(plant)},
+        )
+        async_fire_plant_event(self.hass, EVENT_PLANT_UPDATED, plant, updates)
+        return plant
 
     # =========================================================================
     # PLANT CRUD OPERATIONS
@@ -180,6 +469,7 @@ class PlantManager(BaseService):
                 generation=generation,
             )
 
+            created_at = dt_util.utcnow().isoformat()
             plant = Plant(
                 plant_id=final_plant_id,
                 growspace_id=growspace_id,
@@ -190,7 +480,7 @@ class PlantManager(BaseService):
                 type=plant_type,
                 device_id=device_id,
                 seed_batch_id=seed_batch_id,
-                created_at=dt_util.utcnow().isoformat(),
+                created_at=created_at,
                 updated_at=plant_updated_date(),
                 **date_fields,  # type: ignore[arg-type]
                 source_mother=kwargs.get("source_mother")
@@ -198,12 +488,70 @@ class PlantManager(BaseService):
                 or "",
             )
 
-            if not plant.stage:
-                plant.stage = calculate_plant_stage(plant)
+            if plant.stage:
+                initial_stage = _as_lifecycle_stage(plant.stage)
+            elif plant_type == PlantStage.CLONE:
+                initial_stage = LifecycleStage.CLONE
+            elif plant_type == PlantStage.MOTHER:
+                initial_stage = LifecycleStage.MOTHER
+            elif any(date_fields.values()):
+                initial_stage = _as_lifecycle_stage(calculate_plant_stage(plant))
+            else:
+                initial_stage = LifecycleStage.SEEDLING
 
+            current_start_field = f"{initial_stage.value}_start"
+            if getattr(plant, current_start_field) is None:
+                setattr(plant, current_start_field, created_at)
+
+            legacy_dates = {field: getattr(plant, field, None) for field in DATE_FIELDS}
+            lifecycle = PlantLifecycle.from_data(
+                None,
+                observed_on=dt_util.now().date(),
+                legacy_dates=legacy_dates,
+                current_stage=initial_stage,
+            )
+            if lifecycle.warnings:
+                details = ", ".join(
+                    warning.code.value for warning in lifecycle.warnings
+                )
+                raise ValidationChangeError(
+                    f"Initial plant lifecycle is invalid: {details}"
+                )
+
+            plant.stage = initial_stage.value
+            plant.stage_history = [
+                StageHistoryItem(
+                    stage=item.stage.value,
+                    start=item.started_on.isoformat(),
+                    end=item.ended_on.isoformat() if item.ended_on else None,
+                )
+                for item in lifecycle.history.intervals
+            ]
+            # Retain full timestamp precision in the persisted compatibility shape.
+            for index, interval in enumerate(plant.stage_history):
+                source_timestamp = getattr(plant, f"{interval['stage']}_start")
+                interval["start"] = source_timestamp
+                if index:
+                    plant.stage_history[index - 1]["end"] = source_timestamp
+
+            previous_plant = self.repository.get_plant(final_plant_id)
+            previous_revision = self.repository.require_growspace(
+                growspace_id
+            ).layout_revision
             self.repository.add_plant(plant)
             self._advance_layout_revision(growspace_id)
-            await self._save()
+            try:
+                await self._save()
+            except BaseException:
+                if previous_plant is None:
+                    self.repository.remove_plant(final_plant_id)
+                else:
+                    self.repository.add_plant(previous_plant)
+                self.repository.require_growspace(
+                    growspace_id
+                ).layout_revision = previous_revision
+                self._invalidate(growspace_id)
+                raise
 
         # Event Firing (outside lock if possible, or inside? Service did it after lifecycle call)
         # Service: await lifecycle.add_plant -> fire event
@@ -720,71 +1068,42 @@ class PlantManager(BaseService):
         """Execute a plant stage transition."""
         if isinstance(new_stage, PlantStage):
             new_stage = new_stage.value
-
         if new_stage not in PLANT_STAGES:
             raise ValidationChangeError(f"Invalid stage: {new_stage}")
 
-        # Lifecycle Timestamp: preserve a supplied time, default to now (ADR-0013).
-        trans_date_str = to_lifecycle_timestamp(transition_date)
-
-        updates: dict[str, Any] = {"stage": new_stage}
-        stage_map = {
-            PlantStage.VEG.value: "veg_start",
-            PlantStage.FLOWER.value: "flower_start",
-            PlantStage.DRY.value: "dry_start",
-            PlantStage.CURE.value: "cure_start",
-            PlantStage.CLONE.value: "clone_start",
-        }
-        if new_stage in stage_map:
-            updates[stage_map[new_stage]] = trans_date_str
-
-        plant = self.repository.get_plant(plant_id)
-        if plant is not None and hasattr(plant, "stage_history"):  # Check just in case
-            new_history = [dict(item) for item in plant.stage_history]
-            for item in reversed(new_history):
-                if item.get("end") is None:
-                    item["end"] = trans_date_str
-                    break
-            new_history.append(
-                {"stage": new_stage, "start": trans_date_str, "end": None}
-            )
-            updates["stage_history"] = new_history
-
-        await self.update_plant(plant_id, **updates)
-
-        # Trigger logic for automatic moves based on stage
-        plant = self.repository.get_plant(plant_id)
-        if plant:
-            if new_stage == PlantStage.DRY:
-                await self.move_to_dry_growspace(plant_id, plant, trans_date_str)
-            elif new_stage == PlantStage.CURE:
-                await self.move_to_cure_growspace(plant_id, plant, trans_date_str)
-            elif new_stage == PlantStage.CLONE:
-                await self.move_to_clone_growspace(plant_id, plant, trans_date_str)
+        canonical_target = _as_lifecycle_stage(new_stage)
+        plant = await self._commit_lifecycle_transition(
+            plant_id,
+            canonical_target.value,
+            transition_date,
+            move_to_special=canonical_target in _SPECIAL_LIFECYCLE_STAGES,
+        )
+        if canonical_target is LifecycleStage.DRY:
+            await self._record_analytics(plant)
 
         # Fire event (Service did this)
-        if plant := self.repository.get_plant(plant_id):
+        if committed_plant := self.repository.get_plant(plant_id):
             async_fire_plant_event(
                 self.hass,
                 EVENT_PLANT_TRANSITIONED,
-                plant,
-                {"new_stage": str(new_stage)},
+                committed_plant,
+                {"new_stage": canonical_target.value},
             )
             now_iso = dt_util.now().isoformat()
-            stage_label = new_stage.replace("_", " ").title()
+            stage_label = canonical_target.value.replace("_", " ").title()
             event = GrowspaceEvent(
                 sensor_type="stage_transition",
-                growspace_id=plant.growspace_id,
+                growspace_id=committed_plant.growspace_id,
                 start_time=now_iso,
                 end_time=now_iso,
                 duration_sec=0,
                 severity=1.0,
                 category=CATEGORY_MILESTONE,
                 reasons=[
-                    f"{(plant.genetics.strain_name if plant.genetics else None) or plant_id} entered {stage_label}"
+                    f"{(committed_plant.genetics.strain_name if committed_plant.genetics else None) or plant_id} entered {stage_label}"
                 ],
             )
-            self._emit(plant.growspace_id, event)
+            self._emit(committed_plant.growspace_id, event)
 
     async def transition_plant(
         self,
@@ -841,20 +1160,17 @@ class PlantManager(BaseService):
 
         transition_date_str = to_lifecycle_timestamp(transition_date)
 
-        # Store yield/lab metrics on the plant before analytics recording
-        if hasattr(plant, "harvest_metrics"):
-            if wet_weight is not None:
-                plant.harvest_metrics.wet_weight = wet_weight
-            if dry_weight is not None:
-                plant.harvest_metrics.dry_weight = dry_weight
-            if trim_weight is not None:
-                plant.harvest_metrics.trim_weight = trim_weight
-            if thc_percentage is not None:
-                plant.harvest_metrics.thc_percentage = thc_percentage
-            if cbd_percentage is not None:
-                plant.harvest_metrics.cbd_percentage = cbd_percentage
-            if terpene_profile is not None:
-                plant.harvest_metrics.terpene_profile = terpene_profile
+        metrics: dict[str, Any] = {
+            "wet_weight": wet_weight,
+            "dry_weight": dry_weight,
+            "trim_weight": trim_weight,
+            "thc_percentage": thc_percentage,
+            "cbd_percentage": cbd_percentage,
+            "terpene_profile": terpene_profile,
+        }
+        harvest_metrics = (
+            metrics if any(value is not None for value in metrics.values()) else None
+        )
 
         # Log harvest start
         _LOGGER.info(
@@ -870,16 +1186,37 @@ class PlantManager(BaseService):
                 raise GrowspaceNotFoundError(
                     f"Target growspace {target_growspace_id} not found"
                 )
-            moved = await self._harvest_to_explicit_target(
+            if harvest_metrics is None:
+                moved = await self._harvest_to_explicit_target(
+                    plant_id,
+                    plant,
+                    target_growspace_id,
+                    target_growspace_name,
+                    transition_date_str,
+                )
+            else:
+                moved = await self._harvest_to_explicit_target(
+                    plant_id,
+                    plant,
+                    target_growspace_id,
+                    target_growspace_name,
+                    transition_date_str,
+                    harvest_metrics,
+                )
+        elif harvest_metrics is None:
+            moved = await self._harvest_auto_flow(
                 plant_id,
                 plant,
-                target_growspace_id,
                 target_growspace_name,
                 transition_date_str,
             )
         else:
             moved = await self._harvest_auto_flow(
-                plant_id, plant, target_growspace_name, transition_date_str
+                plant_id,
+                plant,
+                target_growspace_name,
+                transition_date_str,
+                harvest_metrics,
             )
 
         # Post harvest logic
@@ -893,6 +1230,7 @@ class PlantManager(BaseService):
         target_growspace_id: str,
         target_growspace_name: str | None,
         transition_date: str,
+        harvest_metrics: dict[str, Any] | None = None,
     ) -> bool:
         """Move harvested plant to explicit target."""
         try:
@@ -921,13 +1259,25 @@ class PlantManager(BaseService):
                 "mother_start": transition_date,
             }
 
-        await self.update_plant(
-            plant_id,
-            growspace_id=target_growspace_id,
-            row=new_row,
-            col=new_col,
-            **stage_updates,
-        )
+        if stage_updates:
+            await self._commit_lifecycle_transition(
+                plant_id,
+                stage_updates["stage"],
+                transition_date,
+                target_growspace_id=target_growspace_id,
+                harvest_metrics=harvest_metrics,
+            )
+        else:
+            if harvest_metrics:
+                for key, value in harvest_metrics.items():
+                    if value is not None:
+                        setattr(plant.harvest_metrics, key, value)
+            await self.update_plant(
+                plant_id,
+                growspace_id=target_growspace_id,
+                row=new_row,
+                col=new_col,
+            )
         return True
 
     async def _harvest_auto_flow(
@@ -936,6 +1286,7 @@ class PlantManager(BaseService):
         plant: Plant,
         target_growspace_name: str | None,
         transition_date: str,
+        harvest_metrics: dict[str, Any] | None = None,
     ) -> bool:
         """Automatically determine harvest flow."""
         if target_growspace_name:
@@ -949,19 +1300,38 @@ class PlantManager(BaseService):
                 info = SPECIAL_GROWSPACES.get(stage.value, {})
                 aliases = info.get("aliases", [])
                 if name_lower == stage.value or name_lower in aliases:
+                    if harvest_metrics is None:
+                        return await self._move_to_special_growspace(
+                            plant_id, plant, stage, transition_date
+                        )
                     return await self._move_to_special_growspace(
-                        plant_id, plant, stage, transition_date
+                        plant_id,
+                        plant,
+                        stage,
+                        transition_date,
+                        harvest_metrics=harvest_metrics,
                     )
 
         current_stage = calculate_plant_stage(plant)
+        metric_kwargs = (
+            {} if harvest_metrics is None else {"harvest_metrics": harvest_metrics}
+        )
         if current_stage == PlantStage.FLOWER:
-            return await self.move_to_dry_growspace(plant_id, plant, transition_date)
+            return await self.move_to_dry_growspace(
+                plant_id, plant, transition_date, **metric_kwargs
+            )
         if current_stage == PlantStage.DRY:
-            return await self.move_to_cure_growspace(plant_id, plant, transition_date)
+            return await self.move_to_cure_growspace(
+                plant_id, plant, transition_date, **metric_kwargs
+            )
         if current_stage == PlantStage.MOTHER:
-            return await self.move_to_clone_growspace(plant_id, plant, transition_date)
+            return await self.move_to_clone_growspace(
+                plant_id, plant, transition_date, **metric_kwargs
+            )
 
-        return await self.move_to_dry_growspace(plant_id, plant, transition_date)
+        return await self.move_to_dry_growspace(
+            plant_id, plant, transition_date, **metric_kwargs
+        )
 
     async def _move_to_special_growspace(
         self,
@@ -970,49 +1340,27 @@ class PlantManager(BaseService):
         target_stage: PlantStage,
         transition_date: str,
         record_harvest_analytics: bool = False,
+        harvest_metrics: dict[str, Any] | None = None,
     ) -> bool:
         """Generic method to move a plant to a special growspace."""
-        if record_harvest_analytics:
-            await self._record_analytics(plant)
-
-        gs_id = self.growspace_manager.ensure_special_growspace(
-            target_stage.value, target_stage.value
+        committed = await self._commit_lifecycle_transition(
+            plant_id,
+            target_stage,
+            transition_date,
+            move_to_special=True,
+            harvest_metrics=harvest_metrics,
         )
-        target_gs = self.repository.get_growspace(gs_id)
-
-        try:
-            new_row, new_col = self.validator.find_first_available_position(gs_id)
-        except ValueError as e:
-            _LOGGER.warning(
-                "Failed to find position in %s growspace: %s",
-                gs_id,
-                e,
-            )
-            new_row, new_col = 1, 1
-
-        updates: dict[str, Any] = {
-            "growspace_id": gs_id,
-            "row": new_row,
-            "col": new_col,
-            "stage": target_stage,
-        }
-
-        date_map = {
-            PlantStage.DRY: "dry_start",
-            PlantStage.CURE: "cure_start",
-            PlantStage.CLONE: "clone_start",
-            PlantStage.MOTHER: "mother_start",
-            PlantStage.VEG: "veg_start",
-        }
-        updates["device_id"] = target_gs.device_id if target_gs else None
-        if target_stage in date_map:
-            updates[date_map[target_stage]] = transition_date
-
-        await self.update_plant(plant_id, **updates)
+        if record_harvest_analytics:
+            await self._record_analytics(committed)
         return True
 
     async def move_to_dry_growspace(
-        self, plant_id: str, plant: Plant, transition_date: str
+        self,
+        plant_id: str,
+        plant: Plant,
+        transition_date: str,
+        *,
+        harvest_metrics: dict[str, Any] | None = None,
     ) -> bool:
         """Move a plant to the dry growspace."""
         return await self._move_to_special_growspace(
@@ -1021,22 +1369,41 @@ class PlantManager(BaseService):
             PlantStage.DRY,
             transition_date,
             record_harvest_analytics=True,
+            harvest_metrics=harvest_metrics,
         )
 
     async def move_to_cure_growspace(
-        self, plant_id: str, plant: Plant, transition_date: str
+        self,
+        plant_id: str,
+        plant: Plant,
+        transition_date: str,
+        *,
+        harvest_metrics: dict[str, Any] | None = None,
     ) -> bool:
         """Move a plant to the cure growspace."""
         return await self._move_to_special_growspace(
-            plant_id, plant, PlantStage.CURE, transition_date
+            plant_id,
+            plant,
+            PlantStage.CURE,
+            transition_date,
+            harvest_metrics=harvest_metrics,
         )
 
     async def move_to_clone_growspace(
-        self, plant_id: str, plant: Plant, transition_date: str
+        self,
+        plant_id: str,
+        plant: Plant,
+        transition_date: str,
+        *,
+        harvest_metrics: dict[str, Any] | None = None,
     ) -> bool:
         """Move a plant back to the clone growspace."""
         return await self._move_to_special_growspace(
-            plant_id, plant, PlantStage.CLONE, transition_date
+            plant_id,
+            plant,
+            PlantStage.CLONE,
+            transition_date,
+            harvest_metrics=harvest_metrics,
         )
 
     async def start_flowering(self, plant_id: str) -> Plant:
@@ -1074,41 +1441,22 @@ class PlantManager(BaseService):
 
         This updates the EXISTING plant record, preserving its ID and history.
         """
-        plant = self.repository.get_plant(clone_id)
-        if not plant:
-            raise PlantNotFoundError(f"Plant {clone_id} not found")
-
-        if plant.stage != PlantStage.CLONE:
-            raise ValidationChangeError(
-                f"Plant {clone_id} is not in clone stage (current: {plant.stage})"
-            )
-
-        # Resolve target growspace ID (handle aliases like 'veg')
+        # Resolve target growspace ID (handle aliases like 'veg'). The stage and
+        # placement are revalidated and committed under the shared mutation lock.
         if target_growspace_id == "veg":
-            target_gs_id = self.growspace_manager.ensure_special_growspace(
-                PlantStage.VEG, "veg", 5, 5
-            )
+            target_gs_id = None
+            move_to_special = True
         else:
-            # Ensure custom growspace exists
-            if not self.repository.has_growspace(target_growspace_id):
-                raise GrowspaceNotFoundError(
-                    f"Target growspace {target_growspace_id} does not exist"
-                )
             target_gs_id = target_growspace_id
+            move_to_special = False
 
-        # Now find position (reads state)
-        row, col = self.validator.find_first_available_position(target_gs_id)
-        if row is None or col is None:
-            raise ValidationChangeError(f"Target growspace {target_gs_id} is full")
-
-        # Now call update_plant (which acquires lock)
-        await self.update_plant(
+        await self._commit_lifecycle_transition(
             clone_id,
-            growspace_id=target_gs_id,
-            row=row,
-            col=col,
-            stage=PlantStage.VEG,
-            veg_start=transition_date or dt_util.now(),
+            PlantStage.VEG,
+            transition_date or dt_util.now(),
+            target_growspace_id=target_gs_id,
+            move_to_special=move_to_special,
+            expected_current_stage=LifecycleStage.CLONE,
         )
 
     async def _record_analytics(self, plant: Plant) -> None:
