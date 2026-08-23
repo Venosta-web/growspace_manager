@@ -93,6 +93,24 @@ def test_aggregated_value_averages_valid_readings() -> None:
     assert result.observations["temperature"] == pytest.approx(25.0)
 
 
+def test_singular_shadow_of_a_plural_list_is_counted_once() -> None:
+    """The shadow repeats the head of its list; averaging both would skew it.
+
+    This is the shape the Environment Patch actually writes: configuring
+    ``temperature_sensors`` re-derives ``temperature_sensor`` from its head.
+    """
+    config = EnvironmentConfig(
+        temperature_sensor="sensor.t1",
+        temperature_sensors=["sensor.t1", "sensor.t2"],
+    )
+    states = {"sensor.t1": FakeState("20"), "sensor.t2": FakeState("30")}
+
+    result = build_assembler(config, states).assemble()
+
+    assert result.state.temp == pytest.approx(25.0)
+    assert result.observations["temperature"] == pytest.approx(25.0)
+
+
 def test_unavailable_and_unknown_readings_are_skipped() -> None:
     """Unavailable/unknown/non-numeric sensors do not count toward the average."""
     config = EnvironmentConfig(
