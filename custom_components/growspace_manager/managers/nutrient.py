@@ -8,6 +8,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 import uuid
 
+from custom_components.growspace_manager.domain.current_stage import (
+    resolve_current_stage,
+)
 from custom_components.growspace_manager.models import (
     ECRampCurve,
     ECRampPoint,
@@ -80,7 +83,9 @@ class NutrientManager:
             preset = self.nutrient_presets[preset_id]
             preset.name = name
             preset.items = [
-                NutrientPresetItem(nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"])
+                NutrientPresetItem(
+                    nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"]
+                )
                 for n in nutrients
             ]
             preset.stage = stage
@@ -95,7 +100,9 @@ class NutrientManager:
                 id=pid,
                 name=name,
                 items=[
-                    NutrientPresetItem(nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"])
+                    NutrientPresetItem(
+                        nutrient_id=n["nutrient_id"], dose_ml_l=n["dose_ml_l"]
+                    )
                     for n in nutrients
                 ],
                 stage=stage,
@@ -253,17 +260,19 @@ class NutrientManager:
             raise ValueError(f"Plant {plant_id} not found")
 
         applicable: list[NutrientPreset] = []
+        # The Plant Lifecycle module owns Current Stage; matching on the legacy
+        # `plant.stage` shadow fed presets a stale stage after a Reveg (#634).
+        current_stage = resolve_current_stage(plant).lower()
 
         for preset in self.nutrient_presets.values():
             # If preset has no stage filter, it applies to all stages
             if preset.stage is not None:
                 # Check if plant's current stage matches preset stage
-                if str(plant.stage).lower() != str(preset.stage).lower():
+                if current_stage != str(preset.stage).lower():
                     continue
 
             # If preset has min_days_in_stage, check if plant meets it
             if preset.min_days_in_stage is not None:
-                current_stage = str(plant.stage).lower()
                 days_in_stage = plant.get_days_in_stage(current_stage)
                 if days_in_stage < preset.min_days_in_stage:
                     continue

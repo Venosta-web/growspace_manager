@@ -81,6 +81,10 @@ The immutable event draft produced by Lifecycle Correction, recording the prior/
 **Compatibility Data**
 The lifecycle-owned projection for legacy Plant consumers: the shadow `stage`, latest per-stage `*_start` values, and Stage History. It is rebuilt from trusted intervals after every Applied transition or Lifecycle Correction so legacy fields cannot disagree with the domain result.
 
+**Current Stage Resolution**
+The read path's single rule for reporting [[Current Stage]], implemented in `domain/current_stage.py` and shared by the plant view model the card renders, the plant sensor's state and `stage` attribute, and nutrient-preset stage matching: stored [[Stage History]] wins whenever it parses, and the legacy `calculate_plant_stage` date heuristic applies only to Plants with no stored history or history that needs repair. It deliberately does not hand the `plant.stage` shadow to the lifecycle as an expected current stage — that comparison fails history closed to [[Unknown Stage]] and belongs to the mutation path, which repairs the disagreement. Consequences: after a Reveg the stale `flower_start` no longer outranks the newer veg interval, and a promoted clone still sitting in the clone growspace reads as veg rather than taking the special-growspace shortcut.
+_Avoid_: displayed stage, computed stage
+
 **Photoperiod Flip**
 The calendar day on which a Plant transitions from vegetative to flower stage — specifically, the day `flower_start == today`. The grower must change the light schedule to 12 hours on this day. When `IrrigationStrategy.auto_light_tracking` is enabled on the growspace, the integration will auto-adapt the light schedule from sensor data; otherwise the grower must update it manually. A notification is sent once per day per growspace when any plant's Photoperiod Flip day arrives.
 
