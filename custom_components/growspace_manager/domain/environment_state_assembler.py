@@ -50,6 +50,18 @@ class AssembledEnvironment:
     observations: dict[str, Any]
 
 
+def _sensor_ids(shadow: str | None, canonical: list[str]) -> list[str]:
+    """Merge a legacy singular field with its plural, counting each sensor once.
+
+    The Environment Patch re-derives the singular shadow from the head of the
+    plural list (ADR-0026), so the two overlap by construction: averaging both
+    would weight the first sensor double and pull every multi-sensor reading
+    toward it. Mirrors ``utils.read_environment_vpd``.
+    """
+
+    return list(dict.fromkeys(s for s in (shadow, *canonical) if s is not None))
+
+
 class EnvironmentStateAssembler:
     """Builds an :class:`EnvironmentState` for one growspace from HA states."""
 
@@ -78,22 +90,12 @@ class EnvironmentStateAssembler:
         config = self.env_config
 
         temp = self._aggregated_value(
-            [
-                s
-                for s in (config.temperature_sensor, *config.temperature_sensors)
-                if s is not None
-            ]
+            _sensor_ids(config.temperature_sensor, config.temperature_sensors)
         )
         humidity = self._aggregated_value(
-            [
-                s
-                for s in (config.humidity_sensor, *config.humidity_sensors)
-                if s is not None
-            ]
+            _sensor_ids(config.humidity_sensor, config.humidity_sensors)
         )
-        vpd = self._aggregated_value(
-            [s for s in (config.vpd_sensor, *config.vpd_sensors) if s is not None]
-        )
+        vpd = self._aggregated_value(_sensor_ids(config.vpd_sensor, config.vpd_sensors))
 
         # DRY/CURE spaces ignore the leaf-surface offset; there is no canopy.
         active_lst_offset = config.lst_offset
