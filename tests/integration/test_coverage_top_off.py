@@ -75,25 +75,17 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
         plant_cure
     ]
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, s: 1 if s == PlantStage.CURE else 0,
-    ):
-        coordinator = DehumidifierCoordinator(
-            hass, mock_config_entry, "gs1", mock_coordinator
-        )
-        assert coordinator._get_growth_stage() == PlantStage.CURE
+    coordinator = DehumidifierCoordinator(
+        hass, mock_config_entry, "gs1", mock_coordinator
+    )
+    assert coordinator._get_growth_stage() == PlantStage.CURE
 
     # Test DRY stage
     plant_dry = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", dry_start="2024-01-01"
     )
     mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant_dry]
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, s: 1 if s == PlantStage.DRY else 0,
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.DRY
+    assert coordinator._get_growth_stage() == PlantStage.DRY
 
     # Test SEEDLING stage
     plant_seedling = create_plant(
@@ -102,11 +94,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
         plant_seedling
     ]
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, s: 1 if s == PlantStage.SEEDLING else 0,
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.SEEDLING
+    assert coordinator._get_growth_stage() == PlantStage.SEEDLING
 
 
 # --- Models Nesting Coverage ---

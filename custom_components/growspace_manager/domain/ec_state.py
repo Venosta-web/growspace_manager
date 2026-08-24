@@ -38,13 +38,10 @@ from custom_components.growspace_manager.const import (
     EC_MODULATION_MIN_FACTOR,
 )
 from custom_components.growspace_manager.models import DrainReading, IrrigationStrategy
-from custom_components.growspace_manager.utils import (
-    calculate_plant_stage,
-    days_to_week,
-)
+from custom_components.growspace_manager.utils import days_to_week
 from homeassistant.util import dt as dt_util
 
-from .stage_calculator import calculate_days_in_stage
+from .current_stage import resolve_stage_and_age
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.models import (
@@ -163,14 +160,17 @@ def resolve_feed_stage_week(plants: list[Plant]) -> tuple[str | None, int]:
     A growspace has no single canonical stage, so feed-target resolution picks
     the most advanced stage with live (irrigated) plants — never under-feeding
     the most EC-demanding cohort (CONTEXT.md "Active Feed EC Target"). ``week`` is
-    ``days_to_week`` of the max days any plant has spent in that stage, reusing
-    the view model's per-stage day-count convention. Returns ``(None, 0)`` when
-    no live plants are present (empty, or all in dry/cure).
+    ``days_to_week`` of the greatest Current Stage Age among Plants in that
+    selected stage. Returns ``(None, 0)`` when no live plants are present
+    (empty, or all in dry/cure).
     """
+    observed_on = dt_util.now().date()
+    stage_ages = [
+        resolve_stage_and_age(plant, observed_on=observed_on) for plant in plants
+    ]
     best_order = -1
     best_stage: str | None = None
-    for plant in plants:
-        stage = calculate_plant_stage(plant)
+    for stage, _age in stage_ages:
         order = _LIVE_STAGE_ORDER.get(stage)
         if order is not None and order > best_order:
             best_order = order
@@ -179,10 +179,7 @@ def resolve_feed_stage_week(plants: list[Plant]) -> tuple[str | None, int]:
     if best_stage is None:
         return None, 0
 
-    max_days = max(
-        (calculate_days_in_stage(plant, best_stage) for plant in plants),
-        default=0,
-    )
+    max_days = max(age for stage, age in stage_ages if stage == best_stage)
     return best_stage, days_to_week(max_days)
 
 

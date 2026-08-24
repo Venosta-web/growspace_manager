@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from .date_logic import (
-    calculate_days_in_stage,
     calculate_days_since,
     format_date,
     get_days_since_ipm,
@@ -60,7 +59,6 @@ __all__ = [
     "StageHistory",
     "StageInterval",
     "build_position_grid",
-    "calculate_days_in_stage",
     "calculate_days_since",
     "cultivation_band_for",
     "format_date",

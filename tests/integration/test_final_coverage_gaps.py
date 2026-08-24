@@ -192,7 +192,7 @@ async def test_harvest_plant_with_all_metrics(
     plant_manager.repository.get_growspace_plants.return_value = []
 
     with patch(
-        "custom_components.growspace_manager.managers.plant.calculate_plant_stage",
+        "custom_components.growspace_manager.managers.plant.resolve_current_stage",
         return_value="flower",
     ):
         await plant_manager.transition_plant(

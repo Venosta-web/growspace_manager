@@ -1,7 +1,5 @@
 """Tests for the data models in models.py."""
 
-from unittest.mock import patch
-
 import pytest
 
 from custom_components.growspace_manager.const import FanRegulationMode
@@ -312,51 +310,6 @@ def test_growspace_nested_handlers() -> None:
     assert isinstance(gs.irrigation_strategy, IrrigationStrategy)
     assert gs.irrigation_strategy.enabled is True
     assert gs.irrigation_strategy.target_vwc_percent == 60.0
-
-
-def test_plant_days_and_weeks_in_stage() -> None:
-    """Test Plant get_days_in_stage and get_week_in_stage."""
-
-    # Mock utils.calculate_days_since to control time
-    with patch(
-        "custom_components.growspace_manager.models.plant.calculate_days_since"
-    ) as mock_calc:
-        plant = create_plant(
-            plant_id="p1",
-            growspace_id="gs1",
-            strain="Strain",
-            veg_start="2023-01-01T12:00:00",
-        )
-
-        # 1. Test stage that exists
-        mock_calc.return_value = 14
-        assert plant.get_days_in_stage("veg") == 14
-        mock_calc.assert_called_with("2023-01-01T12:00:00")
-
-        # 14 days = 2 weeks
-        # Implementation of days_to_week usually: days // 7 + 1 or similar logic
-        # models.py imports days_to_week from utils. Let's assume standard behavior.
-        # If models.py calls utils.days_to_week(14), we implicitly test integration.
-        # But we mocked calculate_days_since, not days_to_week.
-
-        # We need to control days_to_week return if we want to isolate models.py logic fully,
-        # but models.py just delegates. Let's trust utils or patch it too if needed.
-        # Actually simplest is just to verify the call flow.
-
-        # Test get_week_in_stage
-        with patch(
-            "custom_components.growspace_manager.models.plant.days_to_week"
-        ) as mock_week:
-            mock_week.return_value = 3
-            assert plant.get_week_in_stage("veg") == 3
-            mock_week.assert_called_with(14)  # Passed result from get_days_in_stage
-
-        # 2. Test stage that does not exist (date is None)
-        assert plant.get_days_in_stage("flower") == 0
-
-        # 3. Test stage that exists but value is None/Empty (just in case)
-        plant.veg_start = None
-        assert plant.get_days_in_stage("veg") == 0
 
 
 def test_environment_config_migration() -> None:

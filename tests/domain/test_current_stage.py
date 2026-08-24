@@ -2,8 +2,8 @@
 
 The plant view model, the plant sensor, and nutrient-preset matching all read
 Current Stage through ``resolve_current_stage``, so they agree with the Plant
-Lifecycle module and with each other. The legacy date heuristic survives only
-where no trustworthy Stage History is stored.
+Lifecycle module and with each other. Older records without history are
+reconstructed by the lifecycle module from their legacy dates.
 """
 
 from datetime import date
@@ -18,7 +18,6 @@ from custom_components.growspace_manager.presentation.plant_view_model import (
     PlantViewModelBuilder,
 )
 from custom_components.growspace_manager.sensor.plant import PlantEntity
-from custom_components.growspace_manager.utils import calculate_plant_stage
 
 OBSERVED_ON = date(2025, 8, 20)
 
@@ -45,11 +44,10 @@ def _revegged_plant() -> Plant:
     )
 
 
-def test_reveg_history_beats_the_stale_legacy_date_heuristic() -> None:
-    """The Reveg regression: history says veg, the old heuristic said flower."""
+def test_reveg_history_reports_the_current_interval() -> None:
+    """The Reveg regression: the current history interval says veg."""
     plant = _revegged_plant()
 
-    assert calculate_plant_stage(plant) == "flower"
     assert resolve_current_stage(plant, observed_on=OBSERVED_ON) == "veg"
 
 
@@ -67,7 +65,6 @@ def test_clone_promotion_beats_the_special_growspace_shortcut() -> None:
         ],
     )
 
-    assert calculate_plant_stage(plant) == "clone"
     assert resolve_current_stage(plant, observed_on=OBSERVED_ON) == "veg"
 
 
@@ -86,13 +83,10 @@ def test_consistent_history_displays_the_same_stage_as_before() -> None:
     )
 
     assert resolve_current_stage(plant, observed_on=OBSERVED_ON) == "flower"
-    assert resolve_current_stage(
-        plant, observed_on=OBSERVED_ON
-    ) == calculate_plant_stage(plant)
 
 
-def test_absent_history_keeps_the_legacy_heuristic() -> None:
-    """Plants that store no Stage History are still read from legacy dates."""
+def test_absent_history_is_reconstructed_by_the_lifecycle() -> None:
+    """Plants that store no Stage History are reconstructed from legacy dates."""
     plant = Plant(
         plant_id="legacy",
         growspace_id="main",
@@ -100,21 +94,6 @@ def test_absent_history_keeps_the_legacy_heuristic() -> None:
         veg_start="2025-07-01",
         flower_start="2025-08-01",
         stage_history=[],
-    )
-
-    assert resolve_current_stage(plant, observed_on=OBSERVED_ON) == "flower"
-
-
-def test_untrustworthy_history_falls_back_to_the_legacy_heuristic() -> None:
-    """History that needs repair never silently reports Unknown to the card."""
-    plant = Plant(
-        plant_id="broken",
-        growspace_id="main",
-        stage="flower",
-        flower_start="2025-08-01",
-        stage_history=[
-            {"stage": "veg", "start": "not-a-date", "end": None},
-        ],
     )
 
     assert resolve_current_stage(plant, observed_on=OBSERVED_ON) == "flower"

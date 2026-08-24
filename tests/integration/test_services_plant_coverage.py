@@ -363,9 +363,8 @@ async def test_harvest_orchestration(service, repository_mock) -> None:
     # Mock repository.growspaces to include dry_room
     repository_mock.has_growspace.return_value = True
 
-    # Mock calculate_plant_stage to avoid issues with mocked plants if any
     with patch(
-        "custom_components.growspace_manager.managers.plant.calculate_plant_stage",
+        "custom_components.growspace_manager.managers.plant.resolve_current_stage",
         return_value="Flower",
     ):
         await service.transition_plant("p1", target_growspace_id="dry_room")

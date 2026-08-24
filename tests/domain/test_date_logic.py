@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from custom_components.growspace_manager.domain.date_logic import (
-    calculate_days_in_stage,
     calculate_days_since,
     format_date,
     get_days_since_ipm,
@@ -15,7 +14,6 @@ from custom_components.growspace_manager.domain.date_logic import (
     parse_date_field,
     to_lifecycle_timestamp,
 )
-from custom_components.growspace_manager.domain.stage import PlantStage
 from homeassistant.util.dt import as_local, set_default_time_zone
 
 # Set a consistent timezone for tests
@@ -170,39 +168,6 @@ def test_format_date_valid():
 def test_format_date_invalid():
     """Test format_date with invalid input."""
     assert format_date("invalid") is None
-
-
-def test_calculate_days_in_stage():
-    """Test calculate_days_in_stage with various stages."""
-    plant = MagicMock()
-    # Mocking plant attributes
-    # calculate_days_in_stage uses getattr(plant, f"{stage}_start", None)
-    plant.seedling_start = "2024-01-01"
-    plant.veg_start = "2024-01-11"
-    plant.flower_start = "2024-01-21"
-    plant.dry_start = "2024-01-31"
-    plant.cure_start = "2024-02-10"
-
-    # Test SEEDLING (mapped to veg_start for END date)
-    assert calculate_days_in_stage(plant, PlantStage.SEEDLING) == 10
-    assert calculate_days_in_stage(plant, "seedling") == 10
-
-    # Test VEG (mapped to flower_start for END date)
-    assert calculate_days_in_stage(plant, PlantStage.VEG) == 10
-
-    # Test FLOWER (mapped to dry_start for END date)
-    assert calculate_days_in_stage(plant, PlantStage.FLOWER) == 10
-
-    # Test DRY (mapped to cure_start for END date)
-    assert calculate_days_in_stage(plant, PlantStage.DRY) == 10
-
-
-def test_calculate_days_in_stage_no_start():
-    """Test calculate_days_in_stage when start attribute is missing."""
-    plant = MagicMock()
-    # Ensure attributes are missing
-    plant.nonexistent_start = None
-    assert calculate_days_in_stage(plant, "nonexistent") == 0
 
 
 def test_get_days_since_helpers(freezer):

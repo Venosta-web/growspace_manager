@@ -206,8 +206,8 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         """Get the current week in the feed stage via the canonical ``days_to_week``.
 
         Resolved through the same seam as ``_get_active_curve`` so the week here
-        matches ``Plant.get_week_in_stage`` and the growspace view model (which
-        the prior inline ``(days // 7) + 1`` did not at 7-day boundaries).
+        matches the lifecycle-backed growspace view model (the prior inline
+        ``(days // 7) + 1`` did not at 7-day boundaries).
         """
         plants = self.coordinator.services.growspaces.get_growspace_plants(
             self._growspace_id

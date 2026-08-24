@@ -7,7 +7,7 @@ from typing import Any
 
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.domain.stage import STAGE_REGISTRY
-from custom_components.growspace_manager.utils import calculate_days_since, days_to_week
+from custom_components.growspace_manager.utils import calculate_days_since
 
 from .base import BaseModel, _sanitize_numeric_fields
 from .types import StageHistoryItem
@@ -167,7 +167,7 @@ class Plant(BaseModel):
             if field_name in data:
                 try:
                     data[field_name] = int(float(data[field_name]))
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     data[field_name] = 1  # Safe default
 
         # Migration: old 'scores' dict → new 'phenotype_score' with renamed fields.
@@ -239,32 +239,3 @@ class Plant(BaseModel):
         if self.last_watered:
             return calculate_days_since(self.last_watered)
         return None
-
-    def get_days_in_stage(self, stage_name: str) -> int:
-        """Calculate days spent in a specific stage using history."""
-        total_days = 0
-        found_in_history = False
-
-        # 1. Calculate from history
-        if self.stage_history:
-            for item in self.stage_history:
-                if item["stage"] == stage_name:
-                    found_in_history = True
-                    total_days += calculate_days_since(item["start"], item.get("end"))
-
-            if found_in_history:
-                return total_days
-
-        # 2. Fallback to legacy start date attributes
-        start_date_attr = f"{stage_name}_start"
-        if hasattr(self, start_date_attr):
-            start_date = getattr(self, start_date_attr)
-            if start_date:
-                return calculate_days_since(start_date)
-
-        return 0
-
-    def get_week_in_stage(self, stage_name: str) -> int:
-        """Calculate the week number in a specific stage."""
-        days = self.get_days_in_stage(stage_name)
-        return days_to_week(days)

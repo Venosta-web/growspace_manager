@@ -55,9 +55,7 @@ def strain_library_mock():
 @pytest.fixture
 def serializer_mock():
     """Mock the GrowspaceSerializer."""
-    mock = MagicMock()
-    mock.calculate_days_in_stage.return_value = 10
-    return mock
+    return MagicMock()
 
 
 @pytest.fixture

@@ -273,9 +273,8 @@ class NutrientManager:
                     continue
 
             # If preset has min_days_in_stage, check if plant meets it.
-            # Current Stage Age, not Lifetime Stage Days: `get_days_in_stage`
-            # sums every interval of the stage, so a revegged plant looked
-            # eligible on day one of its second veg stint (#635).
+            # Current Stage Age, not Lifetime Stage Days: a revegged plant must
+            # not look eligible on day one of its second veg stint (#635).
             if preset.min_days_in_stage is not None:
                 if stage_age < preset.min_days_in_stage:
                     continue

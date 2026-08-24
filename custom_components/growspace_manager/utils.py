@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
-from homeassistant.util.dt import now
 
 from .const import DOMAIN
 from .domain.date_logic import (
@@ -17,7 +16,6 @@ from .domain.date_logic import (
     parse_date_field,
     to_lifecycle_timestamp as to_lifecycle_timestamp_logic,
 )
-from .domain.stage import SPECIAL_GROWSPACE_STAGES, STAGES_ORDERED, PlantStage
 from .integration_types import DateInput
 
 if TYPE_CHECKING:
@@ -169,60 +167,6 @@ class VPDCalculator:
 
         vpd = leaf_svp - air_avp
         return round(vpd, 2)
-
-
-# =========================================================================
-# STAGE TRANSITION AND INTERPOLATION logic
-# =========================================================================
-
-
-def calculate_plant_stage(plant: Plant) -> str:
-    """Determine the current growth stage of the plant.
-
-    The stage is determined by a hierarchy: first by the special growspace
-    it's in, then by the most recent start date, and finally by the
-    explicitly set stage property.
-
-    Args:
-        plant: The Plant object to analyze.
-
-    Returns:
-        The determined stage as a string.
-    """
-    if stage := _get_stage_from_growspace(plant):
-        return stage
-
-    current_time = now()
-    # Check in reverse order (STAGES_ORDERED is ascending, so we reverse)
-    for stage_def in reversed(STAGES_ORDERED):
-        date_val = getattr(plant, stage_def.start_field, None)
-        if (dt := parse_date_field(date_val)) and dt <= current_time:
-            return stage_def.id.value
-
-    if stage := _get_stage_fallback(plant):
-        return stage
-
-    return PlantStage.SEEDLING
-
-
-def _get_stage_fallback(plant: Plant) -> str | None:
-    """Fallback to the explicitly set stage if it's valid."""
-    valid_stages = {stage.value for stage in PlantStage}
-    if plant.stage in valid_stages:
-        return plant.stage
-    return None
-
-
-def _get_stage_from_growspace(plant: Plant) -> str | None:
-    """Check if the plant is in a special growspace that dictates its stage."""
-    if not plant.growspace_id:
-        return None
-
-    stage_id = plant.growspace_id.lower()
-    if stage_id in SPECIAL_GROWSPACE_STAGES:
-        return stage_id
-
-    return None
 
 
 def interpolate_value(val_a: float, val_b: float, factor: float) -> float:
