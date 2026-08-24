@@ -13,9 +13,8 @@ from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
     GrowspaceService,
-    PlantStage,
 )
-from custom_components.growspace_manager.domain import calculate_days_in_stage
+from custom_components.growspace_manager.domain import resolve_lifetime_stage_days
 from custom_components.growspace_manager.domain.moisture_band import (
     interpret_moisture_reading,
 )
@@ -27,6 +26,7 @@ from custom_components.growspace_manager.schemas import (
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Context, HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util import dt as dt_util
 
 from ._definition import ServiceDefinition
 from .strain_library import StrainLibrary
@@ -210,37 +210,23 @@ class GrowAssistant:
 
         stages: dict[str, int] = {}
         strains = set()
+        observed_on = dt_util.now().date()
+        lifetime_days = [
+            resolve_lifetime_stage_days(plant, observed_on=observed_on)
+            for plant in plants
+        ]
 
         for plant in plants:
             stage = getattr(plant, "stage", "unknown")
             stages[stage] = stages.get(stage, 0) + 1
             strains.add(plant.strain)
 
-            # Calculate stage durations
-            # Calculate stage durations (unused but potentially useful for future)
-            # veg_days = self.coordinator.calculate_days_in_stage(plant, "veg")
-            # flower_days = self.coordinator.calculate_days_in_stage(plant, "flower")
-
         return {
             "count": len(plants),
             "stages": stages,
             "strains": list(strains),
-            "max_veg_days": max(
-                (
-                    calculate_days_in_stage(p, PlantStage.VEG)
-                    for p in plants
-                    if p.veg_start
-                ),
-                default=0,
-            ),
-            "max_flower_days": max(
-                (
-                    calculate_days_in_stage(p, PlantStage.FLOWER)
-                    for p in plants
-                    if p.flower_start
-                ),
-                default=0,
-            ),
+            "max_veg_days": max((days.veg for days in lifetime_days), default=0),
+            "max_flower_days": max((days.flower for days in lifetime_days), default=0),
         }
 
     def _get_strain_analytics(self, plants: list[Any]) -> dict[str, Any]:

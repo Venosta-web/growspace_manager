@@ -187,6 +187,37 @@ async def test_all_mutation_paths_append_stage_history(
 
 
 @pytest.mark.asyncio
+async def test_harvest_analytics_record_lifetime_days_after_reveg(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """Harvest analytics sum every veg and flower interval after a Reveg."""
+    manager = manager_factory()
+    plant = Plant(
+        plant_id="reveg-harvest",
+        growspace_id="main",
+        genetics=PlantGenetics(strain_name="Test", phenotype_name="Keeper"),
+        stage=PlantStage.FLOWER,
+        # The legacy calculation sees only these latest starts: 20d veg, 10d flower.
+        veg_start="2025-07-21",
+        flower_start="2025-08-10",
+        stage_history=[
+            {"stage": "veg", "start": "2025-07-01", "end": "2025-07-11"},
+            {"stage": "flower", "start": "2025-07-11", "end": "2025-07-21"},
+            {"stage": "veg", "start": "2025-07-21", "end": "2025-08-10"},
+            {"stage": "flower", "start": "2025-08-10", "end": None},
+        ],
+    )
+    repository.add_plant(plant)
+
+    await manager.transition_plant_stage(
+        plant.plant_id, PlantStage.DRY, date(2025, 8, 20)
+    )
+
+    recorded = manager.strain_library.record_harvest.await_args.args
+    assert recorded[2:4] == (30, 20)
+
+
+@pytest.mark.asyncio
 async def test_reveg_clears_stale_later_stage_fields(
     manager_factory, repository: GrowspaceRepository
 ) -> None:

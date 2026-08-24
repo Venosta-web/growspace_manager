@@ -11,6 +11,7 @@ from .date_logic import (
     get_days_since_watering,
 )
 from .grid_builder import build_position_grid
+from .lifetime_stage_days import resolve_lifetime_stage_days
 from .plant_lifecycle import (
     KNOWN_STAGES,
     TRANSITION_GRAPH,
@@ -66,4 +67,5 @@ __all__ = [
     "get_days_since_ipm",
     "get_days_since_training",
     "get_days_since_watering",
+    "resolve_lifetime_stage_days",
 ]
