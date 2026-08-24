@@ -1,7 +1,7 @@
 """Additional tests for plant_lifecycle_manager coverage."""
 
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -150,22 +150,24 @@ async def test_record_analytics_exception_handling(
         plant_id="test_plant",
         growspace_id="test_growspace",
         strain="Test Strain",
+        stage="dry",
         veg_start="2024-01-01",
-        flower_start="2024-02-01",
+        flower_start="2024-01-31",
+        dry_start="2024-03-31",
+        stage_history=[
+            {"stage": "veg", "start": "2024-01-01", "end": "2024-01-31"},
+            {"stage": "flower", "start": "2024-01-31", "end": "2024-03-31"},
+            {"stage": "dry", "start": "2024-03-31", "end": None},
+        ],
     )
 
-    # Patch calculate_days_in_stage to return positive days
-    with patch(
-        "custom_components.growspace_manager.managers.plant.calculate_days_in_stage",
-        side_effect=[30, 60],
-    ):
-        # Mock strain_library.record_harvest to raise exception
-        strain_library_mock.record_harvest = AsyncMock(
-            side_effect=Exception("Database error")
-        )
+    # Mock strain_library.record_harvest to raise exception
+    strain_library_mock.record_harvest = AsyncMock(
+        side_effect=Exception("Database error")
+    )
 
-        # Should not raise, exception is caught and logged
-        await manager._record_analytics(plant)
+    # Should not raise, exception is caught and logged
+    await manager._record_analytics(plant)
 
     # Verify record_harvest was called with scores (all None since plant has no scores set)
     strain_library_mock.record_harvest.assert_awaited_once_with(

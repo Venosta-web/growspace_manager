@@ -18,6 +18,9 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.domain.date_logic import plant_updated_date
+from custom_components.growspace_manager.domain.lifetime_stage_days import (
+    resolve_lifetime_stage_days,
+)
 from custom_components.growspace_manager.domain.plant_lifecycle import (
     TRANSITION_GRAPH,
     Applied,
@@ -28,9 +31,6 @@ from custom_components.growspace_manager.domain.plant_lifecycle import (
     Rejected,
 )
 from custom_components.growspace_manager.domain.stage import STAGE_REGISTRY
-from custom_components.growspace_manager.domain.stage_calculator import (
-    calculate_days_in_stage,
-)
 from custom_components.growspace_manager.events import (
     EVENT_PLANT_ADDED,
     EVENT_PLANT_HARVESTED,
@@ -1756,8 +1756,10 @@ class PlantManager(BaseService):
 
     async def _record_analytics(self, plant: Plant) -> None:
         """Record harvest analytics for a plant."""
-        veg_days = calculate_days_in_stage(plant, PlantStage.VEG)
-        flower_days = calculate_days_in_stage(plant, PlantStage.FLOWER)
+        observed_on = dt_util.now().date()
+        lifetime_days = resolve_lifetime_stage_days(plant, observed_on=observed_on)
+        veg_days = lifetime_days.veg
+        flower_days = lifetime_days.flower
         if self.strain_library and (veg_days > 0 or flower_days > 0):
             try:
                 metrics = getattr(plant, "harvest_metrics", None)
