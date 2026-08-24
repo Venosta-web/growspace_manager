@@ -105,6 +105,7 @@ from .const import (
     CONF_PORE_EC_SENSORS,
     CONF_POWER_SENSORS,
     CONF_RUNOFF_EC_SENSORS,
+    CONF_SNAPSHOT_INTERVAL,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
     CONF_SUBSTRATE_TEMP_SENSORS,
@@ -556,6 +557,9 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_SUBSTRATE_TEMP_SENSORS): cv.ensure_list,
         vol.Optional(CONF_LUNG_ROOM_TEMP_SENSORS): cv.ensure_list,
         vol.Optional(CONF_CAMERA_ENTITIES): cv.ensure_list,
+        vol.Optional(CONF_SNAPSHOT_INTERVAL): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=168)
+        ),
         # Advanced / irrigation monitoring sensors
         vol.Optional(CONF_PH_SENSORS): cv.ensure_list,
         vol.Optional(CONF_FEED_EC_SENSORS): cv.ensure_list,
