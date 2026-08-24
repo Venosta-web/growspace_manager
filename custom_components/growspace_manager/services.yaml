@@ -718,6 +718,24 @@ configure_environment:
       required: false
       selector:
         object:
+    camera_entities:
+      name: Camera Entities
+      description: Cameras used for snapshots and Vision Checkups.
+      required: false
+      selector:
+        entity:
+          domain: camera
+          multiple: true
+    snapshot_interval_hours:
+      name: Snapshot Interval
+      description: Hours between scheduled camera snapshots.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 168
+          step: 1
+          unit_of_measurement: h
 
 remove_environment:
   description: Remove environment configuration for a growspace
