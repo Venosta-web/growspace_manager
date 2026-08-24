@@ -1,0 +1,3 @@
+# Grow Runs are domain records, not one Home Assistant entity each
+
+Grow Runs are persisted domain records queried through the integration API, while each Growspace exposes at most one lightweight Active Run Sensor for dashboard state and automations. Creating an entity-registry entry for every historical Run was rejected because completed history would permanently accumulate registry objects whose attributes still could not carry the full participant, metric, and audit record. The accepted trade-off is that historical navigation uses the card and API rather than native entity browsing, in exchange for a stable registry and a domain model that can represent full Run history without squeezing it into sensor state.

@@ -1,0 +1,3 @@
+# Retain unattributed activity for safe Run backdating
+
+Each Growspace retains the same lightweight facts and daily summaries while no Grow Run is active in an Unattributed Activity Ledger, configurable with a 365-day default. Starting a backdated Run transactionally claims eligible ledger facts after showing the attribution preview; history older than retention can only be represented as an explicitly incomplete Imported Run. Relying on Home Assistant Recorder or reconstructing from current Plant state was rejected because retention is external and Plant location is overwritten on movement. The accepted trade-off is bounded storage even for growers who never start Runs, in exchange for honest backdating rather than silently incomplete historical containers.
