@@ -33,6 +33,9 @@ _LOGGER = logging.getLogger(__name__)
 # On/off domains driven via turn_on/turn_off rather than by percentage.
 _SWITCH_DOMAINS = ("switch", "input_boolean")
 
+# Writable numeric entities use the card's documented 0-10 Fan Entity Mode.
+_SPEED_NUMBER_DOMAINS = ("input_number", "number")
+
 # Domains a binary on/off controller drives via their own turn_on/turn_off
 # service; any other domain falls back to the generic ``homeassistant`` service.
 _ON_OFF_NATIVE_DOMAINS = ("switch", "humidifier", "fan", "input_boolean")
@@ -210,6 +213,50 @@ class LightDriver:
         return state is not None and state.state == STATE_ON
 
 
+class NumberDriver:
+    """Drives a writable 0-10 numeric fan-speed entity.
+
+    Coordinators express demand as a percentage while the card's numeric Fan
+    Entity Mode deliberately exposes the device-native 0-10 speed index.  The
+    driver owns that translation so coordinators and presentation code keep
+    their existing units.
+    """
+
+    def __init__(self, hass: HomeAssistant, entity_id: str) -> None:
+        """Initialize the driver for an ``input_number`` or ``number`` entity."""
+        self._hass = hass
+        self._entity_id = entity_id
+        self._domain = entity_id.split(".", 1)[0]
+
+    async def set_speed(self, pct: int) -> None:
+        """Map a 0-100 percentage demand onto the 0-10 speed index."""
+        value = max(0, min(10, round(pct / 10)))
+        await _safe_service_call(
+            self._hass,
+            self._domain,
+            "set_value",
+            {ATTR_ENTITY_ID: self._entity_id, "value": value},
+        )
+
+    async def turn_on(self) -> None:
+        """Set the numeric speed to its maximum."""
+        await self.set_speed(100)
+
+    async def turn_off(self) -> None:
+        """Set the numeric speed to zero."""
+        await self.set_speed(0)
+
+    def is_on(self) -> bool:
+        """Return whether the current numeric speed is positive."""
+        state = self._hass.states.get(self._entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return False
+        try:
+            return float(state.state) > 0
+        except ValueError:
+            return False
+
+
 def resolve_actuator_driver(
     hass: HomeAssistant, entity_id: str, *, switch_off_threshold: int = 0
 ) -> ActuatorDriver | None:
@@ -223,6 +270,8 @@ def resolve_actuator_driver(
         return FanDriver(hass, entity_id)
     if domain == "light":
         return LightDriver(hass, entity_id)
+    if domain in _SPEED_NUMBER_DOMAINS:
+        return NumberDriver(hass, entity_id)
     if domain in _SWITCH_DOMAINS:
         return SwitchDriver(hass, entity_id, off_threshold=switch_off_threshold)
     return None
