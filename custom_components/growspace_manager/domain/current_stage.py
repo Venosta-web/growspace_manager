@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.util import dt as dt_util
 
+from .date_logic import calculate_days_in_stage
 from .plant_lifecycle import LifecycleStage, PlantLifecycle
 
 if TYPE_CHECKING:
@@ -56,6 +57,34 @@ def stored_lifecycle(plant: Plant, *, observed_on: date) -> PlantLifecycle | Non
     return PlantLifecycle.from_history(raw_history, observed_on=observed_on)
 
 
+def resolve_stage_and_age(
+    plant: Plant, *, observed_on: date | None = None
+) -> tuple[str, int]:
+    """Return the Plant's Current Stage and [[Current Stage Age]] together.
+
+    One history parse answers both, and both fall back together: a Plant read
+    from the legacy heuristic must have its age measured the legacy way too, or
+    the pair would describe two different stages (#635).
+
+    Args:
+        plant: The Plant to resolve.
+        observed_on: The [[Observed Date]] the history is evaluated on; defaults
+            to today in the Home Assistant timezone.
+
+    Returns:
+        The canonical stage string and whole days since the current interval
+        started.
+    """
+    on_date = observed_on if observed_on is not None else dt_util.now().date()
+    lifecycle = stored_lifecycle(plant, observed_on=on_date)
+    if lifecycle is not None:
+        facts = lifecycle.facts(on=on_date)
+        if facts.current_stage is not LifecycleStage.UNKNOWN:
+            return facts.current_stage.value, facts.current_stage_age or 0
+    stage = calculate_plant_stage(plant)
+    return stage, calculate_days_in_stage(plant, stage)
+
+
 def resolve_current_stage(plant: Plant, *, observed_on: date | None = None) -> str:
     """Return the Plant's Current Stage as the lifecycle module reports it.
 
@@ -68,8 +97,4 @@ def resolve_current_stage(plant: Plant, *, observed_on: date | None = None) -> s
         The canonical stage string, falling back to the legacy date heuristic
         when no trustworthy Stage History is stored.
     """
-    on_date = observed_on if observed_on is not None else dt_util.now().date()
-    lifecycle = stored_lifecycle(plant, observed_on=on_date)
-    if lifecycle is not None and lifecycle.current_stage is not LifecycleStage.UNKNOWN:
-        return lifecycle.current_stage.value
-    return calculate_plant_stage(plant)
+    return resolve_stage_and_age(plant, observed_on=observed_on)[0]

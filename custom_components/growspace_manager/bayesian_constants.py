@@ -300,22 +300,6 @@ MOLD_TREND_THRESHOLD_VPD = -1
 """Default VPD threshold for mold trend analysis."""
 
 # =========================================================================
-# STAGE BOUNDARIES (days)
-# =========================================================================
-
-FLOWER_EARLY_MAX_DAYS = 21
-"""Maximum days for early flower stage."""
-
-FLOWER_MID_MIN_DAYS = 21
-"""Minimum days for mid flower stage."""
-
-FLOWER_MID_MAX_DAYS = 42
-"""Maximum days for mid flower stage."""
-
-FLOWER_LATE_MIN_DAYS = 42
-"""Minimum days for late flower stage."""
-
-# =========================================================================
 # MISC THRESHOLDS
 # =========================================================================
 

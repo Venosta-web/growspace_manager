@@ -32,7 +32,7 @@ from .const import (
     GrowspaceSensorType,
     NotificationTier,
 )
-from .domain import calculate_days_in_stage
+from .domain.cultivation_band import current_stage_age_in
 from .exceptions import GrowspaceError
 from .notification_rewriter import AINotificationRewriter
 from .notifications.evaluation_snapshot import EvaluationSnapshot
@@ -627,9 +627,13 @@ class NotificationManager:
         message: str,
     ) -> None:
         """Check and trigger notification for a specific plant."""
-        days_in_stage = calculate_days_in_stage(plant, trigger_type)
+        # A day-of-stage trigger is a question about the stage the plant is in
+        # right now. Reading it off the legacy `*_start` dates counted a veg
+        # stint the plant had already left, so after a Reveg "veg day 14" fired
+        # on the day of the Reveg itself (#635).
+        stage_age = current_stage_age_in(plant, trigger_type)
 
-        if days_in_stage >= day_to_trigger:
+        if stage_age is not None and stage_age >= day_to_trigger:
             notification_key = f"timed_{notification_id}"
             # This bucket is keyed by notification_key -> bool for timed notifications,
             # unlike the stage -> day -> bool shape used elsewhere for this field.

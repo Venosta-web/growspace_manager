@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.utils import calculate_days_since
 
-from .stage import DEFAULT_FLOWER_EARLY_DAYS, FLOWER_LATE_MIN_DAYS, PlantStage
+from .cultivation_band import band_plant_stage, growspace_cultivation_band
+from .stage import PlantStage
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.models import Plant
@@ -42,57 +43,16 @@ def calculate_days_in_stage(plant: Plant, stage: str) -> int:
 def determine_coordinator_stage(plants: list[Plant]) -> PlantStage:
     """Determine the dominant growth stage for environmental control.
 
-    Applies a priority ladder so the most demanding stage wins:
-    cure > dry > late_flower > mid_flower > early_flower > mother > veg > seedling == clone.
+    Delegates to the [[Plant Lifecycle]] module's [[Cultivation Band]] so the
+    dehumidifier, humidifier, circulation fan, and exhaust fan classify flower
+    on exactly the same boundaries the Bayesian evaluation does. The old strict
+    ``> 21`` / ``> 42`` comparisons here put day 21 in Early Flower and day 42
+    in Mid Flower while every other consumer had already moved on (#635).
+
+    The band ladder is unchanged: cure > dry > late_flower > mid_flower >
+    early_flower > mother > veg > seedling == clone, and an empty growspace
+    still reports veg.
     """
-    max_seedling_days = 0
-    max_clone_days = 0
-    max_veg_days = 0
-    max_flower_days = 0
-    max_dry_days = 0
-    max_cure_days = 0
-    max_mother_days = 0
-
-    for plant in plants:
-        max_seedling_days = max(
-            max_seedling_days, calculate_days_in_stage(plant, PlantStage.SEEDLING)
-        )
-        max_clone_days = max(
-            max_clone_days, calculate_days_in_stage(plant, PlantStage.CLONE)
-        )
-        max_veg_days = max(
-            max_veg_days, calculate_days_in_stage(plant, PlantStage.VEG)
-        )
-        max_flower_days = max(
-            max_flower_days, calculate_days_in_stage(plant, PlantStage.FLOWER)
-        )
-        max_dry_days = max(
-            max_dry_days, calculate_days_in_stage(plant, PlantStage.DRY)
-        )
-        max_cure_days = max(
-            max_cure_days, calculate_days_in_stage(plant, PlantStage.CURE)
-        )
-        max_mother_days = max(
-            max_mother_days, calculate_days_in_stage(plant, PlantStage.MOTHER)
-        )
-
-    if max_cure_days > 0:
-        return PlantStage.CURE
-    if max_dry_days > 0:
-        return PlantStage.DRY
-    if max_flower_days > FLOWER_LATE_MIN_DAYS:
-        return PlantStage.FLOWER_LATE
-    if max_flower_days > DEFAULT_FLOWER_EARLY_DAYS:
-        return PlantStage.FLOWER_MID
-    if max_flower_days > 0:
-        return PlantStage.FLOWER_EARLY
-    if max_mother_days > 0:
-        return PlantStage.MOTHER
-    if max_veg_days > 0:
+    if not plants:
         return PlantStage.VEG
-    if max_seedling_days > 0:
-        return PlantStage.SEEDLING
-    if max_clone_days > 0:
-        return PlantStage.CLONE
-
-    return PlantStage.VEG
+    return band_plant_stage(growspace_cultivation_band(plants))

@@ -7,12 +7,12 @@ from enum import StrEnum
 from typing import Final
 
 from ..bayesian_constants import ACCLIMATION_END_DAYS, ACCLIMATION_START_DAYS
+from .plant_lifecycle import CultivationBandId, LifecycleStage, cultivation_band_for
 
-# Constants for stage logic and transitions
-DEFAULT_FLOWER_EARLY_DAYS: Final = 21
-DEFAULT_FLOWER_MID_DAYS: Final = 21
-FLOWER_LATE_MIN_DAYS: Final = 42
-
+# Constants for stage logic and transitions. The flower band boundaries are not
+# here: `cultivation_band_for` in the Plant Lifecycle module owns them, and
+# copies of "21" and "42" in the classifier modules are what let this file, the
+# coordinator stage, and the Bayesian stage key drift apart at those days (#635).
 TRANSITION_WINDOW: Final = 3
 
 
@@ -92,6 +92,36 @@ class StageClassification:
         return _COLLAPSE_MAP.get(raw, raw)
 
 
+FLOWER_BAND_STAGES: Final[dict[CultivationBandId, BayesianStage]] = {
+    CultivationBandId.EARLY_FLOWER: BayesianStage.FLOWER_EARLY,
+    CultivationBandId.MID_FLOWER: BayesianStage.FLOWER_MID,
+    CultivationBandId.LATE_FLOWER: BayesianStage.FLOWER_LATE,
+}
+
+
+def flower_classification(flower_days: int) -> StageClassification:
+    """Project the lifecycle module's flower [[Cultivation Band]] onto the pair.
+
+    The band identity is the stage the growspace is *in*; its interpolation hint,
+    present only in the three days before a boundary, becomes the blend toward
+    the next one. Routing through ``cultivation_band_for`` keeps the day-21 and
+    day-42 boundaries in the lifecycle module rather than duplicated here (#635).
+    """
+    band = cultivation_band_for(LifecycleStage.FLOWER, flower_days)
+    stage_a = FLOWER_BAND_STAGES[band.identity]
+    if band.interpolation is None:
+        return StageClassification(stage_a, stage_a, 0.0)
+    stage_b = FLOWER_BAND_STAGES[band.interpolation.adjacent_band]
+    return StageClassification(stage_a, stage_b, round(band.interpolation.factor, 2))
+
+
+def flower_band_stage(flower_days: int) -> BayesianStage | None:
+    """Return the flower band a day count falls in, or None when not in flower."""
+    if flower_days < 0:
+        return None
+    return flower_classification(flower_days).stage_a
+
+
 def classify_stages(days: StageDays) -> StageClassification:
     """Classify a growspace into a StageClassification from per-stage max-days inputs.
 
@@ -107,27 +137,16 @@ def classify_stages(days: StageDays) -> StageClassification:
         return StageClassification(BayesianStage.MOTHER, BayesianStage.MOTHER, 0.0)
 
     if days.flower >= 0:
-        b1 = DEFAULT_FLOWER_EARLY_DAYS
-        b2 = FLOWER_LATE_MIN_DAYS
-
-        if days.flower <= b1:
-            if days.flower < b1 - TRANSITION_WINDOW:
-                return StageClassification(BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_EARLY, 0.0)
-            factor = (days.flower - (b1 - TRANSITION_WINDOW)) / TRANSITION_WINDOW
-            return StageClassification(BayesianStage.FLOWER_EARLY, BayesianStage.FLOWER_MID, round(float(factor), 2))
-
-        if days.flower <= b2:
-            if days.flower < b2 - TRANSITION_WINDOW:
-                return StageClassification(BayesianStage.FLOWER_MID, BayesianStage.FLOWER_MID, 0.0)
-            factor = (days.flower - (b2 - TRANSITION_WINDOW)) / TRANSITION_WINDOW
-            return StageClassification(BayesianStage.FLOWER_MID, BayesianStage.FLOWER_LATE, round(float(factor), 2))
-
-        return StageClassification(BayesianStage.FLOWER_LATE, BayesianStage.FLOWER_LATE, 0.0)
+        return flower_classification(days.flower)
 
     if days.veg >= 0:
         if days.veg < TRANSITION_WINDOW:
             factor = days.veg / TRANSITION_WINDOW
-            return StageClassification(BayesianStage.SEEDLING_STANDARD, BayesianStage.VEG, round(float(factor), 2))
+            return StageClassification(
+                BayesianStage.SEEDLING_STANDARD,
+                BayesianStage.VEG,
+                round(float(factor), 2),
+            )
         return StageClassification(BayesianStage.VEG, BayesianStage.VEG, 0.0)
 
     if days.seedling >= 0:
@@ -135,22 +154,38 @@ def classify_stages(days: StageDays) -> StageClassification:
         ac_end = ACCLIMATION_END_DAYS
         if days.seedling <= ac_end:
             if days.seedling <= ac_start:
-                return StageClassification(BayesianStage.SEEDLING, BayesianStage.SEEDLING, 0.0)
+                return StageClassification(
+                    BayesianStage.SEEDLING, BayesianStage.SEEDLING, 0.0
+                )
             window = ac_end - ac_start
             factor = (days.seedling - ac_start) / window
-            return StageClassification(BayesianStage.SEEDLING, BayesianStage.SEEDLING_STANDARD, round(float(factor), 2))
-        return StageClassification(BayesianStage.SEEDLING_STANDARD, BayesianStage.SEEDLING_STANDARD, 0.0)
+            return StageClassification(
+                BayesianStage.SEEDLING,
+                BayesianStage.SEEDLING_STANDARD,
+                round(float(factor), 2),
+            )
+        return StageClassification(
+            BayesianStage.SEEDLING_STANDARD, BayesianStage.SEEDLING_STANDARD, 0.0
+        )
 
     if days.clone >= 0:
         ac_start = ACCLIMATION_START_DAYS
         ac_end = ACCLIMATION_END_DAYS
         if days.clone <= ac_end:
             if days.clone <= ac_start:
-                return StageClassification(BayesianStage.CLONE, BayesianStage.CLONE, 0.0)
+                return StageClassification(
+                    BayesianStage.CLONE, BayesianStage.CLONE, 0.0
+                )
             window = ac_end - ac_start
             factor = (days.clone - ac_start) / window
-            return StageClassification(BayesianStage.CLONE, BayesianStage.CLONE_STANDARD, round(float(factor), 2))
-        return StageClassification(BayesianStage.CLONE_STANDARD, BayesianStage.CLONE_STANDARD, 0.0)
+            return StageClassification(
+                BayesianStage.CLONE,
+                BayesianStage.CLONE_STANDARD,
+                round(float(factor), 2),
+            )
+        return StageClassification(
+            BayesianStage.CLONE_STANDARD, BayesianStage.CLONE_STANDARD, 0.0
+        )
 
     return StageClassification(BayesianStage.EMPTY, BayesianStage.EMPTY, 0.0)
 
