@@ -374,7 +374,7 @@
       'pump_flow_rate_ml_per_sec': 0.0,
       'skip_during_dark': False,
       'soil_trigger_percent': None,
-      'veg_day_hours': 12,
+      'veg_day_hours': 18,
     }),
     'irrigation_strategy': dict({
       'auto_light_tracking': False,

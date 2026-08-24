@@ -718,7 +718,7 @@ class Growspace(BaseModel):
                         float(irr_config["veg_day_hours"])
                     )
                 except ValueError, TypeError:
-                    irr_config["veg_day_hours"] = 12
+                    irr_config["veg_day_hours"] = 18
 
             # Migrate irrigation_times and drain_times
             for list_key in ["irrigation_times", "drain_times"]:

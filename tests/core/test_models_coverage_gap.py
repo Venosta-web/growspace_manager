@@ -30,7 +30,7 @@ def test_growspace_invalid_veg_day_hours() -> None:
         "irrigation_config": {"veg_day_hours": "not_a_number"},
     }
     gs = Growspace.from_dict(data)
-    assert gs.irrigation_config.veg_day_hours == 12
+    assert gs.irrigation_config.veg_day_hours == 18
 
 
 def test_plant_genetics_key_property() -> None:
