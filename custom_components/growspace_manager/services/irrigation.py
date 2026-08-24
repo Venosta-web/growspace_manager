@@ -191,8 +191,8 @@ def _validate_volume_mode_selection(
     # Effective values: an incoming update wins over the stored state for both
     # the per-pot volume and the pump flow rate, so a single call (e.g. the
     # config-flow form) may set the profile, the flow rate, and the mode at once.
-    # The service schema never carries ``pump_flow_rate_ml_per_sec`` (a config
-    # field), so for the service path this falls back to the stored value.
+    # The settings service stores the pump flow rate separately from the
+    # strategy, so strategy updates fall back to the persisted config value.
     stored_profile = growspace.irrigation_strategy.substrate_profile
     profile_update = strategy.get("substrate_profile", {})
     liters_per_pot = profile_update.get("liters_per_pot", stored_profile.liters_per_pot)

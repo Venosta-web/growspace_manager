@@ -148,6 +148,7 @@ class TestHandleSetIrrigationSettings:
         call.data = {
             "growspace_id": "gs1",
             "irrigation_pump_entity": "switch.pump",
+            "pump_flow_rate_ml_per_sec": 12.5,
             "drain_pump_entity": "switch.drain",
             "irrigation_duration": 600,
             "drain_duration": 300,
@@ -159,6 +160,7 @@ class TestHandleSetIrrigationSettings:
         # Verify against the main coordinator services facade
         expected_settings = {
             "irrigation_pump_entity": "switch.pump",
+            "pump_flow_rate_ml_per_sec": 12.5,
             "drain_pump_entity": "switch.drain",
             "irrigation_duration": 600,
             "drain_duration": 300,
