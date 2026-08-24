@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import uuid
 
 from custom_components.growspace_manager.domain.current_stage import (
-    resolve_current_stage,
+    resolve_stage_and_age,
 )
 from custom_components.growspace_manager.models import (
     ECRampCurve,
@@ -262,7 +262,8 @@ class NutrientManager:
         applicable: list[NutrientPreset] = []
         # The Plant Lifecycle module owns Current Stage; matching on the legacy
         # `plant.stage` shadow fed presets a stale stage after a Reveg (#634).
-        current_stage = resolve_current_stage(plant).lower()
+        current_stage, stage_age = resolve_stage_and_age(plant)
+        current_stage = current_stage.lower()
 
         for preset in self.nutrient_presets.values():
             # If preset has no stage filter, it applies to all stages
@@ -271,10 +272,12 @@ class NutrientManager:
                 if current_stage != str(preset.stage).lower():
                     continue
 
-            # If preset has min_days_in_stage, check if plant meets it
+            # If preset has min_days_in_stage, check if plant meets it.
+            # Current Stage Age, not Lifetime Stage Days: `get_days_in_stage`
+            # sums every interval of the stage, so a revegged plant looked
+            # eligible on day one of its second veg stint (#635).
             if preset.min_days_in_stage is not None:
-                days_in_stage = plant.get_days_in_stage(current_stage)
-                if days_in_stage < preset.min_days_in_stage:
+                if stage_age < preset.min_days_in_stage:
                     continue
 
             applicable.append(preset)

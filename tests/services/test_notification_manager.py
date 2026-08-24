@@ -279,7 +279,7 @@ async def test_async_check_timed_notifications(
     mock_coordinator.notification_state.sent = {"plant_1": {}}
 
     with patch(
-        "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+        "custom_components.growspace_manager.notification_manager.current_stage_age_in",
         return_value=10,
     ):
         await manager.async_check_timed_notifications()
@@ -313,12 +313,12 @@ async def test_async_check_timed_notifications_normalizes_legacy_trigger(
     mock_coordinator.notification_state.sent = {"plant_1": {}}
 
     with patch(
-        "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+        "custom_components.growspace_manager.notification_manager.current_stage_age_in",
         return_value=10,
-    ) as calculate_days:
+    ) as stage_age:
         await manager.async_check_timed_notifications()
 
-    calculate_days.assert_called_once_with(plant, "flower")
+    stage_age.assert_called_once_with(plant, "flower")
     mock_hass.services.async_call.assert_awaited()
     assert mock_coordinator.notification_state.sent["plant_1"]["timed_legacy_notify"]
 
@@ -1241,7 +1241,7 @@ async def test_check_and_trigger_plant_notification_init(
 
     with (
         patch(
-            "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+            "custom_components.growspace_manager.notification_manager.current_stage_age_in",
             return_value=10,
         ),
         patch.object(manager, "async_send_notification", new_callable=AsyncMock),
@@ -1263,7 +1263,7 @@ async def test_check_and_trigger_plant_notification_init(
 
     with (
         patch(
-            "custom_components.growspace_manager.notification_manager.calculate_days_in_stage",
+            "custom_components.growspace_manager.notification_manager.current_stage_age_in",
             return_value=10,
         ),
         patch.object(

@@ -19,8 +19,6 @@ from .bayesian_constants import (
     DEFAULT_TREND_DURATION,
     DEFAULT_TREND_SENSITIVITY,
     DEFAULT_TREND_THRESHOLD_TEMP,
-    FLOWER_LATE_MIN_DAYS,
-    FLOWER_MID_MIN_DAYS,
     HUMIDIFIER_ACTIVE_THRESHOLD,
     HUMIDITY_ACTIVE_DESICCATION_THRESHOLD,
     HUMIDITY_CHANGE_THRESHOLD,
@@ -93,7 +91,14 @@ from .const import (
 )
 from .domain.environmental_targets import StageEnvironmentalTargets
 from .domain.moisture_band import effective_moisture_band
-from .domain.stage import BayesianStage, StageClassification, StageDays, classify_stages
+from .domain.stage import (
+    BayesianStage,
+    StageClassification,
+    StageDays,
+    classify_stages,
+    flower_band_stage,
+    flower_classification,
+)
 from .models import EnvironmentState
 
 if TYPE_CHECKING:
@@ -136,13 +141,11 @@ def _determine_stage_key(state: EnvironmentState) -> str:
     if state.mother_days > 0:
         return BayesianStage.MOTHER
 
-    # Flower takes precedence over standard vegetative stages
+    # Flower takes precedence over standard vegetative stages. The band comes
+    # from the lifecycle module so this key cannot drift from the one the
+    # coordinators and ``classify_stages`` pick on the same day (#635).
     if state.flower_days > 0:
-        if state.flower_days >= FLOWER_LATE_MIN_DAYS:
-            return BayesianStage.FLOWER_LATE
-        if state.flower_days >= FLOWER_MID_MIN_DAYS:
-            return BayesianStage.FLOWER_MID
-        return BayesianStage.FLOWER_EARLY
+        return flower_classification(state.flower_days).stage_a
 
     # Before flower
     if state.veg_days > 0:
@@ -506,7 +509,7 @@ def evaluate_direct_temp_stress(
             observations.append(prob)
             reasons.append((prob[0], f"High Heat ({temp})"))
         case t if (
-            state.flower_days >= FLOWER_LATE_MIN_DAYS
+            flower_band_stage(state.flower_days) is BayesianStage.FLOWER_LATE
             and t > TEMP_WARM_LATE_FLOWER_THRESHOLD
         ):
             prob = PROB_TEMP_WARM_LATE_FLOWER
@@ -723,9 +726,11 @@ def evaluate_optimal_temperature(
 
     # Match against (is_lights_on, flower_days) for branching logic
     match (state.is_lights_on, state.flower_days):
-        # Case A: Lights ON & Late Flower (Days >= FLOWER_LATE_MIN_DAYS)
+        # Case A: Lights ON & Late Flower (the lifecycle module's Late band)
         # Treat None (unknown) as Lights ON for fallback
-        case (True | None, days) if days >= FLOWER_LATE_MIN_DAYS:
+        case (True | None, days) if (
+            flower_band_stage(days) is BayesianStage.FLOWER_LATE
+        ):
             _evaluate_optimal_temp_late_flower(state.temp, observations, reasons)
 
         # Case B: Lights ON & Normal (Days < 42 or Veg)
