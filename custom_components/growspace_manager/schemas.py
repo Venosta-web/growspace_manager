@@ -719,6 +719,9 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
         {
             vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
             vol.Optional("irrigation_pump_entity"): str,
+            vol.Optional("pump_flow_rate_ml_per_sec"): vol.All(
+                vol.Coerce(float), vol.Range(min=0.0)
+            ),
             vol.Optional("drain_pump_entity"): str,
             vol.Optional("irrigation_duration"): vol.All(
                 vol.Coerce(int), vol.Range(min=1)

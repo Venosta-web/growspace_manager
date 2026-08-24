@@ -16,12 +16,21 @@ def test_set_irrigation_settings_schema_valid() -> None:
     valid_data = {
         "growspace_id": "gs1",
         "irrigation_pump_entity": "switch.pump_1",
+        "pump_flow_rate_ml_per_sec": 12.5,
         "drain_pump_entity": "switch.pump_2",
         "irrigation_duration": 30,
         "drain_duration": 60,
     }
-    # Should not raise
-    SET_IRRIGATION_SETTINGS_SCHEMA(valid_data)
+    result = SET_IRRIGATION_SETTINGS_SCHEMA(valid_data)
+    assert result["pump_flow_rate_ml_per_sec"] == pytest.approx(12.5)
+
+
+def test_set_irrigation_settings_schema_rejects_negative_pump_flow_rate() -> None:
+    """Pump flow rate cannot be negative."""
+    with pytest.raises(vol.Invalid):
+        SET_IRRIGATION_SETTINGS_SCHEMA(
+            {"growspace_id": "gs1", "pump_flow_rate_ml_per_sec": -0.1}
+        )
 
 
 def test_set_irrigation_settings_schema_partial_valid() -> None:
