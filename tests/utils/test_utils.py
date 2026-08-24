@@ -24,7 +24,6 @@ from custom_components.growspace_manager.utils import (
     VPDCalculator,
     any_light_sensor_on,
     calculate_days_since,
-    calculate_plant_stage,
     days_to_week,
     find_first_free_position,
     format_date,
@@ -185,53 +184,6 @@ def test_generate_growspace_grid_empty() -> None:
 def test_days_to_week(days, expected) -> None:
     """Test the `days_to_week` function."""
     assert days_to_week(days) == expected
-
-
-# ----------------------------
-# calculate_plant_stage tests
-# ----------------------------
-def test_calculate_plant_stage() -> None:
-    """Test the `calculate_plant_stage` function."""
-    # 1. Special growspaces
-    p = create_plant(plant_id="p1", growspace_id="mother", strain="A")
-    assert calculate_plant_stage(p) == "mother"
-
-    p = create_plant(plant_id="p1", growspace_id="clone", strain="A")
-    assert calculate_plant_stage(p) == "clone"
-
-    # 2. Date-based (mocking now is hard here without freezegun, so we use past dates)
-    # Assuming today is after 2000-01-01
-    p = create_plant(
-        plant_id="p1", growspace_id="g1", strain="A", flower_start="2000-01-01"
-    )
-    assert calculate_plant_stage(p) == "flower"
-
-    p = create_plant(
-        plant_id="p1", growspace_id="g1", strain="A", veg_start="2000-01-01"
-    )
-    assert calculate_plant_stage(p) == "veg"
-
-    # Priority check: flower > veg
-    p = create_plant(
-        plant_id="p1",
-        growspace_id="g1",
-        strain="A",
-        veg_start="2000-01-01",
-        flower_start="2000-02-01",
-    )
-    assert calculate_plant_stage(p) == "flower"
-
-    # 3. Explicit stage
-    p = create_plant(plant_id="p1", growspace_id="g1", strain="A", stage="dry")
-    assert calculate_plant_stage(p) == "dry"
-
-    # Default
-    p = create_plant(plant_id="p1", growspace_id="g1", strain="A")
-    assert calculate_plant_stage(p) == "seedling"
-
-    # No growspace_id (covers line 227)
-    p = create_plant(plant_id="p1", growspace_id=None, strain="A")
-    assert calculate_plant_stage(p) == "seedling"
 
 
 # ----------------------------

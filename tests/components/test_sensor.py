@@ -80,12 +80,14 @@ def mock_coordinator() -> MagicMock:
         coordinator.plants.values()
     )
     coordinator.serializer = MagicMock()
-    coordinator.serializer.calculate_days_in_stage.return_value = 10
 
     coordinator.services.notifications.should_send_notification.return_value = True
     coordinator.services.notifications.mark_notification_sent = AsyncMock()
     coordinator.async_add_listener = Mock()
-    coordinator.services.config.get_strain_options.return_value = ["Strain A", "Strain B"]
+    coordinator.services.config.get_strain_options.return_value = [
+        "Strain A",
+        "Strain B",
+    ]
     coordinator.services.get_growspace_options.return_value = ["gs1"]
     coordinator.strains = MagicMock()
     coordinator.created_entity_ids = []
@@ -1060,9 +1062,7 @@ def test_growspace_list_sensor_state_and_attributes(
     sensor.platform_data = sensor.platform
     attrs = sensor.extra_state_attributes
     assert "growspaces" in attrs
-    assert attrs["growspaces"] == {
-        "gs1": {"name": "Growspace 1", "total_plants": 1}
-    }
+    assert attrs["growspaces"] == {"gs1": {"name": "Growspace 1", "total_plants": 1}}
 
 
 def test_growspace_list_sensor_plant_counts_per_growspace() -> None:

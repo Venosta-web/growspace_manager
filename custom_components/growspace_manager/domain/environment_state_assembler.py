@@ -31,7 +31,8 @@ from ..models import (
     GrowspaceType,
     Plant,
 )
-from ..utils import VPDCalculator, calculate_days_since
+from ..utils import VPDCalculator
+from .current_stage import resolve_stage_and_age
 from .moisture_band import is_percentage_unit
 
 if TYPE_CHECKING:
@@ -303,19 +304,10 @@ class EnvironmentStateAssembler:
         if not plants:
             return empty
 
-        def _max_days(attr: str) -> int:
-            return max(
-                (
-                    calculate_days_since(value)
-                    for plant in plants
-                    if isinstance(value := getattr(plant, attr), str)
-                ),
-                default=-1,
-            )
-
-        return {
-            "veg_days": _max_days("veg_start"),
-            "flower_days": _max_days("flower_start"),
-            "seedling_days": _max_days("seedling_start"),
-            "clone_days": _max_days("clone_start"),
-        }
+        stage_days = dict(empty)
+        for plant in plants:
+            stage, age = resolve_stage_and_age(plant)
+            key = f"{stage}_days"
+            if key in stage_days:
+                stage_days[key] = max(stage_days[key], age)
+        return stage_days

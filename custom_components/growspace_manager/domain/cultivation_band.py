@@ -13,15 +13,10 @@ the band boundaries (#635):
 Every one of them now derives its band from ``cultivation_band_for``, so the
 boundary lives in the lifecycle module and nowhere else.
 
-The *age* those consumers classify moves too. ``calculate_days_in_stage`` and
-``Plant.get_days_in_stage`` read the legacy ``*_start`` fields (or sum every
-interval of a stage, which is [[Lifetime Stage Days]]), so after a Reveg a stale
-``flower_start`` kept driving a plant that is back in veg. Current Stage Age is
-the age of the *current open interval* only.
-
-Resolution rule, matching ``domain.current_stage``: stored [[Stage History]]
-wins whenever it parses, and the legacy day count survives only for Plants with
-no stored history or history that needs repair.
+Current Stage Age is the age of the *current open interval* only, so after a
+Reveg a stale ``flower_start`` cannot keep driving a plant that is back in veg.
+Older Plants without Stage History are reconstructed by the lifecycle module;
+malformed present history fails closed to Unknown.
 
 Scope note: only the flower bands are routed here. Seedling and Clone
 acclimation keeps ``classify_stages``' own four-day blend between
@@ -88,8 +83,7 @@ def current_stage_age(plant: Plant, *, observed_on: date | None = None) -> int:
             to today in the Home Assistant timezone.
 
     Returns:
-        Whole days since the current open interval started, falling back to the
-        legacy per-stage day count when no trustworthy Stage History is stored.
+        Whole days since the current open interval started.
     """
     on_date = observed_on if observed_on is not None else dt_util.now().date()
     return resolve_stage_and_age(plant, observed_on=on_date)[1]

@@ -1,6 +1,6 @@
 """Tests for the Nutrient Manager."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -211,11 +211,11 @@ def test_get_applicable_presets(manager, repository_mock) -> None:
 
     manager.nutrient_presets = {"p1": p1, "p2": p2, "p3": p3, "p4": p4}
 
-    # Mock plant days calculation
-    # Return 10 days for veg
-    plant.get_days_in_stage.return_value = 10
-
-    applicable = manager.get_applicable_presets("plant1")
+    with patch(
+        "custom_components.growspace_manager.managers.nutrient.resolve_stage_and_age",
+        return_value=("veg", 10),
+    ):
+        applicable = manager.get_applicable_presets("plant1")
 
     # Should get p1 (veg match), p4 (no filter)
     # p2 (flower mismatch) skipped

@@ -237,8 +237,6 @@ def test_plant_entity_phi_days_remaining() -> None:
     plant.col = 1
     plant.phi_clearance_date = "2026-01-20"  # 8 days from frozen "2026-01-12"
     plant.last_watered = None
-    plant.get_days_in_stage = Mock(return_value=0)
-    plant.get_week_in_stage = Mock(return_value=1)
     plant.get_days_since_watering = Mock(return_value=None)
     plant.phenotype_score = PhenotypeScore()
     plant.harvest_metrics = Mock(to_dict=Mock(return_value={}), wet_weight=None)

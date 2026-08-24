@@ -65,7 +65,6 @@ def mock_coordinator() -> MagicMock:
             CONF_ASSISTANT_ID: "test_agent",
         }
     }
-    coordinator.serializer.calculate_days_in_stage.return_value = 10
     coordinator.growspaces = data_repo.growspaces
 
     return coordinator
@@ -119,9 +118,7 @@ async def test_get_grow_advice_success(
     assistant: GrowAssistant, mock_hass: MagicMock
 ) -> None:
     """Test getting grow advice successfully."""
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "AI Advice"}}
         mock_converse.return_value = mock_result
@@ -146,9 +143,7 @@ async def test_get_grow_advice_empty_response(
     assistant: GrowAssistant, mock_hass: MagicMock
 ) -> None:
     """Test getting empty response from AI."""
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": ""}}  # Empty
         mock_converse.return_value = mock_result
@@ -190,9 +185,7 @@ async def test_handle_analyze_all_growspaces(
     """Test handle_analyze_all_growspaces service."""
     call = ServiceCall(mock_hass, "gsm", "analyze", {}, context=MagicMock())
 
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "Analysis Report"}}
         mock_converse.return_value = mock_result
@@ -461,14 +454,14 @@ async def test_execute_conversation_truncates_response(
 ) -> None:
     """Test _execute_conversation truncates response when it exceeds max_length."""
     long_text = "word " * 100  # 500 chars
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": long_text}}
         mock_converse.return_value = mock_result
 
-        result = await assistant._execute_conversation("prompt", "agent", 50, GROWSPACE_ID)
+        result = await assistant._execute_conversation(
+            "prompt", "agent", 50, GROWSPACE_ID
+        )
 
     assert len(result) <= 53  # max_length + "..."
     assert result.endswith("...")
@@ -493,11 +486,11 @@ async def test_handle_analyze_all_growspaces_truncates_response(
 ) -> None:
     """Test handle_analyze_all_growspaces truncates long AI responses."""
     long_text = "word " * 200
-    call = ServiceCall(mock_hass, "gsm", "analyze", {"max_length": 50}, context=MagicMock())
+    call = ServiceCall(
+        mock_hass, "gsm", "analyze", {"max_length": 50}, context=MagicMock()
+    )
 
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": long_text}}
         mock_converse.return_value = mock_result
@@ -516,9 +509,7 @@ async def test_handle_analyze_all_growspaces_empty_ai_response(
     """Test handle_analyze_all_growspaces returns summary on empty AI response."""
     call = ServiceCall(mock_hass, "gsm", "analyze", {}, context=MagicMock())
 
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {}  # No plain speech
         mock_converse.return_value = mock_result
@@ -552,12 +543,20 @@ def test_build_facility_summary_with_issues_and_statuses() -> None:
         {
             "growspace": {"name": "Tent A"},
             "plants": {"count": 4},
-            "analysis": {"optimal": {"active": True}, "stress": {"active": False}, "mold_risk": {"active": False}},
+            "analysis": {
+                "optimal": {"active": True},
+                "stress": {"active": False},
+                "mold_risk": {"active": False},
+            },
         },
         {
             "growspace": {"name": "Tent B"},
             "plants": {"count": 2},
-            "analysis": {"optimal": {"active": False}, "stress": {"active": True}, "mold_risk": {"active": False}},
+            "analysis": {
+                "optimal": {"active": False},
+                "stress": {"active": True},
+                "mold_risk": {"active": False},
+            },
         },
     ]
     issues = ["Tent B: Stress detected - High VPD"]
@@ -589,9 +588,7 @@ async def test_handle_strain_recommendation_success(
     """Test handle_strain_recommendation returns AI response on success."""
     call = ServiceCall(mock_hass, "gsm", "recommend", {}, context=MagicMock())
 
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "Recommend Kush"}}
         mock_converse.return_value = mock_result
@@ -610,9 +607,7 @@ async def test_handle_strain_recommendation_empty_ai_response(
     """Test handle_strain_recommendation fallback on empty AI response."""
     call = ServiceCall(mock_hass, "gsm", "recommend", {}, context=MagicMock())
 
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {}
         mock_converse.return_value = mock_result
@@ -637,9 +632,7 @@ async def test_handle_strain_recommendation_with_growspace_error(
     )
     mock_coordinator._data_repository.get_growspace.return_value = None
 
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "Advice without growspace"}}
         mock_converse.return_value = mock_result
@@ -656,11 +649,11 @@ async def test_handle_strain_recommendation_truncates_response(
 ) -> None:
     """Test handle_strain_recommendation truncates long AI responses."""
     long_text = "word " * 200
-    call = ServiceCall(mock_hass, "gsm", "recommend", {"max_length": 50}, context=MagicMock())
+    call = ServiceCall(
+        mock_hass, "gsm", "recommend", {"max_length": 50}, context=MagicMock()
+    )
 
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": long_text}}
         mock_converse.return_value = mock_result
@@ -716,9 +709,7 @@ async def test_handle_strain_recommendation_successful_growspace_context(
         context=MagicMock(),
     )
 
-    with patch(
-        "homeassistant.components.conversation.async_converse"
-    ) as mock_converse:
+    with patch("homeassistant.components.conversation.async_converse") as mock_converse:
         mock_result = MagicMock()
         mock_result.response.speech = {"plain": {"speech": "Advice with context"}}
         mock_converse.return_value = mock_result

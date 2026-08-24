@@ -346,6 +346,38 @@ def test_stage_days_max_across_plants() -> None:
     assert result.state.flower_days == -1
 
 
+def test_stage_days_only_count_the_current_lifecycle_interval() -> None:
+    """Closed-stage dates do not keep accumulating after a Reveg."""
+    today = dt_util.now().date()
+    reveg = today - timedelta(days=5)
+    flower = reveg - timedelta(days=20)
+    first_veg = flower - timedelta(days=30)
+    plant = Plant(
+        plant_id="reveg",
+        growspace_id="gs1",
+        veg_start=reveg.isoformat(),
+        flower_start=flower.isoformat(),
+        stage_history=[
+            {
+                "stage": "veg",
+                "start": first_veg.isoformat(),
+                "end": flower.isoformat(),
+            },
+            {
+                "stage": "flower",
+                "start": flower.isoformat(),
+                "end": reveg.isoformat(),
+            },
+            {"stage": "veg", "start": reveg.isoformat(), "end": None},
+        ],
+    )
+
+    result = build_assembler(EnvironmentConfig(), plants=[plant]).assemble()
+
+    assert result.state.veg_days == 5
+    assert result.state.flower_days == -1
+
+
 def test_stage_days_empty_growspace_sentinels() -> None:
     """An empty growspace yields -1 sentinels for all stages."""
     result = build_assembler(EnvironmentConfig(), plants=[]).assemble()

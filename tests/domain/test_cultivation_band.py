@@ -250,8 +250,6 @@ def test_current_stage_age_is_the_open_interval_not_the_lifetime() -> None:
     """A revegged plant is five days into veg, not forty-five."""
     plant = _revegged_plant()
 
-    # Lifetime Stage Days — what `get_days_in_stage` reports — sums both stints.
-    assert plant.get_days_in_stage("veg") == 45
     assert current_stage_age(plant, observed_on=OBSERVED_ON) == 5
 
 

@@ -27,10 +27,8 @@ from custom_components.growspace_manager.models import (
     GrowspaceEvent,
     GrowspaceType,
     IrrigationConfig,
-    Plant,
     Subarea,
 )
-from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util.dt import now
@@ -327,34 +325,6 @@ async def test_get_sorted_growspace_options(coordinator: GrowspaceCoordinator) -
     # Check the names match
     sorted_names = [item[1] for item in sorted_options]
     assert sorted_names == [gs.name for gs in expected_order]
-
-
-@pytest.mark.asyncio
-async def test_get_plant_stage(coordinator: GrowspaceCoordinator) -> None:
-    """Test that `_get_plant_stage` correctly determines the stage from dates.
-
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-
-    # Helper to create a plant with only one stage set
-    def make_plant_with_stage(stage_attr: str) -> Plant:
-        kwargs: dict[str, Any] = {f"{stage_attr}_start": date(2025, 1, 1).isoformat()}
-        return create_plant(
-            plant_id=f"{stage_attr}_id", strain="Test", growspace_id="gs1", **kwargs
-        )
-
-    stages = ["cure", "dry", "flower", "veg", "clone", "mother", "seedling"]
-
-    for stage in stages:
-        if stage == "seedling":
-            plant = create_plant(
-                plant_id="seedling_id", strain="Test", growspace_id="gs1"
-            )
-        else:
-            plant = make_plant_with_stage(stage)
-        result = calculate_plant_stage(plant)
-        assert result == stage, f"Expected stage {stage}, got {result}"
 
 
 @pytest.mark.asyncio
@@ -1413,22 +1383,6 @@ async def test_get_growspace_plants(coordinator: GrowspaceCoordinator) -> None:
     assert plant3 in gs2_plants
 
 
-def test_calculate_days_in_stage(coordinator: GrowspaceCoordinator) -> None:
-    """Test calculating the number of days a plant has been in a stage.
-
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-    plant = create_plant(
-        plant_id="p1",
-        strain="Test",
-        growspace_id="gs1",
-        veg_start=(now().date() - timedelta(days=10)).isoformat(),
-    )
-    days = plant.get_days_in_stage(PlantStage.VEG)
-    assert days == 10
-
-
 @pytest.fixture
 def coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     """Provide a fresh `GrowspaceCoordinator` instance for each test."""
@@ -1485,41 +1439,6 @@ async def test_init_with_plant_object(hass: HomeAssistant) -> None:
 
     assert "p1" in coordinator.plants
     assert coordinator.plants["p1"] == plant_obj
-
-
-@pytest.mark.asyncio
-async def test_get_plant_stage_special_growspaces(hass: HomeAssistant) -> None:
-    """Test _get_plant_stage for special growspaces."""
-
-    plant_mother = create_plant(plant_id="p1", strain="Test", growspace_id="mother")
-    assert calculate_plant_stage(plant_mother) == "mother"
-
-    plant_clone = create_plant(plant_id="p2", strain="Test", growspace_id="clone")
-    assert calculate_plant_stage(plant_clone) == "clone"
-
-    plant_cure = create_plant(plant_id="p3", strain="Test", growspace_id="cure")
-    assert calculate_plant_stage(plant_cure) == "cure"
-
-
-@pytest.mark.asyncio
-async def test_get_plant_stage_seedling(hass: HomeAssistant) -> None:
-    """Test _get_plant_stage for the seedling stage."""
-
-    plant = create_plant(
-        plant_id="p1",
-        strain="Test",
-        growspace_id="gs1",
-        seedling_start=date.today().isoformat(),
-    )
-    assert calculate_plant_stage(plant) == "seedling"
-
-
-@pytest.mark.asyncio
-async def test_get_plant_stage_fallback(hass: HomeAssistant) -> None:
-    """Test _get_plant_stage fallback to the explicitly set stage."""
-
-    plant = create_plant(plant_id="p1", strain="Test", growspace_id="gs1", stage="veg")
-    assert calculate_plant_stage(plant) == "veg"
 
 
 @pytest.mark.asyncio
@@ -1782,9 +1701,17 @@ async def test_harvest_auto_flow_mother_to_clone(hass: HomeAssistant) -> None:
     plant = MagicMock()
     plant.stage = "mother"
 
-    with patch.object(
-        coordinator._plant_manager, "move_to_clone_growspace", new_callable=AsyncMock
-    ) as mock_move:
+    with (
+        patch(
+            "custom_components.growspace_manager.managers.plant.resolve_current_stage",
+            return_value="mother",
+        ),
+        patch.object(
+            coordinator._plant_manager,
+            "move_to_clone_growspace",
+            new_callable=AsyncMock,
+        ) as mock_move,
+    ):
         mock_move.return_value = True
         await coordinator._plant_manager._harvest_auto_flow(
             "p1", plant, None, "2025-01-01"
@@ -1802,7 +1729,7 @@ async def test_harvest_auto_flow_fallback_to_dry(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.utils.calculate_plant_stage",
+            "custom_components.growspace_manager.managers.plant.resolve_current_stage",
             return_value="some_other_stage",
         ),
         patch.object(

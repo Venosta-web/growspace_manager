@@ -39,6 +39,7 @@ from custom_components.growspace_manager.drying_calculator import (
     compute_weight_lost_pct,
     is_cure_ready,
 )
+from custom_components.growspace_manager.utils import days_to_week
 from homeassistant.util import dt as dt_util
 
 from .entity_queries import EntityQueries
@@ -185,8 +186,8 @@ class PlantViewModelBuilder:
             if hasattr(plant, start_key):
                 attributes[start_key] = getattr(plant, start_key)
 
-        attributes["veg_week"] = plant.get_week_in_stage("veg")
-        attributes["flower_week"] = plant.get_week_in_stage("flower")
+        attributes["veg_week"] = days_to_week(attributes["veg_days"])
+        attributes["flower_week"] = days_to_week(attributes["flower_days"])
 
         attributes["last_watered"] = plant.last_watered
         attributes["days_since_last_watering"] = plant.get_days_since_watering()

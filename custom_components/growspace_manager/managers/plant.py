@@ -17,6 +17,9 @@ from custom_components.growspace_manager.const import (
     SPECIAL_GROWSPACES,
     PlantStage,
 )
+from custom_components.growspace_manager.domain.current_stage import (
+    resolve_current_stage,
+)
 from custom_components.growspace_manager.domain.date_logic import plant_updated_date
 from custom_components.growspace_manager.domain.lifetime_stage_days import (
     resolve_lifetime_stage_days,
@@ -60,10 +63,7 @@ from custom_components.growspace_manager.services.context import (
     BaseService,
     ServiceContext,
 )
-from custom_components.growspace_manager.utils import (
-    calculate_plant_stage,
-    to_lifecycle_timestamp,
-)
+from custom_components.growspace_manager.utils import to_lifecycle_timestamp
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -167,10 +167,12 @@ class PlantManager(BaseService):
         allow_repair: bool = False,
     ) -> PlantLifecycle:
         """Parse a Plant through the lifecycle domain, bootstrapping legacy empties."""
-        raw_stage = plant.stage or calculate_plant_stage(plant)
+        raw_stage = plant.stage or resolve_current_stage(plant, observed_on=observed_on)
         try:
             current_stage = _as_lifecycle_stage(raw_stage)
         except ValidationChangeError:
+            current_stage = LifecycleStage.SEEDLING
+        if current_stage is LifecycleStage.UNKNOWN:
             current_stage = LifecycleStage.SEEDLING
 
         legacy_dates = {
@@ -787,7 +789,19 @@ class PlantManager(BaseService):
             elif plant_type == PlantStage.MOTHER:
                 initial_stage = LifecycleStage.MOTHER
             elif any(date_fields.values()):
-                initial_stage = _as_lifecycle_stage(calculate_plant_stage(plant))
+                reconstructed = PlantLifecycle.from_data(
+                    None,
+                    observed_on=dt_util.now().date(),
+                    legacy_dates=date_fields,
+                )
+                initial_stage = reconstructed.current_stage
+                if initial_stage is LifecycleStage.UNKNOWN:
+                    details = ", ".join(
+                        warning.code.value for warning in reconstructed.warnings
+                    )
+                    raise ValidationChangeError(
+                        f"Initial plant lifecycle is invalid: {details}"
+                    )
             else:
                 initial_stage = LifecycleStage.SEEDLING
 
@@ -1451,7 +1465,7 @@ class PlantManager(BaseService):
             )
             stage_before = "unknown"
         else:
-            stage_before = calculate_plant_stage(plant)
+            stage_before = resolve_current_stage(plant)
 
         transition_date_str = to_lifecycle_timestamp(transition_date)
 
@@ -1607,7 +1621,7 @@ class PlantManager(BaseService):
                         harvest_metrics=harvest_metrics,
                     )
 
-        current_stage = calculate_plant_stage(plant)
+        current_stage = resolve_current_stage(plant)
         metric_kwargs = (
             {} if harvest_metrics is None else {"harvest_metrics": harvest_metrics}
         )
