@@ -265,9 +265,9 @@ async def test_update_plant_preserves_lifecycle_datetime_time(
     )
     repository_mock.get_plant.return_value = plant
 
-    await manager.update_plant("p1", flower_start="2026-03-01T14:30:00+00:00")
+    await manager.update_plant("p1", flower_start="2026-01-10T14:30:00+00:00")
 
-    # Stored as a full datetime string, not truncated to "2026-03-01".
+    # Stored as a full datetime string, not truncated to "2026-01-10".
     assert "T14:30" in plant.flower_start
 
 

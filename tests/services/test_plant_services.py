@@ -611,7 +611,7 @@ async def test_move_clone_invalid_date(
     mock_coordinator.services.plants.promote_clone.assert_called_once()
     # Logic in service: transitions invalid date string to today
     kwargs = mock_coordinator.services.plants.promote_clone.call_args_list[0].kwargs
-    # Unparseable date falls back to now as a full datetime (ADR-0013).
+    # Unparsable date falls back to now as a full datetime (ADR-0013).
     assert kwargs["transition_date"].date() == datetime.now(UTC).date()
 
 
@@ -739,6 +739,30 @@ async def test_update_plant_not_found(
         )
 
     mock_coordinator._plant_manager.update_plant.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_plant_lifecycle_rejection_is_service_validation_error(
+    hass: HomeAssistant, mock_coordinator, mock_strain_library, mock_plant
+) -> None:
+    """Domain lifecycle rejections surface as user-correctable service errors."""
+    mock_coordinator.plants = {"plant_1": mock_plant}
+    mock_coordinator._plant_manager.update_plant.side_effect = ValidationChangeError(
+        "Future-dated transitions are not allowed"
+    )
+    call = ServiceCall(
+        hass,
+        domain=DOMAIN,
+        service="update_plant",
+        data={"plant_id": "plant_1", "stage": "flower"},
+    )
+
+    with pytest.raises(
+        ServiceValidationError, match="Future-dated transitions are not allowed"
+    ):
+        await mock_coordinator.services.plants.update_plant_from_call(
+            hass, mock_strain_library, call
+        )
 
 
 @pytest.mark.asyncio
@@ -1243,7 +1267,9 @@ async def test_move_plant_exception(
     """Test exception handling in move_plant."""
     mock_coordinator.plants = {"plant_1": mock_plant}
     mock_coordinator.growspaces = {"gs1": mock_growspace}
-    mock_coordinator._plant_manager.move_plant.side_effect = GrowspaceError("Test error")
+    mock_coordinator._plant_manager.move_plant.side_effect = GrowspaceError(
+        "Test error"
+    )
     mock_coordinator.get_growspace_plants = Mock(return_value=[mock_plant])
 
     call = ServiceCall(
