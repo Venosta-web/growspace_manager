@@ -346,8 +346,9 @@ class BaseIrrigationCoordinator:
         except TimeoutError:
             _LOGGER.warning(
                 "%s did not confirm state '%s' within %s seconds. "
-                "This may indicate high device latency (e.g., Matter smart plug). "
-                "Proceeding anyway, but irrigation duration may be inaccurate",
+                "This may indicate high device latency (e.g., Matter smart plug) "
+                "or an offline device. Not a skip — the caller decides how to "
+                "proceed",
                 entity_id,
                 target_state,
                 timeout,
@@ -363,7 +364,7 @@ class BaseIrrigationCoordinator:
         finally:
             remove_listener()
 
-    def _compute_cycle_volume_liters(self, duration: int) -> float:
+    def _compute_cycle_volume_liters(self, duration: float) -> float:
         """Return the estimated water volume for a cycle in litres."""
         return cycle_volume_liters(self.growspace.irrigation_config, duration)
 
@@ -535,21 +536,44 @@ class BaseIrrigationCoordinator:
                     f"Irrigation started — {duration}s on {pump_entity}",
                 )
 
+            command_dt = utcnow()
             await self.hass.services.async_call(
                 "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
             )
 
             # Wait for switch to confirm ON state (critical for Matter smart plugs)
-            await self._async_wait_for_switch_state(pump_entity, "on")
+            confirmed = await self._async_wait_for_switch_state(pump_entity, "on")
 
-            # Start timing AFTER switch confirms ON
-            start_dt = utcnow()
+            if confirmed:
+                # Start timing AFTER switch confirms ON: the device reported the
+                # relay closing, so that is when water started moving.
+                start_dt = utcnow()
+                sleep_seconds: float = duration
+            else:
+                # No confirmation ever arrived. The turn_on call already returned,
+                # so the pump may have been running since the command — assume it
+                # was and shorten the sleep by the wait, or the cycle delivers
+                # `duration` plus the whole confirmation timeout of extra water.
+                start_dt = command_dt
+                sleep_seconds = max(
+                    0.0, duration - (utcnow() - command_dt).total_seconds()
+                )
+                _LOGGER.warning(
+                    "%s never confirmed 'on' for %s; timing the cycle from the "
+                    "turn_on call and sleeping %.1fs instead of %ss so the pump "
+                    "does not overrun the shot",
+                    pump_entity,
+                    self._growspace_id,
+                    sleep_seconds,
+                    duration,
+                )
+
             if event_type == "irrigation":
                 self._last_cycle_timestamp = start_dt.isoformat()
 
             await self._async_send_cycle_notification(event_type, duration, event_data)
 
-            await asyncio.sleep(duration)
+            await asyncio.sleep(sleep_seconds)
 
         except asyncio.CancelledError:
             _LOGGER.info(
@@ -593,12 +617,19 @@ class BaseIrrigationCoordinator:
                     duration_sec = (end_dt - start_dt).total_seconds()
 
                     # Update daily counters for completed irrigation cycles.
-                    # Use the planned duration (not measured elapsed) for volume
-                    # accounting because asyncio.sleep duration is the driver.
+                    # The planned duration is normally the driver — asyncio.sleep
+                    # is what the pump runs for — but a pump that never confirmed
+                    # 'on' can outlast it when the confirmation wait alone exceeds
+                    # the shot. Book whichever is larger so the daily volume and
+                    # its cap never under-count water that physically flowed.
                     if event_type == "irrigation":
+                        billed_volume_l = max(
+                            cycle_volume_l,
+                            self._compute_cycle_volume_liters(duration_sec),
+                        )
                         self._cycles_today += 1
-                        self._volume_dispensed_today += cycle_volume_l
-                        await self._async_record_pump_water(cycle_volume_l)
+                        self._volume_dispensed_today += billed_volume_l
+                        await self._async_record_pump_water(billed_volume_l)
 
                     self._async_spawn_settling_report(
                         event_type=event_type,
