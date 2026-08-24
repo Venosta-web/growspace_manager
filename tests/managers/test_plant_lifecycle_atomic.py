@@ -8,7 +8,10 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from custom_components.growspace_manager.const import PlantStage
+from custom_components.growspace_manager.const import (
+    EVENT_GROWSPACE_LOG_ENTRY,
+    PlantStage,
+)
 from custom_components.growspace_manager.data_access.growspace_repository import (
     GrowspaceRepository,
 )
@@ -299,3 +302,211 @@ async def test_invalid_graph_transition_is_rejected_without_mutation(
 
     assert plant.stage == PlantStage.SEEDLING
     assert len(plant.stage_history) == 1
+
+
+@pytest.mark.asyncio
+async def test_update_plant_forward_stage_edit_uses_lifecycle_transition(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """A graph-valid stage edit appends history instead of overwriting the shadow."""
+    manager = manager_factory()
+    plant = _plant("forward-edit", PlantStage.VEG, "2026-08-01")
+    repository.add_plant(plant)
+
+    await manager.update_plant(
+        "forward-edit",
+        stage=PlantStage.FLOWER,
+        flower_start=date(2026, 8, 10),
+        sex="female",
+    )
+
+    assert plant.stage == PlantStage.FLOWER
+    assert plant.flower_start == "2026-08-10T00:00:00+00:00"
+    assert plant.sex == "female"
+    assert plant.stage_history == [
+        {
+            "stage": "veg",
+            "start": "2026-08-01",
+            "end": "2026-08-10T00:00:00+00:00",
+        },
+        {
+            "stage": "flower",
+            "start": "2026-08-10T00:00:00+00:00",
+            "end": None,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_plant_backdated_current_start_emits_repair_event(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """Editing the open interval's start is an explicit, timeline-visible repair."""
+    manager = manager_factory()
+    plant = _plant("backdated-edit", PlantStage.VEG, "2026-08-10")
+    repository.add_plant(plant)
+
+    await manager.update_plant("backdated-edit", veg_start=date(2026, 8, 5))
+
+    assert plant.stage == PlantStage.VEG
+    assert plant.veg_start == "2026-08-05T00:00:00+00:00"
+    assert plant.stage_history == [
+        {
+            "stage": "veg",
+            "start": "2026-08-05T00:00:00+00:00",
+            "end": None,
+        }
+    ]
+    repair_events = [
+        call.args[1]
+        for call in manager.hass.bus.async_fire.call_args_list
+        if call.args[0] == EVENT_GROWSPACE_LOG_ENTRY
+    ]
+    assert repair_events == [
+        {
+            "plant_id": "backdated-edit",
+            "growspace_id": "main",
+            "sensor_type": "lifecycle_repair",
+            "category": "milestone",
+            "timestamp": repair_events[0]["timestamp"],
+            "notes": "Lifecycle corrected through update_plant",
+            "reasons": ["Corrected Veg start to 2026-08-05"],
+            "previous_stage": "veg",
+            "corrected_stage": "veg",
+            "corrected_stage_started_on": "2026-08-05",
+            "corrected_on": repair_events[0]["corrected_on"],
+            "discarded_interval_count": 1,
+            "warning_codes": [],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_plant_ambiguous_correction_discards_later_intervals(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """A non-transition correction retains only a graph-compatible trusted prefix."""
+    manager = manager_factory()
+    plant = Plant(
+        plant_id="ambiguous-edit",
+        growspace_id="main",
+        genetics=PlantGenetics(strain_name="Test"),
+        stage=PlantStage.FLOWER,
+        seedling_start="2026-08-01",
+        veg_start="2026-08-05",
+        flower_start="2026-08-10",
+        stage_history=[
+            {"stage": "seedling", "start": "2026-08-01", "end": "2026-08-05"},
+            {"stage": "veg", "start": "2026-08-05", "end": "2026-08-10"},
+            {"stage": "flower", "start": "2026-08-10", "end": None},
+        ],
+    )
+    repository.add_plant(plant)
+
+    await manager.update_plant(
+        "ambiguous-edit",
+        stage=PlantStage.MOTHER,
+        mother_start=date(2026, 8, 7),
+    )
+
+    assert plant.stage == PlantStage.MOTHER
+    assert plant.mother_start == "2026-08-07T00:00:00+00:00"
+    assert plant.seedling_start is None
+    assert plant.veg_start is None
+    assert plant.flower_start is None
+    assert plant.stage_history == [
+        {
+            "stage": "mother",
+            "start": "2026-08-07T00:00:00+00:00",
+            "end": None,
+        }
+    ]
+    repair_event = next(
+        call.args[1]
+        for call in manager.hass.bus.async_fire.call_args_list
+        if call.args[0] == EVENT_GROWSPACE_LOG_ENTRY
+    )
+    assert repair_event["discarded_interval_count"] == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"stage": "unknown-stage"}, "Invalid lifecycle stage"),
+        (
+            {"stage": PlantStage.FLOWER, "flower_start": date(2026, 7, 31)},
+            "predate the open interval",
+        ),
+        ({"veg_start": date(2099, 1, 1)}, "after corrected_on"),
+    ],
+)
+async def test_update_plant_rejects_invalid_lifecycle_edit_without_mutation(
+    manager_factory,
+    repository: GrowspaceRepository,
+    updates: dict[str, object],
+    message: str,
+) -> None:
+    """Unknown, too-early, and future lifecycle edits leave the Plant untouched."""
+    manager = manager_factory()
+    plant = _plant("rejected-edit", PlantStage.VEG, "2026-08-01")
+    repository.add_plant(plant)
+
+    with pytest.raises(ValidationChangeError, match=message):
+        await manager.update_plant("rejected-edit", **updates)
+
+    assert plant.stage == PlantStage.VEG
+    assert plant.veg_start == "2026-08-01"
+    assert plant.flower_start is None
+    assert plant.stage_history == [{"stage": "veg", "start": "2026-08-01", "end": None}]
+
+
+@pytest.mark.asyncio
+async def test_update_plant_plain_edit_skips_lifecycle_parse(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """Notes and position edits retain the ordinary update cost."""
+    manager = manager_factory()
+    plant = _plant("plain-edit", PlantStage.VEG, "2026-08-01")
+    repository.add_plant(plant)
+    manager._plant_lifecycle = Mock(wraps=manager._plant_lifecycle)
+
+    await manager.update_plant("plain-edit", sex="female", row=2)
+
+    assert plant.sex == "female"
+    assert plant.row == 2
+    manager._plant_lifecycle.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_failed_lifecycle_update_restores_mixed_fields_and_placement(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """Lifecycle, ordinary fields, layout, and placement roll back as one write."""
+    repository.add_growspace(Growspace(id="target", name="Target"))
+    manager = manager_factory(AsyncMock(side_effect=RuntimeError("disk failed")))
+    plant = _plant("mixed-rollback", PlantStage.VEG, "2026-08-01")
+    repository.add_plant(plant)
+    revisions = {
+        growspace_id: repository.require_growspace(growspace_id).layout_revision
+        for growspace_id in ("main", "target")
+    }
+
+    with pytest.raises(RuntimeError, match="disk failed"):
+        await manager.update_plant(
+            "mixed-rollback",
+            stage=PlantStage.FLOWER,
+            flower_start=date(2026, 8, 10),
+            growspace_id="target",
+            sex="female",
+        )
+
+    assert plant.stage == PlantStage.VEG
+    assert plant.growspace_id == "main"
+    assert plant.sex is None
+    assert plant.flower_start is None
+    assert plant.stage_history == [{"stage": "veg", "start": "2026-08-01", "end": None}]
+    assert {
+        growspace_id: repository.require_growspace(growspace_id).layout_revision
+        for growspace_id in ("main", "target")
+    } == revisions

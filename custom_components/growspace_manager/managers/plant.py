@@ -12,13 +12,16 @@ import uuid
 from custom_components.growspace_manager.const import (
     CATEGORY_MILESTONE,
     DATE_FIELDS,
+    EVENT_GROWSPACE_LOG_ENTRY,
     PLANT_STAGES,
     SPECIAL_GROWSPACES,
     PlantStage,
 )
 from custom_components.growspace_manager.domain.date_logic import plant_updated_date
 from custom_components.growspace_manager.domain.plant_lifecycle import (
+    TRANSITION_GRAPH,
     Applied,
+    LifecycleCorrection,
     LifecycleDecision,
     LifecycleStage,
     PlantLifecycle,
@@ -93,6 +96,8 @@ _SPECIAL_LIFECYCLE_STAGES = {
     LifecycleStage.CLONE,
     LifecycleStage.MOTHER,
 }
+_LIFECYCLE_UPDATE_FIELDS = {"stage", *DATE_FIELDS}
+_LIFECYCLE_CORRECTION_REASON = "Lifecycle corrected through update_plant"
 
 
 def _as_lifecycle_stage(stage: str | PlantStage) -> LifecycleStage:
@@ -154,7 +159,13 @@ class PlantManager(BaseService):
                 deepcopy(getattr(snapshot, model_field.name)),
             )
 
-    def _plant_lifecycle(self, plant: Plant, *, observed_on: date) -> PlantLifecycle:
+    def _plant_lifecycle(
+        self,
+        plant: Plant,
+        *,
+        observed_on: date,
+        allow_repair: bool = False,
+    ) -> PlantLifecycle:
         """Parse a Plant through the lifecycle domain, bootstrapping legacy empties."""
         raw_stage = plant.stage or calculate_plant_stage(plant)
         try:
@@ -198,12 +209,194 @@ class PlantManager(BaseService):
             legacy_dates=legacy_dates,
             current_stage=current_stage,
         )
-        if lifecycle.warnings:
+        if lifecycle.warnings and not allow_repair:
             details = ", ".join(warning.code.value for warning in lifecycle.warnings)
             raise ValidationChangeError(
                 f"Plant {plant.plant_id} lifecycle requires repair: {details}"
             )
         return lifecycle
+
+    @staticmethod
+    def _same_lifecycle_day(left: object, right: object) -> bool:
+        """Compare stored lifecycle values at the domain's calendar-day precision."""
+        return str(left)[:10] == str(right)[:10]
+
+    def _correction_history(
+        self,
+        plant: Plant,
+        correction: LifecycleCorrection,
+        corrected_timestamp: str,
+    ) -> list[dict[str, str | None]]:
+        """Project a correction while retaining trusted timestamp precision."""
+        projected = correction.compatibility_data.as_dict()["stage_history"]
+        history = [dict(item) for item in projected]
+        raw_history = plant.stage_history
+
+        for index, item in enumerate(history[:-1]):
+            if index >= len(raw_history):
+                break
+            raw = raw_history[index]
+            if (
+                raw["stage"] == item["stage"]
+                and self._same_lifecycle_day(raw["start"], item["start"])
+                and self._same_lifecycle_day(raw["end"], item["end"])
+            ):
+                history[index] = dict(raw)
+
+        history[-1]["start"] = corrected_timestamp
+        if len(history) > 1 and self._same_lifecycle_day(
+            history[-2]["end"], corrected_timestamp
+        ):
+            history[-2]["end"] = corrected_timestamp
+        return history
+
+    def _lifecycle_compatibility_updates(
+        self,
+        plant: Plant,
+        decision: LifecycleDecision | LifecycleCorrection,
+        lifecycle: PlantLifecycle,
+        target_stage: LifecycleStage,
+        target_timestamp: str,
+    ) -> dict[str, Any]:
+        """Build one timestamp-preserving update for every lifecycle-owned field."""
+        projected = decision.compatibility_data.as_dict()
+        if isinstance(decision, LifecycleCorrection):
+            projected["stage_history"] = self._correction_history(
+                plant, decision, target_timestamp
+            )
+        else:
+            projected["stage_history"] = self._transition_history(
+                plant, lifecycle, decision, target_timestamp
+            )
+
+        target_field = f"{target_stage.value}_start"
+        for field_name in DATE_FIELDS:
+            projected_value = projected[field_name]
+            if projected_value is None:
+                continue
+            if field_name == target_field:
+                projected[field_name] = target_timestamp
+                continue
+            stored_value = getattr(plant, field_name)
+            if stored_value is not None and self._same_lifecycle_day(
+                stored_value, projected_value
+            ):
+                projected[field_name] = stored_value
+        return projected
+
+    @staticmethod
+    def _lifecycle_edit_request(
+        requested_updates: dict[str, Any],
+    ) -> tuple[LifecycleStage, Any, bool]:
+        """Resolve the editor's one authoritative stage and optional start value."""
+        lifecycle_dates = {
+            field_name: requested_updates[field_name]
+            for field_name in DATE_FIELDS
+            if field_name in requested_updates
+        }
+        non_empty_date_fields = [
+            field_name
+            for field_name, value in lifecycle_dates.items()
+            if value is not None
+        ]
+        if (requested_stage := requested_updates.get("stage")) is None:
+            if len(non_empty_date_fields) != 1:
+                raise ValidationChangeError(
+                    "A lifecycle date edit must identify exactly one current stage"
+                )
+            target = _as_lifecycle_stage(
+                non_empty_date_fields[0].removesuffix("_start")
+            )
+        else:
+            target = _as_lifecycle_stage(requested_stage)
+
+        target_field = f"{target.value}_start"
+        if any(field_name != target_field for field_name in non_empty_date_fields):
+            raise ValidationChangeError(
+                "Lifecycle edits may only set the selected stage's start date"
+            )
+        target_start_supplied = target_field in lifecycle_dates
+        target_date = lifecycle_dates.get(target_field)
+        if target_start_supplied and target_date is None:
+            raise ValidationChangeError("The current lifecycle start cannot be cleared")
+        return target, target_date, target_start_supplied
+
+    @staticmethod
+    def _repair_lifecycle(
+        lifecycle: PlantLifecycle,
+        target: LifecycleStage,
+        target_timestamp: str,
+        observed_on: date,
+    ) -> LifecycleCorrection:
+        """Translate correction input errors into the manager validation vocabulary."""
+        try:
+            return lifecycle.repair_current(
+                target,
+                target_timestamp,
+                observed_on,
+                _LIFECYCLE_CORRECTION_REASON,
+            )
+        except ValueError as err:
+            raise ValidationChangeError(str(err)) from err
+
+    def _lifecycle_editor_decision(
+        self,
+        lifecycle: PlantLifecycle,
+        target: LifecycleStage,
+        target_timestamp: str,
+        observed_on: date,
+        target_start_supplied: bool,
+    ) -> tuple[LifecycleDecision | LifecycleCorrection, LifecycleCorrection | None]:
+        """Choose transition for forward movement and correction for rewritten history."""
+        transition = lifecycle.transition(target, target_timestamp, observed_on)
+        needs_repair = lifecycle.warnings or (
+            target is lifecycle.current_stage and target_start_supplied
+        )
+        if isinstance(transition, Rejected) and target not in TRANSITION_GRAPH.get(
+            lifecycle.current_stage, frozenset()
+        ):
+            needs_repair = True
+
+        if needs_repair:
+            correction = self._repair_lifecycle(
+                lifecycle, target, target_timestamp, observed_on
+            )
+            return correction, correction
+        if isinstance(transition, Rejected):
+            raise ValidationChangeError(
+                transition.reason or "Lifecycle update rejected"
+            )
+        return transition, None
+
+    def _emit_lifecycle_repair_event(
+        self, plant: Plant, correction: LifecycleCorrection
+    ) -> None:
+        """Publish the domain repair draft to the plant-filterable timeline."""
+        repair = correction.repair_event
+        stage_label = repair.corrected_stage.value.replace("_", " ").title()
+        self.hass.bus.async_fire(
+            EVENT_GROWSPACE_LOG_ENTRY,
+            {
+                "plant_id": plant.plant_id,
+                "growspace_id": plant.growspace_id,
+                "sensor_type": "lifecycle_repair",
+                "category": CATEGORY_MILESTONE,
+                "timestamp": dt_util.now().isoformat(),
+                "notes": repair.reason,
+                "reasons": [
+                    f"Corrected {stage_label} start to "
+                    f"{repair.corrected_stage_started_on.isoformat()}"
+                ],
+                "previous_stage": repair.previous_stage.value,
+                "corrected_stage": repair.corrected_stage.value,
+                "corrected_stage_started_on": (
+                    repair.corrected_stage_started_on.isoformat()
+                ),
+                "corrected_on": repair.corrected_on.isoformat(),
+                "discarded_interval_count": repair.discarded_interval_count,
+                "warning_codes": [warning.value for warning in repair.warning_codes],
+            },
+        )
 
     @staticmethod
     def _transition_history(
@@ -397,6 +590,105 @@ class PlantManager(BaseService):
         async_fire_plant_event(self.hass, EVENT_PLANT_UPDATED, plant, updates)
         return plant
 
+    async def _commit_lifecycle_update(
+        self, plant_id: str, requested_updates: dict[str, Any]
+    ) -> Plant:
+        """Commit an editor lifecycle correction/transition and other fields once."""
+        canonical_target, target_date, target_start_supplied = (
+            self._lifecycle_edit_request(requested_updates)
+        )
+
+        async with self._lock:
+            observed_on = dt_util.now().date()
+            plant = self.repository.get_plant(plant_id)
+            if not plant:
+                raise PlantNotFoundError(f"Plant {plant_id} does not exist")
+
+            lifecycle = self._plant_lifecycle(
+                plant, observed_on=observed_on, allow_repair=True
+            )
+            if target_date is None:
+                target_date = dt_util.now()
+            try:
+                target_timestamp = to_lifecycle_timestamp(target_date)
+            except (TypeError, ValueError) as err:
+                raise ValidationChangeError(str(err)) from err
+
+            decision, correction = self._lifecycle_editor_decision(
+                lifecycle,
+                canonical_target,
+                target_timestamp,
+                observed_on,
+                target_start_supplied,
+            )
+
+            lifecycle_updates: dict[str, Any] = {}
+            if isinstance(decision, (Applied, LifecycleCorrection)):
+                lifecycle_updates = self._lifecycle_compatibility_updates(
+                    plant,
+                    decision,
+                    lifecycle,
+                    canonical_target,
+                    target_timestamp,
+                )
+
+            regular_updates = {
+                key: value
+                for key, value in requested_updates.items()
+                if key not in _LIFECYCLE_UPDATE_FIELDS
+            }
+            old_growspace_id = plant.growspace_id
+            new_growspace_id = regular_updates.get("growspace_id", old_growspace_id)
+            growspace_changed = new_growspace_id != old_growspace_id
+            if growspace_changed and not self.repository.has_growspace(
+                new_growspace_id
+            ):
+                raise GrowspaceNotFoundError(f"Growspace {new_growspace_id} not found")
+            position_changed = any(
+                key in regular_updates and regular_updates[key] != getattr(plant, key)
+                for key in ("row", "col")
+            )
+
+            plant_snapshot = deepcopy(plant)
+            growspace_snapshots = {
+                growspace_id: deepcopy(self.repository.get_growspace(growspace_id))
+                for growspace_id in {old_growspace_id, new_growspace_id}
+            }
+            event_updates = {**regular_updates, **lifecycle_updates}
+            try:
+                if "strain" in regular_updates:
+                    plant.genetics.strain_name = regular_updates.pop("strain")
+                if "phenotype" in regular_updates:
+                    plant.genetics.phenotype_name = regular_updates.pop("phenotype")
+
+                for key, value in {**regular_updates, **lifecycle_updates}.items():
+                    if hasattr(plant, key):
+                        setattr(plant, key, value)
+
+                plant.updated_at = plant_updated_date()
+                if growspace_changed:
+                    self._advance_layout_revision(old_growspace_id)
+                    self._advance_layout_revision(new_growspace_id)
+                elif position_changed:
+                    self._advance_layout_revision(old_growspace_id)
+                await self._save()
+            except BaseException:
+                self._restore_plant(plant, plant_snapshot)
+                self.repository.add_plant(plant)
+                for growspace_id, snapshot in growspace_snapshots.items():
+                    if snapshot is not None:
+                        self.repository.add_growspace(snapshot)
+                    self._invalidate(growspace_id)
+                raise
+
+        self._fire_event(
+            "plant_updated", {"plant": self.plant_view_builder.build(plant)}
+        )
+        async_fire_plant_event(self.hass, EVENT_PLANT_UPDATED, plant, event_updates)
+        if correction is not None:
+            self._emit_lifecycle_repair_event(plant, correction)
+        return plant
+
     # =========================================================================
     # PLANT CRUD OPERATIONS
     # =========================================================================
@@ -564,6 +856,9 @@ class PlantManager(BaseService):
 
     async def update_plant(self, plant_id: str, **updates: Any) -> Plant:
         """Update attributes of an existing plant."""
+        if _LIFECYCLE_UPDATE_FIELDS.intersection(updates):
+            return await self._commit_lifecycle_update(plant_id, dict(updates))
+
         async with self._lock:
             plant = self.repository.get_plant(plant_id)
             if not plant:
