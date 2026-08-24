@@ -166,7 +166,8 @@ class VpdOnOffController:
     async def async_check_and_control(self) -> None:
         """Evaluate VPD against stage thresholds and drive the device."""
         entities = self._get_all_controlled_entities()
-        if not self.vpd_sensor or not entities:
+        has_actuators = bool(entities or self._get_ac_infinity_devices())
+        if not self.vpd_sensor or not has_actuators:
             return
 
         current_vpd = self._get_current_vpd()

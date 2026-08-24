@@ -508,6 +508,35 @@ async def test_ac_infinity_humidifier_turn_on(
     )
 
 
+async def test_ac_infinity_only_humidifier_reacts_to_vpd(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """An AC-only bundle must pass the event-handler actuator guard."""
+    coord = _ac_infinity_humidifier(
+        mock_hass, mock_main_coordinator, mock_track_state_change_event
+    )
+    coord._get_current_vpd = MagicMock(return_value=2.0)
+    coord._get_growth_stage = MagicMock(return_value=PlantStage.VEG)
+    coord._day_night.determine = MagicMock(return_value=True)
+    coord._is_device_on = MagicMock(return_value=False)
+    coord._is_locked_by_timer = MagicMock(return_value=False)
+
+    await coord.async_check_and_control()
+
+    mock_hass.services.async_call.assert_any_await(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.hum_mode", "option": "On"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.hum_speed", "value": 8},
+        blocking=False,
+    )
+
+
 async def test_ac_infinity_humidifier_turn_off(
     mock_hass, mock_main_coordinator, mock_track_state_change_event
 ) -> None:
