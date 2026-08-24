@@ -59,14 +59,14 @@ def test_builder_initialization(hass: HomeAssistant):
     "custom_components.growspace_manager.presentation.plant_view_model.format_plant_position"
 )
 @patch(
-    "custom_components.growspace_manager.presentation.plant_view_model.calculate_plant_stage"
+    "custom_components.growspace_manager.presentation.plant_view_model.resolve_current_stage"
 )
 @patch(
     "custom_components.growspace_manager.presentation.plant_view_model.get_days_since_watering"
 )
 def test_build_full_payload(
     mock_get_days_since_watering,
-    mock_calculate_plant_stage,
+    mock_resolve_current_stage,
     mock_format_plant_position,
     mock_calculate_days_in_stage,
     mock_get_formatted_dates,
@@ -78,7 +78,7 @@ def test_build_full_payload(
     mock_get_formatted_dates.return_value = {"started_at": "2024-01-01"}
     mock_calculate_days_in_stage.return_value = 5
     mock_format_plant_position.return_value = "R1:C1"
-    mock_calculate_plant_stage.return_value = "veg"
+    mock_resolve_current_stage.return_value = "veg"
     mock_get_days_since_watering.return_value = 2
 
     # Mock EntityQueries
@@ -118,14 +118,14 @@ def test_build_full_payload(
     "custom_components.growspace_manager.presentation.plant_view_model.format_plant_position"
 )
 @patch(
-    "custom_components.growspace_manager.presentation.plant_view_model.calculate_plant_stage"
+    "custom_components.growspace_manager.presentation.plant_view_model.resolve_current_stage"
 )
 @patch(
     "custom_components.growspace_manager.presentation.plant_view_model.get_days_since_watering"
 )
 def test_build_provided_entity_id(
     mock_get_days_since_watering,
-    mock_calculate_plant_stage,
+    mock_resolve_current_stage,
     mock_format_plant_position,
     mock_calculate_days_in_stage,
     mock_get_formatted_dates,

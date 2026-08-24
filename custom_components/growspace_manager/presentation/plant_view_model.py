@@ -29,6 +29,9 @@ from custom_components.growspace_manager.domain import (
     calculate_days_in_stage,
     get_days_since_watering,
 )
+from custom_components.growspace_manager.domain.current_stage import (
+    resolve_current_stage,
+)
 from custom_components.growspace_manager.domain.plant_metrics import (
     format_plant_position,
     get_formatted_dates,
@@ -38,7 +41,6 @@ from custom_components.growspace_manager.drying_calculator import (
     compute_weight_lost_pct,
     is_cure_ready,
 )
-from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.util import dt as dt_util
 
 from .entity_queries import EntityQueries
@@ -141,7 +143,7 @@ class PlantViewModelBuilder:
             "row": int(plant.row),
             "col": int(plant.col),
             "position": format_plant_position(plant),
-            "stage": calculate_plant_stage(plant),
+            "stage": resolve_current_stage(plant),
             # Watering & Training
             "last_training_technique": plant.last_training_technique,
             "last_ipm_type": plant.last_ipm_type,
@@ -164,7 +166,7 @@ class PlantViewModelBuilder:
         :meth:`build`.
         """
         attributes: dict[str, Any] = {
-            "stage": calculate_plant_stage(plant),
+            "stage": resolve_current_stage(plant),
             "growspace_id": plant.growspace_id,
             "plant_id": plant.plant_id,
             "updated_at": plant.updated_at,

@@ -6,11 +6,13 @@ from typing import Any, override
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.domain.current_stage import (
+    resolve_current_stage,
+)
 from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.presentation.plant_view_model import (
     PlantViewModelBuilder,
 )
-from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -53,7 +55,7 @@ class PlantEntity(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         if not plant:
             return "unknown"
 
-        stage = calculate_plant_stage(plant)
+        stage = resolve_current_stage(plant)
 
         self.coordinator.growspaces.get(plant.growspace_id)
 
