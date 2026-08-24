@@ -58,7 +58,7 @@ class CycleVerdict:
     low_tank: TankReading | None = None
 
 
-def cycle_volume_liters(config: IrrigationConfig, duration: int) -> float:
+def cycle_volume_liters(config: IrrigationConfig, duration: float) -> float:
     """Return the estimated water volume for a cycle in litres.
 
     Returns 0.0 when the flow rate is not configured, which disables the

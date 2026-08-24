@@ -181,9 +181,10 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
                 t0,  # 1. _set_phase("P1 - Ramp Up") logbook event
                 t0,  # 2. _active_events["start"]
                 t0,  # 3. _fire_logbook_event("Irrigation started…")
-                t0,  # 4. start_dt = utcnow()
-                t10,  # 5. end_dt = utcnow()
-                t10,  # 6. _fire_logbook_event("Irrigation completed…")
+                t0,  # 4. command_dt = utcnow() (before switch.turn_on)
+                t0,  # 5. start_dt = utcnow() (switch confirmed 'on')
+                t10,  # 6. end_dt = utcnow()
+                t10,  # 7. _fire_logbook_event("Irrigation completed…")
             ],
         ),
     ):
@@ -250,9 +251,10 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
                 # Case B: pump fires (phase stays P2, no extra logbook from _set_phase)
                 t0,  # 2. _active_events["start"]
                 t0,  # 3. _fire_logbook_event("Irrigation started…")
-                t0,  # 4. start_dt = utcnow()
-                t10,  # 5. end_dt = utcnow()
-                t10,  # 6. _fire_logbook_event("Irrigation completed…")
+                t0,  # 4. command_dt = utcnow() (before switch.turn_on)
+                t0,  # 5. start_dt = utcnow() (switch confirmed 'on')
+                t10,  # 6. end_dt = utcnow()
+                t10,  # 7. _fire_logbook_event("Irrigation completed…")
             ],
         ),
     ):
@@ -727,7 +729,8 @@ async def test_vwc_soil_trigger_percent_fires_watering_when_below(
             side_effect=[
                 t0,  # _set_phase P3→P2 (no logbook since log_to_logbook=False but
                 # _active_events still calls utcnow)
-                t0,  # start_dt
+                t0,  # command_dt (before switch.turn_on)
+                t0,  # start_dt (switch confirmed 'on')
                 t10,  # end_dt
             ],
         ),
