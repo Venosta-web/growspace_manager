@@ -304,7 +304,10 @@ class IrrigationConfig(BaseModel):
     drain_duration: int | None = None
     irrigation_times: list[IrrigationScheduleItem] = field(default_factory=list)
     drain_times: list[IrrigationScheduleItem] = field(default_factory=list)
-    veg_day_hours: int = 12
+    # Legacy irrigation copy of the vegetative photoperiod. Boundary math uses
+    # EnvironmentConfig via resolve_day_hours(), but keeping this default aligned
+    # avoids two backend models assigning different meanings to an omitted value.
+    veg_day_hours: int = 18
     pump_flow_rate_ml_per_sec: float = 0.0
     soil_trigger_percent: float | None = None
     daily_volume_cap_liters: float | None = None

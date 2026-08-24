@@ -155,6 +155,7 @@ class IrrigationConfigData(TypedDict, total=False):
     irrigation_times: list[IrrigationScheduleItemData]
     drain_times: list[IrrigationScheduleItemData]
     veg_day_hours: int
+    resolved_day_hours: int
 
 
 class IrrigationStrategyData(TypedDict, total=False):

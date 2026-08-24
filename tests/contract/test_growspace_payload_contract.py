@@ -267,6 +267,10 @@ def _maximal_environment_config(prefix: str) -> EnvironmentConfig:
 
 def _maximal_growspace() -> Growspace:
     """Return a growspace with every optional nested configuration populated."""
+    environment_config = _maximal_environment_config("contract")
+    # Non-default so the fixture proves the server-resolved crop-steering
+    # photoperiod, rather than merely recording the default.
+    environment_config.flower_day_hours = 11
     return Growspace(
         id=GROWSPACE_ID,
         name="Contract Growspace",
@@ -276,7 +280,7 @@ def _maximal_growspace() -> Growspace:
         notification_target="notify.mobile_app_grower",
         created_at="2026-01-01T00:00:00+00:00",
         device_id="contract-growspace-device",
-        environment_config=_maximal_environment_config("contract"),
+        environment_config=environment_config,
         irrigation_config=IrrigationConfig(
             irrigation_pump_entity="switch.contract_irrigation_pump",
             drain_pump_entity="switch.contract_drain_pump",

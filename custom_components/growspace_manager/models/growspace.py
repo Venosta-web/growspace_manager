@@ -718,7 +718,7 @@ class Growspace(BaseModel):
                         float(irr_config["veg_day_hours"])
                     )
                 except ValueError, TypeError:
-                    irr_config["veg_day_hours"] = 12
+                    irr_config["veg_day_hours"] = 18
 
             # Migrate irrigation_times and drain_times
             for list_key in ["irrigation_times", "drain_times"]:
@@ -763,7 +763,7 @@ class Growspace(BaseModel):
         if "irrigation_strategy" in data and isinstance(
             data["irrigation_strategy"], dict
         ):
-            strat = data["irrigation_strategy"].copy()
+            strategy_data = data["irrigation_strategy"].copy()
             int_fields = [
                 "p0_duration_minutes",
                 "p2_stop_before_lights_off_minutes",
@@ -776,13 +776,13 @@ class Growspace(BaseModel):
                 "p2_shot_interval_minutes",
             ]
             for f in int_fields:
-                if f in strat:
+                if f in strategy_data:
                     try:
-                        strat[f] = int(float(strat[f]))
+                        strategy_data[f] = int(float(strategy_data[f]))
                     except ValueError, TypeError:
                         # Remove invalid value to let dataclass default take over
-                        if f in strat:
-                            del strat[f]
-            data["irrigation_strategy"] = strat
+                        if f in strategy_data:
+                            del strategy_data[f]
+            data["irrigation_strategy"] = strategy_data
 
         return data
