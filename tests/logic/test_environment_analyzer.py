@@ -43,6 +43,7 @@ def mock_growspace():
     gs.environment_config.vpd_sensors = []
     gs.environment_config.temperature_sensors = []
     gs.environment_config.humidity_sensors = []
+    gs.environment_config.minimum_source_air_temperature = 18.0
     return gs
 
 
@@ -50,11 +51,22 @@ def test_classify_stages_display_stage_via_domain() -> None:
     """Test that classify_stages produces the correct display_stage for all branches."""
     assert classify_stages(StageDays(cure=5)).display_stage == BayesianStage.CURE
     assert classify_stages(StageDays(dry=5)).display_stage == BayesianStage.DRY
-    assert classify_stages(StageDays(flower=10)).display_stage == BayesianStage.FLOWER_EARLY
-    assert classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 5)).display_stage == BayesianStage.FLOWER_MID
-    assert classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 30)).display_stage == BayesianStage.FLOWER_LATE
+    assert (
+        classify_stages(StageDays(flower=10)).display_stage
+        == BayesianStage.FLOWER_EARLY
+    )
+    assert (
+        classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 5)).display_stage
+        == BayesianStage.FLOWER_MID
+    )
+    assert (
+        classify_stages(StageDays(flower=DEFAULT_FLOWER_EARLY_DAYS + 30)).display_stage
+        == BayesianStage.FLOWER_LATE
+    )
     assert classify_stages(StageDays(veg=10)).display_stage == BayesianStage.VEG
-    assert classify_stages(StageDays(seedling=5)).display_stage == BayesianStage.SEEDLING
+    assert (
+        classify_stages(StageDays(seedling=5)).display_stage == BayesianStage.SEEDLING
+    )
     assert classify_stages(StageDays(clone=5)).display_stage == BayesianStage.CLONE
     assert classify_stages(StageDays()).display_stage == BayesianStage.EMPTY
 
@@ -258,8 +270,12 @@ async def test_async_update_air_exchange_full_flow(
             "weather_entity": "weather.home",
             "lung_room_temp_sensor": "sensor.lung_temp",
             "lung_room_humidity_sensor": "sensor.lung_hum",
-        },
-        "bayesian_sensors_reason": {"gs1": {"target_vpd": 1.0}},
+        }
+    }
+    mock_coordinator.data = {
+        "serialized_growspaces": {
+            "gs1": {"metrics": {"vpd_target_min": 0.9, "vpd_target_max": 1.1}}
+        }
     }
 
     # Mock sensors

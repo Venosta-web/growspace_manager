@@ -1339,7 +1339,11 @@ async def test_async_update_air_exchange_recommendations(hass: HomeAssistant) ->
     vpd_sensor_entity_id = "sensor.stress_gs_vpd"
 
     gs.environment_config = EnvironmentConfig(vpd_sensor=vpd_sensor_entity_id)
-    coordinator.data = {"bayesian_sensors_reason": {gs.id: {"target_vpd": 1.2}}}
+    coordinator.data = {
+        "serialized_growspaces": {
+            gs.id: {"metrics": {"vpd_target_min": 1.0, "vpd_target_max": 1.4}}
+        }
+    }
 
     # Mock the entity registry to return the correct entity ID
     entity_registry = er.async_get(hass)
@@ -2029,7 +2033,11 @@ async def test_async_update_air_exchange_recommendations_no_vpd(
     coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator._growspace_manager.add_growspace("Test GS")
     gs.environment_config = EnvironmentConfig(vpd_sensor="sensor.vpd")
-    coordinator.data = {"bayesian_sensors_reason": {gs.id: {"target_vpd": None}}}
+    coordinator.data = {
+        "serialized_growspaces": {
+            gs.id: {"metrics": {"vpd_target_min": None, "vpd_target_max": None}}
+        }
+    }
 
     with patch(
         "homeassistant.helpers.entity_registry.EntityRegistry.async_get_entity_id",
