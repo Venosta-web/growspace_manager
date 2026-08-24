@@ -71,6 +71,26 @@ def test_classify_stages_display_stage_via_domain() -> None:
     assert classify_stages(StageDays()).display_stage == BayesianStage.EMPTY
 
 
+@pytest.mark.parametrize(
+    ("days", "expected_stage"),
+    [
+        (StageDays(flower=20), BayesianStage.FLOWER_EARLY),
+        (StageDays(flower=41), BayesianStage.FLOWER_MID),
+        (StageDays(veg=2), BayesianStage.VEG),
+    ],
+)
+def test_biological_metrics_reports_the_current_stage_selector(
+    analyzer: EnvironmentAnalyzer,
+    mock_growspace,
+    days: StageDays,
+    expected_stage: BayesianStage,
+) -> None:
+    """granular_stage preserves bands but flips a true transition at midpoint."""
+    metrics = analyzer.calculate_biological_metrics(mock_growspace, days)
+
+    assert metrics["granular_stage"] is expected_stage
+
+
 def test_determine_is_day(
     hass: HomeAssistant, analyzer: EnvironmentAnalyzer, mock_growspace
 ) -> None:
