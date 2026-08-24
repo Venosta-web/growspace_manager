@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import PLANT_STAGES
+from custom_components.growspace_manager.domain import LifetimeStageDays
 from custom_components.growspace_manager.models import (
     DryingData,
     HarvestMetrics,
@@ -53,7 +54,7 @@ def test_builder_initialization(hass: HomeAssistant):
     "custom_components.growspace_manager.presentation.plant_view_model.get_formatted_dates"
 )
 @patch(
-    "custom_components.growspace_manager.presentation.plant_view_model.calculate_days_in_stage"
+    "custom_components.growspace_manager.presentation.plant_view_model.resolve_lifetime_stage_days"
 )
 @patch(
     "custom_components.growspace_manager.presentation.plant_view_model.format_plant_position"
@@ -68,7 +69,7 @@ def test_build_full_payload(
     mock_get_days_since_watering,
     mock_resolve_current_stage,
     mock_format_plant_position,
-    mock_calculate_days_in_stage,
+    mock_resolve_lifetime_stage_days,
     mock_get_formatted_dates,
     builder,
     mock_plant: Plant,
@@ -76,7 +77,15 @@ def test_build_full_payload(
     """Test building complete plant payload."""
     # Setup mocks
     mock_get_formatted_dates.return_value = {"started_at": "2024-01-01"}
-    mock_calculate_days_in_stage.return_value = 5
+    mock_resolve_lifetime_stage_days.return_value = LifetimeStageDays(
+        seedling=5,
+        clone=5,
+        mother=5,
+        veg=5,
+        flower=5,
+        dry=5,
+        cure=5,
+    )
     mock_format_plant_position.return_value = "R1:C1"
     mock_resolve_current_stage.return_value = "veg"
     mock_get_days_since_watering.return_value = 2
@@ -105,14 +114,14 @@ def test_build_full_payload(
     # Verify mocks were called
     builder.entity_queries.lookup_plant_entity_id.assert_called_once_with("p1")
     mock_get_formatted_dates.assert_called_once_with(mock_plant)
-    assert mock_calculate_days_in_stage.call_count == len(PLANT_STAGES)
+    mock_resolve_lifetime_stage_days.assert_called_once()
 
 
 @patch(
     "custom_components.growspace_manager.presentation.plant_view_model.get_formatted_dates"
 )
 @patch(
-    "custom_components.growspace_manager.presentation.plant_view_model.calculate_days_in_stage"
+    "custom_components.growspace_manager.presentation.plant_view_model.resolve_lifetime_stage_days"
 )
 @patch(
     "custom_components.growspace_manager.presentation.plant_view_model.format_plant_position"
@@ -127,7 +136,7 @@ def test_build_provided_entity_id(
     mock_get_days_since_watering,
     mock_resolve_current_stage,
     mock_format_plant_position,
-    mock_calculate_days_in_stage,
+    mock_resolve_lifetime_stage_days,
     mock_get_formatted_dates,
     builder,
     mock_plant,
@@ -245,3 +254,62 @@ def test_build_attributes_matches_wire_payload_on_shared_blocks(
         "position",
     ):
         assert attributes[key] == wire[key], key
+
+
+def _stage_days(projection: dict[str, object]) -> dict[str, object]:
+    """Extract the complete per-stage day map from one projection."""
+    return {f"{stage}_days": projection[f"{stage}_days"] for stage in PLANT_STAGES}
+
+
+def test_stage_days_match_and_sum_every_interval_after_reveg(
+    builder: PlantViewModelBuilder, freezer
+) -> None:
+    """Wire and sensor expose Lifetime Stage Days, including the open re-entry."""
+    freezer.move_to("2026-02-15 12:00:00+00:00")
+    plant = Plant(
+        plant_id="reflowered",
+        growspace_id="tent",
+        stage="flower",
+        seedling_start="2026-01-01",
+        veg_start="2026-01-23",
+        flower_start="2026-02-12",
+        stage_history=[
+            {"stage": "seedling", "start": "2026-01-01", "end": "2026-01-06"},
+            {"stage": "veg", "start": "2026-01-06", "end": "2026-01-16"},
+            {"stage": "flower", "start": "2026-01-16", "end": "2026-01-23"},
+            {"stage": "veg", "start": "2026-01-23", "end": "2026-02-12"},
+            {"stage": "flower", "start": "2026-02-12", "end": None},
+        ],
+    )
+
+    wire = builder.build(plant, entity_id="sensor.reflowered")
+    attributes = PlantViewModelBuilder.build_attributes(plant)
+
+    expected = {f"{stage}_days": 0 for stage in PLANT_STAGES}
+    expected.update(seedling_days=5, veg_days=30, flower_days=10)
+    assert _stage_days(wire) == expected
+    assert _stage_days(attributes) == expected
+
+
+def test_stage_days_match_for_legacy_plant_without_history(
+    builder: PlantViewModelBuilder, freezer
+) -> None:
+    """Both projections share lifecycle reconstruction for older Plants."""
+    freezer.move_to("2026-02-20 12:00:00+00:00")
+    plant = Plant(
+        plant_id="legacy",
+        growspace_id="tent",
+        stage="flower",
+        seedling_start="2026-01-01",
+        veg_start="2026-01-06",
+        flower_start="2026-02-05",
+        stage_history=[],
+    )
+
+    wire = builder.build(plant, entity_id="sensor.legacy")
+    attributes = PlantViewModelBuilder.build_attributes(plant)
+
+    expected = {f"{stage}_days": 0 for stage in PLANT_STAGES}
+    expected.update(seedling_days=5, veg_days=30, flower_days=15)
+    assert _stage_days(wire) == expected
+    assert _stage_days(attributes) == expected

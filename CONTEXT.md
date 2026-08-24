@@ -322,7 +322,7 @@ The five-code wire vocabulary shared with the card (ADR-0005, completed backend-
 ## Serialization
 
 **Plant View Model**
-The one producer of serialized Plant data (`presentation/plant_view_model.py`, ADR-0028). Two projections share every computed block so they cannot drift field-by-field: `build()` — the wire payload the card reads (formatted dates, entity lookup) — and `build_attributes()` — the plant sensor's HA attribute dict (raw stored date strings for automations; the sensor delegates to it). Sub-dataclass blocks (`phenotype_score`, `harvest_metrics`, and the growspace payload's `irrigation_config` / `drain_config` / `water_usage` / `energy_tracking`) serialize via the model's own `to_dict()`, so a new model field ships to both surfaces automatically; computed properties like `total_score` are appended explicitly. Known kept divergence: the wire computes `{stage}_days` / `days_since_last_watering` with the `domain.date_logic` functions while the sensor uses the stage-history-aware `Plant` model methods — reconciling that is a semantic change, not a serialization one.
+The one shared representation of a Plant exposed to both the card and Home Assistant sensor attributes. Every `{stage}_days` entry means [[Lifetime Stage Days]], including the currently open stage after a Reveg; questions about only the current open interval use [[Current Stage Age]] instead.
 
 ## Sensor Entities
 

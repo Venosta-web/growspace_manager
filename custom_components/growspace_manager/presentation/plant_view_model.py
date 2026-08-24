@@ -11,12 +11,10 @@ Sub-dataclass blocks (harvest_metrics, phenotype_score) serialize via the
 model's own ``to_dict`` so a new model field can never silently drop from a
 payload — the bug class behind the visual_tag/drying-fields incident.
 
-Known divergence kept on purpose: the wire payload computes ``{stage}_days``
-and ``days_since_last_watering`` with the ``domain.date_logic`` functions
-(start-field windows, never-watered → 0) while the sensor attributes use the
-``Plant`` model methods (stage_history-aware, never-watered → None). Both
-values predate this module; reconciling them is a semantic change tracked
-separately, not a serialization concern.
+Both projections report ``{stage}_days`` as [[Lifetime Stage Days]], including
+every interval after a Reveg. ``days_since_last_watering`` keeps its historical
+projection-specific semantics (never-watered → 0 on the wire, ``None`` on the
+sensor).
 """
 
 from __future__ import annotations
@@ -26,8 +24,8 @@ from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.const import PLANT_STAGES
 from custom_components.growspace_manager.domain import (
-    calculate_days_in_stage,
     get_days_since_watering,
+    resolve_lifetime_stage_days,
 )
 from custom_components.growspace_manager.domain.current_stage import (
     resolve_current_stage,
@@ -97,6 +95,12 @@ def _phenotype_score_dict(plant: Plant) -> dict[str, Any]:
     }
 
 
+def _stage_day_fields(plant: Plant) -> dict[str, int]:
+    """Return one shared Lifetime Stage Days projection for every stage key."""
+    lifetime_days = resolve_lifetime_stage_days(plant, observed_on=dt_util.now().date())
+    return {f"{stage}_days": lifetime_days.for_stage(stage) for stage in PLANT_STAGES}
+
+
 class PlantViewModelBuilder:
     """Builds rich plant payloads for frontend consumption."""
 
@@ -123,11 +127,6 @@ class PlantViewModelBuilder:
         if not entity_id:
             entity_id = self.entity_queries.lookup_plant_entity_id(plant.plant_id)
 
-        stage_days = {
-            f"{stage}_days": calculate_days_in_stage(plant, stage)
-            for stage in PLANT_STAGES
-        }
-
         return {
             "plant_id": plant.plant_id,
             "growspace_id": plant.growspace_id,
@@ -136,7 +135,7 @@ class PlantViewModelBuilder:
             "strain": plant.strain,
             "phenotype": plant.phenotype,
             # Days in stage
-            **stage_days,
+            **_stage_day_fields(plant),
             # Start dates (formatted for display)
             **get_formatted_dates(plant),
             # Location & Stage
@@ -179,11 +178,12 @@ class PlantViewModelBuilder:
             "harvest_metrics": plant.harvest_metrics.to_dict(),
         }
 
+        attributes.update(_stage_day_fields(plant))
+
         for stage_name in PLANT_STAGES:
             start_key = f"{stage_name}_start"
             if hasattr(plant, start_key):
                 attributes[start_key] = getattr(plant, start_key)
-            attributes[f"{stage_name}_days"] = plant.get_days_in_stage(stage_name)
 
         attributes["veg_week"] = plant.get_week_in_stage("veg")
         attributes["flower_week"] = plant.get_week_in_stage("flower")
