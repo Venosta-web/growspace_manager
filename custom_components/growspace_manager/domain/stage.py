@@ -84,11 +84,16 @@ class StageClassification:
     stage_a: BayesianStage
     stage_b: BayesianStage
     factor: float
+    is_transition_blend: bool = False
 
     @property
     def display_stage(self) -> BayesianStage:
-        """Card-visible stage: flips to stage_b once factor ≥ 0.5, then collapses sub-stages."""
-        raw = self.stage_b if self.factor >= 0.5 else self.stage_a
+        """Reported selector stage, preserving band identity during interpolation."""
+        raw = (
+            self.stage_b
+            if self.is_transition_blend and self.factor >= 0.5
+            else self.stage_a
+        )
         return _COLLAPSE_MAP.get(raw, raw)
 
 
@@ -146,6 +151,7 @@ def classify_stages(days: StageDays) -> StageClassification:
                 BayesianStage.SEEDLING_STANDARD,
                 BayesianStage.VEG,
                 round(float(factor), 2),
+                is_transition_blend=True,
             )
         return StageClassification(BayesianStage.VEG, BayesianStage.VEG, 0.0)
 

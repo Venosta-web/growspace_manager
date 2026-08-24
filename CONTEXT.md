@@ -66,6 +66,12 @@ The cumulative days a Plant has spent in each canonical stage, including repeate
 **Cultivation Band**
 The stable age classification within the Current Stage: Seedling and Clone are Acclimating on days 0–6 and Established on day 7 onward; Flower is Early on days 0–20, Mid on days 21–41, and Late on day 42 onward. A separate adjacent-band interpolation hint is available in the three days before a boundary, but never changes the reported band identity early.
 
+**Band Identity**
+The [[Cultivation Band]] a Plant or growspace is currently in. It changes only at the band's actual age boundary; an adjacent-band interpolation hint blends numeric environmental targets without changing this identity early.
+
+**Transition Blend**
+A numeric ramp from one [[Current Stage]] into the next, distinct from interpolation between [[Cultivation Band]]s within one stage. Its reported stage changes to the destination at the ramp's midpoint; the seedling-to-veg ramp is the current example.
+
 **Lifecycle Transition**
 An immutable `Applied`, `NoChange`, or `Rejected` proposal. It carries before/after lifecycle values and facts, [[Compatibility Data]], and any Lifecycle Repair Event draft; applying persistence, moves, or events belongs to a separate effect shell.
 

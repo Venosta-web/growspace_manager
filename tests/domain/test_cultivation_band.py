@@ -20,6 +20,9 @@ from custom_components.growspace_manager.domain.cultivation_band import (
     growspace_cultivation_band,
     plant_cultivation_band,
 )
+from custom_components.growspace_manager.domain.fan_control import (
+    resolve_stage_vpd_target,
+)
 from custom_components.growspace_manager.domain.plant_lifecycle import CultivationBandId
 from custom_components.growspace_manager.domain.stage import (
     BayesianStage,
@@ -164,6 +167,36 @@ def test_day_21_and_42_are_the_days_the_band_changes() -> None:
     assert bands[21] is CultivationBandId.MID_FLOWER
     assert bands[41] is CultivationBandId.MID_FLOWER
     assert bands[42] is CultivationBandId.LATE_FLOWER
+
+
+@pytest.mark.parametrize(
+    ("flower_day", "expected_stage"),
+    [
+        (20, BayesianStage.FLOWER_EARLY),
+        (41, BayesianStage.FLOWER_MID),
+    ],
+)
+def test_current_stage_vpd_override_matches_the_reported_granular_stage(
+    flower_day: int,
+    expected_stage: BayesianStage,
+) -> None:
+    """The card's Current row names the override the fan resolver applies."""
+    overrides = {
+        "flower_early": {"day": 1.01, "night": 1.02},
+        "flower_mid": {"day": 1.21, "night": 1.22},
+        "flower_late": {"day": 1.41, "night": 1.42},
+    }
+    classification = classify_stages(StageDays(flower=flower_day))
+
+    # EnvironmentAnalyzer publishes display_stage as granular_stage; the card
+    # marks that key Current. It must name the same override used by both fans.
+    granular_stage = classification.display_stage
+    applied_target = resolve_stage_vpd_target(
+        [_flowering_plant(flower_day)], overrides, fallback_vpd_target=0.5, is_day=True
+    )
+
+    assert granular_stage is expected_stage
+    assert applied_target == overrides[granular_stage.value]["day"]
 
 
 def test_the_growspace_band_is_the_most_demanding_plant() -> None:

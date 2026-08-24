@@ -30,7 +30,7 @@ The aggregated per-stage maximum-days inputs for a growspace, derived from its p
 
 ## StageClassification
 
-The canonical output of `classify_stages(StageDays)`, defined in `domain/stage.py`. Carries `stage_a` and `stage_b` (`BayesianStage` enum values) and a `factor` (0.0–1.0) for smooth VPD threshold interpolation across stage boundaries, plus a `display_stage` property that collapses internal Bayesian sub-stages (e.g. `SEEDLING_STANDARD` → `SEEDLING`) and applies the factor-≥-0.5 flip rule for the card-visible label. `EMPTY` classification disables VPD monitoring and Bayesian evaluation — used when a growspace has no active plants.
+The canonical output of `classify_stages(StageDays)`, defined in `domain/stage.py`. Carries `stage_a` and `stage_b` (`BayesianStage` enum values), a `factor` (0.0–1.0) for smooth VPD threshold interpolation, and `is_transition_blend`, which distinguishes a lifecycle transition from an in-stage band interpolation. Its `display_stage` property preserves `stage_a` as the reported selector during band interpolation, flips to `stage_b` at a transition blend's midpoint, and collapses internal Bayesian sub-stages (e.g. `SEEDLING_STANDARD` → `SEEDLING`). `EMPTY` classification disables VPD monitoring and Bayesian evaluation — used when a growspace has no active plants.
 
 ## EnvironmentConfig
 
