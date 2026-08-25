@@ -47,6 +47,7 @@ def test_window_wrapping_past_midnight() -> None:
         ([], 18),  # no plants -> veg
         ([_plant(None), _plant(None)], 18),  # all vegetative -> veg
         ([_plant(None), _plant("2026-07-01")], 12),  # one entered flower -> flower
+        ([_plant("2026-07-01T00:00:00+02:00")], 12),  # persisted lifecycle timestamp
         ([_plant("2026-07-03")], 12),  # entered flower today -> flower
         ([_plant("2026-07-10")], 18),  # flower start in the future -> still veg
     ],

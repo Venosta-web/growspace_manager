@@ -32,7 +32,7 @@ def resolve_photoperiod_hours(
         if not plant.flower_start:
             continue
         try:
-            if date.fromisoformat(plant.flower_start) <= today:
+            if datetime.fromisoformat(plant.flower_start).date() <= today:
                 return flower_hours
         except ValueError:
             continue

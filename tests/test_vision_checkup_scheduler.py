@@ -396,6 +396,34 @@ def test_schedule_growspace_creates_three_timers(mock_hass, mock_coordinator):
     assert len(scheduler._unsub_timers["tent1"]) == 3
 
 
+def test_schedule_growspace_uses_flower_window_for_persisted_datetime(
+    mock_hass, mock_coordinator
+):
+    """Real persisted flower timestamps keep every checkup inside lights-on."""
+
+    gs = _make_mock_growspace(lights_on_time="11:00:00")
+    plant = MagicMock()
+    plant.flower_start = "2026-08-01T00:00:00+02:00"
+    mock_coordinator.growspaces = {"tent1": gs}
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
+    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
+        ) as mock_track,
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.ha_now",
+            return_value=datetime(2026, 8, 25, 10, 0, 0, tzinfo=UTC),
+        ),
+    ):
+        mock_track.return_value = MagicMock()
+        scheduler.schedule_growspace("tent1")
+
+    scheduled_times = [call.args[2].time() for call in mock_track.call_args_list]
+    assert scheduled_times == [time(12, 0), time(17, 0), time(22, 0)]
+
+
 def test_schedule_growspace_skips_disabled_vision(mock_hass, mock_coordinator):
     """Test that scheduling skips growspaces with vision disabled."""
 
