@@ -63,6 +63,20 @@ def test_configure_environment_schema_accepts_snapshot_interval() -> None:
     assert validated["snapshot_interval_hours"] == 6
 
 
+def test_configure_environment_schema_accepts_soil_moisture_band() -> None:
+    """The config dialog can persist both bounds of the moisture band."""
+    validated = CONFIGURE_ENVIRONMENT_SCHEMA(
+        {
+            "growspace_id": "gs1",
+            "soil_moisture_min": 32.5,
+            "soil_moisture_max": 54.0,
+        }
+    )
+
+    assert validated["soil_moisture_min"] == 32.5
+    assert validated["soil_moisture_max"] == 54.0
+
+
 @pytest.mark.parametrize("value", [0, 169])
 def test_configure_environment_schema_rejects_invalid_snapshot_interval(
     value: int,

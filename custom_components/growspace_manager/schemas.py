@@ -571,6 +571,16 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_POWER_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ENERGY_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ELECTRICITY_COST): vol.Coerce(float),
+        # Acceptable Moisture Band. Both edges are nullable so the pair can be
+        # cleared back to the inherited default; the atomic pair and the
+        # 0 ≤ min < max ≤ 100 relation are enforced by the Environment Patch
+        # builder, which sees both values at once.
+        vol.Optional("soil_moisture_min"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
+        ),
+        vol.Optional("soil_moisture_max"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
+        ),
         vol.Optional("circulation_fan_config"): dict,
         vol.Optional("vpd_optimal_overrides"): dict,
         # AC Infinity actuator bundles, parallel to the plain *_entities lists.
@@ -700,16 +710,6 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
             None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
         ),
         vol.Optional("ec_modulation_enabled"): bool,
-        # Acceptable Moisture Band. Both edges are nullable so the pair can be
-        # cleared back to the inherited default; the atomic pair and the
-        # 0 ≤ min < max ≤ 100 relation are enforced by the Environment Patch
-        # builder, which sees both values at once.
-        vol.Optional("soil_moisture_min"): vol.Any(
-            None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
-        ),
-        vol.Optional("soil_moisture_max"): vol.Any(
-            None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
-        ),
     }
 )
 
