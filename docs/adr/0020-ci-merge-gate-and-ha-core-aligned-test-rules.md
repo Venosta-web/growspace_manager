@@ -170,3 +170,20 @@ baseline must preserve that minimum; a change that cannot do so requires a
 separate decision to raise it. CI continues to exercise one Home Assistant
 version for now. A minimum-and-latest matrix is a separate reliability change
 with its own paired test-helper dependency maintenance.
+
+## Amendment (2026-08-27) — formatting and typing are blocking gates
+
+The repository-wide Ruff formatting and mypy baselines are now clean. The
+temporary `continue-on-error` exceptions in `lint.yaml` are removed: formatting
+or typing regressions fail the `Ruff` or `mypy` job and therefore block merging.
+
+CI deliberately runs the same commands as the prescribed local backend gate:
+
+- `ruff format --check custom_components/ tests/`
+- `mypy --follow-imports=silent custom_components/`
+
+Both commands use the repository's `pyproject.toml` configuration. Ruff and mypy
+versions are pinned identically for CI and local development in `lint.yaml` and
+`requirements.txt`; the Ruff pre-commit hook carries the matching version as
+well. Any version bump must update those pins together so local and CI verdicts
+remain equivalent.
