@@ -115,7 +115,9 @@ async def test_plant_manager_aliases(plant_manager, growspace_manager):
     # handle_transition_plant_stage
     plant_manager.transition_plant_stage.reset_mock()
     await plant_manager.handle_transition_plant_stage("p1", PlantStage.FLOWER)
-    plant_manager.transition_plant_stage.assert_called_once_with("p1", PlantStage.FLOWER)
+    plant_manager.transition_plant_stage.assert_called_once_with(
+        "p1", PlantStage.FLOWER
+    )
 
     # handle_update_plant
     plant_manager.update_plant.reset_mock()

@@ -21,7 +21,9 @@ def test_constants_match_spec() -> None:
 def test_weight_lost_pct_basic() -> None:
     """Weight lost is correct given initial wet weight and current weight."""
     # 150g current out of 200g wet → 25% lost
-    assert compute_weight_lost_pct(wet_weight=200.0, current_weight=150.0) == pytest.approx(25.0)
+    assert compute_weight_lost_pct(
+        wet_weight=200.0, current_weight=150.0
+    ) == pytest.approx(25.0)
 
 
 def test_weight_lost_pct_no_wet_weight() -> None:

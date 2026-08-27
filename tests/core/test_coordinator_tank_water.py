@@ -65,7 +65,9 @@ async def test_async_configure_tank_updates_volume(hass: HomeAssistant) -> None:
     coordinator.services.growspaces.configure_tank = AsyncMock()
 
     # 2. Call the services facade method directly
-    await coordinator.services.growspaces.configure_tank("gs_1", "sensor.tank_1", volume_liters=100.0)
+    await coordinator.services.growspaces.configure_tank(
+        "gs_1", "sensor.tank_1", volume_liters=100.0
+    )
 
     # 3. Verify the call was made
     coordinator.services.growspaces.configure_tank.assert_called_once_with(
@@ -116,7 +118,9 @@ async def test_async_configure_tank_volume_none_does_not_overwrite(
 
     coordinator.storage_manager.async_save = AsyncMock()
 
-    await coordinator.services.growspaces.configure_tank("gs_1", "sensor.tank_1", volume_liters=None)
+    await coordinator.services.growspaces.configure_tank(
+        "gs_1", "sensor.tank_1", volume_liters=None
+    )
 
     tank = growspace.environment_config.irrigation_tanks[0]
     assert tank.volume_liters == 60.0
@@ -162,7 +166,9 @@ def test_get_tank_tracker_returns_none_for_unknown_entity(hass: HomeAssistant) -
     coordinator = _make_coordinator(hass)
     _add_growspace_with_tank(coordinator, volume_liters=200.0)
 
-    tracker = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.does_not_exist")
+    tracker = coordinator.services.growspaces.get_tank_tracker(
+        "gs_1", "sensor.does_not_exist"
+    )
 
     assert tracker is None
 
@@ -173,7 +179,9 @@ def test_get_tank_tracker_returns_none_for_unknown_growspace(
     """Test get_tank_tracker returns None when growspace_id is not found."""
     coordinator = _make_coordinator(hass)
 
-    tracker = coordinator.services.growspaces.get_tank_tracker("nonexistent_gs", "sensor.tank_1")
+    tracker = coordinator.services.growspaces.get_tank_tracker(
+        "nonexistent_gs", "sensor.tank_1"
+    )
 
     assert tracker is None
 
@@ -185,13 +193,19 @@ def test_get_tank_tracker_returns_same_instance_on_repeated_calls(
     coordinator = _make_coordinator(hass)
     _add_growspace_with_tank(coordinator, volume_liters=150.0)
 
-    tracker_first = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.tank_1")
-    tracker_second = coordinator.services.growspaces.get_tank_tracker("gs_1", "sensor.tank_1")
+    tracker_first = coordinator.services.growspaces.get_tank_tracker(
+        "gs_1", "sensor.tank_1"
+    )
+    tracker_second = coordinator.services.growspaces.get_tank_tracker(
+        "gs_1", "sensor.tank_1"
+    )
 
     assert tracker_first is tracker_second
 
 
-def test_get_tank_tracker_stage_resolver_reflects_plant_stage(hass: HomeAssistant) -> None:
+def test_get_tank_tracker_stage_resolver_reflects_plant_stage(
+    hass: HomeAssistant,
+) -> None:
     """Tracker stage_resolver resolves dominant plant stage from growspace plants."""
     from custom_components.growspace_manager.models import Plant
 
@@ -209,7 +223,9 @@ def test_get_tank_tracker_stage_resolver_reflects_plant_stage(hass: HomeAssistan
     assert stage == "veg"
 
 
-def test_get_tank_tracker_stage_resolver_reflects_cure_stage(hass: HomeAssistant) -> None:
+def test_get_tank_tracker_stage_resolver_reflects_cure_stage(
+    hass: HomeAssistant,
+) -> None:
     """Stage resolver correctly identifies cure stage when a plant is in cure."""
     from freezegun import freeze_time
 
@@ -237,7 +253,9 @@ def test_get_tank_tracker_stage_resolver_reflects_cure_stage(hass: HomeAssistant
     assert stage == "cure"
 
 
-def test_get_tank_tracker_stage_resolver_no_plants_returns_veg(hass: HomeAssistant) -> None:
+def test_get_tank_tracker_stage_resolver_no_plants_returns_veg(
+    hass: HomeAssistant,
+) -> None:
     """Stage resolver with no plants defaults to 'veg'."""
     coordinator = _make_coordinator(hass)
     _add_growspace_with_tank(coordinator, volume_liters=200.0)

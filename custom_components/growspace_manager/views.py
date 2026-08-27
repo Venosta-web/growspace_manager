@@ -84,7 +84,7 @@ class StrainLibraryUploadView(HomeAssistantView):
         # 2. Save to temp file
         try:
             temp_path = await self._save_upload_to_temp(file_field)
-        except (OSError, RuntimeError):
+        except OSError, RuntimeError:
             return web.Response(status=500, text="Failed to save upload")
 
         try:
@@ -147,6 +147,6 @@ class StrainLibraryImageView(HomeAssistantView):
                 return web.Response(status=404, text="Image not found")
 
             return web.FileResponse(file_path)
-        except (OSError, ValueError, RuntimeError, Exception):
+        except OSError, ValueError, RuntimeError, Exception:
             _LOGGER.exception("Error serving image %s", filename)
             return web.Response(status=500, text="Internal server error")

@@ -32,9 +32,7 @@ async def handle_trigger_vision_checkup(
     growspace_id = call.data["growspace_id"]
 
     if growspace_id not in coordinator.growspaces:
-        raise ServiceValidationError(
-            f"Growspace '{growspace_id}' not found"
-        )
+        raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
 
     result = await coordinator.vision_scheduler.run_vision_analysis(
         growspace_id, "manual"

@@ -288,7 +288,9 @@ async def test_volume_cap_not_applied_when_flow_rate_is_zero(
     mock_main_coordinator: MagicMock,
 ) -> None:
     """When pump_flow_rate_ml_per_sec == 0, volume cap check is skipped (unknown flow)."""
-    mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config.pump_flow_rate_ml_per_sec = 0.0
+    mock_main_coordinator.growspaces[
+        GROWSPACE_ID
+    ].irrigation_config.pump_flow_rate_ml_per_sec = 0.0
     irrigation_coordinator._volume_dispensed_today = 0.99  # Near the cap
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
@@ -340,7 +342,8 @@ async def test_logbook_start_event_fired_when_enabled(
 
     # At least the start event should carry the growspace_id
     start_events = [
-        c for c in fire_calls
+        c
+        for c in fire_calls
         if c.args[0] == EVENT_GROWSPACE_LOG_ENTRY
         and c.args[1].get(ATTR_GROWSPACE_ID) == GROWSPACE_ID
     ]
@@ -361,7 +364,8 @@ async def test_logbook_skip_event_fired_on_cycle_limit_skip(
 
     fire_calls = mock_hass.bus.async_fire.call_args_list
     skip_events = [
-        c for c in fire_calls
+        c
+        for c in fire_calls
         if c.args[0] == EVENT_GROWSPACE_LOG_ENTRY
         and c.args[1].get(ATTR_GROWSPACE_ID) == GROWSPACE_ID
     ]
@@ -382,7 +386,8 @@ async def test_logbook_skip_event_fired_on_volume_cap_skip(
 
     fire_calls = mock_hass.bus.async_fire.call_args_list
     skip_events = [
-        c for c in fire_calls
+        c
+        for c in fire_calls
         if c.args[0] == EVENT_GROWSPACE_LOG_ENTRY
         and c.args[1].get(ATTR_GROWSPACE_ID) == GROWSPACE_ID
     ]
@@ -395,7 +400,9 @@ async def test_no_logbook_events_when_disabled(
     mock_main_coordinator: MagicMock,
 ) -> None:
     """No logbook events are fired when log_to_logbook=False."""
-    mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config.log_to_logbook = False
+    mock_main_coordinator.growspaces[
+        GROWSPACE_ID
+    ].irrigation_config.log_to_logbook = False
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await irrigation_coordinator._run_pump_cycle(
@@ -404,7 +411,8 @@ async def test_no_logbook_events_when_disabled(
 
     # No logbook events should be fired
     logbook_calls = [
-        c for c in mock_hass.bus.async_fire.call_args_list
+        c
+        for c in mock_hass.bus.async_fire.call_args_list
         if c.args[0] == EVENT_GROWSPACE_LOG_ENTRY
     ]
     assert len(logbook_calls) == 0

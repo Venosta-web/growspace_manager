@@ -85,7 +85,7 @@ class EntityQueries:
 
         try:
             return float(state.state)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None
 
     def get_sensor_state(self, sensor_id: str | None) -> str | None:
@@ -129,9 +129,9 @@ class EntityQueries:
             # Replace European comma with period
             cleaned = cleaned.replace(",", ".")
             return float(cleaned)
-        except (ValueError, TypeError, AttributeError):
+        except ValueError, TypeError, AttributeError:
             # If it's already a number or conversion failed
             try:
                 return float(state_value)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return None

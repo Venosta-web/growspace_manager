@@ -1,4 +1,5 @@
 """Tests for lineage_classifier — pure functions, no HA dependencies."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -12,6 +13,7 @@ from custom_components.growspace_manager.managers.lineage_classifier import (
 # ---------------------------------------------------------------------------
 # _parse_generation
 # ---------------------------------------------------------------------------
+
 
 def test_parse_generation_f2():
     assert _parse_generation("F2") == ("F", 2)
@@ -40,6 +42,7 @@ def test_parse_generation_lowercase():
 # ---------------------------------------------------------------------------
 # _is_ancestor
 # ---------------------------------------------------------------------------
+
 
 def test_is_ancestor_direct_parent():
     tree = {"name": "Child", "parents": [{"name": "Parent A", "parents": []}]}
@@ -82,6 +85,7 @@ def test_is_ancestor_empty_parents():
 # classify_lineage — selfing (Sx)
 # ---------------------------------------------------------------------------
 
+
 def test_classify_s1_same_name():
     tree = {"name": "Strain A", "parents": [], "generation": ""}
     assert classify_lineage("Strain A", "Strain A", tree, tree) == "S1"
@@ -115,6 +119,7 @@ def test_classify_s1_takes_priority_over_ancestor_check():
 # classify_lineage — backcrossing (BXx)
 # ---------------------------------------------------------------------------
 
+
 def test_classify_bx1_parent_is_direct_ancestor_of_child():
     mother_tree = {"name": "OG Kush", "parents": [], "generation": ""}
     f1_tree = {
@@ -140,7 +145,9 @@ def test_classify_bx1_child_is_crossed_to_grandparent():
         ],
         "generation": "F2",
     }
-    assert classify_lineage("Skunk #1", "Deep Cross", grandparent_tree, f2_tree) == "BX1"
+    assert (
+        classify_lineage("Skunk #1", "Deep Cross", grandparent_tree, f2_tree) == "BX1"
+    )
 
 
 def test_classify_bx2_from_bx1_progeny():
@@ -186,6 +193,7 @@ def test_classify_bx1_legacy_bx_string_treated_as_bx1():
 # ---------------------------------------------------------------------------
 # classify_lineage — filial generations (Fx)
 # ---------------------------------------------------------------------------
+
 
 def test_classify_f2_siblings_share_identical_parents():
     sibling_a = {
@@ -289,6 +297,7 @@ def test_classify_f2_not_triggered_when_parents_differ():
 # ---------------------------------------------------------------------------
 # classify_lineage — outcross (F1)
 # ---------------------------------------------------------------------------
+
 
 def test_classify_f1_no_shared_ancestry():
     tree_a = {"name": "OG Kush", "parents": [], "generation": ""}

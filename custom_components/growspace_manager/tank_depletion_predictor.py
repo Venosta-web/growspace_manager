@@ -97,7 +97,7 @@ class TankDepletionPredictor:
 
         try:
             level = float(state.state)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             _LOGGER.warning(
                 "Invalid tank level from %s: %s",
                 self.tank.sensor_entity,
@@ -278,7 +278,7 @@ class TankDepletionPredictor:
 
         try:
             vpd = float(vpd_state.state)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None
 
         # Apply multiplier for high VPD (increased transpiration)

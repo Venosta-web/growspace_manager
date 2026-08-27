@@ -540,9 +540,7 @@ async def test_async_get_strain_details_comp_overrides_metrics(
 
 
 def test_parse_basic_info_with_h1_and_breeder(scraper: SeedfinderScraper) -> None:
-    soup = _soup(
-        '<h1>Blue Dream</h1><a href="/breeder/humboldt/">Humboldt Seed Co</a>'
-    )
+    soup = _soup('<h1>Blue Dream</h1><a href="/breeder/humboldt/">Humboldt Seed Co</a>')
     name, breeder = scraper._parse_basic_info(soup)
     assert name == "Blue Dream"
     assert breeder == "Humboldt Seed Co"
@@ -569,7 +567,7 @@ def test_parse_basic_info_no_breeder_link(scraper: SeedfinderScraper) -> None:
 
 def test_parse_image_alpine_absolute(scraper: SeedfinderScraper) -> None:
     soup = _soup(
-        '<img :src="selectedIndex === -1 ? \'https://cdn.example.com/img.jpg\' : images[selectedIndex].big" />'
+        "<img :src=\"selectedIndex === -1 ? 'https://cdn.example.com/img.jpg' : images[selectedIndex].big\" />"
     )
     url = scraper._parse_image(soup, "Strain")
     assert url == "https://cdn.example.com/img.jpg"
@@ -577,7 +575,7 @@ def test_parse_image_alpine_absolute(scraper: SeedfinderScraper) -> None:
 
 def test_parse_image_alpine_relative(scraper: SeedfinderScraper) -> None:
     soup = _soup(
-        '<img :src="selectedIndex === -1 ? \'/storage/pics/img.jpg\' : images[selectedIndex].big" />'
+        "<img :src=\"selectedIndex === -1 ? '/storage/pics/img.jpg' : images[selectedIndex].big\" />"
     )
     url = scraper._parse_image(soup, "Strain")
     assert url == f"{BASE_URL}/storage/pics/img.jpg"
@@ -606,7 +604,7 @@ def test_parse_image_alpine_404_placeholder_returns_none(
 ) -> None:
     """Alpine.js :src with =404 placeholder is rejected."""
     soup = _soup(
-        '<img :src="selectedIndex === -1 ? \'/storage/pics/00breeder/=404\' : images[selectedIndex].big" />'
+        "<img :src=\"selectedIndex === -1 ? '/storage/pics/00breeder/=404' : images[selectedIndex].big\" />"
     )
     url = scraper._parse_image(soup, "Strain")
     assert url is None
@@ -626,7 +624,9 @@ def test_parse_image_fallback_src_404_placeholder_returns_none(
 # ---------------------------------------------------------------------------
 
 
-def test_parse_composition_sativa_indica_percentages(scraper: SeedfinderScraper) -> None:
+def test_parse_composition_sativa_indica_percentages(
+    scraper: SeedfinderScraper,
+) -> None:
     soup = _soup(
         "<h2>Basic Strain Information</h2><div>70% sativa, 30% indica text here</div>"
     )
@@ -683,25 +683,19 @@ def test_parse_composition_pure_sativa(scraper: SeedfinderScraper) -> None:
 
 
 def test_parse_composition_indicadominiert(scraper: SeedfinderScraper) -> None:
-    soup = _soup(
-        "<h2>Grundlegende Information</h2><div>indicadominiert pflanze</div>"
-    )
+    soup = _soup("<h2>Grundlegende Information</h2><div>indicadominiert pflanze</div>")
     data = scraper._parse_composition(soup)
     assert data["indica"] == 70
 
 
 def test_parse_composition_reine_indica(scraper: SeedfinderScraper) -> None:
-    soup = _soup(
-        "<h2>Grundlegende Information</h2><div>reine indica pflanze</div>"
-    )
+    soup = _soup("<h2>Grundlegende Information</h2><div>reine indica pflanze</div>")
     data = scraper._parse_composition(soup)
     assert data["indica"] == 100
 
 
 def test_parse_composition_reine_sativa(scraper: SeedfinderScraper) -> None:
-    soup = _soup(
-        "<h2>Grundlegende Information</h2><div>reine sativa pflanze</div>"
-    )
+    soup = _soup("<h2>Grundlegende Information</h2><div>reine sativa pflanze</div>")
     data = scraper._parse_composition(soup)
     assert data["sativa"] == 100
 
@@ -1121,7 +1115,7 @@ def test_parse_lineage_to_tree_generic_term_skipped(
 ) -> None:
     """Generic terms trigger fallback to other links in the li."""
     soup = _soup(
-        '<li>'
+        "<li>"
         '<a class="font-bold" href="/a/">specified above »»»</a>'
         '<a href="/strain-info/real-strain/">Real Strain</a>'
         "</li>"
@@ -1166,9 +1160,7 @@ def test_parse_lineage_to_tree_nested_parents(scraper: SeedfinderScraper) -> Non
 def test_parse_lineage_to_tree_strips_arrows_and_brackets(
     scraper: SeedfinderScraper,
 ) -> None:
-    soup = _soup(
-        '<li><a class="font-bold" href="/s/">Name [auto] (clone) »»»</a></li>'
-    )
+    soup = _soup('<li><a class="font-bold" href="/s/">Name [auto] (clone) »»»</a></li>')
     li = soup.find("li")
     result = scraper._parse_lineage_to_tree(li)
     assert result["name"] == "Name"
@@ -1312,7 +1304,9 @@ def test_parse_recursive_partial_paren_not_stripped(
 # ---------------------------------------------------------------------------
 
 
-def test_parse_images_extracts_full_gallery_from_alpine_xdata(scraper: SeedfinderScraper) -> None:
+def test_parse_images_extracts_full_gallery_from_alpine_xdata(
+    scraper: SeedfinderScraper,
+) -> None:
     """_parse_images returns all gallery URLs from Alpine.js x-data, not just the first."""
     html = """
     <div x-data='{"selectedIndex": -1, "images": [{"big": "https://cdn.example.com/1.jpg", "thumb": "https://cdn.example.com/1t.jpg"}, {"big": "https://cdn.example.com/2.jpg", "thumb": "https://cdn.example.com/2t.jpg"}, {"big": "/storage/pics/3.jpg", "thumb": "/storage/pics/3t.jpg"}]}'>
@@ -1328,7 +1322,9 @@ def test_parse_images_extracts_full_gallery_from_alpine_xdata(scraper: Seedfinde
     ]
 
 
-def test_parse_images_extracts_galerie_img_tags_when_no_xdata(scraper: SeedfinderScraper) -> None:
+def test_parse_images_extracts_galerie_img_tags_when_no_xdata(
+    scraper: SeedfinderScraper,
+) -> None:
     """_parse_images collects all /storage/pics/galerie/ img tags (older pages like Sunset Paradise)."""
     html = """
     <a href="/gallery/1"><img src="/storage/pics/galerie/Paradise_Seeds/Sunset_Paradise/img1.jpg" alt="1"></a>
@@ -1369,22 +1365,28 @@ def test_parse_images_caps_at_10(scraper: SeedfinderScraper) -> None:
     assert len(urls) == 10
 
 
-def test_parse_images_falls_back_to_parse_image_when_no_galerie(scraper: SeedfinderScraper) -> None:
+def test_parse_images_falls_back_to_parse_image_when_no_galerie(
+    scraper: SeedfinderScraper,
+) -> None:
     """_parse_images falls back to the single-image path when no galerie tags found."""
-    html = '<img :src="selectedIndex === -1 ? \'https://cdn.example.com/official.jpg\' : images[selectedIndex].big" />'
+    html = "<img :src=\"selectedIndex === -1 ? 'https://cdn.example.com/official.jpg' : images[selectedIndex].big\" />"
     soup = _soup(html)
     urls = scraper._parse_images(soup)
     assert urls == ["https://cdn.example.com/official.jpg"]
 
 
-def test_parse_images_returns_empty_list_when_no_images(scraper: SeedfinderScraper) -> None:
+def test_parse_images_returns_empty_list_when_no_images(
+    scraper: SeedfinderScraper,
+) -> None:
     """_parse_images returns [] when no image data is found at all."""
     soup = _soup("<div>no images here</div>")
     urls = scraper._parse_images(soup)
     assert urls == []
 
 
-def test_parse_images_alpine_js_syntax_unquoted_keys(scraper: SeedfinderScraper) -> None:
+def test_parse_images_alpine_js_syntax_unquoted_keys(
+    scraper: SeedfinderScraper,
+) -> None:
     """Strategy 1 works when x-data uses JS object literal syntax (unquoted keys, single quotes)."""
     html = """
     <div x-data="{selectedIndex: -1, images: [{big: 'https://cdn.example.com/1.jpg'}, {big: '/storage/pics/galerie/B/S/2.jpg'}]}">

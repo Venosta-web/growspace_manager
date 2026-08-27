@@ -1,4 +1,5 @@
 """Tests for subarea CRUD in GrowspaceManager."""
+
 from __future__ import annotations
 
 import asyncio

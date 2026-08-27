@@ -156,7 +156,5 @@ async def test_websocket_remove_nutrient_stock(
     msg = await client.receive_json()
     assert msg["success"]
 
-    mock_coordinator.services.config.remove_stock.assert_called_with(
-        "test_nutrient"
-    )
+    mock_coordinator.services.config.remove_stock.assert_called_with("test_nutrient")
     mock_coordinator.async_commit.assert_called()

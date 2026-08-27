@@ -13,7 +13,9 @@ from homeassistant.core import HomeAssistant
 from tests.common import MockConfigEntry
 
 
-def create_coordinator(hass: HomeAssistant, options: dict[str, Any]) -> GrowspaceCoordinator:
+def create_coordinator(
+    hass: HomeAssistant, options: dict[str, Any]
+) -> GrowspaceCoordinator:
     """Build a real coordinator with the given config-entry options."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options=options)
     entry.add_to_hass(hass)

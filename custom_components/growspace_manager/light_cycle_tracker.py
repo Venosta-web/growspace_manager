@@ -41,11 +41,7 @@ class LightCycleTracker:
             return False
         env = getattr(growspace, "environment_config", None)
         light_sensors = getattr(env, "light_sensors", []) if env else []
-        return (
-            strategy.enabled
-            and strategy.auto_light_tracking
-            and bool(light_sensors)
-        )
+        return strategy.enabled and strategy.auto_light_tracking and bool(light_sensors)
 
     def _light_sensors(self) -> list[str]:
         growspace = self.main_coordinator.growspaces.get(self.growspace_id)

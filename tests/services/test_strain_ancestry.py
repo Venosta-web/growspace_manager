@@ -70,8 +70,16 @@ def test_collect_ancestors_single_level() -> None:
     node = {
         "name": "Gelato",
         "parents": [
-            {"name": "Thin Mint GSC", "url": "https://seedfinder.eu/tmc", "parents": []},
-            {"name": "Sunset Sherbet", "url": "https://seedfinder.eu/ss", "parents": []},
+            {
+                "name": "Thin Mint GSC",
+                "url": "https://seedfinder.eu/tmc",
+                "parents": [],
+            },
+            {
+                "name": "Sunset Sherbet",
+                "url": "https://seedfinder.eu/ss",
+                "parents": [],
+            },
         ],
     }
     result = _collect_ancestors(node)
@@ -150,7 +158,11 @@ async def test_ancestry_populated_on_add_strain(strain_library: StrainLibrary) -
         "name": "Gelato",
         "url": None,
         "parents": [
-            {"name": "Thin Mint GSC", "url": "https://seedfinder.eu/tmc", "parents": []},
+            {
+                "name": "Thin Mint GSC",
+                "url": "https://seedfinder.eu/tmc",
+                "parents": [],
+            },
             {"name": "Sunset Sherbet", "url": None, "parents": []},
         ],
     }
@@ -229,7 +241,9 @@ async def test_ancestry_not_populated_without_lineage_tree(
     """Adding a strain without lineage_tree leaves ancestry table empty."""
     await strain_library.add_strain("Blue Dream")
 
-    async with strain_library._db.execute("SELECT COUNT(*) as n FROM strain_ancestry") as cursor:
+    async with strain_library._db.execute(
+        "SELECT COUNT(*) as n FROM strain_ancestry"
+    ) as cursor:
         row = await cursor.fetchone()
 
     assert row["n"] == 0
@@ -268,7 +282,9 @@ async def test_get_strains_by_ancestor(strain_library: StrainLibrary) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_strains_by_ancestor_returns_depth(strain_library: StrainLibrary) -> None:
+async def test_get_strains_by_ancestor_returns_depth(
+    strain_library: StrainLibrary,
+) -> None:
     """Result includes depth field indicating how far the ancestor is."""
     tree = {
         "name": "Gelato",

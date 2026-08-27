@@ -653,7 +653,9 @@ def test_downscale_logo_if_needed_large_rgba_to_monochrome() -> None:
     img = Image.frombytes("RGBA", (100, 100), os.urandom(100 * 100 * 4))
     buff = BytesIO()
     img.save(buff, format="PNG")
-    large_rgba_base64 = f"data:image/png;base64,{base64.b64encode(buff.getvalue()).decode()}"
+    large_rgba_base64 = (
+        f"data:image/png;base64,{base64.b64encode(buff.getvalue()).decode()}"
+    )
 
     # Ensure our constructed image is indeed large enough (> 25000 chars)
     assert len(large_rgba_base64) >= 25000

@@ -21,6 +21,7 @@ from homeassistant.util import dt as dt_util
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def patch_store():
     """Patch Store so construction doesn't require a real hass instance."""
@@ -36,7 +37,9 @@ def mock_hass() -> MagicMock:
     """Minimal Home Assistant mock."""
     hass = MagicMock(spec=HomeAssistant)
     hass.loop = asyncio.get_event_loop()
-    hass.async_create_task = MagicMock(side_effect=lambda coro: asyncio.ensure_future(coro))
+    hass.async_create_task = MagicMock(
+        side_effect=lambda coro: asyncio.ensure_future(coro)
+    )
     return hass
 
 
@@ -61,6 +64,7 @@ def mock_coordinator(mock_hass: MagicMock) -> MagicMock:
 # Cycle 1 — Initialisation
 # ---------------------------------------------------------------------------
 
+
 def test_briefing_scheduler_initializes(
     mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:
@@ -73,6 +77,7 @@ def test_briefing_scheduler_initializes(
 # ---------------------------------------------------------------------------
 # Cycle 2 — Interval trigger
 # ---------------------------------------------------------------------------
+
 
 def test_start_registers_interval_listener(
     mock_hass: MagicMock, mock_coordinator: MagicMock
@@ -118,8 +123,16 @@ async def test_interval_callback_generates_briefing(
     scheduler._store.async_save = AsyncMock()
 
     with patch.object(
-        scheduler, "_generate_briefing", new_callable=AsyncMock,
-        return_value={"generated_at": 1234.0, "summary_text": "All good", "ai_available": True, "kpis": [], "recommendations": []}
+        scheduler,
+        "_generate_briefing",
+        new_callable=AsyncMock,
+        return_value={
+            "generated_at": 1234.0,
+            "summary_text": "All good",
+            "ai_available": True,
+            "kpis": [],
+            "recommendations": [],
+        },
     ) as mock_gen:
         await scheduler._async_on_interval(None)
 
@@ -132,12 +145,14 @@ async def test_interval_callback_generates_briefing(
 # Cycle 3 — Entity event trigger + debounce
 # ---------------------------------------------------------------------------
 
+
 def test_start_registers_entity_listener_when_entities_configured(
     mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:
     """start() registers async_track_state_change_event when trigger entities are set."""
     mock_coordinator.options["ai_settings"]["briefing_trigger_entities"] = [
-        "binary_sensor.tent1_door", "binary_sensor.tent2_door"
+        "binary_sensor.tent1_door",
+        "binary_sensor.tent2_door",
     ]
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
 
@@ -253,6 +268,7 @@ async def test_rapid_entity_changes_are_debounced(
 # Cycle 4 — Manual refresh (force_refresh=True)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_get_briefing_force_refresh_bypasses_cache(
     mock_hass: MagicMock, mock_coordinator: MagicMock
@@ -262,12 +278,26 @@ async def test_get_briefing_force_refresh_bypasses_cache(
     scheduler._store = MagicMock()
     scheduler._store.async_save = AsyncMock()
 
-    stale = {"generated_at": 1.0, "summary_text": "Stale", "ai_available": False, "kpis": [], "recommendations": []}
-    fresh = {"generated_at": 2.0, "summary_text": "Fresh", "ai_available": True, "kpis": [], "recommendations": []}
+    stale = {
+        "generated_at": 1.0,
+        "summary_text": "Stale",
+        "ai_available": False,
+        "kpis": [],
+        "recommendations": [],
+    }
+    fresh = {
+        "generated_at": 2.0,
+        "summary_text": "Fresh",
+        "ai_available": True,
+        "kpis": [],
+        "recommendations": [],
+    }
 
     scheduler._cached_briefing = stale
 
-    with patch.object(scheduler, "_generate_briefing", new_callable=AsyncMock, return_value=fresh):
+    with patch.object(
+        scheduler, "_generate_briefing", new_callable=AsyncMock, return_value=fresh
+    ):
         result = await scheduler.async_get_briefing(force_refresh=True)
 
     assert result["summary_text"] == "Fresh"
@@ -281,10 +311,18 @@ async def test_get_briefing_returns_cache_when_available(
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
     scheduler._store = MagicMock()
 
-    cached = {"generated_at": 999.0, "summary_text": "Cached", "ai_available": True, "kpis": [], "recommendations": []}
+    cached = {
+        "generated_at": 999.0,
+        "summary_text": "Cached",
+        "ai_available": True,
+        "kpis": [],
+        "recommendations": [],
+    }
     scheduler._cached_briefing = cached
 
-    with patch.object(scheduler, "_generate_briefing", new_callable=AsyncMock) as mock_gen:
+    with patch.object(
+        scheduler, "_generate_briefing", new_callable=AsyncMock
+    ) as mock_gen:
         result = await scheduler.async_get_briefing(force_refresh=False)
 
     mock_gen.assert_not_called()
@@ -297,11 +335,19 @@ async def test_get_briefing_loads_from_store_when_no_cache(
 ) -> None:
     """get_briefing() loads persisted briefing from Store when in-memory cache is cold."""
     scheduler = BriefingScheduler(mock_hass, mock_coordinator)
-    stored = {"generated_at": 50.0, "summary_text": "Stored", "ai_available": True, "kpis": [], "recommendations": []}
+    stored = {
+        "generated_at": 50.0,
+        "summary_text": "Stored",
+        "ai_available": True,
+        "kpis": [],
+        "recommendations": [],
+    }
     scheduler._store = MagicMock()
     scheduler._store.async_load = AsyncMock(return_value=stored)
 
-    with patch.object(scheduler, "_generate_briefing", new_callable=AsyncMock) as mock_gen:
+    with patch.object(
+        scheduler, "_generate_briefing", new_callable=AsyncMock
+    ) as mock_gen:
         result = await scheduler.async_get_briefing(force_refresh=False)
 
     mock_gen.assert_not_called()
@@ -332,7 +378,9 @@ async def test_get_briefing_discards_stored_briefing_with_old_kpis_format(
     scheduler._store.async_load = AsyncMock(return_value=old_format)
     scheduler._store.async_save = AsyncMock()
 
-    with patch.object(scheduler, "_generate_briefing", new_callable=AsyncMock, return_value=fresh) as mock_gen:
+    with patch.object(
+        scheduler, "_generate_briefing", new_callable=AsyncMock, return_value=fresh
+    ) as mock_gen:
         result = await scheduler.async_get_briefing(force_refresh=False)
 
     mock_gen.assert_called_once()
@@ -342,6 +390,7 @@ async def test_get_briefing_discards_stored_briefing_with_old_kpis_format(
 # ---------------------------------------------------------------------------
 # Cycle 5 — AI unavailable → Bayesian fallback
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_generate_briefing_ai_unavailable_returns_bayesian(
@@ -411,6 +460,7 @@ async def test_generate_briefing_includes_required_fields(
 # Cycle 6 — Listener cleanup on unload
 # ---------------------------------------------------------------------------
 
+
 def test_async_stop_cancels_all_listeners(
     mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:
@@ -456,6 +506,7 @@ def test_async_stop_is_idempotent(
 # Cycle 7 — Bayesian summary content
 # ---------------------------------------------------------------------------
 
+
 def _make_sensor_state(active: bool, reasons: list[str]) -> MagicMock:
     state = MagicMock()
     state.state = "on" if active else "off"
@@ -475,7 +526,9 @@ def _setup_bayesian_states(
 
     states = {
         f"binary_sensor.{DOMAIN}_{growspace_id}_stress": _make_sensor_state(*stress),
-        f"binary_sensor.{DOMAIN}_{growspace_id}_mold_risk": _make_sensor_state(*mold_risk),
+        f"binary_sensor.{DOMAIN}_{growspace_id}_mold_risk": _make_sensor_state(
+            *mold_risk
+        ),
         f"binary_sensor.{DOMAIN}_{growspace_id}_optimal": _make_sensor_state(*optimal),
     }
     mock_hass.states = MagicMock()
@@ -571,6 +624,7 @@ def test_bayesian_summary_mold_risk_active_detected(
 # Cycle 8 — _read_bayesian_states with real sensor state
 # ---------------------------------------------------------------------------
 
+
 def test_read_bayesian_states_returns_active_true_when_sensor_on(
     mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:
@@ -596,6 +650,7 @@ def test_read_bayesian_states_returns_active_true_when_sensor_on(
 # ---------------------------------------------------------------------------
 # Cycle 9 — _collect_kpis with growspace VPD + water data
 # ---------------------------------------------------------------------------
+
 
 def test_collect_kpis_includes_avg_vpd_from_growspace_env_state(
     mock_hass: MagicMock, mock_coordinator: MagicMock
@@ -664,6 +719,7 @@ def test_collect_kpis_includes_water_use_when_nonzero(
 # Cycle 10 — _generate_briefing AI success path
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_generate_briefing_ai_success_returns_ai_available_true(
     mock_hass: MagicMock, mock_coordinator: MagicMock
@@ -676,7 +732,17 @@ async def test_generate_briefing_ai_success_returns_ai_available_true(
         scheduler,
         "_generate_ai_content",
         new_callable=AsyncMock,
-        return_value=("Plants are thriving.", [{"title": "Water now", "description": "Plants need water.", "impact": "high", "suggested_action": {}}]),
+        return_value=(
+            "Plants are thriving.",
+            [
+                {
+                    "title": "Water now",
+                    "description": "Plants need water.",
+                    "impact": "high",
+                    "suggested_action": {},
+                }
+            ],
+        ),
     ):
         briefing = await scheduler._generate_briefing()
 
@@ -689,6 +755,7 @@ async def test_generate_briefing_ai_success_returns_ai_available_true(
 # Cycle 11 — _generate_ai_content response parsing
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_generate_ai_content_parses_summary_and_recommendations(
     mock_hass: MagicMock, mock_coordinator: MagicMock
@@ -696,7 +763,14 @@ async def test_generate_ai_content_parses_summary_and_recommendations(
     """_generate_ai_content parses SUMMARY: and RECOMMENDATIONS: from AI speech."""
     import json
 
-    recs = [{"title": "Lower VPD", "description": "VPD is above target range.", "impact": "high", "suggested_action": {}}]
+    recs = [
+        {
+            "title": "Lower VPD",
+            "description": "VPD is above target range.",
+            "impact": "high",
+            "suggested_action": {},
+        }
+    ]
     speech_text = f"SUMMARY: All healthy. RECOMMENDATIONS: {json.dumps(recs)}"
 
     mock_result = MagicMock()

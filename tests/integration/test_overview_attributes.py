@@ -145,7 +145,9 @@ async def test_environment_attributes_includes_circulation_fan_config(hass) -> N
     dialog re-opens with the correct enabled state instead of falling back to False."""
     builder = GrowspaceViewModelBuilder(hass)
 
-    fan_cfg = CirculationFanConfig(enabled=True, vpd_target=1.2, min_speed=30, max_speed=90)
+    fan_cfg = CirculationFanConfig(
+        enabled=True, vpd_target=1.2, min_speed=30, max_speed=90
+    )
 
     mock_env = MagicMock()
     mock_env.temperature_sensor = None

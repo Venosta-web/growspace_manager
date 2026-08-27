@@ -421,7 +421,9 @@ async def test_update_growspace_entities_new_vpd(hass: HomeAssistant):
             "custom_components.growspace_manager.sensor._setup._async_create_derivative_sensors",
             new_callable=AsyncMock,
         ),
-        patch("custom_components.growspace_manager.sensor._setup.GrowspaceOverviewSensor"),
+        patch(
+            "custom_components.growspace_manager.sensor._setup.GrowspaceOverviewSensor"
+        ),
     ):
         await _update_growspace_entities(
             hass,

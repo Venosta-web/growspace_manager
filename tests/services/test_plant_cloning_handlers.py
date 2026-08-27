@@ -22,7 +22,9 @@ def coordinator() -> MagicMock:
     mock = MagicMock()
     mock.plants = {}
     mock.services = MagicMock()
-    mock.services.plants.take_clones = AsyncMock(return_value=[MagicMock(), MagicMock()])
+    mock.services.plants.take_clones = AsyncMock(
+        return_value=[MagicMock(), MagicMock()]
+    )
     mock.services.plants.promote_clone = AsyncMock()
     return mock
 
@@ -58,7 +60,9 @@ async def test_take_clone_raises_when_mother_missing(coordinator: MagicMock) -> 
 
 
 @pytest.mark.asyncio
-async def test_take_clone_raises_when_num_clones_not_positive(coordinator: MagicMock) -> None:
+async def test_take_clone_raises_when_num_clones_not_positive(
+    coordinator: MagicMock,
+) -> None:
     """Handler rejects non-positive num_clones before touching the coordinator."""
     coordinator.plants["m1"] = MagicMock()
     call = MagicMock()
@@ -88,5 +92,7 @@ async def test_move_clone_raises_when_ids_missing(coordinator: MagicMock) -> Non
     call = MagicMock()
     call.data = {ATTR_PLANT_ID: "clone1"}
 
-    with pytest.raises(ServiceValidationError, match="Missing plant_id or target_growspace_id"):
+    with pytest.raises(
+        ServiceValidationError, match="Missing plant_id or target_growspace_id"
+    ):
         await handle_move_clone(MagicMock(), coordinator, MagicMock(), call)

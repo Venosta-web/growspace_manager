@@ -359,7 +359,10 @@ async def test_import_seedfinder_empty_name_node(mock_hass) -> None:
             {"name": "", "parents": []},
         ],
     }
-    with patch.object(lib, "load", new=AsyncMock()), patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()):
+    with (
+        patch.object(lib, "load", new=AsyncMock()),
+        patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()),
+    ):
         await lib.async_import_seedfinder_lineage_tree("Root Strain", tree)
 
     # lineage_by_node is empty (only parent had empty name) → early return before any execute
@@ -378,7 +381,10 @@ async def test_import_seedfinder_no_lineage_nodes(mock_hass) -> None:
 
     # Tree with only the root and no parents — lineage_by_node will be empty
     tree = {"name": "Lone Strain", "parents": []}
-    with patch.object(lib, "load", new=AsyncMock()), patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()):
+    with (
+        patch.object(lib, "load", new=AsyncMock()),
+        patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()),
+    ):
         await lib.async_import_seedfinder_lineage_tree("Lone Strain", tree)
 
     # No DB inserts/updates should occur after the early return
@@ -399,10 +405,17 @@ async def test_import_seedfinder_leaf_parent_url_stored(mock_hass) -> None:
     tree = {
         "name": "Root",
         "parents": [
-            {"name": "LeafParent", "url": "https://seedfinder.eu/strain/LeafParent", "parents": []},
+            {
+                "name": "LeafParent",
+                "url": "https://seedfinder.eu/strain/LeafParent",
+                "parents": [],
+            },
         ],
     }
-    with patch.object(lib, "load", new=AsyncMock()), patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()):
+    with (
+        patch.object(lib, "load", new=AsyncMock()),
+        patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()),
+    ):
         # No scraper — leaf_parent_urls collected but not fetched
         await lib.async_import_seedfinder_lineage_tree("Root", tree)
 
@@ -423,7 +436,11 @@ async def test_import_seedfinder_scraper_fetches_leaf_parent(mock_hass) -> None:
     tree = {
         "name": "Root",
         "parents": [
-            {"name": "LeafParent", "url": "https://seedfinder.eu/strain/LeafParent", "parents": []},
+            {
+                "name": "LeafParent",
+                "url": "https://seedfinder.eu/strain/LeafParent",
+                "parents": [],
+            },
         ],
     }
 
@@ -437,8 +454,13 @@ async def test_import_seedfinder_scraper_fetches_leaf_parent(mock_hass) -> None:
         }
     )
 
-    with patch.object(lib, "load", new=AsyncMock()), patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()):
-        await lib.async_import_seedfinder_lineage_tree("Root", tree, scraper=mock_scraper)
+    with (
+        patch.object(lib, "load", new=AsyncMock()),
+        patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()),
+    ):
+        await lib.async_import_seedfinder_lineage_tree(
+            "Root", tree, scraper=mock_scraper
+        )
 
     mock_scraper.async_get_strain_details.assert_awaited_once()
 
@@ -456,16 +478,27 @@ async def test_import_seedfinder_scraper_error_silenced(mock_hass) -> None:
     tree = {
         "name": "Root",
         "parents": [
-            {"name": "LeafParent", "url": "https://seedfinder.eu/strain/LeafParent", "parents": []},
+            {
+                "name": "LeafParent",
+                "url": "https://seedfinder.eu/strain/LeafParent",
+                "parents": [],
+            },
         ],
     }
 
     mock_scraper = AsyncMock()
-    mock_scraper.async_get_strain_details = AsyncMock(side_effect=ValueError("scrape failed"))
+    mock_scraper.async_get_strain_details = AsyncMock(
+        side_effect=ValueError("scrape failed")
+    )
 
-    with patch.object(lib, "load", new=AsyncMock()), patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()):
+    with (
+        patch.object(lib, "load", new=AsyncMock()),
+        patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()),
+    ):
         # Should not raise
-        await lib.async_import_seedfinder_lineage_tree("Root", tree, scraper=mock_scraper)
+        await lib.async_import_seedfinder_lineage_tree(
+            "Root", tree, scraper=mock_scraper
+        )
 
 
 def test_get_strain_lineage_tree_cache_hit(mock_hass) -> None:
@@ -477,7 +510,12 @@ def test_get_strain_lineage_tree_cache_hit(mock_hass) -> None:
 
     lib.get_strain_lineage_tree("Cached Strain")
     # Manually place a different value in the cache to confirm cache is returned
-    lib._lineage_cache["Cached Strain"] = {"name": "FROM_CACHE", "parents": [], "source": "library", "generation": ""}
+    lib._lineage_cache["Cached Strain"] = {
+        "name": "FROM_CACHE",
+        "parents": [],
+        "source": "library",
+        "generation": "",
+    }
 
     result2 = lib.get_strain_lineage_tree("Cached Strain")
     assert result2["name"] == "FROM_CACHE"
@@ -510,7 +548,11 @@ def test_get_strain_lineage_tree_non_library_parent_with_phenotype(mock_hass) ->
         "Child": {
             "meta": {
                 "lineage_tree": [
-                    {"name": "ExternalParent", "source": "seedfinder", "phenotype": "PX"},
+                    {
+                        "name": "ExternalParent",
+                        "source": "seedfinder",
+                        "phenotype": "PX",
+                    },
                 ]
             },
             "phenotypes": {},
@@ -599,7 +641,9 @@ async def test_rebuild_ancestry_with_ancestors(mock_hass) -> None:
 
 
 @pytest.mark.asyncio
-async def test_import_seedfinder_scraper_skips_already_resolved_parent(mock_hass) -> None:
+async def test_import_seedfinder_scraper_skips_already_resolved_parent(
+    mock_hass,
+) -> None:
     """Test scraper skips leaf parents already in lineage_by_node (line 1003).
 
     GrandParent appears as a leaf-with-URL in one branch (→ leaf_parent_urls)
@@ -620,7 +664,11 @@ async def test_import_seedfinder_scraper_skips_already_resolved_parent(mock_hass
                 # ParentA has GrandParent as a leaf (URL, no children) → leaf_parent_urls
                 "name": "ParentA",
                 "parents": [
-                    {"name": "GrandParent", "url": "https://seedfinder.eu/strain/GrandParent", "parents": []},
+                    {
+                        "name": "GrandParent",
+                        "url": "https://seedfinder.eu/strain/GrandParent",
+                        "parents": [],
+                    },
                 ],
             },
             {
@@ -639,8 +687,13 @@ async def test_import_seedfinder_scraper_skips_already_resolved_parent(mock_hass
     mock_scraper = AsyncMock()
     mock_scraper.async_get_strain_details = AsyncMock()
 
-    with patch.object(lib, "load", new=AsyncMock()), patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()):
-        await lib.async_import_seedfinder_lineage_tree("Root", tree, scraper=mock_scraper)
+    with (
+        patch.object(lib, "load", new=AsyncMock()),
+        patch.object(lib, "_rebuild_strain_ancestry", new=AsyncMock()),
+    ):
+        await lib.async_import_seedfinder_lineage_tree(
+            "Root", tree, scraper=mock_scraper
+        )
 
     # GrandParent was already resolved from the tree — scraper should NOT be called for it
     mock_scraper.async_get_strain_details.assert_not_awaited()

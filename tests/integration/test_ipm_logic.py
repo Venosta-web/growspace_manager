@@ -81,9 +81,13 @@ async def test_ipm_preset_visible_after_storage_load_sync(
     mock_coordinator._nutrient_manager.ipm_presets = fresh_presets
 
     # Apply the fix: re-point ipm_service at the same dict.
-    mock_coordinator.ipm_service.ipm_presets = mock_coordinator._nutrient_manager.ipm_presets
+    mock_coordinator.ipm_service.ipm_presets = (
+        mock_coordinator._nutrient_manager.ipm_presets
+    )
 
-    items = [{"name": "Neem Oil", "dose_amount": 5.0, "dose_unit": "ml/L", "phi_days": 0}]
+    items = [
+        {"name": "Neem Oil", "dose_amount": 5.0, "dose_unit": "ml/L", "phi_days": 0}
+    ]
     preset = await mock_coordinator.services.config.save_ipm_preset(
         name="Neem Spray", type="foliar", items=items
     )
@@ -140,7 +144,9 @@ async def test_async_apply_ipm_to_growspace(
     events = async_capture_events(mock_coordinator.hass, EVENT_GROWSPACE_LOG_ENTRY)
 
     # Execute
-    affected = await mock_coordinator.services.plants.apply_ipm("ipm1", growspace_id="gs1")
+    affected = await mock_coordinator.services.plants.apply_ipm(
+        "ipm1", growspace_id="gs1"
+    )
 
     # Verify return
     assert set(affected) == {"p1", "p2"}
@@ -216,4 +222,6 @@ async def test_async_apply_ipm_errors(mock_coordinator: GrowspaceCoordinator) ->
 
     # Missing preset
     with pytest.raises(KeyError):
-        await mock_coordinator.services.plants.apply_ipm("missing_id", growspace_id="gs1")
+        await mock_coordinator.services.plants.apply_ipm(
+            "missing_id", growspace_id="gs1"
+        )

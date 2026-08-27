@@ -357,7 +357,11 @@ async def test_async_step_add_plant_success(
     """Test add plant step success."""
     mock_flow = MagicMock()
     mock_flow.async_create_entry = MagicMock(
-        side_effect=lambda title, data: {"type": FlowResultType.CREATE_ENTRY, "title": title, "data": data}
+        side_effect=lambda title, data: {
+            "type": FlowResultType.CREATE_ENTRY,
+            "title": title,
+            "data": data,
+        }
     )
     handler.flow = mock_flow
     handler.flow.selected_growspace_id = "gs1"
@@ -383,7 +387,11 @@ async def test_async_step_update_plant_success(
     """Test update plant step success."""
     mock_flow = MagicMock()
     mock_flow.async_create_entry = MagicMock(
-        side_effect=lambda title, data: {"type": FlowResultType.CREATE_ENTRY, "title": title, "data": data}
+        side_effect=lambda title, data: {
+            "type": FlowResultType.CREATE_ENTRY,
+            "title": title,
+            "data": data,
+        }
     )
     handler.flow = mock_flow
     handler.flow.selected_plant_id = "p1"

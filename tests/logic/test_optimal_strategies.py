@@ -31,7 +31,9 @@ async def test_optimal_conditions_notification(mock_sensor: MagicMock) -> None:
 
     strategy = OptimalConditionsEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=lambda: mock_growspace,
         get_notification_message=MagicMock(return_value="msg"),
@@ -49,7 +51,9 @@ async def test_optimal_conditions_notification(mock_sensor: MagicMock) -> None:
     # Test fallback name when get_growspace returns None
     strategy_no_growspace = OptimalConditionsEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=lambda: None,
         get_notification_message=MagicMock(return_value="msg"),
@@ -62,9 +66,7 @@ async def test_optimal_conditions_notification(mock_sensor: MagicMock) -> None:
 class DummyEvaluatorStrategy(BayesianEvaluatorStrategy):
     """Dummy strategy to test the base class methods."""
 
-    async def async_evaluate(
-        self, state: Any
-    ) -> tuple[Any, Any]:
+    async def async_evaluate(self, state: Any) -> tuple[Any, Any]:
         """Implement abstract method."""
         return [], []
 
@@ -73,7 +75,9 @@ def test_base_evaluator_strategy_notification_default(mock_sensor: MagicMock) ->
     """Test that the default base class implementation of get_notification_title_message returns None."""
     strategy = DummyEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=MagicMock(return_value=None),
         get_notification_message=MagicMock(return_value="msg"),
@@ -83,11 +87,15 @@ def test_base_evaluator_strategy_notification_default(mock_sensor: MagicMock) ->
 
 
 @pytest.mark.asyncio
-async def test_optimal_conditions_evaluate_missing_state_fields(mock_sensor: MagicMock) -> None:
+async def test_optimal_conditions_evaluate_missing_state_fields(
+    mock_sensor: MagicMock,
+) -> None:
     """Test async_evaluate early return when state fields are None."""
     strategy = OptimalConditionsEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=MagicMock(return_value=None),
         get_notification_message=MagicMock(return_value="msg"),
@@ -123,7 +131,9 @@ async def test_optimal_conditions_evaluate_success(mock_sensor: MagicMock) -> No
     """Test async_evaluate when all required fields are present."""
     strategy = OptimalConditionsEvaluatorStrategy(
         env_config=mock_sensor.env_config,
-        analyze_trend=AsyncMock(return_value={"trend": "stable", "crossed_threshold": False}),
+        analyze_trend=AsyncMock(
+            return_value={"trend": "stable", "crossed_threshold": False}
+        ),
         get_state=MagicMock(return_value=None),
         get_growspace=MagicMock(return_value=None),
         get_notification_message=MagicMock(return_value="msg"),
@@ -134,5 +144,3 @@ async def test_optimal_conditions_evaluate_success(mock_sensor: MagicMock) -> No
 
     assert isinstance(obs, list)
     assert isinstance(reasons, list)
-
-

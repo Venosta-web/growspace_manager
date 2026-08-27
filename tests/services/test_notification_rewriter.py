@@ -36,7 +36,9 @@ def rewriter(mock_hass: MagicMock) -> AINotificationRewriter:
     return AINotificationRewriter(mock_hass)
 
 
-def _make_converse_result(speech: str | None, error_code: str | None = None) -> MagicMock:
+def _make_converse_result(
+    speech: str | None, error_code: str | None = None
+) -> MagicMock:
     result = MagicMock()
     result.response.error_code = error_code
     result.response.response_type = None
@@ -54,7 +56,9 @@ async def test_async_rewrite_success(rewriter: AINotificationRewriter) -> None:
         new_callable=AsyncMock,
         return_value=_make_converse_result("Ahoy! Test Message Rewrite"),
     ):
-        result = await rewriter.async_rewrite("Original", "Tent", None, AI_SETTINGS_BASE)
+        result = await rewriter.async_rewrite(
+            "Original", "Tent", None, AI_SETTINGS_BASE
+        )
 
     assert result == "Ahoy! Test Message Rewrite"
 
@@ -63,9 +67,7 @@ async def test_async_rewrite_on_cooldown(rewriter: AINotificationRewriter) -> No
     """Test returns original message when on AI rate-limit cooldown."""
     rewriter._ai_cooldown_until = dt_util.utcnow() + timedelta(minutes=10)
 
-    result = await rewriter.async_rewrite(
-        "Original", "Tent", None, AI_SETTINGS_BASE
-    )
+    result = await rewriter.async_rewrite("Original", "Tent", None, AI_SETTINGS_BASE)
 
     assert result == "Original"
 
@@ -81,7 +83,9 @@ async def test_async_rewrite_rate_limit_sets_cooldown(
         new_callable=AsyncMock,
         return_value=mock_result,
     ):
-        result = await rewriter.async_rewrite("Original", "Tent", None, AI_SETTINGS_BASE)
+        result = await rewriter.async_rewrite(
+            "Original", "Tent", None, AI_SETTINGS_BASE
+        )
 
     assert result == "Original"
     assert rewriter._ai_cooldown_until is not None
@@ -91,7 +95,9 @@ async def test_async_rewrite_non_rate_limit_error_no_cooldown(
     rewriter: AINotificationRewriter,
 ) -> None:
     """Test non-rate-limit error logs warning but does not set cooldown."""
-    mock_result = _make_converse_result("Some error occurred", error_code="some_other_error")
+    mock_result = _make_converse_result(
+        "Some error occurred", error_code="some_other_error"
+    )
 
     with (
         patch(
@@ -103,7 +109,9 @@ async def test_async_rewrite_non_rate_limit_error_no_cooldown(
             "custom_components.growspace_manager.notification_rewriter._LOGGER.warning"
         ) as mock_warn,
     ):
-        result = await rewriter.async_rewrite("Original", "Tent", None, AI_SETTINGS_BASE)
+        result = await rewriter.async_rewrite(
+            "Original", "Tent", None, AI_SETTINGS_BASE
+        )
         mock_warn.assert_called()
 
     assert result == "Original"
@@ -124,7 +132,9 @@ async def test_async_rewrite_empty_speech_returns_original(
         new_callable=AsyncMock,
         return_value=mock_result,
     ):
-        result = await rewriter.async_rewrite("Original", "Tent", None, AI_SETTINGS_BASE)
+        result = await rewriter.async_rewrite(
+            "Original", "Tent", None, AI_SETTINGS_BASE
+        )
 
     assert result == "Original"
 
@@ -138,7 +148,9 @@ async def test_async_rewrite_none_result_returns_original(
         new_callable=AsyncMock,
         return_value=None,
     ):
-        result = await rewriter.async_rewrite("Original", "Tent", None, AI_SETTINGS_BASE)
+        result = await rewriter.async_rewrite(
+            "Original", "Tent", None, AI_SETTINGS_BASE
+        )
 
     assert result == "Original"
 
@@ -152,7 +164,9 @@ async def test_async_rewrite_exception_returns_original(
         new_callable=AsyncMock,
         side_effect=ValueError("AI Error"),
     ):
-        result = await rewriter.async_rewrite("Original", "Tent", None, AI_SETTINGS_BASE)
+        result = await rewriter.async_rewrite(
+            "Original", "Tent", None, AI_SETTINGS_BASE
+        )
 
     assert result == "Original"
 
@@ -233,6 +247,8 @@ async def test_async_rewrite_truncation_too_long(
         new_callable=AsyncMock,
         return_value=_make_converse_result(very_long_response),
     ):
-        result = await rewriter.async_rewrite("Original Message", "Tent", None, ai_settings)
+        result = await rewriter.async_rewrite(
+            "Original Message", "Tent", None, ai_settings
+        )
 
     assert result == "Original Message"

@@ -50,30 +50,36 @@ def watering_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     coordinator = create_test_coordinator(hass)
 
     # Manually add a growspace and plant for testing
-    coordinator._data_repository.add_growspace(Growspace(
-        id="test_gs",
-        name="Test Growspace",
-        rows=3,
-        plants_per_row=3,
-    ))
+    coordinator._data_repository.add_growspace(
+        Growspace(
+            id="test_gs",
+            name="Test Growspace",
+            rows=3,
+            plants_per_row=3,
+        )
+    )
 
-    coordinator._data_repository.add_plant(create_plant(
-        plant_id="test_plant",
-        growspace_id="test_gs",
-        strain="Test Strain",
-        phenotype="Phenotype A",
-        row=1,
-        col=1,
-    ))
+    coordinator._data_repository.add_plant(
+        create_plant(
+            plant_id="test_plant",
+            growspace_id="test_gs",
+            strain="Test Strain",
+            phenotype="Phenotype A",
+            row=1,
+            col=1,
+        )
+    )
 
-    coordinator._data_repository.add_plant(create_plant(
-        plant_id="test_plant_2",
-        growspace_id="test_gs",
-        strain="Test Strain 2",
-        phenotype="Phenotype B",
-        row=2,
-        col=1,
-    ))
+    coordinator._data_repository.add_plant(
+        create_plant(
+            plant_id="test_plant_2",
+            growspace_id="test_gs",
+            strain="Test Strain 2",
+            phenotype="Phenotype B",
+            row=2,
+            col=1,
+        )
+    )
 
     return coordinator
 
@@ -170,7 +176,9 @@ class TestAsyncWaterPlant:
         """Test that watering a nonexistent plant raises an error."""
 
         with pytest.raises(PlantNotFoundError):
-            await watering_coordinator.services.plants.water_plant("nonexistent", amount=1.0)
+            await watering_coordinator.services.plants.water_plant(
+                "nonexistent", amount=1.0
+            )
 
 
 class TestAsyncWaterGrowspace:

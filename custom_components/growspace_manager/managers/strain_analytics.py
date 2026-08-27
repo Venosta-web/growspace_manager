@@ -69,17 +69,20 @@ class StrainAnalyticsManager:
                 pheno_meta = {
                     k: v
                     for k, v in pheno_data.items()
-                    if k not in ["harvests", "description", "image_path", "image_crop_meta"]
+                    if k
+                    not in ["harvests", "description", "image_path", "image_crop_meta"]
                 }
                 pheno_analytics[pheno_name] = {**stats, **pheno_meta}
 
             num_strain_harvests = len(strain_harvests)
             if num_strain_harvests:
                 strain_avg_veg = round(
-                    sum(h.get("veg_days", 0) for h in strain_harvests) / num_strain_harvests
+                    sum(h.get("veg_days", 0) for h in strain_harvests)
+                    / num_strain_harvests
                 )
                 strain_avg_flower = round(
-                    sum(h.get("flower_days", 0) for h in strain_harvests) / num_strain_harvests
+                    sum(h.get("flower_days", 0) for h in strain_harvests)
+                    / num_strain_harvests
                 )
             else:
                 strain_avg_veg = 0

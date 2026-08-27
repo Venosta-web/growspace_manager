@@ -60,6 +60,7 @@ def _seedling_standard_state(vpd: float) -> EnvironmentState:
 
 # ── Custom veg override ──────────────────────────────────────────────────────
 
+
 def test_vpd_inside_custom_veg_window_but_outside_default_is_optimal() -> None:
     """VPD 1.1 is outside the default veg window (0.5–0.9) but inside custom (0.5–1.2).
 
@@ -73,7 +74,9 @@ def test_vpd_inside_custom_veg_window_but_outside_default_is_optimal() -> None:
 
     observations, reasons = evaluate_optimal_vpd(state, env_config)
 
-    assert reasons == [], f"VPD 1.1 should be optimal under custom veg override; reasons={reasons}"
+    assert reasons == [], (
+        f"VPD 1.1 should be optimal under custom veg override; reasons={reasons}"
+    )
     assert observations[0] != PROB_VPD_STRESS_OUT_OF_RANGE
 
 
@@ -90,11 +93,14 @@ def test_vpd_inside_default_veg_window_but_outside_custom_is_not_optimal() -> No
 
     observations, reasons = evaluate_optimal_vpd(state, env_config)
 
-    assert len(reasons) == 1, f"VPD 0.8 should be not-optimal under custom narrow window; reasons={reasons}"
+    assert len(reasons) == 1, (
+        f"VPD 0.8 should be not-optimal under custom narrow window; reasons={reasons}"
+    )
     assert observations[0] == PROB_VPD_STRESS_OUT_OF_RANGE
 
 
 # ── No override → default behaviour ─────────────────────────────────────────
+
 
 def test_no_override_uses_default_thresholds_optimal() -> None:
     """Without any override, VPD 0.7 is optimal under veg defaults."""
@@ -113,6 +119,7 @@ def test_no_override_uses_default_thresholds_not_optimal() -> None:
 
 # ── Acclimation stage is never overridden ────────────────────────────────────
 
+
 def test_acclimation_seedling_ignores_seedling_override() -> None:
     """BayesianStage.SEEDLING (acclimation dome) is never overridden.
 
@@ -120,7 +127,10 @@ def test_acclimation_seedling_ignores_seedling_override() -> None:
     override with a high-VPD window (1.0–2.0) must NOT affect this sub-stage.
     """
     overrides = {
-        "seedling": {"day": {"low": 1.0, "high": 2.0}, "night": {"low": 0.9, "high": 1.8}},
+        "seedling": {
+            "day": {"low": 1.0, "high": 2.0},
+            "night": {"low": 0.9, "high": 1.8},
+        },
     }
     env_config = {"vpd_optimal_overrides": overrides}
     state = _seedling_acclimation_state(vpd=0.2)
@@ -134,6 +144,7 @@ def test_acclimation_seedling_ignores_seedling_override() -> None:
 
 # ── SEEDLING_STANDARD uses the override ─────────────────────────────────────
 
+
 def test_seedling_standard_uses_seedling_override() -> None:
     """BayesianStage.SEEDLING_STANDARD (past acclimation) does use the 'seedling' override.
 
@@ -141,7 +152,10 @@ def test_seedling_standard_uses_seedling_override() -> None:
     but inside the custom override (0.9–1.1), so it must be optimal.
     """
     overrides = {
-        "seedling": {"day": {"low": 0.9, "high": 1.1}, "night": {"low": 0.8, "high": 1.0}},
+        "seedling": {
+            "day": {"low": 0.9, "high": 1.1},
+            "night": {"low": 0.8, "high": 1.0},
+        },
     }
     env_config = {"vpd_optimal_overrides": overrides}
     state = _seedling_standard_state(vpd=1.0)

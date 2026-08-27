@@ -1,4 +1,5 @@
 """Pure functions for classifying cannabis cross types from lineage trees."""
+
 from __future__ import annotations
 
 import re
