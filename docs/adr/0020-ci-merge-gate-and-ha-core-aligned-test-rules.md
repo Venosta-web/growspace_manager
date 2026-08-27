@@ -187,3 +187,23 @@ versions are pinned identically for CI and local development in `lint.yaml` and
 `requirements.txt`; the Ruff pre-commit hook carries the matching version as
 well. Any version bump must update those pins together so local and CI verdicts
 remain equivalent.
+
+## Amendment (2026-08-27) — one validation event per change boundary
+
+The lint, test, and HACS/Hassfest workflows validate feature-branch commits on
+`pull_request`, not on their simultaneous `push` event. Their `push` triggers are
+therefore limited to the protected `prerelease`, `dev`, and `main` branches, where
+post-merge and direct-push validation must remain available. Without that branch
+filter, a commit pushed to a same-repository pull request emits both events and
+runs every validation workflow twice.
+
+Each validation workflow has its own concurrency group, keyed by pull-request
+number for PR events and by the unique workflow run ID otherwise. A newer commit
+cancels the superseded run of the same workflow for the same pull request.
+Protected-branch pushes and manual runs are never cancelled by this policy.
+
+Release concurrency remains a separate concern. Stable and prerelease publishing
+use dedicated `stable-publish` and `prerelease-publish` groups with cancellation
+disabled, so validation churn cannot cancel a publishing run. Workflow names and
+job names remain unchanged because the repository ruleset uses those status checks
+as merge gates.
