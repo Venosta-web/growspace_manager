@@ -4,10 +4,12 @@ export_strain_library:
   # No fields required
 
 import_strain_library:
-  description: Import a strain library from a ZIP file containing data and images
+  description: >-
+    Import a strain library from a ZIP file containing data and images
   fields:
     file_path:
-      description: The full path to the ZIP file on the server (e.g. uploaded via Lovelace)
+      description: >-
+        The full path to the ZIP file on the server (e.g. uploaded via Lovelace)
       required: false
       selector:
         text:
@@ -17,7 +19,8 @@ import_strain_library:
       selector:
         text:
     replace:
-      description: If true, overwrite existing library. If false (default), merge.
+      description: >-
+        If true, overwrite existing library. If false (default), merge.
       required: false
       default: false
       selector:
@@ -28,7 +31,9 @@ clear_strain_library:
   # No fields required
 
 get_strain_library:
-  description: Get the full strain library data (for frontend use). Returns a dictionary with the strain library data.
+  description: >-
+    Get the full strain library data (for frontend use). Returns a dictionary
+    with the strain library data.
 
 add_growspace:
   description: Add a new growspace
@@ -75,7 +80,8 @@ ask_grow_advice:
         text:
           multiline: true
     context_type:
-      description: Type of advice context (general, diagnostic, optimization, planning)
+      description: >-
+        Type of advice context (general, diagnostic, optimization, planning)
       required: false
       default: "general"
       selector:
@@ -403,7 +409,8 @@ test_notification:
             - "veg"
             - "flower"
     days:
-      description: Days in stage (will be matched against DEFAULT_NOTIFICATION_EVENTS)
+      description: >-
+        Days in stage (will be matched against DEFAULT_NOTIFICATION_EVENTS)
       required: true
       selector:
         number:
@@ -419,7 +426,9 @@ harvest_plant:
       selector:
         text:
     target_growspace_id:
-      description: Optional target growspace ID (if omitted, auto-move flower→dry_overview, dry→cure_overview)
+      description: >-
+        Optional target growspace ID (if omitted, auto-move flower→dry_overview,
+        dry→cure_overview)
       required: false
       selector:
         text:
@@ -471,7 +480,8 @@ harvest_plant:
           step: 0.1
           unit_of_measurement: "%"
     terpene_profile:
-      description: Terpene profile (free text, e.g. "myrcene, limonene, caryophyllene")
+      description: >-
+        Terpene profile (free text, e.g. "myrcene, limonene, caryophyllene")
       required: false
       selector:
         text:
@@ -485,7 +495,9 @@ take_clone:
       selector:
         text:
     target_growspace_id:
-      description: Optional target growspace ID (if omitted, auto-move flower→dry_overview, dry→cure_overview)
+      description: >-
+        Optional target growspace ID (if omitted, auto-move flower→dry_overview,
+        dry→cure_overview)
       required: false
       selector:
         text:
@@ -547,184 +559,205 @@ configure_environment:
       example: "4x4_tent"
       selector:
         text:
-
-    temperature_sensor:
-      name: Temperature Sensor
-      description: Temperature sensor entity (°C)
-      required: true
-      example: "sensor.4x4_tent_temperature"
-      selector:
+    temperature_sensors:
+      name: Temperature Sensors
+      description: Temperature sensor entities.
+      selector: &sensor_list
         entity:
           domain: sensor
-          device_class: temperature
-
-    humidity_sensor:
-      name: Humidity Sensor
-      description: Humidity sensor entity (%)
-      required: true
-      example: "sensor.4x4_tent_humidity"
-      selector:
-        entity:
-          domain: sensor
-          device_class: humidity
-
-    vpd_sensor:
-      name: VPD Sensor
-      description: VPD sensor entity (kPa)
-      required: true
-      example: "sensor.4x4_tent_vpd"
-      selector:
-        entity:
-          domain: sensor
-
+          multiple: true
+    humidity_sensors:
+      name: Humidity Sensors
+      description: Humidity sensor entities.
+      selector: *sensor_list
+    vpd_sensors:
+      name: VPD Sensors
+      description: VPD sensor entities.
+      selector: *sensor_list
     co2_sensor:
-      name: CO2 Sensor (Optional)
-      description: CO2 sensor entity (ppm)
-      required: false
-      example: "sensor.4x4_tent_co2"
+      name: CO2 Sensor
+      description: Carbon-dioxide sensor entity; clear with an empty value.
       selector:
         entity:
           domain: sensor
-          device_class: carbon_dioxide
-
-    circulation_fan:
-      name: Circulation Fan (Optional)
-      description: Fan entity for mold risk detection
-      required: false
-      example: "fan.4x4_tent_circulation"
-      selector:
-        entity:
-          domain: fan
-
-    stress_threshold:
-      name: Stress Detection Threshold
-      description: Probability threshold for stress detection (0-1)
-      required: false
-      default: 0.70
-      example: 0.70
-      selector:
-        number:
-          min: 0.5
-          max: 0.95
-          step: 0.05
-
-    mold_threshold:
-      name: Mold Risk Threshold
-      description: Probability threshold for mold risk detection (0-1)
-      required: false
-      default: 0.75
-      example: 0.75
-      selector:
-        number:
-          min: 0.5
-          max: 0.95
-          step: 0.05
-
-    light_sensor:
-      name: Light Sensor / Switch
-      description: Sensor or switch indicating if lights are on
-      required: false
+    light_sensors:
+      name: Light Sensors
+      description: Entities indicating the light state.
       selector:
         entity:
           domain: [light, switch, binary_sensor, sensor, input_boolean]
-
-    exhaust_entity:
-      name: Exhaust Fan
-      description: Fan or switch controlling exhaust
-      required: false
-      selector:
-        entity:
-          domain: [fan, switch, input_boolean]
-
-    humidifier_entity:
-      name: Humidifier
-      description: Humidifier device or switch
-      required: false
-      selector:
-        entity:
-          domain: [humidifier, switch, input_boolean]
-
-    dehumidifier_entity:
-      name: Dehumidifier
-      description: Dehumidifier device or switch
-      required: false
-      selector:
-        entity:
-          domain: [humidifier, switch, input_boolean]
-
+          multiple: true
     soil_moisture_sensor:
       name: Soil Moisture Sensor
-      description: Sensor for soil VWC/moisture
-      required: false
+      description: Substrate VWC or moisture sensor entity.
       selector:
         entity:
-          domain: [sensor]
-          device_class: moisture
-
-    control_dehumidifier:
-      name: Control Dehumidifier
-      description: Enable automated control of the dehumidifier
-      required: false
-      default: false
+          domain: sensor
+    soil_moisture_min:
+      name: Soil Moisture Minimum
+      description: Lower bound of the atomic acceptable moisture band.
+      selector: &moisture_bound
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+    soil_moisture_max:
+      name: Soil Moisture Maximum
+      description: Upper bound of the atomic acceptable moisture band.
+      selector: *moisture_bound
+    stress_threshold:
+      name: Stress Detection Threshold
+      description: Probability threshold for stress detection.
+      selector: &probability
+        number:
+          min: 0
+          max: 1
+          step: 0.01
+    mold_threshold:
+      name: Mold Risk Threshold
+      description: Probability threshold for mold-risk detection.
+      selector: *probability
+    control_humidifier:
+      name: Control Humidifier
+      description: Enable automated humidifier control.
       selector:
         boolean:
-
-    sensor_groups:
-      name: Sensor Groups
-      description: List of sensor groups for 3D heatmap
-      required: false
+    control_dehumidifier:
+      name: Control Dehumidifier
+      description: Enable automated dehumidifier control.
       selector:
-        object:
-
-    sensor_coordinates:
-      name: Sensor Coordinates
-      description: Dictionary of sensor coordinates for 3D mapping
-      required: false
+        boolean:
+    exhaust_fan_entities:
+      name: Exhaust Fan Entities
+      description: Exhaust fan, switch, or input-boolean entities.
+      selector: &fan_entities
+        entity:
+          domain: [fan, switch, input_boolean]
+          multiple: true
+    circulation_fan_entities:
+      name: Circulation Fan Entities
+      description: Circulation fan, switch, or input-boolean entities.
+      selector: *fan_entities
+    humidifier_entities:
+      name: Humidifier Entities
+      description: Humidifier actuator entities.
+      selector: &humidity_devices
+        entity:
+          domain: [humidifier, switch, input_boolean]
+          multiple: true
+    dehumidifier_entities:
+      name: Dehumidifier Entities
+      description: Dehumidifier actuator entities.
+      selector: *humidity_devices
+    growlight_entities:
+      name: Grow Light Entities
+      description: Grow-light actuator entities.
       selector:
-        object:
-
-    irrigation_tanks:
-      name: Irrigation Tanks
-      description: Configuration for irrigation tanks
-      required: false
-      selector:
-        object:
+        entity:
+          domain: [light, switch]
+          multiple: true
     exhaust_fan_ac_infinity_devices:
       name: Exhaust Fan AC Infinity Devices
-      description: >-
-        AC Infinity exhaust-fan ports as {mode_entity, speed_entity, on_speed}
-        bundles. Omit to preserve existing devices.
-      required: false
-      selector:
+      description: Exhaust AC Infinity port bundles.
+      selector: &object_list
         object:
+          multiple: true
     circulation_fan_ac_infinity_devices:
       name: Circulation Fan AC Infinity Devices
-      description: >-
-        AC Infinity circulation-fan ports as {mode_entity, speed_entity,
-        on_speed} bundles. Omit to preserve existing devices.
-      required: false
-      selector:
-        object:
+      description: Circulation AC Infinity port bundles.
+      selector: *object_list
     humidifier_ac_infinity_devices:
       name: Humidifier AC Infinity Devices
-      description: >-
-        AC Infinity humidifier ports as {mode_entity, speed_entity, on_speed}
-        bundles. Omit to preserve existing devices.
-      required: false
-      selector:
-        object:
+      description: Humidifier AC Infinity port bundles.
+      selector: *object_list
     dehumidifier_ac_infinity_devices:
       name: Dehumidifier AC Infinity Devices
-      description: >-
-        AC Infinity dehumidifier ports as {mode_entity, speed_entity, on_speed}
-        bundles. Omit to preserve existing devices.
-      required: false
-      selector:
+      description: Dehumidifier AC Infinity port bundles.
+      selector: *object_list
+    growlight_ac_infinity_devices:
+      name: Grow Light AC Infinity Devices
+      description: Grow-light AC Infinity configurator bundles.
+      selector: *object_list
+    humidifier_thresholds:
+      name: Humidifier Thresholds
+      description: Stage and day/night humidifier threshold table.
+      selector: &object_value
         object:
+    dehumidifier_thresholds:
+      name: Dehumidifier Thresholds
+      description: Stage and day/night dehumidifier threshold table.
+      selector: *object_value
+    sensor_groups:
+      name: Sensor Groups
+      description: Sensor groups used by the spatial heatmap.
+      selector: *object_list
+    sensor_coordinates:
+      name: Sensor Coordinates
+      description: Sensor-coordinate mapping used by the spatial heatmap.
+      selector: *object_value
+    irrigation_tanks:
+      name: Irrigation Tanks
+      description: Irrigation Tank Config entries.
+      selector: *object_list
+    circulation_fan_config:
+      name: Circulation Fan Config
+      description: Complete circulation-fan controller sub-config.
+      selector: *object_value
+    growlight_config:
+      name: Grow Light Config
+      description: Complete grow-light controller sub-config.
+      selector: *object_value
+    vpd_optimal_overrides:
+      name: Optimal VPD Overrides
+      description: Per-stage day/night optimal VPD bands.
+      selector: *object_value
+    substrate_temperature_sensors:
+      name: Substrate Temperature Sensors
+      description: Substrate temperature sensor entities.
+      selector: *sensor_list
+    ph_sensors:
+      name: pH Sensors
+      description: pH sensor entities.
+      selector: *sensor_list
+    feed_ec_sensors:
+      name: Feed EC Sensors
+      description: Feed EC sensor entities.
+      selector: *sensor_list
+    bulk_ec_sensors:
+      name: Bulk EC Sensors
+      description: Bulk EC sensor entities.
+      selector: *sensor_list
+    pore_ec_sensors:
+      name: Pore EC Sensors
+      description: Pore EC sensor entities.
+      selector: *sensor_list
+    runoff_ec_sensors:
+      name: Runoff EC Sensors
+      description: Runoff EC sensor entities.
+      selector: *sensor_list
+    drain_volume_sensors:
+      name: Drain Volume Sensors
+      description: Drain volume sensor entities.
+      selector: *sensor_list
+    irrigation_flow_sensors:
+      name: Irrigation Flow Sensors
+      description: Irrigation flow sensor entities.
+      selector: *sensor_list
+    power_sensors:
+      name: Power Sensors
+      description: Power sensor entities.
+      selector: *sensor_list
+    energy_sensors:
+      name: Energy Sensors
+      description: Energy sensor entities.
+      selector: *sensor_list
+    lung_room_temp_sensors:
+      name: Lung Room Temperature Sensors
+      description: Source-air temperature sensor entities.
+      selector: *sensor_list
     camera_entities:
       name: Camera Entities
       description: Cameras used for snapshots and Vision Checkups.
-      required: false
       selector:
         entity:
           domain: camera
@@ -732,13 +765,28 @@ configure_environment:
     snapshot_interval_hours:
       name: Snapshot Interval
       description: Hours between scheduled camera snapshots.
-      required: false
       selector:
         number:
           min: 1
           max: 168
           step: 1
           unit_of_measurement: h
+    electricity_cost_per_kwh:
+      name: Electricity Cost per kWh
+      description: Local electricity cost per kilowatt-hour.
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          mode: box
+    lst_offset:
+      name: Leaf Surface Temperature Offset
+      description: Leaf-to-air temperature offset used for VPD calculation.
+      selector:
+        number:
+          min: -10
+          max: 10
+          step: 0.1
 
 remove_environment:
   description: Remove environment configuration for a growspace
@@ -831,7 +879,8 @@ configure_exhaust_fan:
           step: 0.01
           unit_of_measurement: kPa
     stage_vpd_enabled:
-      description: Resolve the VPD target from the active plant stage and day/night
+      description: >-
+        Resolve the VPD target from the active plant stage and day/night
       required: false
       selector:
         boolean:
@@ -841,7 +890,8 @@ configure_exhaust_fan:
       selector:
         object:
     critical_temp_low:
-      description: Low-temperature safety threshold (drives fan to minimum speed)
+      description: >-
+        Low-temperature safety threshold (drives fan to minimum speed)
       required: false
       selector:
         number:
@@ -850,7 +900,8 @@ configure_exhaust_fan:
           step: 0.1
           unit_of_measurement: "°C"
     critical_temp_high:
-      description: High-temperature safety threshold (drives fan to maximum speed)
+      description: >-
+        High-temperature safety threshold (drives fan to maximum speed)
       required: false
       selector:
         number:
@@ -859,7 +910,8 @@ configure_exhaust_fan:
           step: 0.1
           unit_of_measurement: "°C"
     critical_temp_hysteresis:
-      description: Hysteresis applied before clearing a temperature safety override
+      description: >-
+        Hysteresis applied before clearing a temperature safety override
       required: true
       selector:
         number:
@@ -935,7 +987,8 @@ add_strain:
       selector:
         object:
     images:
-      description: Full image gallery (list of {path, crop_meta, is_thumbnail} dicts)
+      description: >-
+        Full image gallery (list of {path, crop_meta, is_thumbnail} dicts)
       required: false
       selector:
         object:
@@ -1026,7 +1079,8 @@ update_strain_meta:
       selector:
         object:
     images:
-      description: Full image gallery (list of {path, crop_meta, is_thumbnail} dicts)
+      description: >-
+        Full image gallery (list of {path, crop_meta, is_thumbnail} dicts)
       required: false
       selector:
         object:
@@ -1107,7 +1161,8 @@ debug_reset_special_growspaces:
         boolean:
 
 analyze_all_growspaces:
-  description: Analyze all growspaces and provide a comprehensive facility report
+  description: >-
+    Analyze all growspaces and provide a comprehensive facility report
   fields:
     max_length:
       description: Maximum length for the response
@@ -1123,7 +1178,9 @@ strain_recommendation:
     Returns strain recommendations with reasoning.
   fields:
     preferences:
-      description: 'Your preferences (as key-value pairs, e.g., {"grow_time": "fast", "yield": "high"})'
+      description: >-
+        Your preferences (as key-value pairs, e.g., {"grow_time": "fast",
+        "yield": "high"})
       required: false
       selector:
         object:
@@ -1133,7 +1190,9 @@ strain_recommendation:
       selector:
         text:
     user_query:
-      description: Natural language query describing what you are looking for (e.g., "something fruity for daytime")
+      description: >-
+        Natural language query describing what you are looking for (e.g.,
+        "something fruity for daytime")
       required: false
       selector:
         text:
@@ -1212,7 +1271,8 @@ set_irrigation_strategy:
           min: 0
           unit_of_measurement: "minutes"
     p2_shot_duration_seconds:
-      description: Duration of a single P2 (maintenance) irrigation shot in seconds.
+      description: >-
+        Duration of a single P2 (maintenance) irrigation shot in seconds.
       required: false
       selector:
         number:
@@ -1226,14 +1286,16 @@ set_irrigation_strategy:
           min: 0
           unit_of_measurement: "minutes"
     shot_duration_seconds:
-      description: Deprecated. Shared shot duration in seconds; sets both P1 and P2.
+      description: >-
+        Deprecated. Shared shot duration in seconds; sets both P1 and P2.
       required: false
       selector:
         number:
           min: 0
           unit_of_measurement: "seconds"
     shot_interval_minutes:
-      description: Deprecated. Shared shot interval in minutes; sets both P1 and P2.
+      description: >-
+        Deprecated. Shared shot interval in minutes; sets both P1 and P2.
       required: false
       selector:
         number:
@@ -1562,7 +1624,8 @@ print_label:
       selector:
         boolean:
     base_url:
-      description: Base URL for QR code (defaults to Home Assistant external URL)
+      description: >-
+        Base URL for QR code (defaults to Home Assistant external URL)
       required: false
       selector:
         text:
@@ -1767,7 +1830,8 @@ configure_drain_monitoring:
       selector:
         boolean:
     max_ec_delta:
-      description: Maximum allowed EC difference (drain - feed) before alert (mS/cm)
+      description: >-
+        Maximum allowed EC difference (drain - feed) before alert (mS/cm)
       required: false
       selector:
         number:
@@ -1790,7 +1854,8 @@ reset_plant_last_watered:
     automations or user-facing dashboards.
   fields:
     plant_id:
-      description: The ID of the plant whose last_watered timestamp should be cleared.
+      description: >-
+        The ID of the plant whose last_watered timestamp should be cleared.
       required: true
       selector:
         text:
@@ -1819,8 +1884,9 @@ save_ec_ramp_curve:
         text:
     points:
       description: >
-        List of EC target points, each with week (int), ec_min (float), ec_max (float).
-        Example: [{week: 1, ec_min: 1.2, ec_max: 1.6}, {week: 2, ec_min: 1.4, ec_max: 1.8}]
+        List of EC target points, each with week (int), ec_min (float), ec_max
+        (float). Example: [{week: 1, ec_min: 1.2, ec_max: 1.6},
+        {week: 2, ec_min: 1.4, ec_max: 1.8}]
       required: true
       selector:
         object:
