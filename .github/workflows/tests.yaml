@@ -38,14 +38,7 @@ jobs:
         with:
           python-version: "3.14"
           cache: "pip"
-      - name: Cache pip
-        uses: actions/cache@v5.0.5
-        with:
-          path: ~/.cache/pip
-          # The cache key depends on the OS and the contents of requirements.txt
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          cache-dependency-path: requirements.txt
       - name: update pip
         run: python -m pip install --upgrade pip setuptools wheel
       # Two-phase install so every Home-Assistant-owned dependency resolves to

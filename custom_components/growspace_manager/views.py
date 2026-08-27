@@ -103,7 +103,7 @@ class StrainLibraryUploadView(HomeAssistantView):
 
             return self.json({"success": True, "imported_count": count})
 
-        except Exception as err:  # pylint: disable=broad-except
+        except Exception as err:
             _LOGGER.exception("Error processing strain library upload")
             return self.json({"success": False, "error": str(err)})
 
