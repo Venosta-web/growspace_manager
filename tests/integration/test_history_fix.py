@@ -51,7 +51,7 @@ async def test_websocket_history_handles_dicts(hass: HomeAssistant):
 
         result = await websocket_get_history_stats(hass, MagicMock(), msg)
 
-        # If it fails with AttributeError, send_result wont be called (validation)
+        # If it fails with AttributeError, send_result won't be called (validation)
         # or it will raise uncaught exception depending on test harness.
         # But our code catches Exception and sends error usually?
         # Wait, the logs showed "Error handling websocket_get_history_stats" AND Traceback.
