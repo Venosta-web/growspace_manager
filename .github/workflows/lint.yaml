@@ -1,9 +1,23 @@
 name: Lint
 
 on:
+  # Feature branches are validated by pull_request. Restrict push validation to
+  # protected branches so a same-repository PR commit does not run twice.
   push:
+    branches:
+      - prerelease
+      - dev
+      - main
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  # Cancel only an older run for this workflow and this PR. Push and manual
+  # runs keep their branch/ref group and are never cancelled here.
+  group: >-
+    validation-${{ github.workflow }}-${{ github.event_name }}-${{
+    github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ruff:
