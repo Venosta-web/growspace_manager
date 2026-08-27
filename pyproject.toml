@@ -449,12 +449,16 @@ max-line-length-suggestions = 72
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = [".git", "testing_config"]
+pythonpath = ["."]
+addopts = "-p syrupy"
 log_format = "%(asctime)s.%(msecs)03d %(levelname)-8s %(threadName)s %(name)s:%(filename)s:%(lineno)s %(message)s"
 log_date_format = "%Y-%m-%d %H:%M:%S"
 asyncio_debug = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
+  "error",
+  "ignore::aiohttp.web_exceptions.NotAppKeyWarning",
   "error::sqlalchemy.exc.SAWarning",
   "error:usefixtures\\(\\) in .* without arguments has no effect:UserWarning", # pytest
 
@@ -639,7 +643,11 @@ filterwarnings = [
 ]
 
 [tool.coverage.run]
-source = ["homeassistant"]
+source = ["custom_components/growspace_manager"]
+omit = [
+  "tests/*",
+  "custom_components/growspace_manager/translations/*",
+]
 
 [tool.coverage.report]
 exclude_lines = [
