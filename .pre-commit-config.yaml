@@ -1,3 +1,4 @@
+---
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.12
@@ -38,6 +39,7 @@ repos:
           - --branch=main
           - --branch=dev
   - repo: https://github.com/adrienverge/yamllint.git
+    # Keep this revision aligned with the yamllint pin in requirements.txt.
     rev: v1.37.1
     hooks:
       - id: yamllint

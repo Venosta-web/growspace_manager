@@ -52,11 +52,11 @@ home-assistant-intents==2026.7.30
 syrupy>=5.0.0
 
 # Local dev tooling — CI installs separate copies using matching pins in
-# lint.yaml. Keep both versions synchronized so local checks agree with the
-# gate, and move the Ruff pre-commit rev with any Ruff version bump.
+# lint.yaml. Keep versions synchronized so local checks agree with the gate.
+# Move the corresponding pre-commit rev with any Ruff or yamllint version bump.
 ruff==0.15.12
 mypy==1.20.2
 pre-commit==4.6.2
 pylint
-yamllint
+yamllint==1.37.1
 codespell

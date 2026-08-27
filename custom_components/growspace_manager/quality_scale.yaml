@@ -2,6 +2,7 @@
 # Integration Target: Gold
 # Last Updated: 2026-01-14
 
+---
 # =============================================================================
 # BRONZE TIER
 # =============================================================================
@@ -54,7 +55,9 @@ docs-high-level-description:
 
 docs-installation-instructions:
   status: done
-  comment: The documentation provides step-by-step installation instructions for the integration, including, if needed, prerequisites
+  comment: >-
+    The documentation provides step-by-step installation instructions for the
+    integration, including, if needed, prerequisites
 
 docs-removal-instructions:
   status: done

@@ -1,6 +1,7 @@
+---
 name: HACS/HASS
 
-on:
+"on":
   # Feature branches are validated by pull_request. Restrict push validation to
   # protected branches so a same-repository PR commit does not run twice.
   push:
