@@ -12,11 +12,20 @@ repos:
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=aiport,astroid,checkin,currenty,hass,iif,incomfort,lookin,nam,NotIn,tage,trough
-          - --skip="./.*,*.csv,*.json,*.ambr"
+          - --ignore-words-list=hass,tage,trough
           - --quiet-level=2
-        exclude_types: [csv, json, html]
-        exclude: ^tests/fixtures/
+        # These are tracked for tests or debugging, but are not first-party
+        # prose:
+        # captured SeedFinder HTML, generated Ruff output, copied card bundles,
+        # and generated Syrupy snapshots. Keep authored dotfiles and data files
+        # in scope so `--all-files` remains a repository-wide check.
+        exclude: >-
+          (?x)^(
+            custom_components/growspace_manager/
+            (ruff_output\.txt|search_results\.html)
+            |tests/[^/]+/configs/www/growspace-manager-card\.js
+            |tests/.+/snapshots/.+\.ambr
+          )$
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
