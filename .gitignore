@@ -45,6 +45,9 @@ htmlcov/
 nosetests.xml
 coverage.xml
 coverage*.txt
+backend_coverage*.txt
+COVERAGE*.txt
+COVERAGE_REPORT.md
 *.cover
 .pytest_cache/
 .hypothesis/
