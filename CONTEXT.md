@@ -505,6 +505,9 @@ The per-field classification row, declared once beside `EnvironmentConfig` in `m
 **Environment Patch Verdict**
 The value `apply_environment_patch` returns, in the [[Cycle Verdict]] mould: a fresh `EnvironmentConfig` (inputs never mutated), `changed_fields` (by value comparison — a patch restating current values changes nothing and restarts nothing), `controllers_to_restart` (derived behind the seam from a field→controller relevance table), `exhaust_repair_relevant`, a pure-formatted `summary` for the logbook, and the builder's drop-warnings. The verdict records the decision; the commit shell performs the effects.
 
+**Environment Action Metadata**
+The curated Home Assistant presentation of canonical `configure_environment` fields. Compatibility aliases remain accepted by the action adapter but are not part of this preferred interface, and omission never acquires a metadata default.
+
 The growspace store is the **single source of truth** for `environment_config`. Per-growspace environment blobs in `config_entry.options` are legacy — no current writer produces them; on load one is adopted only when the store has no environment config for that growspace (one-time migration), then deleted. `storage_manager` no longer re-applies options over the store on every restart (the mechanism that silently reverted service-made environment edits).
 
 ## Drying Thresholds (Constants)
