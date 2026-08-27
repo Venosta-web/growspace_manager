@@ -136,5 +136,7 @@ uv.lock
 tests/core/snapshots/
 tests/integration/snapshots/*
 custom_components/growspace_manager/ruff_check_full.txt
+custom_components/growspace_manager/ruff*.txt
+custom_components/growspace_manager/search_results*.html
 
 scratch/
