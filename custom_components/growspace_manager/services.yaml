@@ -1,3 +1,4 @@
+---
 export_strain_library:
   description: Export the strain library and images to a ZIP file
   # No fields required
@@ -195,7 +196,7 @@ add_plants:
           min: 1
           max: 100
     start_number:
-      description: Starting number for phenotype suffix (e.g. 1 for "Strain #1")
+      description: 'Starting number for phenotype suffix (e.g. 1 for "Strain #1")'
       required: false
       default: 1
       selector:
@@ -1309,9 +1310,8 @@ set_irrigation_strategy:
         boolean:
     dynamic_aggressiveness:
       description: >-
-        Overshoot correction strength. Higher values shrink the shot and
-        lengthen the interval more sharply when a shot overshoots the VWC
-        target.
+        Overshoot correction strength. Higher values shrink the shot and lengthen
+        the interval more sharply when a shot overshoots the VWC target.
       required: false
       selector:
         number:
@@ -1320,8 +1320,8 @@ set_irrigation_strategy:
           step: 0.1
     dynamic_recovery:
       description: >-
-        Undershoot recovery rate. How quickly the size and interval factors
-        return to nominal when shots meet or fall short of target.
+        Undershoot recovery rate. How quickly the size and interval factors return
+        to nominal when shots meet or fall short of target.
       required: false
       selector:
         number:
@@ -1340,8 +1340,8 @@ set_irrigation_strategy:
           step: 0.05
     dynamic_interval_ceiling:
       description: >-
-        Upper clamp on the interval factor — the largest multiple of the
-        configured shot interval adaptation may apply.
+        Upper clamp on the interval factor — the largest multiple of the configured
+        shot interval adaptation may apply.
       required: false
       selector:
         number:
@@ -1368,8 +1368,8 @@ set_irrigation_strategy:
           step: 0.1
     ec_modulation_enabled:
       description: >-
-        Opt-in toggle for EC Modulation. When off (or the band/sensors are
-        absent), the modulation factor is exactly 1.0.
+        Opt-in toggle for EC Modulation. When off (or the band/sensors are absent),
+        the modulation factor is exactly 1.0.
       required: false
       selector:
         boolean:
