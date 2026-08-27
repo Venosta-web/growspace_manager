@@ -240,7 +240,11 @@ async def test_base_step_routes_based_on_regulation_mode(
     """Base step routes to correct sub-step based on selected regulation mode."""
     flow = _make_flow()
 
-    setattr(flow, expected_step_call, AsyncMock(return_value={"type": "form", "step_id": expected_step_call}))
+    setattr(
+        flow,
+        expected_step_call,
+        AsyncMock(return_value={"type": "form", "step_id": expected_step_call}),
+    )
 
     handler = FanControllerHandler(flow)
     result = await handler.async_step_configure_fan_controller(
@@ -260,8 +264,14 @@ async def test_base_step_routes_based_on_regulation_mode(
     ("step_method_name", "step_user_input"),
     [
         ("async_step_configure_fan_vpd", {"vpd_target": 1.1, "vpd_tolerance": 0.1}),
-        ("async_step_configure_fan_humidity", {"humidity_target": 55.0, "humidity_tolerance": 4.0}),
-        ("async_step_configure_fan_temperature", {"temperature_target": 24.0, "temperature_tolerance": 1.5}),
+        (
+            "async_step_configure_fan_humidity",
+            {"humidity_target": 55.0, "humidity_tolerance": 4.0},
+        ),
+        (
+            "async_step_configure_fan_temperature",
+            {"temperature_target": 24.0, "temperature_tolerance": 1.5},
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -282,8 +292,12 @@ async def test_sub_steps_route_based_on_wind(
     flow = _make_flow()
     flow.fan_config_step1 = {"wind_enabled": wind_enabled}
 
-    flow.async_step_configure_fan_wind = AsyncMock(return_value={"type": "form", "step_id": "configure_fan_wind"})
-    flow.async_step_configure_sensor_placement = AsyncMock(return_value={"type": "form", "step_id": "configure_sensor_placement"})
+    flow.async_step_configure_fan_wind = AsyncMock(
+        return_value={"type": "form", "step_id": "configure_fan_wind"}
+    )
+    flow.async_step_configure_sensor_placement = AsyncMock(
+        return_value={"type": "form", "step_id": "configure_sensor_placement"}
+    )
 
     handler = FanControllerHandler(flow)
     method = getattr(handler, step_method_name)
@@ -353,7 +367,9 @@ async def test_save_fan_config_uses_defaults() -> None:
 async def test_fan_step_handles_missing_environment_config() -> None:
     """Step methods handle growspace environment_config being None."""
     flow = _make_flow()
-    growspace = flow.config_entry.runtime_data.services.growspaces.get_growspace.return_value
+    growspace = (
+        flow.config_entry.runtime_data.services.growspaces.get_growspace.return_value
+    )
     growspace.environment_config = None
 
     handler = FanControllerHandler(flow)
@@ -361,4 +377,3 @@ async def test_fan_step_handles_missing_environment_config() -> None:
 
     assert result["type"] == "form"
     assert result["step_id"] == "configure_fan_controller"
-

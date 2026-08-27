@@ -33,7 +33,8 @@ async def async_get_config_entry_diagnostics(
             "mode": getattr(coord, "mode", None),
         }
         for gs_id in coordinator.growspaces
-        if (coord := coordinator.services.growspaces.get_irrigation_coordinator(gs_id)) is not None
+        if (coord := coordinator.services.growspaces.get_irrigation_coordinator(gs_id))
+        is not None
     }
 
     dehumidifier_states = {
@@ -42,7 +43,10 @@ async def async_get_config_entry_diagnostics(
             "target_vpd": getattr(coord, "_target_vpd", None),
         }
         for gs_id in coordinator.growspaces
-        if (coord := coordinator.services.growspaces.get_dehumidifier_coordinator(gs_id)) is not None
+        if (
+            coord := coordinator.services.growspaces.get_dehumidifier_coordinator(gs_id)
+        )
+        is not None
     }
 
     return {
@@ -51,7 +55,9 @@ async def async_get_config_entry_diagnostics(
         "system_stats": {
             "growspace_count": len(coordinator.growspaces),
             "plant_count": len(coordinator.plants),
-            "strain_library_count": len(coordinator.services.config.strain_library.get_all())
+            "strain_library_count": len(
+                coordinator.services.config.strain_library.get_all()
+            )
             if coordinator.services.config.strain_library
             else 0,
         },

@@ -99,7 +99,7 @@ def test_growspace_pre_deserialize_sanitization_failures():
         "name": "GS1",
         "irrigation_config": {
             "irrigation_times": [{"time": "08:00", "duration": "invalid"}]
-        }
+        },
     }
     sanitized = Growspace.__pre_deserialize__(data)
     assert sanitized["irrigation_config"]["irrigation_times"][0]["duration"] == 60
@@ -110,8 +110,8 @@ def test_growspace_pre_deserialize_sanitization_failures():
         "name": "GS1",
         "irrigation_strategy": {
             "p0_duration_minutes": "not_an_int",
-            "shot_duration_seconds": "invalid"  # Added another one for coverage
-        }
+            "shot_duration_seconds": "invalid",  # Added another one for coverage
+        },
     }
     sanitized = Growspace.__pre_deserialize__(data)
     # The invalid field should be deleted from the dict
@@ -119,10 +119,6 @@ def test_growspace_pre_deserialize_sanitization_failures():
     assert "shot_duration_seconds" not in sanitized["irrigation_strategy"]
 
     # Test invalid rows/plants_per_row (Line 598)
-    data = {
-        "id": "gs1",
-        "name": "GS1",
-        "rows": "invalid"
-    }
+    data = {"id": "gs1", "name": "GS1", "rows": "invalid"}
     sanitized = Growspace.__pre_deserialize__(data)
     assert sanitized["rows"] == 3

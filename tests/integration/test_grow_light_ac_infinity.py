@@ -131,7 +131,7 @@ async def test_schedule_matches_when_device_already_holds_it(
         {"time.port_off": "20:00:00"},  # off-time drifted (e.g. missed flip)
         {"number.port_power": "8.0"},  # power drifted
         {"select.port_mode": None},  # entity unavailable
-        {"number.port_power": "unknown"},  # unparseable power
+        {"number.port_power": "unknown"},  # unparsable power
     ],
 )
 async def test_schedule_mismatch_requires_push(
@@ -291,9 +291,7 @@ async def test_schedule_matches_when_sunrise_disabled_and_switch_off(
         ac_infinity_schedule_matches,
     )
 
-    _hass_with_states(
-        mock_hass, _matching_states() | {"switch.port_sunrise": "off"}
-    )
+    _hass_with_states(mock_hass, _matching_states() | {"switch.port_sunrise": "off"})
     assert (
         ac_infinity_schedule_matches(
             mock_hass,

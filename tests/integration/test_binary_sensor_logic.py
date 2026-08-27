@@ -26,7 +26,6 @@ from homeassistant.core import HomeAssistant
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
 
-
 def create_test_sensor(
     coordinator: MagicMock,
     growspace_id: str,
@@ -51,6 +50,7 @@ def create_test_sensor(
         get_plants=coordinator.get_growspace_plants,
         add_event=coordinator.add_event,
     )
+
 
 @pytest.fixture
 def mock_coordinator():

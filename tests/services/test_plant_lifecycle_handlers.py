@@ -27,7 +27,9 @@ def coordinator() -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_transition_plant_stage_delegates_to_facade(coordinator: MagicMock) -> None:
+async def test_transition_plant_stage_delegates_to_facade(
+    coordinator: MagicMock,
+) -> None:
     """Handler passes plant_id and new_stage to the facade."""
     coordinator.plants["p1"] = MagicMock()
     call = MagicMock()
@@ -43,7 +45,9 @@ async def test_transition_plant_stage_delegates_to_facade(coordinator: MagicMock
 
 
 @pytest.mark.asyncio
-async def test_transition_plant_stage_raises_when_plant_missing(coordinator: MagicMock) -> None:
+async def test_transition_plant_stage_raises_when_plant_missing(
+    coordinator: MagicMock,
+) -> None:
     """Handler raises ServiceValidationError when plant_id is not in coordinator."""
     call = MagicMock()
     call.data = {ATTR_PLANT_ID: "ghost", ATTR_NEW_STAGE: "flower"}
@@ -76,7 +80,9 @@ async def test_harvest_plant_delegates_to_facade(coordinator: MagicMock) -> None
 
 
 @pytest.mark.asyncio
-async def test_harvest_plant_raises_when_plant_id_missing(coordinator: MagicMock) -> None:
+async def test_harvest_plant_raises_when_plant_id_missing(
+    coordinator: MagicMock,
+) -> None:
     """Harvest handler raises when plant_id field is absent from call data."""
     call = MagicMock()
     call.data = {}

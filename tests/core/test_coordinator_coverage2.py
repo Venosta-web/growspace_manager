@@ -83,7 +83,6 @@ async def test_plants_property(hass: HomeAssistant) -> None:
 # =============================================================================
 
 
-
 @pytest.mark.asyncio
 async def test_get_for_service_call(hass: HomeAssistant) -> None:
     """Test the get_for_service_call static method (line 132)."""
@@ -441,9 +440,7 @@ async def test_async_water_plant(hass: HomeAssistant) -> None:
     """Test async_water_plant delegates to WateringService (line 1102)."""
     coordinator = create_test_coordinator(hass)
     mock_result = MagicMock()
-    coordinator.watering_service.async_water_plant = AsyncMock(
-        return_value=mock_result
-    )
+    coordinator.watering_service.async_water_plant = AsyncMock(return_value=mock_result)
 
     result = await coordinator.services.plants.water_plant("plant_1", 500.0)
 

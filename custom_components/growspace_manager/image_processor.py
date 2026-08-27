@@ -100,7 +100,9 @@ class GrowspaceImageProcessor:
         try:
             img: Image.Image = Image.open(io.BytesIO(image_bytes))
         except Exception as exc:
-            raise ValueError(f"Could not decode the supplied image bytes: {exc}") from exc
+            raise ValueError(
+                f"Could not decode the supplied image bytes: {exc}"
+            ) from exc
 
         if img.mode != "RGB":
             img = img.convert("RGB")

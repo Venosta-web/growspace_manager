@@ -56,6 +56,5 @@ def test_no_external_access_to_coordinator_internals() -> None:
 
     assert not offenders, (
         "Coordinator internals must be reached through coordinator.services.* "
-        "(see CONTEXT.md 'Seam Enforcement'). Offending lines:\n"
-        + "\n".join(offenders)
+        "(see CONTEXT.md 'Seam Enforcement'). Offending lines:\n" + "\n".join(offenders)
     )

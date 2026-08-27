@@ -41,7 +41,9 @@ async def handle_water_plant(
         nutrients: dict[str, float] | None = call.data.get("nutrients")
         preset_id: str | None = call.data.get("preset_id")
 
-        await coordinator.services.plants.water_plant(plant_id, amount, nutrients, preset_id)
+        await coordinator.services.plants.water_plant(
+            plant_id, amount, nutrients, preset_id
+        )
 
         _LOGGER.info(
             "Service water_plant completed for plant %s with %sL",

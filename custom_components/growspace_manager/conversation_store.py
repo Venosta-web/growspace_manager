@@ -34,7 +34,9 @@ class ConversationStore:
         """Load persisted threads into memory."""
         raw = await self._store.async_load() or {}
         self._data = raw.get("threads_by_growspace", {})
-        _LOGGER.debug("Loaded conversation threads for %d growspace(s)", len(self._data))
+        _LOGGER.debug(
+            "Loaded conversation threads for %d growspace(s)", len(self._data)
+        )
 
     def get_threads(self, growspace_id: str) -> list[dict[str, Any]]:
         """Return the thread list for *growspace_id* (empty list if none)."""

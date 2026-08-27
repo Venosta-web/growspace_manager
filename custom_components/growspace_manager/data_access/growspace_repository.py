@@ -106,9 +106,7 @@ class GrowspaceRepository:
 
     def get_growspace_options(self) -> dict[str, str]:
         """Return growspaces as {id: name} for dropdown selection."""
-        return {
-            gs.id: getattr(gs, "name", gs.id) for gs in self._growspaces.values()
-        }
+        return {gs.id: getattr(gs, "name", gs.id) for gs in self._growspaces.values()}
 
     def get_sorted_growspace_options(self) -> list[tuple[str, str]]:
         """Return a sorted list of (id, name) tuples for dropdown selection."""

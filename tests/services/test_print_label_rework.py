@@ -56,6 +56,7 @@ def _niimbot_density(mock_hass: MagicMock) -> int:
 # Tracer bullet: logo field
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_logo_excluded_when_fields_logo_false(
     mock_hass: MagicMock,
@@ -67,11 +68,13 @@ async def test_logo_excluded_when_fields_logo_false(
         "custom_components.growspace_manager.services.strain_library.get_url",
         return_value="http://ha.local",
     ):
-        call = _make_call({
-            "strain": "Vitamin Z",
-            "breeder_logo": "data:image/png;base64,abc",
-            "fields": {"logo": False},
-        })
+        call = _make_call(
+            {
+                "strain": "Vitamin Z",
+                "breeder_logo": "data:image/png;base64,abc",
+                "fields": {"logo": False},
+            }
+        )
         await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
 
     payload = _niimbot_payload(mock_hass)
@@ -82,6 +85,7 @@ async def test_logo_excluded_when_fields_logo_false(
 # ---------------------------------------------------------------------------
 # Field visibility: QR code
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_qr_excluded_when_fields_qr_false(
@@ -133,6 +137,7 @@ async def test_qr_included_by_default_when_plant_id_present(
 # Field visibility: multiline info rows (phenotype, breeder, lineage)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_phenotype_excluded_from_multiline_when_fields_phenotype_false(
     mock_hass: MagicMock,
@@ -144,11 +149,13 @@ async def test_phenotype_excluded_from_multiline_when_fields_phenotype_false(
         "custom_components.growspace_manager.services.strain_library.get_url",
         return_value="http://ha.local",
     ):
-        call = _make_call({
-            "strain": "Vitamin Z",
-            "phenotype": "S1",
-            "fields": {"phenotype": False},
-        })
+        call = _make_call(
+            {
+                "strain": "Vitamin Z",
+                "phenotype": "S1",
+                "fields": {"phenotype": False},
+            }
+        )
         await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
 
     payload = _niimbot_payload(mock_hass)
@@ -171,10 +178,12 @@ async def test_logo_included_by_default_when_breeder_logo_present(
         "custom_components.growspace_manager.services.strain_library.get_url",
         return_value="http://ha.local",
     ):
-        call = _make_call({
-            "strain": "Vitamin Z",
-            "breeder_logo": "data:image/png;base64,abc",
-        })
+        call = _make_call(
+            {
+                "strain": "Vitamin Z",
+                "breeder_logo": "data:image/png;base64,abc",
+            }
+        )
         await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
 
     payload = _niimbot_payload(mock_hass)
@@ -184,6 +193,7 @@ async def test_logo_included_by_default_when_breeder_logo_present(
 # ---------------------------------------------------------------------------
 # Density mapping
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_density_low_maps_to_3(
@@ -252,6 +262,7 @@ async def test_density_defaults_to_5_when_absent(
 # ---------------------------------------------------------------------------
 # QR target URL
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_qr_target_web_uses_ha_base_url(

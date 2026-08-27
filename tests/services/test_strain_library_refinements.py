@@ -16,6 +16,7 @@ def mock_hass():
     hass.async_add_executor_job = AsyncMock(side_effect=lambda f, *args: f(*args))
     return hass
 
+
 @pytest.fixture
 def mock_image_manager():
     """Fixture for a mock ImageManager."""
@@ -26,6 +27,7 @@ def mock_image_manager():
     manager.async_setup = AsyncMock()
     return manager
 
+
 @pytest.fixture
 def mock_import_export_manager():
     """Fixture for a mock ImportExportManager."""
@@ -33,6 +35,7 @@ def mock_import_export_manager():
     manager.export_library = AsyncMock(return_value="/path/to/export.zip")
     manager.import_library = AsyncMock(return_value={})
     return manager
+
 
 @pytest.fixture
 async def strain_library(mock_hass, mock_image_manager, mock_import_export_manager):
@@ -43,14 +46,24 @@ async def strain_library(mock_hass, mock_image_manager, mock_import_export_manag
         return await real_connect(":memory:", **kwargs)
 
     with (
-        patch("custom_components.growspace_manager.strain_library.ImageManager", return_value=mock_image_manager),
-        patch("custom_components.growspace_manager.strain_library.ImportExportManager", return_value=mock_import_export_manager),
-        patch("custom_components.growspace_manager.strain_library.aiosqlite.connect", side_effect=mock_connect),
+        patch(
+            "custom_components.growspace_manager.strain_library.ImageManager",
+            return_value=mock_image_manager,
+        ),
+        patch(
+            "custom_components.growspace_manager.strain_library.ImportExportManager",
+            return_value=mock_import_export_manager,
+        ),
+        patch(
+            "custom_components.growspace_manager.strain_library.aiosqlite.connect",
+            side_effect=mock_connect,
+        ),
     ):
         library = StrainLibrary(mock_hass)
         await library.async_setup()
         yield library
         await library.async_close()
+
 
 @pytest.mark.asyncio
 async def test_add_strain_0_percentages(strain_library: StrainLibrary) -> None:
@@ -91,16 +104,18 @@ async def test_add_strain_0_percentages(strain_library: StrainLibrary) -> None:
     assert meta["sativa_percentage"] == 0
     assert meta["indica_percentage"] == 100
 
+
 @pytest.mark.asyncio
-async def test_export_filters_stubs(strain_library: StrainLibrary, mock_import_export_manager) -> None:
+async def test_export_filters_stubs(
+    strain_library: StrainLibrary, mock_import_export_manager
+) -> None:
     """Test that is_stub strains are excluded from exports."""
     # Add a real strain
     await strain_library.add_strain(strain="Real Strain", breeder="Real")
 
     # Add a stub strain (simulating ancestor resolution)
     await strain_library._db.execute(
-        "INSERT INTO strains (strain_name, is_stub) VALUES (?, ?)",
-        ("Stub Strain", 1)
+        "INSERT INTO strains (strain_name, is_stub) VALUES (?, ?)", ("Stub Strain", 1)
     )
     await strain_library._db.commit()
     await strain_library.load()

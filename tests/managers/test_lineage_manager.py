@@ -1,4 +1,3 @@
-
 from custom_components.growspace_manager.managers.lineage import StrainLineageManager
 
 STRAINS = {
@@ -20,8 +19,14 @@ STRAINS = {
 
 
 CYCLIC_STRAINS = {
-    "A": {"meta": {"lineage_tree": [{"name": "B", "source": "library"}]}, "phenotypes": {}},
-    "B": {"meta": {"lineage_tree": [{"name": "A", "source": "library"}]}, "phenotypes": {}},
+    "A": {
+        "meta": {"lineage_tree": [{"name": "B", "source": "library"}]},
+        "phenotypes": {},
+    },
+    "B": {
+        "meta": {"lineage_tree": [{"name": "A", "source": "library"}]},
+        "phenotypes": {},
+    },
 }
 
 

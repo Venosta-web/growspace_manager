@@ -118,7 +118,10 @@ def test_tank_mode_adds_manual_on_top():
 
 def test_tank_mode_sums_across_multiple_trackers():
     gs = _growspace(tank_volume=200.0)
-    trackers = [_FakeTracker(today=2.0, since=10.0), _FakeTracker(today=3.0, since=15.0)]
+    trackers = [
+        _FakeTracker(today=2.0, since=10.0),
+        _FakeTracker(today=3.0, since=15.0),
+    ]
     figures = compute_growspace_water(gs, trackers, reference_date="2026-06-15")
     assert figures.today == 5.0
     assert figures.cycle == 25.0
@@ -168,6 +171,8 @@ def test_record_daily_water_keeps_sources_separate():
 def test_record_daily_water_ignores_nonpositive():
     gs = _growspace()
     record_daily_water(gs, 0.0, source=WATER_SOURCE_MANUAL, reference_date="2026-06-15")
-    record_daily_water(gs, -2.0, source=WATER_SOURCE_MANUAL, reference_date="2026-06-15")
+    record_daily_water(
+        gs, -2.0, source=WATER_SOURCE_MANUAL, reference_date="2026-06-15"
+    )
     assert gs.water_usage.total_liters == 0.0
     assert gs.water_usage.daily_readings == []

@@ -74,7 +74,9 @@ def test_rgb_to_hsv_ocv_pure_red_outside_green_band():
     arr = np.array([[[220, 20, 20]]], dtype=np.uint8)
     hsv = _rgb_to_hsv_ocv(arr)
     h = int(hsv[0, 0, 0])
-    assert not (_GREEN_LOWER[0] <= h <= _GREEN_UPPER[0]), f"Red hue {h} should not be in green range"
+    assert not (_GREEN_LOWER[0] <= h <= _GREEN_UPPER[0]), (
+        f"Red hue {h} should not be in green range"
+    )
 
 
 def test_rgb_to_hsv_ocv_gray_low_saturation():
@@ -82,7 +84,9 @@ def test_rgb_to_hsv_ocv_gray_low_saturation():
     arr = np.array([[[128, 128, 128]]], dtype=np.uint8)
     hsv = _rgb_to_hsv_ocv(arr)
     s = int(hsv[0, 0, 1])
-    assert s < _GREEN_LOWER[1], f"Gray saturation {s} should be below green floor {_GREEN_LOWER[1]}"
+    assert s < _GREEN_LOWER[1], (
+        f"Gray saturation {s} should be below green floor {_GREEN_LOWER[1]}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +258,10 @@ def test_process_snapshot_old_pillow_font_fallback():
             raise TypeError("load_default() got an unexpected keyword argument 'size'")
         return original_load_default()
 
-    with patch("custom_components.growspace_manager.image_processor.ImageFont.load_default", side_effect=_raise_on_size):
+    with patch(
+        "custom_components.growspace_manager.image_processor.ImageFont.load_default",
+        side_effect=_raise_on_size,
+    ):
         out_bytes, _ = GrowspaceImageProcessor().process_snapshot(data)
 
     assert len(out_bytes) > 0

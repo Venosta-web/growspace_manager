@@ -142,7 +142,9 @@ class ConfigFacade:
 
     async def remove_nutrient_preset(self, preset_id: str) -> None:
         """Remove a nutrient preset."""
-        await self._coordinator._nutrient_manager.async_remove_nutrient_preset(preset_id)
+        await self._coordinator._nutrient_manager.async_remove_nutrient_preset(
+            preset_id
+        )
 
     def get_applicable_presets(self, plant_id: str) -> list[NutrientPreset]:
         """Return all nutrient presets applicable to a plant."""

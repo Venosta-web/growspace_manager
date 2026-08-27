@@ -124,13 +124,17 @@ async def test_explicit_50x30_matches_default_output(
 ) -> None:
     """Explicit label_size='50x30' produces the same output as omitting label_size."""
     call_default = _make_call({"strain": "Blue Dream"})
-    await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call_default)
+    await handle_print_label(
+        mock_hass, mock_coordinator, mock_strain_library, call_default
+    )
     sd_default = _niimbot_service_data(mock_hass)
 
     mock_hass.services.async_call.reset_mock()
 
     call_explicit = _make_call({"strain": "Blue Dream", "label_size": "50x30"})
-    await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call_explicit)
+    await handle_print_label(
+        mock_hass, mock_coordinator, mock_strain_library, call_explicit
+    )
     sd_explicit = _niimbot_service_data(mock_hass)
 
     assert sd_explicit["width"] == sd_default["width"]

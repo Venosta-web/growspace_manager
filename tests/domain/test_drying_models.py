@@ -1,6 +1,5 @@
 """Tests for DryingData model defaults and serialization."""
 
-
 from custom_components.growspace_manager.models import (
     DryingData,
     MoistureEntry,

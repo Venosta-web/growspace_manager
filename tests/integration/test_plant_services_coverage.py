@@ -23,16 +23,16 @@ async def test_handle_add_timeline_note_service_call() -> None:
     strain_library = MagicMock()
 
     mock_call = MagicMock(spec=ServiceCall)
-    mock_call.data = {
-        ATTR_PLANT_ID: "plant1",
-        ATTR_NOTES: "Service call note"
-    }
+    mock_call.data = {ATTR_PLANT_ID: "plant1", ATTR_NOTES: "Service call note"}
 
-    with patch(
-        "custom_components.growspace_manager.services.plant_facade._ensure_plant_loaded"
-    ), patch(
-        "custom_components.growspace_manager.services.plant_facade._resolve_plant_id",
-        return_value="plant1",
+    with (
+        patch(
+            "custom_components.growspace_manager.services.plant_facade._ensure_plant_loaded"
+        ),
+        patch(
+            "custom_components.growspace_manager.services.plant_facade._resolve_plant_id",
+            return_value="plant1",
+        ),
     ):
         await PlantFacade(coordinator).add_timeline_note_from_call(
             hass, strain_library, mock_call
@@ -81,9 +81,6 @@ async def test_handle_add_plants_success() -> None:
     assert args["phenotype"] == "Strain A #10"
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_handle_harvest_plant_not_loaded() -> None:
     """Test handle_harvest_plant when plant is not loaded."""
@@ -100,7 +97,9 @@ async def test_handle_harvest_plant_not_loaded() -> None:
     call = MagicMock(spec=ServiceCall)
     call.data = {ATTR_PLANT_ID: "plant1"}
 
-    with pytest.raises(ServiceValidationError, match=".*not found and could not be reloaded.*"):
+    with pytest.raises(
+        ServiceValidationError, match=".*not found and could not be reloaded.*"
+    ):
         await handle_harvest_plant(hass, coordinator, strain_library, call)
 
 

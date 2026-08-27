@@ -123,15 +123,25 @@ class SubsystemManager:
         await irrigation_coordinator.async_setup()
         self.irrigation_coordinators[growspace_id] = irrigation_coordinator
 
-        light_cycle_tracker = LightCycleTracker(self.hass, growspace_id, self.coordinator)
+        light_cycle_tracker = LightCycleTracker(
+            self.hass, growspace_id, self.coordinator
+        )
         await light_cycle_tracker.async_setup()
         self.light_cycle_trackers[growspace_id] = light_cycle_tracker
 
         controllers: list[EnvironmentController] = [
-            DehumidifierCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
-            HumidifierCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
-            CirculationFanCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
-            ExhaustFanCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
+            DehumidifierCoordinator(
+                self.hass, self.entry, growspace_id, self.coordinator
+            ),
+            HumidifierCoordinator(
+                self.hass, self.entry, growspace_id, self.coordinator
+            ),
+            CirculationFanCoordinator(
+                self.hass, self.entry, growspace_id, self.coordinator
+            ),
+            ExhaustFanCoordinator(
+                self.hass, self.entry, growspace_id, self.coordinator
+            ),
             GrowLightCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
         ]
         for controller in controllers:
@@ -163,14 +173,18 @@ class SubsystemManager:
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("Error unloading environment controller: %s", err)
 
-    def get_dehumidifier_controller(self, growspace_id: str) -> DehumidifierCoordinator | None:
+    def get_dehumidifier_controller(
+        self, growspace_id: str
+    ) -> DehumidifierCoordinator | None:
         """Return the dehumidifier coordinator for a growspace, or None."""
         for c in self.environment_controllers.get(growspace_id, []):
             if isinstance(c, DehumidifierCoordinator):
                 return c
         return None
 
-    def get_humidifier_controller(self, growspace_id: str) -> HumidifierCoordinator | None:
+    def get_humidifier_controller(
+        self, growspace_id: str
+    ) -> HumidifierCoordinator | None:
         """Return the humidifier coordinator for a growspace, or None."""
         for c in self.environment_controllers.get(growspace_id, []):
             if isinstance(c, HumidifierCoordinator):

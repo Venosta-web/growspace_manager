@@ -155,9 +155,7 @@ async def test_no_subscription_for_growspace_without_environment_config(
 ) -> None:
     """Growspace with no EnvironmentConfig registers no state listeners."""
     coordinator = MagicMock()
-    coordinator.growspaces = {
-        "gs_noenv": Growspace(id="gs_noenv", name="No Env")
-    }
+    coordinator.growspaces = {"gs_noenv": Growspace(id="gs_noenv", name="No Env")}
     monitor = TankLevelMonitor(hass, coordinator, notify)
     callbacks = await _start_and_get_callback(monitor)
 
