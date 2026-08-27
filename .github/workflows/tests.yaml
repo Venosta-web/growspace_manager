@@ -65,6 +65,10 @@ jobs:
       # Expose the resolved set so time-dependent failures can be compared.
       - name: record resolved dependency set
         run: pip freeze
+      - name: Prepare isolated Lovelace fixtures
+        run: |
+          python tests/utils/prepare_lovelace_fixtures.py
+          python tests/utils/prepare_lovelace_fixtures.py --check
       - name: Run Unit Tests
         run: >-
           pytest

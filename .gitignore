@@ -135,6 +135,7 @@ uv.lock
 # pytest cache
 tests/core/snapshots/
 tests/integration/snapshots/*
+tests/*/configs/www/growspace-manager-card.js
 custom_components/growspace_manager/ruff_check_full.txt
 custom_components/growspace_manager/ruff*.txt
 custom_components/growspace_manager/search_results*.html

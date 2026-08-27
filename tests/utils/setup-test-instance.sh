@@ -4,7 +4,16 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+FIXTURE="$PROJECT_DIR/tests/fixtures/lovelace/growspace-manager-card.js"
+
+cd "$PROJECT_DIR"
+
 echo "🔧 Setting up Home Assistant test instance..."
+
+echo "🔎 Validating and preparing isolated Lovelace fixtures..."
+python3 "$SCRIPT_DIR/prepare_lovelace_fixtures.py"
 
 # Wait for test instance to be ready
 echo "⏳ Waiting for test instance to initialize..."
@@ -21,17 +30,8 @@ echo "📁 Creating www directory in test instance..."
 docker exec homeassistant-test mkdir -p /config/www
 
 echo "📦 Copying Lovelace card to test instance..."
-# Copy the built card file to the test instance's www directory
-if [ -f "../../lovelace-growspace-manager-card/dist/growspace-manager-card.js" ]; then
-    docker cp ../../lovelace-growspace-manager-card/dist/growspace-manager-card.js homeassistant-test:/config/www/
-    echo "✅ Lovelace card copied successfully"
-elif [ -f "../../lovelace-growspace-manager-card/growspace-manager-card.js" ]; then
-    docker cp ../../lovelace-growspace-manager-card/growspace-manager-card.js homeassistant-test:/config/www/
-    echo "✅ Lovelace card copied successfully"
-else
-    echo "⚠️  Lovelace card not found. Build it first with:"
-    echo "   cd ../../lovelace-growspace-manager-card && npm run build"
-fi
+docker cp "$FIXTURE" homeassistant-test:/config/www/growspace-manager-card.js
+echo "✅ Authoritative Lovelace fixture copied successfully"
 
 echo "📁 Creating themes directory..."
 docker exec homeassistant-test mkdir -p /config/themes
