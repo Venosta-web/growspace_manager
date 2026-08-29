@@ -11,7 +11,6 @@ from custom_components.growspace_manager.data_access.notification_state import (
 from custom_components.growspace_manager.models import (
     Growspace,
     HarvestMetrics,
-    IrrigationConfig,
     IrrigationTank,
     PhenotypeScore,
 )
@@ -442,133 +441,6 @@ async def test_add_mother_plant(mock_coordinator) -> None:
 
 
 # ---------------------------------------------------------------------------
-# update_irrigation_config
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_update_irrigation_config_not_found(mock_coordinator) -> None:
-    """update_irrigation_config raises error if growspace not found."""
-    from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
-
-    facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.growspaces = {}
-    with pytest.raises(GrowspaceNotFoundError):
-        await facade.growspaces.update_irrigation_config("missing", {})
-
-
-@pytest.mark.asyncio
-async def test_update_irrigation_config_clear(mock_coordinator) -> None:
-    """Clear flag resets irrigation config."""
-    facade = ServiceFacade(mock_coordinator)
-    gs = MagicMock()
-    gs.irrigation_config = MagicMock()
-    gs.irrigation_strategy = MagicMock()
-    mock_coordinator.growspaces = {"gs1": gs}
-    mock_coordinator.async_commit = AsyncMock()
-
-    await facade.growspaces.update_irrigation_config("gs1", {"clear": True})
-
-    assert isinstance(gs.irrigation_config, IrrigationConfig)
-    assert gs.irrigation_strategy.enabled is False
-    mock_coordinator.async_commit.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_update_irrigation_config_vwc_steering(mock_coordinator) -> None:
-    """use_vwc_steering sets strategy.enabled."""
-    facade = ServiceFacade(mock_coordinator)
-    gs = Growspace(id="gs1", name="GS1")
-    mock_coordinator.growspaces = {"gs1": gs}
-    mock_coordinator.async_commit = AsyncMock()
-    mock_coordinator.async_request_refresh = AsyncMock()
-    mock_coordinator.cache = MagicMock()
-
-    await facade.growspaces.update_irrigation_config("gs1", {"use_vwc_steering": True})
-    assert gs.irrigation_strategy.enabled is True
-
-
-@pytest.mark.asyncio
-async def test_update_irrigation_config_sets_fields(mock_coordinator) -> None:
-    """update_irrigation_config updates IrrigationConfig fields."""
-    facade = ServiceFacade(mock_coordinator)
-    gs = Growspace(id="gs1", name="GS1")
-    mock_coordinator.growspaces = {"gs1": gs}
-    mock_coordinator.async_commit = AsyncMock()
-    mock_coordinator.async_request_refresh = AsyncMock()
-    mock_coordinator.cache = MagicMock()
-
-    await facade.growspaces.update_irrigation_config(
-        "gs1",
-        {
-            "target_vwc": 0.35,
-            "irrigation_pump_entity": "",  # falsy -> None
-            "drain_pump_entity": "",  # falsy -> None
-        },
-    )
-    assert gs.irrigation_config.irrigation_pump_entity is None
-
-
-@pytest.mark.asyncio
-async def test_update_irrigation_config_sets_pore_ec_band(mock_coordinator) -> None:
-    """A valid pore-EC band and opt-in flag land on the strategy."""
-    facade = ServiceFacade(mock_coordinator)
-    gs = Growspace(id="gs1", name="GS1")
-    mock_coordinator.growspaces = {"gs1": gs}
-    mock_coordinator.async_commit = AsyncMock()
-    mock_coordinator.async_request_refresh = AsyncMock()
-    mock_coordinator.cache = MagicMock()
-
-    await facade.growspaces.update_irrigation_config(
-        "gs1",
-        {
-            "pore_ec_target_min": 2.0,
-            "pore_ec_target_max": 3.5,
-            "ec_modulation_enabled": True,
-        },
-    )
-    assert gs.irrigation_strategy.pore_ec_target_min == 2.0
-    assert gs.irrigation_strategy.pore_ec_target_max == 3.5
-    assert gs.irrigation_strategy.ec_modulation_enabled is True
-
-
-@pytest.mark.asyncio
-async def test_update_irrigation_config_rejects_inverted_band(mock_coordinator) -> None:
-    """A pore-EC band with min >= max is rejected with a validation error."""
-    facade = ServiceFacade(mock_coordinator)
-    gs = Growspace(id="gs1", name="GS1")
-    mock_coordinator.growspaces = {"gs1": gs}
-    mock_coordinator.async_commit = AsyncMock()
-    mock_coordinator.async_request_refresh = AsyncMock()
-    mock_coordinator.cache = MagicMock()
-
-    with pytest.raises(ServiceValidationError, match="Pore EC target band"):
-        await facade.growspaces.update_irrigation_config(
-            "gs1",
-            {"pore_ec_target_min": 3.0, "pore_ec_target_max": 2.0},
-        )
-
-
-@pytest.mark.asyncio
-async def test_update_irrigation_config_band_single_edge_vs_stored(
-    mock_coordinator,
-) -> None:
-    """Setting one edge is validated against the already-stored other edge."""
-    facade = ServiceFacade(mock_coordinator)
-    gs = Growspace(id="gs1", name="GS1")
-    gs.irrigation_strategy.pore_ec_target_max = 3.0
-    mock_coordinator.growspaces = {"gs1": gs}
-    mock_coordinator.async_commit = AsyncMock()
-    mock_coordinator.async_request_refresh = AsyncMock()
-    mock_coordinator.cache = MagicMock()
-
-    with pytest.raises(ServiceValidationError, match="Pore EC target band"):
-        await facade.growspaces.update_irrigation_config(
-            "gs1", {"pore_ec_target_min": 4.0}
-        )
-
-
-# ---------------------------------------------------------------------------
 # take_clones / promote_clone
 # ---------------------------------------------------------------------------
 
@@ -603,19 +475,6 @@ async def test_promote_clone(mock_coordinator) -> None:
 # ---------------------------------------------------------------------------
 # Irrigation schedule methods
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_set_irrigation_settings(mock_coordinator) -> None:
-    """set_irrigation_settings delegates to update_irrigation_config."""
-    facade = ServiceFacade(mock_coordinator)
-    gs = Growspace(id="gs1", name="GS1")
-    mock_coordinator.growspaces = {"gs1": gs}
-    mock_coordinator.async_commit = AsyncMock()
-    mock_coordinator.async_request_refresh = AsyncMock()
-    mock_coordinator.cache = MagicMock()
-
-    await facade.growspaces.set_irrigation_settings("gs1", {"target_vwc": 0.4})
 
 
 @pytest.mark.asyncio

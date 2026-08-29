@@ -2059,21 +2059,16 @@ async def test_async_update_irrigation_config(
     gs_id = gs.id
     gs.irrigation_config.irrigation_pump_entity = "switch.pump1"
 
-    # 1. Update with read-only fields (should be ignored) and valid fields
-    user_input = {
-        "irrigation_pump_entity": "switch.pump2",
-        "current_irrigation_times": "ignored",
-        "growspace_id_read_only": "ignored",
-    }
-
-    await coordinator.services.growspaces.update_irrigation_config(gs_id, user_input)
+    await coordinator.services.growspaces.update_irrigation_config(
+        gs_id, {"irrigation_pump_entity": "switch.pump2"}
+    )
 
     assert (
         coordinator.growspaces[gs_id].irrigation_config.irrigation_pump_entity
         == "switch.pump2"
     )
 
-    # 2. Calling with non-existent GS raises GrowspaceNotFoundError
+    # Calling with non-existent GS raises GrowspaceNotFoundError.
     with pytest.raises(GrowspaceNotFoundError):
         await coordinator.services.growspaces.update_irrigation_config("missing", {})
 

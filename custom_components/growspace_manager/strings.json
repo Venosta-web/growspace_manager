@@ -479,6 +479,7 @@
       "setup_error": "The integration is not set up yet. Try again once it has finished loading.",
       "file_not_found": "No file was found at that path. Check the path and try again.",
       "invalid_zip": "That file is not a valid strain library archive.",
+      "invalid_irrigation_change": "The irrigation settings are invalid: {error}",
       "import_failed": "The strain library could not be imported. Check the logs for details.",
       "add_failed": "The item could not be added because of an unexpected error. Check the logs for details.",
       "update_failed": "The item could not be updated because of an unexpected error. Check the logs for details.",

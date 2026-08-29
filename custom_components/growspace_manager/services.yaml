@@ -1301,6 +1301,54 @@ set_irrigation_strategy:
         number:
           min: 0
           unit_of_measurement: "minutes"
+    auto_light_tracking:
+      description: Use observed light transitions instead of the configured lights-on time.
+      required: false
+      selector:
+        boolean:
+    shot_sizing_mode:
+      description: Size irrigation shots by duration or substrate-volume percentage.
+      required: false
+      selector:
+        select:
+          options:
+            - "seconds"
+            - "volume"
+    substrate_media_type:
+      description: Growing-medium type used by Volume Mode presets.
+      required: false
+      selector:
+        select:
+          options:
+            - "coco"
+            - "rockwool"
+            - "soil"
+    substrate_liters_per_pot:
+      description: Substrate volume per pot used to calculate Volume Mode shots.
+      required: false
+      selector:
+        number:
+          min: 0.0
+          step: 0.1
+          unit_of_measurement: "L"
+    p1_shot_volume_percent:
+      description: P1 shot size as a percentage of total substrate volume.
+      required: false
+      selector:
+        number:
+          min: 0.0
+          max: 100.0
+          step: 0.1
+          unit_of_measurement: "%"
+    p2_shot_volume_percent:
+      description: P2 shot size as a percentage of total substrate volume.
+      required: false
+      selector:
+        number:
+          min: 0.0
+          max: 100.0
+          step: 0.1
+          unit_of_measurement: "%"
     dynamic_shot_enabled:
       description: >-
         Master toggle for Adaptive Shot Control — adapts both shot size and
@@ -1416,6 +1464,63 @@ set_irrigation_settings:
         number:
           min: 1
           unit_of_measurement: "seconds"
+    soil_trigger_percent:
+      description: Soil-moisture percentage below which irrigation may trigger.
+      required: false
+      selector:
+        number:
+          min: 0.0
+          max: 100.0
+          step: 0.1
+          unit_of_measurement: "%"
+    daily_volume_cap_liters:
+      description: Maximum irrigation volume allowed per day; omit to disable the cap.
+      required: false
+      selector:
+        number:
+          min: 0.0
+          step: 0.1
+          unit_of_measurement: "L"
+    max_cycles_per_day:
+      description: Maximum automatic irrigation cycles allowed per day; omit for no cap.
+      required: false
+      selector:
+        number:
+          min: 0
+          step: 1
+    skip_during_dark:
+      description: Skip automatic irrigation while the growspace is dark.
+      required: false
+      selector:
+        boolean:
+    pause_on_low_tank:
+      description: Pause automatic irrigation when a configured tank is low.
+      required: false
+      selector:
+        boolean:
+    log_to_logbook:
+      description: Record irrigation activity in the Home Assistant logbook.
+      required: false
+      selector:
+        boolean:
+    auto_advance_p1_to_p2:
+      description: Automatically advance from steering phase P1 to P2.
+      required: false
+      selector:
+        boolean:
+    auto_advance_p2_to_p3:
+      description: Automatically advance from steering phase P2 to P3.
+      required: false
+      selector:
+        boolean:
+    halt_on_runoff_ec_threshold:
+      description: Halt irrigation when runoff EC reaches this threshold; omit to disable.
+      required: false
+      selector:
+        number:
+          min: 0.0
+          step: 0.1
+          unit_of_measurement: "mS/cm"
 
 apply_steering_mode:
   description: >-

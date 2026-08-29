@@ -744,7 +744,6 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("halt_on_runoff_ec_threshold"): vol.Any(
                 None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
             ),
-            vol.Optional("active_steering_phase"): vol.In(["p1", "p2", "p3"]),
         }
     ),
     _validate_pump_entities,
