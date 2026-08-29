@@ -1,0 +1,244 @@
+"""Tests for the Irrigation Change write seam."""
+
+from dataclasses import FrozenInstanceError
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
+from custom_components.growspace_manager.models import Growspace, SubstrateProfile
+from custom_components.growspace_manager.services.irrigation_change import (
+    IrrigationChange,
+    IrrigationChangeError,
+    IrrigationChangeOperation,
+    async_apply_irrigation_change,
+)
+
+
+def _coordinator(growspace: Growspace) -> SimpleNamespace:
+    """Return the effect shell needed by the public Irrigation Change seam."""
+    coordinator = SimpleNamespace(
+        growspaces={growspace.id: growspace},
+        cache=MagicMock(),
+        async_commit=AsyncMock(),
+        async_request_refresh=AsyncMock(),
+    )
+    return coordinator
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "unknown_field",
+        "active_steering_phase",
+        "phase_changed_at",
+        "detected_lights_on_time",
+        "declared_steering_mode",
+    ],
+)
+@pytest.mark.asyncio
+async def test_change_rejects_fields_the_grower_does_not_own(field: str) -> None:
+    """Unknown, derived, and runtime-owned fields fail instead of disappearing."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match=field):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.OPTIONS,
+                values={field: "replacement"},
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()
+    coordinator.async_request_refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_change_atomically_replaces_candidate_state_and_describes_it() -> None:
+    """One mixed options change returns canonical immutable changed-field sets."""
+    growspace = Growspace(id="tent", name="Tent")
+    prior_config = growspace.irrigation_config
+    prior_strategy = growspace.irrigation_strategy
+    coordinator = _coordinator(growspace)
+
+    result = await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.OPTIONS,
+            values={
+                "irrigation_duration": 45,
+                "target_vwc_percent": 58.0,
+            },
+        ),
+    )
+
+    assert growspace.irrigation_config is not prior_config
+    assert growspace.irrigation_strategy is not prior_strategy
+    assert growspace.irrigation_config.irrigation_duration == 45
+    assert growspace.irrigation_strategy.target_vwc_percent == 58.0
+    assert result.operation is IrrigationChangeOperation.OPTIONS
+    assert result.changed_config_fields == frozenset({"irrigation_duration"})
+    assert result.changed_strategy_fields == frozenset({"target_vwc_percent"})
+    with pytest.raises(FrozenInstanceError):
+        result.operation = IrrigationChangeOperation.SETTINGS  # type: ignore[misc]
+    coordinator.cache.invalidate.assert_called_once_with("tent")
+    coordinator.async_commit.assert_awaited_once()
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_change_normalizes_compatibility_fields_to_canonical_state() -> None:
+    """Pump clears, form aliases, and partial profiles keep public behavior."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_config.irrigation_pump_entity = "switch.pump"
+    growspace.irrigation_strategy.substrate_profile = SubstrateProfile(
+        media_type=SubstrateMediaType.ROCKWOOL,
+        liters_per_pot=4.0,
+    )
+    coordinator = _coordinator(growspace)
+
+    result = await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.OPTIONS,
+            values={
+                "irrigation_pump_entity": "",
+                "use_vwc_steering": True,
+                "shot_duration_seconds": 12,
+                "substrate_liters_per_pot": 6.0,
+            },
+        ),
+    )
+
+    assert growspace.irrigation_config.irrigation_pump_entity is None
+    assert growspace.irrigation_strategy.enabled is True
+    assert growspace.irrigation_strategy.p1_shot_duration_seconds == 12
+    assert growspace.irrigation_strategy.p2_shot_duration_seconds == 12
+    assert growspace.irrigation_strategy.substrate_profile == SubstrateProfile(
+        media_type=SubstrateMediaType.ROCKWOOL,
+        liters_per_pot=6.0,
+    )
+    assert result.changed_config_fields == frozenset({"irrigation_pump_entity"})
+    assert result.changed_strategy_fields == frozenset(
+        {
+            "enabled",
+            "p1_shot_duration_seconds",
+            "p2_shot_duration_seconds",
+            "substrate_profile",
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_change_validates_volume_mode_against_effective_state() -> None:
+    """A settings-only change cannot remove a prerequisite from active Volume Mode."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_config.pump_flow_rate_ml_per_sec = 20.0
+    growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.VOLUME
+    growspace.irrigation_strategy.substrate_profile = SubstrateProfile(
+        liters_per_pot=4.0
+    )
+    prior_config = growspace.irrigation_config
+    prior_strategy = growspace.irrigation_strategy
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match="Volume Mode requires"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.SETTINGS,
+                values={"pump_flow_rate_ml_per_sec": 0.0},
+            ),
+        )
+
+    assert growspace.irrigation_config is prior_config
+    assert growspace.irrigation_strategy is prior_strategy
+    coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_change_accepts_volume_mode_prerequisites_in_the_same_change() -> None:
+    """The effective-state candidate includes config and strategy values together."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.OPTIONS,
+            values={
+                "shot_sizing_mode": "volume",
+                "pump_flow_rate_ml_per_sec": 12.0,
+                "substrate_media_type": "rockwool",
+                "substrate_liters_per_pot": 6.0,
+            },
+        ),
+    )
+
+    assert growspace.irrigation_strategy.shot_sizing_mode is ShotSizingMode.VOLUME
+    assert growspace.irrigation_config.pump_flow_rate_ml_per_sec == 12.0
+    assert growspace.irrigation_strategy.substrate_profile == SubstrateProfile(
+        media_type=SubstrateMediaType.ROCKWOOL,
+        liters_per_pot=6.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_change_validates_partial_pore_ec_band_against_effective_state() -> None:
+    """One supplied band edge is ordered against the retained opposite edge."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_strategy.pore_ec_target_min = 2.0
+    growspace.irrigation_strategy.pore_ec_target_max = 4.0
+    prior_strategy = growspace.irrigation_strategy
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match=r"min \(5.0\).*max \(4.0\)"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.STRATEGY,
+                values={"pore_ec_target_min": 5.0},
+            ),
+        )
+
+    assert growspace.irrigation_strategy is prior_strategy
+    coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_change_restores_prior_state_when_persistence_fails() -> None:
+    """The candidate is never left live when the persistence effect rejects it."""
+    growspace = Growspace(id="tent", name="Tent")
+    prior_config = growspace.irrigation_config
+    prior_strategy = growspace.irrigation_strategy
+    coordinator = _coordinator(growspace)
+    coordinator.async_commit.side_effect = OSError("disk full")
+
+    with pytest.raises(OSError, match="disk full"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.OPTIONS,
+                values={
+                    "irrigation_duration": 90,
+                    "target_vwc_percent": 61.0,
+                },
+            ),
+        )
+
+    assert growspace.irrigation_config is prior_config
+    assert growspace.irrigation_strategy is prior_strategy
+    assert growspace.irrigation_config.irrigation_duration is None
+    assert growspace.irrigation_strategy.target_vwc_percent == 55.0
+    coordinator.async_commit.assert_awaited_once()
+    coordinator.async_request_refresh.assert_not_awaited()

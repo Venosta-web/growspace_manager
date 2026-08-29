@@ -10,9 +10,8 @@ from typing import Any
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
-from custom_components.growspace_manager.services.irrigation import (
-    _build_substrate_profile_update,
-    _validate_volume_mode_selection,
+from custom_components.growspace_manager.services.irrigation_change import (
+    IrrigationChangeError,
 )
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -105,33 +104,45 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
             "use_vwc_steering": growspace.irrigation_strategy.enabled,
         }
 
+        errors: dict[str, str] = {}
+        error_message: str | None = None
         if user_input is not None:
-            # Fold the flat substrate fields into the nested ``substrate_profile``
-            # and reject Volume Mode without its prerequisites — reusing the exact
-            # helpers the set_irrigation_strategy service uses, so the form and the
-            # service share one write path and one validation rule (ADR-0011).
-            _build_substrate_profile_update(user_input)
-            _validate_volume_mode_selection(coordinator, growspace_id, user_input)
-            await coordinator.services.growspaces.update_irrigation_config(
-                growspace_id, user_input
-            )
-
-            if self.config_entry is None:
-                return self.flow.async_abort(reason="setup_error")
-            # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
-            return self.flow.async_create_entry(
-                title="",
-                data=self.config_entry.options,  # No changes to ConfigEntry options
-                description="Irrigation settings have been updated.",
-            )
+            change_values = dict(user_input)
+            for display_field in (
+                "current_irrigation_times",
+                "current_drain_times",
+                "growspace_id_read_only",
+            ):
+                change_values.pop(display_field, None)
+            try:
+                await coordinator.services.growspaces.update_irrigation_config(
+                    growspace_id, change_values
+                )
+            except IrrigationChangeError as err:
+                errors["base"] = "invalid_irrigation_change"
+                error_message = str(err)
+                irrigation_options.update(user_input)
+            else:
+                if self.config_entry is None:
+                    return self.flow.async_abort(reason="setup_error")
+                # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
+                return self.flow.async_create_entry(
+                    title="",
+                    data=self.config_entry.options,  # No changes to ConfigEntry options
+                    description="Irrigation settings have been updated.",
+                )
 
         # Describe schema to pass ALL data to the Lovelace component
         schema = self.get_irrigation_overview_schema(irrigation_options, growspace_id)
 
+        description_placeholders = {"growspace_name": growspace.name}
+        if error_message is not None:
+            description_placeholders["error"] = error_message
         return self.flow.async_show_form(
             step_id="irrigation_overview",
             data_schema=schema,
-            description_placeholders={"growspace_name": growspace.name},
+            errors=errors,
+            description_placeholders=description_placeholders,
         )
 
     def get_irrigation_overview_schema(

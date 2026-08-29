@@ -7,10 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.const import (
-    ATTR_DRAIN_TIMES,
     ATTR_GROWSPACE_ID,
     ATTR_IMAGES,
-    ATTR_IRRIGATION_TIMES,
     ATTR_NAME,
     ATTR_NOTES,
     ATTR_NOTIFICATION_TARGET,
@@ -23,7 +21,6 @@ from custom_components.growspace_manager.const import (
     VERSION,
     GrowspaceService,
     SteeringMode,
-    SubstrateMediaType,
 )
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
 from custom_components.growspace_manager.domain.stage import StageDays
@@ -37,9 +34,7 @@ from custom_components.growspace_manager.exceptions import (
 from custom_components.growspace_manager.models import (
     ECTargetRange,
     Growspace,
-    IrrigationConfig,
     Subarea,
-    SubstrateProfile,
     WaterUsageData,
 )
 from custom_components.growspace_manager.schemas import (
@@ -60,6 +55,12 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util, slugify
 
 from ._definition import ServiceDefinition
+from .irrigation_change import (
+    IrrigationChange,
+    IrrigationChangeOperation,
+    IrrigationChangeResult,
+    async_apply_irrigation_change,
+)
 from .utils import handle_service_errors
 
 if TYPE_CHECKING:
@@ -267,90 +268,42 @@ class GrowspaceFacade:
 
     async def update_irrigation_config(
         self, growspace_id: str, user_input: dict[str, Any]
-    ) -> None:
-        """Update irrigation configuration for a growspace."""
-        growspace = self._coordinator.growspaces.get(growspace_id)
-        if not growspace:
-            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
-        if user_input.get("clear"):
-            growspace.irrigation_config = IrrigationConfig()
-            growspace.irrigation_strategy.enabled = False
-            _LOGGER.info("Cleared irrigation config for %s", growspace_id)
-            await self._coordinator.async_commit()
-            return
-        if "use_vwc_steering" in user_input:
-            growspace.irrigation_strategy.enabled = bool(
-                user_input.pop("use_vwc_steering")
-            )
-        updated_settings = {
-            k: v
-            for k, v in user_input.items()
-            if k
-            not in [ATTR_IRRIGATION_TIMES, ATTR_DRAIN_TIMES, "growspace_id_read_only"]
-        }
-        for pump_key in ("irrigation_pump_entity", "drain_pump_entity"):
-            if pump_key in updated_settings and not updated_settings[pump_key]:
-                updated_settings[pump_key] = None
-        if "substrate_profile" in updated_settings:
-            updated_settings["substrate_profile"] = self._merge_substrate_profile(
-                growspace.irrigation_strategy.substrate_profile,
-                updated_settings["substrate_profile"],
-            )
-
-        # Validate the Pore EC Target Band (min < max) using the effective
-        # post-update values so setting a single edge is checked against the
-        # already-stored other edge.
-        strategy = growspace.irrigation_strategy
-        band_min = updated_settings.get(
-            "pore_ec_target_min", strategy.pore_ec_target_min
-        )
-        band_max = updated_settings.get(
-            "pore_ec_target_max", strategy.pore_ec_target_max
-        )
-        if band_min is not None and band_max is not None and band_min >= band_max:
-            raise ServiceValidationError(
-                f"Pore EC target band invalid: min ({band_min}) must be below "
-                f"max ({band_max})"
-            )
-
-        for k, v in updated_settings.items():
-            if hasattr(growspace.irrigation_config, k):
-                setattr(growspace.irrigation_config, k, v)
-            elif hasattr(growspace.irrigation_strategy, k):
-                setattr(growspace.irrigation_strategy, k, v)
-        self._coordinator.cache.invalidate(growspace_id)
-        await self._coordinator.async_commit()
-        await self._coordinator.async_request_refresh()
-        _LOGGER.info("Updated irrigation config for %s", growspace_id)
-
-    @staticmethod
-    def _merge_substrate_profile(
-        existing: SubstrateProfile, update: Any
-    ) -> SubstrateProfile:
-        """Merge a partial substrate-profile update onto the existing profile.
-
-        The service surface may send only the media type or only the per-pot
-        volume; unspecified keys keep their current value (ADR-0011 profile).
-        """
-        if isinstance(update, SubstrateProfile):
-            return update
-        data = update if isinstance(update, dict) else {}
-        return SubstrateProfile(
-            media_type=SubstrateMediaType(data.get("media_type", existing.media_type)),
-            liters_per_pot=float(data.get("liters_per_pot", existing.liters_per_pot)),
+    ) -> IrrigationChangeResult:
+        """Apply an options-flow Irrigation Change."""
+        return await async_apply_irrigation_change(
+            self._coordinator,
+            growspace_id,
+            IrrigationChange(
+                operation=IrrigationChangeOperation.OPTIONS,
+                values=user_input,
+            ),
         )
 
     async def set_irrigation_settings(
         self, growspace_id: str, settings: dict[str, Any]
-    ) -> None:
-        """Set irrigation settings for a growspace."""
-        await self.update_irrigation_config(growspace_id, settings)
+    ) -> IrrigationChangeResult:
+        """Apply a settings-action Irrigation Change."""
+        return await async_apply_irrigation_change(
+            self._coordinator,
+            growspace_id,
+            IrrigationChange(
+                operation=IrrigationChangeOperation.SETTINGS,
+                values=settings,
+            ),
+        )
 
     async def set_irrigation_strategy(
         self, growspace_id: str, strategy: dict[str, Any]
-    ) -> None:
-        """Set irrigation strategy for a growspace."""
-        await self.update_irrigation_config(growspace_id, strategy)
+    ) -> IrrigationChangeResult:
+        """Apply a strategy-action Irrigation Change."""
+        return await async_apply_irrigation_change(
+            self._coordinator,
+            growspace_id,
+            IrrigationChange(
+                operation=IrrigationChangeOperation.STRATEGY,
+                values=strategy,
+            ),
+        )
 
     async def apply_steering_mode(self, growspace_id: str, mode: SteeringMode) -> None:
         """Stamp a Steering Mode's preset values into the strategy (ADR-0012).

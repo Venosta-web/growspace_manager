@@ -6,7 +6,6 @@ import pytest
 
 from custom_components.growspace_manager.services.irrigation import (
     _get_irrigation_coordinator,
-    _validate_volume_mode_selection,
     handle_add_drain_time,
     handle_add_irrigation_time,
     handle_remove_drain_time,
@@ -446,6 +445,32 @@ class TestHandleSetIrrigationStrategy:
         with pytest.raises(ServiceValidationError, match="not found"):
             await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
 
+    @pytest.mark.asyncio
+    async def test_set_irrigation_strategy_presents_change_validation_error(
+        self,
+        mock_hass: MagicMock,
+        mock_irrigation_coordinator: MagicMock,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """The action adapter presents a domain validation failure unchanged."""
+        from custom_components.growspace_manager.services.irrigation_change import (
+            IrrigationChangeError,
+        )
+
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {
+            "gs1": mock_irrigation_coordinator
+        }
+        mock_coordinator.services.growspaces.set_irrigation_strategy.side_effect = (
+            IrrigationChangeError("Field 'detected_lights_on_time' is read-only")
+        )
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "detected_lights_on_time": "07:00:00"}
+
+        with pytest.raises(ServiceValidationError) as exc_info:
+            await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
+
+        assert str(exc_info.value) == ("Field 'detected_lights_on_time' is read-only")
+
 
 class TestHandleApplySteeringMode:
     """Tests for handle_apply_steering_mode service handler (ADR-0012)."""
@@ -535,118 +560,3 @@ class TestHandleRunIrrigationCycle:
 
         with pytest.raises(ServiceValidationError, match="not found"):
             await handle_run_irrigation_cycle(mock_hass, mock_coordinator, call)
-
-
-class TestVolumeModeStrategyValidation:
-    """Volume Mode gating + substrate-profile folding (ADR-0011)."""
-
-    def _make_growspace(self, liters_per_pot: float, flow_rate: float):
-        from custom_components.growspace_manager.models import (
-            Growspace,
-            IrrigationConfig,
-            IrrigationStrategy,
-            SubstrateProfile,
-        )
-
-        gs = Growspace(
-            id="gs1",
-            name="GS",
-            irrigation_config=IrrigationConfig(pump_flow_rate_ml_per_sec=flow_rate),
-        )
-        gs.irrigation_strategy = IrrigationStrategy(
-            substrate_profile=SubstrateProfile(liters_per_pot=liters_per_pot)
-        )
-        return gs
-
-    @pytest.mark.asyncio
-    async def test_volume_mode_rejected_without_profile(
-        self, mock_hass: MagicMock, mock_coordinator: MagicMock
-    ) -> None:
-        """Selecting Volume Mode without a substrate profile is rejected."""
-        mock_coordinator.growspaces = {"gs1": self._make_growspace(0.0, 20.0)}
-
-        call = MagicMock(spec=ServiceCall)
-        call.data = {"growspace_id": "gs1", "shot_sizing_mode": "volume"}
-
-        with pytest.raises(ServiceValidationError, match="Volume Mode requires"):
-            await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
-        mock_coordinator.services.growspaces.set_irrigation_strategy.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_volume_mode_rejected_without_flow_rate(
-        self, mock_hass: MagicMock, mock_coordinator: MagicMock
-    ) -> None:
-        """Selecting Volume Mode without a pump flow rate is rejected."""
-        mock_coordinator.growspaces = {"gs1": self._make_growspace(6.0, 0.0)}
-
-        call = MagicMock(spec=ServiceCall)
-        call.data = {"growspace_id": "gs1", "shot_sizing_mode": "volume"}
-
-        with pytest.raises(ServiceValidationError, match="Volume Mode requires"):
-            await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
-
-    @pytest.mark.asyncio
-    async def test_volume_mode_accepted_when_profile_set_in_same_call(
-        self, mock_hass: MagicMock, mock_coordinator: MagicMock
-    ) -> None:
-        """A single call may set the profile and switch to Volume Mode together."""
-        mock_coordinator.growspaces = {"gs1": self._make_growspace(0.0, 20.0)}
-
-        call = MagicMock(spec=ServiceCall)
-        call.data = {
-            "growspace_id": "gs1",
-            "shot_sizing_mode": "volume",
-            "substrate_media_type": "rockwool",
-            "substrate_liters_per_pot": 6.0,
-        }
-
-        await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
-
-        _gid, strategy = (
-            mock_coordinator.services.growspaces.set_irrigation_strategy.await_args[0]
-        )
-        # Flat substrate keys are folded into a nested profile dict.
-        assert "substrate_media_type" not in strategy
-        assert strategy["substrate_profile"] == {
-            "media_type": "rockwool",
-            "liters_per_pot": 6.0,
-        }
-        assert strategy["shot_sizing_mode"] == "volume"
-
-    @pytest.mark.asyncio
-    async def test_seconds_mode_skips_volume_validation(
-        self, mock_hass: MagicMock, mock_coordinator: MagicMock
-    ) -> None:
-        """Seconds Mode is accepted with no profile or flow rate."""
-        mock_coordinator.growspaces = {"gs1": self._make_growspace(0.0, 0.0)}
-
-        call = MagicMock(spec=ServiceCall)
-        call.data = {"growspace_id": "gs1", "shot_sizing_mode": "seconds"}
-
-        await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
-
-        mock_coordinator.services.growspaces.set_irrigation_strategy.assert_awaited_once()
-
-    def test_incoming_flow_rate_satisfies_gate(
-        self, mock_coordinator: MagicMock
-    ) -> None:
-        """An incoming pump flow rate wins over the stored one (config-flow path).
-
-        The config-flow form sets the flow rate and the mode in one submission, so
-        the gate must evaluate the incoming value, not the (still-zero) stored one.
-        """
-        mock_coordinator.growspaces = {"gs1": self._make_growspace(6.0, 0.0)}
-
-        # No raise: incoming flow rate is positive even though stored is 0.0.
-        _validate_volume_mode_selection(
-            mock_coordinator,
-            "gs1",
-            {"shot_sizing_mode": "volume", "pump_flow_rate_ml_per_sec": 12.0},
-        )
-
-        with pytest.raises(ServiceValidationError, match="Volume Mode requires"):
-            _validate_volume_mode_selection(
-                mock_coordinator,
-                "gs1",
-                {"shot_sizing_mode": "volume", "pump_flow_rate_ml_per_sec": 0.0},
-            )
