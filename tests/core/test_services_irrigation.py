@@ -4,6 +4,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.services.growspace_facade import (
+    GrowspaceFacade,
+)
 from custom_components.growspace_manager.services.irrigation import (
     _get_irrigation_coordinator,
     handle_add_drain_time,
@@ -67,6 +71,22 @@ def mock_coordinator():
 def mock_strain_library():
     """Create a mock strain library."""
     return MagicMock()
+
+
+def _install_real_irrigation_action_stack(
+    coordinator: MagicMock, irrigation_coordinator: MagicMock
+) -> Growspace:
+    """Connect an action handler to the real facade and Irrigation Change seam."""
+    growspace = Growspace(id="gs1", name="Growspace 1")
+    coordinator.growspaces = {growspace.id: growspace}
+    coordinator._subsystem_manager.irrigation_coordinators = {
+        growspace.id: irrigation_coordinator
+    }
+    coordinator.cache = MagicMock()
+    coordinator.async_commit = AsyncMock()
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.services.growspaces = GrowspaceFacade(coordinator)
+    return growspace
 
 
 class TestGetIrrigationCoordinator:
@@ -137,11 +157,10 @@ class TestHandleSetIrrigationSettings:
         mock_irrigation_coordinator,
         mock_coordinator,
     ):
-        """Test setting irrigation settings."""
-        # Setup
-        mock_coordinator._subsystem_manager.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        """The settings action applies canonical state through the write seam."""
+        growspace = _install_real_irrigation_action_stack(
+            mock_coordinator, mock_irrigation_coordinator
+        )
 
         call = MagicMock(spec=ServiceCall)
         call.data = {
@@ -153,20 +172,13 @@ class TestHandleSetIrrigationSettings:
             "drain_duration": 300,
         }
 
-        # Execute
         await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
 
-        # Verify against the main coordinator services facade
-        expected_settings = {
-            "irrigation_pump_entity": "switch.pump",
-            "pump_flow_rate_ml_per_sec": 12.5,
-            "drain_pump_entity": "switch.drain",
-            "irrigation_duration": 600,
-            "drain_duration": 300,
-        }
-        mock_coordinator.services.growspaces.set_irrigation_settings.assert_awaited_once_with(
-            "gs1", expected_settings
-        )
+        assert growspace.irrigation_config.irrigation_pump_entity == "switch.pump"
+        assert growspace.irrigation_config.pump_flow_rate_ml_per_sec == 12.5
+        assert growspace.irrigation_config.drain_pump_entity == "switch.drain"
+        assert growspace.irrigation_config.irrigation_duration == 600
+        assert growspace.irrigation_config.drain_duration == 300
 
     @pytest.mark.asyncio
     async def test_set_irrigation_settings_accepts_input_boolean_entities(
@@ -213,6 +225,28 @@ class TestHandleSetIrrigationSettings:
         # Should raise ServiceValidationError because GS not found even in fallback
         with pytest.raises(ServiceValidationError, match="not found"):
             await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
+
+    @pytest.mark.asyncio
+    async def test_set_irrigation_settings_presents_change_validation_error(
+        self,
+        mock_hass: MagicMock,
+        mock_irrigation_coordinator: MagicMock,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """The settings adapter presents a rejected field without rewriting it."""
+        _install_real_irrigation_action_stack(
+            mock_coordinator, mock_irrigation_coordinator
+        )
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "active_steering_phase": "p2"}
+
+        with pytest.raises(ServiceValidationError) as exc_info:
+            await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
+
+        assert str(exc_info.value) == (
+            "Field 'active_steering_phase' is not writable by the settings "
+            "irrigation operation"
+        )
 
 
 class TestHandleAddIrrigationTime:
@@ -391,11 +425,10 @@ class TestHandleSetIrrigationStrategy:
         mock_irrigation_coordinator: MagicMock,
         mock_coordinator: MagicMock,
     ) -> None:
-        """Test setting irrigation strategy."""
-        # Setup
-        mock_coordinator._subsystem_manager.irrigation_coordinators = {
-            "gs1": mock_irrigation_coordinator
-        }
+        """The strategy action applies canonical state through the write seam."""
+        growspace = _install_real_irrigation_action_stack(
+            mock_coordinator, mock_irrigation_coordinator
+        )
 
         call = MagicMock(spec=ServiceCall)
         call.data = {
@@ -410,23 +443,18 @@ class TestHandleSetIrrigationStrategy:
             "shot_interval_minutes": 15,
         }
 
-        # Execute
         await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
 
-        # Verify against the main coordinator services facade
-        expected_strategy = {
-            "enabled": True,
-            "lights_on_time": "06:00:00",
-            "p0_duration_minutes": 60,
-            "p2_stop_before_lights_off_minutes": 120,
-            "target_vwc_percent": 55.0,
-            "maintenance_dryback_percent": 2.0,
-            "shot_duration_seconds": 10,
-            "shot_interval_minutes": 15,
-        }
-        mock_coordinator.services.growspaces.set_irrigation_strategy.assert_awaited_once_with(
-            "gs1", expected_strategy
-        )
+        assert growspace.irrigation_strategy.enabled is True
+        assert growspace.irrigation_strategy.lights_on_time == "06:00:00"
+        assert growspace.irrigation_strategy.p0_duration_minutes == 60
+        assert growspace.irrigation_strategy.p2_stop_before_lights_off_minutes == 120
+        assert growspace.irrigation_strategy.target_vwc_percent == 55.0
+        assert growspace.irrigation_strategy.maintenance_dryback_percent == 2.0
+        assert growspace.irrigation_strategy.p1_shot_duration_seconds == 10
+        assert growspace.irrigation_strategy.p2_shot_duration_seconds == 10
+        assert growspace.irrigation_strategy.p1_shot_interval_minutes == 15
+        assert growspace.irrigation_strategy.p2_shot_interval_minutes == 15
 
     @pytest.mark.asyncio
     async def test_set_irrigation_strategy_growspace_not_found(

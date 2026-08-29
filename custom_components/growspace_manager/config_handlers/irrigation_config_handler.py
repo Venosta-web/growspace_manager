@@ -123,12 +123,12 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 error_message = str(err)
                 irrigation_options.update(user_input)
             else:
-                if self.config_entry is None:
-                    return self.flow.async_abort(reason="setup_error")
+                config_entry = self.config_entry
+                assert config_entry is not None
                 # This triggers async_update_listener in __init__.py, reloading the IrrigationCoordinator
                 return self.flow.async_create_entry(
                     title="",
-                    data=self.config_entry.options,  # No changes to ConfigEntry options
+                    data=config_entry.options,  # No changes to ConfigEntry options
                     description="Irrigation settings have been updated.",
                 )
 

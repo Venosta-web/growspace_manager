@@ -136,6 +136,72 @@ async def test_change_normalizes_compatibility_fields_to_canonical_state() -> No
 
 
 @pytest.mark.asyncio
+async def test_change_accepts_a_typed_substrate_profile() -> None:
+    """Callers may supply the canonical model value without re-encoding it."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+    profile = SubstrateProfile(
+        media_type=SubstrateMediaType.COCO,
+        liters_per_pot=8.0,
+    )
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.OPTIONS,
+            values={"substrate_profile": profile},
+        ),
+    )
+
+    assert growspace.irrigation_strategy.substrate_profile == profile
+
+
+@pytest.mark.asyncio
+async def test_change_merges_a_partial_substrate_profile_mapping() -> None:
+    """A nested partial profile retains the stored value for its missing half."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_strategy.substrate_profile = SubstrateProfile(
+        media_type=SubstrateMediaType.ROCKWOOL,
+        liters_per_pot=4.0,
+    )
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.OPTIONS,
+            values={"substrate_profile": {"liters_per_pot": 6.0}},
+        ),
+    )
+
+    assert growspace.irrigation_strategy.substrate_profile == SubstrateProfile(
+        media_type=SubstrateMediaType.ROCKWOOL,
+        liters_per_pot=6.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_change_rejects_a_non_mapping_substrate_profile() -> None:
+    """Malformed profile input fails before state or persistence is touched."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match="must be a mapping"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.OPTIONS,
+                values={"substrate_profile": "rockwool"},
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_change_validates_volume_mode_against_effective_state() -> None:
     """A settings-only change cannot remove a prerequisite from active Volume Mode."""
     growspace = Growspace(id="tent", name="Tent")
