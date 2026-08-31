@@ -119,7 +119,7 @@ The new card presents one chronological Vision History. It maps each V1 capture 
 its image and evidence while preserving legacy items as a marked tail. It derives
 visual tone from the fusion contract: neutral for `no_detected_change`, informational
 for visual-only anomaly, the existing environmental tone for environmental or
-concurrent states, and warning for `critical_scene_issue`. There is no replacement
+concurrent states, and warning for `persistent_visual_anomaly`. There is no replacement
 severity field.
 
 ## Availability and configuration
@@ -202,6 +202,8 @@ installed card.
    `tests/domain/test_evidence_fusion.py`, `test_vision_comparison.py` and
    `test_environmental_evidence.py` for every ADR 0040 truth-table cell, freshness
    boundary, persistence rule, provenance reset and seven-entry trend boundary.
+   Replace the scaffolded `critical_scene_issue` enum and SQLite CHECK value with
+   ADR 0044's canonical `persistent_visual_anomaly` in the same contract change.
 4. **Connection lifecycle:** centralize the unstable Home Assistant `AddonManager`
    import and cached status in
    `custom_components/growspace_manager/vision_connection.py`; add connection options

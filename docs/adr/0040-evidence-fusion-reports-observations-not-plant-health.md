@@ -2,6 +2,10 @@
 
 **Status:** Accepted
 
+Amended by [ADR 0044](./0044-v1-alerts-on-capture-continuity-not-anomaly-scores.md):
+`critical_scene_issue` is now `persistent_visual_anomaly`, all fusion outcomes remain
+observe-only, and Capture Continuity Break owns V1's only new visual-system alert.
+
 Decided on 2026-08-31 in
 [workspace#69](https://github.com/Venosta-web/growspace_manager_workspace/issues/69),
 after the strict Vision boundary and measured symptom limits were settled in
@@ -57,7 +61,7 @@ The five Evidence Fusion States are:
 2. `environmental_risk`
 3. `visual_anomaly`
 4. `concurrent_environmental_risk_and_visual_anomaly`
-5. `critical_scene_issue`
+5. `persistent_visual_anomaly`
 
 The concurrent state asserts co-occurrence, not correlation or causation. A normal
 visual comparison means only that no material departure from recent scene history was
@@ -77,11 +81,11 @@ Persistence is ignored for every visual input except `material_scene_change` wit
 Comparison Confidence `1`. This makes the function total even when a caller supplies
 an irrelevant persistence flag.
 
-| Environmental evidence | Visual unavailable                       | Visual normal                             | Visual monitor                          | Visual confirmed                                                        | Visual persistent                           |
-| ---------------------- | ---------------------------------------- | ----------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------- |
-| Unavailable            | unavailable — preserve all reasons       | unavailable — environmental evidence      | `visual_anomaly`, monitor, partial      | `visual_anomaly`, confirmed, partial                                    | `critical_scene_issue`, confirmed, partial  |
-| Within evaluated range | unavailable — visual evidence            | `no_detected_change`, confirmed, complete | `visual_anomaly`, monitor, complete     | `visual_anomaly`, confirmed, complete                                   | `critical_scene_issue`, confirmed, complete |
-| Risk                   | `environmental_risk`, confirmed, partial | `environmental_risk`, confirmed, complete | `environmental_risk`, monitor, complete | `concurrent_environmental_risk_and_visual_anomaly`, confirmed, complete | `critical_scene_issue`, confirmed, complete |
+| Environmental evidence | Visual unavailable                       | Visual normal                             | Visual monitor                          | Visual confirmed                                                        | Visual persistent                                |
+| ---------------------- | ---------------------------------------- | ----------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------ |
+| Unavailable            | unavailable — preserve all reasons       | unavailable — environmental evidence      | `visual_anomaly`, monitor, partial      | `visual_anomaly`, confirmed, partial                                    | `persistent_visual_anomaly`, confirmed, partial  |
+| Within evaluated range | unavailable — visual evidence            | `no_detected_change`, confirmed, complete | `visual_anomaly`, monitor, complete     | `visual_anomaly`, confirmed, complete                                   | `persistent_visual_anomaly`, confirmed, complete |
+| Risk                   | `environmental_risk`, confirmed, partial | `environmental_risk`, confirmed, complete | `environmental_risk`, monitor, complete | `concurrent_environmental_risk_and_visual_anomaly`, confirmed, complete | `persistent_visual_anomaly`, confirmed, complete |
 
 The unavailable-environment/visual-monitor cell deliberately keeps a monitor-only
 visual anomaly visible with partial coverage. Positive evidence from one channel is
@@ -91,23 +95,23 @@ produces the concurrent state.
 
 ## Persistence and precedence
 
-`critical_scene_issue` requires two consecutive automatically scheduled
+`persistent_visual_anomaly` requires two consecutive automatically scheduled
 `material_scene_change` results with Comparison Confidence `1` for the same camera,
 Grow Run, model version, and Framing Epoch. Each result must come from its light
 window's ready Baseline Bucket, and the pair must occur within 24 hours. Any scheduled
 normal, uncertain, rejected, or unavailable result breaks the streak. Manual checks
 neither advance nor reset it.
 
-Once persistence is met, `critical_scene_issue` takes precedence regardless of the
-environmental verdict. V1 has no immediate critical path. Temporal tracking belongs to
+Once persistence is met, `persistent_visual_anomaly` takes precedence regardless of the
+environmental verdict. V1 has no immediate persistent path. Temporal tracking belongs to
 the caller; the pure fusion function receives only `persistence_met: bool`.
 
 ## Triage and notification policy
 
 V1 records and displays fusion outcomes but does not create a visual or fused Triage
-Alert and does not send a visual notification. Workspace issue
-[#75](https://github.com/Venosta-web/growspace_manager_workspace/issues/75) owns the
-decision that can unlock those side effects.
+Alert and does not send a notification from fusion. ADR 0044 settles the alerting
+boundary: only the separate three-capture Capture Continuity Break creates a new
+warning Triage Alert and notification.
 
 - `no_detected_change` creates no alert.
 - `environmental_risk` reuses the existing stress or mold Triage Alert and its existing
@@ -115,10 +119,9 @@ decision that can unlock those side effects.
 - `visual_anomaly` is observe-only and has presentation severity `info`.
 - `concurrent_environmental_risk_and_visual_anomaly` retains the underlying
   environmental severity. Co-occurrence does not escalate it.
-- `critical_scene_issue` reserves a future `visual_scene_change` Triage Alert with
-  `warning` severity and a warning-tier notification. “Critical” describes fusion
-  precedence and persistence, not plant danger, and the alert remains disabled until
-  #75 explicitly enables it.
+- `persistent_visual_anomaly` remains observe-only and has warning presentation tone.
+  Persistence strengthens the scene-departure observation but does not identify a
+  cause or establish plant danger.
 
 ## Named home and testability
 
@@ -134,8 +137,8 @@ Pure domain tests must cover every truth-table cell plus these invariants:
 - unavailable evidence never becomes `no_detected_change`;
 - a visually normal result plus environmental risk is `environmental_risk` and never a
   visual plant-health claim;
-- monitor-only visual evidence never produces the concurrent or critical state;
-- critical precedence is independent of the environmental verdict;
+- monitor-only visual evidence never produces the concurrent or persistent state;
+- persistent-anomaly precedence is independent of the environmental verdict;
 - persistence is ignored unless the visual verdict and confidence qualify;
 - environmental fields remain invalid in the Growspace Vision request contract.
 
@@ -153,7 +156,7 @@ plumbing against contracts that the surrounding roadmap has not implemented yet.
   scene change do not establish correlation or causation.
 - **Treating unavailable or zero-observation evidence as normal** was rejected because
   it creates false reassurance.
-- **Immediate critical escalation** was rejected because a single material scene
+- **Immediate persistent escalation** was rejected because a single material scene
   change can still be transient, manual, or camera-shaped.
-- **Emitting alerts in this decision** was rejected because V1 sensitivity is not
-  validated and workspace issue #75 owns the alerting gate.
+- **Emitting alerts from fusion** was rejected because V1 plant-health sensitivity is
+  not validated; ADR 0044 permits only the independently defined equipment condition.
