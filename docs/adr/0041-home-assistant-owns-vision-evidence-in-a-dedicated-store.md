@@ -1,25 +1,19 @@
 # Home Assistant owns vision evidence in a dedicated store
 
-**Status:** Accepted, amended 2026-08-31 by [hub#74](https://github.com/Venosta-web/growspace_manager_workspace/issues/74)
-
-> **Amendment.** The Framing Epoch `reason` vocabulary loses
-> `camera_move_detected`, and a capture gains
-> `quality_structural_correlation`. Growspace Vision's ADR 0005 found automatic
-> camera-move detection unsafe, so no detector starts an epoch; the correlation
-> is recorded per capture instead. See _Framing Epochs and the Grow Run
-> dimension_ below.
+**Status:** Accepted; amended by
+[ADR 0043](./0043-vision-checkups-migrate-through-versioned-capture-contracts.md)
 
 Decided on 2026-08-31 in
 [hub#70](https://github.com/Venosta-web/growspace_manager_workspace/issues/70), under
 the stateless-service boundary of ADR 0003 and the baseline semantics of ADR 0004.
 
-Every artifact of a Vision Checkup — the capture, its image files, its Visual
-Embedding, the Baseline Bucket it was scored against, the Visual Comparison Result,
-and any grower label — is persisted by Home Assistant in a dedicated SQLite database,
-`growspace_vision.db`. Evidence rows are kept unpruned for the life of the growspace;
-images are kept on a bounded rolling window with an explicit pin rule. The existing
-cloud-era `vision_checkup_history` is frozen in place rather than migrated, and no
-`STORAGE_VERSION` bump is required.
+Every artifact of a Vision Checkup — the checkup envelope, each capture, its image
+files, its Visual Embedding, the Baseline Bucket it was scored against, the Visual
+Comparison Result, and any grower label — is persisted by Home Assistant in a
+dedicated SQLite database, `growspace_vision.db`. Evidence rows are kept unpruned for
+the life of the growspace; images are kept on a bounded rolling window with an
+explicit pin rule. The existing cloud-era `vision_checkup_history` is frozen in place
+rather than migrated, and no `STORAGE_VERSION` bump is required.
 
 ## Medium
 
@@ -93,6 +87,11 @@ URL and the path is guessable from a timestamp. The database stores a
 can change without a data migration.
 
 ## Capture identity
+
+A `checkup_id` is a UUIDv7 string minted when one scheduled or manual Vision
+Checkup begins. The `vision_checkup` row is the durable multi-camera task and every
+capture references it; close timestamps are never used as an implicit group (ADR
+0043).
 
 A `capture_id` is a UUIDv7 string minted in Home Assistant at capture time, **before**
 the Growspace Vision call, and is the filename stem of every image variant. It exists
@@ -203,9 +202,10 @@ ordinary camera history out of Run media.
 
 ## Write ordering
 
-The capture row is written first, when the bytes are persisted, before the analysis
-call. The result is written after. A capture with no result is a first-class state and
-is always visible to retention — which makes the database the index for the image
+The checkup row is written when the task begins. Each capture row is written when its
+bytes are persisted, before the analysis call, and its result is written after. A
+capture with no result is a first-class state and is always visible to retention —
+which makes the database the index for the image
 files and closes the untracked-file hole `www/snapshots` has today, where the
 filesystem _is_ the index and a glob parses the timestamp out of the filename.
 
