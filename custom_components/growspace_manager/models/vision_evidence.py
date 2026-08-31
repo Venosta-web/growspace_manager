@@ -18,10 +18,15 @@ from enum import StrEnum
 
 
 class FramingEpochReason(StrEnum):
-    """Why a camera's Framing Epoch began."""
+    """Why a camera's Framing Epoch began.
+
+    There is no detector reason.  V1 has no automatic camera-move detection: the
+    structural signature cannot separate a camera move from a lens occlusion, and a
+    boundary drawn from it would re-learn an occluded view as normal (ADR 0005,
+    amending ADR 0004).  Only a grower or a run/model boundary starts an epoch.
+    """
 
     INITIAL = "initial"
-    CAMERA_MOVE_DETECTED = "camera_move_detected"
     MANUAL_RESTART = "manual_restart"
     GROW_RUN_BOUNDARY = "grow_run_boundary"
     MODEL_VERSION_CHANGE = "model_version_change"
@@ -164,6 +169,8 @@ class FramingEpoch:
     camera_id: str
     started_at: str
     reason: FramingEpochReason
+    # The structural correlation observed when the epoch was started, where one was
+    # known.  Evidence for "why did this camera's baseline reset", never its trigger.
     detector_evidence: str | None = None
 
 
@@ -206,6 +213,7 @@ class VisionCapture:
     quality_clipped_pixel_fraction: float | None = None
     quality_mean_absolute_gradient: float | None = None
     quality_reasons: tuple[str, ...] = ()
+    quality_structural_correlation: float | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
