@@ -668,7 +668,24 @@ A user-configured reminder that fires on a specific day of a plant's lifecycle s
 A point-in-time image captured from a growspace camera. Can be triggered manually by the grower via the camera snapshots dialog or automatically as part of a scheduled [[Vision Checkup]]. Saved to the public directory `www/growspace_manager/snapshots/{growspace_id}/` as a JPEG file named with a local timestamp prefix for display in the frontend.
 
 **Vision Checkup**
-An AI-powered diagnostic task performed on one or more [[Camera Snapshot]]s from a growspace, scheduled at three key times in the light cycle (early, mid, late) or triggered manually. The snapshots are processed with a 4x4 grid overlay and canopy green-pixel coverage analysis before being sent to the AI model. The analysis results (severity, detected issues, recommendations) are stored as a `VisionCheckupResult` in the growspace's vision history.
+An observation of one or more [[Camera Snapshot]]s from a growspace, scheduled at three key times in the light cycle (early, mid, late) or triggered manually. The snapshots are processed with a 4x4 grid overlay before analysis. A checkup produces a Visual Comparison Result and an [[Evidence Fusion Outcome]]; where an AI task is configured it also produces a [[Vision Explainer Report]], which narrates that evidence and never decides it. The legacy `VisionCheckupResult` history is frozen in place (ADR 0041) and its `severity` and `issues_detected` fields are not produced by the new pipeline.
+_Avoid_: Vision diagnosis, AI verdict, plant health check
+
+**Vision Explainer**
+The optional cloud LLM stage of a [[Vision Checkup]]. It receives the [[Evidence Fusion Outcome]], the visual evidence, the environmental evidence and the temporal trend, each labelled with its origin, and produces prose. It emits no verdict, no severity and no machine-readable symptom claim; severity is a fusion output and the explainer has no field to overrule it. A growspace with no AI task configured has no explainer and a complete report without one. See [ADR-0042](./docs/adr/0042-the-vision-explainer-explains-evidence-it-does-not-inspect.md).
+_Avoid_: Vision AI, diagnostician, the vision model
+
+**Visual Observation Pass**
+The first of the [[Vision Explainer]]'s two calls. It receives the photographs and the light window and nothing else — there is no parameter through which environmental evidence, a fusion state or a trend could reach it — and returns a description of what is visible. Optional, behind `ai_settings.vision_explainer_sees_image`; when it is off or it fails, the observation is derived from the Visual Comparison Result and recorded as `visual_comparison_only`.
+_Avoid_: Image analysis, visual diagnosis
+
+**Evidence Explanation Pass**
+The second of the [[Vision Explainer]]'s two calls. It receives the [[Visual Observation Pass]]'s text, the evidence and the trend, and **no image** — which is what makes its binding rule ("You have not seen an image") true rather than aspirational. It never returns the observation, so it cannot revise what was seen.
+_Avoid_: Interpretation call, the second prompt
+
+**Vision Explainer Report**
+The four fields a [[Vision Explainer]] produces for one capture — `observation`, `environmental_risk`, `hypothesis`, `recommendations` — stored in the `vision_explainer_report` table with the [[Evidence Fusion Outcome]] snapshotted alongside them. No severity, no symptom vocabulary. Empty values are legal: an empty hypothesis is the honest output when the evidence supports none.
+_Avoid_: Vision analysis, AI diagnosis, checkup result
 
 **Vision Evidence Store**
 The Home Assistant-owned SQLite database `growspace_vision.db` holding every artifact of a [[Vision Checkup]]: [[Vision Capture]]s, their image files, Visual Embeddings, Visual Comparison Results, Baseline Buckets and [[Vision Label]]s. Growspace Vision is stateless, so this is the only durable record that the analysis happened. Versioned by `PRAGMA user_version` and migrated by forward-only numbered steps — deliberately not the `try: ALTER TABLE / except` pattern of `strain_library.py`, which records no version. See [ADR-0041](./docs/adr/0041-home-assistant-owns-vision-evidence-in-a-dedicated-store.md).

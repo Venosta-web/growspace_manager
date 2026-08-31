@@ -233,6 +233,60 @@ CREATE TABLE IF NOT EXISTS vision_comparison_result (
 CREATE INDEX IF NOT EXISTS idx_vision_result_capture
     ON vision_comparison_result (capture_id, evaluated_at);
 
+-- The Vision Explainer's narrative for one capture (ADR 0042).  Separate from the
+-- capture because the explainer is optional: the evidence rows are a complete
+-- report without it, and a growspace with no AI task configured simply has no rows
+-- here.  There is no severity column — severity is an Evidence Fusion output
+-- (ADR 0040) and the explainer must not be able to overrule it — and no symptom
+-- vocabulary, because V1 has no validated classifier to stand behind one (hub#68).
+--
+-- The fusion outcome is snapshotted rather than joined.  A narrative written
+-- against `environmental_risk` is uninterpretable once the fusion transition table
+-- moves underneath it, which is invisible to model version; the same reasoning that
+-- put `scoring_policy_version` on a comparison result.  Text is free.
+--
+-- Not unique per capture: a manual re-run against a different AI task entity is a
+-- second report, not a correction of the first.
+CREATE TABLE IF NOT EXISTS vision_explainer_report (
+    report_id          TEXT PRIMARY KEY,
+    capture_id         TEXT NOT NULL
+                       REFERENCES vision_capture (capture_id) ON DELETE CASCADE,
+    created_at         TEXT NOT NULL,
+    ai_task_entity_id  TEXT NOT NULL,
+    -- `visual_comparison_only` records that no photograph was read, whether the
+    -- Visual Observation Pass was switched off or failed.  A report can never
+    -- imply an inspection that did not happen.
+    observation_source TEXT NOT NULL
+                       CHECK (observation_source IN ('image_pass',
+                                                     'visual_comparison_only')),
+    scoring_policy_version INTEGER NOT NULL,
+    observation        TEXT NOT NULL,
+    environmental_risk TEXT NOT NULL,
+    hypothesis         TEXT NOT NULL,
+    recommendations    TEXT NOT NULL,
+    fusion_state       TEXT
+                       CHECK (fusion_state IS NULL
+                              OR fusion_state IN (
+                                  'no_detected_change',
+                                  'environmental_risk',
+                                  'visual_anomaly',
+                                  'concurrent_environmental_risk_and_visual_anomaly',
+                                  'critical_scene_issue')),
+    fusion_confidence  TEXT
+                       CHECK (fusion_confidence IS NULL
+                              OR fusion_confidence IN ('confirmed', 'monitor')),
+    fusion_coverage    TEXT
+                       CHECK (fusion_coverage IS NULL
+                              OR fusion_coverage IN ('complete', 'partial')),
+    fusion_unavailable_reasons TEXT,
+    -- An available fusion outcome carries exactly one state with both qualifiers;
+    -- an unavailable one carries none of the three.
+    CHECK ((fusion_state IS NULL) = (fusion_confidence IS NULL)),
+    CHECK ((fusion_state IS NULL) = (fusion_coverage IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_vision_explainer_report_capture
+    ON vision_explainer_report (capture_id, created_at);
+
 -- Grower feedback.  Two kinds, because V1 emits a scene claim and never a health
 -- claim (hub#68): a `comparison_correction` corrects a verdict the model actually
 -- made, an `observation` asserts something the model never claimed and therefore
