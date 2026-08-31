@@ -939,12 +939,19 @@ async def test_process_camera_images_creates_output_directory(
 
 
 # ---------------------------------------------------------------------------
-# _build_vision_prompt — canopy coverage and grid reference
+# _build_vision_prompt — grid reference
 # ---------------------------------------------------------------------------
 
 
-def test_build_vision_prompt_injects_canopy_coverage(mock_hass, mock_coordinator):
-    """Canopy coverage percentage appears in the prompt when provided."""
+def test_build_vision_prompt_makes_no_canopy_coverage_claim(
+    mock_hass, mock_coordinator
+):
+    """The HSV green-pixel statistic is not stated to the model.
+
+    It varies 31.5% inside one fixed camera's healthy bucket (hub#68), so
+    presenting it as a measured fact alongside the image gave the model a
+    quantity to reason from that does not mean what it appears to mean.
+    """
     scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
 
     with patch(
@@ -956,30 +963,11 @@ def test_build_vision_prompt_injects_canopy_coverage(mock_hass, mock_coordinator
             "mid",
             {"growspace": {"name": "t", "id": "t1"}},
             [],
-            canopy_coverage=64.5,
-        )
-
-    assert "64.5%" in prompt
-    assert "CANOPY COVERAGE" in prompt
-
-
-def test_build_vision_prompt_omits_coverage_when_none(mock_hass, mock_coordinator):
-    """No canopy coverage line is added when canopy_coverage is None."""
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with patch(
-        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._format_context_data",
-        return_value="",
-    ):
-        prompt = scheduler._build_vision_prompt(
-            "t1",
-            "mid",
-            {"growspace": {"name": "t", "id": "t1"}},
-            [],
-            canopy_coverage=None,
         )
 
     assert "CANOPY COVERAGE" not in prompt
+    assert "HSV" not in prompt
+    assert "green plant matter" not in prompt
 
 
 def test_build_vision_prompt_includes_grid_sector_instructions(

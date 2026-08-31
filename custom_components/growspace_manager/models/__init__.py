@@ -88,9 +88,11 @@ from .vision_evidence import (
     LabelKind,
     LightState,
     LightWindow,
+    ObservationSource,
     VisionCapture,
     VisionCaptureFile,
     VisionEmbedding,
+    VisionExplainerReport,
     VisionLabel,
     VisualComparisonResult,
 )
@@ -164,6 +166,7 @@ __all__ = [
     "NutrientPresetDict",
     "NutrientPresetItem",
     "NutrientStock",
+    "ObservationSource",
     "PhenotypeScore",
     "Plant",
     # plant
@@ -187,6 +190,7 @@ __all__ = [
     "VisionCheckupConfig",
     "VisionCheckupResult",
     "VisionEmbedding",
+    "VisionExplainerReport",
     "VisionLabel",
     "VisualComparisonResult",
     "WaterUsageData",

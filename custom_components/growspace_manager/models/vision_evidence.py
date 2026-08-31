@@ -131,6 +131,18 @@ class ComparisonVerdict(StrEnum):
     MATERIAL_SCENE_CHANGE = "material_scene_change"
 
 
+class ObservationSource(StrEnum):
+    """Where a Vision Explainer Report's observation text came from.
+
+    ``VISUAL_COMPARISON_ONLY`` is the honest record that no photograph was read —
+    because the Visual Observation Pass is switched off, or because it failed.  A
+    report can then never imply an inspection that did not happen.
+    """
+
+    IMAGE_PASS = "image_pass"
+    VISUAL_COMPARISON_ONLY = "visual_comparison_only"
+
+
 class LabelKind(StrEnum):
     """Which kind of feedback a label carries.
 
@@ -332,3 +344,34 @@ class VisionLabel:
     excluded: bool = False
     exclusion_reason: str | None = None
     superseded_by: str | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class VisionExplainerReport:
+    """The Vision Explainer's four-field narrative for one capture.
+
+    ``observation`` is the Visual Observation Pass's own words, carried across
+    unchanged; the Evidence Explanation Pass never returns it and so cannot revise
+    it.  There is no severity — severity is an Evidence Fusion output (ADR 0040) —
+    and no symptom vocabulary, because V1 has no validated classifier to stand
+    behind one (hub#68).
+
+    The fusion outcome is snapshotted rather than referenced.  A narrative written
+    against ``environmental_risk`` becomes uninterpretable once the fusion
+    transition table moves underneath it, and text costs nothing to keep.
+    """
+
+    report_id: str
+    capture_id: str
+    created_at: str
+    ai_task_entity_id: str
+    observation_source: ObservationSource
+    scoring_policy_version: int
+    observation: str
+    environmental_risk: str
+    hypothesis: str
+    recommendations: tuple[str, ...] = ()
+    fusion_state: str | None = None
+    fusion_confidence: str | None = None
+    fusion_coverage: str | None = None
+    fusion_unavailable_reasons: tuple[str, ...] = ()

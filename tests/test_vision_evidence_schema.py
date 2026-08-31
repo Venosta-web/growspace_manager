@@ -17,6 +17,11 @@ from custom_components.growspace_manager.data_access.vision_evidence_schema impo
     VISION_EVIDENCE_SCHEMA_VERSION,
     VISION_SCORING_POLICY_VERSION,
 )
+from custom_components.growspace_manager.domain.evidence_fusion import (
+    ConfidenceQualifier,
+    EvidenceCoverage,
+    EvidenceFusionState,
+)
 from custom_components.growspace_manager.models.vision_evidence import (
     AdmissionPhase,
     AnalysisState,
@@ -32,6 +37,7 @@ from custom_components.growspace_manager.models.vision_evidence import (
     LabelKind,
     LightState,
     LightWindow,
+    ObservationSource,
 )
 
 EXPECTED_TABLES = {
@@ -41,6 +47,7 @@ EXPECTED_TABLES = {
     "vision_capture_file",
     "vision_comparison_result",
     "vision_embedding",
+    "vision_explainer_report",
     "vision_framing_epoch",
     "vision_grow_run_ref",
     "vision_label",
@@ -133,6 +140,10 @@ def test_schema_version_is_recorded_in_user_version(db):
         ("vision_comparison_result", "outcome", ComparisonOutcome),
         ("vision_comparison_result", "verdict", ComparisonVerdict),
         ("vision_label", "label_kind", LabelKind),
+        ("vision_explainer_report", "observation_source", ObservationSource),
+        ("vision_explainer_report", "fusion_state", EvidenceFusionState),
+        ("vision_explainer_report", "fusion_confidence", ConfidenceQualifier),
+        ("vision_explainer_report", "fusion_coverage", EvidenceCoverage),
     ],
 )
 def test_check_constraints_match_the_model_enums(db, table, column, enum):
@@ -292,3 +303,82 @@ def test_baseline_members_required_matches_the_bucket_default(db):
         "SELECT sql FROM sqlite_master WHERE name = 'vision_baseline_bucket'"
     ).fetchone()
     assert f"DEFAULT {VISION_BASELINE_MEMBERS_REQUIRED}" in row[0]
+
+
+def _insert_report(
+    db: sqlite3.Connection,
+    report_id: str = "report-1",
+    *,
+    capture_id: str = "capture-1",
+    fusion_state: str | None = "no_detected_change",
+    fusion_confidence: str | None = "confirmed",
+    fusion_coverage: str | None = "complete",
+) -> str:
+    """Insert a Vision Explainer Report and return its id."""
+    db.execute(
+        "INSERT INTO vision_explainer_report"
+        " (report_id, capture_id, created_at, ai_task_entity_id,"
+        "  observation_source, scoring_policy_version, observation,"
+        "  environmental_risk, hypothesis, recommendations,"
+        "  fusion_state, fusion_confidence, fusion_coverage)"
+        " VALUES (?, ?, '2026-08-31T06:05:00+00:00', 'ai_task.cloud',"
+        " 'image_pass', 1, 'Canopy is even across all sectors.',"
+        " 'No active evaluation.', '', '[]', ?, ?, ?)",
+        (report_id, capture_id, fusion_state, fusion_confidence, fusion_coverage),
+    )
+    return report_id
+
+
+def test_explainer_report_carries_no_severity(db):
+    """Severity is a fusion output; the explainer has no column to overrule it."""
+    sql = _table_sql(db, "vision_explainer_report")
+    assert "severity" not in sql.lower()
+
+
+def test_explainer_report_carries_no_symptom_vocabulary(db):
+    """V1 emits no machine-readable symptom claim (hub#68)."""
+    sql = _table_sql(db, "vision_explainer_report")
+    assert "symptom" not in sql.lower()
+    assert "issues_detected" not in sql.lower()
+
+
+def test_explainer_report_is_recordable(db):
+    """A complete report attaches to its capture."""
+    _insert_epoch(db)
+    _insert_capture(db)
+    _insert_report(db)
+    assert db.execute("SELECT COUNT(*) FROM vision_explainer_report").fetchone()[0] == 1
+
+
+def test_an_unavailable_fusion_outcome_carries_no_qualifiers(db):
+    """State, confidence and coverage are present together or not at all."""
+    _insert_epoch(db)
+    _insert_capture(db)
+    _insert_report(
+        db,
+        "report-unavailable",
+        fusion_state=None,
+        fusion_confidence=None,
+        fusion_coverage=None,
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        _insert_report(db, "report-half", fusion_confidence=None)
+
+
+def test_a_capture_may_carry_more_than_one_report(db):
+    """A re-run against another AI task entity is a second report, not an edit."""
+    _insert_epoch(db)
+    _insert_capture(db)
+    _insert_report(db, "report-1")
+    _insert_report(db, "report-2")
+    assert db.execute("SELECT COUNT(*) FROM vision_explainer_report").fetchone()[0] == 2
+
+
+def test_deleting_a_capture_removes_its_report(db):
+    """Evidence deletion is complete: no narrative outlives its capture."""
+    _insert_epoch(db)
+    _insert_capture(db)
+    _insert_report(db)
+    db.execute("DELETE FROM vision_capture WHERE capture_id = 'capture-1'")
+    assert db.execute("SELECT COUNT(*) FROM vision_explainer_report").fetchone()[0] == 0

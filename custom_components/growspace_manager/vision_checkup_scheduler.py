@@ -145,9 +145,22 @@ class VisionCheckupScheduler:
         check_type: str,
         context_data: dict[str, Any],
         previous_results: list[VisionCheckupResult],
-        canopy_coverage: float | None = None,
     ) -> str:
-        """Build the vision analysis prompt with full growspace context."""
+        """Build the vision analysis prompt with full growspace context.
+
+        Interim shape. The evidence-explainer rewrite (ADR 0042) lives in
+        ``domain/vision_explainer_prompt.py`` and is wired in by hub#73, once the
+        Evidence Fusion Outcome and Visual Comparison Result seams exist. What
+        changes here now is only the canopy-coverage claim, which had no such
+        dependency: the HSV green-pixel statistic varies 31.5% inside a fixed
+        camera's healthy bucket (hub#68), so stating it as a measured fact
+        alongside the image invited the model to reason from it.
+
+        The MOISTURE INTERPRETATION RULE below deliberately stays until that
+        rewrite lands. Weak as it is, it is the only counterweight currently
+        standing between the sensor block and the image; removing it first would
+        make contamination worse, not better.
+        """
         from .services.ai_assistant import GrowAssistant  # noqa: PLC0415
 
         assistant = GrowAssistant(
@@ -174,18 +187,10 @@ class VisionCheckupScheduler:
         }
         timing_desc = check_type_descriptions.get(check_type, check_type)
 
-        canopy_line = (
-            f"CANOPY COVERAGE: {canopy_coverage}% of the image area is green plant matter "
-            "(calculated via HSV color filtering before this message was sent).\n\n"
-            if canopy_coverage is not None
-            else ""
-        )
-
         return (
             "You are an expert cannabis plant health analyst performing a visual inspection.\n\n"
             f"TIMING: This is a {check_type} checkup ({timing_desc}).\n\n"
             f"{env_context}\n\n"
-            f"{canopy_line}"
             f"{trend_context}"
             "GRID REFERENCE: The attached image has a 4x4 grid overlay with sectors labeled "
             "A1–A4 (top row) through D1–D4 (bottom row). When you identify any issue, you MUST "
@@ -566,7 +571,7 @@ class VisionCheckupScheduler:
 
         # Process camera images: apply green-coverage analysis and grid overlay.
         # Falls back to direct camera URIs if processing fails for all cameras.
-        attachments, avg_coverage, temp_paths = await self._process_camera_images(
+        attachments, _coverage, temp_paths = await self._process_camera_images(
             growspace_id, camera_entities
         )
         if not attachments:
@@ -578,14 +583,12 @@ class VisionCheckupScheduler:
                 {"media_content_id": f"media-source://camera/{cam}"}
                 for cam in camera_entities
             ]
-            avg_coverage = None
 
         prompt = self._build_vision_prompt(
             growspace_id,
             check_type,
             context_data,
             growspace.vision_checkup_history,
-            avg_coverage,
         )
 
         try:
