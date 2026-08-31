@@ -668,7 +668,7 @@ A user-configured reminder that fires on a specific day of a plant's lifecycle s
 A point-in-time image captured from a growspace camera. Can be triggered manually by the grower via the camera snapshots dialog or automatically as part of a scheduled [[Vision Checkup]]. Manual JPEGs and grid-overlaid `_processed.jpg` images live in the public directory `www/growspace_manager/snapshots/{growspace_id}/` for frontend display. A Vision Checkup also preserves the camera response bytes unchanged in the resolved private media root at `growspace_vision/raw/{growspace_id}/{timestamp}_{camera}_raw.{source-extension}`. These raw artifacts never appear in the snapshot-listing API and are pruned after 90 days until the [[Vision Evidence Store]] takes over their lifecycle.
 
 **Vision Checkup**
-An observation of one or more [[Camera Snapshot]]s from a growspace, scheduled at three key times in the light cycle (early, mid, late) or triggered manually. The snapshots are processed with a 4x4 grid overlay before analysis. A checkup produces a Visual Comparison Result and an [[Evidence Fusion Outcome]]; where an AI task is configured it also produces a [[Vision Explainer Report]], which narrates that evidence and never decides it. The legacy `VisionCheckupResult` history is frozen in place (ADR 0041) and its `severity` and `issues_detected` fields are not produced by the new pipeline.
+One Home Assistant-owned observation task for a growspace, scheduled in a light window or triggered manually and identified by `checkup_id`. It groups one [[Vision Capture]] per camera and has only an operational outcome (`completed`, `partial`, `failed`); visual comparison and [[Evidence Fusion Outcome]] remain capture-specific and are never aggregated across cameras. See [ADR-0043](./docs/adr/0043-vision-checkups-migrate-through-versioned-capture-contracts.md).
 _Avoid_: Vision diagnosis, AI verdict, plant health check
 
 **Vision Explainer**
@@ -688,12 +688,24 @@ The four fields a [[Vision Explainer]] produces for one capture — `observation
 _Avoid_: Vision analysis, AI diagnosis, checkup result
 
 **Vision Evidence Store**
-The Home Assistant-owned SQLite database `growspace_vision.db` holding every artifact of a [[Vision Checkup]]: [[Vision Capture]]s, their image files, Visual Embeddings, Visual Comparison Results, Baseline Buckets and [[Vision Label]]s. Growspace Vision is stateless, so this is the only durable record that the analysis happened. Versioned by `PRAGMA user_version` and migrated by forward-only numbered steps — deliberately not the `try: ALTER TABLE / except` pattern of `strain_library.py`, which records no version. See [ADR-0041](./docs/adr/0041-home-assistant-owns-vision-evidence-in-a-dedicated-store.md).
+The Home Assistant-owned SQLite database `growspace_vision.db` holding every artifact of a [[Vision Checkup]]: the checkup itself, [[Vision Capture]]s, their image files, Visual Embeddings, Visual Comparison Results, Baseline Buckets and [[Vision Label]]s. Growspace Vision is stateless, so this is the only durable record that the analysis happened. Versioned by `PRAGMA user_version` and migrated by forward-only numbered steps — deliberately not the `try: ALTER TABLE / except` pattern of `strain_library.py`, which records no version. See [ADR-0041](./docs/adr/0041-home-assistant-owns-vision-evidence-in-a-dedicated-store.md).
 _Avoid_: Vision history, embedding cache, anomaly database
 
 **Vision Capture**
-One [[Camera Snapshot]] taken for a [[Vision Checkup]], identified by a `capture_id` (UUIDv7) minted in Home Assistant **before** the Growspace Vision call. The id is the filename stem of every image variant, so a file and its record are linked without the database. The capture record is written when the bytes are persisted, so a rejected or failed analysis still leaves a tracked, prunable image; `analysis_state` carries how far it got (`pending`, `analyzed`, `rejected`, `failed`).
+One [[Camera Snapshot]] taken for a [[Vision Checkup]], identified by a `capture_id` (UUIDv7) and linked to its parent `checkup_id`. The id is minted in Home Assistant before the Growspace Vision call and names every image variant; the record is written when the bytes are persisted, so rejection or failure still leaves a tracked, prunable image.
 _Avoid_: Frame, snapshot record, image row
+
+**Vision Capture Result**
+The card-facing projection of one [[Vision Capture]]: image availability, quality outcome, visual comparison, normalized environmental evidence, [[Evidence Fusion Outcome]], measurement-only trend, provenance and optional [[Vision Explainer Report]]. It is not an embedding or database-row dump and has no severity or symptom claim.
+_Avoid_: Checkup result, AI verdict, capture diagnosis
+
+**Vision Service Status**
+The integration-owned statement of whether Growspace Vision is `ready`, `unavailable` or `incompatible`, with a typed reason and the service, schema and active-model versions when known. The card displays it but never probes or configures the service itself.
+_Avoid_: Connected boolean, App health check, model setting
+
+**Vision Connection**
+The integration-wide route to Growspace Vision: either automatic Supervisor discovery or an explicit manual endpoint and bearer token. It never belongs to a growspace, never reaches the card with its token, and never silently falls back between modes.
+_Avoid_: VisionCheckupConfig endpoint, camera connection
 
 **Capture Variant**
 Which rendering of a [[Vision Capture]] an image file holds: `raw` (the camera's original bytes) or `processed` (the grid-overlaid JPEG the cloud path produces). Stored as a path relative to the resolved image root, never as a public URL, so the serving mechanism can change without a data migration. The record outlives the file — a pruned image is distinguishable from an image that never existed.
@@ -716,6 +728,14 @@ _Avoid_: Correction, ground truth, annotation record
 **Legacy Vision Checkup History**
 The pre-local-vision `vision_checkup_history` list on each `Growspace`, holding up to ten cloud-LLM results with `analysis`, `issues_detected`, `severity` and `recommendations`. Frozen in place at the cutover: never appended to again, and never read by baselines, trends, [[Evidence Fusion]] or a training set. It is not migrated into the [[Vision Evidence Store]] — those records assert exactly the symptom claims V1 may not make, and giving them equal standing with measured evidence would re-import the false authority the local vision work exists to remove.
 _Avoid_: Vision history (unqualified)
+
+**Legacy Vision Checkup Result**
+One cloud-era entry preserved verbatim inside [[Legacy Vision Checkup History]] and discriminated as `legacy_cloud_v1` when projected to the card. Its severity and detected issues are attributed historical cloud output, never V1 evidence.
+_Avoid_: Migrated result, V1 result
+
+**Vision History**
+The newest-first card projection of V1 [[Vision Checkup]] envelopes and clearly marked [[Legacy Vision Checkup Result]]s. Pagination counts checkups rather than captures, and legacy entries never participate in V1 trends or evidence.
+_Avoid_: Legacy history, capture list
 
 **Contract Fixture**
 The golden `get_data` growspace payload committed at `tests/fixtures/contract/growspace_payload.json`, serialized from one **maximally populated** growspace (every optional sub-config set). A snapshot test fails when the payload shape changes without the fixture being deliberately regenerated; the lovelace card strict-parses the same file in its CI. Maximal population is the load-bearing property — a field absent from the fixture builder is invisible to the contract.
