@@ -230,6 +230,24 @@ re-scoring under a new policy adds rather than replaces, that one capture may ho
 several model versions, that a Baseline Bucket has no `manual` light window, and that
 neither label kind can be filled in as the other.
 
+## Interim raw-capture bridge
+
+[Hub issue #72](https://github.com/Venosta-web/growspace_manager_workspace/issues/72)
+starts preserving the source corpus before the dedicated evidence repository and
+local comparison producer exist. The cloud-era scheduler writes each camera response
+unchanged under the resolved private media root:
+
+`growspace_vision/raw/{growspace_id}/{timestamp}_{camera}_raw.{source-extension}`
+
+The paired overlaid image remains in the existing public snapshot directory with the
+same stem and `_processed.jpg`; manual captures retain the bare `.jpg` convention.
+Unknown camera content types use `.bin` rather than claiming the bytes are JPEG. Raw
+artifacts are retained for 90 days and pruning matches only `_raw` files. They are not
+returned by `get_snapshots` because that API only reads the separate `www/` tree; no
+filename filter is needed. A failed overlay still leaves the already-fetched raw
+artifact available. This file-only bridge is replaced by the capture and file rows
+specified above when the evidence repository lands.
+
 [hub#68]: https://github.com/Venosta-web/growspace_manager_workspace/issues/68
 [hub#69]: https://github.com/Venosta-web/growspace_manager_workspace/issues/69
 [hub#73]: https://github.com/Venosta-web/growspace_manager_workspace/issues/73

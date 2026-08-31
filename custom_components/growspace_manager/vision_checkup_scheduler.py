@@ -22,6 +22,7 @@ from homeassistant.util.dt import now as ha_now, utcnow
 from .domain.light_schedule import resolve_photoperiod_hours
 from .image_processor import GrowspaceImageProcessor
 from .models import VisionCheckupResult
+from .raw_snapshot_store import RawSnapshotStore
 
 if TYPE_CHECKING:
     from homeassistant.core import CALLBACK_TYPE, HomeAssistant
@@ -295,6 +296,7 @@ class VisionCheckupScheduler:
         attachments: list[dict[str, str]] = []
         coverages: list[float] = []
         temp_paths: list[Path] = []
+        raw_store = RawSnapshotStore(media_dir / "raw")
 
         for i, cam_entity in enumerate(camera_entities):
             try:
@@ -304,6 +306,25 @@ class VisionCheckupScheduler:
                     "Failed to fetch snapshot from camera %s, skipping", cam_entity
                 )
                 continue
+
+            captured_at = ha_now()
+            capture_timestamp = captured_at.strftime("%Y%m%d_%H%M%S_%f")
+            safe_name = cam_entity.replace(".", "_").replace(" ", "_")
+            capture_stem = f"{capture_timestamp}_{safe_name}"
+
+            try:
+                await self.hass.async_add_executor_job(
+                    raw_store.save,
+                    growspace_id,
+                    capture_stem,
+                    image.content,
+                    getattr(image, "content_type", None),
+                    captured_at,
+                )
+            except OSError:
+                _LOGGER.exception(
+                    "Failed to save raw snapshot bytes for %s", cam_entity
+                )
 
             try:
                 processed_bytes, coverage = await self.hass.async_add_executor_job(
@@ -330,11 +351,7 @@ class VisionCheckupScheduler:
 
             # Save a permanent copy to the www snapshots directory
             try:
-                from homeassistant.util import dt as dt_util  # noqa: PLC0415
-
-                local_timestamp = dt_util.now().strftime("%Y%m%d_%H%M%S")
-                safe_name = cam_entity.replace(".", "_").replace(" ", "_")
-                snapshot_filename = f"{local_timestamp}_{safe_name}_processed.jpg"
+                snapshot_filename = f"{capture_stem}_processed.jpg"
                 snapshot_file_path = snapshot_dir / snapshot_filename
 
                 await self.hass.async_add_executor_job(

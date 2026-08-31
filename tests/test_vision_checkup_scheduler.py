@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -709,6 +710,7 @@ async def test_process_camera_images_returns_media_source_uris(
 
     mock_image = MagicMock()
     mock_image.content = b"\xff\xd8\xff\xe0fake"
+    mock_image.content_type = "image/jpeg"
 
     with (
         patch(
@@ -763,6 +765,7 @@ async def test_process_camera_images_saves_under_media_source_root(
 
     mock_image = MagicMock()
     mock_image.content = b"\xff\xd8\xff\xe0fake"
+    mock_image.content_type = "image/jpeg"
 
     with (
         patch(
@@ -795,6 +798,14 @@ async def test_process_camera_images_saves_under_media_source_root(
     )
     snapshots = list(snapshot_dir.glob("*_processed.jpg"))
     assert len(snapshots) == 1
+    raw_dir = local_media_root / "growspace_vision" / "raw" / "tent1"
+    raw_snapshots = list(raw_dir.glob("*_raw.jpg"))
+    assert len(raw_snapshots) == 1
+    assert raw_snapshots[0].read_bytes() == mock_image.content
+    assert not raw_snapshots[0].is_relative_to(tmp_path / "config" / "www")
+    assert raw_snapshots[0].stem.removesuffix("_raw") == snapshots[0].stem.removesuffix(
+        "_processed"
+    )
     assert scheduler._latest_public_paths["tent1"] == [
         f"/local/growspace_manager/snapshots/tent1/{snapshots[0].name}"
     ]
@@ -861,9 +872,9 @@ async def test_process_camera_images_skips_failed_camera_fetch(
 
 @pytest.mark.asyncio
 async def test_process_camera_images_skips_failed_processing(
-    hass_with_executor, mock_coordinator
+    hass_with_executor, mock_coordinator, tmp_path
 ):
-    """A camera whose image fails to process is skipped; others are still used."""
+    """A failed overlay still leaves the fetched raw camera artifact available."""
     scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
 
     mock_image = MagicMock()
@@ -886,6 +897,79 @@ async def test_process_camera_images_skips_failed_processing(
 
     assert len(attachments) == 1
     assert coverage == 60.0
+    raw_snapshots = list(
+        (tmp_path / "media" / "growspace_vision" / "raw" / "tent1").glob("*_raw.*")
+    )
+    assert len(raw_snapshots) == 2
+    assert all(path.read_bytes() == mock_image.content for path in raw_snapshots)
+
+
+@pytest.mark.asyncio
+async def test_process_camera_images_continues_when_raw_persistence_fails(
+    hass_with_executor, mock_coordinator
+):
+    """A local storage failure does not discard an otherwise valid analysis."""
+    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
+    mock_image = MagicMock(content=b"camera bytes", content_type="image/jpeg")
+
+    with (
+        patch(
+            "homeassistant.components.camera.async_get_image",
+            new_callable=AsyncMock,
+            return_value=mock_image,
+        ),
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.RawSnapshotStore.save",
+            side_effect=OSError("disk unavailable"),
+        ),
+        patch(
+            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
+            return_value=(b"processed", 50.0),
+        ),
+    ):
+        attachments, coverage, temp_paths = await scheduler._process_camera_images(
+            "tent1", ["camera.cam1"]
+        )
+
+    assert len(attachments) == 1
+    assert coverage == 50.0
+    assert len(temp_paths) == 1
+
+
+@pytest.mark.asyncio
+async def test_process_camera_images_continues_when_public_copy_fails(
+    hass_with_executor, mock_coordinator
+):
+    """The private raw corpus and AI attachment do not depend on the UI copy."""
+    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
+    mock_image = MagicMock(content=b"camera bytes", content_type="image/jpeg")
+    original_write_bytes = Path.write_bytes
+
+    def fail_public_write(path: Path, content: bytes) -> int:
+        if "www" in path.parts:
+            raise OSError("public snapshots unavailable")
+        return original_write_bytes(path, content)
+
+    with (
+        patch(
+            "homeassistant.components.camera.async_get_image",
+            new_callable=AsyncMock,
+            return_value=mock_image,
+        ),
+        patch(
+            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
+            return_value=(b"processed", 50.0),
+        ),
+        patch("pathlib.Path.write_bytes", new=fail_public_write),
+    ):
+        attachments, coverage, temp_paths = await scheduler._process_camera_images(
+            "tent1", ["camera.cam1"]
+        )
+
+    assert len(attachments) == 1
+    assert coverage == 50.0
+    assert len(temp_paths) == 1
+    assert scheduler._latest_public_paths["tent1"] == []
 
 
 @pytest.mark.asyncio
