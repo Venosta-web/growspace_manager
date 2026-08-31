@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 import os
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from custom_components.growspace_manager.raw_snapshot_store import RawSnapshotStore
 
@@ -69,3 +70,25 @@ def test_save_prunes_only_expired_raw_artifacts(tmp_path: Path) -> None:
     assert not expired_raw.exists()
     assert recent_raw.exists()
     assert unrelated_processed.exists()
+
+
+def test_prune_continues_when_one_raw_artifact_cannot_be_inspected(caplog) -> None:
+    """One inaccessible artifact does not disable retention for future captures."""
+    candidate = MagicMock(spec=Path)
+    candidate.stat.side_effect = OSError("unreadable")
+    root = MagicMock(spec=Path)
+    root.rglob.return_value = [candidate]
+
+    RawSnapshotStore(root)._prune(datetime(2026, 8, 31, 12, tzinfo=UTC))
+
+    assert "Failed to inspect or prune raw vision snapshot" in caplog.text
+
+
+def test_prune_tolerates_an_unreadable_raw_store(caplog) -> None:
+    """A retention scan failure is logged without breaking capture processing."""
+    root = MagicMock(spec=Path)
+    root.rglob.side_effect = OSError("unreadable store")
+
+    RawSnapshotStore(root)._prune(datetime(2026, 8, 31, 12, tzinfo=UTC))
+
+    assert "Failed to scan raw vision snapshot store" in caplog.text
