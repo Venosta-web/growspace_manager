@@ -39,14 +39,20 @@ PRAGMA foreign_keys = ON;
 -- unchanged.  Its own table rather than a bare integer so that "why did this
 -- camera's baseline reset" is answerable after the fact — camera-shaped change is
 -- the dominant cause of high visual distance (hub#62), so the question gets asked.
+--
+-- No reason is a detector.  V1 has no automatic camera-move detection (ADR 0005):
+-- the four known repositionings in the corpus interleave with the occlusion days on
+-- structural correlation, and a boundary triggered by an occlusion would re-learn
+-- the occluded view as normal.  `detector_evidence` therefore records the
+-- correlation observed when an epoch was started, not the thing that started it.
 CREATE TABLE IF NOT EXISTS vision_framing_epoch (
     epoch_id          TEXT PRIMARY KEY,
     growspace_id      TEXT NOT NULL,
     camera_id         TEXT NOT NULL,
     started_at        TEXT NOT NULL,
     reason            TEXT NOT NULL
-                      CHECK (reason IN ('initial', 'camera_move_detected',
-                                        'manual_restart', 'grow_run_boundary',
+                      CHECK (reason IN ('initial', 'manual_restart',
+                                        'grow_run_boundary',
                                         'model_version_change')),
     detector_evidence TEXT
 );
@@ -119,6 +125,11 @@ CREATE TABLE IF NOT EXISTS vision_capture (
     quality_clipped_pixel_fraction REAL,
     quality_mean_absolute_gradient REAL,
     quality_reasons       TEXT,
+    -- Structural correlation of this capture's 32x24 standardised signature against
+    -- its camera's recent history.  Recorded on every capture as evidence that can
+    -- be calibrated later against real positives; nothing automatic reads it
+    -- (ADR 0005).
+    quality_structural_correlation REAL,
     created_at            TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_vision_capture_camera_time

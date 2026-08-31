@@ -2,6 +2,15 @@
 
 **Status:** Accepted; amended by
 [ADR 0043](./0043-vision-checkups-migrate-through-versioned-capture-contracts.md)
+and on 2026-08-31 by
+[hub#74](https://github.com/Venosta-web/growspace_manager_workspace/issues/74)
+
+> **Amendment.** The Framing Epoch `reason` vocabulary loses
+> `camera_move_detected`, and a capture gains
+> `quality_structural_correlation`. Growspace Vision's ADR 0005 found automatic
+> camera-move detection unsafe, so no detector starts an epoch; the correlation
+> is recorded per capture instead. See _Framing Epochs and the Grow Run
+> dimension_ below.
 
 Decided on 2026-08-31 in
 [hub#70](https://github.com/Venosta-web/growspace_manager_workspace/issues/70), under
@@ -143,11 +152,28 @@ available admission bias for a baseline of "normal".
 ## Framing Epochs and the Grow Run dimension
 
 A Framing Epoch is its own table, with `started_at`, a `reason`
-(`camera_move_detected`, `manual_restart`, `grow_run_boundary`,
-`model_version_change`, `initial`) and a nullable `detector_evidence` for [hub#74]'s
-structural-correlation value. An integer column would answer _which_ epoch but not
+(`manual_restart`, `grow_run_boundary`, `model_version_change`, `initial`) and a
+nullable `detector_evidence`. An integer column would answer _which_ epoch but not
 _why this camera's baseline reset_, and camera-shaped change is the dominant cause of
 high visual distance, so that question gets asked constantly.
+
+**No reason is a detector.** This ADR originally named `camera_move_detected`, on the
+assumption that [hub#74] would supply a move detector. It measured one and rejected
+it: the four known repositionings in the corpus score 0.291 – 0.390 on adjacent-day
+structural correlation and the occlusion days interleave with them at 0.299 – 0.485,
+so no threshold separates a camera that moved from a lens the canopy grew over. The
+failure is asymmetric — a boundary triggered by an occlusion **re-learns the occluded
+view as normal**, after which the camera reports nothing wrong while looking at a leaf.
+An epoch therefore begins only when a grower restarts the baseline, or at a Grow Run
+or model-version boundary. `detector_evidence` survives the removal with its meaning
+narrowed: the correlation observed when an epoch was started, evidence rather than
+trigger.
+
+The correlation itself is recorded on every capture, in
+`quality_structural_correlation` alongside the three frame-quality signals. It costs
+microseconds, nothing automatic reads it, and it is the one quantity that could later
+be calibrated against real positives — which is exactly why it belongs in stored
+evidence rather than in a decision.
 
 Grow Runs are specified (ADR 0033-0035) but not implemented; `grep` finds `GrowRun` in
 three ADRs and zero Python files. Leaving `grow_run_id` null until they land was
