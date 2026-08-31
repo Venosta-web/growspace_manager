@@ -670,6 +670,36 @@ A point-in-time image captured from a growspace camera. Can be triggered manuall
 **Vision Checkup**
 An AI-powered diagnostic task performed on one or more [[Camera Snapshot]]s from a growspace, scheduled at three key times in the light cycle (early, mid, late) or triggered manually. The snapshots are processed with a 4x4 grid overlay and canopy green-pixel coverage analysis before being sent to the AI model. The analysis results (severity, detected issues, recommendations) are stored as a `VisionCheckupResult` in the growspace's vision history.
 
+**Vision Evidence Store**
+The Home Assistant-owned SQLite database `growspace_vision.db` holding every artifact of a [[Vision Checkup]]: [[Vision Capture]]s, their image files, Visual Embeddings, Visual Comparison Results, Baseline Buckets and [[Vision Label]]s. Growspace Vision is stateless, so this is the only durable record that the analysis happened. Versioned by `PRAGMA user_version` and migrated by forward-only numbered steps — deliberately not the `try: ALTER TABLE / except` pattern of `strain_library.py`, which records no version. See [ADR-0041](./docs/adr/0041-home-assistant-owns-vision-evidence-in-a-dedicated-store.md).
+_Avoid_: Vision history, embedding cache, anomaly database
+
+**Vision Capture**
+One [[Camera Snapshot]] taken for a [[Vision Checkup]], identified by a `capture_id` (UUIDv7) minted in Home Assistant **before** the Growspace Vision call. The id is the filename stem of every image variant, so a file and its record are linked without the database. The capture record is written when the bytes are persisted, so a rejected or failed analysis still leaves a tracked, prunable image; `analysis_state` carries how far it got (`pending`, `analyzed`, `rejected`, `failed`).
+_Avoid_: Frame, snapshot record, image row
+
+**Capture Variant**
+Which rendering of a [[Vision Capture]] an image file holds: `raw` (the camera's original bytes) or `processed` (the grid-overlaid JPEG the cloud path produces). Stored as a path relative to the resolved image root, never as a public URL, so the serving mechanism can change without a data migration. The record outlives the file — a pruned image is distinguishable from an image that never existed.
+
+**Pinned Capture**
+A [[Vision Capture]] exempt from image retention because its image is evidence: it is a current Baseline Bucket member, it carries a [[Vision Label]], or its Visual Comparison Result was `uncertain` or `material_scene_change`. Unpinned images are deleted after `image_retention_days` (default 90); pinned ones are kept indefinitely and survive deletion of their Growspace as orphans, with the growspace name denormalized onto the capture. This is the set a future training run needs, so an unrelated tidy-up must not destroy it.
+_Avoid_: Archived capture, saved snapshot
+
+**Scoring Policy Version**
+An integer recorded on every Visual Comparison Result and Baseline Bucket, bumped whenever the Home Assistant side changes _how_ a comparison is produced — the distance metric, the rolling window size, the leave-one-out calibration, or the verdict cuts of ADR 0004. Distinct from model identity: an encoder change and a policy change both make results incomparable, and only the first is captured by model version. A result whose policy version differs from the current one stays displayable as history but is never reused as evidence.
+_Avoid_: Schema version, algorithm hash
+
+**Grow Run Reference**
+The run identity a [[Vision Capture]] is attributed to. Grow Runs are specified but not yet implemented, so the integration mints a persisted surrogate id per growspace and marks it `surrogate`; when Grow Runs land, the source flips to `grow_run` and the mapping is a one-row-per-growspace backfill rather than a schema migration. A run boundary starts fresh Baseline Buckets — without one, the harvest (the largest legitimate scene change in the measured corpus) would alarm every time.
+
+**Vision Label**
+Grower feedback anchored on a `capture_id`, in exactly two kinds. A `comparison_correction` corrects a scene verdict the model actually made and carries that verdict alongside the corrected one. An `observation` asserts a symptom or condition the model never claimed, and therefore has no model output to correct — V1 emits no health claim, so conflating the two would imply one. Append-only: a revision supersedes its predecessor rather than overwriting it. Training eligibility is derived at export time, never stored; only an explicit human exclusion is persisted.
+_Avoid_: Correction, ground truth, annotation record
+
+**Legacy Vision Checkup History**
+The pre-local-vision `vision_checkup_history` list on each `Growspace`, holding up to ten cloud-LLM results with `analysis`, `issues_detected`, `severity` and `recommendations`. Frozen in place at the cutover: never appended to again, and never read by baselines, trends, [[Evidence Fusion]] or a training set. It is not migrated into the [[Vision Evidence Store]] — those records assert exactly the symptom claims V1 may not make, and giving them equal standing with measured evidence would re-import the false authority the local vision work exists to remove.
+_Avoid_: Vision history (unqualified)
+
 **Contract Fixture**
 The golden `get_data` growspace payload committed at `tests/fixtures/contract/growspace_payload.json`, serialized from one **maximally populated** growspace (every optional sub-config set). A snapshot test fails when the payload shape changes without the fixture being deliberately regenerated; the lovelace card strict-parses the same file in its CI. Maximal population is the load-bearing property — a field absent from the fixture builder is invisible to the contract.
 
