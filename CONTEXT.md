@@ -656,6 +656,46 @@ A class in `domain/environmental_targets.py` that encapsulates all stage-interpo
 **Evaluation Snapshot**
 An immutable record published by each Bayesian binary sensor (stress/mold/optimal) after every probability update, via `coordinator.services.notifications.report_evaluation()`. Fields: `growspace_id`, `sensor_type`, sensor name, `probability`, `threshold`, `is_on`, `reasons`, `sensor_states` (observation dict), `lights_on`, and the notification title/message precomputed for the triggered state. The snapshot is the **only** interface between Bayesian sensors and the notification subsystem: the facade sends it to both the Notification Manager and Alert Monitor. Neither consumer holds live sensor entity references, and there is no entity-registration or global state-change-listener path. The Notification Manager stores the latest snapshot per `(growspace_id, sensor_type)`. Light-flip cooldown is derived by the manager from consecutive snapshots' `lights_on` transitions, deduplicated per growspace — sensors do not call `trigger_cooldown`. The title/message text is frozen at snapshot time, which may be a few seconds older than the debounced batch-fire time; this is accepted. Notification message formatting (sorted reasons appended up to `MAX_NOTIFICATION_LENGTH`) is a pure function in `notifications/`, not a Notification Manager method. GrowAssistant AI enrichment of alert _records_ lives in `AlertMonitor._async_enrich_with_ai` (gated by `CONF_AI_AUTO_ALERTS`); the sensor never had a live AI path — its old `_send_notification` GrowAssistant copy was already unreachable and was removed.
 
+**Vision Analysis**
+One Growspace Vision operation that either produces a Visual Embedding or rejects the Camera Snapshot as unusable.
+_Avoid_: Vision Checkup, scoring, diagnosis
+
+**Visual Embedding**
+The model-versioned vector representation of one Camera Snapshot returned by a successful Vision Analysis.
+_Avoid_: Anomaly score, health score, feature score
+
+**Frame Quality Result**
+The non-plant image measurements and any unusable-frame reasons returned by a Vision Analysis.
+_Avoid_: Plant evidence, health evidence
+
+**Frame Quality Gate**
+The two-layer decision that admits or rejects a Camera Snapshot: an absolute floor applied by Growspace Vision to one image, and history-relative rails applied by Home Assistant to the returned Frame Quality Result.
+_Avoid_: Image quality score, blur detector
+
+**Quality History**
+The trailing 30 accepted captures' Frame Quality Result signals for one camera, across light windows, against which the relative rails are evaluated. Rejected captures never enter it.
+_Avoid_: Quality baseline, exposure baseline
+
+**Baseline Bucket**
+The Home Assistant-owned rolling recent history for one camera, light window, Grow Run, model version, and Framing Epoch against which Visual Embeddings may be compared.
+_Avoid_: Vision-service baseline, global baseline
+
+**Framing Epoch**
+A period in which one camera's physical framing is treated as materially unchanged. A manual visual-baseline restart begins another epoch. V1 has no automatic camera-move detection because the structural signature cannot separate a move from a lens occlusion.
+_Avoid_: Camera position, framing bucket
+
+**Baseline State**
+The comparison readiness of a Baseline Bucket: `monitoring`, `ready`, or `stale`.
+_Avoid_: Validity flag, baseline confidence
+
+**Visual Comparison Result**
+The Home Assistant-owned result of interpreting a Vision Analysis against temporal context, including an Anomaly Score and any material-scene-change verdict.
+_Avoid_: Evaluation Snapshot, analysis response, model result
+
+**Capture Continuity Break**
+The equipment condition raised when three consecutive automatically scheduled captures from one camera are non-comparable: quality-rejected or `material_scene_change`. It names no cause or plant condition; manual captures neither advance nor reset it.
+_Avoid_: Camera fault, equipment alarm, camera moved
+
 **Evidence Fusion**
 The Home Assistant-owned interpretation of current Bayesian environmental evidence and a Visual Comparison Result. It reports environmental risk, departure from recent scene history, or their coexistence; it never diagnoses plant health or treats coexistence as causation. See [ADR-0040](./docs/adr/0040-evidence-fusion-reports-observations-not-plant-health.md).
 _Avoid_: Plant-health fusion, diagnosis engine, correlated stress

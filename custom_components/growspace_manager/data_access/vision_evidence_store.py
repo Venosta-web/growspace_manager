@@ -15,6 +15,13 @@ import uuid
 
 import aiosqlite
 
+from custom_components.growspace_manager.domain.vision_quality import (
+    MAX_CONSECUTIVE_RELATIVE_REJECTIONS,
+    QUALITY_HISTORY_SIZE,
+    QualityHistory,
+    QualitySignals,
+    RelativeQualityReason,
+)
 from custom_components.growspace_manager.models.vision_evidence import (
     AdmissionPhase,
     AnalysisState,
@@ -358,6 +365,55 @@ class VisionEvidenceStore:
             return None
         return _capture_from_row(row)
 
+    async def async_get_quality_history(self, camera_id: str) -> QualityHistory:
+        """Reconstruct one camera's durable relative-rail state."""
+        db = self._require_db()
+        cursor = await db.execute(
+            "SELECT quality_mean_luminance, quality_clipped_pixel_fraction,"
+            " quality_mean_absolute_gradient, quality_history_reanchored"
+            " FROM vision_capture"
+            " WHERE camera_id = ? AND analysis_state = 'analyzed'"
+            " AND quality_mean_luminance IS NOT NULL"
+            " AND quality_clipped_pixel_fraction IS NOT NULL"
+            " AND quality_mean_absolute_gradient IS NOT NULL"
+            " ORDER BY captured_at DESC, capture_id DESC LIMIT ?",
+            (camera_id, QUALITY_HISTORY_SIZE),
+        )
+        accepted_rows = list(await cursor.fetchall())
+        for index, row in enumerate(accepted_rows):
+            if row["quality_history_reanchored"]:
+                accepted_rows = accepted_rows[: index + 1]
+                break
+        accepted_rows.reverse()
+        accepted = tuple(
+            QualitySignals(
+                mean_luminance=row["quality_mean_luminance"],
+                clipped_pixel_fraction=row["quality_clipped_pixel_fraction"],
+                mean_absolute_gradient=row["quality_mean_absolute_gradient"],
+            )
+            for row in accepted_rows
+        )
+
+        cursor = await db.execute(
+            "SELECT analysis_state, quality_reasons FROM vision_capture"
+            " WHERE camera_id = ? AND analysis_state <> 'pending'"
+            " ORDER BY captured_at DESC, capture_id DESC LIMIT ?",
+            (camera_id, MAX_CONSECUTIVE_RELATIVE_REJECTIONS),
+        )
+        relative_reasons = {reason.value for reason in RelativeQualityReason}
+        rejection_streak = 0
+        for row in await cursor.fetchall():
+            reasons = set(json.loads(row["quality_reasons"] or "[]"))
+            if row["analysis_state"] != AnalysisState.REJECTED.value or not (
+                reasons & relative_reasons
+            ):
+                break
+            rejection_streak += 1
+        return QualityHistory(
+            accepted=accepted,
+            relative_rejection_streak=rejection_streak,
+        )
+
     async def async_get_capture_files(self, capture_id: str) -> list[VisionCaptureFile]:
         """Return every recorded image variant for a capture."""
         cursor = await self._require_db().execute(
@@ -435,6 +491,7 @@ class VisionEvidenceStore:
         comparison: VisualComparisonResult | None = None,
         bucket: BaselineBucket | None = None,
         member: BaselineMember | None = None,
+        evict_capture_id: str | None = None,
     ) -> None:
         """Commit one analysis and all evidence it produced atomically."""
         capture_id = capture.capture_id
@@ -445,6 +502,10 @@ class VisionEvidenceStore:
             bucket is None or member.bucket_id != bucket.bucket_id
         ):
             raise ValueError("Baseline membership requires its matching bucket")
+        if evict_capture_id is not None and (member is None or bucket is None):
+            raise ValueError("Baseline eviction requires its replacement member")
+        if evict_capture_id == capture_id:
+            raise ValueError("A capture cannot evict its own baseline membership")
         if comparison is not None and comparison.bucket_id is not None:
             if bucket is None or comparison.bucket_id != bucket.bucket_id:
                 raise ValueError("Comparison bucket must be part of the same write")
@@ -464,7 +525,9 @@ class VisionEvidenceStore:
                     " vision_schema_version = ?, service_version = ?,"
                     " quality_mean_luminance = ?,"
                     " quality_clipped_pixel_fraction = ?,"
-                    " quality_mean_absolute_gradient = ?, quality_reasons = ?"
+                    " quality_mean_absolute_gradient = ?, quality_reasons = ?,"
+                    " quality_structural_correlation = ?,"
+                    " quality_history_reanchored = ?"
                     " WHERE capture_id = ?",
                     (
                         capture.analysis_state.value,
@@ -476,6 +539,8 @@ class VisionEvidenceStore:
                         capture.quality_clipped_pixel_fraction,
                         capture.quality_mean_absolute_gradient,
                         json.dumps(capture.quality_reasons),
+                        capture.quality_structural_correlation,
+                        int(capture.quality_history_reanchored),
                         capture_id,
                     ),
                 )
@@ -485,6 +550,26 @@ class VisionEvidenceStore:
                     await self._async_insert_embedding(embedding)
                 if bucket is not None:
                     await self._async_upsert_bucket(bucket)
+                if evict_capture_id is not None:
+                    assert member is not None
+                    assert bucket is not None
+                    cursor = await db.execute(
+                        "UPDATE vision_baseline_member"
+                        " SET evicted_at = ?, evicted_by_capture_id = ?"
+                        " WHERE bucket_id = ? AND capture_id = ?"
+                        " AND evicted_at IS NULL",
+                        (
+                            member.admitted_at,
+                            capture_id,
+                            bucket.bucket_id,
+                            evict_capture_id,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise KeyError(
+                            "Active baseline member"
+                            f" {bucket.bucket_id}/{evict_capture_id} not found"
+                        )
                 if comparison is not None:
                     await self._async_insert_comparison(comparison)
                 if member is not None:
@@ -1155,6 +1240,8 @@ def _capture_from_row(row: aiosqlite.Row) -> VisionCapture:
         quality_clipped_pixel_fraction=row["quality_clipped_pixel_fraction"],
         quality_mean_absolute_gradient=row["quality_mean_absolute_gradient"],
         quality_reasons=tuple(json.loads(row["quality_reasons"] or "[]")),
+        quality_structural_correlation=row["quality_structural_correlation"],
+        quality_history_reanchored=bool(row["quality_history_reanchored"]),
         created_at=row["created_at"],
     )
 

@@ -269,6 +269,77 @@ async def test_checkup_groups_captures_and_records_operational_outcome(
 
 
 @pytest.mark.asyncio
+async def test_quality_history_reconstructs_accepted_tail_and_rejection_streak(
+    tmp_path: Path,
+) -> None:
+    """Camera-relative rails survive restart without learning from rejections."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    accepted = await _start_capture(store)
+    first_rejection = await _start_capture(
+        store, captured_at=datetime(2026, 9, 1, 7, tzinfo=UTC)
+    )
+    second_rejection = await _start_capture(
+        store, captured_at=datetime(2026, 9, 1, 8, tzinfo=UTC)
+    )
+    await store.async_record_analysis(
+        replace(
+            accepted,
+            analysis_state=AnalysisState.ANALYZED,
+            quality_mean_luminance=100.0,
+            quality_clipped_pixel_fraction=0.1,
+            quality_mean_absolute_gradient=10.0,
+        )
+    )
+    await store.async_record_analysis(
+        replace(
+            first_rejection,
+            analysis_state=AnalysisState.REJECTED,
+            quality_mean_luminance=40.0,
+            quality_clipped_pixel_fraction=0.1,
+            quality_mean_absolute_gradient=10.0,
+            quality_reasons=("exposure_excursion",),
+        )
+    )
+    await store.async_record_analysis(
+        replace(
+            second_rejection,
+            analysis_state=AnalysisState.REJECTED,
+            quality_mean_luminance=100.0,
+            quality_clipped_pixel_fraction=0.1,
+            quality_mean_absolute_gradient=4.0,
+            quality_reasons=("detail_collapse",),
+        )
+    )
+
+    history = await store.async_get_quality_history("camera.canopy")
+
+    assert len(history.accepted) == 1
+    assert history.accepted[0].mean_luminance == 100.0
+    assert history.relative_rejection_streak == 2
+
+    reanchored = await _start_capture(
+        store, captured_at=datetime(2026, 9, 1, 9, tzinfo=UTC)
+    )
+    await store.async_record_analysis(
+        replace(
+            reanchored,
+            analysis_state=AnalysisState.ANALYZED,
+            quality_mean_luminance=40.0,
+            quality_clipped_pixel_fraction=0.1,
+            quality_mean_absolute_gradient=10.0,
+            quality_history_reanchored=True,
+        )
+    )
+
+    restarted_history = await store.async_get_quality_history("camera.canopy")
+
+    assert [entry.mean_luminance for entry in restarted_history.accepted] == [40.0]
+    assert restarted_history.relative_rejection_streak == 0
+    await store.async_close()
+
+
+@pytest.mark.asyncio
 async def test_processed_capture_variant_is_tracked_by_the_same_identity(
     tmp_path: Path,
 ) -> None:
@@ -435,6 +506,110 @@ async def test_baseline_eviction_remains_auditable(tmp_path: Path) -> None:
             evicted_by_capture_id="newer-capture",
         )
     ]
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_rolling_admission_evicts_oldest_member_in_analysis_transaction(
+    tmp_path: Path,
+) -> None:
+    """A normal result cannot commit its 31st member without its paired eviction."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    first = await _start_capture(store)
+    first_records = _analysis_records(first)
+    await store.async_record_analysis(
+        first_records[0],
+        embedding=first_records[1],
+        comparison=first_records[4],
+        bucket=first_records[2],
+        member=first_records[3],
+    )
+    second = await _start_capture(
+        store, captured_at=datetime(2026, 9, 2, 6, tzinfo=UTC)
+    )
+    completed, embedding, bucket, member, result = _analysis_records(second)
+    member = replace(
+        member,
+        admitted_at="2026-09-02T06:00:01+00:00",
+        admission_phase=AdmissionPhase.NORMAL,
+    )
+    result = replace(result, result_id="result-2")
+
+    await store.async_record_analysis(
+        completed,
+        embedding=embedding,
+        comparison=result,
+        bucket=bucket,
+        member=member,
+        evict_capture_id=first.capture_id,
+    )
+
+    assert await store.async_get_active_baseline_members(bucket.bucket_id) == [member]
+    assert await store.async_get_baseline_members(bucket.bucket_id) == [
+        replace(
+            first_records[3],
+            evicted_at=member.admitted_at,
+            evicted_by_capture_id=second.capture_id,
+        ),
+        member,
+    ]
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_analysis_eviction_requires_a_distinct_replacement_member(
+    tmp_path: Path,
+) -> None:
+    """An eviction cannot be committed without one distinct admitted replacement."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    capture = await _start_capture(store)
+    completed, embedding, bucket, member, result = _analysis_records(capture)
+
+    with pytest.raises(ValueError, match="requires its replacement member"):
+        await store.async_record_analysis(
+            completed,
+            embedding=embedding,
+            comparison=result,
+            evict_capture_id="older-capture",
+        )
+    with pytest.raises(ValueError, match="cannot evict its own"):
+        await store.async_record_analysis(
+            completed,
+            embedding=embedding,
+            comparison=result,
+            bucket=bucket,
+            member=member,
+            evict_capture_id=capture.capture_id,
+        )
+
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_analysis_eviction_of_missing_member_rolls_back_replacement(
+    tmp_path: Path,
+) -> None:
+    """A stale eviction request cannot leave the replacement half-committed."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    capture = await _start_capture(store)
+    completed, embedding, bucket, member, result = _analysis_records(capture)
+
+    with pytest.raises(KeyError, match="Active baseline member"):
+        await store.async_record_analysis(
+            completed,
+            embedding=embedding,
+            comparison=result,
+            bucket=bucket,
+            member=member,
+            evict_capture_id="missing-capture",
+        )
+
+    assert await store.async_get_capture(capture.capture_id) == capture
+    assert await store.async_get_baseline_bucket(bucket.bucket_id) is None
+    assert await store.async_get_active_baseline_members(bucket.bucket_id) == []
     await store.async_close()
 
 
