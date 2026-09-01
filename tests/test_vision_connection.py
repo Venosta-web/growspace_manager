@@ -56,18 +56,23 @@ def _supervisor(
     slugs: list[str] | None = None,
     state: Any = None,
     discovery: dict[str, Any] | Exception | None = None,
+    list_error: Exception | None = None,
+    info_error: Exception | None = None,
 ):
     """Stand in for a Supervisor holding some installed Apps.
 
     `slugs` are the composed Supervisor slugs of the installed Apps, `state` the
     Core `AddonState` of the matched one, and `discovery` the payload it
     published — or the `AddonError` raised when it published none.
+    `list_error` and `info_error` are what Supervisor itself raises when it
+    cannot answer at all.
     """
     from homeassistant.components.hassio import AddonInfo, AddonState
 
     supervisor = MagicMock()
     supervisor.addons.list = AsyncMock(
-        return_value=[MagicMock(slug=slug) for slug in (slugs or [])]
+        return_value=[MagicMock(slug=slug) for slug in (slugs or [])],
+        side_effect=list_error,
     )
 
     manager = MagicMock()
@@ -79,7 +84,8 @@ def _supervisor(
             state=state or AddonState.RUNNING,
             update_available=False,
             version="1.0.0",
-        )
+        ),
+        side_effect=info_error,
     )
     if isinstance(discovery, Exception):
         manager.async_get_addon_discovery_info = AsyncMock(side_effect=discovery)
@@ -369,3 +375,113 @@ async def test_shutdown_drops_the_negotiated_session(
 
     assert connection.negotiated is None
     assert connection.is_stale
+
+
+async def test_a_supervisor_that_cannot_describe_the_app_reports_not_installed(
+    hass: HomeAssistant,
+) -> None:
+    """Supervisor knows the slug but will not answer for it.
+
+    An App mid-update or mid-removal looks exactly like this, and it is closer
+    to absent than to unreachable: there is nothing to point a capture at.
+    """
+    from homeassistant.components.hassio import AddonError
+
+    with _supervisor(
+        slugs=["local_growspace_vision"],
+        info_error=AddonError("the App is not there"),
+    ):
+        status = await VisionConnection(hass, _automatic).async_refresh()
+
+    assert status.availability is VisionAvailability.UNAVAILABLE
+    assert status.reason is VisionUnavailableReason.NOT_INSTALLED
+
+
+async def test_a_supervisor_that_will_not_list_its_apps_reports_not_configured(
+    hass: HomeAssistant,
+) -> None:
+    """Without a listing there is no slug to compose, so nothing can be resolved."""
+    with _supervisor(list_error=RuntimeError("supervisor is restarting")):
+        status = await VisionConnection(hass, _automatic).async_refresh()
+
+    assert status.availability is VisionAvailability.UNAVAILABLE
+    assert status.reason is VisionUnavailableReason.NOT_CONFIGURED
+
+
+async def test_an_unexpected_probe_failure_is_still_only_a_status(
+    hass: HomeAssistant,
+) -> None:
+    """`async_refresh` never raises, whatever the negotiation did.
+
+    Every caller of it — the coordinator tick, the status projection — wants a
+    reason to report. An escaping exception there would take down the whole
+    update instead of marking one optional service unusable.
+    """
+    with patch(
+        "custom_components.growspace_manager.vision_connection"
+        ".GrowspaceVisionClient.async_negotiate",
+        AsyncMock(side_effect=RuntimeError("boom")),
+    ):
+        status = await VisionConnection(
+            hass, lambda: _manual("http://vision.local:8099")
+        ).async_refresh()
+
+    assert status.availability is VisionAvailability.UNAVAILABLE
+    assert status.reason is VisionUnavailableReason.UNREACHABLE
+
+
+async def test_manual_mode_keeps_its_source_when_nothing_resolves(
+    hass: HomeAssistant,
+) -> None:
+    """The reported source is the configured one, not a guess from the failure.
+
+    Reporting `supervisor` here would send the grower to fix an App they never
+    chose to use.
+    """
+    status = await VisionConnection(
+        hass, lambda: _manual("http://vision.local:8099", "")
+    ).async_refresh()
+
+    assert status.reason is VisionUnavailableReason.NOT_CONFIGURED
+    assert status.connection_source is VisionConnectionSource.MANUAL
+
+
+async def test_an_unrecognised_mode_falls_back_to_automatic(
+    hass: HomeAssistant,
+) -> None:
+    """A settings value from a newer version must not be read as manual.
+
+    Defaulting the other way would let stale credentials in the same options
+    become the endpoint, which is the silent fallback manual mode exists to
+    prevent.
+    """
+    options = {
+        VISION_SETTINGS_KEY: {
+            CONF_VISION_CONNECTION_MODE: "semi-automatic",
+            CONF_VISION_ENDPOINT_URL: "http://vision.local:8099",
+            CONF_VISION_ACCESS_TOKEN: TOKEN,
+        }
+    }
+
+    with patch(
+        "custom_components.growspace_manager.vision_connection.is_hassio",
+        return_value=False,
+    ):
+        status = await VisionConnection(hass, lambda: options).async_refresh()
+
+    assert status.connection_source is VisionConnectionSource.SUPERVISOR
+    assert status.reason is VisionUnavailableReason.NOT_CONFIGURED
+
+
+async def test_only_a_ready_status_permits_a_checkup(
+    hass: HomeAssistant, served_app: tuple[FakeVisionApp, str, int]
+) -> None:
+    """`is_ready` is the single question a caller asks before spending a capture."""
+    _app, host, port = served_app
+
+    ready = await VisionConnection(
+        hass, lambda: _manual(f"http://{host}:{port}")
+    ).async_refresh()
+
+    assert ready.is_ready
+    assert not VisionConnection(hass, dict).status.is_ready

@@ -3258,6 +3258,32 @@ async def test_options_flow_export_strain_library_back(
 
 
 @pytest.mark.asyncio
+async def test_options_flow_configure_vision_delegates_to_the_ai_handler(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """The Vision connection step is reachable from the menu and by name.
+
+    The options flow owns neither the form nor the probe; both entry points
+    delegate to the one handler, so the connection cannot be configured through
+    a second path that skips the probe.
+    """
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow.ai_handler.async_step_configure_vision = AsyncMock(  # type: ignore[method-assign]
+        return_value={"type": FlowResultType.FORM}
+    )
+
+    await flow.async_step_init(user_input={"action": "configure_vision"})
+    await flow.async_step_configure_vision(user_input={"connection_mode": "automatic"})
+
+    assert flow.ai_handler.async_step_configure_vision.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_options_flow_init_navigation(
     hass: HomeAssistant, mock_coordinator: MagicMock
 ) -> None:

@@ -321,3 +321,175 @@ def test_a_non_object_body_is_refused() -> None:
     """A bare array or string is not a V1 object."""
     with pytest.raises(VisionProtocolError, match="JSON object"):
         parse_info([1, 2, 3])
+
+
+def _set(body: Any, path: str, value: Any) -> None:
+    """Overwrite one dotted path inside a loaded fixture, in place."""
+    *parents, key = path.split(".")
+    target = body
+    for step in parents:
+        target = target[int(step)] if step.isdigit() else target[step]
+    target[key] = value
+
+
+@pytest.mark.parametrize(
+    ("parser", "fixture", "path", "value", "match"),
+    [
+        (parse_info, "valid/info.json", "supported_schema_versions", [], "empty"),
+        (
+            parse_info,
+            "valid/info.json",
+            "supported_schema_versions",
+            [1, 1],
+            "repeats a version",
+        ),
+        (
+            parse_info,
+            "valid/info.json",
+            "supported_schema_versions",
+            1,
+            "must be an array",
+        ),
+        (
+            parse_info,
+            "valid/info.json",
+            "supported_schema_versions",
+            ["1"],
+            "must hold integers",
+        ),
+        (
+            parse_info,
+            "valid/info.json",
+            "supported_schema_versions",
+            [0],
+            "out-of-range",
+        ),
+        (parse_info, "valid/info.json", "service_version", 5, "must be a string"),
+        (parse_info, "valid/info.json", "service_version", "", "1 to 255 characters"),
+        (
+            parse_info,
+            "valid/info.json",
+            "capabilities.batch_analysis",
+            "false",
+            "must be a boolean",
+        ),
+        (
+            parse_models,
+            "valid/models.json",
+            "models.0.state",
+            "warming",
+            "is not a V1 state",
+        ),
+        (
+            parse_models,
+            "valid/models.json",
+            "models.0.embedding_dimension",
+            "384",
+            "must be an integer",
+        ),
+        (
+            parse_models,
+            "valid/models.json",
+            "models.0.embedding_dimension",
+            0,
+            "out of range",
+        ),
+        (
+            parse_error,
+            "valid/error-model-not-loaded.json",
+            "error.code",
+            "kettle_offline",
+            "not a V1 error code",
+        ),
+        (
+            parse_analysis,
+            "valid/analyze-response-rejected.json",
+            "quality.reasons",
+            "too_dark",
+            "must be an array",
+        ),
+        (
+            parse_analysis,
+            "valid/analyze-response-rejected.json",
+            "quality.reasons",
+            ["too_dark", "too_dark"],
+            "repeats reason",
+        ),
+        (
+            parse_analysis,
+            "valid/analyze-response-rejected.json",
+            "quality.signals.mean_luminance",
+            "3.4",
+            "must be a number",
+        ),
+        (
+            parse_analysis,
+            "valid/analyze-response-rejected.json",
+            "quality.signals.mean_luminance",
+            float("nan"),
+            "must be finite",
+        ),
+        (
+            parse_analysis,
+            "valid/analyze-response-rejected.json",
+            "quality.signals.mean_luminance",
+            300,
+            "out of range",
+        ),
+        (
+            parse_analysis,
+            "valid/analyze-response-analyzed.json",
+            "embedding.values",
+            "0.1",
+            "must be an array",
+        ),
+        (
+            parse_analysis,
+            "valid/analyze-response-analyzed.json",
+            "embedding.values",
+            [0.1, "not a number"],
+            "must hold numbers",
+        ),
+    ],
+    ids=[
+        "info-offers-no-schema-version",
+        "info-repeats-a-schema-version",
+        "info-schema-versions-not-an-array",
+        "info-schema-versions-not-integers",
+        "info-schema-version-below-one",
+        "info-service-version-not-a-string",
+        "info-service-version-empty",
+        "info-capability-not-a-boolean",
+        "models-unknown-state",
+        "models-dimension-not-an-integer",
+        "models-dimension-out-of-range",
+        "error-unknown-code",
+        "quality-reasons-not-an-array",
+        "quality-reasons-repeated",
+        "signal-not-a-number",
+        "signal-not-finite",
+        "signal-out-of-range",
+        "embedding-values-not-an-array",
+        "embedding-values-not-numbers",
+    ],
+)
+def test_every_typed_field_refuses_its_malformation(
+    parser: Any, fixture: str, path: str, value: Any, match: str
+) -> None:
+    """Each field is typed, ranged and enumerated at the boundary, not later.
+
+    A wrong type reaching evidence would not fail here; it would fail much
+    later, in whatever arithmetic or comparison first assumed the contract had
+    been honoured, with nothing left to say which App sent it.
+    """
+    body = _load(fixture)
+    _set(body, path, value)
+
+    with pytest.raises(VisionProtocolError, match=match):
+        parser(body)
+
+
+def test_a_non_string_key_is_refused() -> None:
+    """JSON cannot express one, but a decoder or a caller can hand one over."""
+    with pytest.raises(VisionProtocolError, match="non-string key"):
+        parse_info({1: "not a JSON object"})

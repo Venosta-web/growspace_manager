@@ -20,6 +20,7 @@ from custom_components.growspace_manager.const import (
     CONF_VISION_ACCESS_TOKEN,
     CONF_VISION_CONNECTION_MODE,
     CONF_VISION_ENDPOINT_URL,
+    DEFAULT_VISION_CONNECTION_MODE,
     VISION_SETTINGS_KEY,
 )
 from custom_components.growspace_manager.exceptions import (
@@ -33,6 +34,11 @@ from custom_components.growspace_manager.exceptions import (
 PROBE = (
     "custom_components.growspace_manager.config_handlers.ai_config_handler"
     ".AIConfigHandler._async_probe_vision"
+)
+
+BUILD_CLIENT = (
+    "custom_components.growspace_manager.vision_connection"
+    ".VisionConnection.build_client"
 )
 
 MANUAL_INPUT = {
@@ -175,3 +181,74 @@ async def test_an_unexpected_probe_failure_is_reported_as_unreachable() -> None:
         result = await handler.async_step_configure_vision(dict(MANUAL_INPUT))
 
     assert result["errors"] == {"base": "vision_cannot_connect"}
+
+
+async def test_the_probe_negotiates_with_the_submitted_settings() -> None:
+    """The connection that is stored is the one that actually answered.
+
+    The probe builds its client from the *submitted* settings rather than the
+    saved ones, so it cannot accidentally validate the endpoint being replaced.
+    """
+    handler = _make_handler()
+    handler.hass = MagicMock()
+    client = MagicMock(async_negotiate=AsyncMock())
+
+    with patch(BUILD_CLIENT, return_value=client) as build_client:
+        result = await handler.async_step_configure_vision(dict(MANUAL_INPUT))
+
+    assert result["type"] == "create_entry"
+    client.async_negotiate.assert_awaited_once()
+    assert (
+        build_client.call_args.args[0].base_url
+        == MANUAL_INPUT[CONF_VISION_ENDPOINT_URL]
+    )
+
+
+async def test_a_typed_probe_failure_reaches_the_form_unchanged() -> None:
+    """A `VisionError` is already the right answer, so it is re-raised as it is.
+
+    Wrapping it would collapse "the token is wrong" into "cannot connect" and
+    cost the grower the one detail that says what to fix.
+    """
+    handler = _make_handler()
+    handler.hass = MagicMock()
+    client = MagicMock(
+        async_negotiate=AsyncMock(side_effect=VisionAuthError("bad token", status=401))
+    )
+
+    with patch(BUILD_CLIENT, return_value=client):
+        result = await handler.async_step_configure_vision(dict(MANUAL_INPUT))
+
+    assert result["errors"] == {"base": "vision_invalid_auth"}
+
+
+async def test_the_form_opens_on_defaults_before_the_entry_is_loaded() -> None:
+    """With no config entry there are no stored settings to prefill from."""
+    handler = _make_handler({VISION_SETTINGS_KEY: dict(MANUAL_INPUT)})
+    handler.config_entry = None
+
+    defaults = handler.get_vision_connection_schema()({})
+
+    assert defaults == {
+        CONF_VISION_CONNECTION_MODE: DEFAULT_VISION_CONNECTION_MODE,
+        CONF_VISION_ENDPOINT_URL: "",
+        CONF_VISION_ACCESS_TOKEN: "",
+    }
+
+
+@pytest.mark.parametrize("missing", ["config_entry", "coordinator"])
+async def test_saving_without_a_loaded_integration_refuses(missing: str) -> None:
+    """A probed connection with nowhere to go must fail loudly, not vanish.
+
+    The step aborts before it reaches here, so arriving with no coordinator
+    means something else called it — and dropping the settings silently would
+    look like a successful save.
+    """
+    handler = _make_handler()
+    if missing == "config_entry":
+        handler.config_entry = None
+    else:
+        handler.config_entry.runtime_data = None
+
+    with pytest.raises(ValueError, match="Coordinator not found"):
+        await handler.save_vision_settings(dict(MANUAL_INPUT))
