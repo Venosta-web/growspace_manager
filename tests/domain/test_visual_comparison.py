@@ -244,3 +244,91 @@ def test_rejected_and_manual_bootstrap_captures_cannot_create_membership() -> No
     assert manual.comparison.samples_collected == 0
     assert manual.baseline is None
     assert manual.admitted is False
+
+
+def test_manual_capture_preserves_an_existing_monitoring_bucket() -> None:
+    """Manual observations never enter a partially built scheduled baseline."""
+    engine = VisualComparisonEngine(bucket_id_factory=lambda: "bucket-1")
+    first = engine.evaluate(_key(), _capture(1), baseline=None)
+    assert first.baseline is not None
+
+    manual = engine.evaluate(
+        _key(),
+        _capture(2, trigger=CaptureTrigger.MANUAL),
+        first.baseline,
+    )
+
+    assert manual.comparison is not None
+    assert manual.comparison.outcome is ComparisonOutcome.MONITORING
+    assert manual.comparison.samples_collected == 1
+    assert manual.baseline is first.baseline
+    assert manual.admitted is False
+
+
+def test_stale_bucket_remains_stale_on_later_captures() -> None:
+    """A stale bucket cannot silently resume scoring or baseline admission."""
+    engine = VisualComparisonEngine(bucket_id_factory=lambda: "bucket-1")
+    baseline = None
+    for number in range(1, 31):
+        baseline = engine.evaluate(_key(), _capture(number), baseline).baseline
+    assert baseline is not None
+    assert baseline.last_admitted_at is not None
+    stale = engine.evaluate(
+        _key(),
+        replace(
+            _capture(31),
+            captured_at=baseline.last_admitted_at + timedelta(days=15),
+        ),
+        baseline,
+    )
+    assert stale.baseline is not None
+
+    later = engine.evaluate(_key(), _capture(32), stale.baseline)
+
+    assert later.comparison is not None
+    assert later.comparison.baseline_state is BaselineState.STALE
+    assert later.baseline is stale.baseline
+    assert later.admitted is False
+
+
+@pytest.mark.parametrize(
+    "values",
+    [(), (0.0, 0.0), (math.inf, 0.0), (math.nan, 0.0)],
+)
+def test_bootstrap_rejects_invalid_embeddings(values: tuple[float, ...]) -> None:
+    """A baseline cannot learn from empty, zero-norm, or non-finite embeddings."""
+    engine = VisualComparisonEngine(bucket_id_factory=lambda: "bucket-1")
+
+    with pytest.raises(ValueError, match="Visual Embedding"):
+        engine.evaluate(_key(), _capture(1, values=values), baseline=None)
+
+
+def test_baseline_calibration_rejects_mixed_embedding_dimensions() -> None:
+    """All members must share one embedding dimension before a bucket becomes ready."""
+    engine = VisualComparisonEngine(bucket_id_factory=lambda: "bucket-1")
+    baseline = None
+    for number in range(1, 30):
+        baseline = engine.evaluate(_key(), _capture(number), baseline).baseline
+
+    with pytest.raises(ValueError, match="Baseline Bucket embedding"):
+        engine.evaluate(
+            _key(),
+            _capture(30, values=(1.0, 0.0, 0.0)),
+            baseline,
+        )
+
+
+def test_ready_comparison_rejects_a_changed_embedding_dimension() -> None:
+    """A ready bucket cannot compare vectors from a dimensionally different model."""
+    engine = VisualComparisonEngine(bucket_id_factory=lambda: "bucket-1")
+    baseline = None
+    for number in range(1, 31):
+        baseline = engine.evaluate(_key(), _capture(number), baseline).baseline
+    assert baseline is not None
+
+    with pytest.raises(ValueError, match="compared Visual Embedding"):
+        engine.evaluate(
+            _key(),
+            _capture(31, values=(1.0, 0.0, 0.0)),
+            baseline,
+        )

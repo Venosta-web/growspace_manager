@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from custom_components.growspace_manager.domain.capture_continuity import (
     CaptureContinuityEvent,
     ContinuityReason,
@@ -134,3 +136,22 @@ def test_unavailable_scheduled_capture_does_not_change_streak_evidence() -> None
 
     assert unavailable.transition is ContinuityTransition.NONE
     assert unavailable.state is first.state
+
+
+def test_state_cannot_be_reused_for_a_different_camera() -> None:
+    """Per-camera continuity state cannot leak across orchestration keys."""
+    first = evaluate_capture_continuity(None, _event(1))
+    assert first.state is not None
+
+    with pytest.raises(ValueError, match="different camera"):
+        evaluate_capture_continuity(
+            first.state,
+            CaptureContinuityEvent(
+                growspace_id="gs-1",
+                camera_id="camera.side",
+                capture_id="capture-2",
+                captured_at=BASE_TIME + timedelta(hours=2),
+                trigger_source=CaptureTrigger.SCHEDULED,
+                quality_accepted=False,
+            ),
+        )

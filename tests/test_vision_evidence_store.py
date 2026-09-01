@@ -558,6 +558,62 @@ async def test_rolling_admission_evicts_oldest_member_in_analysis_transaction(
 
 
 @pytest.mark.asyncio
+async def test_analysis_eviction_requires_a_distinct_replacement_member(
+    tmp_path: Path,
+) -> None:
+    """An eviction cannot be committed without one distinct admitted replacement."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    capture = await _start_capture(store)
+    completed, embedding, bucket, member, result = _analysis_records(capture)
+
+    with pytest.raises(ValueError, match="requires its replacement member"):
+        await store.async_record_analysis(
+            completed,
+            embedding=embedding,
+            comparison=result,
+            evict_capture_id="older-capture",
+        )
+    with pytest.raises(ValueError, match="cannot evict its own"):
+        await store.async_record_analysis(
+            completed,
+            embedding=embedding,
+            comparison=result,
+            bucket=bucket,
+            member=member,
+            evict_capture_id=capture.capture_id,
+        )
+
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_analysis_eviction_of_missing_member_rolls_back_replacement(
+    tmp_path: Path,
+) -> None:
+    """A stale eviction request cannot leave the replacement half-committed."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    capture = await _start_capture(store)
+    completed, embedding, bucket, member, result = _analysis_records(capture)
+
+    with pytest.raises(KeyError, match="Active baseline member"):
+        await store.async_record_analysis(
+            completed,
+            embedding=embedding,
+            comparison=result,
+            bucket=bucket,
+            member=member,
+            evict_capture_id="missing-capture",
+        )
+
+    assert await store.async_get_capture(capture.capture_id) == capture
+    assert await store.async_get_baseline_bucket(bucket.bucket_id) is None
+    assert await store.async_get_active_baseline_members(bucket.bucket_id) == []
+    await store.async_close()
+
+
+@pytest.mark.asyncio
 async def test_failed_analysis_write_rolls_back_every_artifact(tmp_path: Path) -> None:
     """A bad result cannot leave provenance or an embedding half-committed."""
     store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")

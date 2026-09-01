@@ -58,6 +58,34 @@ PERSISTENCE_KEY = VisualPersistenceKey(
 )
 
 
+def test_evidence_value_objects_reject_invalid_tagged_shapes() -> None:
+    """Available and unavailable evidence cannot be represented ambiguously."""
+    with pytest.raises(ValueError, match="environmental evidence requires a reason"):
+        EnvironmentalEvidence(verdict=EnvironmentalVerdict.UNAVAILABLE)
+    with pytest.raises(ValueError, match="cannot carry reasons"):
+        EnvironmentalEvidence(
+            verdict=EnvironmentalVerdict.RISK,
+            unavailable_reasons=("not_applicable",),
+        )
+    with pytest.raises(ValueError, match="available together"):
+        VisualEvidence(verdict=ComparisonVerdict.NORMAL)
+    with pytest.raises(ValueError, match="visual evidence requires a reason"):
+        VisualEvidence()
+    with pytest.raises(ValueError, match="cannot carry reasons"):
+        VisualEvidence(
+            verdict=ComparisonVerdict.NORMAL,
+            comparison_confidence=1.0,
+            unavailable_reasons=("not_applicable",),
+        )
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        VisualEvidence(
+            verdict=ComparisonVerdict.NORMAL,
+            comparison_confidence=1.01,
+        )
+    with pytest.raises(ValueError, match="fusion outcome requires a reason"):
+        UnavailableFusionOutcome(unavailable_reasons=())
+
+
 def _persistence_event(
     number: int,
     *,
