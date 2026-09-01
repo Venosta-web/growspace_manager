@@ -19,6 +19,7 @@ from custom_components.growspace_manager.data_access.vision_evidence_schema impo
 )
 from custom_components.growspace_manager.domain.evidence_fusion import (
     ConfidenceQualifier,
+    EnvironmentalVerdict,
     EvidenceCoverage,
     EvidenceFusionState,
 )
@@ -28,6 +29,7 @@ from custom_components.growspace_manager.models.vision_evidence import (
     BaselineState,
     CaptureFileVariant,
     CaptureTrigger,
+    CheckupStatus,
     ComparisonOutcome,
     ComparisonVerdict,
     EmbeddingSource,
@@ -45,10 +47,12 @@ EXPECTED_TABLES = {
     "vision_baseline_member",
     "vision_capture",
     "vision_capture_file",
+    "vision_checkup",
     "vision_comparison_result",
     "vision_embedding",
     "vision_explainer_report",
     "vision_framing_epoch",
+    "vision_fusion_outcome",
     "vision_grow_run_ref",
     "vision_label",
 }
@@ -85,6 +89,18 @@ def _insert_epoch(db: sqlite3.Connection, epoch_id: str = "epoch-1") -> str:
     return epoch_id
 
 
+def _insert_checkup(db: sqlite3.Connection, checkup_id: str = "checkup-1") -> str:
+    """Insert a Vision Checkup and return its id."""
+    db.execute(
+        "INSERT INTO vision_checkup"
+        " (checkup_id, growspace_id, growspace_name, trigger_source, light_window,"
+        " started_at) VALUES (?, 'gs-1', 'Flower Tent', 'scheduled', 'early',"
+        " '2026-08-31T06:00:00+00:00')",
+        (checkup_id,),
+    )
+    return checkup_id
+
+
 def _insert_capture(
     db: sqlite3.Connection,
     capture_id: str = "capture-1",
@@ -94,12 +110,13 @@ def _insert_capture(
     trigger_source: str = "scheduled",
 ) -> str:
     """Insert a capture and return its id."""
+    _insert_checkup(db)
     db.execute(
         "INSERT INTO vision_capture"
-        " (capture_id, growspace_id, growspace_name, camera_id, grow_run_id,"
+        " (capture_id, checkup_id, growspace_id, growspace_name, camera_id, grow_run_id,"
         "  framing_epoch_id, captured_at, light_window, light_state,"
         "  trigger_source, analysis_state, created_at)"
-        " VALUES (?, 'gs-1', 'Flower Tent', 'camera.growcam', 'run-1', 'epoch-1',"
+        " VALUES (?, 'checkup-1', 'gs-1', 'Flower Tent', 'camera.growcam', 'run-1', 'epoch-1',"
         " '2026-08-31T06:00:00+00:00', ?, 'on', ?, ?,"
         " '2026-08-31T06:00:00+00:00')",
         (capture_id, light_window, trigger_source, analysis_state),
@@ -132,6 +149,7 @@ def test_schema_version_is_recorded_in_user_version(db):
         ("vision_capture", "light_state", LightState),
         ("vision_capture", "trigger_source", CaptureTrigger),
         ("vision_capture", "analysis_state", AnalysisState),
+        ("vision_checkup", "status", CheckupStatus),
         ("vision_capture_file", "variant", CaptureFileVariant),
         ("vision_capture_file", "deletion_reason", FileDeletionReason),
         ("vision_embedding", "source", EmbeddingSource),
@@ -144,6 +162,10 @@ def test_schema_version_is_recorded_in_user_version(db):
         ("vision_explainer_report", "fusion_state", EvidenceFusionState),
         ("vision_explainer_report", "fusion_confidence", ConfidenceQualifier),
         ("vision_explainer_report", "fusion_coverage", EvidenceCoverage),
+        ("vision_fusion_outcome", "environmental_verdict", EnvironmentalVerdict),
+        ("vision_fusion_outcome", "fusion_state", EvidenceFusionState),
+        ("vision_fusion_outcome", "fusion_confidence", ConfidenceQualifier),
+        ("vision_fusion_outcome", "fusion_coverage", EvidenceCoverage),
     ],
 )
 def test_check_constraints_match_the_model_enums(db, table, column, enum):
@@ -303,6 +325,23 @@ def test_baseline_members_required_matches_the_bucket_default(db):
         "SELECT sql FROM sqlite_master WHERE name = 'vision_baseline_bucket'"
     ).fetchone()
     assert f"DEFAULT {VISION_BASELINE_MEMBERS_REQUIRED}" in row[0]
+
+
+def test_new_scoring_policy_gets_a_distinct_baseline_bucket(db):
+    """Changing HA scoring rules never mutates the bucket used by old results."""
+    _insert_epoch(db)
+    for policy in (1, 2):
+        db.execute(
+            "INSERT INTO vision_baseline_bucket"
+            " (bucket_id, growspace_id, camera_id, light_window, grow_run_id,"
+            " model_id, model_version, framing_epoch_id, state,"
+            " scoring_policy_version, created_at)"
+            " VALUES (?, 'gs-1', 'camera.growcam', 'early', 'run-1',"
+            " 'dinov2-vits14', '1.0.0', 'epoch-1', 'monitoring', ?,"
+            " '2026-08-31T06:00:00+00:00')",
+            (f"bucket-{policy}", policy),
+        )
+    assert db.execute("SELECT COUNT(*) FROM vision_baseline_bucket").fetchone()[0] == 2
 
 
 def _insert_report(

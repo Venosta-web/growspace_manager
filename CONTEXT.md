@@ -701,7 +701,7 @@ The four fields a [[Vision Explainer]] produces for one capture — `observation
 _Avoid_: Vision analysis, AI diagnosis, checkup result
 
 **Vision Evidence Store**
-The Home Assistant-owned SQLite database `growspace_vision.db` holding every artifact of a [[Vision Checkup]]: the checkup itself, [[Vision Capture]]s, their image files, Visual Embeddings, Visual Comparison Results, Baseline Buckets and [[Vision Label]]s. Growspace Vision is stateless, so this is the only durable record that the analysis happened. Versioned by `PRAGMA user_version` and migrated by forward-only numbered steps — deliberately not the `try: ALTER TABLE / except` pattern of `strain_library.py`, which records no version. See [ADR-0041](./docs/adr/0041-home-assistant-owns-vision-evidence-in-a-dedicated-store.md).
+The Home Assistant-owned SQLite database `growspace_vision.db` holding every artifact of a [[Vision Checkup]]: the checkup itself, [[Vision Capture]]s, their image files, Visual Embeddings, Visual Comparison Results, Baseline Buckets, [[Evidence Fusion Outcome]]s and [[Vision Label]]s. Growspace Vision is stateless, so this is the only durable record that the analysis happened. Versioned by `PRAGMA user_version` and migrated by forward-only numbered steps — deliberately not the `try: ALTER TABLE / except` pattern of `strain_library.py`, which records no version. See [ADR-0041](./docs/adr/0041-home-assistant-owns-vision-evidence-in-a-dedicated-store.md).
 _Avoid_: Vision history, embedding cache, anomaly database
 
 **Vision Capture**

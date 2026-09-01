@@ -37,7 +37,7 @@ class EvidenceFusionState(StrEnum):
     ``NO_DETECTED_CHANGE`` means only that complete available evidence found
     neither environmental risk nor material departure from recent scene history.
     ``CONCURRENT_...`` asserts co-occurrence, not correlation or causation.
-    ``CRITICAL_SCENE_ISSUE`` describes fusion precedence and persistence, not
+    ``PERSISTENT_VISUAL_ANOMALY`` describes fusion precedence and persistence, not
     plant danger.
     """
 
@@ -47,7 +47,7 @@ class EvidenceFusionState(StrEnum):
     CONCURRENT_ENVIRONMENTAL_RISK_AND_VISUAL_ANOMALY = (
         "concurrent_environmental_risk_and_visual_anomaly"
     )
-    CRITICAL_SCENE_ISSUE = "critical_scene_issue"
+    PERSISTENT_VISUAL_ANOMALY = "persistent_visual_anomaly"
 
 
 class ConfidenceQualifier(StrEnum):

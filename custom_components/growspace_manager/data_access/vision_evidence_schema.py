@@ -1,10 +1,9 @@
 """SQLite schema for the Vision Evidence Store.
 
 Home Assistant owns every artifact of a Vision Checkup because Growspace Vision is
-stateless (ADR 0003).  This module holds the schema alone: the DDL, its version, and
-the vocabulary its ``CHECK`` constraints enforce.  Connection handling, migrations and
-queries live in ``vision_evidence_store.py``, which is deliberately deferred until the
-Visual Comparison Result producer exists — see ADR 0041.
+stateless (ADR 0003). This module holds the schema alone: the DDL, its version,
+numbered migrations, and the vocabulary its ``CHECK`` constraints enforce.
+Connection handling and queries live in ``vision_evidence_store.py``.
 
 The schema is versioned through ``PRAGMA user_version`` and migrated by forward-only
 numbered steps.  This is a deliberate departure from ``strain_library.py``, which
@@ -67,12 +66,34 @@ CREATE TABLE IF NOT EXISTS vision_grow_run_ref (
     source       TEXT NOT NULL CHECK (source IN ('surrogate', 'grow_run'))
 );
 
+-- One growspace-level observation task.  Captures are grouped by identity rather
+-- than timestamp coincidence because simultaneous checks, retries and slow cameras
+-- make timestamps unable to reconstruct a multi-camera domain event (ADR 0043).
+CREATE TABLE IF NOT EXISTS vision_checkup (
+    checkup_id     TEXT PRIMARY KEY,
+    growspace_id   TEXT NOT NULL,
+    growspace_name TEXT NOT NULL,
+    trigger_source TEXT NOT NULL
+                   CHECK (trigger_source IN ('scheduled', 'manual')),
+    light_window   TEXT NOT NULL
+                   CHECK (light_window IN ('early', 'mid', 'late', 'manual')),
+    started_at     TEXT NOT NULL,
+    completed_at   TEXT,
+    status         TEXT CHECK (status IS NULL
+                               OR status IN ('completed', 'partial', 'failed')),
+    CHECK ((completed_at IS NULL) = (status IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_vision_checkup_growspace_time
+    ON vision_checkup (growspace_id, started_at);
+
 -- One Camera Snapshot taken for a Vision Checkup.  Written BEFORE the Growspace
 -- Vision call, at the moment the bytes are persisted, so a failed or rejected
 -- analysis still leaves the image tracked and prunable.  `growspace_name` is
 -- denormalized so a labelled capture stays readable after its Growspace is deleted.
 CREATE TABLE IF NOT EXISTS vision_capture (
     capture_id            TEXT PRIMARY KEY,
+    checkup_id            TEXT NOT NULL
+                          REFERENCES vision_checkup (checkup_id),
     growspace_id          TEXT NOT NULL,
     growspace_name        TEXT NOT NULL,
     camera_id             TEXT NOT NULL,
@@ -168,7 +189,7 @@ CREATE TABLE IF NOT EXISTS vision_baseline_bucket (
     scoring_policy_version INTEGER NOT NULL,
     created_at            TEXT NOT NULL,
     UNIQUE (camera_id, light_window, grow_run_id, model_id, model_version,
-            framing_epoch_id)
+            framing_epoch_id, scoring_policy_version)
 );
 
 -- Membership is recorded, not derived.  Admission is history-dependent — during
@@ -233,6 +254,42 @@ CREATE TABLE IF NOT EXISTS vision_comparison_result (
 CREATE INDEX IF NOT EXISTS idx_vision_result_capture
     ON vision_comparison_result (capture_id, evaluated_at);
 
+-- The capture-specific Evidence Fusion Outcome and the normalized environmental
+-- evidence used to produce it.  This row exists even when the optional cloud
+-- explainer is disabled, and remains additive across scoring-policy changes.
+CREATE TABLE IF NOT EXISTS vision_fusion_outcome (
+    outcome_id               TEXT PRIMARY KEY,
+    capture_id               TEXT NOT NULL
+                             REFERENCES vision_capture (capture_id) ON DELETE CASCADE,
+    evaluated_at             TEXT NOT NULL,
+    scoring_policy_version   INTEGER NOT NULL,
+    environmental_verdict    TEXT NOT NULL
+                             CHECK (environmental_verdict IN (
+                                 'risk', 'within_evaluated_range', 'unavailable')),
+    environmental_evaluated_at TEXT,
+    stress_reasons           TEXT NOT NULL,
+    mold_reasons             TEXT NOT NULL,
+    fusion_state             TEXT
+                             CHECK (fusion_state IS NULL OR fusion_state IN (
+                                 'no_detected_change',
+                                 'environmental_risk',
+                                 'visual_anomaly',
+                                 'concurrent_environmental_risk_and_visual_anomaly',
+                                 'persistent_visual_anomaly')),
+    fusion_confidence        TEXT
+                             CHECK (fusion_confidence IS NULL
+                                    OR fusion_confidence IN ('confirmed', 'monitor')),
+    fusion_coverage          TEXT
+                             CHECK (fusion_coverage IS NULL
+                                    OR fusion_coverage IN ('complete', 'partial')),
+    unavailable_reasons      TEXT NOT NULL,
+    CHECK ((fusion_state IS NULL) = (fusion_confidence IS NULL)),
+    CHECK ((fusion_state IS NULL) = (fusion_coverage IS NULL)),
+    UNIQUE (capture_id, scoring_policy_version)
+);
+CREATE INDEX IF NOT EXISTS idx_vision_fusion_capture
+    ON vision_fusion_outcome (capture_id, evaluated_at);
+
 -- The Vision Explainer's narrative for one capture (ADR 0042).  Separate from the
 -- capture because the explainer is optional: the evidence rows are a complete
 -- report without it, and a growspace with no AI task configured simply has no rows
@@ -271,7 +328,7 @@ CREATE TABLE IF NOT EXISTS vision_explainer_report (
                                   'environmental_risk',
                                   'visual_anomaly',
                                   'concurrent_environmental_risk_and_visual_anomaly',
-                                  'critical_scene_issue')),
+                                  'persistent_visual_anomaly')),
     fusion_confidence  TEXT
                        CHECK (fusion_confidence IS NULL
                               OR fusion_confidence IN ('confirmed', 'monitor')),
@@ -329,3 +386,7 @@ CREATE TABLE IF NOT EXISTS vision_label (
 CREATE INDEX IF NOT EXISTS idx_vision_label_capture
     ON vision_label (capture_id, created_at);
 """
+
+# Index N contains the DDL that migrates schema version N to N + 1.  Keep steps
+# append-only: an installed database advances through every intermediate version.
+VISION_EVIDENCE_MIGRATIONS: Final = (VISION_EVIDENCE_SCHEMA,)

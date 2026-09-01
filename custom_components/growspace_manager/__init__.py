@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 import logging
 import pathlib
 from typing import TYPE_CHECKING, Any
@@ -12,8 +13,10 @@ from homeassistant.components.frontend import (
 )
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
@@ -22,6 +25,10 @@ from . import service_registration
 from .const import CONF_SHOW_SIDEBAR, DOMAIN, PLATFORMS, STORAGE_KEY, STORAGE_VERSION
 from .coordinator import GrowspaceCoordinator
 from .coordinator_builder import CoordinatorBuilder
+from .data_access.vision_evidence_store import (
+    DEFAULT_IMAGE_RETENTION_DAYS,
+    VisionEvidenceStore,
+)
 from .exhaust_migration import evaluate_exhaust_migration_issues
 from .intent import async_setup_intents
 from .services.seedfinder_scraper import SeedfinderScraper
@@ -35,6 +42,9 @@ _LOGGER = logging.getLogger(__name__)
 
 _LEGACY_PLANT_MANUFACTURER = "Growspace Manager"
 _LEGACY_PLANT_MODEL_PREFIX = "Plant ("
+_VISION_EVIDENCE_STORE = "vision_evidence_store"
+_VISION_RETENTION_UNSUB = "vision_retention_unsub"
+_VISION_IMAGE_RETENTION_DAYS = "image_retention_days"
 
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -96,6 +106,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
                     )
                 ]
             )
+
+        await _async_setup_vision_evidence_store(hass, entry)
 
     # Retrieve global Strain Library and Scraper
     strain_library_instance = hass.data[DOMAIN]["strain_library"]
@@ -228,6 +240,49 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
+async def _async_setup_vision_evidence_store(
+    hass: HomeAssistant, entry: GrowspaceConfigEntry
+) -> None:
+    """Open the global evidence store and schedule its daily image retention."""
+    media_dirs = hass.config.media_dirs
+    source_dir_id = "local" if "local" in media_dirs else next(iter(media_dirs), None)
+    if source_dir_id is None:
+        _LOGGER.error("No media directory is available for the Vision Evidence Store")
+        return
+
+    store = VisionEvidenceStore(
+        pathlib.Path(hass.config.path("growspace_vision.db")),
+        pathlib.Path(media_dirs[source_dir_id]) / "growspace_vision",
+        image_retention_days=int(
+            entry.options.get(
+                _VISION_IMAGE_RETENTION_DAYS, DEFAULT_IMAGE_RETENTION_DAYS
+            )
+        ),
+    )
+    try:
+        await store.async_setup()
+    except Exception:
+        # A damaged evidence corpus must not take the cultivation integration down.
+        _LOGGER.exception("Failed to open the Vision Evidence Store")
+        return
+
+    hass.data[DOMAIN][_VISION_EVIDENCE_STORE] = store
+
+    async def _async_close_store(_event: Event) -> None:
+        await store.async_close()
+
+    async def _async_run_retention(now: datetime) -> None:
+        try:
+            await store.async_run_retention(now)
+        except Exception:
+            _LOGGER.exception("Vision image retention failed")
+
+    hass.data[DOMAIN][_VISION_RETENTION_UNSUB] = async_track_time_interval(
+        hass, _async_run_retention, timedelta(days=1), cancel_on_shutdown=True
+    )
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_close_store)
+
+
 async def async_register_sidebar_panel(
     hass: HomeAssistant, entry: GrowspaceConfigEntry
 ) -> None:
@@ -293,6 +348,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) -
 
         # Clean up global Strain Library and Scraper
         if DOMAIN in hass.data:
+            if _VISION_RETENTION_UNSUB in hass.data[DOMAIN]:
+                hass.data[DOMAIN].pop(_VISION_RETENTION_UNSUB)()
+            if _VISION_EVIDENCE_STORE in hass.data[DOMAIN]:
+                await hass.data[DOMAIN].pop(_VISION_EVIDENCE_STORE).async_close()
             if "strain_library" in hass.data[DOMAIN]:
                 await hass.data[DOMAIN]["strain_library"].async_close()
                 del hass.data[DOMAIN]["strain_library"]
