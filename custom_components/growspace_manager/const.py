@@ -504,8 +504,8 @@ CONF_BRIEFING_TRIGGER_ENTITIES = "briefing_trigger_entities"
 DEFAULT_BRIEFING_INTERVAL_MINUTES = 30
 
 # Vision Checkup Constants
-CONF_VISION_CHECKUP_ENABLED = "vision_checkup_enabled"
 CONF_AI_TASK_ENTITY_ID = "ai_task_entity_id"
+CONF_VISION_EXPLAINER_SEES_IMAGE = "vision_explainer_sees_image"
 CONF_VISION_DEBUG_ENABLED = "vision_debug_enabled"
 DEFAULT_VISION_EARLY_OFFSET_MINUTES = 60
 DEFAULT_VISION_MID_CHECK_HOURS = 6

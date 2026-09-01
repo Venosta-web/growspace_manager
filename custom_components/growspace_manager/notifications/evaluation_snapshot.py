@@ -10,6 +10,7 @@ precomputed notification title/message.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -33,3 +34,7 @@ class EvaluationSnapshot:
     # title/message (e.g. drying/curing) or the sensor is not triggered.
     notification_title: str | None
     notification_message: str | None
+    # Capture-relative Vision evidence may use the snapshot only when it was
+    # evaluated at or before the image, is fresh, and had real observations.
+    evaluated_at: datetime | None = None
+    has_observations: bool = False

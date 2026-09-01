@@ -62,11 +62,11 @@ Unlike simple threshold sensors, Growspace Manager orchestrates active climate c
 - **Day/Night Hysteresis**: Prevents HVAC short-cycling by applying smart buffer margins and recognizing light status.
 - **Active Mold Risk Fan Control**: Incorporates relative humidity, canopy temperature, dew point, and circulation fan telemetry. If air circulation is stagnant and humidity spikes during the dark period, the Bayesian engine flags a high mold risk and triggers circulation fans or exhaust dampers to protect flowers.
 
-### AI Diagnostics & Vision Checkup Engine
+### Evidence-Based Vision Checkups
 
-Combine computer vision with LLM smarts to secure your facility:
+Combine local computer vision with the integration's environmental evaluation:
 
-- **Vision Checkups**: Trigger a high-resolution camera snapshot when lights are on, sending the image to an AI vision agent to inspect the canopy for drooping leaves (under/over-watering), pest damage, or chlorosis (nutrient deficiency).
+- **Vision Checkups**: Capture each configured camera, validate frame quality, compare the scene with its provenance-compatible baseline, and fuse the result with fresh stress and mold evidence. A configured AI task can explain that evidence but is not required to complete the checkup.
 - **Context-Aware Advice**: The Virtual Grow Master integrates real-time ambient parameters (canopy VPD, substrate temp, CO2 ppm) and plant stage history to deliver hyper-specific advice compared to generic LLM chatbots.
 
 ### Genetics, Breeding & Phenotype Scoring

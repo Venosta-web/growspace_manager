@@ -477,6 +477,85 @@ async def test_analysis_evidence_is_one_durable_write(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_comparison_trend_contains_only_earlier_compatible_scores(
+    tmp_path: Path,
+) -> None:
+    """Trend lookup excludes later rows and carries only stored fusion state."""
+    store = VisionEvidenceStore(tmp_path / "vision.db", tmp_path / "images")
+    await store.async_setup()
+    captures = []
+    comparisons = []
+    for index, hour in enumerate((6, 7, 8), start=1):
+        capture = await _start_capture(
+            store, captured_at=datetime(2026, 9, 1, hour, tzinfo=UTC)
+        )
+        completed, embedding, bucket, _member, result = _analysis_records(capture)
+        evaluated_at = f"2026-09-01T{hour:02d}:00:01+00:00"
+        comparison = replace(
+            result,
+            result_id=f"result-{index}",
+            capture_id=capture.capture_id,
+            evaluated_at=evaluated_at,
+            outcome=ComparisonOutcome.SCORED,
+            baseline_state=BaselineState.READY,
+            raw_distance=0.2,
+            anomaly_score=index / 10,
+            verdict=ComparisonVerdict.NORMAL,
+            comparison_confidence=0.9,
+            admitted_to_baseline=False,
+        )
+        await store.async_record_analysis(
+            completed,
+            embedding=replace(
+                embedding,
+                capture_id=capture.capture_id,
+                derived_at=evaluated_at,
+            ),
+            comparison=comparison,
+            bucket=replace(bucket, state=BaselineState.READY),
+            member=None,
+        )
+        captures.append(capture)
+        comparisons.append(comparison)
+
+    await store.async_record_fusion_outcome(
+        VisionFusionOutcome(
+            outcome_id="fusion-1",
+            capture_id=captures[0].capture_id,
+            evaluated_at=comparisons[0].evaluated_at,
+            scoring_policy_version=1,
+            environmental_verdict="risk",
+            fusion_state="environmental_risk",
+            fusion_confidence="confirmed",
+            fusion_coverage="complete",
+        )
+    )
+
+    trend = await store.async_get_comparison_trend(
+        capture_id=captures[1].capture_id,
+        camera_id=captures[1].camera_id,
+        grow_run_id=captures[1].grow_run_id,
+        framing_epoch_id=captures[1].framing_epoch_id,
+        model_id=comparisons[1].model_id,
+        model_version=comparisons[1].model_version,
+        scoring_policy_version=1,
+        before_evaluated_at=comparisons[1].evaluated_at,
+    )
+
+    assert trend == [(comparisons[0], "environmental_risk")]
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_recent_scheduled_capture_limit_must_be_positive(tmp_path: Path) -> None:
+    """Temporal replay refuses an empty or negative history window."""
+    store = VisionEvidenceStore(tmp_path / "vision.db", tmp_path / "images")
+
+    with pytest.raises(ValueError, match="limit must be positive"):
+        await store.async_get_recent_scheduled_captures("camera.canopy", limit=0)
+
+
+@pytest.mark.asyncio
 async def test_baseline_eviction_remains_auditable(tmp_path: Path) -> None:
     """Rolling-window eviction changes active membership without deleting history."""
     store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")

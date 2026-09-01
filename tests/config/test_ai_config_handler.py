@@ -11,6 +11,7 @@ from custom_components.growspace_manager.config_handlers.ai_config_handler impor
 from custom_components.growspace_manager.const import (
     CONF_AI_ENABLED,
     CONF_ASSISTANT_ID,
+    CONF_VISION_EXPLAINER_SEES_IMAGE,
     DOMAIN,
 )
 from homeassistant.core import HomeAssistant
@@ -67,6 +68,12 @@ async def testget_ai_settings_schema_defaults(
     schema = await handler.get_ai_settings_schema()
 
     assert isinstance(schema, vol.Schema)
+    assert "vision_checkup_enabled" not in str(schema.schema)
+    assert CONF_VISION_EXPLAINER_SEES_IMAGE in str(schema.schema)
+    image_setting = next(
+        key for key in schema.schema if key.schema == CONF_VISION_EXPLAINER_SEES_IMAGE
+    )
+    assert image_setting.default() is True
 
 
 async def testget_ai_settings_schema_with_agents(

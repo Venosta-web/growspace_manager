@@ -504,7 +504,11 @@ async def websocket_get_ai_settings(
     Response: the ``ai_settings`` dict, or ``{}`` when not yet configured.
     """
     ai_settings: dict[str, Any] = coordinator.options.get("ai_settings", {})
-    return dict(ai_settings)
+    return {
+        key: value
+        for key, value in ai_settings.items()
+        if key != "vision_checkup_enabled"
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -559,7 +563,7 @@ _AI_SETTINGS_KEYS = (
     "notification_personality",
     "ai_auto_alerts",
     "max_response_length",
-    "vision_checkup_enabled",
+    "vision_explainer_sees_image",
     "ai_task_entity_id",
     "briefing_interval_minutes",
     "briefing_trigger_entities",
@@ -574,7 +578,7 @@ SCHEMA_WS_SAVE_AI_SETTINGS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Optional("notification_personality"): str,
         vol.Optional("ai_auto_alerts"): bool,
         vol.Optional("max_response_length"): int,
-        vol.Optional("vision_checkup_enabled"): bool,
+        vol.Optional("vision_explainer_sees_image"): bool,
         vol.Optional("ai_task_entity_id"): vol.Any(str, None),
         vol.Optional("briefing_interval_minutes"): int,
         vol.Optional("briefing_trigger_entities"): list,
@@ -592,6 +596,7 @@ async def websocket_save_ai_settings(
     """
     new_options = coordinator.config_entry.options.copy()
     existing_settings = dict(new_options.get("ai_settings", {}))
+    existing_settings.pop("vision_checkup_enabled", None)
     ai_settings: dict[str, Any] = {
         **existing_settings,
         **{k: msg[k] for k in _AI_SETTINGS_KEYS if k in msg},
