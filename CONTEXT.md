@@ -740,6 +740,18 @@ _Avoid_: Interpretation call, the second prompt
 The four fields a [[Vision Explainer]] produces for one capture — `observation`, `environmental_risk`, `hypothesis`, `recommendations` — stored in the `vision_explainer_report` table with the [[Evidence Fusion Outcome]] snapshotted alongside them. No severity, no symptom vocabulary. Empty values are legal: an empty hypothesis is the honest output when the evidence supports none.
 _Avoid_: Vision analysis, AI diagnosis, checkup result
 
+**Vision Analysis**
+One stateless `POST /analyze` against Growspace Vision: exactly one image plus a closed metadata object in, and either a [[Visual Embedding]] or a [[Frame Quality Result]] rejection out. `analyzed` says only that the App produced an embedding — never that the scene is normal, anomalous, healthy or unhealthy. Every temporal claim is Home Assistant's, so an anomaly score, change score, trend or symptom in a response is a contract violation and is refused at the boundary. See [ADR-0043](./docs/adr/0043-vision-checkups-migrate-through-versioned-capture-contracts.md).
+_Avoid_: Vision checkup, plant health scan, AI analysis
+
+**Frame Quality Result**
+The App's three single-frame measurements — mean luminance, clipped pixel fraction, mean absolute gradient — plus every absolute-floor reason that held (`too_dark`, `overexposed`, `low_detail`, `light_state_mismatch`). Returned on accepted and rejected frames alike, because the numbers describe the frame while the history-relative rails stay in Home Assistant. A rejection is a first-class HTTP 200 result stored as unusable, never an error that erases the attempt.
+_Avoid_: Blur score, image validation error, quality gate failure
+
+**Visual Embedding**
+The model-versioned vector one accepted frame produced. It is comparable only with embeddings from the same `model_id` and `model_version`: a changed model version starts a new Baseline Bucket rather than continuing the old one, which is why negotiation refuses to substitute a different model for a pinned one.
+_Avoid_: Feature vector, fingerprint, image hash
+
 **Vision Evidence Store**
 The Home Assistant-owned SQLite database `growspace_vision.db` holding every artifact of a [[Vision Checkup]]: the checkup itself, [[Vision Capture]]s, their image files, Visual Embeddings, Visual Comparison Results, Baseline Buckets, [[Evidence Fusion Outcome]]s and [[Vision Label]]s. Growspace Vision is stateless, so this is the only durable record that the analysis happened. Versioned by `PRAGMA user_version` and migrated by forward-only numbered steps — deliberately not the `try: ALTER TABLE / except` pattern of `strain_library.py`, which records no version. See [ADR-0041](./docs/adr/0041-home-assistant-owns-vision-evidence-in-a-dedicated-store.md).
 _Avoid_: Vision history, embedding cache, anomaly database

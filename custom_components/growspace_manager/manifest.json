@@ -1,6 +1,7 @@
 {
   "domain": "growspace_manager",
   "name": "Growspace Manager",
+  "after_dependencies": ["hassio"],
   "codeowners": ["@Venosta-web"],
   "config_flow": true,
   "dependencies": ["recorder", "intent", "http"],
