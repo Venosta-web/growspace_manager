@@ -510,6 +510,32 @@ DEFAULT_VISION_MID_CHECK_HOURS = 6
 DEFAULT_VISION_LATE_OFFSET_MINUTES = 60
 DEFAULT_VISION_HISTORY_LIMIT = 10
 
+# Growspace Vision connection (ADR 0043). Integration-wide, never per growspace:
+# the endpoint is one service and its bearer token is a secret the card must not
+# see. Stored under their own options key rather than inside ``ai_settings``,
+# because local vision is required after cutover whether or not AI is enabled.
+VISION_SETTINGS_KEY = "vision_settings"
+CONF_VISION_CONNECTION_MODE = "vision_connection_mode"
+CONF_VISION_ENDPOINT_URL = "vision_endpoint_url"
+CONF_VISION_ACCESS_TOKEN = "vision_access_token"
+VISION_CONNECTION_MODE_AUTOMATIC = "automatic"
+VISION_CONNECTION_MODE_MANUAL = "manual"
+DEFAULT_VISION_CONNECTION_MODE = VISION_CONNECTION_MODE_AUTOMATIC
+
+VISION_APP_SLUG = "growspace_vision"
+"""The App's own ``config.yaml`` slug.
+
+Supervisor prefixes it with the repository it came from — ``local`` for a
+side-loaded App, an 8-character hash of the repository URL for a store install
+— so the installed slug is matched by suffix and never hard-coded.
+"""
+
+VISION_DISCOVERY_SERVICE = "growspace_manager"
+"""The discovery service name the App declares so Supervisor accepts its push."""
+
+VISION_STATUS_TTL_SECONDS = 300
+"""How long a probed Vision status stands before a checkup re-probes it."""
+
 # Notification Defaults
 DEFAULT_COOLDOWN_MINUTES = 5
 

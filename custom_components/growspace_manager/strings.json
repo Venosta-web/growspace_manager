@@ -170,6 +170,15 @@
           "ai_task_entity_id": "AI task entity (for vision analysis)"
         }
       },
+      "configure_vision": {
+        "title": "Configure Growspace Vision",
+        "description": "Growspace Vision is the local image-analysis service. Leave this on automatic to use the Growspace Vision App installed through the Supervisor; choose manual to point Home Assistant at an endpoint you run yourself. A manual endpoint always needs its own access token.",
+        "data": {
+          "vision_connection_mode": "Connection",
+          "vision_endpoint_url": "Endpoint URL",
+          "vision_access_token": "Access token"
+        }
+      },
       "select_growspace_for_env": {
         "title": "Select Growspace",
         "description": "Choose which growspace to configure the environment for.",
@@ -486,7 +495,12 @@
       "remove_failed": "The item could not be removed because of an unexpected error. Check the logs for details.",
       "select_growspace": "Select a growspace to continue",
       "fan_speed_invalid": "The minimum fan speed must be lower than the maximum fan speed",
-      "invalid_tuple_format": "The advanced Bayesian values must be entered as number pairs, for example (0.1, 0.9)"
+      "invalid_tuple_format": "The advanced Bayesian values must be entered as number pairs, for example (0.1, 0.9)",
+      "vision_not_configured": "No Growspace Vision endpoint is available. Install and start the Growspace Vision App, or enter a manual endpoint URL and access token.",
+      "vision_invalid_auth": "Growspace Vision rejected that access token.",
+      "vision_cannot_connect": "Growspace Vision could not be reached at that endpoint.",
+      "vision_incompatible": "That Growspace Vision service supports no analysis schema version this version of Growspace Manager understands. Update one of them.",
+      "vision_model_unavailable": "Growspace Vision is running but has no usable model loaded. Check the App log."
     },
     "abort": {
       "setup_error": "The integration is not set up yet. Try again once it has finished loading.",
