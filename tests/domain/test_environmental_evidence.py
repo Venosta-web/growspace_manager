@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from custom_components.growspace_manager.domain.environmental_evidence import (
     environmental_evidence_at,
 )
@@ -98,3 +100,17 @@ def test_stale_future_missing_and_zero_observation_snapshots_are_unavailable() -
     assert empty.unavailable_reasons == ("stress_no_valid_observations",)
     for evidence in (stale, future, missing, empty):
         assert evidence.verdict is EnvironmentalVerdict.UNAVAILABLE
+
+
+def test_capture_and_evaluation_timestamps_must_be_timezone_aware() -> None:
+    naive = datetime(2026, 9, 1, 12)
+
+    with pytest.raises(ValueError, match="captured_at must be timezone-aware"):
+        environmental_evidence_at(naive, stress=None, mold=None)
+
+    evidence = environmental_evidence_at(
+        CAPTURED_AT,
+        stress=_snapshot("stress", evaluated_at=naive),
+        mold=_snapshot("mold"),
+    )
+    assert evidence.unavailable_reasons == ("stress_missing",)

@@ -547,6 +547,15 @@ async def test_comparison_trend_contains_only_earlier_compatible_scores(
 
 
 @pytest.mark.asyncio
+async def test_recent_scheduled_capture_limit_must_be_positive(tmp_path: Path) -> None:
+    """Temporal replay refuses an empty or negative history window."""
+    store = VisionEvidenceStore(tmp_path / "vision.db", tmp_path / "images")
+
+    with pytest.raises(ValueError, match="limit must be positive"):
+        await store.async_get_recent_scheduled_captures("camera.canopy", limit=0)
+
+
+@pytest.mark.asyncio
 async def test_baseline_eviction_remains_auditable(tmp_path: Path) -> None:
     """Rolling-window eviction changes active membership without deleting history."""
     store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")

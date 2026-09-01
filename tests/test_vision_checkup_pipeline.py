@@ -10,10 +10,17 @@ import pytest
 from custom_components.growspace_manager.data_access.vision_evidence_store import (
     VisionEvidenceStore,
 )
+from custom_components.growspace_manager.domain.evidence_fusion import (
+    AvailableFusionOutcome,
+    ConfidenceQualifier,
+    EvidenceCoverage,
+    EvidenceFusionState,
+)
 from custom_components.growspace_manager.models.vision_evidence import (
     AnalysisState,
     CheckupStatus,
     ComparisonOutcome,
+    ComparisonVerdict,
     ObservationSource,
 )
 from custom_components.growspace_manager.notifications.evaluation_snapshot import (
@@ -21,6 +28,9 @@ from custom_components.growspace_manager.notifications.evaluation_snapshot impor
 )
 from custom_components.growspace_manager.vision_checkup_scheduler import (
     VisionCheckupScheduler,
+    _explainer_fusion,
+    _fusion_visual,
+    _unpack_f32,
 )
 from custom_components.growspace_manager.vision_client import VisionSession
 from custom_components.growspace_manager.vision_connection import (
@@ -255,6 +265,41 @@ async def test_multi_camera_checkup_is_partial_when_one_camera_cannot_capture(
 
 
 @pytest.mark.asyncio
+async def test_local_analysis_failure_is_durable_and_explainer_degrades(
+    tmp_path,
+) -> None:
+    settings = {
+        "ai_task_entity_id": "ai_task.growspace",
+        "vision_explainer_sees_image": True,
+    }
+    async with _pipeline(tmp_path, ai_settings=settings) as pipeline:
+        pipeline.client.async_analyze.side_effect = RuntimeError("vision unavailable")
+        with patch(
+            "homeassistant.components.ai_task.async_generate_data",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("explainer unavailable"),
+        ) as generate:
+            outcome = await pipeline.scheduler.run_vision_analysis("tent1", "manual")
+
+        assert outcome.checkup.status is CheckupStatus.FAILED
+        capture = outcome.captures[0]
+        assert capture.capture.analysis_state is AnalysisState.FAILED
+        assert capture.capture.analysis_error_code == "runtimeerror"
+        assert capture.fusion.unavailable_reasons == ("vision_unavailable",)
+        assert capture.report is None
+        assert generate.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_scheduled_comparable_capture_clears_continuity_break(tmp_path) -> None:
+    async with _pipeline(tmp_path) as pipeline:
+        await pipeline.scheduler.run_vision_analysis("tent1", "early")
+
+        clear = pipeline.coordinator.alert_monitor.async_clear_capture_continuity_break
+        clear.assert_awaited_once_with("camera.canopy", cleared_at=NOW)
+
+
+@pytest.mark.asyncio
 async def test_third_scheduled_rejection_raises_one_continuity_break(tmp_path) -> None:
     async with _pipeline(tmp_path) as pipeline:
         pipeline.client.async_analyze.return_value = VisionAnalysis(
@@ -286,3 +331,33 @@ async def test_third_scheduled_rejection_raises_one_continuity_break(tmp_path) -
         )
         record.assert_awaited_once()
         assert record.await_args.args[0].consecutive_count == 3
+
+
+def test_evidence_projection_helpers_cover_available_and_unavailable_shapes() -> None:
+    failed_capture = SimpleNamespace(analysis_state=AnalysisState.FAILED)
+    analyzed_capture = SimpleNamespace(analysis_state=AnalysisState.ANALYZED)
+    scored = SimpleNamespace(
+        outcome=ComparisonOutcome.SCORED,
+        verdict=ComparisonVerdict.MATERIAL_SCENE_CHANGE,
+        comparison_confidence=0.9,
+    )
+
+    assert _fusion_visual(failed_capture, None).unavailable_reasons == (
+        "vision_unavailable",
+    )
+    assert _fusion_visual(analyzed_capture, None).unavailable_reasons == (
+        "vision_unavailable",
+    )
+    visual = _fusion_visual(analyzed_capture, scored)
+    assert visual.verdict is ComparisonVerdict.MATERIAL_SCENE_CHANGE
+    assert visual.comparison_confidence == 0.9
+
+    summary = _explainer_fusion(
+        AvailableFusionOutcome(
+            state=EvidenceFusionState.VISUAL_ANOMALY,
+            confidence=ConfidenceQualifier.CONFIRMED,
+            coverage=EvidenceCoverage.COMPLETE,
+        )
+    )
+    assert summary.state is EvidenceFusionState.VISUAL_ANOMALY
+    assert _unpack_f32(None) == ()
