@@ -20,7 +20,6 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util.dt import now, parse_datetime
 
-from .const import PlantStage
 from .domain.ec_state import (
     ECRecommendation,
     ECState,
@@ -32,6 +31,7 @@ from .domain.ec_state import (
     runoff_halt,
 )
 from .domain.infiltration import InfiltrationMonitor
+from .domain.plant_metrics import count_live_plants
 from .domain.shot_composer import FeedbackTuning, ShotComposer
 from .domain.steering_phase import (
     ShotRequest,
@@ -48,12 +48,6 @@ if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-# Plant stages whose plants no longer sit on the irrigation line; excluded from
-# the live plant count that backs per-plant Volume Mode dosing (see ADR-0011).
-_NON_LIVE_STAGES: frozenset[str] = frozenset(
-    {PlantStage.DRY.value, PlantStage.CURE.value}
-)
 
 
 class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
@@ -336,11 +330,10 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         "Live" excludes plants in the dry/cure stages, which no longer draw
         irrigation. This is the per-plant dosing basis for Volume Mode (ADR-0011).
         """
-        plants = self._main_coordinator.services.growspaces.get_growspace_plants(
-            self._growspace_id
-        )
-        return sum(
-            1 for p in plants if str(getattr(p, "stage", "")) not in _NON_LIVE_STAGES
+        return count_live_plants(
+            self._main_coordinator.services.growspaces.get_growspace_plants(
+                self._growspace_id
+            )
         )
 
     def _record_infiltration(self, sensor_entity: str, current_vwc: float) -> None:

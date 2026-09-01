@@ -48,6 +48,12 @@ from .irrigation import (
     TankWaterEvent,
     TankWaterHistory,
 )
+from .irrigation_recipe import (
+    CropSteeringRecipe,
+    IrrigationRecipe,
+    RecipeProvenance,
+    ScheduleRecipe,
+)
 from .nutrient import NutrientInventory, NutrientPreset, NutrientStock
 from .plant import (
     DryingData,
@@ -115,6 +121,7 @@ __all__ = [
     "CirculationFanConfig",
     "ComparisonOutcome",
     "ComparisonVerdict",
+    "CropSteeringRecipe",
     "CropSteeringState",
     "DLIState",
     "DehumidifierRange",
@@ -150,9 +157,10 @@ __all__ = [
     # ipm
     "IPMType",
     "IrrigationConfig",
+    # irrigation
+    "IrrigationRecipe",
     # types
     "IrrigationScheduleItem",
-    # irrigation
     "IrrigationStrategy",
     "IrrigationTank",
     "LabelKind",
@@ -174,6 +182,8 @@ __all__ = [
     "PlantStage",
     "PlantTimelineEvent",
     "PollinationEvent",
+    "RecipeProvenance",
+    "ScheduleRecipe",
     # genetics
     "SeedBatch",
     "SensorGroup",

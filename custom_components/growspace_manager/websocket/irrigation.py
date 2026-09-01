@@ -6,7 +6,11 @@ from typing import Any
 
 import voluptuous as vol
 
-from custom_components.growspace_manager.const import DOMAIN, SteeringMode
+from custom_components.growspace_manager.const import (
+    DOMAIN,
+    IrrigationRecipeKind,
+    SteeringMode,
+)
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.crop_steering_history import (
     CropSteeringHistoryAnalyzer,
@@ -48,6 +52,32 @@ SCHEMA_WS_APPLY_STEERING_MODE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend
         vol.Required("type"): WS_TYPE_APPLY_STEERING_MODE,
         vol.Required("growspace_id"): str,
         vol.Required("steering_mode"): vol.In([m.value for m in SteeringMode]),
+    }
+)
+
+WS_TYPE_GET_IRRIGATION_RECIPES = f"{DOMAIN}/get_irrigation_recipes"
+SCHEMA_WS_GET_IRRIGATION_RECIPES = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_IRRIGATION_RECIPES,
+    }
+)
+
+WS_TYPE_SAVE_IRRIGATION_RECIPE = f"{DOMAIN}/save_irrigation_recipe"
+SCHEMA_WS_SAVE_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SAVE_IRRIGATION_RECIPE,
+        vol.Required("growspace_id"): str,
+        vol.Required("name"): str,
+        vol.Required("kind"): vol.In([k.value for k in IrrigationRecipeKind]),
+        vol.Optional("recipe_id"): str,
+    }
+)
+
+WS_TYPE_REMOVE_IRRIGATION_RECIPE = f"{DOMAIN}/remove_irrigation_recipe"
+SCHEMA_WS_REMOVE_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_REMOVE_IRRIGATION_RECIPE,
+        vol.Required("recipe_id"): str,
     }
 )
 
@@ -143,6 +173,37 @@ async def websocket_apply_steering_mode(
     return {"growspace_id": growspace_id, "declared_steering_mode": mode.value}
 
 
+def websocket_get_irrigation_recipes(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the global Irrigation Recipe library.
+
+    Global, so it resolves through any coordinator and never takes a
+    growspace: a recipe saved from one tent is listed from every other.
+    """
+    return coordinator.services.config.get_irrigation_recipes()
+
+
+async def websocket_save_irrigation_recipe(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Save a growspace's current irrigation settings as a named recipe."""
+    recipe = await coordinator.services.config.save_irrigation_recipe(
+        growspace_id=msg["growspace_id"],
+        name=msg["name"],
+        kind=IrrigationRecipeKind(msg["kind"]),
+        recipe_id=msg.get("recipe_id"),
+    )
+    return recipe.to_dict()
+
+
+async def websocket_remove_irrigation_recipe(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> None:
+    """Remove a recipe from the global Irrigation Recipe library."""
+    await coordinator.services.config.remove_irrigation_recipe(msg["recipe_id"])
+
+
 COMMANDS: list[WSCommand] = [
     WSCommand(
         WS_TYPE_GET_IRRIGATION_ANALYTICS,
@@ -163,5 +224,23 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_APPLY_STEERING_MODE,
         websocket_apply_steering_mode,
         SCHEMA_WS_APPLY_STEERING_MODE,
+    ),
+    WSCommand(
+        WS_TYPE_GET_IRRIGATION_RECIPES,
+        websocket_get_irrigation_recipes,
+        SCHEMA_WS_GET_IRRIGATION_RECIPES,
+        resolve="any",
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_SAVE_IRRIGATION_RECIPE,
+        websocket_save_irrigation_recipe,
+        SCHEMA_WS_SAVE_IRRIGATION_RECIPE,
+    ),
+    WSCommand(
+        WS_TYPE_REMOVE_IRRIGATION_RECIPE,
+        websocket_remove_irrigation_recipe,
+        SCHEMA_WS_REMOVE_IRRIGATION_RECIPE,
+        resolve="any",
     ),
 ]

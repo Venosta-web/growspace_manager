@@ -23,6 +23,7 @@ from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
+from .managers.irrigation_recipe import IrrigationRecipeLibrary
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
 from .managers.subsystem import SubsystemManager
@@ -155,6 +156,10 @@ class CoordinatorBuilder:
         view_model_builder = ViewModelBuilder(coordinator)
 
         nutrient_manager = NutrientManager(repository, coordinator._save_callback)  # noqa: SLF001
+        recipe_library = IrrigationRecipeLibrary(
+            repository,
+            coordinator._save_callback,  # noqa: SLF001
+        )
         genetics_manager = GeneticsManager(
             repository,
             coordinator._save_callback,  # noqa: SLF001
@@ -166,6 +171,7 @@ class CoordinatorBuilder:
             nutrient_manager,
             genetics_manager,
             notification_state,
+            recipe_library=recipe_library,
         )
 
         svc_ctx = ServiceContext(
@@ -240,6 +246,7 @@ class CoordinatorBuilder:
         coordinator._attach_services(  # noqa: SLF001
             view_model_builder=view_model_builder,
             nutrient_manager=nutrient_manager,
+            recipe_library=recipe_library,
             genetics_manager=genetics_manager,
             storage_manager=storage_manager,
             growspace_manager=growspace_manager,

@@ -13,6 +13,7 @@ import pytest
 from custom_components.growspace_manager.const import (
     DOMAIN,
     FanRegulationMode,
+    IrrigationRecipeKind,
     PlantStage,
     ShotSizingMode,
     SteeringMode,
@@ -23,6 +24,7 @@ from custom_components.growspace_manager.models import (
     ACInfinityDevice,
     ACInfinityGrowLight,
     CirculationFanConfig,
+    CropSteeringRecipe,
     DrainConfig,
     DrainReading,
     DryingData,
@@ -35,12 +37,15 @@ from custom_components.growspace_manager.models import (
     GrowspaceType,
     HarvestMetrics,
     IrrigationConfig,
+    IrrigationRecipe,
     IrrigationStrategy,
     IrrigationTank,
     MoistureEntry,
     PhenotypeScore,
     Plant,
     PlantGenetics,
+    RecipeProvenance,
+    ScheduleRecipe,
     SensorGroup,
     Subarea,
     SubstrateHistory,
@@ -563,6 +568,72 @@ def _set_runtime_states(hass: HomeAssistant) -> None:
         hass.states.async_set(entity_id, state, attributes)
 
 
+def _maximal_recipe_library() -> dict[str, IrrigationRecipe]:
+    """Return one recipe of each kind, every optional field populated.
+
+    Both kinds are present because the halves are disjoint: a library holding
+    only crop-steering recipes would leave the schedule payload shape — and
+    the ``null`` half of the other — outside the contract entirely.
+    """
+    return {
+        "contract-recipe-steering": IrrigationRecipe(
+            id="contract-recipe-steering",
+            name="Flower week 3 — generative",
+            kind=IrrigationRecipeKind.CROP_STEERING,
+            provenance=RecipeProvenance(
+                media_type=SubstrateMediaType.ROCKWOOL,
+                liters_per_pot=7.5,
+                pump_flow_rate_ml_per_sec=13.5,
+                stage=PlantStage.FLOWER.value,
+                week=3,
+            ),
+            crop_steering=CropSteeringRecipe(
+                lights_on_time="06:00:00",
+                p0_duration_minutes=90,
+                p2_stop_before_lights_off_minutes=75,
+                target_vwc_percent=58.0,
+                maintenance_dryback_percent=3.5,
+                p1_shot_volume_percent=4.5,
+                p1_shot_interval_minutes=20,
+                p2_shot_volume_percent=3.0,
+                p2_shot_interval_minutes=30,
+                auto_light_tracking=True,
+                dynamic_shot_enabled=True,
+                dynamic_aggressiveness=1.2,
+                dynamic_recovery=0.15,
+                dynamic_shot_size_floor=0.6,
+                dynamic_interval_ceiling=1.8,
+                pore_ec_target_min=2.1,
+                pore_ec_target_max=2.8,
+                ec_modulation_enabled=True,
+            ),
+            created_at="2026-08-04T09:00:00+00:00",
+        ),
+        "contract-recipe-schedule": IrrigationRecipe(
+            id="contract-recipe-schedule",
+            name="Veg timer",
+            kind=IrrigationRecipeKind.SCHEDULE,
+            provenance=RecipeProvenance(
+                media_type=SubstrateMediaType.COCO,
+                liters_per_pot=5.0,
+                pump_flow_rate_ml_per_sec=11.0,
+                stage=PlantStage.VEG.value,
+                week=2,
+            ),
+            schedule=ScheduleRecipe(
+                irrigation_times=[{"time": "07:30:00", "duration": 45}],
+                drain_times=[{"time": "19:30:00", "duration": 20}],
+                irrigation_duration=45,
+                drain_duration=20,
+                daily_volume_cap_liters=14.0,
+                max_cycles_per_day=8,
+                skip_during_dark=True,
+            ),
+            created_at="2026-08-05T09:00:00+00:00",
+        ),
+    }
+
+
 async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     """Build the fixture payload through the real ``get_data`` path."""
     entry = MockConfigEntry(
@@ -593,6 +664,7 @@ async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     coordinator = GrowspaceCoordinator.build(hass, entry, data={})
     coordinator._data_repository.add_growspace(_maximal_growspace())
     coordinator._data_repository.add_plant(_maximal_plant())
+    coordinator._recipe_library.load_data(_maximal_recipe_library())
     _set_runtime_states(hass)
 
     frozen_now = datetime(2026, 8, 11, 12, tzinfo=UTC)

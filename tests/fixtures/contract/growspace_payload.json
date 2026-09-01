@@ -414,6 +414,75 @@
     "last_cycle_timestamp": null,
     "next_scheduled_cycle": null,
     "projected_shot_window": null,
+    "recipes": {
+      "contract-recipe-schedule": {
+        "created_at": "2026-08-05T09:00:00+00:00",
+        "crop_steering": null,
+        "id": "contract-recipe-schedule",
+        "kind": "schedule",
+        "name": "Veg timer",
+        "provenance": {
+          "liters_per_pot": 5.0,
+          "media_type": "coco",
+          "pump_flow_rate_ml_per_sec": 11.0,
+          "stage": "veg",
+          "week": 2
+        },
+        "schedule": {
+          "daily_volume_cap_liters": 14.0,
+          "drain_duration": 20,
+          "drain_times": [
+            {
+              "duration": 20,
+              "time": "19:30:00"
+            }
+          ],
+          "irrigation_duration": 45,
+          "irrigation_times": [
+            {
+              "duration": 45,
+              "time": "07:30:00"
+            }
+          ],
+          "max_cycles_per_day": 8,
+          "skip_during_dark": true
+        }
+      },
+      "contract-recipe-steering": {
+        "created_at": "2026-08-04T09:00:00+00:00",
+        "crop_steering": {
+          "auto_light_tracking": true,
+          "dynamic_aggressiveness": 1.2,
+          "dynamic_interval_ceiling": 1.8,
+          "dynamic_recovery": 0.15,
+          "dynamic_shot_enabled": true,
+          "dynamic_shot_size_floor": 0.6,
+          "ec_modulation_enabled": true,
+          "lights_on_time": "06:00:00",
+          "maintenance_dryback_percent": 3.5,
+          "p0_duration_minutes": 90,
+          "p1_shot_interval_minutes": 20,
+          "p1_shot_volume_percent": 4.5,
+          "p2_shot_interval_minutes": 30,
+          "p2_shot_volume_percent": 3.0,
+          "p2_stop_before_lights_off_minutes": 75,
+          "pore_ec_target_max": 2.8,
+          "pore_ec_target_min": 2.1,
+          "target_vwc_percent": 58.0
+        },
+        "id": "contract-recipe-steering",
+        "kind": "crop_steering",
+        "name": "Flower week 3 \u2014 generative",
+        "provenance": {
+          "liters_per_pot": 7.5,
+          "media_type": "rockwool",
+          "pump_flow_rate_ml_per_sec": 13.5,
+          "stage": "flower",
+          "week": 3
+        },
+        "schedule": null
+      }
+    },
     "substrate": {
       "ec_trend": "rising",
       "ec_trend_available": true,

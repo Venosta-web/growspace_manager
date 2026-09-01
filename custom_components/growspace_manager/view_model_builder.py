@@ -231,6 +231,16 @@ class ViewModelBuilder:
             else None
         )
 
+        # The global [[Irrigation Recipe]] library rides every growspace payload
+        # for the same reason the notification settings below do: the card's
+        # irrigation dialog seeds from the device payload, and the recipe picker
+        # lives in that dialog. It is global, not per-growspace — the same
+        # library appears on every payload — and this is what puts it inside the
+        # golden contract fixture, where a dropped field fails CI (ADR-0030).
+        serialized["irrigation"]["recipes"] = (
+            self.coordinator.services.config.get_irrigation_recipes()
+        )
+
         # Global notification settings ride every growspace payload so the card's
         # Config Dialog (which seeds from the device payload) can round-trip saved
         # values. They are global, not per-growspace, but mirror notifications_enabled

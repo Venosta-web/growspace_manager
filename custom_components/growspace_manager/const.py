@@ -454,6 +454,8 @@ ATTR_WATER_AMOUNT = "amount"
 ATTR_NUTRIENTS = "nutrients"
 ATTR_AMOUNT_PER_PLANT = "amount_per_plant"
 ATTR_PRESET_ID = "preset_id"
+ATTR_RECIPE_ID = "recipe_id"
+ATTR_RECIPE_KIND = "kind"
 ATTR_PRESET_NAME = "preset_name"
 ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
 
@@ -678,6 +680,9 @@ class GrowspaceService(StrEnum):
     # Nutrient Preset Services
     SAVE_NUTRIENT_PRESET = "save_nutrient_preset"
     REMOVE_NUTRIENT_PRESET = "remove_nutrient_preset"
+    # Irrigation Recipe Services
+    SAVE_IRRIGATION_RECIPE = "save_irrigation_recipe"
+    REMOVE_IRRIGATION_RECIPE = "remove_irrigation_recipe"
     # Training Services
     LOG_TRAINING_EVENT = "log_training_event"
     # IPM Services
@@ -744,6 +749,18 @@ class ShotSizingMode(StrEnum):
 
     SECONDS = "seconds"
     VOLUME = "volume"
+
+
+class IrrigationRecipeKind(StrEnum):
+    """Which half of a growspace's irrigation an [[Irrigation Recipe]] holds.
+
+    A grower runs crop steering or a time schedule, never both, so a recipe
+    carries exactly one kind rather than both halves with one of them noise
+    (CONTEXT.md "Irrigation Recipe", ADR-0045).
+    """
+
+    CROP_STEERING = "crop_steering"
+    SCHEDULE = "schedule"
 
 
 class SteeringMode(StrEnum):
