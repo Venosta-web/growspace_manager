@@ -159,15 +159,15 @@
       },
       "configure_ai": {
         "title": "Configure AI Settings",
-        "description": "Set up the AI assistant for grow advice, notifications, and vision checkups.",
+        "description": "Set up the AI assistant for grow advice, notifications, and optional Vision evidence explanations.",
         "data": {
           "ai_enabled": "Enable AI features",
           "assistant_id": "AI assistant entity",
           "notification_personality": "Notification personality",
           "ai_auto_alerts": "Enable automatic AI alerts",
           "max_response_length": "Maximum response length (characters)",
-          "vision_checkup_enabled": "Enable AI vision checkups",
-          "ai_task_entity_id": "AI task entity (for vision analysis)"
+          "vision_explainer_sees_image": "Allow the optional Vision explainer to inspect snapshots",
+          "ai_task_entity_id": "AI task entity (optional Vision explainer)"
         }
       },
       "configure_vision": {
@@ -624,7 +624,7 @@
     },
     "trigger_vision_checkup": {
       "name": "Trigger vision checkup",
-      "description": "Capture camera snapshot(s) and run AI vision analysis to detect plant health issues like drooping, pests, or nutrient deficiencies.",
+      "description": "Capture each configured camera and assemble local visual comparison, environmental, and fusion evidence. An AI task can optionally explain the result but is not required.",
       "fields": {
         "growspace_id": {
           "name": "Growspace ID",

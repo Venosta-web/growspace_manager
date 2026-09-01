@@ -17,10 +17,10 @@ from custom_components.growspace_manager.const import (
     CONF_BRIEFING_TRIGGER_ENTITIES,
     CONF_NOTIFICATION_PERSONALITY,
     CONF_VISION_ACCESS_TOKEN,
-    CONF_VISION_CHECKUP_ENABLED,
     CONF_VISION_CONNECTION_MODE,
     CONF_VISION_DEBUG_ENABLED,
     CONF_VISION_ENDPOINT_URL,
+    CONF_VISION_EXPLAINER_SEES_IMAGE,
     DEFAULT_BRIEFING_INTERVAL_MINUTES,
     DEFAULT_VISION_CONNECTION_MODE,
     VISION_SETTINGS_KEY,
@@ -102,11 +102,12 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
             )
         )
 
-        # Add vision checkup toggle
+        # The local checkup is complete without cloud AI. This setting controls
+        # only whether the optional observation pass may inspect the image.
         schema[
             vol.Optional(
-                CONF_VISION_CHECKUP_ENABLED,
-                default=current_settings.get(CONF_VISION_CHECKUP_ENABLED, False),
+                CONF_VISION_EXPLAINER_SEES_IMAGE,
+                default=current_settings.get(CONF_VISION_EXPLAINER_SEES_IMAGE, True),
             )
         ] = selector.BooleanSelector()
 

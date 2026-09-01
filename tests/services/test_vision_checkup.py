@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.models import VisionCheckupResult
 from custom_components.growspace_manager.services.vision_checkup import (
     handle_trigger_vision_checkup,
 )
@@ -25,17 +24,31 @@ def mock_coordinator():
 
 @pytest.mark.asyncio
 async def test_trigger_vision_checkup_returns_analysis(mock_coordinator):
-    """Test that the service returns analysis data on success."""
-    mock_result = VisionCheckupResult(
-        timestamp="2026-03-21T12:00:00",
-        growspace_id="tent1",
-        check_type="manual",
-        analysis="All plants look healthy.",
-        issues_detected=[],
-        severity="none",
-        recommendations=[],
+    """The compatibility response is non-assertive and carries V1 identity."""
+    from types import SimpleNamespace
+
+    report = SimpleNamespace(
+        observation="Leaves are level across the canopy.",
+        environmental_risk="Measurements are within their evaluated range.",
+        hypothesis="",
+        recommendations=("Continue monitoring.",),
     )
-    mock_coordinator.vision_scheduler.run_vision_analysis.return_value = mock_result
+    mock_coordinator.vision_scheduler.run_vision_analysis.return_value = (
+        SimpleNamespace(
+            checkup=SimpleNamespace(
+                growspace_id="tent1",
+                checkup_id="01991f1d-5c00-7000-8000-000000000001",
+                completed_at="2026-09-01T12:00:00+00:00",
+                status=SimpleNamespace(value="completed"),
+            ),
+            captures=(
+                SimpleNamespace(
+                    report=report,
+                    media_content_id="media-source://media_source/local/capture.jpg",
+                ),
+            ),
+        )
+    )
 
     hass = MagicMock()
     call = MagicMock()
@@ -47,9 +60,12 @@ async def test_trigger_vision_checkup_returns_analysis(mock_coordinator):
         "tent1", "manual"
     )
     assert result["severity"] == "none"
-    assert result["analysis"] == "All plants look healthy."
+    assert "Leaves are level" in result["analysis"]
     assert result["check_type"] == "manual"
     assert result["growspace_id"] == "tent1"
+    assert result["issues_detected"] == []
+    assert result["checkup_id"].startswith("01991f1d")
+    assert result["snapshot_paths"] == ["media-source://media_source/local/capture.jpg"]
 
 
 @pytest.mark.asyncio
@@ -62,17 +78,4 @@ async def test_trigger_vision_checkup_growspace_not_found(mock_coordinator):
     call.data = {"growspace_id": "nonexistent"}
 
     with pytest.raises(ServiceValidationError, match="not found"):
-        await handle_trigger_vision_checkup(hass, mock_coordinator, call)
-
-
-@pytest.mark.asyncio
-async def test_trigger_vision_checkup_returns_none_raises(mock_coordinator):
-    """Test error raised when vision analysis returns None."""
-    mock_coordinator.vision_scheduler.run_vision_analysis.return_value = None
-
-    hass = MagicMock()
-    call = MagicMock()
-    call.data = {"growspace_id": "tent1"}
-
-    with pytest.raises(ServiceValidationError, match="could not be performed"):
         await handle_trigger_vision_checkup(hass, mock_coordinator, call)

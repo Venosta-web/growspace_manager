@@ -27,30 +27,41 @@ async def handle_trigger_vision_checkup(
 ) -> dict[str, Any]:
     """Handle the trigger_vision_checkup service call.
 
-    Captures camera snapshot(s) and runs AI vision analysis for a growspace.
+    Captures camera snapshots and assembles local visual and environmental evidence.
     """
     growspace_id = call.data["growspace_id"]
 
     if growspace_id not in coordinator.growspaces:
         raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
 
-    result = await coordinator.vision_scheduler.run_vision_analysis(
+    outcome = await coordinator.vision_scheduler.run_vision_analysis(
         growspace_id, "manual"
     )
-
-    if result is None:
-        raise ServiceValidationError(
-            f"Vision checkup could not be performed for '{growspace_id}'."
-        )
-
+    reports = [capture.report for capture in outcome.captures if capture.report]
+    recommendations = [
+        recommendation
+        for report in reports
+        for recommendation in report.recommendations
+    ]
+    analysis = "\n\n".join(
+        part
+        for report in reports
+        for part in (report.observation, report.environmental_risk, report.hypothesis)
+        if part
+    )
+    if outcome.checkup.status is None:  # pragma: no cover - finished by the pipeline
+        raise RuntimeError("Vision Checkup returned before reaching a terminal status")
     return {
-        "growspace_id": result.growspace_id,
-        "check_type": result.check_type,
-        "analysis": result.analysis,
-        "issues_detected": result.issues_detected,
-        "severity": result.severity,
-        "recommendations": result.recommendations,
-        "timestamp": result.timestamp,
+        "growspace_id": outcome.checkup.growspace_id,
+        "check_type": "manual",
+        "analysis": analysis,
+        "issues_detected": [],
+        "severity": "none",
+        "recommendations": recommendations,
+        "timestamp": outcome.checkup.completed_at,
+        "snapshot_paths": [capture.media_content_id for capture in outcome.captures],
+        "checkup_id": outcome.checkup.checkup_id,
+        "status": outcome.checkup.status.value,
     }
 
 

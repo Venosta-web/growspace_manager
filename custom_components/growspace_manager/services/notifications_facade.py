@@ -62,6 +62,12 @@ class NotificationsFacade:
         self.manager.report_evaluation(snapshot)
         self._coordinator.alert_monitor.report_evaluation(snapshot)
 
+    def latest_evaluation(
+        self, growspace_id: str, sensor_type: str
+    ) -> EvaluationSnapshot | None:
+        """Return the latest active or inactive Bayesian evaluation."""
+        return self.manager.latest_evaluation(growspace_id, sensor_type)
+
     def get_timed_notifications(self) -> list[dict[str, Any]]:
         """Return the list of configured timed notifications."""
         return self._coordinator.notification_settings.get_timed_notifications()

@@ -365,6 +365,23 @@ class VisionEvidenceStore:
             return None
         return _capture_from_row(row)
 
+    async def async_get_recent_scheduled_captures(
+        self, camera_id: str, *, limit: int
+    ) -> list[VisionCapture]:
+        """Return recent scheduled captures oldest-first for temporal policies."""
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        cursor = await self._require_db().execute(
+            "SELECT * FROM vision_capture"
+            " WHERE camera_id = ? AND trigger_source = 'scheduled'"
+            " AND analysis_state <> 'pending'"
+            " ORDER BY captured_at DESC, capture_id DESC LIMIT ?",
+            (camera_id, limit),
+        )
+        captures = [_capture_from_row(row) for row in await cursor.fetchall()]
+        captures.reverse()
+        return captures
+
     async def async_get_quality_history(self, camera_id: str) -> QualityHistory:
         """Reconstruct one camera's durable relative-rail state."""
         db = self._require_db()
@@ -601,6 +618,47 @@ class VisionEvidenceStore:
             (capture_id,),
         )
         return [_comparison_from_row(row) for row in await cursor.fetchall()]
+
+    async def async_get_comparison_trend(
+        self,
+        *,
+        capture_id: str,
+        camera_id: str,
+        grow_run_id: str,
+        framing_epoch_id: str,
+        model_id: str,
+        model_version: str,
+        scoring_policy_version: int,
+        before_evaluated_at: str,
+        limit: int = 7,
+    ) -> list[tuple[VisualComparisonResult, str | None]]:
+        """Return earlier provenance-compatible scored measurements newest-first."""
+        cursor = await self._require_db().execute(
+            "SELECT r.*,(SELECT f.fusion_state FROM vision_fusion_outcome AS f"
+            " WHERE f.capture_id = r.capture_id"
+            " ORDER BY f.evaluated_at DESC, f.outcome_id DESC LIMIT 1)"
+            " AS trend_fusion_state"
+            " FROM vision_comparison_result AS r"
+            " JOIN vision_capture AS c ON c.capture_id = r.capture_id"
+            " WHERE r.capture_id <> ? AND r.evaluated_at < ? AND c.camera_id = ?"
+            " AND c.grow_run_id = ? AND c.framing_epoch_id = ?"
+            " AND r.model_id = ? AND r.model_version = ?"
+            " AND r.scoring_policy_version = ? AND r.outcome = 'scored'"
+            " ORDER BY r.evaluated_at DESC, r.result_id DESC LIMIT ?",
+            (
+                capture_id,
+                before_evaluated_at,
+                camera_id,
+                grow_run_id,
+                framing_epoch_id,
+                model_id,
+                model_version,
+                scoring_policy_version,
+                limit,
+            ),
+        )
+        rows = await cursor.fetchall()
+        return [(_comparison_from_row(row), row["trend_fusion_state"]) for row in rows]
 
     async def async_record_fusion_outcome(self, outcome: VisionFusionOutcome) -> None:
         """Persist capture-specific environmental and fusion evidence."""

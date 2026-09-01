@@ -13,6 +13,7 @@ from homeassistant.helpers.storage import Store
 from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
+from .const import DOMAIN
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
@@ -218,7 +219,11 @@ class CoordinatorBuilder:
         # Reads the coordinator's live options, so a connection change made in
         # the options flow takes effect without rebuilding the coordinator.
         vision_connection = VisionConnection(self.hass, lambda: coordinator.options)
-        vision_scheduler = VisionCheckupScheduler(self.hass, coordinator)
+        vision_scheduler = VisionCheckupScheduler(
+            self.hass,
+            coordinator,
+            evidence_store=self.hass.data.get(DOMAIN, {}).get("vision_evidence_store"),
+        )
         briefing_scheduler = BriefingScheduler(self.hass, coordinator)
         photoperiod_checker = PhotoperiodFlipChecker(self.hass, coordinator)
 
