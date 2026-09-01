@@ -3,6 +3,7 @@
 import pytest
 
 from custom_components.growspace_manager.domain.shot_sizing import (
+    dripper_flow_rate_ml_per_sec,
     percent_to_seconds,
     seconds_to_percent,
     shot_volume_ml,
@@ -173,3 +174,13 @@ def test_seconds_to_percent_refuses_on_missing_prerequisites(
         )
         is None
     )
+
+
+def test_dripper_throughput_converts_the_grower_facing_rating() -> None:
+    """Four 2 L/h emitters deliver 8 L/h, which is 8000/3600 ml/s."""
+    assert dripper_flow_rate_ml_per_sec(2.0, 4) == pytest.approx(8000.0 / 3600.0)
+
+
+def test_dripper_throughput_of_no_emitters_is_no_flow() -> None:
+    """An unwired line delivers nothing, which downstream reads as unset."""
+    assert dripper_flow_rate_ml_per_sec(2.0, 0) == 0.0

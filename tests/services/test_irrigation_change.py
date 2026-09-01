@@ -308,3 +308,70 @@ async def test_change_restores_prior_state_when_persistence_fails() -> None:
     assert growspace.irrigation_strategy.target_vwc_percent == 55.0
     coordinator.async_commit.assert_awaited_once()
     coordinator.async_request_refresh.assert_not_awaited()
+
+
+# --- Dripper Throughput (ADR-0045) -----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dripper_throughput_stores_only_the_derived_flow_rate() -> None:
+    """L/h × emitters is an input spelling of ml/s; neither input is stored."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.SETTINGS,
+            values={"dripper_liters_per_hour": 2.0, "emitter_count": 9},
+        ),
+    )
+
+    # 2 L/h × 9 emitters = 18 L/h = 18000 ml / 3600 s = 5 ml/s.
+    assert growspace.irrigation_config.pump_flow_rate_ml_per_sec == pytest.approx(5.0)
+    stored = growspace.irrigation_config.to_dict()
+    assert "dripper_liters_per_hour" not in stored
+    assert "emitter_count" not in stored
+
+
+@pytest.mark.asyncio
+async def test_dripper_throughput_needs_both_halves() -> None:
+    """One number alone does not name a flow rate, so it is refused."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match="emitter_count"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.SETTINGS,
+                values={"dripper_liters_per_hour": 2.0},
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dripper_throughput_and_a_direct_flow_rate_conflict() -> None:
+    """One stored value, so two answers for it are refused rather than ranked."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match="not both"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.SETTINGS,
+                values={
+                    "pump_flow_rate_ml_per_sec": 12.0,
+                    "dripper_liters_per_hour": 2.0,
+                    "emitter_count": 9,
+                },
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()

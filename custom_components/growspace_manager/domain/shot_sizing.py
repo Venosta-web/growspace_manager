@@ -25,6 +25,11 @@ run different plant counts, and only dividing the count out maps both back to
 the one percent. Skipping that division would scale the percent by the count,
 and every growspace the value is later applied to would be silently mis-watered
 by that factor.
+
+The same module also owns [[Dripper Throughput]] — the litres/hour × emitter
+count a grower actually types — because that pair is an input representation of
+the very ``flow_rate_ml_per_sec`` the conversions above consume, not a separate
+stored quantity.
 """
 
 from __future__ import annotations
@@ -91,3 +96,20 @@ def seconds_to_percent(
         return None
     volume_ml = seconds * flow_rate_ml_per_sec
     return volume_ml / (liters_per_pot * live_plant_count * 1000.0) * 100.0
+
+
+# Seconds per hour × millilitres per litre, the constant that turns a dripper's
+# rated litres/hour into the pump's millilitres/second.
+_ML_PER_LITER = 1000.0
+_SECONDS_PER_HOUR = 3600.0
+
+
+def dripper_flow_rate_ml_per_sec(liters_per_hour: float, emitter_count: int) -> float:
+    """Return the ml/s a dripper line delivers, from its grower-facing rating.
+
+    [[Dripper Throughput]] is an *input representation* of the one stored
+    ``pump_flow_rate_ml_per_sec``, not a second quantity: growers buy emitters
+    rated in litres/hour and count them, so this converts that pair into the
+    single value everything downstream already reads. Nothing stores the pair.
+    """
+    return liters_per_hour * emitter_count * _ML_PER_LITER / _SECONDS_PER_HOUR

@@ -725,6 +725,13 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("pump_flow_rate_ml_per_sec"): vol.All(
                 vol.Coerce(float), vol.Range(min=0.0)
             ),
+            # [[Dripper Throughput]]: the grower-facing spelling of the one
+            # value above. Submitting the pair stores the derived ml/s; no
+            # second field is persisted.
+            vol.Optional("dripper_liters_per_hour"): vol.All(
+                vol.Coerce(float), vol.Range(min=0.0)
+            ),
+            vol.Optional("emitter_count"): vol.All(vol.Coerce(int), vol.Range(min=0)),
             vol.Optional("drain_pump_entity"): str,
             vol.Optional("irrigation_duration"): vol.All(
                 vol.Coerce(int), vol.Range(min=1)
