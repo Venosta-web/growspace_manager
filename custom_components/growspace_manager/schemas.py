@@ -959,6 +959,13 @@ REMOVE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
     }
 )
 
+APPLY_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_RECIPE_ID): str,
+    }
+)
+
 # --- IPM Preset Schemas ---
 
 IPM_ITEM_SCHEMA = vol.Schema(

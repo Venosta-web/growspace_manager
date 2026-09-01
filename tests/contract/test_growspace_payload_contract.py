@@ -341,6 +341,14 @@ def _maximal_growspace() -> Growspace:
             pore_ec_target_max=2.8,
             ec_modulation_enabled=True,
             declared_steering_mode=SteeringMode.GENERATIVE,
+            # The [[Recipe Stamp]] provenance, populated non-null because both
+            # fields are optional and a sparse fixture would not catch one being
+            # dropped on the way to the card (ADR-0030). The id names the
+            # crop-steering recipe below, whose values equal the setpoints
+            # above — so the derived ``applied_recipe_drifted`` in the payload
+            # is a real computed answer rather than a placeholder.
+            applied_recipe_id="contract-recipe-steering",
+            recipe_applied_at="2026-08-10T07:15:00+00:00",
         ),
         growspace_type=GrowspaceType.FLOWER,
         drain_config=DrainConfig(

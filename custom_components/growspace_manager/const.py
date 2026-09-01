@@ -683,6 +683,7 @@ class GrowspaceService(StrEnum):
     # Irrigation Recipe Services
     SAVE_IRRIGATION_RECIPE = "save_irrigation_recipe"
     REMOVE_IRRIGATION_RECIPE = "remove_irrigation_recipe"
+    APPLY_IRRIGATION_RECIPE = "apply_irrigation_recipe"
     # Training Services
     LOG_TRAINING_EVENT = "log_training_event"
     # IPM Services
