@@ -1805,6 +1805,48 @@ remove_nutrient_preset:
       selector:
         text:
 
+save_irrigation_recipe:
+  description: >-
+    Save a growspace's current irrigation settings as a reusable Irrigation
+    Recipe in the global library. Shot sizes are stored as a percent of
+    substrate volume, so saving from a growspace in Seconds shot sizing mode
+    requires a pump flow rate and a substrate volume per pot.
+  fields:
+    growspace_id:
+      description: The growspace whose settings are captured.
+      required: true
+      selector:
+        text:
+    name:
+      description: Name for the recipe.
+      required: true
+      selector:
+        text:
+    kind:
+      description: >-
+        Which half of the irrigation settings the recipe holds. A recipe
+        carries exactly one.
+      required: true
+      selector:
+        select:
+          options:
+            - crop_steering
+            - schedule
+    recipe_id:
+      description: ID of an existing recipe to overwrite (optional).
+      required: false
+      selector:
+        text:
+
+remove_irrigation_recipe:
+  description: Remove an Irrigation Recipe from the global library.
+  fields:
+    recipe_id:
+      description: ID of the recipe to remove.
+      required: true
+      selector:
+        text:
+
 save_ipm_preset:
   description: Save an IPM schedule preset
   fields:

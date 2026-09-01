@@ -51,6 +51,8 @@ from .const import (
     ATTR_PRESET_ID,
     ATTR_QUANTITY,
     ATTR_RECEIVER_PLANT_ID,
+    ATTR_RECIPE_ID,
+    ATTR_RECIPE_KIND,
     ATTR_RESIN,
     ATTR_ROW,
     ATTR_SEED_BATCH_ID,
@@ -114,6 +116,7 @@ from .const import (
     DATE_FIELDS,
     PLANT_STAGES,
     FanRegulationMode,
+    IrrigationRecipeKind,
     ShotSizingMode,
     SteeringMode,
     SubstrateMediaType,
@@ -928,6 +931,24 @@ SAVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
 REMOVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PRESET_ID): str,
+    }
+)
+
+# --- Irrigation Recipe Schemas ---
+
+SAVE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_NAME): str,
+        vol.Required(ATTR_RECIPE_KIND): vol.In([k.value for k in IrrigationRecipeKind]),
+        # Present to overwrite an existing recipe in place; absent mints a new one.
+        vol.Optional(ATTR_RECIPE_ID): str,
+    }
+)
+
+REMOVE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_RECIPE_ID): str,
     }
 )
 

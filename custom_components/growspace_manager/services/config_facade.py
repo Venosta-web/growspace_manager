@@ -1,6 +1,7 @@
 """Config sub-facade for the Growspace Manager integration.
 
-Covers nutrient presets, IPM presets, EC ramp curves, and strain library.
+Covers nutrient presets, IPM presets, EC ramp curves, Irrigation Recipes, and
+the strain library.
 """
 
 from __future__ import annotations
@@ -19,10 +20,12 @@ from custom_components.growspace_manager.const import (
     ATTR_STAGE,
     ATTR_TYPE,
     GrowspaceService,
+    IrrigationRecipeKind,
 )
 from custom_components.growspace_manager.models import (
     ECRampCurve,
     IPMPreset,
+    IrrigationRecipe,
     NutrientPreset,
 )
 from custom_components.growspace_manager.schemas import (
@@ -153,6 +156,33 @@ class ConfigFacade:
     def get_nutrient_serialization_data(self) -> dict[str, Any]:
         """Return serialized nutrient data for WebSocket consumers."""
         return self._coordinator._nutrient_manager.get_serialization_data()
+
+    # -------------------------------------------------------------------------
+    # Irrigation Recipes
+    # -------------------------------------------------------------------------
+
+    async def save_irrigation_recipe(
+        self,
+        growspace_id: str,
+        name: str,
+        kind: IrrigationRecipeKind,
+        recipe_id: str | None = None,
+    ) -> IrrigationRecipe:
+        """Save a growspace's current irrigation settings as a named recipe."""
+        return await self._coordinator._recipe_library.async_save_from_growspace(
+            growspace_id, name, kind, recipe_id
+        )
+
+    async def remove_irrigation_recipe(self, recipe_id: str) -> None:
+        """Remove a recipe from the global Irrigation Recipe library."""
+        await self._coordinator._recipe_library.async_remove_recipe(recipe_id)
+
+    def get_irrigation_recipes(self) -> dict[str, dict[str, Any]]:
+        """Return the serialized global Irrigation Recipe library.
+
+        Global, so the answer does not depend on which growspace asked.
+        """
+        return self._coordinator._recipe_library.serialized_recipes()
 
     # -------------------------------------------------------------------------
     # IPM presets
