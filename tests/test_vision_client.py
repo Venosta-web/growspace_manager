@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import aiohttp
+from aiohttp import web
 import pytest
 
 from custom_components.growspace_manager.exceptions import (
@@ -25,11 +26,16 @@ from custom_components.growspace_manager.exceptions import (
     VisionTransportError,
 )
 from custom_components.growspace_manager.models.vision_evidence import LightState
-from custom_components.growspace_manager.vision_client import GrowspaceVisionClient
+from custom_components.growspace_manager.vision_client import (
+    GrowspaceVisionClient,
+    VisionSession,
+    _verify_analysis_matches,
+)
 from custom_components.growspace_manager.vision_models import (
     AnalysisStatus,
     ModelIdentity,
     QualityReason,
+    parse_analysis,
 )
 
 from .vision_app_double import TOKEN, FakeVisionApp, load_fixture
@@ -390,3 +396,89 @@ async def test_a_non_image_content_type_never_reaches_the_app(
         )
 
     assert app.analyze_image is None
+
+
+async def test_a_pinned_model_that_is_still_loaded_is_kept(
+    client: GrowspaceVisionClient,
+) -> None:
+    """A pin is honoured silently while the App still offers it loaded.
+
+    This is the ordinary case for every growspace that already has a Baseline
+    Bucket: the negotiation must return the pinned identity rather than
+    re-choosing from the catalogue.
+    """
+    session = await client.async_negotiate(pinned_model=PRODUCTION_MODEL)
+
+    assert session.model == PRODUCTION_MODEL
+
+
+async def test_several_loaded_models_resolve_deterministically(
+    app: FakeVisionApp, client: GrowspaceVisionClient
+) -> None:
+    """V1 bundles one model, so several is unexpected — but must not be random.
+
+    Taking the highest identity keeps the unpinned choice stable across
+    restarts; a choice that varied would silently invalidate the Baseline
+    Bucket built during the previous run.
+    """
+    app.models["models"].append(
+        {
+            "model_id": "dinov2-vit-s-14-int8-onnx",
+            "model_version": "2.0.0",
+            "embedding_dimension": 384,
+            "state": "loaded",
+        }
+    )
+
+    first = await client.async_negotiate()
+    second = await client.async_negotiate()
+
+    assert first.model.model_version == "2.0.0"
+    assert second.model == first.model
+
+
+async def test_a_2xx_that_is_not_200_is_a_service_failure(
+    aiohttp_client: Callable[..., Any], socket_enabled: None
+) -> None:
+    """V1 answers 200 or an error; a bodyless 204 has no result to parse.
+
+    A proxy or a half-implemented App can produce one, and treating it as
+    success would hand the caller an empty body to decode.
+    """
+
+    async def _no_content(request: web.Request) -> web.StreamResponse:
+        return web.Response(status=204)
+
+    served = web.Application()
+    served.router.add_get("/info", _no_content)
+    test_client = await aiohttp_client(served)
+    client = GrowspaceVisionClient(
+        test_client.session,
+        base_url=str(test_client.make_url("")),
+        token=TOKEN,
+    )
+
+    with pytest.raises(VisionServiceError) as raised:
+        await client.async_get_info()
+
+    assert raised.value.status == 204
+
+
+def test_an_answer_stamped_with_another_schema_is_refused() -> None:
+    """The guard that keeps a V2 answer out of a V1 session.
+
+    It cannot be reached over the wire while V1 is the only version this
+    integration implements — the parser refuses another `schema_version` first
+    — so it is exercised directly rather than left unproven until V2 makes it
+    reachable.
+    """
+    analysis = parse_analysis(load_fixture("valid/analyze-response-analyzed.json"))
+    session = VisionSession(
+        schema_version=2,
+        service_version="2.0.0",
+        model=PRODUCTION_MODEL,
+        embedding_dimension=384,
+    )
+
+    with pytest.raises(VisionProtocolError, match="schema"):
+        _verify_analysis_matches(analysis, session)
