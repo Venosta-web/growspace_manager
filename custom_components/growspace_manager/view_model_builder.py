@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .crop_steering import get_crop_steering_state
+from .domain.irrigation_recipe import recipe_has_drifted
+from .domain.plant_metrics import count_live_plants
 from .domain.stage import StageDays
 from .domain.water_aggregation import compute_growspace_water
 from .models import Plant
@@ -241,6 +243,15 @@ class ViewModelBuilder:
             self.coordinator.services.config.get_irrigation_recipes()
         )
 
+        # [[Recipe Stamp]] drift, computed on read rather than stored: because
+        # recipes are held by reference, a hash written at stamp time would go
+        # stale the moment the recipe itself was edited (ADR-0045). None means
+        # the question does not apply — the growspace has never had a recipe
+        # applied, or the one it names has since been removed from the library.
+        serialized["irrigation"]["applied_recipe_drifted"] = self._applied_recipe_drift(
+            growspace, plants
+        )
+
         # Global notification settings ride every growspace payload so the card's
         # Config Dialog (which seeds from the device payload) can round-trip saved
         # values. They are global, not per-growspace, but mirror notifications_enabled
@@ -260,6 +271,28 @@ class ViewModelBuilder:
         # Cache the serialized data as a tuple: (timestamp, data)
         self.coordinator.cache.set(growspace_id, (current_time, serialized))
         return serialized
+
+    def _applied_recipe_drift(
+        self, growspace: Growspace, plants: list[Plant]
+    ) -> bool | None:
+        """Return whether the growspace still holds what its recipe stamped.
+
+        None when there is nothing to compare against: no recipe was ever
+        applied, or the applied recipe has since been deleted from the global
+        library (deleting leaves references dangling rather than cascading).
+        """
+        recipe_id = growspace.irrigation_strategy.applied_recipe_id
+        if recipe_id is None:
+            return None
+        recipe = self.coordinator.services.config.find_irrigation_recipe(recipe_id)
+        if recipe is None:
+            return None
+        return recipe_has_drifted(
+            recipe,
+            strategy=growspace.irrigation_strategy,
+            config=growspace.irrigation_config,
+            live_plant_count=count_live_plants(plants),
+        )
 
     def build_data_property(
         self, preserve_air_exchange_recs: bool = True

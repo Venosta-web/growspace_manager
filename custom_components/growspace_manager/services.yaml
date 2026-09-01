@@ -1864,6 +1864,26 @@ remove_irrigation_recipe:
       selector:
         text:
 
+apply_irrigation_recipe:
+  description: >-
+    Stamp a saved Irrigation Recipe into a growspace once, re-expressing its
+    substrate-relative shot sizes in this growspace's own flow rate and pot
+    size. Applying always writes, so re-applying the recipe already applied
+    resets the fields and discards hand tweaks. A recipe of the wrong kind for
+    how the growspace is running is refused; a recipe authored in a different
+    medium is applied unscaled with a warning.
+  fields:
+    growspace_id:
+      description: The growspace to apply the recipe to.
+      required: true
+      selector:
+        text:
+    recipe_id:
+      description: ID of the recipe to apply.
+      required: true
+      selector:
+        text:
+
 save_ipm_preset:
   description: Save an IPM schedule preset
   fields:

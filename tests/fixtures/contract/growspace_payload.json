@@ -323,6 +323,7 @@
     "type": "normal"
   },
   "irrigation": {
+    "applied_recipe_drifted": false,
     "cycles_today": 0,
     "drain_config": {
       "enabled": true,
@@ -380,6 +381,7 @@
       "veg_day_hours": 18
     },
     "irrigation_strategy": {
+      "applied_recipe_id": "contract-recipe-steering",
       "auto_light_tracking": true,
       "declared_steering_mode": "generative",
       "detected_lights_on_time": "05:58:00",
@@ -402,6 +404,7 @@
       "p2_stop_before_lights_off_minutes": 75,
       "pore_ec_target_max": 2.8,
       "pore_ec_target_min": 2.1,
+      "recipe_applied_at": "2026-08-10T07:15:00+00:00",
       "shot_duration_seconds": 12,
       "shot_interval_minutes": 20,
       "shot_sizing_mode": "volume",

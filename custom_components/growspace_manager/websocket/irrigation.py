@@ -81,6 +81,15 @@ SCHEMA_WS_REMOVE_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.e
     }
 )
 
+WS_TYPE_APPLY_IRRIGATION_RECIPE = f"{DOMAIN}/apply_irrigation_recipe"
+SCHEMA_WS_APPLY_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_APPLY_IRRIGATION_RECIPE,
+        vol.Required("growspace_id"): str,
+        vol.Required("recipe_id"): str,
+    }
+)
+
 _RANGE_CONFIG: dict[str, tuple[str, int]] = {
     "1h": ("24h", 4),
     "6h": ("24h", 24),
@@ -204,6 +213,29 @@ async def websocket_remove_irrigation_recipe(
     await coordinator.services.config.remove_irrigation_recipe(msg["recipe_id"])
 
 
+async def websocket_apply_irrigation_recipe(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Stamp a saved Irrigation Recipe into a growspace (ADR-0045).
+
+    Echoes back what was recorded, so the caller does not have to re-read the
+    growspace to learn which recipe it now carries. ``warning`` is the
+    media-mismatch notice: the apply succeeded and the values were **not**
+    scaled, because pot size normalises across growspaces and media does not.
+    """
+    growspace_id = msg["growspace_id"]
+    warning = await coordinator.services.growspaces.apply_irrigation_recipe(
+        growspace_id, msg["recipe_id"]
+    )
+    strategy = coordinator.growspaces[growspace_id].irrigation_strategy
+    return {
+        "growspace_id": growspace_id,
+        "applied_recipe_id": strategy.applied_recipe_id,
+        "recipe_applied_at": strategy.recipe_applied_at,
+        "warning": warning,
+    }
+
+
 COMMANDS: list[WSCommand] = [
     WSCommand(
         WS_TYPE_GET_IRRIGATION_ANALYTICS,
@@ -242,5 +274,10 @@ COMMANDS: list[WSCommand] = [
         websocket_remove_irrigation_recipe,
         SCHEMA_WS_REMOVE_IRRIGATION_RECIPE,
         resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_APPLY_IRRIGATION_RECIPE,
+        websocket_apply_irrigation_recipe,
+        SCHEMA_WS_APPLY_IRRIGATION_RECIPE,
     ),
 ]

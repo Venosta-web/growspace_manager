@@ -59,6 +59,25 @@ async def test_stamp_always_writes_over_hand_tweaks() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stamp_writes_config_fields_too() -> None:
+    """A schedule recipe's setpoints live on the config, not the strategy."""
+    coordinator = _make_coordinator()
+
+    await async_apply_strategy_stamp(
+        coordinator,
+        "tent1",
+        StrategyStamp(
+            values={},
+            config_values={"max_cycles_per_day": 8, "skip_during_dark": True},
+        ),
+    )
+
+    config = coordinator.growspaces["tent1"].irrigation_config
+    assert config.max_cycles_per_day == 8
+    assert config.skip_during_dark is True
+
+
+@pytest.mark.asyncio
 async def test_stamp_invalidates_commits_and_refreshes() -> None:
     """The effects half runs in full: cache, store, then a refresh."""
     coordinator = _make_coordinator()
@@ -135,7 +154,10 @@ async def test_stamp_unknown_growspace_raises() -> None:
 def test_stamp_snapshots_its_mappings() -> None:
     """The resolved mappings are copied, so a caller's dict cannot mutate later."""
     values = {"maintenance_dryback_percent": 5.0}
-    stamp = StrategyStamp(values=values)
+    config_values = {"max_cycles_per_day": 8}
+    stamp = StrategyStamp(values=values, config_values=config_values)
     values["maintenance_dryback_percent"] = 99.0
+    config_values["max_cycles_per_day"] = 99
 
     assert stamp.values["maintenance_dryback_percent"] == 5.0
+    assert stamp.config_values["max_cycles_per_day"] == 8

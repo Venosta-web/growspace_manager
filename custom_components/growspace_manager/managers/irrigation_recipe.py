@@ -111,6 +111,21 @@ class IrrigationRecipeLibrary:
         )
         return recipe
 
+    def get_recipe(self, recipe_id: str) -> IrrigationRecipe:
+        """Return one recipe by id.
+
+        Recipes are held by reference everywhere they are used, so callers get
+        the library's own object rather than a copy: editing a recipe is meant
+        to be visible to everything pointing at it.
+
+        Raises:
+            EntityNotFoundError: when no recipe carries that id.
+        """
+        recipe = self.recipes.get(recipe_id)
+        if recipe is None:
+            raise EntityNotFoundError(f"Irrigation recipe '{recipe_id}' not found")
+        return recipe
+
     async def async_remove_recipe(self, recipe_id: str) -> None:
         """Remove a recipe from the library."""
         recipe = self.recipes.pop(recipe_id, None)

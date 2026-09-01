@@ -23,6 +23,10 @@ from custom_components.growspace_manager.const import (
     SteeringMode,
 )
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
+from custom_components.growspace_manager.domain.irrigation_recipe import (
+    resolve_recipe_application,
+)
+from custom_components.growspace_manager.domain.plant_metrics import count_live_plants
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
     determine_coordinator_stage,
@@ -343,6 +347,73 @@ class GrowspaceFacade:
         _LOGGER.info(
             "Applied %s steering mode for growspace '%s'", mode.value, growspace_id
         )
+
+    async def apply_irrigation_recipe(
+        self, growspace_id: str, recipe_id: str
+    ) -> str | None:
+        """Stamp a saved [[Irrigation Recipe]] into a growspace (ADR-0045).
+
+        The [[Recipe Stamp]]: the recipe's values are re-expressed in this
+        growspace's own units — a shot size stored as a percent of substrate
+        volume becomes *this* tent's pump seconds through *its* flow rate and
+        pot volume — and handed to the shared [[Strategy Stamp]] seam, which
+        writes them into the ordinary editable fields and records which recipe
+        did it and when. Always re-stamps, so re-applying the recipe already
+        applied resets the fields and discards hand tweaks.
+
+        Returns the media-mismatch warning when the recipe was authored in a
+        different medium, else None. Such an apply proceeds **unscaled**: pot
+        size normalises across growspaces and media does not.
+
+        Raises:
+            GrowspaceNotFoundError: when the growspace does not exist.
+            EntityNotFoundError: when the recipe does not exist.
+            RecipeKindMismatchError: when the recipe holds the half this
+                growspace is not running. Resolution happens before any write,
+                so a refused apply changes nothing.
+            RecipeApplyError: when the target cannot be given the recipe's shot
+                sizes honestly.
+        """
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+
+        recipe = self._coordinator._recipe_library.get_recipe(recipe_id)
+        strategy = growspace.irrigation_strategy
+        application = resolve_recipe_application(
+            recipe,
+            strategy=strategy,
+            config=growspace.irrigation_config,
+            live_plant_count=count_live_plants(self.get_growspace_plants(growspace_id)),
+        )
+
+        authored_media = recipe.provenance.media_type.value
+        target_media = strategy.substrate_profile.media_type.value
+        await async_apply_strategy_stamp(
+            self._coordinator,
+            growspace_id,
+            StrategyStamp(
+                values=application.values,
+                config_values=application.config_values,
+                records={
+                    "applied_recipe_id": recipe.id,
+                    "recipe_applied_at": dt_util.utcnow().isoformat(),
+                },
+                logbook_message=(
+                    f"Applied irrigation recipe '{recipe.name}' "
+                    f"({authored_media} → {target_media})"
+                ),
+            ),
+        )
+        if application.media_warning:
+            _LOGGER.warning("%s", application.media_warning)
+        _LOGGER.info(
+            "Applied irrigation recipe '%s' (id=%s) to growspace '%s'",
+            recipe.name,
+            recipe.id,
+            growspace_id,
+        )
+        return application.media_warning
 
     async def set_ec_target_range(
         self,

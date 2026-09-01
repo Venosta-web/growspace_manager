@@ -265,6 +265,7 @@
         'veg_day_hours': 18,
       }),
       'irrigation_strategy': dict({
+        'applied_recipe_id': None,
         'auto_light_tracking': False,
         'declared_steering_mode': None,
         'detected_lights_on_time': None,
@@ -287,6 +288,7 @@
         'p2_stop_before_lights_off_minutes': 120,
         'pore_ec_target_max': None,
         'pore_ec_target_min': None,
+        'recipe_applied_at': None,
         'shot_duration_seconds': 10,
         'shot_interval_minutes': 15,
         'shot_sizing_mode': 'seconds',

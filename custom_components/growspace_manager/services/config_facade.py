@@ -177,6 +177,15 @@ class ConfigFacade:
         """Remove a recipe from the global Irrigation Recipe library."""
         await self._coordinator._recipe_library.async_remove_recipe(recipe_id)
 
+    def find_irrigation_recipe(self, recipe_id: str) -> IrrigationRecipe | None:
+        """Return one recipe by id, or None when the library has no such id.
+
+        The forgiving lookup, for readers that must degrade rather than fail:
+        deleting a recipe leaves references to it dangling by design, so a
+        growspace can outlive the recipe it names (ADR-0045).
+        """
+        return self._coordinator._recipe_library.recipes.get(recipe_id)
+
     def get_irrigation_recipes(self) -> dict[str, dict[str, Any]]:
         """Return the serialized global Irrigation Recipe library.
 
