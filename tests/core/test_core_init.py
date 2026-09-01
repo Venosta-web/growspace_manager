@@ -4,7 +4,7 @@ This file contains tests to ensure that the integration can be successfully set 
 and unloaded within Home Assistant.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import json
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +14,7 @@ import pytest
 
 from custom_components.growspace_manager import (
     _async_cancel_coordinators,
+    _async_setup_vision_evidence_store,
     _async_update_listener,
     async_reload_entry,
     async_setup,
@@ -234,6 +235,86 @@ async def test_async_setup_entry(hass: HomeAssistant) -> None:
 
         # WebSocket API is now registered in async_setup_entry, not async_setup
         mock_ws_reg.assert_called_once_with(hass)
+
+
+@pytest.mark.asyncio
+async def test_vision_evidence_store_lifecycle_and_retention_errors(
+    mock_hass, tmp_path, caplog
+) -> None:
+    """The global store uses private media, schedules retention and closes cleanly."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={"image_retention_days": 7})
+    mock_hass.data = {DOMAIN: {}}
+    mock_hass.config.media_dirs = {"local": str(tmp_path / "media")}
+    mock_hass.config.path = MagicMock(return_value=str(tmp_path / "vision.db"))
+    store = MagicMock()
+    store.async_setup = AsyncMock()
+    store.async_run_retention = AsyncMock(
+        side_effect=RuntimeError("retention unavailable")
+    )
+    store.async_close = AsyncMock()
+    unsubscribe = MagicMock()
+
+    with (
+        patch(
+            "custom_components.growspace_manager.VisionEvidenceStore",
+            return_value=store,
+        ) as store_cls,
+        patch(
+            "custom_components.growspace_manager.async_track_time_interval",
+            return_value=unsubscribe,
+        ) as track_interval,
+    ):
+        await _async_setup_vision_evidence_store(mock_hass, entry)
+
+    store_cls.assert_called_once_with(
+        tmp_path / "vision.db",
+        tmp_path / "media" / "growspace_vision",
+        image_retention_days=7,
+    )
+    assert mock_hass.data[DOMAIN]["vision_evidence_store"] is store
+    retention_callback = track_interval.call_args.args[1]
+    await retention_callback(datetime.now())
+    assert "Vision image retention failed" in caplog.text
+
+    stop_callback = mock_hass.bus.async_listen_once.call_args.args[1]
+    await stop_callback(MagicMock())
+    store.async_close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_vision_evidence_store_setup_degrades_without_private_media(
+    mock_hass, caplog
+) -> None:
+    """A missing media root leaves the cultivation integration available."""
+    mock_hass.data = {DOMAIN: {}}
+    mock_hass.config.media_dirs = {}
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+
+    await _async_setup_vision_evidence_store(mock_hass, entry)
+
+    assert "vision_evidence_store" not in mock_hass.data[DOMAIN]
+    assert "No media directory" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_vision_evidence_store_setup_degrades_on_database_failure(
+    mock_hass, tmp_path, caplog
+) -> None:
+    """A damaged evidence database never prevents the integration from loading."""
+    mock_hass.data = {DOMAIN: {}}
+    mock_hass.config.media_dirs = {"local": str(tmp_path / "media")}
+    mock_hass.config.path = MagicMock(return_value=str(tmp_path / "vision.db"))
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    store = MagicMock()
+    store.async_setup = AsyncMock(side_effect=RuntimeError("damaged database"))
+
+    with patch(
+        "custom_components.growspace_manager.VisionEvidenceStore", return_value=store
+    ):
+        await _async_setup_vision_evidence_store(mock_hass, entry)
+
+    assert "vision_evidence_store" not in mock_hass.data[DOMAIN]
+    assert "Failed to open the Vision Evidence Store" in caplog.text
 
 
 @pytest.mark.asyncio

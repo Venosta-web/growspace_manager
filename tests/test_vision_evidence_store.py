@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import AsyncMock
 import uuid
 
 import aiosqlite
@@ -715,4 +716,403 @@ async def test_growspace_deletion_keeps_pinned_captures_as_named_orphans(
     assert not (image_root / ordinary_file.relative_path).exists()
     assert (image_root / pinned_file.relative_path).exists()
     assert await store.async_get_labels(pinned.capture_id)
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_public_boundaries_reject_invalid_identity_time_and_media(
+    tmp_path: Path,
+) -> None:
+    """Invalid caller data is rejected before it can become durable evidence."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    now = datetime(2026, 9, 1, 6, tzinfo=UTC)
+
+    assert await store.async_run_retention(now) == 0
+    with pytest.raises(ValueError, match="checkup_id"):
+        await store.async_start_checkup(
+            checkup_id=str(uuid.uuid4()),
+            growspace_id="gs-1",
+            growspace_name="Flower Tent",
+            trigger_source=CaptureTrigger.SCHEDULED,
+            light_window=LightWindow.EARLY,
+            started_at=now,
+        )
+    with pytest.raises(ValueError, match="started_at"):
+        await store.async_start_checkup(
+            checkup_id=store.mint_checkup_id(),
+            growspace_id="gs-1",
+            growspace_name="Flower Tent",
+            trigger_source=CaptureTrigger.SCHEDULED,
+            light_window=LightWindow.EARLY,
+            started_at=now.replace(tzinfo=None),
+        )
+
+    checkup_id = store.mint_checkup_id()
+    await store.async_start_checkup(
+        checkup_id=checkup_id,
+        growspace_id="gs-1",
+        growspace_name="Flower Tent",
+        trigger_source=CaptureTrigger.SCHEDULED,
+        light_window=LightWindow.EARLY,
+        started_at=now,
+    )
+    capture_arguments = {
+        "checkup_id": checkup_id,
+        "growspace_id": "gs-1",
+        "growspace_name": "Flower Tent",
+        "camera_id": "camera.canopy",
+        "captured_at": now,
+        "light_window": LightWindow.EARLY,
+        "light_state": LightState.ON,
+        "trigger_source": CaptureTrigger.SCHEDULED,
+        "image": b"capture",
+        "content_type": "image/jpeg",
+    }
+    with pytest.raises(ValueError, match="capture_id"):
+        await store.async_start_capture(
+            capture_id=str(uuid.uuid4()), **capture_arguments
+        )
+    with pytest.raises(ValueError, match="captured_at"):
+        await store.async_start_capture(
+            capture_id=store.mint_capture_id(),
+            **(capture_arguments | {"captured_at": now.replace(tzinfo=None)}),
+        )
+    with pytest.raises(ValueError, match="JPEG or PNG"):
+        await store.async_start_capture(
+            capture_id=store.mint_capture_id(),
+            **(capture_arguments | {"content_type": "image/webp"}),
+        )
+    with pytest.raises(KeyError, match="does not exist"):
+        await store.async_start_capture(
+            capture_id=store.mint_capture_id(),
+            **(capture_arguments | {"checkup_id": store.mint_checkup_id()}),
+        )
+    with pytest.raises(ValueError, match="does not match"):
+        await store.async_start_capture(
+            capture_id=store.mint_capture_id(),
+            **(capture_arguments | {"growspace_id": "gs-other"}),
+        )
+    with pytest.raises(KeyError, match="does not exist"):
+        await store.async_add_capture_file(
+            "missing",
+            variant=CaptureFileVariant.PROCESSED,
+            image=b"png",
+            content_type="image/png",
+        )
+    with pytest.raises(ValueError, match="cannot be negative"):
+        await store.async_prune_images(image_retention_days=-1, now=now)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        await store.async_prune_images(
+            image_retention_days=90, now=now.replace(tzinfo=None)
+        )
+
+    capture = await store.async_start_capture(
+        capture_id=store.mint_capture_id(), **capture_arguments
+    )
+    processed = await store.async_add_capture_file(
+        capture.capture_id,
+        variant=CaptureFileVariant.PROCESSED,
+        image=b"png",
+        content_type="image/png; charset=binary",
+    )
+    assert processed.relative_path.endswith(".processed.png")
+
+    await store.async_close()
+    await store.async_close()
+    with pytest.raises(RuntimeError, match="not open"):
+        await store.async_get_capture(capture.capture_id)
+
+
+@pytest.mark.asyncio
+async def test_checkup_state_transitions_roll_back_invalid_updates(
+    tmp_path: Path,
+) -> None:
+    """Duplicate starts and invalid finishes leave the original envelope intact."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    checkup_id = store.mint_checkup_id()
+    now = datetime(2026, 9, 1, 6, tzinfo=UTC)
+    arguments = {
+        "checkup_id": checkup_id,
+        "growspace_id": "gs-1",
+        "growspace_name": "Flower Tent",
+        "trigger_source": CaptureTrigger.SCHEDULED,
+        "light_window": LightWindow.EARLY,
+        "started_at": now,
+    }
+    pending = await store.async_start_checkup(**arguments)
+
+    with pytest.raises(aiosqlite.IntegrityError):
+        await store.async_start_checkup(**arguments)
+    with pytest.raises(ValueError, match="completed_at"):
+        await store.async_finish_checkup(
+            checkup_id,
+            status=CheckupStatus.COMPLETED,
+            completed_at=now.replace(tzinfo=None),
+        )
+    with pytest.raises(KeyError, match="not found"):
+        await store.async_finish_checkup(
+            "missing",
+            status=CheckupStatus.FAILED,
+            completed_at=now,
+        )
+    assert await store.async_get_checkup(checkup_id) == pending
+
+    await store.async_finish_checkup(
+        checkup_id, status=CheckupStatus.COMPLETED, completed_at=now
+    )
+    with pytest.raises(KeyError, match="not found"):
+        await store.async_finish_checkup(
+            checkup_id, status=CheckupStatus.COMPLETED, completed_at=now
+        )
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_image_index_refuses_existing_paths_and_cleans_up_commit_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The filesystem side never overwrites a file or outlives a failed commit."""
+    image_root = tmp_path / "images"
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", image_root)
+    await store.async_setup()
+    now = datetime(2026, 9, 1, 6, tzinfo=UTC)
+    checkup_id = store.mint_checkup_id()
+    await store.async_start_checkup(
+        checkup_id=checkup_id,
+        growspace_id="gs-1",
+        growspace_name="Flower Tent",
+        trigger_source=CaptureTrigger.SCHEDULED,
+        light_window=LightWindow.EARLY,
+        started_at=now,
+    )
+    arguments = {
+        "checkup_id": checkup_id,
+        "growspace_id": "gs-1",
+        "growspace_name": "Flower Tent",
+        "camera_id": "camera.canopy",
+        "captured_at": now,
+        "light_window": LightWindow.EARLY,
+        "light_state": LightState.ON,
+        "trigger_source": CaptureTrigger.SCHEDULED,
+        "image": b"capture",
+        "content_type": "image/jpeg",
+    }
+
+    occupied_id = store.mint_capture_id()
+    occupied = image_root / "gs-1" / "camera.canopy" / f"{occupied_id}.raw.jpg"
+    occupied.parent.mkdir(parents=True)
+    occupied.write_bytes(b"do-not-replace")
+    with pytest.raises(FileExistsError):
+        await store.async_start_capture(capture_id=occupied_id, **arguments)
+    assert occupied.read_bytes() == b"do-not-replace"
+    assert await store.async_get_capture(occupied_id) is None
+
+    db = store._require_db()
+    original_commit = db.commit
+    monkeypatch.setattr(
+        db, "commit", AsyncMock(side_effect=aiosqlite.OperationalError("disk full"))
+    )
+    failed_id = store.mint_capture_id()
+    with pytest.raises(aiosqlite.OperationalError, match="disk full"):
+        await store.async_start_capture(capture_id=failed_id, **arguments)
+    monkeypatch.setattr(db, "commit", original_commit)
+    failed_path = image_root / "gs-1" / "camera.canopy" / f"{failed_id}.raw.jpg"
+    assert not failed_path.exists()
+    assert await store.async_get_capture(failed_id) is None
+
+    capture = await store.async_start_capture(
+        capture_id=store.mint_capture_id(), **arguments
+    )
+    processed_path = (
+        image_root / "gs-1" / "camera.canopy" / f"{capture.capture_id}.processed.jpg"
+    )
+    processed_path.write_bytes(b"occupied")
+    with pytest.raises(FileExistsError):
+        await store.async_add_capture_file(
+            capture.capture_id,
+            variant=CaptureFileVariant.PROCESSED,
+            image=b"processed",
+            content_type="image/jpeg",
+        )
+    assert processed_path.read_bytes() == b"occupied"
+
+    processed_path.unlink()
+    monkeypatch.setattr(
+        db, "commit", AsyncMock(side_effect=aiosqlite.OperationalError("disk full"))
+    )
+    with pytest.raises(aiosqlite.OperationalError, match="disk full"):
+        await store.async_add_capture_file(
+            capture.capture_id,
+            variant=CaptureFileVariant.PROCESSED,
+            image=b"processed",
+            content_type="image/jpeg",
+        )
+    monkeypatch.setattr(db, "commit", original_commit)
+    assert not processed_path.exists()
+    assert {
+        item.variant for item in await store.async_get_capture_files(capture.capture_id)
+    } == {CaptureFileVariant.RAW}
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_analysis_rejects_cross_capture_and_incomplete_artifacts(
+    tmp_path: Path,
+) -> None:
+    """Repository invariants reject evidence that cannot form one atomic analysis."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    capture = await _start_capture(store)
+    completed, embedding, bucket, member, result = _analysis_records(capture)
+
+    with pytest.raises(ValueError, match="belong to the capture"):
+        await store.async_record_analysis(
+            completed, embedding=replace(embedding, capture_id="other")
+        )
+    with pytest.raises(ValueError, match="matching bucket"):
+        await store.async_record_analysis(completed, member=member)
+    with pytest.raises(ValueError, match="same write"):
+        await store.async_record_analysis(completed, comparison=result)
+    with pytest.raises(ValueError, match="dimension"):
+        await store.async_record_analysis(
+            completed, embedding=replace(embedding, values_f32=b"short")
+        )
+    with pytest.raises(KeyError, match="does not exist"):
+        await store.async_record_analysis(
+            replace(completed, capture_id=store.mint_capture_id())
+        )
+    assert await store.async_get_capture(capture.capture_id) == capture
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_additive_repositories_roll_back_duplicate_and_invalid_writes(
+    tmp_path: Path,
+) -> None:
+    """Fusion, report, membership and label failures leave prior evidence intact."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    capture = await _start_capture(store)
+    completed, embedding, bucket, member, result = _analysis_records(capture)
+    await store.async_record_analysis(
+        completed,
+        embedding=embedding,
+        comparison=result,
+        bucket=bucket,
+        member=member,
+    )
+    outcome = VisionFusionOutcome(
+        outcome_id="fusion-duplicate",
+        capture_id=capture.capture_id,
+        evaluated_at="2026-09-01T06:00:02+00:00",
+        scoring_policy_version=1,
+        environmental_verdict="unavailable",
+    )
+    await store.async_record_fusion_outcome(outcome)
+    with pytest.raises(aiosqlite.IntegrityError):
+        await store.async_record_fusion_outcome(outcome)
+
+    report = VisionExplainerReport(
+        report_id="report-duplicate",
+        capture_id=capture.capture_id,
+        created_at="2026-09-01T06:00:03+00:00",
+        ai_task_entity_id="ai_task.cloud",
+        observation_source=ObservationSource.VISUAL_COMPARISON_ONLY,
+        scoring_policy_version=1,
+        observation="No image was inspected.",
+        environmental_risk="",
+        hypothesis="",
+    )
+    await store.async_add_explainer_report(report)
+    with pytest.raises(aiosqlite.IntegrityError):
+        await store.async_add_explainer_report(report)
+    with pytest.raises(KeyError, match="not found"):
+        await store.async_evict_baseline_member(
+            bucket.bucket_id,
+            "missing",
+            evicted_at="2026-09-02T06:00:00+00:00",
+            evicted_by_capture_id="newer",
+        )
+
+    invalid_label = VisionLabel(
+        label_id="invalid-label",
+        capture_id=capture.capture_id,
+        label_kind=LabelKind.OBSERVATION,
+        created_at="2026-09-01T07:00:00+00:00",
+        author="grower",
+        superseded_by="already-set",
+    )
+    with pytest.raises(ValueError, match="cannot already be superseded"):
+        await store.async_add_label(invalid_label)
+
+    assert await store.async_get_fusion_outcomes(capture.capture_id) == [outcome]
+    assert await store.async_get_explainer_reports(capture.capture_id) == [report]
+    assert await store.async_get_active_baseline_members(bucket.bucket_id) == [member]
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_corrupt_paths_are_contained_during_retention_and_deletion(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A corrupt row cannot make either cleanup operation escape the image root."""
+    image_root = tmp_path / "images"
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", image_root)
+    await store.async_setup()
+    old = datetime(2026, 5, 1, 6, tzinfo=UTC)
+    capture = await _start_capture(store, captured_at=old)
+    outside = tmp_path / "outside.jpg"
+    outside.write_bytes(b"unrelated")
+    db = store._require_db()
+    await db.execute(
+        "UPDATE vision_capture_file SET relative_path = '../outside.jpg'"
+        " WHERE capture_id = ?",
+        (capture.capture_id,),
+    )
+    await db.commit()
+
+    assert (
+        await store.async_prune_images(
+            image_retention_days=90,
+            now=datetime(2026, 9, 1, tzinfo=UTC),
+        )
+        == 0
+    )
+    assert await store.async_delete_growspace("gs-1") == 0
+    assert outside.read_bytes() == b"unrelated"
+    assert await store.async_get_capture(capture.capture_id) == capture
+    assert "Failed to prune tracked vision image" in caplog.text
+    assert "Failed to delete images" in caplog.text
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_growspace_delete_rolls_back_rows_when_database_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A database failure retains recoverable rows after files are deleted first."""
+    image_root = tmp_path / "images"
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", image_root)
+    await store.async_setup()
+    capture = await _start_capture(store)
+    capture_file = (await store.async_get_capture_files(capture.capture_id))[0]
+    db = store._require_db()
+    original_execute = db.execute
+
+    async def failing_execute(sql, parameters=None):
+        if sql.startswith("DELETE FROM vision_grow_run_ref"):
+            raise aiosqlite.OperationalError("database is read-only")
+        if parameters is None:
+            return await original_execute(sql)
+        return await original_execute(sql, parameters)
+
+    monkeypatch.setattr(db, "execute", failing_execute)
+    with pytest.raises(aiosqlite.OperationalError, match="read-only"):
+        await store.async_delete_growspace("gs-1")
+    monkeypatch.setattr(db, "execute", original_execute)
+
+    assert await store.async_get_capture(capture.capture_id) == capture
+    assert not (image_root / capture_file.relative_path).exists()
     await store.async_close()
