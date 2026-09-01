@@ -29,6 +29,10 @@ from typing import Any
 
 from custom_components.growspace_manager.const import ShotSizingMode
 from custom_components.growspace_manager.domain.infiltration import InfiltrationState
+from custom_components.growspace_manager.domain.shot_sizing import (
+    percent_to_seconds,
+    shot_volume_ml,
+)
 from custom_components.growspace_manager.models import IrrigationStrategy
 
 _LOGGER = logging.getLogger(__name__)
@@ -534,12 +538,11 @@ class SteeringPhaseMachine:
     ) -> tuple[int | None, str | None]:
         """Return the base pump-seconds for a Volume Mode shot, or None to suspend.
 
-        Converts the per-phase percent-of-substrate-volume size to milliliters
-        (``percent/100 × liters_per_pot × live_count × 1000``) and then to pump
-        seconds via the flow rate (``ml / flow_rate_ml_per_sec``). Returns None
-        when the live plant count is zero so the caller suspends the shot rather
-        than firing a 1 s floor. Also formats a volume-change note when a
-        live-count change alters the computed shot volume (ADR-0011).
+        Defers the arithmetic to the [[Shot Size Conversion]], passing the live
+        plant count explicitly; None comes back when the count is zero (or the
+        size is), so the caller suspends the shot rather than firing a 1 s
+        floor. The volume itself is still needed here to format the
+        volume-change note when a live-count change alters it (ADR-0011).
         """
         live_count = inputs.live_plant_count
         strategy = inputs.strategy
@@ -548,17 +551,20 @@ class SteeringPhaseMachine:
             if phase == "P2"
             else strategy.p1_shot_volume_percent
         )
-        profile = strategy.substrate_profile
+        liters_per_pot = strategy.substrate_profile.liters_per_pot
 
-        shot_volume_ml = (
-            (percent / 100.0) * profile.liters_per_pot * live_count * 1000.0
+        volume_ml = shot_volume_ml(
+            percent, liters_per_pot=liters_per_pot, live_plant_count=live_count
         )
-        note = self._volume_change_note(shot_volume_ml, live_count)
+        note = self._volume_change_note(volume_ml, live_count)
 
-        if live_count == 0 or shot_volume_ml <= 0.0:
-            return None, note
         return (
-            max(1, round(shot_volume_ml / inputs.pump_flow_rate_ml_per_sec)),
+            percent_to_seconds(
+                percent,
+                liters_per_pot=liters_per_pot,
+                live_plant_count=live_count,
+                flow_rate_ml_per_sec=inputs.pump_flow_rate_ml_per_sec,
+            ),
             note,
         )
 
