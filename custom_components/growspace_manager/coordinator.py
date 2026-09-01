@@ -47,6 +47,7 @@ from .strain_library import StrainLibrary
 from .tank_monitor import TankLevelMonitor
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
+from .vision_connection import VisionConnection
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -196,6 +197,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         notification_settings: NotificationSettingsManager,
         subsystem_manager: SubsystemManager,
         services: ServiceFacade,
+        vision_connection: VisionConnection,
         vision_scheduler: VisionCheckupScheduler,
         briefing_scheduler: BriefingScheduler,
         photoperiod_checker: PhotoperiodFlipChecker,
@@ -219,6 +221,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.notification_settings = notification_settings
         self._subsystem_manager = subsystem_manager
         self.services = services
+        self.vision_connection = vision_connection
         self.vision_scheduler = vision_scheduler
         self.briefing_scheduler = briefing_scheduler
         self.photoperiod_checker = photoperiod_checker
@@ -328,6 +331,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._notification_manager.async_check_timed_notifications()
         await self._notification_manager.async_check_pending_alerts()
         await self.environment_analyzer.async_update_air_exchange_recommendations()
+        # Keeps the Vision status cache warm so `get_vision_status` never has to
+        # probe. It is a no-op while the cache is fresh (ADR 0043).
+        await self.vision_connection.async_refresh_if_stale()
 
         return self.data
 
@@ -486,6 +492,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._notification_manager.shutdown()
         self.tank_monitor.async_stop()
         self.vision_scheduler.async_stop()
+        await self.vision_connection.async_shutdown()
         self.briefing_scheduler.async_stop()
         self.photoperiod_checker.async_stop()
         await self.storage_manager.async_force_save()
@@ -514,6 +521,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Ensure default special growspaces exist
         await self._growspace_manager.ensure_default_growspaces()
         await self.async_commit()
+
+        # Probe Growspace Vision once at setup so the status the card reads is
+        # populated before the first coordinator tick.
+        await self.vision_connection.async_refresh()
 
         # Schedule vision checkups for all loaded growspaces
         self.vision_scheduler.schedule_all_growspaces()

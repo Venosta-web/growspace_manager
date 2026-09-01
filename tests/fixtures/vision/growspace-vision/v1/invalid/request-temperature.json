@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "camera_id": "camera.growcam_sog",
+  "growspace_id": "growspace-sog-01",
+  "captured_at": "2026-08-31T08:30:00Z",
+  "light_state": "on",
+  "model_id": "dinov2-vit-s-14-int8-onnx",
+  "model_version": "1.0.0",
+  "temperature_c": 24.5
+}

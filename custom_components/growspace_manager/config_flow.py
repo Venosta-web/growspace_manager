@@ -314,6 +314,8 @@ class OptionsFlowHandler(OptionsFlow):
                 return await self.async_step_select_growspace_for_env()
             if action == "configure_ai":
                 return await self.ai_handler.async_step_configure_ai()
+            if action == "configure_vision":
+                return await self.ai_handler.async_step_configure_vision()
             if action == "manage_timed_notifications":
                 return await self.notify_handler.async_step_manage_timed_notifications()
             if action == "manage_strain_library":
@@ -337,6 +339,12 @@ class OptionsFlowHandler(OptionsFlow):
     ) -> ConfigFlowResult:
         """Delegate AI configuration to the AI handler."""
         return await self.ai_handler.async_step_configure_ai(user_input)
+
+    async def async_step_configure_vision(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delegate Growspace Vision connection settings to the AI handler."""
+        return await self.ai_handler.async_step_configure_vision(user_input)
 
     async def async_step_manage_timed_notifications(
         self, user_input: dict[str, Any] | None = None
@@ -658,6 +666,10 @@ class OptionsFlowHandler(OptionsFlow):
                             selector.SelectOptionDict(
                                 value="configure_ai",
                                 label="Configure AI Assistant",
+                            ),
+                            selector.SelectOptionDict(
+                                value="configure_vision",
+                                label="Configure Growspace Vision",
                             ),
                             selector.SelectOptionDict(
                                 value="manage_timed_notifications",

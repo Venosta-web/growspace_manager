@@ -16,9 +16,26 @@ from custom_components.growspace_manager.const import (
     CONF_BRIEFING_INTERVAL_MINUTES,
     CONF_BRIEFING_TRIGGER_ENTITIES,
     CONF_NOTIFICATION_PERSONALITY,
+    CONF_VISION_ACCESS_TOKEN,
     CONF_VISION_CHECKUP_ENABLED,
+    CONF_VISION_CONNECTION_MODE,
     CONF_VISION_DEBUG_ENABLED,
+    CONF_VISION_ENDPOINT_URL,
     DEFAULT_BRIEFING_INTERVAL_MINUTES,
+    DEFAULT_VISION_CONNECTION_MODE,
+    VISION_SETTINGS_KEY,
+)
+from custom_components.growspace_manager.exceptions import (
+    VisionAuthError,
+    VisionError,
+    VisionIncompatibleError,
+    VisionModelUnavailableError,
+    VisionNotConfiguredError,
+    VisionTransportError,
+)
+from custom_components.growspace_manager.vision_connection import (
+    VisionConnection,
+    VisionConnectionMode,
 )
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
@@ -188,3 +205,146 @@ class AIConfigHandler(BaseConfigHandler[dict[str, Any]]):
         await coordinator.services.save()
 
         return new_options
+
+    def get_vision_connection_schema(self) -> vol.Schema:
+        """Build the schema for the Growspace Vision connection settings."""
+        current = self._vision_settings()
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_VISION_CONNECTION_MODE,
+                    default=current.get(
+                        CONF_VISION_CONNECTION_MODE, DEFAULT_VISION_CONNECTION_MODE
+                    ),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value=VisionConnectionMode.AUTOMATIC.value,
+                                label="Discover the Growspace Vision App automatically",
+                            ),
+                            selector.SelectOptionDict(
+                                value=VisionConnectionMode.MANUAL.value,
+                                label="Use a manually configured endpoint",
+                            ),
+                        ],
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                ),
+                vol.Optional(
+                    CONF_VISION_ENDPOINT_URL,
+                    default=current.get(CONF_VISION_ENDPOINT_URL, ""),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.URL)
+                ),
+                vol.Optional(
+                    CONF_VISION_ACCESS_TOKEN,
+                    default=current.get(CONF_VISION_ACCESS_TOKEN, ""),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                ),
+            }
+        )
+
+    async def async_step_configure_vision(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show and save the Growspace Vision connection settings.
+
+        The submitted connection is probed before it is stored, so a wrong
+        endpoint or token is a form error rather than a checkup that only fails
+        hours later during a scheduled run.
+        """
+        try:
+            self.get_coordinator()
+        except AbortFlow as e:
+            return self.flow.async_abort(reason=e.reason)
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            settings = _normalize_vision_settings(user_input)
+            try:
+                await self._async_probe_vision(settings)
+            except VisionNotConfiguredError:
+                errors["base"] = "vision_not_configured"
+            except VisionAuthError:
+                errors["base"] = "vision_invalid_auth"
+            except VisionIncompatibleError:
+                errors["base"] = "vision_incompatible"
+            except VisionModelUnavailableError:
+                errors["base"] = "vision_model_unavailable"
+            except VisionError:
+                errors["base"] = "vision_cannot_connect"
+            else:
+                new_options = await self.save_vision_settings(settings)
+                return self.flow.async_create_entry(title="", data=new_options)
+
+        return self.flow.async_show_form(
+            step_id="configure_vision",
+            data_schema=self.get_vision_connection_schema(),
+            errors=errors,
+        )
+
+    async def save_vision_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
+        """Persist the connection settings and refresh the live coordinator."""
+        if self.config_entry is None:
+            raise ValueError("Coordinator not found")
+        coordinator = self.config_entry.runtime_data
+        if coordinator is None:
+            raise ValueError("Coordinator not found")
+
+        new_options = dict(self.config_entry.options)
+        new_options[VISION_SETTINGS_KEY] = settings
+        coordinator.options = new_options
+        await coordinator.services.save()
+        await coordinator.vision_connection.async_refresh()
+        return new_options
+
+    async def _async_probe_vision(self, settings: dict[str, Any]) -> None:
+        """Resolve and negotiate these settings, raising a `VisionError` if unusable.
+
+        Anything the client does not already type — a URL `aiohttp` refuses to
+        parse, say — becomes a transport failure, so the caller only has to
+        handle the Vision hierarchy.
+        """
+        connection = VisionConnection(
+            self.hass, lambda: {VISION_SETTINGS_KEY: settings}
+        )
+        try:
+            endpoint = await connection.async_resolve_endpoint()
+            await connection.build_client(endpoint).async_negotiate()
+        except VisionError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Growspace Vision connection probe failed", exc_info=True)
+            raise VisionTransportError("Growspace Vision could not be reached") from err
+
+    def _vision_settings(self) -> dict[str, Any]:
+        if self.config_entry is None:
+            return {}
+        settings = self.config_entry.options.get(VISION_SETTINGS_KEY)
+        return dict(settings) if isinstance(settings, dict) else {}
+
+
+def _normalize_vision_settings(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Reduce the submitted form to what the selected mode actually uses.
+
+    Switching back to automatic drops the manual endpoint and token rather than
+    keeping them out of sight, so there is no dormant credential to fall back
+    to and no secret retained for a connection the grower stopped using.
+    """
+    mode = str(
+        user_input.get(CONF_VISION_CONNECTION_MODE, DEFAULT_VISION_CONNECTION_MODE)
+    )
+    if mode != VisionConnectionMode.MANUAL:
+        return {CONF_VISION_CONNECTION_MODE: VisionConnectionMode.AUTOMATIC.value}
+    return {
+        CONF_VISION_CONNECTION_MODE: VisionConnectionMode.MANUAL.value,
+        CONF_VISION_ENDPOINT_URL: str(
+            user_input.get(CONF_VISION_ENDPOINT_URL) or ""
+        ).strip(),
+        CONF_VISION_ACCESS_TOKEN: str(
+            user_input.get(CONF_VISION_ACCESS_TOKEN) or ""
+        ).strip(),
+    }

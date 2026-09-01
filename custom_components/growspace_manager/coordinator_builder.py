@@ -43,6 +43,7 @@ from .strain_library import StrainLibrary
 from .tank_monitor import TankLevelMonitor
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
+from .vision_connection import VisionConnection
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -214,6 +215,9 @@ class CoordinatorBuilder:
         notification_settings = NotificationSettingsManager(coordinator)
         subsystem_manager = SubsystemManager(self.hass, coordinator, self.entry)
         services = ServiceFacade(coordinator)
+        # Reads the coordinator's live options, so a connection change made in
+        # the options flow takes effect without rebuilding the coordinator.
+        vision_connection = VisionConnection(self.hass, lambda: coordinator.options)
         vision_scheduler = VisionCheckupScheduler(self.hass, coordinator)
         briefing_scheduler = BriefingScheduler(self.hass, coordinator)
         photoperiod_checker = PhotoperiodFlipChecker(self.hass, coordinator)
@@ -249,6 +253,7 @@ class CoordinatorBuilder:
             notification_settings=notification_settings,
             subsystem_manager=subsystem_manager,
             services=services,
+            vision_connection=vision_connection,
             vision_scheduler=vision_scheduler,
             briefing_scheduler=briefing_scheduler,
             photoperiod_checker=photoperiod_checker,
