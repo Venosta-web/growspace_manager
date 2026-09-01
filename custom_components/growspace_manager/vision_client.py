@@ -8,7 +8,7 @@ and the mapping from a transport or typed service failure to one of the
 Two rules run through all of it, both from ADR 0003 (Vision):
 
 * **A failure is a failure.**  Any non-2xx response, any timeout, any
-  unparseable body raises.  There is no empty, normal or healthy substitute
+  unparsable body raises.  There is no empty, normal or healthy substitute
   result, and nothing retries automatically — a `429 busy` is normal load, and
   still ends this capture.
 * **A rejection is not a failure.**  A quality-rejected frame is a 200 with no
@@ -320,7 +320,7 @@ def _service_error(
     except VisionProtocolError:
         # A non-2xx that is not even a V1 error body is still a failure; it
         # just cannot say which one.
-        _LOGGER.debug("Growspace Vision returned an unparseable %d body", status)
+        _LOGGER.debug("Growspace Vision returned an unparsable %d body", status)
     else:
         code = error.code
         request_id = error.request_id
@@ -347,7 +347,7 @@ def _service_error(
 
 
 def _decode_json(body: bytes) -> object:
-    """Decode a response body, treating anything unparseable as a violation."""
+    """Decode a response body, treating anything unparsable as a violation."""
     try:
         return json.loads(body)
     except (UnicodeDecodeError, ValueError) as err:
