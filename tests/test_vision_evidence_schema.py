@@ -13,6 +13,7 @@ import pytest
 
 from custom_components.growspace_manager.data_access.vision_evidence_schema import (
     VISION_BASELINE_MEMBERS_REQUIRED,
+    VISION_EVIDENCE_MIGRATIONS,
     VISION_EVIDENCE_SCHEMA,
     VISION_EVIDENCE_SCHEMA_VERSION,
     VISION_SCORING_POLICY_VERSION,
@@ -63,6 +64,8 @@ def db_fixture():
     """Return an in-memory database with the evidence schema applied."""
     connection = sqlite3.connect(":memory:")
     connection.executescript(VISION_EVIDENCE_SCHEMA)
+    for migration in VISION_EVIDENCE_MIGRATIONS[1:]:
+        connection.executescript(migration)
     connection.execute(f"PRAGMA user_version = {VISION_EVIDENCE_SCHEMA_VERSION}")
     yield connection
     connection.close()
@@ -213,6 +216,24 @@ def test_a_capture_records_its_structural_correlation(db):
         "SELECT quality_structural_correlation FROM vision_capture"
     ).fetchone()[0]
     assert stored == pytest.approx(0.351)
+
+
+def test_quality_history_reanchor_is_a_boolean_capture_fact(db):
+    """Restart reconstruction can stop at the durable changed-regime boundary."""
+    _insert_epoch(db)
+    _insert_capture(db)
+    db.execute(
+        "UPDATE vision_capture SET quality_history_reanchored = 1"
+        " WHERE capture_id = 'capture-1'"
+    )
+    assert db.execute(
+        "SELECT quality_history_reanchored FROM vision_capture"
+    ).fetchone() == (1,)
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "UPDATE vision_capture SET quality_history_reanchored = 2"
+            " WHERE capture_id = 'capture-1'"
+        )
 
 
 def test_manual_capture_is_recordable(db):

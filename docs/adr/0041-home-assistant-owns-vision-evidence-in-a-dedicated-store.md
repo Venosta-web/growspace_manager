@@ -12,6 +12,11 @@ and on 2026-08-31 by
 > is recorded per capture instead. See _Framing Epochs and the Grow Run
 > dimension_ below.
 
+Issue #89 adds `quality_history_reanchored` as a capture fact. ADR 0005 requires the
+third consecutive relative-rail excursion to re-anchor Quality History; recording that
+boundary keeps the new regime intact across an integration restart instead of silently
+reintroducing older accepted signals.
+
 Decided on 2026-08-31 in
 [hub#70](https://github.com/Venosta-web/growspace_manager_workspace/issues/70), under
 the stateless-service boundary of ADR 0003 and the baseline semantics of ADR 0004.

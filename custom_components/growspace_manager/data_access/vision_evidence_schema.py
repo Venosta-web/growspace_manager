@@ -18,7 +18,7 @@ from typing import Final
 # Bumped by any forward migration step. Read from and written to PRAGMA user_version;
 # a file whose user_version exceeds this value is a downgrade and must fail loudly
 # rather than be migrated backwards.
-VISION_EVIDENCE_SCHEMA_VERSION: Final = 1
+VISION_EVIDENCE_SCHEMA_VERSION: Final = 2
 
 # Bumped whenever the Home Assistant side changes how a Visual Comparison Result is
 # produced — the distance metric, the rolling window size, the leave-one-out
@@ -400,4 +400,13 @@ CREATE INDEX IF NOT EXISTS idx_vision_label_capture
 
 # Index N contains the DDL that migrates schema version N to N + 1.  Keep steps
 # append-only: an installed database advances through every intermediate version.
-VISION_EVIDENCE_MIGRATIONS: Final = (VISION_EVIDENCE_SCHEMA,)
+VISION_EVIDENCE_SCHEMA_V2: Final = """
+ALTER TABLE vision_capture
+    ADD COLUMN quality_history_reanchored INTEGER NOT NULL DEFAULT 0
+    CHECK (quality_history_reanchored IN (0, 1));
+"""
+
+VISION_EVIDENCE_MIGRATIONS: Final = (
+    VISION_EVIDENCE_SCHEMA,
+    VISION_EVIDENCE_SCHEMA_V2,
+)

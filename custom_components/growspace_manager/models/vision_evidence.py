@@ -237,6 +237,7 @@ class VisionCapture:
     quality_mean_absolute_gradient: float | None = None
     quality_reasons: tuple[str, ...] = ()
     quality_structural_correlation: float | None = None
+    quality_history_reanchored: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
