@@ -307,13 +307,75 @@
         "visual_tag": "stems_snap",
         "weight_lost_pct": 69.41176470588235
       },
-      "position_1_2": null,
+      "position_1_2": {
+        "clone_days": 0,
+        "clone_start": null,
+        "col": 2,
+        "cure_days": 0,
+        "cure_start": null,
+        "days_since_last_watering": 0,
+        "days_to_target": null,
+        "dry_days": 0,
+        "dry_start": null,
+        "drying_moisture": null,
+        "drying_ready_for_cure": false,
+        "drying_weight": null,
+        "entity_id": null,
+        "flower_days": 15,
+        "flower_early_days": 0,
+        "flower_late_days": 0,
+        "flower_mid_days": 0,
+        "flower_start": "2026-07-27",
+        "growspace_id": "contract_growspace",
+        "harvest_metrics": {
+          "cbd_percentage": null,
+          "dry_weight": null,
+          "terpene_profile": null,
+          "thc_percentage": null,
+          "trim_weight": null,
+          "wet_weight": null
+        },
+        "last_ipm": null,
+        "last_ipm_type": null,
+        "last_trained": null,
+        "last_training_technique": null,
+        "last_watered": null,
+        "mother_days": 0,
+        "mother_start": null,
+        "phenotype": "",
+        "phenotype_score": {
+          "internodal_spacing": null,
+          "keeper": false,
+          "mold_resistance": null,
+          "notes": "",
+          "resin": null,
+          "terpene_intensity": null,
+          "total_score": null,
+          "updated_at": null,
+          "vigor": null,
+          "yield_potential": null
+        },
+        "plant_id": "contract-live-plant",
+        "position": "(1,2)",
+        "row": 1,
+        "seedling_days": 0,
+        "seedling_start": null,
+        "stage": "flower",
+        "strain": "",
+        "updated_at": null,
+        "veg_days": 56,
+        "veg_early_days": 0,
+        "veg_late_days": 0,
+        "veg_start": "2026-06-01",
+        "visual_tag": null,
+        "weight_lost_pct": null
+      },
       "position_2_1": null,
       "position_2_2": null
     },
     "plants_per_row": 2,
     "rows": 2,
-    "total_plants": 1
+    "total_plants": 2
   },
   "identity": {
     "growspace_id": "contract_growspace",
@@ -392,6 +454,7 @@
       "dynamic_shot_size_floor": 0.6,
       "ec_modulation_enabled": true,
       "enabled": true,
+      "irrigation_program_id": "contract-program",
       "lights_on_time": "06:00:00",
       "maintenance_dryback_percent": 3.5,
       "p0_duration_minutes": 90,
@@ -416,6 +479,75 @@
     },
     "last_cycle_timestamp": null,
     "next_scheduled_cycle": null,
+    "program": {
+      "name": "Full run \u2014 coco",
+      "program_id": "contract-program",
+      "recipe": {
+        "created_at": "2026-08-04T09:00:00+00:00",
+        "crop_steering": {
+          "auto_light_tracking": true,
+          "dynamic_aggressiveness": 1.2,
+          "dynamic_interval_ceiling": 1.8,
+          "dynamic_recovery": 0.15,
+          "dynamic_shot_enabled": true,
+          "dynamic_shot_size_floor": 0.6,
+          "ec_modulation_enabled": true,
+          "lights_on_time": "06:00:00",
+          "maintenance_dryback_percent": 3.5,
+          "p0_duration_minutes": 90,
+          "p1_shot_interval_minutes": 20,
+          "p1_shot_volume_percent": 4.5,
+          "p2_shot_interval_minutes": 30,
+          "p2_shot_volume_percent": 3.0,
+          "p2_stop_before_lights_off_minutes": 75,
+          "pore_ec_target_max": 2.8,
+          "pore_ec_target_min": 2.1,
+          "target_vwc_percent": 58.0
+        },
+        "id": "contract-recipe-steering",
+        "kind": "crop_steering",
+        "name": "Flower week 3 \u2014 generative",
+        "provenance": {
+          "liters_per_pot": 7.5,
+          "media_type": "rockwool",
+          "pump_flow_rate_ml_per_sec": 13.5,
+          "stage": "flower",
+          "week": 3
+        },
+        "schedule": null
+      },
+      "slot": {
+        "recipe_id": "contract-recipe-steering",
+        "stage": "flower",
+        "week": 3
+      },
+      "stage": "flower",
+      "week": 3
+    },
+    "programs": {
+      "contract-program": {
+        "created_at": "2026-08-06T09:00:00+00:00",
+        "id": "contract-program",
+        "name": "Full run \u2014 coco",
+        "slots": [
+          {
+            "recipe_id": "contract-recipe-schedule",
+            "stage": "veg",
+            "week": 1
+          },
+          {
+            "recipe_id": "contract-recipe-steering",
+            "stage": "flower",
+            "week": 1
+          },
+          {
+            "recipe_id": "contract-recipe-steering",
+            "stage": "flower",
+            "week": 3
+          }
+        ]
+      }
+    },
     "projected_shot_window": null,
     "recipes": {
       "contract-recipe-schedule": {

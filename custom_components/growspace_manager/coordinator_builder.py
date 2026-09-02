@@ -24,6 +24,7 @@ from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
+from .managers.irrigation_program import IrrigationProgramLibrary
 from .managers.irrigation_recipe import IrrigationRecipeLibrary
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
@@ -161,6 +162,9 @@ class CoordinatorBuilder:
             repository,
             coordinator._save_callback,  # noqa: SLF001
         )
+        program_library = IrrigationProgramLibrary(
+            coordinator._save_callback,  # noqa: SLF001
+        )
         genetics_manager = GeneticsManager(
             repository,
             coordinator._save_callback,  # noqa: SLF001
@@ -173,6 +177,7 @@ class CoordinatorBuilder:
             genetics_manager,
             notification_state,
             recipe_library=recipe_library,
+            program_library=program_library,
         )
 
         svc_ctx = ServiceContext(
@@ -252,6 +257,7 @@ class CoordinatorBuilder:
             view_model_builder=view_model_builder,
             nutrient_manager=nutrient_manager,
             recipe_library=recipe_library,
+            program_library=program_library,
             genetics_manager=genetics_manager,
             storage_manager=storage_manager,
             growspace_manager=growspace_manager,

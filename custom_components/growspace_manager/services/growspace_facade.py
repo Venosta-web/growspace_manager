@@ -415,6 +415,50 @@ class GrowspaceFacade:
         )
         return application.media_warning
 
+    async def assign_irrigation_program(
+        self, growspace_id: str, program_id: str | None
+    ) -> None:
+        """Bind a growspace to an [[Irrigation Program]], or unbind it.
+
+        Binding **applies nothing**. It writes one field — the explicit
+        ``irrigation_program_id`` — and no setpoint, so picking a program from
+        a dropdown cannot change what a pump does that same minute. Reading the
+        growspace afterwards reports which slot it is in and which recipe that
+        slot holds; putting those values into the strategy is the separate,
+        deliberate [[Recipe Stamp]] gesture.
+
+        The binding is explicit rather than matched, which is the whole point:
+        ``ECRampCurve`` binds by first stage match in dictionary order, so
+        which curve drives a growspace is an accident of insertion (ADR-0045).
+
+        ``program_id`` of ``None`` unbinds.
+
+        Raises:
+            GrowspaceNotFoundError: when the growspace does not exist.
+            EntityNotFoundError: when the program does not exist. Checked
+                before the write, so a refused assignment changes nothing.
+        """
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+
+        if program_id is not None:
+            # Resolved for its refusal only: binding to a program that is not
+            # there would report as unbound and look like the write was lost.
+            self._coordinator._program_library.get_program(program_id)
+
+        growspace.irrigation_strategy.irrigation_program_id = program_id
+        self._coordinator.cache.invalidate(growspace_id)
+        await self._coordinator.async_commit()
+        await self._coordinator.async_request_refresh()
+        _LOGGER.info(
+            "Growspace '%s' is now %s",
+            growspace_id,
+            f"bound to irrigation program '{program_id}'"
+            if program_id is not None
+            else "bound to no irrigation program",
+        )
+
     async def set_ec_target_range(
         self,
         growspace_id: str,

@@ -18,6 +18,7 @@ from custom_components.growspace_manager.crop_steering_history import (
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.schemas import (
     CROP_STEERING_RECIPE_VALUES_SCHEMA,
+    PROGRAM_SLOT_SCHEMA,
     SCHEDULE_RECIPE_VALUES_SCHEMA,
 )
 from homeassistant.components import websocket_api
@@ -102,6 +103,41 @@ SCHEMA_WS_APPLY_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.ex
         vol.Required("type"): WS_TYPE_APPLY_IRRIGATION_RECIPE,
         vol.Required("growspace_id"): str,
         vol.Required("recipe_id"): str,
+    }
+)
+
+WS_TYPE_GET_IRRIGATION_PROGRAMS = f"{DOMAIN}/get_irrigation_programs"
+SCHEMA_WS_GET_IRRIGATION_PROGRAMS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_IRRIGATION_PROGRAMS,
+    }
+)
+
+WS_TYPE_SAVE_IRRIGATION_PROGRAM = f"{DOMAIN}/save_irrigation_program"
+SCHEMA_WS_SAVE_IRRIGATION_PROGRAM = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SAVE_IRRIGATION_PROGRAM,
+        vol.Required("name"): str,
+        vol.Required("slots"): [PROGRAM_SLOT_SCHEMA],
+        vol.Optional("program_id"): str,
+    }
+)
+
+WS_TYPE_REMOVE_IRRIGATION_PROGRAM = f"{DOMAIN}/remove_irrigation_program"
+SCHEMA_WS_REMOVE_IRRIGATION_PROGRAM = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_REMOVE_IRRIGATION_PROGRAM,
+        vol.Required("program_id"): str,
+    }
+)
+
+WS_TYPE_ASSIGN_IRRIGATION_PROGRAM = f"{DOMAIN}/assign_irrigation_program"
+SCHEMA_WS_ASSIGN_IRRIGATION_PROGRAM = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_ASSIGN_IRRIGATION_PROGRAM,
+        vol.Required("growspace_id"): str,
+        # Omitted or null unbinds.
+        vol.Optional("program_id"): vol.Any(None, str),
     }
 )
 
@@ -268,6 +304,61 @@ async def websocket_apply_irrigation_recipe(
     }
 
 
+def websocket_get_irrigation_programs(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the global Irrigation Program library.
+
+    Global, so it resolves through any coordinator and never takes a
+    growspace: a plan authored for one tent is listed from every other.
+    """
+    return coordinator.services.config.get_irrigation_programs()
+
+
+async def websocket_save_irrigation_program(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Save a plan of ``(stage, week)`` slots as a named Irrigation Program.
+
+    Returns the whole stored program, so the editor sees the slots in the run
+    order the library put them in rather than the order it sent them.
+    """
+    program = await coordinator.services.config.save_irrigation_program(
+        name=msg["name"],
+        slots=msg["slots"],
+        program_id=msg.get("program_id"),
+    )
+    return program.to_dict()
+
+
+async def websocket_remove_irrigation_program(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> None:
+    """Remove a program from the global Irrigation Program library."""
+    await coordinator.services.config.remove_irrigation_program(msg["program_id"])
+
+
+async def websocket_assign_irrigation_program(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Bind a growspace to an Irrigation Program, or unbind it (ADR-0045).
+
+    Binding only: no setpoint is written and no pump fires. Omitting
+    ``program_id`` — or passing it as null — unbinds. Echoes back what the
+    growspace now holds so the caller need not re-read it.
+    """
+    growspace_id = msg["growspace_id"]
+    program_id = msg.get("program_id")
+    await coordinator.services.growspaces.assign_irrigation_program(
+        growspace_id, program_id
+    )
+    strategy = coordinator.growspaces[growspace_id].irrigation_strategy
+    return {
+        "growspace_id": growspace_id,
+        "irrigation_program_id": strategy.irrigation_program_id,
+    }
+
+
 COMMANDS: list[WSCommand] = [
     WSCommand(
         WS_TYPE_GET_IRRIGATION_ANALYTICS,
@@ -317,5 +408,29 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_APPLY_IRRIGATION_RECIPE,
         websocket_apply_irrigation_recipe,
         SCHEMA_WS_APPLY_IRRIGATION_RECIPE,
+    ),
+    WSCommand(
+        WS_TYPE_GET_IRRIGATION_PROGRAMS,
+        websocket_get_irrigation_programs,
+        SCHEMA_WS_GET_IRRIGATION_PROGRAMS,
+        resolve="any",
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_SAVE_IRRIGATION_PROGRAM,
+        websocket_save_irrigation_program,
+        SCHEMA_WS_SAVE_IRRIGATION_PROGRAM,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_REMOVE_IRRIGATION_PROGRAM,
+        websocket_remove_irrigation_program,
+        SCHEMA_WS_REMOVE_IRRIGATION_PROGRAM,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_ASSIGN_IRRIGATION_PROGRAM,
+        websocket_assign_irrigation_program,
+        SCHEMA_WS_ASSIGN_IRRIGATION_PROGRAM,
     ),
 ]

@@ -36,6 +36,7 @@ from custom_components.growspace_manager.schemas import (
     APPLY_IRRIGATION_RECIPE_SCHEMA,
     APPLY_STEERING_MODE_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
+    ASSIGN_IRRIGATION_PROGRAM_SCHEMA,
     BATCH_ACTION_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_CIRCULATION_FAN_SCHEMA,
@@ -65,6 +66,7 @@ from custom_components.growspace_manager.schemas import (
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_IPM_PRESET_SCHEMA,
+    REMOVE_IRRIGATION_PROGRAM_SCHEMA,
     REMOVE_IRRIGATION_RECIPE_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
     REMOVE_NUTRIENT_PRESET_SCHEMA,
@@ -75,6 +77,7 @@ from custom_components.growspace_manager.schemas import (
     RUN_IRRIGATION_CYCLE_SCHEMA,
     SAVE_EC_RAMP_CURVE_SCHEMA,
     SAVE_IPM_PRESET_SCHEMA,
+    SAVE_IRRIGATION_PROGRAM_SCHEMA,
     SAVE_IRRIGATION_RECIPE_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
     SCORE_PHENOTYPE_SCHEMA,
@@ -381,6 +384,9 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "update_irrigation_recipe": UPDATE_IRRIGATION_RECIPE_SCHEMA,
         "remove_irrigation_recipe": REMOVE_IRRIGATION_RECIPE_SCHEMA,
         "apply_irrigation_recipe": APPLY_IRRIGATION_RECIPE_SCHEMA,
+        "save_irrigation_program": SAVE_IRRIGATION_PROGRAM_SCHEMA,
+        "remove_irrigation_program": REMOVE_IRRIGATION_PROGRAM_SCHEMA,
+        "assign_irrigation_program": ASSIGN_IRRIGATION_PROGRAM_SCHEMA,
         "log_training_event": LOG_TRAINING_EVENT_SCHEMA,
         "save_ipm_preset": SAVE_IPM_PRESET_SCHEMA,
         "remove_ipm_preset": REMOVE_IPM_PRESET_SCHEMA,
@@ -1005,7 +1011,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 75
+        assert mock_reg.call_count == 79
 
 
 @pytest.mark.asyncio

@@ -27,9 +27,10 @@ so a grower opting out of EC Modulation can never mask the safety cut-off
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.const import (
@@ -56,13 +57,19 @@ if TYPE_CHECKING:
 # and ``cure`` are excluded — those plants are no longer irrigated, so they never
 # drive the feed target (CONTEXT.md "Active Feed EC Target"). Ordered by
 # progression so the **furthest-along** live stage wins when stages are mixed.
-_LIVE_STAGE_ORDER: dict[str, int] = {
-    "seedling": 10,
-    "clone": 20,
-    "mother": 30,
-    "veg": 40,
-    "flower": 50,
-}
+#
+# Public because it is also the set of stages ``resolve_feed_stage_week`` can
+# ever answer with, which is what an [[Irrigation Program]] slot must be keyed
+# by: a slot naming any other stage could never resolve.
+LIVE_STAGE_ORDER: Mapping[str, int] = MappingProxyType(
+    {
+        "seedling": 10,
+        "clone": 20,
+        "mother": 30,
+        "veg": 40,
+        "flower": 50,
+    }
+)
 
 
 class ECRecommendation(StrEnum):
@@ -171,7 +178,7 @@ def resolve_feed_stage_week(plants: list[Plant]) -> tuple[str | None, int]:
     best_order = -1
     best_stage: str | None = None
     for stage, _age in stage_ages:
-        order = _LIVE_STAGE_ORDER.get(stage)
+        order = LIVE_STAGE_ORDER.get(stage)
         if order is not None and order > best_order:
             best_order = order
             best_stage = stage

@@ -1918,6 +1918,63 @@ apply_irrigation_recipe:
       selector:
         text:
 
+save_irrigation_program:
+  description: >-
+    Save an ordered plan assigning Irrigation Recipes to (stage, week) slots
+    across a whole run. Recipes are held by reference, so correcting one recipe
+    corrects every program using it. Saving replaces the program's whole slot
+    list rather than merging into it.
+  fields:
+    name:
+      description: Name for the program.
+      required: true
+      selector:
+        text:
+    slots:
+      description: >-
+        The plan, as a list of {stage, week, recipe_id} entries. Stage must be
+        one of seedling, clone, mother, veg or flower — the stages a
+        growspace's current stage resolves to — and week is 1-indexed. At most
+        one slot per stage and week.
+      required: true
+      selector:
+        object:
+    program_id:
+      description: ID of an existing program to overwrite (optional).
+      required: false
+      selector:
+        text:
+
+remove_irrigation_program:
+  description: >-
+    Remove an Irrigation Program from the global library. A growspace bound to
+    it keeps its program id and simply reports no current slot.
+  fields:
+    program_id:
+      description: ID of the program to remove.
+      required: true
+      selector:
+        text:
+
+assign_irrigation_program:
+  description: >-
+    Bind a growspace to an Irrigation Program, or unbind it by omitting the
+    program. Binding only: no setpoint is written and no pump fires. Reading
+    the growspace afterwards reports which slot it is in and which recipe that
+    slot holds; putting those values into the growspace is the separate
+    apply_irrigation_recipe action.
+  fields:
+    growspace_id:
+      description: The growspace to bind.
+      required: true
+      selector:
+        text:
+    program_id:
+      description: ID of the program to bind. Omit to unbind.
+      required: false
+      selector:
+        text:
+
 save_ipm_preset:
   description: Save an IPM schedule preset
   fields:
