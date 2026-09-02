@@ -22,6 +22,7 @@ from .environment_analyzer import EnvironmentAnalyzer
 from .event_bus_pkg import GrowspaceEventBus
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
+from .irrigation_program_progression import IrrigationProgramProgression
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
 from .managers.irrigation_program import IrrigationProgramLibrary
@@ -225,6 +226,7 @@ class CoordinatorBuilder:
             self.hass, coordinator, notification_manager.async_send_notification
         )
         notification_settings = NotificationSettingsManager(coordinator)
+        program_progression = IrrigationProgramProgression(coordinator)
         subsystem_manager = SubsystemManager(self.hass, coordinator, self.entry)
         services = ServiceFacade(coordinator)
         # Reads the coordinator's live options, so a connection change made in
@@ -269,6 +271,7 @@ class CoordinatorBuilder:
             environment_reporter=environment_reporter,
             notification_manager=notification_manager,
             notification_settings=notification_settings,
+            program_progression=program_progression,
             subsystem_manager=subsystem_manager,
             services=services,
             vision_connection=vision_connection,

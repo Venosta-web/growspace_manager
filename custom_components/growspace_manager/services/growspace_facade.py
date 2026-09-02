@@ -420,12 +420,23 @@ class GrowspaceFacade:
     ) -> None:
         """Bind a growspace to an [[Irrigation Program]], or unbind it.
 
-        Binding **applies nothing**. It writes one field — the explicit
-        ``irrigation_program_id`` — and no setpoint, so picking a program from
-        a dropdown cannot change what a pump does that same minute. Reading the
-        growspace afterwards reports which slot it is in and which recipe that
-        slot holds; putting those values into the strategy is the separate,
-        deliberate [[Recipe Stamp]] gesture.
+        Binding **applies nothing** — except when ``program_auto_advance`` is
+        already on, which is that same consent expressed in advance. With it
+        off this writes one field, the explicit ``irrigation_program_id``, and
+        no setpoint, so picking a program from a dropdown cannot change what a
+        pump does that same minute. Reading the growspace afterwards reports
+        which slot it is in and which recipe that slot holds; putting those
+        values into the strategy is the separate, deliberate [[Recipe Stamp]]
+        gesture.
+
+        With auto-advance on the current slot is applied immediately rather
+        than at the next refresh, because a grower who opted into unattended
+        progression and then binds a program has already said yes — and a
+        binding that visibly did nothing for a quarter of an hour reads as a
+        write that was lost. It goes through the same progression seam the
+        refresh uses, so every [[Program Hold]] applies here too: a week with
+        no slot, a finished program or a drifted growspace binds and changes
+        nothing.
 
         The binding is explicit rather than matched, which is the whole point:
         ``ECRampCurve`` binds by first stage match in dictionary order, so
@@ -458,6 +469,9 @@ class GrowspaceFacade:
             if program_id is not None
             else "bound to no irrigation program",
         )
+
+        if program_id is not None and growspace.irrigation_config.program_auto_advance:
+            await self._coordinator.program_progression.async_evaluate(growspace_id)
 
     async def set_ec_target_range(
         self,

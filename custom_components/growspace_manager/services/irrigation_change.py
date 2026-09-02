@@ -54,6 +54,7 @@ IRRIGATION_CONFIG_CHANGE_FIELDS: frozenset[str] = frozenset(
         "log_to_logbook",
         "auto_advance_p1_to_p2",
         "auto_advance_p2_to_p3",
+        "program_auto_advance",
         "halt_on_runoff_ec_threshold",
     }
 )
