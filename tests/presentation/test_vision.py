@@ -215,3 +215,49 @@ async def test_checkup_projection_exposes_capture_evidence_and_authenticated_ima
         ],
     }
     assert "relative_path" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_checkup_projection_marks_missing_fusion_evidence_unavailable() -> None:
+    """A capture without fusion evidence remains an explicit, parseable result."""
+    checkup = VisionCheckup(
+        checkup_id="01991f1d-5c00-7000-8000-000000000002",
+        growspace_id="tent-1",
+        growspace_name="Flower Tent",
+        trigger_source=CaptureTrigger.MANUAL,
+        light_window=LightWindow.MANUAL,
+        started_at="2026-09-01T07:00:00+00:00",
+    )
+    capture = VisionCapture(
+        capture_id="01991f1d-5c01-7000-8000-000000000002",
+        checkup_id=checkup.checkup_id,
+        growspace_id="tent-1",
+        growspace_name="Flower Tent",
+        camera_id="camera.canopy",
+        grow_run_id=None,
+        framing_epoch_id=None,
+        captured_at="2026-09-01T07:00:01+00:00",
+        light_window=LightWindow.MANUAL,
+        light_state=LightState.UNKNOWN,
+        trigger_source=CaptureTrigger.MANUAL,
+        analysis_state=AnalysisState.PENDING,
+        created_at="2026-09-01T07:00:01+00:00",
+    )
+    store = AsyncMock()
+    store.async_get_checkup_captures.return_value = [capture]
+    store.async_get_capture_files.return_value = []
+    store.async_get_comparison_results.return_value = []
+    store.async_get_fusion_outcomes.return_value = []
+    store.async_get_explainer_reports.return_value = []
+
+    payload = await async_serialize_vision_checkup(store, checkup, media_source="local")
+
+    projected_capture = payload["captures"][0]
+    assert projected_capture["environment"] == {
+        "verdict": "unavailable",
+        "stress_reasons": [],
+        "mold_reasons": [],
+    }
+    assert projected_capture["fusion"] == {
+        "unavailable_reasons": ["fusion_unavailable"]
+    }

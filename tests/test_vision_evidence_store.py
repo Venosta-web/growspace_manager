@@ -296,6 +296,8 @@ async def test_checkup_history_queries_are_growspace_scoped_and_newest_first(
     assert [row.checkup_id for row in rows] == [newer_id]
     assert await store.async_count_checkups("gs-1") == 2
     assert await store.async_count_captures("gs-1") == 0
+    with pytest.raises(ValueError, match="limit must be positive"):
+        await store.async_get_checkups("gs-1", limit=0)
     await store.async_close()
 
 
