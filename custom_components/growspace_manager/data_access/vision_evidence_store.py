@@ -346,6 +346,37 @@ class VisionEvidenceStore:
         row = await cursor.fetchone()
         return _checkup_from_row(row) if row is not None else None
 
+    async def async_get_checkups(
+        self, growspace_id: str, *, limit: int
+    ) -> list[VisionCheckup]:
+        """Return one growspace's newest Vision Checkups."""
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        cursor = await self._require_db().execute(
+            "SELECT * FROM vision_checkup WHERE growspace_id = ?"
+            " ORDER BY started_at DESC, checkup_id DESC LIMIT ?",
+            (growspace_id, limit),
+        )
+        return [_checkup_from_row(row) for row in await cursor.fetchall()]
+
+    async def async_count_checkups(self, growspace_id: str) -> int:
+        """Count durable Vision Checkups for one growspace."""
+        cursor = await self._require_db().execute(
+            "SELECT COUNT(*) FROM vision_checkup WHERE growspace_id = ?",
+            (growspace_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row is not None else 0
+
+    async def async_count_captures(self, growspace_id: str) -> int:
+        """Count durable capture-granular results for one growspace."""
+        cursor = await self._require_db().execute(
+            "SELECT COUNT(*) FROM vision_capture WHERE growspace_id = ?",
+            (growspace_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row is not None else 0
+
     async def async_get_checkup_captures(self, checkup_id: str) -> list[VisionCapture]:
         """Return a checkup's captures in capture-time order."""
         cursor = await self._require_db().execute(

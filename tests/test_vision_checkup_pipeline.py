@@ -144,6 +144,7 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
                 async_record_capture_continuity_break=AsyncMock(),
                 async_clear_capture_continuity_break=AsyncMock(),
             ),
+            async_update_listeners=MagicMock(),
         )
         hass = MagicMock()
         hass.config.media_dirs = {"local": str(tmp_path / "media")}
@@ -183,6 +184,9 @@ async def test_local_only_checkup_persists_comparison_and_fusion(tmp_path) -> No
         assert capture_outcome.comparison.outcome is ComparisonOutcome.MONITORING
         assert capture_outcome.fusion.unavailable_reasons == ("baseline_monitoring",)
         assert pipeline.growspace.vision_checkup_history == []
+        assert pipeline.scheduler.latest_checkup("tent1")["checkup_id"] == (
+            outcome.checkup.checkup_id
+        )
 
         persisted = await pipeline.store.async_get_checkup_captures(
             outcome.checkup.checkup_id
@@ -191,6 +195,24 @@ async def test_local_only_checkup_persists_comparison_and_fusion(tmp_path) -> No
             AnalysisState.ANALYZED
         ]
         pipeline.client.async_analyze.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_latest_sensor_projection_reloads_from_durable_evidence(tmp_path) -> None:
+    """The retained sensor does not depend on process-local checkup history."""
+    async with _pipeline(tmp_path) as pipeline:
+        outcome = await pipeline.scheduler.run_vision_analysis("tent1", "manual")
+        reloaded = VisionCheckupScheduler(
+            pipeline.scheduler.hass,
+            pipeline.coordinator,
+            evidence_store=pipeline.store,
+        )
+
+        await reloaded.async_load_latest_checkups(["tent1"])
+
+        assert reloaded.latest_checkup("tent1")["checkup_id"] == (
+            outcome.checkup.checkup_id
+        )
 
 
 @pytest.mark.asyncio

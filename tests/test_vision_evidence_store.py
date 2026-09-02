@@ -269,6 +269,37 @@ async def test_checkup_groups_captures_and_records_operational_outcome(
 
 
 @pytest.mark.asyncio
+async def test_checkup_history_queries_are_growspace_scoped_and_newest_first(
+    tmp_path: Path,
+) -> None:
+    """The public history source pages durable checkups, not capture timestamps."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    older_id = store.mint_checkup_id()
+    newer_id = store.mint_checkup_id()
+    for checkup_id, growspace_id, started_at in (
+        (older_id, "gs-1", datetime(2026, 9, 1, 6, tzinfo=UTC)),
+        (newer_id, "gs-1", datetime(2026, 9, 2, 6, tzinfo=UTC)),
+        (store.mint_checkup_id(), "gs-2", datetime(2026, 9, 3, 6, tzinfo=UTC)),
+    ):
+        await store.async_start_checkup(
+            checkup_id=checkup_id,
+            growspace_id=growspace_id,
+            growspace_name="Flower Tent",
+            trigger_source=CaptureTrigger.SCHEDULED,
+            light_window=LightWindow.EARLY,
+            started_at=started_at,
+        )
+
+    rows = await store.async_get_checkups("gs-1", limit=1)
+
+    assert [row.checkup_id for row in rows] == [newer_id]
+    assert await store.async_count_checkups("gs-1") == 2
+    assert await store.async_count_captures("gs-1") == 0
+    await store.async_close()
+
+
+@pytest.mark.asyncio
 async def test_quality_history_reconstructs_accepted_tail_and_rejection_streak(
     tmp_path: Path,
 ) -> None:
