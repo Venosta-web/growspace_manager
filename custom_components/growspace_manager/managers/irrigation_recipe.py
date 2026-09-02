@@ -8,7 +8,7 @@ entire point of the object (ADR-0045). The library owns storage and identity;
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid
@@ -17,9 +17,11 @@ from custom_components.growspace_manager.const import IrrigationRecipeKind
 from custom_components.growspace_manager.domain.ec_state import resolve_feed_stage_week
 from custom_components.growspace_manager.domain.irrigation_recipe import (
     RecipeCaptureError,
+    RecipeEditError,
     capture_crop_steering,
     capture_provenance,
     capture_schedule,
+    edit_recipe,
 )
 from custom_components.growspace_manager.domain.plant_metrics import count_live_plants
 from custom_components.growspace_manager.exceptions import (
@@ -126,6 +128,49 @@ class IrrigationRecipeLibrary:
             raise EntityNotFoundError(f"Irrigation recipe '{recipe_id}' not found")
         return recipe
 
+    async def async_update_recipe(
+        self,
+        recipe_id: str,
+        *,
+        name: str | None = None,
+        crop_steering: Mapping[str, Any] | None = None,
+        schedule: Mapping[str, Any] | None = None,
+    ) -> IrrigationRecipe:
+        """Edit one stored recipe in place — rename it, correct its values.
+
+        The edit is validated in full by ``edit_recipe`` before anything is
+        written, so a refusal leaves the library exactly as it was.
+
+        The stored object is then mutated rather than replaced, because
+        ``get_recipe`` hands out the library's own instance precisely so that
+        editing a recipe is visible to everything pointing at it. Only the
+        three fields an edit can reach are copied across; ``id``, ``kind``,
+        ``created_at`` and the provenance are the same objects afterwards
+        because nothing here can touch them.
+
+        Editing changes no growspace. Applying a recipe is a by-value stamp
+        (ADR-0045), so a growspace holds the numbers rather than a live link —
+        which is exactly what makes a recipe safe to edit. What a grower does
+        see afterwards is drift, because ``recipe_has_drifted`` re-resolves the
+        recipe against the live fields and the growspace no longer holds what
+        the recipe now says.
+
+        Raises:
+            EntityNotFoundError: when no recipe carries that id.
+            RecipeEditError: when the payload cannot become an edit.
+        """
+        recipe = self.get_recipe(recipe_id)
+        edited = edit_recipe(
+            recipe, name=name, crop_steering=crop_steering, schedule=schedule
+        )
+        recipe.name = edited.name
+        recipe.crop_steering = edited.crop_steering
+        recipe.schedule = edited.schedule
+
+        await self.save_callback()
+        _LOGGER.info("Edited irrigation recipe '%s' (id=%s)", recipe.name, recipe_id)
+        return recipe
+
     async def async_remove_recipe(self, recipe_id: str) -> None:
         """Remove a recipe from the library."""
         recipe = self.recipes.pop(recipe_id, None)
@@ -144,4 +189,4 @@ class IrrigationRecipeLibrary:
         return {"irrigation_recipes": self.serialized_recipes()}
 
 
-__all__ = ["IrrigationRecipeLibrary", "RecipeCaptureError"]
+__all__ = ["IrrigationRecipeLibrary", "RecipeCaptureError", "RecipeEditError"]

@@ -51,8 +51,10 @@ from .const import (
     ATTR_PRESET_ID,
     ATTR_QUANTITY,
     ATTR_RECEIVER_PLANT_ID,
+    ATTR_RECIPE_CROP_STEERING,
     ATTR_RECIPE_ID,
     ATTR_RECIPE_KIND,
+    ATTR_RECIPE_SCHEDULE,
     ATTR_RESIN,
     ATTR_ROW,
     ATTR_SEED_BATCH_ID,
@@ -950,6 +952,90 @@ SAVE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
         vol.Required(ATTR_RECIPE_KIND): vol.In([k.value for k in IrrigationRecipeKind]),
         # Present to overwrite an existing recipe in place; absent mints a new one.
         vol.Optional(ATTR_RECIPE_ID): str,
+    }
+)
+
+# An edit is sparse: every value is optional and an unnamed field keeps what
+# the recipe stores. The key sets below must stay equal to the editable fields
+# `domain/irrigation_recipe.py` derives from the halves themselves — a contract
+# test asserts exactly that, because a field missing here would be silently
+# uneditable rather than loudly wrong.
+_RECIPE_SCHEDULE_ITEM_SCHEMA = vol.Schema(
+    {
+        vol.Optional("time"): str,
+        vol.Optional("duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("start_time"): str,
+        vol.Optional("duration_seconds"): vol.Any(None, vol.Coerce(float)),
+    }
+)
+
+CROP_STEERING_RECIPE_VALUES_SCHEMA = vol.Schema(
+    {
+        vol.Optional("lights_on_time"): str,
+        vol.Optional("p0_duration_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("p2_stop_before_lights_off_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("target_vwc_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional("maintenance_dryback_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        # Percents of substrate volume, never pump seconds
+        # ([[Substrate-Relative Shot Storage]]).
+        vol.Optional("p1_shot_volume_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional("p1_shot_interval_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=1)
+        ),
+        vol.Optional("p2_shot_volume_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional("p2_shot_interval_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=1)
+        ),
+        vol.Optional("auto_light_tracking"): bool,
+        vol.Optional("dynamic_shot_enabled"): bool,
+        vol.Optional("dynamic_aggressiveness"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("dynamic_recovery"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("dynamic_shot_size_floor"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("dynamic_interval_ceiling"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("pore_ec_target_min"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("pore_ec_target_max"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("ec_modulation_enabled"): bool,
+    }
+)
+
+SCHEDULE_RECIPE_VALUES_SCHEMA = vol.Schema(
+    {
+        vol.Optional("irrigation_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
+        vol.Optional("drain_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
+        vol.Optional("irrigation_duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("drain_duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("daily_volume_cap_liters"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("max_cycles_per_day"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("skip_during_dark"): bool,
+    }
+)
+
+UPDATE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_RECIPE_ID): str,
+        # Rename, correct the values, or both. The half must be the one this
+        # recipe's kind holds; neither kind nor provenance is writable here.
+        vol.Optional(ATTR_NAME): str,
+        vol.Optional(ATTR_RECIPE_CROP_STEERING): CROP_STEERING_RECIPE_VALUES_SCHEMA,
+        vol.Optional(ATTR_RECIPE_SCHEDULE): SCHEDULE_RECIPE_VALUES_SCHEMA,
     }
 )
 

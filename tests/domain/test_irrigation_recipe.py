@@ -8,12 +8,16 @@ from custom_components.growspace_manager.const import (
     SubstrateMediaType,
 )
 from custom_components.growspace_manager.domain.irrigation_recipe import (
+    CROP_STEERING_RECIPE_EDIT_FIELDS,
+    SCHEDULE_RECIPE_EDIT_FIELDS,
     RecipeApplyError,
     RecipeCaptureError,
+    RecipeEditError,
     RecipeKindMismatchError,
     capture_crop_steering,
     capture_provenance,
     capture_schedule,
+    edit_recipe,
     recipe_has_drifted,
     resolve_recipe_application,
 )
@@ -29,6 +33,10 @@ from custom_components.growspace_manager.models.irrigation_recipe import (
     IrrigationRecipe,
     RecipeProvenance,
     ScheduleRecipe,
+)
+from custom_components.growspace_manager.schemas import (
+    CROP_STEERING_RECIPE_VALUES_SCHEMA,
+    SCHEDULE_RECIPE_VALUES_SCHEMA,
 )
 
 
@@ -588,3 +596,154 @@ def test_a_recipe_that_no_longer_resolves_counts_as_drifted() -> None:
         config=_config(),
         live_plant_count=4,
     )
+
+
+# --- Editing a stored recipe (#109) ----------------------------------------
+
+
+def test_a_rename_leaves_the_values_alone() -> None:
+    """Renaming is a whole edit; nothing else needs supplying."""
+    recipe = _steering_recipe()
+
+    edited = edit_recipe(recipe, name="Flower week 4")
+
+    assert edited.name == "Flower week 4"
+    assert edited.crop_steering == recipe.crop_steering
+
+
+def test_a_name_is_stripped() -> None:
+    """Surrounding whitespace is not part of what the grower typed."""
+    assert edit_recipe(_steering_recipe(), name="  Flower  ").name == "Flower"
+
+
+def test_a_blank_name_is_refused() -> None:
+    """A nameless recipe cannot be picked out of a library."""
+    with pytest.raises(RecipeEditError, match="cannot be blank"):
+        edit_recipe(_steering_recipe(), name="   ")
+
+
+def test_values_are_sparse() -> None:
+    """A field the mapping does not name keeps what the recipe stores."""
+    recipe = _steering_recipe()
+
+    edited = edit_recipe(recipe, crop_steering={"p1_shot_volume_percent": 7.5})
+
+    assert edited.crop_steering is not None
+    assert edited.crop_steering.p1_shot_volume_percent == 7.5
+    assert edited.crop_steering.p2_shot_volume_percent == 3.0
+
+
+def test_the_schedule_half_edits_the_same_way() -> None:
+    """Both halves are editable through the one entry point."""
+    edited = edit_recipe(_schedule_recipe(), schedule={"skip_during_dark": False})
+
+    assert edited.schedule is not None
+    assert edited.schedule.skip_during_dark is False
+    assert edited.schedule.max_cycles_per_day == 8
+
+
+def test_identity_kind_created_at_and_provenance_are_untouched() -> None:
+    """An edit reaches the name and the values, and nothing else."""
+    recipe = _steering_recipe()
+
+    edited = edit_recipe(
+        recipe, name="Renamed", crop_steering={"target_vwc_percent": 61.0}
+    )
+
+    assert edited.id == recipe.id
+    assert edited.kind is recipe.kind
+    assert edited.created_at == recipe.created_at
+    assert edited.provenance == recipe.provenance
+
+
+def test_the_source_recipe_is_not_mutated() -> None:
+    """Pure: the caller decides whether the edit is stored."""
+    recipe = _steering_recipe()
+
+    edit_recipe(recipe, name="Renamed", crop_steering={"target_vwc_percent": 61.0})
+
+    assert recipe.name == "Flower week 3"
+    assert recipe.crop_steering is not None
+    assert recipe.crop_steering.target_vwc_percent != 61.0
+
+
+def test_editing_the_half_the_kind_is_not_is_refused() -> None:
+    """A crop-steering recipe has no schedule values to correct."""
+    with pytest.raises(RecipeEditError, match="no schedule values"):
+        edit_recipe(_steering_recipe(), schedule={"skip_during_dark": True})
+
+
+def test_editing_the_other_half_the_other_way_round_is_refused() -> None:
+    """And a schedule recipe has no setpoints."""
+    with pytest.raises(RecipeEditError, match="no crop_steering values"):
+        edit_recipe(_schedule_recipe(), crop_steering={"target_vwc_percent": 61.0})
+
+
+def test_an_unknown_field_is_refused() -> None:
+    """Naming a field the half does not store refuses the whole edit."""
+    with pytest.raises(RecipeEditError, match="liters_per_pot is not part of"):
+        edit_recipe(_steering_recipe(), crop_steering={"liters_per_pot": 9.0})
+
+
+def test_provenance_is_not_reachable_as_a_value() -> None:
+    """Provenance describes what happened; an edit cannot rewrite it."""
+    with pytest.raises(RecipeEditError, match="media_type"):
+        edit_recipe(_steering_recipe(), crop_steering={"media_type": "rockwool"})
+
+
+def test_a_refused_edit_builds_nothing() -> None:
+    """Every refusal is raised before the name is applied, not after."""
+    recipe = _steering_recipe()
+
+    with pytest.raises(RecipeEditError):
+        edit_recipe(recipe, name="Renamed", crop_steering={"nope": 1})
+
+    assert recipe.name == "Flower week 3"
+
+
+@pytest.mark.parametrize(
+    ("kind", "half", "values"),
+    [
+        (
+            IrrigationRecipeKind.CROP_STEERING,
+            "crop_steering",
+            {"target_vwc_percent": 61.0},
+        ),
+        (IrrigationRecipeKind.SCHEDULE, "schedule", {"skip_during_dark": True}),
+    ],
+)
+def test_a_recipe_missing_its_declared_half_cannot_be_edited(
+    kind, half, values
+) -> None:
+    """A corrupt library entry refuses rather than growing a half from defaults.
+
+    Both halves, because the guard is what stops a missing half being silently
+    replaced by a dataclass full of defaults — a recipe that would then apply
+    setpoints nobody authored.
+    """
+    recipe = IrrigationRecipe(id="recipe-3", name="Half-less", kind=kind)
+
+    with pytest.raises(RecipeEditError, match=f"holds no {half} half"):
+        edit_recipe(recipe, **{half: values})
+
+
+def test_editing_no_field_at_all_is_a_no_op_copy() -> None:
+    """The degenerate call is total, not an error."""
+    recipe = _steering_recipe()
+
+    assert edit_recipe(recipe) == recipe
+
+
+def test_the_transport_schemas_accept_exactly_the_editable_fields() -> None:
+    """The voluptuous surface and the editable field sets are one list.
+
+    ``domain`` derives what an edit may write from the halves themselves,
+    while ``schemas.py`` hand-lists the same names to give each one a type.
+    A field in the dataclass but not the schema would be silently uneditable
+    — the quietest possible failure — so the two are pinned together here.
+    """
+    for vol_schema, editable in (
+        (CROP_STEERING_RECIPE_VALUES_SCHEMA, CROP_STEERING_RECIPE_EDIT_FIELDS),
+        (SCHEDULE_RECIPE_VALUES_SCHEMA, SCHEDULE_RECIPE_EDIT_FIELDS),
+    ):
+        assert {str(key) for key in vol_schema.schema} == editable
