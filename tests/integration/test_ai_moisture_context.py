@@ -7,11 +7,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import CONF_AI_ENABLED, CONF_ASSISTANT_ID
-from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
-from custom_components.growspace_manager.services.ai_assistant import GrowAssistant
-from custom_components.growspace_manager.vision_checkup_scheduler import (
-    VisionCheckupScheduler,
+from custom_components.growspace_manager.domain.vision_explainer_prompt import (
+    ObservationPassInput,
+    build_observation_prompt,
 )
+from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
+from custom_components.growspace_manager.models.vision_evidence import LightWindow
+from custom_components.growspace_manager.services.ai_assistant import GrowAssistant
 
 
 def _assistant(
@@ -155,22 +157,17 @@ async def test_general_advice_receives_canonical_moisture_context() -> None:
 def test_vision_prompts_share_context_and_preserve_visible_symptom_authority(
     check_type: str,
 ) -> None:
-    """Scheduled and manual checkups use the band without overruling the image."""
-    assistant, coordinator, _ = _assistant("90", "%", 80.0, 95.0)
-    scheduler = VisionCheckupScheduler(assistant.hass, coordinator)
-    context_data = assistant.gather_growspace_data("tent1")
-
-    prompt = scheduler._build_vision_prompt(
-        "tent1", check_type, context_data, previous_results=[]
+    """Moisture context cannot enter the image-only observation pass."""
+    prompt = build_observation_prompt(
+        ObservationPassInput(
+            light_window=LightWindow(check_type),
+            photograph_count=1,
+        )
     )
 
-    assert "Raw reading: 90%" in prompt
-    assert "80–95% (custom, inclusive)" in prompt
-    assert "Classification: within the acceptable band" in prompt
-    assert (
-        "Visible plant symptoms may still justify a moisture-stress conclusion even while "
-        "the sensor reading is within that band" in prompt
-    )
+    assert "Raw reading: 90%" not in prompt
+    assert "80–95%" not in prompt
+    assert "moisture" not in prompt.lower()
 
 
 def test_band_change_only_changes_future_context() -> None:

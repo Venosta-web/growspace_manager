@@ -622,6 +622,7 @@ async def test_async_load(coordinator: GrowspaceCoordinator) -> None:
     assert coordinator._strain_library is not None
     coordinator._strain_library.import_strains = AsyncMock()  # type: ignore[method-assign]  # type: ignore[method-assign]
     coordinator.storage_manager.async_save = AsyncMock()  # type: ignore[method-assign]
+    coordinator.vision_scheduler.async_load_latest_checkups = AsyncMock()  # type: ignore[method-assign]
 
     # Patch the ensure methods to avoid side effects (creating default growspaces)
     with (
@@ -637,6 +638,9 @@ async def test_async_load(coordinator: GrowspaceCoordinator) -> None:
         await coordinator.async_load()
         mock_ensure_defaults.assert_awaited_once()
         mock_ensure_calc.assert_called_once()
+        coordinator.vision_scheduler.async_load_latest_checkups.assert_awaited_once_with(
+            ["gs1"]
+        )
 
     # Assertions
     assert "p1" in coordinator.plants

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 import uuid
 
@@ -10,6 +11,28 @@ import pytest
 GROWSPACE_ID = "tent1"
 STRESS_REASONS = ["High VPD: 1.8 kPa", "Fan off"]
 MOLD_REASONS = ["High humidity: 85%", "Dense canopy"]
+
+
+def _continuity_state(
+    *,
+    latest_capture_id: str = "capture-3",
+    camera_id: str = "camera.canopy",
+):
+    from custom_components.growspace_manager.domain.capture_continuity import (
+        CaptureContinuityState,
+        ContinuityReason,
+    )
+
+    return CaptureContinuityState(
+        growspace_id=GROWSPACE_ID,
+        camera_id=camera_id,
+        streak_started_at=datetime(2026, 9, 1, 6, tzinfo=UTC),
+        consecutive_count=3,
+        reason_counts=((ContinuityReason.FRAME_REJECTED, 3),),
+        latest_capture_id=latest_capture_id,
+        latest_captured_at=datetime(2026, 9, 1, 8, tzinfo=UTC),
+        condition_active=True,
+    )
 
 
 @pytest.fixture
@@ -95,6 +118,84 @@ async def test_record_alert_mold_type(monitor) -> None:
     assert len(alerts) == 1
     assert alerts[0]["type"] == "mold"
     assert alerts[0]["bayesian_reasons"] == MOLD_REASONS
+
+
+async def test_capture_continuity_alert_is_equipment_evidence_only(monitor) -> None:
+    """The equipment branch cannot carry Bayesian probability or AI reasoning."""
+    await monitor.async_record_capture_continuity_break(_continuity_state())
+
+    alert = monitor.get_alerts()[0]
+
+    assert alert["type"] == "capture_continuity_break"
+    assert alert["severity"] == "warning"
+    assert alert["camera_id"] == "camera.canopy"
+    assert alert["consecutive_count"] == 3
+    assert alert["reason_counts"] == {"frame_rejected": 3}
+    assert alert["latest_capture_id"] == "capture-3"
+    assert alert["condition_active"] is True
+    assert alert["cleared_at"] is None
+    assert "bayesian_reasons" not in alert
+    assert "bayesian_probability" not in alert
+    assert "ai_reasoning" not in alert
+
+
+async def test_cleared_continuity_condition_rearms_without_resolving_alert(
+    monitor,
+) -> None:
+    """A later streak gets a new alert even while the cleared first stays unread."""
+    first = await monitor.async_record_capture_continuity_break(_continuity_state())
+    cleared_at = datetime(2026, 9, 1, 9, tzinfo=UTC)
+
+    assert await monitor.async_clear_capture_continuity_break(
+        "camera.canopy", cleared_at=cleared_at
+    )
+    second = await monitor.async_record_capture_continuity_break(
+        _continuity_state(latest_capture_id="capture-7")
+    )
+
+    alerts = monitor.get_alerts(alert_type="capture_continuity_break")
+    assert first["alert_id"] != second["alert_id"]
+    assert len(alerts) == 2
+    assert alerts[0]["condition_active"] is False
+    assert alerts[0]["cleared_at"] == int(cleared_at.timestamp())
+    assert alerts[0]["resolved"] is False
+    assert alerts[1]["condition_active"] is True
+
+
+async def test_active_continuity_alert_updates_without_duplication(monitor) -> None:
+    """Later captures in one streak update its single durable alert."""
+    first = await monitor.async_record_capture_continuity_break(_continuity_state())
+
+    updated = await monitor.async_record_capture_continuity_break(
+        _continuity_state(latest_capture_id="capture-4")
+    )
+
+    assert updated is first
+    assert updated["latest_capture_id"] == "capture-4"
+    assert len(monitor.get_alerts(alert_type="capture_continuity_break")) == 1
+
+
+async def test_continuity_alerts_honor_the_retention_cap(monitor) -> None:
+    """Equipment alerts use the same bounded durable inbox as other alert types."""
+    monitor.MAX_ALERTS = 1
+    first = await monitor.async_record_capture_continuity_break(_continuity_state())
+
+    second = await monitor.async_record_capture_continuity_break(
+        _continuity_state(camera_id="camera.side", latest_capture_id="capture-side-3")
+    )
+
+    assert monitor._alerts == [second]
+    assert first not in monitor._alerts
+
+
+async def test_clear_continuity_break_returns_false_without_active_alert(
+    monitor,
+) -> None:
+    """Clearing an unknown or already-cleared camera is an idempotent no-op."""
+    assert not await monitor.async_clear_capture_continuity_break(
+        "camera.missing",
+        cleared_at=datetime(2026, 9, 1, 9, tzinfo=UTC),
+    )
 
 
 # ---------------------------------------------------------------------------

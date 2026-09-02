@@ -12,6 +12,10 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .crop_steering import get_crop_steering_state
+from .domain.ec_state import resolve_feed_stage_week
+from .domain.irrigation_program import resolve_program_slot
+from .domain.irrigation_recipe import recipe_has_drifted
+from .domain.plant_metrics import count_live_plants
 from .domain.stage import StageDays
 from .domain.water_aggregation import compute_growspace_water
 from .models import Plant
@@ -231,6 +235,38 @@ class ViewModelBuilder:
             else None
         )
 
+        # The global [[Irrigation Recipe]] library rides every growspace payload
+        # for the same reason the notification settings below do: the card's
+        # irrigation dialog seeds from the device payload, and the recipe picker
+        # lives in that dialog. It is global, not per-growspace — the same
+        # library appears on every payload — and this is what puts it inside the
+        # golden contract fixture, where a dropped field fails CI (ADR-0030).
+        serialized["irrigation"]["recipes"] = (
+            self.coordinator.services.config.get_irrigation_recipes()
+        )
+
+        # [[Recipe Stamp]] drift, computed on read rather than stored: because
+        # recipes are held by reference, a hash written at stamp time would go
+        # stale the moment the recipe itself was edited (ADR-0045). None means
+        # the question does not apply — the growspace has never had a recipe
+        # applied, or the one it names has since been removed from the library.
+        serialized["irrigation"]["applied_recipe_drifted"] = self._applied_recipe_drift(
+            growspace, plants
+        )
+
+        # The global [[Irrigation Program]] library rides every payload for the
+        # same reason the recipe library above does: the card's program editor
+        # lives in the dialog that seeds from the device payload.
+        serialized["irrigation"]["programs"] = (
+            self.coordinator.services.config.get_irrigation_programs()
+        )
+
+        # Where this growspace currently sits in the program it is bound to —
+        # the slot and that slot's recipe, resolved on read. None whenever the
+        # question does not apply: nothing bound, or a binding naming a program
+        # the library no longer holds.
+        serialized["irrigation"]["program"] = self._program_state(growspace, plants)
+
         # Global notification settings ride every growspace payload so the card's
         # Config Dialog (which seeds from the device payload) can round-trip saved
         # values. They are global, not per-growspace, but mirror notifications_enabled
@@ -250,6 +286,72 @@ class ViewModelBuilder:
         # Cache the serialized data as a tuple: (timestamp, data)
         self.coordinator.cache.set(growspace_id, (current_time, serialized))
         return serialized
+
+    def _applied_recipe_drift(
+        self, growspace: Growspace, plants: list[Plant]
+    ) -> bool | None:
+        """Return whether the growspace still holds what its recipe stamped.
+
+        None when there is nothing to compare against: no recipe was ever
+        applied, or the applied recipe has since been deleted from the global
+        library (deleting leaves references dangling rather than cascading).
+        """
+        recipe_id = growspace.irrigation_strategy.applied_recipe_id
+        if recipe_id is None:
+            return None
+        recipe = self.coordinator.services.config.find_irrigation_recipe(recipe_id)
+        if recipe is None:
+            return None
+        return recipe_has_drifted(
+            recipe,
+            strategy=growspace.irrigation_strategy,
+            config=growspace.irrigation_config,
+            live_plant_count=count_live_plants(plants),
+        )
+
+    def _program_state(
+        self, growspace: Growspace, plants: list[Plant]
+    ) -> dict[str, Any] | None:
+        """Return the bound [[Irrigation Program]]'s current slot and recipe.
+
+        The position comes from ``resolve_feed_stage_week`` — the same seam the
+        [[Active Feed EC Target]] uses, reused unchanged so one card never
+        shows two different weeks for one tent ([[Recipe Week Resolution]]).
+        No second week calculator exists.
+
+        ``slot`` and ``recipe`` are ``None`` independently of one another and
+        of each other's causes: a growspace with no live plants has no
+        position to match, a defined position may simply have no slot
+        ([[Program Hold]]), and a slot may name a recipe the library no longer
+        holds — all three report cleanly rather than raising, because holding
+        is the safe answer and an error here would blank a whole payload.
+
+        ``stage``/``week`` are reported even when nothing matched, so the card
+        can say *which* week found no slot rather than only that none was
+        found.
+        """
+        program_id = growspace.irrigation_strategy.irrigation_program_id
+        if program_id is None:
+            return None
+        program = self.coordinator.services.config.find_irrigation_program(program_id)
+        if program is None:
+            return None
+
+        stage, week = resolve_feed_stage_week(plants)
+        slot = resolve_program_slot(program, stage=stage, week=week)
+        recipe = (
+            self.coordinator.services.config.find_irrigation_recipe(slot.recipe_id)
+            if slot is not None
+            else None
+        )
+        return {
+            "program_id": program.id,
+            "name": program.name,
+            "stage": stage,
+            "week": week,
+            "slot": slot.to_dict() if slot is not None else None,
+            "recipe": recipe.to_dict() if recipe is not None else None,
+        }
 
     def build_data_property(
         self, preserve_air_exchange_recs: bool = True

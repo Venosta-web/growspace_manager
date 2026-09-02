@@ -454,6 +454,12 @@ ATTR_WATER_AMOUNT = "amount"
 ATTR_NUTRIENTS = "nutrients"
 ATTR_AMOUNT_PER_PLANT = "amount_per_plant"
 ATTR_PRESET_ID = "preset_id"
+ATTR_RECIPE_ID = "recipe_id"
+ATTR_RECIPE_KIND = "kind"
+ATTR_RECIPE_CROP_STEERING = "crop_steering"
+ATTR_RECIPE_SCHEDULE = "schedule"
+ATTR_PROGRAM_ID = "program_id"
+ATTR_PROGRAM_SLOTS = "slots"
 ATTR_PRESET_NAME = "preset_name"
 ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
 
@@ -502,13 +508,39 @@ CONF_BRIEFING_TRIGGER_ENTITIES = "briefing_trigger_entities"
 DEFAULT_BRIEFING_INTERVAL_MINUTES = 30
 
 # Vision Checkup Constants
-CONF_VISION_CHECKUP_ENABLED = "vision_checkup_enabled"
 CONF_AI_TASK_ENTITY_ID = "ai_task_entity_id"
+CONF_VISION_EXPLAINER_SEES_IMAGE = "vision_explainer_sees_image"
 CONF_VISION_DEBUG_ENABLED = "vision_debug_enabled"
 DEFAULT_VISION_EARLY_OFFSET_MINUTES = 60
 DEFAULT_VISION_MID_CHECK_HOURS = 6
 DEFAULT_VISION_LATE_OFFSET_MINUTES = 60
 DEFAULT_VISION_HISTORY_LIMIT = 10
+
+# Growspace Vision connection (ADR 0043). Integration-wide, never per growspace:
+# the endpoint is one service and its bearer token is a secret the card must not
+# see. Stored under their own options key rather than inside ``ai_settings``,
+# because local vision is required after cutover whether or not AI is enabled.
+VISION_SETTINGS_KEY = "vision_settings"
+CONF_VISION_CONNECTION_MODE = "vision_connection_mode"
+CONF_VISION_ENDPOINT_URL = "vision_endpoint_url"
+CONF_VISION_ACCESS_TOKEN = "vision_access_token"
+VISION_CONNECTION_MODE_AUTOMATIC = "automatic"
+VISION_CONNECTION_MODE_MANUAL = "manual"
+DEFAULT_VISION_CONNECTION_MODE = VISION_CONNECTION_MODE_AUTOMATIC
+
+VISION_APP_SLUG = "growspace_vision"
+"""The App's own ``config.yaml`` slug.
+
+Supervisor prefixes it with the repository it came from — ``local`` for a
+side-loaded App, an 8-character hash of the repository URL for a store install
+— so the installed slug is matched by suffix and never hard-coded.
+"""
+
+VISION_DISCOVERY_SERVICE = "growspace_manager"
+"""The discovery service name the App declares so Supervisor accepts its push."""
+
+VISION_STATUS_TTL_SECONDS = 300
+"""How long a probed Vision status stands before a checkup re-probes it."""
 
 # Notification Defaults
 DEFAULT_COOLDOWN_MINUTES = 5
@@ -652,6 +684,15 @@ class GrowspaceService(StrEnum):
     # Nutrient Preset Services
     SAVE_NUTRIENT_PRESET = "save_nutrient_preset"
     REMOVE_NUTRIENT_PRESET = "remove_nutrient_preset"
+    # Irrigation Recipe Services
+    SAVE_IRRIGATION_RECIPE = "save_irrigation_recipe"
+    UPDATE_IRRIGATION_RECIPE = "update_irrigation_recipe"
+    REMOVE_IRRIGATION_RECIPE = "remove_irrigation_recipe"
+    APPLY_IRRIGATION_RECIPE = "apply_irrigation_recipe"
+    # Irrigation Program Services
+    SAVE_IRRIGATION_PROGRAM = "save_irrigation_program"
+    REMOVE_IRRIGATION_PROGRAM = "remove_irrigation_program"
+    ASSIGN_IRRIGATION_PROGRAM = "assign_irrigation_program"
     # Training Services
     LOG_TRAINING_EVENT = "log_training_event"
     # IPM Services
@@ -718,6 +759,18 @@ class ShotSizingMode(StrEnum):
 
     SECONDS = "seconds"
     VOLUME = "volume"
+
+
+class IrrigationRecipeKind(StrEnum):
+    """Which half of a growspace's irrigation an [[Irrigation Recipe]] holds.
+
+    A grower runs crop steering or a time schedule, never both, so a recipe
+    carries exactly one kind rather than both halves with one of them noise
+    (CONTEXT.md "Irrigation Recipe", ADR-0045).
+    """
+
+    CROP_STEERING = "crop_steering"
+    SCHEDULE = "schedule"
 
 
 class SteeringMode(StrEnum):

@@ -1,10 +1,12 @@
 """Config sub-facade for the Growspace Manager integration.
 
-Covers nutrient presets, IPM presets, EC ramp curves, and strain library.
+Covers nutrient presets, IPM presets, EC ramp curves, Irrigation Recipes and
+Programs, and the strain library.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -19,10 +21,13 @@ from custom_components.growspace_manager.const import (
     ATTR_STAGE,
     ATTR_TYPE,
     GrowspaceService,
+    IrrigationRecipeKind,
 )
 from custom_components.growspace_manager.models import (
     ECRampCurve,
     IPMPreset,
+    IrrigationProgram,
+    IrrigationRecipe,
     NutrientPreset,
 )
 from custom_components.growspace_manager.schemas import (
@@ -153,6 +158,90 @@ class ConfigFacade:
     def get_nutrient_serialization_data(self) -> dict[str, Any]:
         """Return serialized nutrient data for WebSocket consumers."""
         return self._coordinator._nutrient_manager.get_serialization_data()
+
+    # -------------------------------------------------------------------------
+    # Irrigation Recipes
+    # -------------------------------------------------------------------------
+
+    async def save_irrigation_recipe(
+        self,
+        growspace_id: str,
+        name: str,
+        kind: IrrigationRecipeKind,
+        recipe_id: str | None = None,
+    ) -> IrrigationRecipe:
+        """Save a growspace's current irrigation settings as a named recipe."""
+        return await self._coordinator._recipe_library.async_save_from_growspace(
+            growspace_id, name, kind, recipe_id
+        )
+
+    async def update_irrigation_recipe(
+        self,
+        recipe_id: str,
+        *,
+        name: str | None = None,
+        crop_steering: Mapping[str, Any] | None = None,
+        schedule: Mapping[str, Any] | None = None,
+    ) -> IrrigationRecipe:
+        """Edit a stored recipe in place — rename it, correct its values."""
+        return await self._coordinator._recipe_library.async_update_recipe(
+            recipe_id, name=name, crop_steering=crop_steering, schedule=schedule
+        )
+
+    async def remove_irrigation_recipe(self, recipe_id: str) -> None:
+        """Remove a recipe from the global Irrigation Recipe library."""
+        await self._coordinator._recipe_library.async_remove_recipe(recipe_id)
+
+    def find_irrigation_recipe(self, recipe_id: str) -> IrrigationRecipe | None:
+        """Return one recipe by id, or None when the library has no such id.
+
+        The forgiving lookup, for readers that must degrade rather than fail:
+        deleting a recipe leaves references to it dangling by design, so a
+        growspace can outlive the recipe it names (ADR-0045).
+        """
+        return self._coordinator._recipe_library.recipes.get(recipe_id)
+
+    def get_irrigation_recipes(self) -> dict[str, dict[str, Any]]:
+        """Return the serialized global Irrigation Recipe library.
+
+        Global, so the answer does not depend on which growspace asked.
+        """
+        return self._coordinator._recipe_library.serialized_recipes()
+
+    # -------------------------------------------------------------------------
+    # Irrigation Programs
+    # -------------------------------------------------------------------------
+
+    async def save_irrigation_program(
+        self,
+        name: str,
+        slots: Iterable[Mapping[str, Any]],
+        program_id: str | None = None,
+    ) -> IrrigationProgram:
+        """Save a named plan of ``(stage, week)`` slots."""
+        return await self._coordinator._program_library.async_save_program(
+            name, slots, program_id
+        )
+
+    async def remove_irrigation_program(self, program_id: str) -> None:
+        """Remove a program from the global Irrigation Program library."""
+        await self._coordinator._program_library.async_remove_program(program_id)
+
+    def find_irrigation_program(self, program_id: str) -> IrrigationProgram | None:
+        """Return one program by id, or None when the library has no such id.
+
+        The forgiving lookup, for readers that must degrade rather than fail:
+        removing a program leaves a growspace's binding dangling by design, so
+        a growspace can outlive the program it names (ADR-0045).
+        """
+        return self._coordinator._program_library.programs.get(program_id)
+
+    def get_irrigation_programs(self) -> dict[str, dict[str, Any]]:
+        """Return the serialized global Irrigation Program library.
+
+        Global, so the answer does not depend on which growspace asked.
+        """
+        return self._coordinator._program_library.serialized_programs()
 
     # -------------------------------------------------------------------------
     # IPM presets

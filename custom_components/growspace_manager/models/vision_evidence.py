@@ -1,8 +1,8 @@
 """Records of the Vision Evidence Store.
 
 Growspace Vision is stateless (ADR 0003), so Home Assistant owns every artifact of a
-Vision Checkup: the capture, its image files, its Visual Embedding, the Visual
-Comparison Result, the Baseline Bucket it was scored against, and any grower label.
+Vision Checkup: its envelope, each capture, image files, Visual Embedding, Visual
+Comparison Result, Baseline Bucket, fusion outcome, report, and grower labels.
 These are the row shapes of ``growspace_vision.db`` — see ADR 0041 and
 ``data_access/vision_evidence_schema.py``.
 
@@ -65,6 +65,14 @@ class CaptureTrigger(StrEnum):
 
     SCHEDULED = "scheduled"
     MANUAL = "manual"
+
+
+class CheckupStatus(StrEnum):
+    """The operational outcome of a multi-camera Vision Checkup."""
+
+    COMPLETED = "completed"
+    PARTIAL = "partial"
+    FAILED = "failed"
 
 
 class AnalysisState(StrEnum):
@@ -185,6 +193,20 @@ class GrowRunRef:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class VisionCheckup:
+    """One growspace-level observation task grouping capture-specific evidence."""
+
+    checkup_id: str
+    growspace_id: str
+    growspace_name: str
+    trigger_source: CaptureTrigger
+    light_window: LightWindow
+    started_at: str
+    completed_at: str | None = None
+    status: CheckupStatus | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class VisionCapture:
     """One Camera Snapshot taken for a Vision Checkup.
 
@@ -193,6 +215,7 @@ class VisionCapture:
     """
 
     capture_id: str
+    checkup_id: str
     growspace_id: str
     growspace_name: str
     camera_id: str
@@ -214,6 +237,7 @@ class VisionCapture:
     quality_mean_absolute_gradient: float | None = None
     quality_reasons: tuple[str, ...] = ()
     quality_structural_correlation: float | None = None
+    quality_history_reanchored: bool = False
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -321,6 +345,24 @@ class VisualComparisonResult:
     verdict: ComparisonVerdict | None = None
     comparison_confidence: float | None = None
     admitted_to_baseline: bool = False
+    unavailable_reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class VisionFusionOutcome:
+    """Capture-specific normalized environmental evidence and fusion result."""
+
+    outcome_id: str
+    capture_id: str
+    evaluated_at: str
+    scoring_policy_version: int
+    environmental_verdict: str
+    environmental_evaluated_at: str | None = None
+    stress_reasons: tuple[str, ...] = ()
+    mold_reasons: tuple[str, ...] = ()
+    fusion_state: str | None = None
+    fusion_confidence: str | None = None
+    fusion_coverage: str | None = None
     unavailable_reasons: tuple[str, ...] = ()
 
 

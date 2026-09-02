@@ -79,6 +79,7 @@ class NotificationManager:
         # Latest evaluation snapshot per (growspace_id, sensor_type), used to
         # build batched notifications without holding live entity references.
         self._latest_snapshots: dict[tuple[str, str], EvaluationSnapshot] = {}
+        self._latest_evaluations: dict[tuple[str, str], EvaluationSnapshot] = {}
         self._batch_timers: dict[str, CALLBACK_TYPE] = {}
         self._pending_alerts: dict[str, PendingAlert] = {}
         self._cooldowns: dict[str, dict[str, datetime]] = {}
@@ -168,6 +169,7 @@ class NotificationManager:
         growspace_id = snapshot.growspace_id
         sensor_type = snapshot.sensor_type
         snap_key = (growspace_id, sensor_type)
+        self._latest_evaluations[snap_key] = snapshot
 
         self._handle_light_flip(growspace_id, snapshot.lights_on)
 
@@ -248,6 +250,12 @@ class NotificationManager:
         ):
             alert.notification_timer()
             alert.notification_timer = None
+
+    def latest_evaluation(
+        self, growspace_id: str, sensor_type: str
+    ) -> EvaluationSnapshot | None:
+        """Return the latest immutable Bayesian evaluation, active or inactive."""
+        return self._latest_evaluations.get((growspace_id, sensor_type))
 
     @callback
     def _schedule_recovery(self, growspace_id: str, alert: PendingAlert) -> None:

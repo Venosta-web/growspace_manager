@@ -2,6 +2,20 @@
 
 **Status:** Accepted; amended by
 [ADR 0043](./0043-vision-checkups-migrate-through-versioned-capture-contracts.md)
+and on 2026-08-31 by
+[hub#74](https://github.com/Venosta-web/growspace_manager_workspace/issues/74)
+
+> **Amendment.** The Framing Epoch `reason` vocabulary loses
+> `camera_move_detected`, and a capture gains
+> `quality_structural_correlation`. Growspace Vision's ADR 0005 found automatic
+> camera-move detection unsafe, so no detector starts an epoch; the correlation
+> is recorded per capture instead. See _Framing Epochs and the Grow Run
+> dimension_ below.
+
+Issue #89 adds `quality_history_reanchored` as a capture fact. ADR 0005 requires the
+third consecutive relative-rail excursion to re-anchor Quality History; recording that
+boundary keeps the new regime intact across an integration restart instead of silently
+reintroducing older accepted signals.
 
 Decided on 2026-08-31 in
 [hub#70](https://github.com/Venosta-web/growspace_manager_workspace/issues/70), under
@@ -9,11 +23,12 @@ the stateless-service boundary of ADR 0003 and the baseline semantics of ADR 000
 
 Every artifact of a Vision Checkup — the checkup envelope, each capture, its image
 files, its Visual Embedding, the Baseline Bucket it was scored against, the Visual
-Comparison Result, and any grower label — is persisted by Home Assistant in a
-dedicated SQLite database, `growspace_vision.db`. Evidence rows are kept unpruned for
-the life of the growspace; images are kept on a bounded rolling window with an
-explicit pin rule. The existing cloud-era `vision_checkup_history` is frozen in place
-rather than migrated, and no `STORAGE_VERSION` bump is required.
+Comparison Result, its Evidence Fusion Outcome, and any grower label — is persisted
+by Home Assistant in a dedicated SQLite database, `growspace_vision.db`. Evidence
+rows are kept unpruned for the life of the growspace; images are kept on a bounded
+rolling window with an explicit pin rule. The existing cloud-era
+`vision_checkup_history` is frozen in place rather than migrated, and no
+`STORAGE_VERSION` bump is required.
 
 ## Medium
 
@@ -240,9 +255,8 @@ decision once real installs have rolled over.
 - `custom_components/growspace_manager/models/vision_evidence.py` — frozen records and
   the enums the `CHECK` constraints enforce.
 - `custom_components/growspace_manager/data_access/vision_evidence_store.py` — the
-  repository: connection, migrations, queries. **Deferred**, following [hub#69]: the
-  Visual Comparison Result producer does not exist yet, and building plumbing against
-  an unimplemented producer is speculative.
+  repository: connection lifecycle, migrations, evidence queries, atomic image writes,
+  retention and deletion.
 
 `domain/` gets nothing. There is no pure logic here; ADR 0004's baseline mathematics
 belongs with the scoring work, not with the store.
@@ -269,8 +283,9 @@ Unknown camera content types use `.bin` rather than claiming the bytes are JPEG.
 artifacts are retained for 90 days and pruning matches only `_raw` files. They are not
 returned by `get_snapshots` because that API only reads the separate `www/` tree; no
 filename filter is needed. A failed overlay still leaves the already-fetched raw
-artifact available. This file-only bridge is replaced by the capture and file rows
-specified above when the evidence repository lands.
+artifact available. This file-only bridge remains until the Vision Checkup producer
+is cut over to the repository; that cutover replaces it with the capture and file rows
+specified above.
 
 [hub#68]: https://github.com/Venosta-web/growspace_manager_workspace/issues/68
 [hub#69]: https://github.com/Venosta-web/growspace_manager_workspace/issues/69

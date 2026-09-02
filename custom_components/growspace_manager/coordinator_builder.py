@@ -13,6 +13,7 @@ from homeassistant.helpers.storage import Store
 from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
+from .const import DOMAIN
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
@@ -23,6 +24,8 @@ from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
+from .managers.irrigation_program import IrrigationProgramLibrary
+from .managers.irrigation_recipe import IrrigationRecipeLibrary
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
 from .managers.subsystem import SubsystemManager
@@ -43,6 +46,7 @@ from .strain_library import StrainLibrary
 from .tank_monitor import TankLevelMonitor
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
+from .vision_connection import VisionConnection
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -154,6 +158,13 @@ class CoordinatorBuilder:
         view_model_builder = ViewModelBuilder(coordinator)
 
         nutrient_manager = NutrientManager(repository, coordinator._save_callback)  # noqa: SLF001
+        recipe_library = IrrigationRecipeLibrary(
+            repository,
+            coordinator._save_callback,  # noqa: SLF001
+        )
+        program_library = IrrigationProgramLibrary(
+            coordinator._save_callback,  # noqa: SLF001
+        )
         genetics_manager = GeneticsManager(
             repository,
             coordinator._save_callback,  # noqa: SLF001
@@ -165,6 +176,8 @@ class CoordinatorBuilder:
             nutrient_manager,
             genetics_manager,
             notification_state,
+            recipe_library=recipe_library,
+            program_library=program_library,
         )
 
         svc_ctx = ServiceContext(
@@ -214,7 +227,14 @@ class CoordinatorBuilder:
         notification_settings = NotificationSettingsManager(coordinator)
         subsystem_manager = SubsystemManager(self.hass, coordinator, self.entry)
         services = ServiceFacade(coordinator)
-        vision_scheduler = VisionCheckupScheduler(self.hass, coordinator)
+        # Reads the coordinator's live options, so a connection change made in
+        # the options flow takes effect without rebuilding the coordinator.
+        vision_connection = VisionConnection(self.hass, lambda: coordinator.options)
+        vision_scheduler = VisionCheckupScheduler(
+            self.hass,
+            coordinator,
+            evidence_store=self.hass.data.get(DOMAIN, {}).get("vision_evidence_store"),
+        )
         briefing_scheduler = BriefingScheduler(self.hass, coordinator)
         photoperiod_checker = PhotoperiodFlipChecker(self.hass, coordinator)
 
@@ -236,6 +256,8 @@ class CoordinatorBuilder:
         coordinator._attach_services(  # noqa: SLF001
             view_model_builder=view_model_builder,
             nutrient_manager=nutrient_manager,
+            recipe_library=recipe_library,
+            program_library=program_library,
             genetics_manager=genetics_manager,
             storage_manager=storage_manager,
             growspace_manager=growspace_manager,
@@ -249,6 +271,7 @@ class CoordinatorBuilder:
             notification_settings=notification_settings,
             subsystem_manager=subsystem_manager,
             services=services,
+            vision_connection=vision_connection,
             vision_scheduler=vision_scheduler,
             briefing_scheduler=briefing_scheduler,
             photoperiod_checker=photoperiod_checker,

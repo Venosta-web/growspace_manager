@@ -13,6 +13,7 @@ import pytest
 from custom_components.growspace_manager.const import (
     DOMAIN,
     FanRegulationMode,
+    IrrigationRecipeKind,
     PlantStage,
     ShotSizingMode,
     SteeringMode,
@@ -23,6 +24,7 @@ from custom_components.growspace_manager.models import (
     ACInfinityDevice,
     ACInfinityGrowLight,
     CirculationFanConfig,
+    CropSteeringRecipe,
     DrainConfig,
     DrainReading,
     DryingData,
@@ -35,12 +37,17 @@ from custom_components.growspace_manager.models import (
     GrowspaceType,
     HarvestMetrics,
     IrrigationConfig,
+    IrrigationProgram,
+    IrrigationRecipe,
     IrrigationStrategy,
     IrrigationTank,
     MoistureEntry,
     PhenotypeScore,
     Plant,
     PlantGenetics,
+    ProgramSlot,
+    RecipeProvenance,
+    ScheduleRecipe,
     SensorGroup,
     Subarea,
     SubstrateHistory,
@@ -336,6 +343,21 @@ def _maximal_growspace() -> Growspace:
             pore_ec_target_max=2.8,
             ec_modulation_enabled=True,
             declared_steering_mode=SteeringMode.GENERATIVE,
+            # The [[Recipe Stamp]] provenance, populated non-null because both
+            # fields are optional and a sparse fixture would not catch one being
+            # dropped on the way to the card (ADR-0030). The id names the
+            # crop-steering recipe below, whose values equal the setpoints
+            # above — so the derived ``applied_recipe_drifted`` in the payload
+            # is a real computed answer rather than a placeholder.
+            applied_recipe_id="contract-recipe-steering",
+            recipe_applied_at="2026-08-10T07:15:00+00:00",
+            # The [[Irrigation Program]] binding, likewise non-null: it is
+            # optional, and a sparse fixture would not catch it being dropped
+            # on the way to the card (ADR-0030). It names the program below,
+            # whose flower-week-3 slot is the one this growspace's plant
+            # resolves to — so the payload's reported slot is a real resolution
+            # rather than a placeholder.
+            irrigation_program_id="contract-program",
         ),
         growspace_type=GrowspaceType.FLOWER,
         drain_config=DrainConfig(
@@ -563,6 +585,121 @@ def _set_runtime_states(hass: HomeAssistant) -> None:
         hass.states.async_set(entity_id, state, attributes)
 
 
+def _maximal_recipe_library() -> dict[str, IrrigationRecipe]:
+    """Return one recipe of each kind, every optional field populated.
+
+    Both kinds are present because the halves are disjoint: a library holding
+    only crop-steering recipes would leave the schedule payload shape — and
+    the ``null`` half of the other — outside the contract entirely.
+    """
+    return {
+        "contract-recipe-steering": IrrigationRecipe(
+            id="contract-recipe-steering",
+            name="Flower week 3 — generative",
+            kind=IrrigationRecipeKind.CROP_STEERING,
+            provenance=RecipeProvenance(
+                media_type=SubstrateMediaType.ROCKWOOL,
+                liters_per_pot=7.5,
+                pump_flow_rate_ml_per_sec=13.5,
+                stage=PlantStage.FLOWER.value,
+                week=3,
+            ),
+            crop_steering=CropSteeringRecipe(
+                lights_on_time="06:00:00",
+                p0_duration_minutes=90,
+                p2_stop_before_lights_off_minutes=75,
+                target_vwc_percent=58.0,
+                maintenance_dryback_percent=3.5,
+                p1_shot_volume_percent=4.5,
+                p1_shot_interval_minutes=20,
+                p2_shot_volume_percent=3.0,
+                p2_shot_interval_minutes=30,
+                auto_light_tracking=True,
+                dynamic_shot_enabled=True,
+                dynamic_aggressiveness=1.2,
+                dynamic_recovery=0.15,
+                dynamic_shot_size_floor=0.6,
+                dynamic_interval_ceiling=1.8,
+                pore_ec_target_min=2.1,
+                pore_ec_target_max=2.8,
+                ec_modulation_enabled=True,
+            ),
+            created_at="2026-08-04T09:00:00+00:00",
+        ),
+        "contract-recipe-schedule": IrrigationRecipe(
+            id="contract-recipe-schedule",
+            name="Veg timer",
+            kind=IrrigationRecipeKind.SCHEDULE,
+            provenance=RecipeProvenance(
+                media_type=SubstrateMediaType.COCO,
+                liters_per_pot=5.0,
+                pump_flow_rate_ml_per_sec=11.0,
+                stage=PlantStage.VEG.value,
+                week=2,
+            ),
+            schedule=ScheduleRecipe(
+                irrigation_times=[{"time": "07:30:00", "duration": 45}],
+                drain_times=[{"time": "19:30:00", "duration": 20}],
+                irrigation_duration=45,
+                drain_duration=20,
+                daily_volume_cap_liters=14.0,
+                max_cycles_per_day=8,
+                skip_during_dark=True,
+            ),
+            created_at="2026-08-05T09:00:00+00:00",
+        ),
+    }
+
+
+def _maximal_program_library() -> dict[str, IrrigationProgram]:
+    """Return one program spanning both stages and both recipe kinds.
+
+    The flower week-3 slot is the one the fixture growspace resolves to; the
+    others exist so the payload carries a plan rather than a single row, and
+    so a slot referencing the *schedule* recipe proves a program is indifferent
+    to which half a recipe holds.
+    """
+    return {
+        "contract-program": IrrigationProgram(
+            id="contract-program",
+            name="Full run — coco",
+            slots=[
+                ProgramSlot(stage="veg", week=1, recipe_id="contract-recipe-schedule"),
+                ProgramSlot(
+                    stage="flower", week=1, recipe_id="contract-recipe-steering"
+                ),
+                ProgramSlot(
+                    stage="flower", week=3, recipe_id="contract-recipe-steering"
+                ),
+            ],
+            created_at="2026-08-06T09:00:00+00:00",
+        ),
+    }
+
+
+def _live_plant() -> Plant:
+    """Return one live flowering plant, 15 days in — flower week 3.
+
+    The maximal plant above is in cure so that every lifecycle timestamp has a
+    value, which means it is not on the irrigation line and
+    ``resolve_feed_stage_week`` answers "no live cohort". This second plant
+    exists so the fixture's [[Irrigation Program]] resolves to a real slot:
+    without it, ``irrigation.program.slot`` and ``.recipe`` would be null and a
+    dropped field there would sail through CI (ADR-0030).
+    """
+    return Plant(
+        plant_id="contract-live-plant",
+        growspace_id=GROWSPACE_ID,
+        row=1,
+        col=2,
+        stage=PlantStage.FLOWER,
+        type="clone",
+        veg_start="2026-06-01T00:00:00+00:00",
+        flower_start="2026-07-27T00:00:00+00:00",
+        created_at="2026-06-01T00:00:00+00:00",
+    )
+
+
 async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     """Build the fixture payload through the real ``get_data`` path."""
     entry = MockConfigEntry(
@@ -593,6 +730,9 @@ async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     coordinator = GrowspaceCoordinator.build(hass, entry, data={})
     coordinator._data_repository.add_growspace(_maximal_growspace())
     coordinator._data_repository.add_plant(_maximal_plant())
+    coordinator._data_repository.add_plant(_live_plant())
+    coordinator._recipe_library.load_data(_maximal_recipe_library())
+    coordinator._program_library.load_data(_maximal_program_library())
     _set_runtime_states(hass)
 
     frozen_now = datetime(2026, 8, 11, 12, tzinfo=UTC)

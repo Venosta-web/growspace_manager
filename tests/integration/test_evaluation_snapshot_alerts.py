@@ -108,6 +108,12 @@ class _AlertPipeline:
         for coro in coroutines:
             await coro
 
+    def latest_evaluation(self, sensor_type: str) -> EvaluationSnapshot | None:
+        """Read the capture-facing snapshot through the public facade."""
+        return self.coordinator.services.notifications.latest_evaluation(
+            "tent1", sensor_type
+        )
+
     async def inbox(self, message_id: int) -> list[dict[str, Any]]:
         """Read alerts through the public Inbox WebSocket handler."""
         return await websocket_get_ai_alerts(
@@ -158,6 +164,21 @@ async def test_active_snapshot_appears_once_in_triage_inbox(
         "resolution_note": None,
     }
 
+    pipeline.close()
+
+
+async def test_latest_evaluation_retains_inactive_snapshot_for_vision() -> None:
+    """Inactive measured evidence remains available outside alert batching."""
+    store = MagicMock()
+    store.async_load = AsyncMock(return_value=None)
+    store.async_save = AsyncMock()
+    pipeline = _AlertPipeline(store)
+    await pipeline.async_start()
+    snapshot = _snapshot(is_on=False, probability=0.1)
+
+    await pipeline.report(snapshot)
+
+    assert pipeline.latest_evaluation("stress") is snapshot
     pipeline.close()
 
 

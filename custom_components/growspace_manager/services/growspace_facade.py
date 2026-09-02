@@ -23,6 +23,10 @@ from custom_components.growspace_manager.const import (
     SteeringMode,
 )
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
+from custom_components.growspace_manager.domain.irrigation_recipe import (
+    resolve_recipe_application,
+)
+from custom_components.growspace_manager.domain.plant_metrics import count_live_plants
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
     determine_coordinator_stage,
@@ -41,6 +45,10 @@ from custom_components.growspace_manager.schemas import (
     ADD_GROWSPACE_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     UPDATE_GROWSPACE_SCHEMA,
+)
+from custom_components.growspace_manager.services.strategy_stamp import (
+    StrategyStamp,
+    async_apply_strategy_stamp,
 )
 from custom_components.growspace_manager.steering_presets import resolve_steering_preset
 from custom_components.growspace_manager.strain_library import StrainLibrary
@@ -309,12 +317,13 @@ class GrowspaceFacade:
         """Stamp a Steering Mode's preset values into the strategy (ADR-0012).
 
         Looks up the preset for (mode, stored media type, active shot sizing
-        mode) and writes those values into the ordinary editable strategy
-        fields, then records the mode as the declared intent. The coordinator
-        never reads the mode afterwards — only the explicit fields. Always
-        re-stamps, so re-selecting the current mode resets the fields to that
-        mode's defaults (discarding hand tweaks). ``target_vwc_percent`` is
-        never written. Writes one logbook entry naming the mode and media.
+        mode) and hands it to the shared [[Strategy Stamp]] seam, which writes
+        those values into the ordinary editable strategy fields and records the
+        mode as the declared intent. The coordinator never reads the mode
+        afterwards — only the explicit fields. Always re-stamps, so
+        re-selecting the current mode resets the fields to that mode's defaults
+        (discarding hand tweaks). ``target_vwc_percent`` is never written.
+        Writes one logbook entry naming the mode and media.
         """
         growspace = self._coordinator.growspaces.get(growspace_id)
         if not growspace:
@@ -322,27 +331,132 @@ class GrowspaceFacade:
 
         strategy = growspace.irrigation_strategy
         media_type = strategy.substrate_profile.media_type
-        preset = resolve_steering_preset(mode, media_type, strategy.shot_sizing_mode)
-        for field_name, value in preset.items():
-            setattr(strategy, field_name, value)
-        strategy.declared_steering_mode = mode
+        await async_apply_strategy_stamp(
+            self._coordinator,
+            growspace_id,
+            StrategyStamp(
+                values=resolve_steering_preset(
+                    mode, media_type, strategy.shot_sizing_mode
+                ),
+                records={"declared_steering_mode": mode},
+                logbook_message=(
+                    f"Applied {mode.value} steering mode ({media_type.value})"
+                ),
+            ),
+        )
+        _LOGGER.info(
+            "Applied %s steering mode for growspace '%s'", mode.value, growspace_id
+        )
 
-        if growspace.irrigation_config.log_to_logbook:
-            self._coordinator.hass.bus.async_fire(
-                EVENT_GROWSPACE_LOG_ENTRY,
-                {
-                    ATTR_GROWSPACE_ID: growspace_id,
-                    "message": f"Applied {mode.value} steering mode ({media_type.value})",
-                    "category": "irrigation",
-                    "timestamp": dt_util.now().isoformat(),
+    async def apply_irrigation_recipe(
+        self, growspace_id: str, recipe_id: str
+    ) -> str | None:
+        """Stamp a saved [[Irrigation Recipe]] into a growspace (ADR-0045).
+
+        The [[Recipe Stamp]]: the recipe's values are re-expressed in this
+        growspace's own units — a shot size stored as a percent of substrate
+        volume becomes *this* tent's pump seconds through *its* flow rate and
+        pot volume — and handed to the shared [[Strategy Stamp]] seam, which
+        writes them into the ordinary editable fields and records which recipe
+        did it and when. Always re-stamps, so re-applying the recipe already
+        applied resets the fields and discards hand tweaks.
+
+        Returns the media-mismatch warning when the recipe was authored in a
+        different medium, else None. Such an apply proceeds **unscaled**: pot
+        size normalises across growspaces and media does not.
+
+        Raises:
+            GrowspaceNotFoundError: when the growspace does not exist.
+            EntityNotFoundError: when the recipe does not exist.
+            RecipeKindMismatchError: when the recipe holds the half this
+                growspace is not running. Resolution happens before any write,
+                so a refused apply changes nothing.
+            RecipeApplyError: when the target cannot be given the recipe's shot
+                sizes honestly.
+        """
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+
+        recipe = self._coordinator._recipe_library.get_recipe(recipe_id)
+        strategy = growspace.irrigation_strategy
+        application = resolve_recipe_application(
+            recipe,
+            strategy=strategy,
+            config=growspace.irrigation_config,
+            live_plant_count=count_live_plants(self.get_growspace_plants(growspace_id)),
+        )
+
+        authored_media = recipe.provenance.media_type.value
+        target_media = strategy.substrate_profile.media_type.value
+        await async_apply_strategy_stamp(
+            self._coordinator,
+            growspace_id,
+            StrategyStamp(
+                values=application.values,
+                config_values=application.config_values,
+                records={
+                    "applied_recipe_id": recipe.id,
+                    "recipe_applied_at": dt_util.utcnow().isoformat(),
                 },
-            )
+                logbook_message=(
+                    f"Applied irrigation recipe '{recipe.name}' "
+                    f"({authored_media} → {target_media})"
+                ),
+            ),
+        )
+        if application.media_warning:
+            _LOGGER.warning("%s", application.media_warning)
+        _LOGGER.info(
+            "Applied irrigation recipe '%s' (id=%s) to growspace '%s'",
+            recipe.name,
+            recipe.id,
+            growspace_id,
+        )
+        return application.media_warning
 
+    async def assign_irrigation_program(
+        self, growspace_id: str, program_id: str | None
+    ) -> None:
+        """Bind a growspace to an [[Irrigation Program]], or unbind it.
+
+        Binding **applies nothing**. It writes one field — the explicit
+        ``irrigation_program_id`` — and no setpoint, so picking a program from
+        a dropdown cannot change what a pump does that same minute. Reading the
+        growspace afterwards reports which slot it is in and which recipe that
+        slot holds; putting those values into the strategy is the separate,
+        deliberate [[Recipe Stamp]] gesture.
+
+        The binding is explicit rather than matched, which is the whole point:
+        ``ECRampCurve`` binds by first stage match in dictionary order, so
+        which curve drives a growspace is an accident of insertion (ADR-0045).
+
+        ``program_id`` of ``None`` unbinds.
+
+        Raises:
+            GrowspaceNotFoundError: when the growspace does not exist.
+            EntityNotFoundError: when the program does not exist. Checked
+                before the write, so a refused assignment changes nothing.
+        """
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        if not growspace:
+            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+
+        if program_id is not None:
+            # Resolved for its refusal only: binding to a program that is not
+            # there would report as unbound and look like the write was lost.
+            self._coordinator._program_library.get_program(program_id)
+
+        growspace.irrigation_strategy.irrigation_program_id = program_id
         self._coordinator.cache.invalidate(growspace_id)
         await self._coordinator.async_commit()
         await self._coordinator.async_request_refresh()
         _LOGGER.info(
-            "Applied %s steering mode for growspace '%s'", mode.value, growspace_id
+            "Growspace '%s' is now %s",
+            growspace_id,
+            f"bound to irrigation program '{program_id}'"
+            if program_id is not None
+            else "bound to no irrigation program",
         )
 
     async def set_ec_target_range(

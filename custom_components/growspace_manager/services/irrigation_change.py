@@ -14,6 +14,9 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
+from custom_components.growspace_manager.domain.shot_sizing import (
+    dripper_flow_rate_ml_per_sec,
+)
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import SubstrateProfile
 
@@ -95,6 +98,11 @@ _STRATEGY_ALIASES = frozenset(
         "substrate_liters_per_pot",
     }
 )
+# [[Dripper Throughput]]: the grower-facing input representation of
+# ``pump_flow_rate_ml_per_sec``. Accepted as a pair here and collapsed into that
+# single stored value during normalization — two numbers that must agree would
+# be a reconciliation rule waiting to be written, so neither is persisted.
+_CONFIG_ALIASES = frozenset({"dripper_liters_per_hour", "emitter_count"})
 _OPTIONS_ALIASES = frozenset({"use_vwc_steering"})
 
 
@@ -122,12 +130,13 @@ class IrrigationChangeResult:
 def _accepted_fields(operation: IrrigationChangeOperation) -> frozenset[str]:
     """Return the compatibility surface for one public operation."""
     if operation is IrrigationChangeOperation.SETTINGS:
-        return IRRIGATION_CONFIG_CHANGE_FIELDS
+        return IRRIGATION_CONFIG_CHANGE_FIELDS | _CONFIG_ALIASES
     if operation is IrrigationChangeOperation.STRATEGY:
         return IRRIGATION_STRATEGY_CHANGE_FIELDS | _STRATEGY_ALIASES
     return (
         IRRIGATION_CONFIG_CHANGE_FIELDS
         | IRRIGATION_STRATEGY_CHANGE_FIELDS
+        | _CONFIG_ALIASES
         | _STRATEGY_ALIASES
         | _OPTIONS_ALIASES
     )
@@ -156,6 +165,24 @@ def _normalize_values(
             alias_value = values.pop(alias)
             for phase_field in phase_fields:
                 values.setdefault(phase_field, alias_value)
+
+    liters_per_hour = values.pop("dripper_liters_per_hour", None)
+    emitter_count = values.pop("emitter_count", None)
+    if liters_per_hour is not None or emitter_count is not None:
+        if liters_per_hour is None or emitter_count is None:
+            raise IrrigationChangeError(
+                "Dripper throughput needs both dripper_liters_per_hour and "
+                "emitter_count; one alone does not name a flow rate."
+            )
+        if "pump_flow_rate_ml_per_sec" in values:
+            raise IrrigationChangeError(
+                "Set the pump flow rate either directly or as dripper "
+                "throughput, not both; there is one stored value and no rule "
+                "for reconciling two answers."
+            )
+        values["pump_flow_rate_ml_per_sec"] = dripper_flow_rate_ml_per_sec(
+            float(liters_per_hour), int(emitter_count)
+        )
 
     profile_update = values.pop("substrate_profile", None)
     media_type = values.pop("substrate_media_type", None)

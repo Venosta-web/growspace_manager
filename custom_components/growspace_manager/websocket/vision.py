@@ -11,6 +11,11 @@ import voluptuous as vol
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.presentation.vision import (
+    async_serialize_vision_checkup,
+    serialize_legacy_vision_result,
+    serialize_vision_status,
+)
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -27,6 +32,20 @@ SCHEMA_WS_GET_VISION_HISTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Required("growspace_id"): str,
         vol.Optional("limit", default=10): vol.All(int, vol.Range(min=1, max=50)),
     }
+)
+
+WS_TYPE_GET_VISION_HISTORY_V2 = f"{DOMAIN}/get_vision_history_v2"
+SCHEMA_WS_GET_VISION_HISTORY_V2 = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_VISION_HISTORY_V2,
+        vol.Required("growspace_id"): str,
+        vol.Optional("limit", default=10): vol.All(int, vol.Range(min=1, max=50)),
+    }
+)
+
+WS_TYPE_GET_VISION_STATUS = f"{DOMAIN}/get_vision_status"
+SCHEMA_WS_GET_VISION_STATUS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {vol.Required("type"): WS_TYPE_GET_VISION_STATUS}
 )
 
 WS_TYPE_UPDATE_VISION_CHECKUP_CONFIG = f"{DOMAIN}/update_vision_checkup_config"
@@ -177,6 +196,54 @@ async def websocket_get_vision_history(
     return {"history": history, "total": len(growspace.vision_checkup_history)}
 
 
+async def websocket_get_vision_status(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the cached Growspace Vision service status."""
+    return serialize_vision_status(coordinator.vision_connection.status)
+
+
+async def websocket_get_vision_history_v2(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Return versioned Vision Checkups with a frozen attributed legacy tail."""
+    growspace = _get_growspace(coordinator, msg["growspace_id"])
+    limit: int = msg.get("limit", 10)
+    store = hass.data.get(DOMAIN, {}).get("vision_evidence_store")
+    v1: list[dict[str, Any]] = []
+    v1_total = 0
+    capture_total = 0
+    if store is not None:
+        media_dirs = hass.config.media_dirs
+        media_source = "local" if "local" in media_dirs else next(iter(media_dirs))
+        checkups = await store.async_get_checkups(msg["growspace_id"], limit=limit)
+        v1 = [
+            await async_serialize_vision_checkup(
+                store, checkup, media_source=media_source
+            )
+            for checkup in checkups
+        ]
+        v1_total = await store.async_count_checkups(msg["growspace_id"])
+        capture_total = await store.async_count_captures(msg["growspace_id"])
+    legacy = [
+        serialize_legacy_vision_result(item)
+        for item in growspace.vision_checkup_history
+    ]
+    history = sorted(v1 + legacy, key=_vision_history_timestamp, reverse=True)[:limit]
+    return {
+        "history": history,
+        "total": v1_total + len(legacy),
+        "capture_total": capture_total,
+    }
+
+
+def _vision_history_timestamp(item: dict[str, Any]) -> str:
+    """Return the chronology key shared only by the public union."""
+    if item["result_schema"] == "legacy_cloud_v1":
+        return str(item["timestamp"])
+    return str(item["completed_at"] or item["started_at"])
+
+
 async def websocket_update_vision_checkup_config(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> dict[str, Any]:
@@ -209,6 +276,16 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_CAPTURE_SNAPSHOT, websocket_capture_snapshot, SCHEMA_WS_CAPTURE_SNAPSHOT
     ),
     WSCommand(WS_TYPE_GET_SNAPSHOTS, websocket_get_snapshots, SCHEMA_WS_GET_SNAPSHOTS),
+    WSCommand(
+        WS_TYPE_GET_VISION_STATUS,
+        websocket_get_vision_status,
+        SCHEMA_WS_GET_VISION_STATUS,
+    ),
+    WSCommand(
+        WS_TYPE_GET_VISION_HISTORY_V2,
+        websocket_get_vision_history_v2,
+        SCHEMA_WS_GET_VISION_HISTORY_V2,
+    ),
     WSCommand(
         WS_TYPE_GET_VISION_HISTORY,
         websocket_get_vision_history,

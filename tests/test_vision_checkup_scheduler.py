@@ -1,1507 +1,352 @@
-"""Tests for the VisionCheckupScheduler time calculation logic."""
-
-from __future__ import annotations
+"""Scheduling behavior for evidence-based Vision Checkups."""
 
 from datetime import UTC, datetime, time
-from pathlib import Path
+import struct
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.models import (
-    EnvironmentConfig,
-    IrrigationStrategy,
-    VisionCheckupConfig,
-    VisionCheckupResult,
+from custom_components.growspace_manager.domain.visual_comparison import (
+    BaselineEntry,
+    BaselineKey,
+    BaselineSnapshot,
+    ComparisonDecision,
+    ComparisonValue,
+)
+from custom_components.growspace_manager.models.vision_evidence import (
+    AdmissionPhase,
+    BaselineState,
+    ComparisonOutcome,
+    LightWindow,
 )
 from custom_components.growspace_manager.vision_checkup_scheduler import (
     VisionCheckupScheduler,
     calculate_checkup_times,
 )
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from custom_components.growspace_manager.vision_connection import (
+    VisionAvailability,
+    VisionConnectionSource,
+    VisionStatus,
+)
+from homeassistant.exceptions import ServiceValidationError
 
 
-def test_calculate_checkup_times_veg_18_6():
-    """Test checkup times for 18/6 vegetative cycle with lights on at 06:00."""
-    lights_on = time(6, 0)
-    day_hours = 18
-
-    times = calculate_checkup_times(
-        lights_on_time=lights_on,
-        day_hours=day_hours,
-        early_offset_minutes=60,
-        mid_check_hours=6,
-        late_offset_minutes=60,
-    )
-
-    assert times["early"] == time(7, 0)  # 06:00 + 1h
-    assert times["mid"] == time(12, 0)  # 06:00 + 6h
-    assert times["late"] == time(23, 0)  # 06:00 + 18h - 1h = 23:00
-
-
-def test_calculate_checkup_times_flower_12_12():
-    """Test checkup times for 12/12 flowering cycle with lights on at 06:00."""
-    times = calculate_checkup_times(
-        lights_on_time=time(6, 0),
-        day_hours=12,
-        early_offset_minutes=60,
-        mid_check_hours=6,
-        late_offset_minutes=60,
-    )
-
-    assert times["early"] == time(7, 0)  # 06:00 + 1h
-    assert times["mid"] == time(12, 0)  # 06:00 + 6h
-    assert times["late"] == time(17, 0)  # 06:00 + 12h - 1h = 17:00
-
-
-def test_calculate_checkup_times_wraps_midnight():
-    """Test checkup times that wrap past midnight."""
-    # Lights on at 20:00, 18h cycle -> lights off at 14:00 next day
-    times = calculate_checkup_times(
-        lights_on_time=time(20, 0),
-        day_hours=18,
-        early_offset_minutes=60,
-        mid_check_hours=6,
-        late_offset_minutes=60,
-    )
-
-    assert times["early"] == time(21, 0)  # 20:00 + 1h
-    assert times["mid"] == time(2, 0)  # 20:00 + 6h = 02:00 next day
-    assert times["late"] == time(13, 0)  # 20:00 + 18h - 1h = 13:00 next day
-
-
-def test_calculate_checkup_times_flower_night_schedule():
-    """Test 12/12 flower with lights on at 18:00 (common night schedule)."""
-    times = calculate_checkup_times(
-        lights_on_time=time(18, 0),
-        day_hours=12,
-        early_offset_minutes=60,
-        mid_check_hours=6,
-        late_offset_minutes=60,
-    )
-
-    assert times["early"] == time(19, 0)  # 18:00 + 1h
-    assert times["mid"] == time(0, 0)  # 18:00 + 6h = 00:00
-    assert times["late"] == time(5, 0)  # 18:00 + 12h - 1h = 05:00
-
-
-def test_vision_checkup_scheduler_initializes():
-    """Test VisionCheckupScheduler initializes with correct attributes."""
-    hass = MagicMock(spec=HomeAssistant)
-    coordinator = MagicMock()
-
-    scheduler = VisionCheckupScheduler(hass, coordinator)
-
-    assert scheduler.hass is hass
-    assert scheduler.coordinator is coordinator
-    assert scheduler._unsub_timers == {}
-    assert scheduler._latest_public_paths == {}
-
-
-@pytest.fixture
-def mock_hass():
-    """Create a mock Home Assistant instance."""
-    hass = MagicMock(spec=HomeAssistant)
-    return hass
-
-
-@pytest.fixture
-def mock_coordinator(mock_hass):
-    """Create a mock coordinator with minimal required attributes."""
-    coordinator = MagicMock()
-    coordinator.hass = mock_hass
-    coordinator.options = {
-        "ai_settings": {
-            "ai_enabled": True,
-            "assistant_id": "conversation.claude",
-            "ai_task_entity_id": "ai_task.anthropic",
-        }
-    }
-    coordinator.growspaces = {}
-    coordinator.get_growspace_plants = MagicMock(return_value=[])
-    coordinator.async_save = AsyncMock()
-    coordinator.async_commit = AsyncMock()
-    coordinator._strain_library = MagicMock()
-    return coordinator
-
-
-def _make_mock_growspace(
-    growspace_id="tent1",
-    camera_entities=None,
-    lights_on_time="06:00:00",
-    veg_day_hours=18,
-    flower_day_hours=12,
-    vision_enabled=True,
-):
-    """Create a mock growspace with configurable settings."""
-
-    gs = MagicMock()
-    gs.id = growspace_id
-    gs.name = "Test Tent"
-    gs.vision_checkup_history = []
-
-    env_config = MagicMock(spec=EnvironmentConfig)
-    env_config.camera_entities = (
-        camera_entities if camera_entities is not None else ["camera.tent1_cam"]
-    )
-    env_config.veg_day_hours = veg_day_hours
-    env_config.flower_day_hours = flower_day_hours
-    env_config.vision_checkup_config = VisionCheckupConfig(enabled=vision_enabled)
-
-    gs.environment_config = env_config
-
-    irrigation = MagicMock(spec=IrrigationStrategy)
-    irrigation.lights_on_time = lights_on_time
-    gs.irrigation_strategy = irrigation
-
-    return gs
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_calls_ai_task(mock_hass, mock_coordinator):
-    """Test that vision analysis calls async_generate_data with camera attachments."""
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    minimal_context = {
-        "growspace": {
-            "id": "tent1",
-            "name": "Test Tent",
-            "size": "3x3",
-            "total_plants": 4,
-        },
-        "environment": {"sensors": {"temperature_sensor": "25.5 C"}},
-        "analysis": {
-            "stress": {"active": False, "reasons": []},
-            "mold_risk": {"active": False, "reasons": []},
-            "optimal": {"active": True, "reasons": []},
-            "light_schedule": {"correct": True},
-        },
-        "plants": {
-            "count": 4,
-            "stages": {"flower": 4},
-            "strains": ["OG Kush"],
-            "max_veg_days": 28,
-            "max_flower_days": 35,
-        },
-        "strain_analytics": {},
+def test_calculate_checkup_times_for_18_hour_cycle() -> None:
+    assert calculate_checkup_times(time(6), 18) == {
+        "early": time(7),
+        "mid": time(12),
+        "late": time(23),
     }
 
-    mock_result = MagicMock()
-    mock_result.data = {
-        "analysis": "Plants look healthy with good coloring.",
-        "issues_detected": [],
-        "severity": "none",
-        "recommendations": ["Continue current feeding schedule."],
-    }
 
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+def _growspace(*, enabled: bool = True, cameras: list[str] | None = None):
+    return SimpleNamespace(
+        id="tent1",
+        environment_config=SimpleNamespace(
+            camera_entities=cameras if cameras is not None else ["camera.canopy"],
+            veg_day_hours=18,
+            flower_day_hours=12,
+            vision_checkup_config=SimpleNamespace(
+                enabled=enabled,
+                early_check_offset_minutes=60,
+                mid_check_hours=6,
+                late_check_offset_minutes=60,
+            ),
+        ),
+        irrigation_strategy=SimpleNamespace(lights_on_time="06:00:00"),
+    )
 
+
+def _coordinator(growspace=None):
+    services = SimpleNamespace(
+        growspaces=SimpleNamespace(get_growspace_plants=MagicMock(return_value=[]))
+    )
+    return SimpleNamespace(
+        growspaces={"tent1": growspace or _growspace()},
+        services=services,
+        options={},
+    )
+
+
+def test_schedule_registers_three_one_shot_timers() -> None:
+    scheduler = VisionCheckupScheduler(MagicMock(), _coordinator())
     with (
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=([], None, []),
-        ),
         patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            return_value=mock_result,
-        ) as mock_gen,
-        patch.object(scheduler, "_gather_context_data", return_value=minimal_context),
-    ):
-        result = await scheduler.run_vision_analysis("tent1", "mid")
-
-    assert result is not None
-    assert result.check_type == "mid"
-    assert result.growspace_id == "tent1"
-    assert result.analysis == "Plants look healthy with good coloring."
-    assert result.severity == "none"
-
-    mock_gen.assert_called_once()
-    call_kwargs = mock_gen.call_args.kwargs
-    assert call_kwargs["task_name"] == "growspace_vision_checkup"
-    assert len(call_kwargs["attachments"]) == 1
-    assert "camera.tent1_cam" in call_kwargs["attachments"][0]["media_content_id"]
-    # Without a structure schema, ai_task returns .data as raw text (not a dict),
-    # which breaks the data.get(...) parsing below. Lock the schema in.
-    from custom_components.growspace_manager.vision_checkup_scheduler import (
-        VISION_RESULT_SCHEMA,
-    )
-
-    assert call_kwargs["structure"] is VISION_RESULT_SCHEMA
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_no_cameras_raises_error(mock_hass, mock_coordinator):
-    """Test that vision analysis raises ServiceValidationError when no cameras configured."""
-
-    gs = _make_mock_growspace(camera_entities=[])
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    with pytest.raises(ServiceValidationError, match="No cameras configured"):
-        await scheduler.run_vision_analysis("tent1", "mid")
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_growspace_not_found(mock_hass, mock_coordinator):
-    """Test that vision analysis raises ServiceValidationError when growspace not found."""
-
-    mock_coordinator.growspaces = {}
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with pytest.raises(
-        ServiceValidationError, match="Growspace 'nonexistent' not found"
-    ):
-        await scheduler.run_vision_analysis("nonexistent", "mid")
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_stores_result_in_history(
-    mock_hass, mock_coordinator
-):
-    """Test that vision analysis result is stored in growspace history."""
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    mock_result = MagicMock()
-    mock_result.data = {
-        "analysis": "Minor leaf drooping detected.",
-        "issues_detected": ["leaf_drooping"],
-        "severity": "low",
-        "recommendations": ["Check watering schedule."],
-    }
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    minimal_context = {
-        "growspace": {
-            "id": "tent1",
-            "name": "Test Tent",
-            "size": "3x3",
-            "total_plants": 0,
-        },
-        "environment": {"sensors": {}},
-        "analysis": {
-            "stress": {"active": False, "reasons": []},
-            "mold_risk": {"active": False, "reasons": []},
-            "optimal": {"active": False, "reasons": []},
-            "light_schedule": {"correct": True},
-        },
-        "plants": {
-            "count": 0,
-            "stages": {},
-            "strains": [],
-            "max_veg_days": 0,
-            "max_flower_days": 0,
-        },
-        "strain_analytics": {},
-    }
-
-    with (
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=([], None, []),
-        ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            return_value=mock_result,
-        ),
-        patch.object(scheduler, "_gather_context_data", return_value=minimal_context),
-    ):
-        result = await scheduler.run_vision_analysis("tent1", "mid")
-
-    assert result is not None
-    assert len(gs.vision_checkup_history) == 1
-    assert gs.vision_checkup_history[0].severity == "low"
-    mock_coordinator.async_commit.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_ai_failure_raises_error(mock_hass, mock_coordinator):
-    """Test that AI failure raises HomeAssistantError."""
-
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    minimal_context = {
-        "growspace": {
-            "id": "tent1",
-            "name": "Test Tent",
-            "size": "3x3",
-            "total_plants": 0,
-        },
-        "environment": {"sensors": {}},
-        "analysis": {
-            "stress": {"active": False, "reasons": []},
-            "mold_risk": {"active": False, "reasons": []},
-            "optimal": {"active": False, "reasons": []},
-            "light_schedule": {"correct": True},
-        },
-        "plants": {
-            "count": 0,
-            "stages": {},
-            "strains": [],
-            "max_veg_days": 0,
-            "max_flower_days": 0,
-        },
-        "strain_analytics": {},
-    }
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with (
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=([], None, []),
-        ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            side_effect=Exception("AI service unavailable"),
-        ),
-        patch.object(scheduler, "_gather_context_data", return_value=minimal_context),
-    ):
-        with pytest.raises(HomeAssistantError, match="AI vision analysis failed"):
-            await scheduler.run_vision_analysis("tent1", "mid")
-
-
-def test_schedule_growspace_creates_three_timers(mock_hass, mock_coordinator):
-    """Test that scheduling a growspace creates 3 timers (early, mid, late)."""
-
-    gs = _make_mock_growspace(vision_enabled=True)
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with patch(
-        "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
-    ) as mock_track:
-        mock_track.return_value = MagicMock()
-        with patch(
             "custom_components.growspace_manager.vision_checkup_scheduler.ha_now",
-        ) as mock_now:
-            mock_now.return_value = datetime(2026, 3, 21, 10, 0, 0, tzinfo=UTC)
-            scheduler.schedule_growspace("tent1")
+            return_value=datetime(2026, 9, 1, 5, tzinfo=UTC),
+        ),
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
+            return_value=MagicMock(),
+        ) as track,
+    ):
+        scheduler.schedule_growspace("tent1")
 
-    assert mock_track.call_count == 3
-    assert "tent1" in scheduler._unsub_timers
+    assert track.call_count == 3
     assert len(scheduler._unsub_timers["tent1"]) == 3
 
 
-def test_schedule_growspace_skips_disabled_vision(mock_hass, mock_coordinator):
-    """Test that scheduling skips growspaces with vision disabled."""
-
-    gs = _make_mock_growspace(vision_enabled=False)
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with patch(
-        "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
-    ) as mock_track:
+def test_schedule_replaces_timers_handles_short_time_and_stops() -> None:
+    growspace = _growspace()
+    growspace.irrigation_strategy.lights_on_time = "06:00"
+    scheduler = VisionCheckupScheduler(MagicMock(), _coordinator(growspace))
+    old_unsubscribe = MagicMock()
+    scheduler._unsub_timers["tent1"] = [old_unsubscribe]
+    new_unsubscribes = [MagicMock(), MagicMock(), MagicMock()]
+    current = datetime(2026, 9, 1, 23, 59, tzinfo=UTC)
+    with (
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.ha_now",
+            return_value=current,
+        ),
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
+            side_effect=new_unsubscribes,
+        ) as track,
+    ):
         scheduler.schedule_growspace("tent1")
 
-    mock_track.assert_not_called()
-    assert "tent1" not in scheduler._unsub_timers
-
-
-def test_schedule_growspace_skips_no_cameras(mock_hass, mock_coordinator):
-    """Test that scheduling skips growspaces with no cameras."""
-
-    gs = _make_mock_growspace(camera_entities=[])
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with patch(
-        "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
-    ) as mock_track:
-        scheduler.schedule_growspace("tent1")
-
-    mock_track.assert_not_called()
-
-
-def test_async_stop_cancels_all_timers(mock_hass, mock_coordinator):
-    """Test that async_stop cancels all registered timers."""
-
-    mock_unsub_1 = MagicMock()
-    mock_unsub_2 = MagicMock()
-    mock_unsub_3 = MagicMock()
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    scheduler._unsub_timers = {
-        "tent1": [mock_unsub_1, mock_unsub_2, mock_unsub_3],
-    }
+    old_unsubscribe.assert_called_once_with()
+    assert all(call.args[2] > current for call in track.call_args_list)
 
     scheduler.async_stop()
 
-    mock_unsub_1.assert_called_once()
-    mock_unsub_2.assert_called_once()
-    mock_unsub_3.assert_called_once()
+    for unsubscribe in new_unsubscribes:
+        unsubscribe.assert_called_once_with()
     assert scheduler._unsub_timers == {}
 
 
-@pytest.mark.asyncio
-async def test_get_active_day_hours_flower(mock_hass, mock_coordinator):
-    """Test getting active day hours when a plant has entered flower.
-
-    Resolution must key off ``flower_start`` (like the grow light
-    controller), not the cached ``plant.stage`` attribute, since the latter
-    is only set once at plant creation and never updated on flip.
-    """
-
-    gs = _make_mock_growspace()
-    plant = MagicMock()
-    plant.flower_start = "2000-01-01"
-    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    assert scheduler._get_active_day_hours(gs) == 12
-
-
-@pytest.mark.asyncio
-async def test_get_active_day_hours_stale_stage_ignored(mock_hass, mock_coordinator):
-    """A stale ``plant.stage`` of "flower" must not override flower_start.
-
-    Regression test: the vision scheduler previously trusted the cached
-    ``plant.stage`` attribute, which desynced from the actual grow light
-    schedule (driven by ``flower_start``) once a plant had been created,
-    producing checkup times that landed hours after lights had already
-    turned off.
-    """
-
-    gs = _make_mock_growspace()
-    plant = MagicMock()
-    plant.stage = "flower"
-    plant.flower_start = None
-    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant]
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    assert scheduler._get_active_day_hours(gs) == 18
-
-
-def test_get_lights_on_time_fallback(mock_hass, mock_coordinator):
-    """Test fallback when lights on time misses seconds."""
-
-    gs = _make_mock_growspace(lights_on_time="06:30")
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    assert scheduler._get_lights_on_time(gs) == time(6, 30)
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_context_exception(mock_hass, mock_coordinator):
-    """Test fallback context when context gathering fails."""
-
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    mock_result = MagicMock()
-    mock_result.data = {"analysis": "Fallback analysis", "severity": "none"}
-
-    with (
-        patch.object(
-            scheduler, "_gather_context_data", side_effect=Exception("DB Error")
-        ),
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=([], None, []),
-        ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            return_value=mock_result,
-        ),
-    ):
-        result = await scheduler.run_vision_analysis("tent1", "early")
-
-    # Verify it still runs and returns a result using the fallback context
-    assert result is not None
-    assert result.analysis == "Fallback analysis"
-
-
-def test_build_vision_prompt_with_history(mock_hass, mock_coordinator):
-    """Test prompt building includes previous trend history."""
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    context = {"growspace": {"name": "test", "id": "t1"}}
-
-    prev = VisionCheckupResult(
-        timestamp="2026-03-21T12:00:00",
-        growspace_id="t1",
-        check_type="mid",
-        snapshot_paths=[],
-        analysis="Good",
-        issues_detected=["spot"],
-        severity="low",
-        recommendations=[],
-    )
-
-    with patch(
-        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._format_context_data",
-        return_value="Context Formatting",
-    ):
-        prompt = scheduler._build_vision_prompt("t1", "early", context, [prev])
-        assert "PREVIOUS CHECKUP HISTORY" in prompt
-        assert "severity=low" in prompt
-        assert "issues=spot" in prompt
-
-
-def test_schedule_growspace_missing_growspace(mock_hass, mock_coordinator):
-    """Test scheduling handles missing growspace."""
-
-    mock_coordinator.growspaces = {}
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
+def test_schedule_missing_growspace_and_schedule_all() -> None:
+    scheduler = VisionCheckupScheduler(MagicMock(), _coordinator())
     with patch(
         "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time"
-    ) as mock_track:
+    ) as track:
         scheduler.schedule_growspace("missing")
-        mock_track.assert_not_called()
+    track.assert_not_called()
+
+    scheduler.schedule_growspace = MagicMock()
+    scheduler.schedule_all_growspaces()
+    scheduler.schedule_growspace.assert_called_once_with("tent1")
+
+
+@pytest.mark.parametrize(
+    "growspace",
+    [_growspace(enabled=False), _growspace(cameras=[])],
+)
+def test_schedule_skips_disabled_or_camera_less_growspaces(growspace) -> None:
+    scheduler = VisionCheckupScheduler(MagicMock(), _coordinator(growspace))
+    with patch(
+        "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time"
+    ) as track:
+        scheduler.schedule_growspace("tent1")
+    track.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_callback_exception_reschedules(mock_hass, mock_coordinator):
-    """Test callback catches exceptions and still reschedules."""
+async def test_manual_checkup_requires_a_ready_local_service() -> None:
+    unavailable = VisionStatus(
+        availability=VisionAvailability.UNAVAILABLE,
+        connection_source=VisionConnectionSource.MANUAL,
+    )
+    coordinator = _coordinator()
+    coordinator.vision_connection = SimpleNamespace(
+        async_refresh_if_stale=AsyncMock(return_value=unavailable),
+        negotiated=None,
+    )
+    scheduler = VisionCheckupScheduler(
+        MagicMock(), coordinator, evidence_store=MagicMock()
+    )
 
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    callback = scheduler._create_checkup_callback("tent1", "early")
-
-    with (
-        patch.object(
-            scheduler, "run_vision_analysis", side_effect=Exception("API Error")
-        ),
-        patch.object(scheduler, "schedule_growspace") as mock_schedule,
-    ):
-        await callback(datetime.now())
-        mock_schedule.assert_called_once_with("tent1")
-
-
-@pytest.mark.asyncio
-async def test_send_vision_notification_no_target(mock_hass, mock_coordinator):
-    """Test notification exits if no target configured."""
-
-    gs = _make_mock_growspace()
-    gs.notification_target = None
-    mock_coordinator.growspaces = {"tent1": gs}
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    result = MagicMock()
-    mock_call = AsyncMock()
-    mock_hass.services = MagicMock()
-    mock_hass.services.async_call = mock_call
-    await scheduler._send_vision_notification("tent1", result)
-    mock_call.assert_not_called()
+    with pytest.raises(ServiceValidationError, match="not ready"):
+        await scheduler.run_vision_analysis("tent1", "manual")
 
 
 @pytest.mark.asyncio
-async def test_send_vision_notification_exception(mock_hass, mock_coordinator):
-    """Test notification handles exceptions gracefully."""
+@pytest.mark.parametrize(
+    ("growspaces", "store", "message"),
+    [
+        ({}, MagicMock(), "not found"),
+        ({"tent1": _growspace(cameras=[])}, MagicMock(), "No cameras configured"),
+        ({"tent1": _growspace()}, None, "Evidence Store is unavailable"),
+    ],
+)
+async def test_manual_checkup_validates_local_prerequisites(
+    growspaces, store, message
+) -> None:
+    coordinator = _coordinator()
+    coordinator.growspaces = growspaces
+    scheduler = VisionCheckupScheduler(MagicMock(), coordinator, evidence_store=store)
 
-    gs = _make_mock_growspace()
-    gs.notification_target = "notify.mobile_app"
-    mock_coordinator.growspaces = {"tent1": gs}
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
+    with pytest.raises(ServiceValidationError, match=message):
+        await scheduler.run_vision_analysis("tent1", "manual")
 
-    result = VisionCheckupResult(
-        timestamp="2026-03-21T12:00:00",
+
+@pytest.mark.asyncio
+async def test_scheduled_callback_skips_unavailable_service_and_reschedules() -> None:
+    unavailable = VisionStatus(
+        availability=VisionAvailability.UNAVAILABLE,
+        connection_source=VisionConnectionSource.SUPERVISOR,
+    )
+    coordinator = _coordinator()
+    coordinator.vision_connection = SimpleNamespace(
+        async_refresh_if_stale=AsyncMock(return_value=unavailable)
+    )
+    scheduler = VisionCheckupScheduler(MagicMock(), coordinator)
+    scheduler.run_vision_analysis = AsyncMock()
+    scheduler.schedule_growspace = MagicMock()
+
+    await scheduler._create_checkup_callback("tent1", "early")(
+        datetime(2026, 9, 1, 7, tzinfo=UTC)
+    )
+
+    scheduler.run_vision_analysis.assert_not_awaited()
+    scheduler.schedule_growspace.assert_called_once_with("tent1")
+
+
+@pytest.mark.asyncio
+async def test_scheduled_callback_contains_pipeline_failure_and_reschedules() -> None:
+    ready = VisionStatus(
+        availability=VisionAvailability.READY,
+        connection_source=VisionConnectionSource.MANUAL,
+    )
+    coordinator = _coordinator()
+    coordinator.vision_connection = SimpleNamespace(
+        async_refresh_if_stale=AsyncMock(return_value=ready)
+    )
+    scheduler = VisionCheckupScheduler(MagicMock(), coordinator)
+    scheduler.run_vision_analysis = AsyncMock(side_effect=RuntimeError("failed"))
+    scheduler.schedule_growspace = MagicMock()
+
+    await scheduler._create_checkup_callback("tent1", "early")(
+        datetime(2026, 9, 1, 7, tzinfo=UTC)
+    )
+
+    scheduler.run_vision_analysis.assert_awaited_once_with("tent1", "early")
+    scheduler.schedule_growspace.assert_called_once_with("tent1")
+
+
+def _baseline_key() -> BaselineKey:
+    return BaselineKey(
         growspace_id="tent1",
-        check_type="mid",
-        snapshot_paths=[],
-        analysis="Bad",
-        issues_detected=["bug"],
-        severity="critical",
-        recommendations=["fix"],
+        camera_id="camera.canopy",
+        light_window=LightWindow.EARLY,
+        grow_run_id="run-1",
+        model_id="dinov2-small",
+        model_version="1.0.0",
+        framing_epoch_id="epoch-1",
+        scoring_policy_version=1,
     )
 
-    mock_call = AsyncMock(side_effect=Exception("Call failed"))
-    mock_hass.services = MagicMock()
-    mock_hass.services.async_call = mock_call
-    await scheduler._send_vision_notification("tent1", result)
-    mock_call.assert_called_once()
-    # Should complete without raising
 
-
-def test_gather_context_data(mock_hass, mock_coordinator):
-    """Test gathering context data uses the assistant."""
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    with patch(
-        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant.gather_growspace_data"
-    ) as mock_gather:
-        mock_gather.return_value = {"a": 1}
-        res = scheduler._gather_context_data("tent1")
-        assert res == {"a": 1}
-        mock_gather.assert_called_once_with("tent1")
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers for image-processing tests
-# ---------------------------------------------------------------------------
-
-
-def _minimal_context() -> dict:
-    """Return a minimal context dict accepted by run_vision_analysis."""
-    return {
-        "growspace": {
-            "id": "tent1",
-            "name": "Test Tent",
-            "size": "3x3",
-            "total_plants": 0,
-        },
-        "environment": {"sensors": {}},
-        "analysis": {
-            "stress": {"active": False, "reasons": []},
-            "mold_risk": {"active": False, "reasons": []},
-            "optimal": {"active": False, "reasons": []},
-            "light_schedule": {"correct": True},
-        },
-        "plants": {
-            "count": 0,
-            "stages": {},
-            "strains": [],
-            "max_veg_days": 0,
-            "max_flower_days": 0,
-        },
-        "strain_analytics": {},
-    }
-
-
-@pytest.fixture
-def hass_with_executor(mock_hass, tmp_path):
-    """Extend mock_hass with a functional executor and config.path backed by tmp_path."""
-    # MagicMock(spec=HomeAssistant) blocks instance-only attrs; set config explicitly.
-    mock_hass.config = MagicMock()
-    mock_hass.config.path.side_effect = lambda *parts: str(tmp_path.joinpath(*parts))
-    # HA core always populates media_dirs; the local source resolves snapshots here.
-    mock_hass.config.media_dirs = {"local": str(tmp_path / "media")}
-
-    async def fake_executor(func, *args):
-        return func(*args)
-
-    mock_hass.async_add_executor_job = fake_executor
-    return mock_hass
-
-
-# ---------------------------------------------------------------------------
-# _process_camera_images tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_returns_media_source_uris(
-    hass_with_executor, mock_coordinator
-):
-    """Processed images are referenced via media-source://media_source/local/... URIs."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-
-    mock_image = MagicMock()
-    mock_image.content = b"\xff\xd8\xff\xe0fake"
-    mock_image.content_type = "image/jpeg"
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            return_value=mock_image,
-        ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            return_value=(b"\xff\xd8\xff\xe0processed", 42.5),
-        ),
-    ):
-        attachments, coverage, temp_paths = await scheduler._process_camera_images(
-            "tent1", ["camera.tent1_cam"]
-        )
-
-    assert len(attachments) == 1
-    uri = attachments[0]["media_content_id"]
-    assert uri.startswith("media-source://media_source/local/growspace_vision/")
-    assert "tent1" in uri
-    assert uri.endswith(".jpg")
-    assert coverage == 42.5
-    assert len(temp_paths) == 1
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_saves_under_media_source_root(
-    mock_hass, mock_coordinator, tmp_path
-):
-    """Snapshots are written to the dir the local media-source resolves to.
-
-    In a Docker/HA-OS env config.path("media") (<config>/media) differs from
-    hass.config.media_dirs["local"] (/media). Writing to the former while
-    referencing media-source://media_source/local/... made the AI task fail
-    with "does not exist". The write dir and the URI source must agree.
-    """
-    config_media = tmp_path / "config" / "media"
-    local_media_root = tmp_path / "media"  # what media_dirs["local"] points to
-
-    mock_hass.config = MagicMock()
-    mock_hass.config.path.side_effect = lambda *parts: str(
-        (tmp_path / "config").joinpath(*parts)
-    )
-    mock_hass.config.media_dirs = {"local": str(local_media_root)}
-
-    async def fake_executor(func, *args):
-        return func(*args)
-
-    mock_hass.async_add_executor_job = fake_executor
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    mock_image = MagicMock()
-    mock_image.content = b"\xff\xd8\xff\xe0fake"
-    mock_image.content_type = "image/jpeg"
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            return_value=mock_image,
-        ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            return_value=(b"\xff\xd8\xff\xe0processed", 42.5),
-        ),
-    ):
-        attachments, _, temp_paths = await scheduler._process_camera_images(
-            "tent1", ["camera.tent1_cam"]
-        )
-
-    assert len(temp_paths) == 1
-    saved = temp_paths[0]
-    # The file must live under the local media-source root, not <config>/media.
-    assert saved.is_relative_to(local_media_root)
-    assert not saved.is_relative_to(config_media)
-    assert saved.exists()
-    # The URI source id must match where the bytes were actually written.
-    assert attachments[0]["media_content_id"].startswith(
-        "media-source://media_source/local/growspace_vision/"
-    )
-    # A permanent copy is also written under <config>/www for the frontend.
-    snapshot_dir = (
-        tmp_path / "config" / "www" / "growspace_manager" / "snapshots" / "tent1"
-    )
-    snapshots = list(snapshot_dir.glob("*_processed.jpg"))
-    assert len(snapshots) == 1
-    raw_dir = local_media_root / "growspace_vision" / "raw" / "tent1"
-    raw_snapshots = list(raw_dir.glob("*_raw.jpg"))
-    assert len(raw_snapshots) == 1
-    assert raw_snapshots[0].read_bytes() == mock_image.content
-    assert not raw_snapshots[0].is_relative_to(tmp_path / "config" / "www")
-    assert raw_snapshots[0].stem.removesuffix("_raw") == snapshots[0].stem.removesuffix(
-        "_processed"
-    )
-    assert scheduler._latest_public_paths["tent1"] == [
-        f"/local/growspace_manager/snapshots/tent1/{snapshots[0].name}"
-    ]
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_averages_coverage_across_cameras(
-    hass_with_executor, mock_coordinator
-):
-    """Average coverage is computed across all successfully processed cameras."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-
-    mock_image = MagicMock()
-    mock_image.content = b"\xff\xd8\xff\xe0fake"
-
-    coverages = iter([30.0, 70.0])
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            return_value=mock_image,
-        ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            side_effect=lambda _: (b"\xff\xd8\xff\xe0ok", next(coverages)),
-        ),
-    ):
-        _, coverage, _ = await scheduler._process_camera_images(
-            "tent1", ["camera.cam1", "camera.cam2"]
-        )
-
-    assert coverage == 50.0
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_skips_failed_camera_fetch(
-    hass_with_executor, mock_coordinator
-):
-    """A camera that fails to provide an image is skipped; others are processed."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-
-    mock_image = MagicMock()
-    mock_image.content = b"\xff\xd8\xff\xe0fake"
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            side_effect=[Exception("camera offline"), mock_image],
-        ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            return_value=(b"\xff\xd8\xff\xe0ok", 55.0),
-        ),
-    ):
-        attachments, coverage, _ = await scheduler._process_camera_images(
-            "tent1", ["camera.dead", "camera.live"]
-        )
-
-    assert len(attachments) == 1
-    assert coverage == 55.0
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_skips_failed_processing(
-    hass_with_executor, mock_coordinator, tmp_path
-):
-    """A failed overlay still leaves the fetched raw camera artifact available."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-
-    mock_image = MagicMock()
-    mock_image.content = b"\xff\xd8\xff\xe0fake"
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            return_value=mock_image,
-        ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            side_effect=[ValueError("bad image"), (b"\xff\xd8\xff\xe0ok", 60.0)],
-        ),
-    ):
-        attachments, coverage, _ = await scheduler._process_camera_images(
-            "tent1", ["camera.bad", "camera.good"]
-        )
-
-    assert len(attachments) == 1
-    assert coverage == 60.0
-    raw_snapshots = list(
-        (tmp_path / "media" / "growspace_vision" / "raw" / "tent1").glob("*_raw.*")
-    )
-    assert len(raw_snapshots) == 2
-    assert all(path.read_bytes() == mock_image.content for path in raw_snapshots)
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_continues_when_raw_persistence_fails(
-    hass_with_executor, mock_coordinator
-):
-    """A local storage failure does not discard an otherwise valid analysis."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-    mock_image = MagicMock(content=b"camera bytes", content_type="image/jpeg")
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            return_value=mock_image,
-        ),
-        patch(
-            "custom_components.growspace_manager.vision_checkup_scheduler.RawSnapshotStore.save",
-            side_effect=OSError("disk unavailable"),
-        ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            return_value=(b"processed", 50.0),
-        ),
-    ):
-        attachments, coverage, temp_paths = await scheduler._process_camera_images(
-            "tent1", ["camera.cam1"]
-        )
-
-    assert len(attachments) == 1
-    assert coverage == 50.0
-    assert len(temp_paths) == 1
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_continues_when_public_copy_fails(
-    hass_with_executor, mock_coordinator
-):
-    """The private raw corpus and AI attachment do not depend on the UI copy."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-    mock_image = MagicMock(content=b"camera bytes", content_type="image/jpeg")
-    original_write_bytes = Path.write_bytes
-
-    def fail_public_write(path: Path, content: bytes) -> int:
-        if "www" in path.parts:
-            raise OSError("public snapshots unavailable")
-        return original_write_bytes(path, content)
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            return_value=mock_image,
-        ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            return_value=(b"processed", 50.0),
-        ),
-        patch("pathlib.Path.write_bytes", new=fail_public_write),
-    ):
-        attachments, coverage, temp_paths = await scheduler._process_camera_images(
-            "tent1", ["camera.cam1"]
-        )
-
-    assert len(attachments) == 1
-    assert coverage == 50.0
-    assert len(temp_paths) == 1
-    assert scheduler._latest_public_paths["tent1"] == []
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_returns_empty_when_all_cameras_fail(
-    hass_with_executor, mock_coordinator
-):
-    """Returns ([], None, []) when every camera fetch raises an exception."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-
-    with patch(
-        "homeassistant.components.camera.async_get_image",
-        new_callable=AsyncMock,
-        side_effect=Exception("all cameras offline"),
-    ):
-        attachments, coverage, temp_paths = await scheduler._process_camera_images(
-            "tent1", ["camera.cam1", "camera.cam2"]
-        )
-
-    assert attachments == []
-    assert coverage is None
-    assert temp_paths == []
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_creates_output_directory(
-    hass_with_executor, mock_coordinator, tmp_path
-):
-    """The growspace_vision media subdirectory is created on first use."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-
-    expected_dir = tmp_path / "media" / "growspace_vision"
-    assert not expected_dir.exists()
-
-    mock_image = MagicMock()
-    mock_image.content = b"\xff\xd8\xff\xe0fake"
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            return_value=mock_image,
-        ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            return_value=(b"\xff\xd8\xff\xe0ok", 50.0),
-        ),
-    ):
-        await scheduler._process_camera_images("tent1", ["camera.cam1"])
-
-    assert expected_dir.exists()
-
-
-# ---------------------------------------------------------------------------
-# _build_vision_prompt — grid reference
-# ---------------------------------------------------------------------------
-
-
-def test_build_vision_prompt_makes_no_canopy_coverage_claim(
-    mock_hass, mock_coordinator
-):
-    """The HSV green-pixel statistic is not stated to the model.
-
-    It varies 31.5% inside one fixed camera's healthy bucket (hub#68), so
-    presenting it as a measured fact alongside the image gave the model a
-    quantity to reason from that does not mean what it appears to mean.
-    """
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with patch(
-        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._format_context_data",
-        return_value="",
-    ):
-        prompt = scheduler._build_vision_prompt(
-            "t1",
-            "mid",
-            {"growspace": {"name": "t", "id": "t1"}},
-            [],
-        )
-
-    assert "CANOPY COVERAGE" not in prompt
-    assert "HSV" not in prompt
-    assert "green plant matter" not in prompt
-
-
-def test_build_vision_prompt_includes_grid_sector_instructions(
-    mock_hass, mock_coordinator
-):
-    """The prompt instructs the AI to reference grid sector labels for any issue."""
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with patch(
-        "custom_components.growspace_manager.services.ai_assistant.GrowAssistant._format_context_data",
-        return_value="",
-    ):
-        prompt = scheduler._build_vision_prompt(
-            "t1", "mid", {"growspace": {"name": "t", "id": "t1"}}, []
-        )
-
-    assert "GRID REFERENCE" in prompt
-    assert "A1" in prompt
-    assert "D4" in prompt
-
-
-# ---------------------------------------------------------------------------
-# run_vision_analysis — image processing integration
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_uses_processed_image_attachments(
-    mock_hass, mock_coordinator, tmp_path
-):
-    """run_vision_analysis passes the processed image URIs to async_generate_data."""
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    processed_uri = (
-        "media-source://media_source/local/growspace_vision/tent1_20260101_120000_0.jpg"
-    )
-    fake_temp = tmp_path / "tent1_20260101_120000_0.jpg"
-    fake_temp.write_bytes(b"test")
-
-    mock_ai_result = MagicMock()
-    mock_ai_result.data = {
-        "analysis": "Healthy.",
-        "issues_detected": [],
-        "severity": "none",
-        "recommendations": [],
-    }
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with (
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=([{"media_content_id": processed_uri}], 55.0, [fake_temp]),
-        ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            return_value=mock_ai_result,
-        ) as mock_gen,
-        patch.object(
-            scheduler, "_gather_context_data", return_value=_minimal_context()
-        ),
-    ):
-        result = await scheduler.run_vision_analysis("tent1", "mid")
-
-    assert result is not None
-    assert mock_gen.call_args.kwargs["attachments"] == [
-        {"media_content_id": processed_uri}
-    ]
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_falls_back_to_raw_camera_uris_when_processing_fails(
-    mock_hass, mock_coordinator
-):
-    """Falls back to raw camera URIs when _process_camera_images returns empty."""
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    mock_ai_result = MagicMock()
-    mock_ai_result.data = {
-        "analysis": "OK",
-        "issues_detected": [],
-        "severity": "none",
-        "recommendations": [],
-    }
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with (
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=([], None, []),
-        ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            return_value=mock_ai_result,
-        ) as mock_gen,
-        patch.object(
-            scheduler, "_gather_context_data", return_value=_minimal_context()
-        ),
-    ):
-        result = await scheduler.run_vision_analysis("tent1", "mid")
-
-    assert result is not None
-    attachment_uri = mock_gen.call_args.kwargs["attachments"][0]["media_content_id"]
-    assert "camera.tent1_cam" in attachment_uri
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_snapshot_paths_contain_public_uris(
-    hass_with_executor, mock_coordinator
-):
-    """snapshot_paths holds /local/... public URLs after real image processing."""
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    mock_image = MagicMock()
-    mock_image.content = b"\xff\xd8\xff\xe0fake"
-
-    mock_ai_result = MagicMock()
-    mock_ai_result.data = {
-        "analysis": "OK",
-        "issues_detected": [],
-        "severity": "none",
-        "recommendations": [],
-    }
-
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            return_value=mock_image,
-        ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            return_value=(b"\xff\xd8\xff\xe0processed", 55.0),
-        ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            return_value=mock_ai_result,
-        ),
-        patch.object(
-            scheduler, "_gather_context_data", return_value=_minimal_context()
-        ),
-    ):
-        result = await scheduler.run_vision_analysis("tent1", "mid")
-
-    assert result is not None
-    assert len(result.snapshot_paths) == 1
-    assert result.snapshot_paths[0].startswith(
-        "/local/growspace_manager/snapshots/tent1/"
-    )
-    assert result.snapshot_paths[0].endswith("_processed.jpg")
-    # State is popped after use so it does not leak into the next run.
-    assert "tent1" not in scheduler._latest_public_paths
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_deletes_temp_files_after_success(
-    mock_hass, mock_coordinator, tmp_path
-):
-    """Temporary processed image files are deleted after a successful AI call."""
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    fake_temp = tmp_path / "vision_tmp.jpg"
-    fake_temp.write_bytes(b"test")
-    assert fake_temp.exists()
-
-    mock_ai_result = MagicMock()
-    mock_ai_result.data = {
-        "analysis": "OK",
-        "issues_detected": [],
-        "severity": "none",
-        "recommendations": [],
-    }
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with (
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=(
-                [
-                    {
-                        "media_content_id": "media-source://media_source/local/growspace_vision/tmp.jpg"
-                    }
-                ],
-                50.0,
-                [fake_temp],
+def _baseline() -> BaselineSnapshot:
+    key = _baseline_key()
+    return BaselineSnapshot(
+        bucket_id="bucket-1",
+        key=key,
+        created_at=datetime(2026, 9, 1, 6, tzinfo=UTC),
+        state=BaselineState.MONITORING,
+        members=(
+            BaselineEntry(
+                capture_id="capture-1",
+                admitted_at=datetime(2026, 9, 1, 6, tzinfo=UTC),
+                values=(1.0, 0.0),
             ),
         ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            return_value=mock_ai_result,
-        ),
-        patch.object(
-            scheduler, "_gather_context_data", return_value=_minimal_context()
-        ),
-    ):
-        await scheduler.run_vision_analysis("tent1", "mid")
-
-    assert not fake_temp.exists()
+        centroid=(1.0, 0.0),
+        calibration_distances=(0.1,),
+        last_admitted_at=datetime(2026, 9, 1, 6, tzinfo=UTC),
+    )
 
 
 @pytest.mark.asyncio
-async def test_run_vision_analysis_deletes_temp_files_after_ai_failure(
-    mock_hass, mock_coordinator, tmp_path
-):
-    """Temporary files are cleaned up even when the AI call raises an exception."""
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    fake_temp = tmp_path / "vision_tmp.jpg"
-    fake_temp.write_bytes(b"test")
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with (
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=(
-                [{"media_content_id": "media-source://..."}],
-                50.0,
-                [fake_temp],
-            ),
+async def test_baseline_snapshot_rehydrates_member_embeddings() -> None:
+    baseline = _baseline()
+    bucket = SimpleNamespace(
+        bucket_id=baseline.bucket_id,
+        created_at=baseline.created_at.isoformat(),
+        state=baseline.state,
+        model_id=baseline.key.model_id,
+        model_version=baseline.key.model_version,
+        centroid=struct.pack("<2f", *baseline.centroid),
+        calibration_distances=struct.pack("<1f", *baseline.calibration_distances),
+        last_admitted_at=baseline.last_admitted_at.isoformat(),
+    )
+    member = SimpleNamespace(
+        capture_id="capture-1", admitted_at=baseline.created_at.isoformat()
+    )
+    store = SimpleNamespace(
+        async_get_active_baseline_members=AsyncMock(return_value=[member]),
+        async_get_embedding=AsyncMock(
+            return_value=SimpleNamespace(values_f32=struct.pack("<2f", 1.0, 0.0))
         ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            side_effect=Exception("AI service down"),
-        ),
-        patch.object(
-            scheduler, "_gather_context_data", return_value=_minimal_context()
-        ),
-    ):
-        with pytest.raises(HomeAssistantError, match="AI vision analysis failed"):
-            await scheduler.run_vision_analysis("tent1", "mid")
+    )
+    scheduler = VisionCheckupScheduler(
+        MagicMock(), _coordinator(), evidence_store=store
+    )
 
-    assert not fake_temp.exists()
+    restored = await scheduler._baseline_snapshot(bucket, baseline.key)
+
+    assert restored is not None
+    assert restored.bucket_id == baseline.bucket_id
+    assert restored.members == baseline.members
+    assert restored.centroid == baseline.centroid
+    assert restored.calibration_distances == pytest.approx(
+        baseline.calibration_distances
+    )
 
 
 @pytest.mark.asyncio
-async def test_callback_triggers_notification(mock_hass, mock_coordinator):
-    """Test callback triggers notification on high severity."""
-
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    callback = scheduler._create_checkup_callback("tent1", "early")
-
-    mock_result = MagicMock()
-    mock_result.severity = "critical"
-
-    with (
-        patch.object(scheduler, "run_vision_analysis", return_value=mock_result),
-        patch.object(
-            scheduler, "_send_vision_notification", new_callable=AsyncMock
-        ) as mock_notify,
-        patch.object(scheduler, "schedule_growspace"),
-    ):
-        await callback(datetime.now())
-        mock_notify.assert_called_once_with("tent1", mock_result)
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_mkdir_oserror(
-    hass_with_executor, mock_coordinator
-):
-    """Test OSError when creating media directory returns empty results."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-
-    with patch("pathlib.Path.mkdir", side_effect=OSError("Permission denied")):
-        attachments, coverage, temp_paths = await scheduler._process_camera_images(
-            "tent1", ["camera.cam1"]
-        )
-
-    assert attachments == []
-    assert coverage is None
-    assert temp_paths == []
-
-
-@pytest.mark.asyncio
-async def test_process_camera_images_write_oserror(
-    hass_with_executor, mock_coordinator, tmp_path
-):
-    """Test OSError when writing processed image saves other images but skips failed."""
-    scheduler = VisionCheckupScheduler(hass_with_executor, mock_coordinator)
-
-    mock_image = MagicMock()
-    mock_image.content = b"fake"
-
-    def mock_write_bytes(self, data):
-        if "_0.jpg" in str(self):
-            raise OSError("Disk full")
-        # Let cam2 succeed by writing normally
-        with open(self, "wb") as f:
-            f.write(data)
-
-    with (
-        patch(
-            "homeassistant.components.camera.async_get_image",
-            new_callable=AsyncMock,
-            return_value=mock_image,
+async def test_baseline_snapshot_refuses_member_without_embedding() -> None:
+    baseline = _baseline()
+    bucket = SimpleNamespace(
+        bucket_id=baseline.bucket_id,
+        model_id=baseline.key.model_id,
+        model_version=baseline.key.model_version,
+    )
+    store = SimpleNamespace(
+        async_get_active_baseline_members=AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    capture_id="capture-1",
+                    admitted_at=baseline.created_at.isoformat(),
+                )
+            ]
         ),
-        patch(
-            "custom_components.growspace_manager.image_processor.GrowspaceImageProcessor.process_snapshot",
-            return_value=(b"ok", 50.0),
-        ),
-        patch("pathlib.Path.write_bytes", new=mock_write_bytes),
-    ):
-        attachments, coverage, temp_paths = await scheduler._process_camera_images(
-            "tent1", ["camera.cam1", "camera.cam2"]
-        )
+        async_get_embedding=AsyncMock(return_value=None),
+    )
+    scheduler = VisionCheckupScheduler(
+        MagicMock(), _coordinator(), evidence_store=store
+    )
 
-    # cam1 fails, cam2 succeeds
-    assert len(attachments) == 1
-    assert coverage == 50.0
-    assert len(temp_paths) == 1
+    with pytest.raises(RuntimeError, match="no matching embedding"):
+        await scheduler._baseline_snapshot(bucket, baseline.key)
 
 
-@pytest.mark.asyncio
-async def test_run_vision_analysis_saves_debug_images(
-    mock_hass, mock_coordinator, tmp_path
-):
-    """Test debug images are saved if debug enabled."""
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-    mock_coordinator.options["ai_settings"]["vision_debug_enabled"] = True
+def test_persistence_records_encode_admission_decision() -> None:
+    baseline = _baseline()
+    scheduler = VisionCheckupScheduler(MagicMock(), _coordinator())
+    capture = SimpleNamespace(
+        capture_id="capture-2",
+        captured_at=datetime(2026, 9, 1, 7, tzinfo=UTC).isoformat(),
+    )
+    comparison = ComparisonValue(
+        outcome=ComparisonOutcome.MONITORING,
+        baseline_state=BaselineState.MONITORING,
+        samples_collected=1,
+    )
 
-    mock_hass.config = MagicMock()
-    mock_hass.config.path.side_effect = lambda *parts: str(tmp_path.joinpath(*parts))
+    bucket, member = scheduler._persistence_records(
+        capture,
+        ComparisonDecision(comparison=comparison, baseline=baseline, admitted=False),
+    )
+    assert bucket is not None
+    assert member is None
 
-    async def fake_executor(func, *args):
-        return func(*args)
-
-    mock_hass.async_add_executor_job = fake_executor
-
-    fake_temp = tmp_path / "vision_tmp.jpg"
-    fake_temp.write_bytes(b"test")
-
-    mock_ai_result = MagicMock()
-    mock_ai_result.data = {"analysis": "OK", "severity": "none"}
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with (
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=(
-                [{"media_content_id": "media-source://tmp"}],
-                50.0,
-                [fake_temp],
-            ),
-        ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            return_value=mock_ai_result,
-        ),
-        patch.object(
-            scheduler, "_gather_context_data", return_value=_minimal_context()
-        ),
-    ):
-        await scheduler.run_vision_analysis("tent1", "mid")
-
-    debug_dir = tmp_path / "openCVDebug"
-    assert debug_dir.exists()
-    assert (debug_dir / "vision_tmp.jpg").exists()
-    assert not fake_temp.exists()  # Deleted correctly
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_debug_images_exception(
-    mock_hass, mock_coordinator, tmp_path
-):
-    """Test debug image path exception and unlink exception."""
-    gs = _make_mock_growspace()
-    mock_coordinator.growspaces = {"tent1": gs}
-    mock_coordinator.options["ai_settings"]["vision_debug_enabled"] = True
-
-    mock_hass.config = MagicMock()
-    mock_hass.config.path.side_effect = lambda *parts: str(tmp_path.joinpath(*parts))
-
-    async def fake_executor(func, *args):
-        return func(*args)
-
-    mock_hass.async_add_executor_job = fake_executor
-
-    fake_temp = tmp_path / "vision_tmp.jpg"
-    fake_temp.write_bytes(b"test")
-
-    mock_ai_result = MagicMock()
-    mock_ai_result.data = {"analysis": "OK"}
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-
-    with (
-        patch.object(
-            scheduler,
-            "_process_camera_images",
-            new_callable=AsyncMock,
-            return_value=(
-                [{"media_content_id": "media-source://tmp"}],
-                50.0,
-                [fake_temp],
-            ),
-        ),
-        patch(
-            "homeassistant.components.ai_task.async_generate_data",
-            new_callable=AsyncMock,
-            return_value=mock_ai_result,
-        ),
-        patch.object(
-            scheduler, "_gather_context_data", return_value=_minimal_context()
-        ),
-        patch("shutil.copy2", side_effect=Exception("Copy failed")),
-        patch("pathlib.Path.unlink", side_effect=OSError("Cannot delete")),
-    ):
-        await scheduler.run_vision_analysis("tent1", "mid")
-
-    # Should handle exceptions and complete gracefully
-    assert fake_temp.exists()  # Could not be deleted due to OSError
-
-
-@pytest.mark.asyncio
-async def test_run_vision_analysis_no_ai_entity(mock_hass, mock_coordinator):
-    """Test that vision analysis raises ServiceValidationError when no AI entity configured (vision_checkup_scheduler.py:439)."""
-
-    mock_coordinator.options = {"ai_settings": {}}  # No ai_task_entity_id
-    gs = _make_mock_growspace(camera_entities=["camera.tent1_cam"])
-    mock_coordinator.growspaces = {"tent1": gs}
-
-    scheduler = VisionCheckupScheduler(mock_hass, mock_coordinator)
-    with pytest.raises(ServiceValidationError, match="No AI task entity configured"):
-        await scheduler.run_vision_analysis("tent1", "mid")
+    bucket, member = scheduler._persistence_records(
+        capture,
+        ComparisonDecision(comparison=comparison, baseline=baseline, admitted=True),
+    )
+    assert bucket is not None
+    assert member is not None
+    assert member.admission_phase is AdmissionPhase.BOOTSTRAP

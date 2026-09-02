@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import uuid
 
 from homeassistant.core import HomeAssistant, callback
@@ -40,11 +40,21 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import CONF_AI_AUTO_ALERTS, CONF_AI_ENABLED
+from .domain.capture_continuity import CAPTURE_CONTINUITY_MESSAGE
 from .notifications.evaluation_snapshot import EvaluationSnapshot
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from .domain.capture_continuity import CaptureContinuityState
 
 _LOGGER = logging.getLogger(__name__)
 
-_SEVERITY_MAP: dict[str, str] = {"stress": "danger", "mold": "warning"}
+_SEVERITY_MAP: dict[str, str] = {
+    "stress": "danger",
+    "mold": "warning",
+    "capture_continuity_break": "warning",
+}
 
 
 def _serialize_alert(alert: dict[str, Any]) -> dict[str, Any]:
@@ -58,7 +68,7 @@ def _serialize_alert(alert: dict[str, Any]) -> dict[str, Any]:
     parsed_dt = dt_util.parse_datetime(ts_iso)
     unix_ts = int(parsed_dt.timestamp()) if parsed_dt is not None else 0
 
-    return {
+    serialized = {
         **{
             k: v
             for k, v in alert.items()
@@ -70,6 +80,13 @@ def _serialize_alert(alert: dict[str, Any]) -> dict[str, Any]:
         "timestamp": unix_ts,
         "resolution_note": alert.get("resolution_notes"),
     }
+    for field in ("streak_started_at", "latest_captured_at", "cleared_at"):
+        if field not in alert:
+            continue
+        value = alert[field]
+        parsed = dt_util.parse_datetime(value) if value is not None else None
+        serialized[field] = int(parsed.timestamp()) if parsed is not None else None
+    return serialized
 
 
 class AlertMonitor:
@@ -188,6 +205,59 @@ class AlertMonitor:
 
         return alert
 
+    async def async_record_capture_continuity_break(
+        self,
+        state: CaptureContinuityState,
+    ) -> dict[str, Any]:
+        """Create one equipment Triage Alert per active continuity streak."""
+        for active_alert in reversed(self._alerts):
+            if (
+                active_alert["alert_type"] == "capture_continuity_break"
+                and active_alert["camera_id"] == state.camera_id
+                and active_alert["condition_active"]
+            ):
+                active_alert.update(_continuity_evidence(state))
+                await self._async_save()
+                return active_alert
+
+        alert: dict[str, Any] = {
+            "alert_id": str(uuid.uuid4()),
+            "growspace_id": state.growspace_id,
+            "alert_type": "capture_continuity_break",
+            "title": "Capture continuity break",
+            "description": CAPTURE_CONTINUITY_MESSAGE,
+            **_continuity_evidence(state),
+            "condition_active": True,
+            "cleared_at": None,
+            "timestamp": state.latest_captured_at.isoformat(),
+            "resolved": False,
+            "resolution_notes": None,
+        }
+        self._alerts.append(alert)
+        if len(self._alerts) > self.MAX_ALERTS:
+            self._alerts = self._alerts[-self.MAX_ALERTS :]
+        await self._async_save()
+        return alert
+
+    async def async_clear_capture_continuity_break(
+        self,
+        camera_id: str,
+        *,
+        cleared_at: datetime,
+    ) -> bool:
+        """Clear a camera condition without acknowledging its durable alert."""
+        for alert in reversed(self._alerts):
+            if (
+                alert["alert_type"] == "capture_continuity_break"
+                and alert["camera_id"] == camera_id
+                and alert["condition_active"]
+            ):
+                alert["condition_active"] = False
+                alert["cleared_at"] = cleared_at.isoformat()
+                await self._async_save()
+                return True
+        return False
+
     # ------------------------------------------------------------------
     # AI enrichment
     # ------------------------------------------------------------------
@@ -275,3 +345,15 @@ class AlertMonitor:
     async def _async_save(self) -> None:
         """Persist the current alerts list to the Store."""
         await self._store.async_save({"alerts": self._alerts})
+
+
+def _continuity_evidence(state: CaptureContinuityState) -> dict[str, Any]:
+    """Serialize only equipment evidence, never Bayesian or AI fields."""
+    return {
+        "camera_id": state.camera_id,
+        "streak_started_at": state.streak_started_at.isoformat(),
+        "consecutive_count": state.consecutive_count,
+        "reason_counts": {reason.value: count for reason, count in state.reason_counts},
+        "latest_capture_id": state.latest_capture_id,
+        "latest_captured_at": state.latest_captured_at.isoformat(),
+    }

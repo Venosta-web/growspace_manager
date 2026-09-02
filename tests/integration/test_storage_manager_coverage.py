@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import IrrigationRecipeKind
 from custom_components.growspace_manager.data_access.notification_state import (
     NotificationState,
 )
@@ -11,6 +12,8 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     IPMPreset,
+    IrrigationProgram,
+    IrrigationRecipe,
     NutrientInventory,
     NutrientPreset,
     Plant,
@@ -494,6 +497,68 @@ def test_storage_load_nutrient_presets(storage) -> None:
         ) as mock_log_exc,
     ):
         res = storage._load_nutrient_presets(data)
+        assert res == {}
+        mock_log_exc.assert_called_once()
+
+
+def test_storage_load_irrigation_recipes(storage) -> None:
+    """Test _load_irrigation_recipes and error handling.
+
+    A corrupt recipe must not brick startup: the library loads empty and the
+    failure is logged, exactly as the nutrient and IPM libraries behave.
+    """
+    data = {"irrigation_recipes": {"r1": {"name": "R1"}}}
+    recipe = IrrigationRecipe(
+        id="r1", name="R1", kind=IrrigationRecipeKind.CROP_STEERING
+    )
+
+    with patch(
+        "custom_components.growspace_manager.models.IrrigationRecipe.from_dict",
+        return_value=recipe,
+    ):
+        res = storage._load_irrigation_recipes(data)
+        assert "r1" in res
+
+    with (
+        patch(
+            "custom_components.growspace_manager.models.IrrigationRecipe.from_dict",
+            side_effect=ValueError,
+        ),
+        patch(
+            "custom_components.growspace_manager.storage_manager._LOGGER.exception"
+        ) as mock_log_exc,
+    ):
+        res = storage._load_irrigation_recipes(data)
+        assert res == {}
+        mock_log_exc.assert_called_once()
+
+
+def test_storage_load_irrigation_programs(storage) -> None:
+    """Test _load_irrigation_programs and error handling.
+
+    A corrupt program must not brick startup: the library loads empty and the
+    failure is logged, exactly as the recipe library beside it behaves.
+    """
+    data = {"irrigation_programs": {"p1": {"name": "P1"}}}
+    program = IrrigationProgram(id="p1", name="P1")
+
+    with patch(
+        "custom_components.growspace_manager.models.IrrigationProgram.from_dict",
+        return_value=program,
+    ):
+        res = storage._load_irrigation_programs(data)
+        assert "p1" in res
+
+    with (
+        patch(
+            "custom_components.growspace_manager.models.IrrigationProgram.from_dict",
+            side_effect=ValueError,
+        ),
+        patch(
+            "custom_components.growspace_manager.storage_manager._LOGGER.exception"
+        ) as mock_log_exc,
+    ):
+        res = storage._load_irrigation_programs(data)
         assert res == {}
         mock_log_exc.assert_called_once()
 

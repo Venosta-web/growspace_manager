@@ -6,12 +6,21 @@ from typing import Any
 
 import voluptuous as vol
 
-from custom_components.growspace_manager.const import DOMAIN, SteeringMode
+from custom_components.growspace_manager.const import (
+    DOMAIN,
+    IrrigationRecipeKind,
+    SteeringMode,
+)
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.crop_steering_history import (
     CropSteeringHistoryAnalyzer,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.schemas import (
+    CROP_STEERING_RECIPE_VALUES_SCHEMA,
+    PROGRAM_SLOT_SCHEMA,
+    SCHEDULE_RECIPE_VALUES_SCHEMA,
+)
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
@@ -48,6 +57,87 @@ SCHEMA_WS_APPLY_STEERING_MODE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend
         vol.Required("type"): WS_TYPE_APPLY_STEERING_MODE,
         vol.Required("growspace_id"): str,
         vol.Required("steering_mode"): vol.In([m.value for m in SteeringMode]),
+    }
+)
+
+WS_TYPE_GET_IRRIGATION_RECIPES = f"{DOMAIN}/get_irrigation_recipes"
+SCHEMA_WS_GET_IRRIGATION_RECIPES = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_IRRIGATION_RECIPES,
+    }
+)
+
+WS_TYPE_SAVE_IRRIGATION_RECIPE = f"{DOMAIN}/save_irrigation_recipe"
+SCHEMA_WS_SAVE_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SAVE_IRRIGATION_RECIPE,
+        vol.Required("growspace_id"): str,
+        vol.Required("name"): str,
+        vol.Required("kind"): vol.In([k.value for k in IrrigationRecipeKind]),
+        vol.Optional("recipe_id"): str,
+    }
+)
+
+WS_TYPE_UPDATE_IRRIGATION_RECIPE = f"{DOMAIN}/update_irrigation_recipe"
+SCHEMA_WS_UPDATE_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPDATE_IRRIGATION_RECIPE,
+        vol.Required("recipe_id"): str,
+        vol.Optional("name"): str,
+        vol.Optional("crop_steering"): CROP_STEERING_RECIPE_VALUES_SCHEMA,
+        vol.Optional("schedule"): SCHEDULE_RECIPE_VALUES_SCHEMA,
+    }
+)
+
+WS_TYPE_REMOVE_IRRIGATION_RECIPE = f"{DOMAIN}/remove_irrigation_recipe"
+SCHEMA_WS_REMOVE_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_REMOVE_IRRIGATION_RECIPE,
+        vol.Required("recipe_id"): str,
+    }
+)
+
+WS_TYPE_APPLY_IRRIGATION_RECIPE = f"{DOMAIN}/apply_irrigation_recipe"
+SCHEMA_WS_APPLY_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_APPLY_IRRIGATION_RECIPE,
+        vol.Required("growspace_id"): str,
+        vol.Required("recipe_id"): str,
+    }
+)
+
+WS_TYPE_GET_IRRIGATION_PROGRAMS = f"{DOMAIN}/get_irrigation_programs"
+SCHEMA_WS_GET_IRRIGATION_PROGRAMS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_IRRIGATION_PROGRAMS,
+    }
+)
+
+WS_TYPE_SAVE_IRRIGATION_PROGRAM = f"{DOMAIN}/save_irrigation_program"
+SCHEMA_WS_SAVE_IRRIGATION_PROGRAM = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SAVE_IRRIGATION_PROGRAM,
+        vol.Required("name"): str,
+        vol.Required("slots"): [PROGRAM_SLOT_SCHEMA],
+        vol.Optional("program_id"): str,
+    }
+)
+
+WS_TYPE_REMOVE_IRRIGATION_PROGRAM = f"{DOMAIN}/remove_irrigation_program"
+SCHEMA_WS_REMOVE_IRRIGATION_PROGRAM = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_REMOVE_IRRIGATION_PROGRAM,
+        vol.Required("program_id"): str,
+    }
+)
+
+WS_TYPE_ASSIGN_IRRIGATION_PROGRAM = f"{DOMAIN}/assign_irrigation_program"
+SCHEMA_WS_ASSIGN_IRRIGATION_PROGRAM = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_ASSIGN_IRRIGATION_PROGRAM,
+        vol.Required("growspace_id"): str,
+        # Omitted or null unbinds.
+        vol.Optional("program_id"): vol.Any(None, str),
     }
 )
 
@@ -143,6 +233,132 @@ async def websocket_apply_steering_mode(
     return {"growspace_id": growspace_id, "declared_steering_mode": mode.value}
 
 
+def websocket_get_irrigation_recipes(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the global Irrigation Recipe library.
+
+    Global, so it resolves through any coordinator and never takes a
+    growspace: a recipe saved from one tent is listed from every other.
+    """
+    return coordinator.services.config.get_irrigation_recipes()
+
+
+async def websocket_save_irrigation_recipe(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Save a growspace's current irrigation settings as a named recipe."""
+    recipe = await coordinator.services.config.save_irrigation_recipe(
+        growspace_id=msg["growspace_id"],
+        name=msg["name"],
+        kind=IrrigationRecipeKind(msg["kind"]),
+        recipe_id=msg.get("recipe_id"),
+    )
+    return recipe.to_dict()
+
+
+async def websocket_update_irrigation_recipe(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Rename a recipe and/or correct the values it stores.
+
+    Returns the whole edited recipe so the library editor need not re-read the
+    library to show what it now holds.
+    """
+    recipe = await coordinator.services.config.update_irrigation_recipe(
+        msg["recipe_id"],
+        name=msg.get("name"),
+        crop_steering=msg.get("crop_steering"),
+        schedule=msg.get("schedule"),
+    )
+    return recipe.to_dict()
+
+
+async def websocket_remove_irrigation_recipe(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> None:
+    """Remove a recipe from the global Irrigation Recipe library."""
+    await coordinator.services.config.remove_irrigation_recipe(msg["recipe_id"])
+
+
+async def websocket_apply_irrigation_recipe(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Stamp a saved Irrigation Recipe into a growspace (ADR-0045).
+
+    Echoes back what was recorded, so the caller does not have to re-read the
+    growspace to learn which recipe it now carries. ``warning`` is the
+    media-mismatch notice: the apply succeeded and the values were **not**
+    scaled, because pot size normalises across growspaces and media does not.
+    """
+    growspace_id = msg["growspace_id"]
+    warning = await coordinator.services.growspaces.apply_irrigation_recipe(
+        growspace_id, msg["recipe_id"]
+    )
+    strategy = coordinator.growspaces[growspace_id].irrigation_strategy
+    return {
+        "growspace_id": growspace_id,
+        "applied_recipe_id": strategy.applied_recipe_id,
+        "recipe_applied_at": strategy.recipe_applied_at,
+        "warning": warning,
+    }
+
+
+def websocket_get_irrigation_programs(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the global Irrigation Program library.
+
+    Global, so it resolves through any coordinator and never takes a
+    growspace: a plan authored for one tent is listed from every other.
+    """
+    return coordinator.services.config.get_irrigation_programs()
+
+
+async def websocket_save_irrigation_program(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Save a plan of ``(stage, week)`` slots as a named Irrigation Program.
+
+    Returns the whole stored program, so the editor sees the slots in the run
+    order the library put them in rather than the order it sent them.
+    """
+    program = await coordinator.services.config.save_irrigation_program(
+        name=msg["name"],
+        slots=msg["slots"],
+        program_id=msg.get("program_id"),
+    )
+    return program.to_dict()
+
+
+async def websocket_remove_irrigation_program(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> None:
+    """Remove a program from the global Irrigation Program library."""
+    await coordinator.services.config.remove_irrigation_program(msg["program_id"])
+
+
+async def websocket_assign_irrigation_program(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Bind a growspace to an Irrigation Program, or unbind it (ADR-0045).
+
+    Binding only: no setpoint is written and no pump fires. Omitting
+    ``program_id`` — or passing it as null — unbinds. Echoes back what the
+    growspace now holds so the caller need not re-read it.
+    """
+    growspace_id = msg["growspace_id"]
+    program_id = msg.get("program_id")
+    await coordinator.services.growspaces.assign_irrigation_program(
+        growspace_id, program_id
+    )
+    strategy = coordinator.growspaces[growspace_id].irrigation_strategy
+    return {
+        "growspace_id": growspace_id,
+        "irrigation_program_id": strategy.irrigation_program_id,
+    }
+
+
 COMMANDS: list[WSCommand] = [
     WSCommand(
         WS_TYPE_GET_IRRIGATION_ANALYTICS,
@@ -163,5 +379,58 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_APPLY_STEERING_MODE,
         websocket_apply_steering_mode,
         SCHEMA_WS_APPLY_STEERING_MODE,
+    ),
+    WSCommand(
+        WS_TYPE_GET_IRRIGATION_RECIPES,
+        websocket_get_irrigation_recipes,
+        SCHEMA_WS_GET_IRRIGATION_RECIPES,
+        resolve="any",
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_SAVE_IRRIGATION_RECIPE,
+        websocket_save_irrigation_recipe,
+        SCHEMA_WS_SAVE_IRRIGATION_RECIPE,
+    ),
+    WSCommand(
+        WS_TYPE_UPDATE_IRRIGATION_RECIPE,
+        websocket_update_irrigation_recipe,
+        SCHEMA_WS_UPDATE_IRRIGATION_RECIPE,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_REMOVE_IRRIGATION_RECIPE,
+        websocket_remove_irrigation_recipe,
+        SCHEMA_WS_REMOVE_IRRIGATION_RECIPE,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_APPLY_IRRIGATION_RECIPE,
+        websocket_apply_irrigation_recipe,
+        SCHEMA_WS_APPLY_IRRIGATION_RECIPE,
+    ),
+    WSCommand(
+        WS_TYPE_GET_IRRIGATION_PROGRAMS,
+        websocket_get_irrigation_programs,
+        SCHEMA_WS_GET_IRRIGATION_PROGRAMS,
+        resolve="any",
+        sync=True,
+    ),
+    WSCommand(
+        WS_TYPE_SAVE_IRRIGATION_PROGRAM,
+        websocket_save_irrigation_program,
+        SCHEMA_WS_SAVE_IRRIGATION_PROGRAM,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_REMOVE_IRRIGATION_PROGRAM,
+        websocket_remove_irrigation_program,
+        SCHEMA_WS_REMOVE_IRRIGATION_PROGRAM,
+        resolve="any",
+    ),
+    WSCommand(
+        WS_TYPE_ASSIGN_IRRIGATION_PROGRAM,
+        websocket_assign_irrigation_program,
+        SCHEMA_WS_ASSIGN_IRRIGATION_PROGRAM,
     ),
 ]

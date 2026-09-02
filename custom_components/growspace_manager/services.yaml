@@ -1444,6 +1444,23 @@ set_irrigation_settings:
           min: 0
           step: 0.1
           unit_of_measurement: "mL/s"
+    dripper_liters_per_hour:
+      description: >-
+        Per-emitter dripper rating. Submit together with emitter_count to set
+        the pump flow rate in the units drippers are sold in; the derived mL/s
+        is what gets stored.
+      required: false
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "L/h"
+    emitter_count:
+      description: Number of emitters on the line, paired with dripper_liters_per_hour.
+      required: false
+      selector:
+        number:
+          min: 0
     drain_pump_entity:
       description: The switch entity for the drain pump.
       required: false
@@ -1805,6 +1822,159 @@ remove_nutrient_preset:
       selector:
         text:
 
+save_irrigation_recipe:
+  description: >-
+    Save a growspace's current irrigation settings as a reusable Irrigation
+    Recipe in the global library. Shot sizes are stored as a percent of
+    substrate volume, so saving from a growspace in Seconds shot sizing mode
+    requires a pump flow rate and a substrate volume per pot.
+  fields:
+    growspace_id:
+      description: The growspace whose settings are captured.
+      required: true
+      selector:
+        text:
+    name:
+      description: Name for the recipe.
+      required: true
+      selector:
+        text:
+    kind:
+      description: >-
+        Which half of the irrigation settings the recipe holds. A recipe
+        carries exactly one.
+      required: true
+      selector:
+        select:
+          options:
+            - crop_steering
+            - schedule
+    recipe_id:
+      description: ID of an existing recipe to overwrite (optional).
+      required: false
+      selector:
+        text:
+
+update_irrigation_recipe:
+  description: >-
+    Rename an Irrigation Recipe and/or correct the values it stores, in place.
+    Sparse: a field this call does not name keeps what the recipe stores. The
+    recipe's kind, provenance and creation time are not editable, and no
+    growspace is changed — applying is a one-time stamp, so a growspace
+    carrying this recipe simply reads as drifted afterwards.
+  fields:
+    recipe_id:
+      description: ID of the recipe to edit.
+      required: true
+      selector:
+        text:
+    name:
+      description: New name for the recipe (optional).
+      required: false
+      selector:
+        text:
+    crop_steering:
+      description: >-
+        Crop-steering values to correct, as a mapping of field name to value.
+        Only for a recipe whose kind is crop_steering. Shot sizes are percents
+        of substrate volume, never pump seconds.
+      required: false
+      selector:
+        object:
+    schedule:
+      description: >-
+        Schedule values to correct, as a mapping of field name to value. Only
+        for a recipe whose kind is schedule.
+      required: false
+      selector:
+        object:
+
+remove_irrigation_recipe:
+  description: Remove an Irrigation Recipe from the global library.
+  fields:
+    recipe_id:
+      description: ID of the recipe to remove.
+      required: true
+      selector:
+        text:
+
+apply_irrigation_recipe:
+  description: >-
+    Stamp a saved Irrigation Recipe into a growspace once, re-expressing its
+    substrate-relative shot sizes in this growspace's own flow rate and pot
+    size. Applying always writes, so re-applying the recipe already applied
+    resets the fields and discards hand tweaks. A recipe of the wrong kind for
+    how the growspace is running is refused; a recipe authored in a different
+    medium is applied unscaled with a warning.
+  fields:
+    growspace_id:
+      description: The growspace to apply the recipe to.
+      required: true
+      selector:
+        text:
+    recipe_id:
+      description: ID of the recipe to apply.
+      required: true
+      selector:
+        text:
+
+save_irrigation_program:
+  description: >-
+    Save an ordered plan assigning Irrigation Recipes to (stage, week) slots
+    across a whole run. Recipes are held by reference, so correcting one recipe
+    corrects every program using it. Saving replaces the program's whole slot
+    list rather than merging into it.
+  fields:
+    name:
+      description: Name for the program.
+      required: true
+      selector:
+        text:
+    slots:
+      description: >-
+        The plan, as a list of {stage, week, recipe_id} entries. Stage must be
+        one of seedling, clone, mother, veg or flower — the stages a
+        growspace's current stage resolves to — and week is 1-indexed. At most
+        one slot per stage and week.
+      required: true
+      selector:
+        object:
+    program_id:
+      description: ID of an existing program to overwrite (optional).
+      required: false
+      selector:
+        text:
+
+remove_irrigation_program:
+  description: >-
+    Remove an Irrigation Program from the global library. A growspace bound to
+    it keeps its program id and simply reports no current slot.
+  fields:
+    program_id:
+      description: ID of the program to remove.
+      required: true
+      selector:
+        text:
+
+assign_irrigation_program:
+  description: >-
+    Bind a growspace to an Irrigation Program, or unbind it by omitting the
+    program. Binding only: no setpoint is written and no pump fires. Reading
+    the growspace afterwards reports which slot it is in and which recipe that
+    slot holds; putting those values into the growspace is the separate
+    apply_irrigation_recipe action.
+  fields:
+    growspace_id:
+      description: The growspace to bind.
+      required: true
+      selector:
+        text:
+    program_id:
+      description: ID of the program to bind. Omit to unbind.
+      required: false
+      selector:
+        text:
+
 save_ipm_preset:
   description: Save an IPM schedule preset
   fields:
@@ -2013,8 +2183,9 @@ remove_ec_ramp_curve:
 trigger_vision_checkup:
   name: Trigger vision checkup
   description: >-
-    Capture camera snapshot(s) and run AI vision analysis to detect plant
-    health issues like drooping, pests, or nutrient deficiencies.
+    Capture each configured camera and assemble local visual comparison,
+    environmental, and fusion evidence. An AI task can optionally explain the
+    result but is not required.
   fields:
     growspace_id:
       name: Growspace ID
