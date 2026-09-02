@@ -458,6 +458,8 @@ ATTR_RECIPE_ID = "recipe_id"
 ATTR_RECIPE_KIND = "kind"
 ATTR_RECIPE_CROP_STEERING = "crop_steering"
 ATTR_RECIPE_SCHEDULE = "schedule"
+ATTR_PROGRAM_ID = "program_id"
+ATTR_PROGRAM_SLOTS = "slots"
 ATTR_PRESET_NAME = "preset_name"
 ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
 
@@ -687,6 +689,10 @@ class GrowspaceService(StrEnum):
     UPDATE_IRRIGATION_RECIPE = "update_irrigation_recipe"
     REMOVE_IRRIGATION_RECIPE = "remove_irrigation_recipe"
     APPLY_IRRIGATION_RECIPE = "apply_irrigation_recipe"
+    # Irrigation Program Services
+    SAVE_IRRIGATION_PROGRAM = "save_irrigation_program"
+    REMOVE_IRRIGATION_PROGRAM = "remove_irrigation_program"
+    ASSIGN_IRRIGATION_PROGRAM = "assign_irrigation_program"
     # Training Services
     LOG_TRAINING_EVENT = "log_training_event"
     # IPM Services

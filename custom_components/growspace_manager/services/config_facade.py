@@ -1,12 +1,12 @@
 """Config sub-facade for the Growspace Manager integration.
 
-Covers nutrient presets, IPM presets, EC ramp curves, Irrigation Recipes, and
-the strain library.
+Covers nutrient presets, IPM presets, EC ramp curves, Irrigation Recipes and
+Programs, and the strain library.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +26,7 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.models import (
     ECRampCurve,
     IPMPreset,
+    IrrigationProgram,
     IrrigationRecipe,
     NutrientPreset,
 )
@@ -206,6 +207,41 @@ class ConfigFacade:
         Global, so the answer does not depend on which growspace asked.
         """
         return self._coordinator._recipe_library.serialized_recipes()
+
+    # -------------------------------------------------------------------------
+    # Irrigation Programs
+    # -------------------------------------------------------------------------
+
+    async def save_irrigation_program(
+        self,
+        name: str,
+        slots: Iterable[Mapping[str, Any]],
+        program_id: str | None = None,
+    ) -> IrrigationProgram:
+        """Save a named plan of ``(stage, week)`` slots."""
+        return await self._coordinator._program_library.async_save_program(
+            name, slots, program_id
+        )
+
+    async def remove_irrigation_program(self, program_id: str) -> None:
+        """Remove a program from the global Irrigation Program library."""
+        await self._coordinator._program_library.async_remove_program(program_id)
+
+    def find_irrigation_program(self, program_id: str) -> IrrigationProgram | None:
+        """Return one program by id, or None when the library has no such id.
+
+        The forgiving lookup, for readers that must degrade rather than fail:
+        removing a program leaves a growspace's binding dangling by design, so
+        a growspace can outlive the program it names (ADR-0045).
+        """
+        return self._coordinator._program_library.programs.get(program_id)
+
+    def get_irrigation_programs(self) -> dict[str, dict[str, Any]]:
+        """Return the serialized global Irrigation Program library.
+
+        Global, so the answer does not depend on which growspace asked.
+        """
+        return self._coordinator._program_library.serialized_programs()
 
     # -------------------------------------------------------------------------
     # IPM presets

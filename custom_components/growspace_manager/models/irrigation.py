@@ -142,6 +142,15 @@ class IrrigationStrategy(BaseModel):
     applied_recipe_id: str | None = None
     recipe_applied_at: str | None = None
 
+    # ── Irrigation Program binding (ADR-0045) ───────────────────────────────
+    # Which grower-authored [[Irrigation Program]] this growspace follows.
+    # The binding is **explicit** on purpose: ``ECRampCurve`` binds implicitly
+    # by first stage match in dictionary order, so which curve drives a
+    # growspace is an accident of insertion — a footgun this deliberately does
+    # not repeat. None means unbound. The control loop never reads it either:
+    # a program is a plan, and nothing applies from it without a stamp.
+    irrigation_program_id: str | None = None
+
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Migrate legacy shared shot fields by seeding both phases.

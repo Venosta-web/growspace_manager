@@ -206,6 +206,7 @@
       'dynamic_shot_size_floor': 0.5,
       'ec_modulation_enabled': False,
       'enabled': False,
+      'irrigation_program_id': None,
       'lights_on_time': '06:00:00',
       'maintenance_dryback_percent': 2.0,
       'p0_duration_minutes': 60,

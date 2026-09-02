@@ -49,6 +49,8 @@ from .const import (
     ATTR_PLANT_IDS,
     ATTR_POINTS,
     ATTR_PRESET_ID,
+    ATTR_PROGRAM_ID,
+    ATTR_PROGRAM_SLOTS,
     ATTR_QUANTITY,
     ATTR_RECEIVER_PLANT_ID,
     ATTR_RECIPE_CROP_STEERING,
@@ -1049,6 +1051,45 @@ APPLY_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
         vol.Required(ATTR_RECIPE_ID): str,
+    }
+)
+
+# --- Irrigation Program Schemas ---
+
+# One (stage, week) slot. The stage set and the 1-indexed weeks are enforced by
+# `domain/irrigation_program.py`, which owns what a reachable slot is; this
+# schema only fixes the wire shape.
+PROGRAM_SLOT_SCHEMA = vol.Schema(
+    {
+        vol.Required("stage"): str,
+        vol.Required("week"): vol.Coerce(int),
+        vol.Required("recipe_id"): str,
+    }
+)
+
+SAVE_IRRIGATION_PROGRAM_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_NAME): str,
+        # The whole plan: saving replaces the slot list rather than merging
+        # into it, so an empty list is a program a grower has emptied.
+        vol.Required(ATTR_PROGRAM_SLOTS): [PROGRAM_SLOT_SCHEMA],
+        # Present to overwrite an existing program in place; absent mints a new one.
+        vol.Optional(ATTR_PROGRAM_ID): str,
+    }
+)
+
+REMOVE_IRRIGATION_PROGRAM_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PROGRAM_ID): str,
+    }
+)
+
+ASSIGN_IRRIGATION_PROGRAM_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        # Omitted or null unbinds. Binding applies nothing, so neither spelling
+        # can change what a pump does.
+        vol.Optional(ATTR_PROGRAM_ID): vol.Any(None, str),
     }
 )
 

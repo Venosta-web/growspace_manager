@@ -27,6 +27,7 @@ from .import_export_manager import ImportExportManager
 from .integration_types import DateInput
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
+from .managers.irrigation_program import IrrigationProgramLibrary
 from .managers.irrigation_recipe import IrrigationRecipeLibrary
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
@@ -186,6 +187,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         view_model_builder: ViewModelBuilder,
         nutrient_manager: NutrientManager,
         recipe_library: IrrigationRecipeLibrary,
+        program_library: IrrigationProgramLibrary,
         genetics_manager: GeneticsManager,
         storage_manager: StorageManager,
         growspace_manager: GrowspaceManager,
@@ -211,6 +213,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.view_model_builder = view_model_builder
         self._nutrient_manager = nutrient_manager
         self._recipe_library = recipe_library
+        self._program_library = program_library
         self._genetics_manager = genetics_manager
         self.storage_manager = storage_manager
         self._growspace_manager = growspace_manager

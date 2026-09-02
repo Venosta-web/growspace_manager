@@ -48,6 +48,7 @@ from .irrigation import (
     TankWaterEvent,
     TankWaterHistory,
 )
+from .irrigation_program import IrrigationProgram, ProgramSlot
 from .irrigation_recipe import (
     CropSteeringRecipe,
     IrrigationRecipe,
@@ -158,6 +159,7 @@ __all__ = [
     "IPMType",
     "IrrigationConfig",
     # irrigation
+    "IrrigationProgram",
     "IrrigationRecipe",
     # types
     "IrrigationScheduleItem",
@@ -182,6 +184,7 @@ __all__ = [
     "PlantStage",
     "PlantTimelineEvent",
     "PollinationEvent",
+    "ProgramSlot",
     "RecipeProvenance",
     "ScheduleRecipe",
     # genetics
