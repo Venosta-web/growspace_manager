@@ -35,6 +35,7 @@ from custom_components.growspace_manager.services.irrigation_recipes import (
     handle_apply_irrigation_recipe,
     handle_remove_irrigation_recipe,
     handle_save_irrigation_recipe,
+    handle_update_irrigation_recipe,
 )
 from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
 from custom_components.growspace_manager.websocket.irrigation import (
@@ -42,6 +43,7 @@ from custom_components.growspace_manager.websocket.irrigation import (
     websocket_get_irrigation_recipes,
     websocket_remove_irrigation_recipe,
     websocket_save_irrigation_recipe,
+    websocket_update_irrigation_recipe,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -508,3 +510,152 @@ async def test_applying_an_unknown_recipe_is_not_found(hass, coordinator) -> Non
 
     with pytest.raises(EntityNotFoundError):
         await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", "nope")
+
+
+# ---------------------------------------------------------------------------
+# Editing a stored recipe (#109)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_update_service_renames_and_corrects_values(hass, coordinator) -> None:
+    """The action edits the library in place, sparsely."""
+    recipe_id = await _saved_steering_recipe(coordinator)
+
+    await handle_update_irrigation_recipe(
+        hass,
+        coordinator,
+        _call(
+            recipe_id=recipe_id,
+            name="Flower wk4",
+            crop_steering={"p1_shot_volume_percent": 7.5},
+        ),
+    )
+
+    recipe = coordinator.services.config.find_irrigation_recipe(recipe_id)
+    assert recipe is not None
+    assert recipe.name == "Flower wk4"
+    assert recipe.crop_steering is not None
+    assert recipe.crop_steering.p1_shot_volume_percent == 7.5
+
+
+@pytest.mark.asyncio
+async def test_update_service_reports_a_refusal_to_the_grower(
+    hass, coordinator
+) -> None:
+    """The wrong half surfaces as a validation error, not an internal one."""
+    recipe_id = await _saved_steering_recipe(coordinator)
+
+    with pytest.raises(ServiceValidationError):
+        await handle_update_irrigation_recipe(
+            hass,
+            coordinator,
+            _call(recipe_id=recipe_id, schedule={"skip_during_dark": True}),
+        )
+
+
+@pytest.mark.asyncio
+async def test_websocket_update_returns_the_edited_recipe(hass, coordinator) -> None:
+    """The editor learns what the library now holds without re-reading it."""
+    recipe_id = await _saved_steering_recipe(coordinator)
+
+    edited = await websocket_update_irrigation_recipe(
+        hass,
+        coordinator,
+        {"recipe_id": recipe_id, "name": "Flower wk4"},
+    )
+
+    assert edited["id"] == recipe_id
+    assert edited["name"] == "Flower wk4"
+    assert edited["kind"] == IrrigationRecipeKind.CROP_STEERING.value
+
+    listed = websocket_get_irrigation_recipes(hass, coordinator, {})
+    assert listed[recipe_id]["name"] == "Flower wk4"
+
+
+@pytest.mark.asyncio
+async def test_websocket_update_of_an_unknown_recipe_is_not_found(
+    hass, coordinator
+) -> None:
+    """A stale edit narrows to not-found the card can act on."""
+    with pytest.raises(EntityNotFoundError):
+        await websocket_update_irrigation_recipe(
+            hass, coordinator, {"recipe_id": "nope", "name": "Ghost"}
+        )
+
+
+@pytest.mark.asyncio
+async def test_editing_a_recipe_changes_no_growspace(hass, coordinator) -> None:
+    """Apply is a by-value stamp, so an edit reaches no irrigation field."""
+    _steer(coordinator, "tent_a")
+    recipe_id = await _saved_steering_recipe(coordinator)
+    await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe_id)
+    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    before = strategy.p1_shot_volume_percent
+
+    await coordinator.services.config.update_irrigation_recipe(
+        recipe_id, crop_steering={"p1_shot_volume_percent": before + 5.0}
+    )
+
+    assert strategy.p1_shot_volume_percent == before
+
+
+@pytest.mark.asyncio
+async def test_editing_a_recipe_makes_its_carriers_read_as_drifted(
+    hass, coordinator
+) -> None:
+    """The consequence a grower does see: the tent no longer holds what it says."""
+    _steer(coordinator, "tent_a", "tent_b")
+    recipe_id = await _saved_steering_recipe(coordinator)
+    other = await coordinator.services.config.save_irrigation_recipe(
+        "tent_b", "Other", IrrigationRecipeKind.CROP_STEERING
+    )
+    await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe_id)
+    await coordinator.services.growspaces.apply_irrigation_recipe("tent_b", other.id)
+    view_model = ViewModelBuilder(coordinator)
+
+    await coordinator.services.config.update_irrigation_recipe(
+        recipe_id, crop_steering={"target_vwc_percent": 61.0}
+    )
+    coordinator.cache.invalidate("tent_a")
+    coordinator.cache.invalidate("tent_b")
+
+    payload_a = view_model.build_serialized_growspace("tent_a")
+    payload_b = view_model.build_serialized_growspace("tent_b")
+    assert payload_a["irrigation"]["applied_recipe_drifted"] is True
+    assert payload_b["irrigation"]["applied_recipe_drifted"] is False
+
+
+@pytest.mark.asyncio
+async def test_an_edited_recipe_survives_a_storage_round_trip(
+    hass, coordinator
+) -> None:
+    """The correction is in the config document, not only in memory."""
+    recipe_id = await _saved_steering_recipe(coordinator)
+    await coordinator.services.config.update_irrigation_recipe(
+        recipe_id, name="Flower wk4", crop_steering={"target_vwc_percent": 61.0}
+    )
+
+    stored = coordinator._recipe_library.get_serialization_data()["irrigation_recipes"][
+        recipe_id
+    ]
+
+    assert stored["name"] == "Flower wk4"
+    assert stored["crop_steering"]["target_vwc_percent"] == 61.0
+
+
+@pytest.mark.asyncio
+async def test_an_edited_recipe_is_read_from_every_growspace(hass, coordinator) -> None:
+    """The library is global, and stays global after an edit."""
+    recipe_id = await _saved_steering_recipe(coordinator)
+    await coordinator.services.config.update_irrigation_recipe(
+        recipe_id, name="Flower wk4"
+    )
+
+    view_model = ViewModelBuilder(coordinator)
+    for growspace_id in ("tent_a", "tent_b"):
+        coordinator.cache.invalidate(growspace_id)
+        recipes = view_model.build_serialized_growspace(growspace_id)["irrigation"][
+            "recipes"
+        ]
+        assert recipes[recipe_id]["name"] == "Flower wk4"

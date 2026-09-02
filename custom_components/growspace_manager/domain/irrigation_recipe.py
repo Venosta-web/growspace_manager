@@ -29,7 +29,8 @@ against what is there, which is why no drift hash is ever stored.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields as dataclass_fields, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from custom_components.growspace_manager.const import (
@@ -55,13 +56,17 @@ if TYPE_CHECKING:
     from custom_components.growspace_manager.models.types import IrrigationScheduleItem
 
 __all__ = [
+    "CROP_STEERING_RECIPE_EDIT_FIELDS",
+    "SCHEDULE_RECIPE_EDIT_FIELDS",
     "RecipeApplication",
     "RecipeApplyError",
     "RecipeCaptureError",
+    "RecipeEditError",
     "RecipeKindMismatchError",
     "capture_crop_steering",
     "capture_provenance",
     "capture_schedule",
+    "edit_recipe",
     "recipe_has_drifted",
     "resolve_recipe_application",
 ]
@@ -69,6 +74,10 @@ __all__ = [
 
 class RecipeCaptureError(ValueError):
     """A growspace whose settings cannot honestly become a recipe."""
+
+
+class RecipeEditError(ValueError):
+    """A payload that cannot become an edit to a stored recipe."""
 
 
 class RecipeApplyError(ValueError):
@@ -185,6 +194,113 @@ def capture_schedule(config: IrrigationConfig) -> ScheduleRecipe:
 def _copy_item(item: IrrigationScheduleItem) -> IrrigationScheduleItem:
     """Return a detached copy so a later growspace edit cannot rewrite a recipe."""
     return cast("IrrigationScheduleItem", dict(item))
+
+
+# ---------------------------------------------------------------------------
+# Editing a stored recipe
+# ---------------------------------------------------------------------------
+
+# The fields an edit may write, taken from the halves themselves so a new
+# setpoint is editable the moment it is stored rather than the moment someone
+# remembers to widen a hand-written list.
+CROP_STEERING_RECIPE_EDIT_FIELDS: frozenset[str] = frozenset(
+    f.name for f in dataclass_fields(CropSteeringRecipe)
+)
+SCHEDULE_RECIPE_EDIT_FIELDS: frozenset[str] = frozenset(
+    f.name for f in dataclass_fields(ScheduleRecipe)
+)
+
+
+def edit_recipe(
+    recipe: IrrigationRecipe,
+    *,
+    name: str | None = None,
+    crop_steering: Mapping[str, Any] | None = None,
+    schedule: Mapping[str, Any] | None = None,
+) -> IrrigationRecipe:
+    """Return ``recipe`` with a corrected name and/or corrected stored values.
+
+    The counterpart to capture: capture asks a growspace what its settings are,
+    this asks the grower what the recipe should have said. Both live here
+    because both answer the same question about what a stored percent means —
+    an edit sets a percent of substrate volume, never pump seconds, so unlike
+    capture it has no plumbing to recover from and no refusal path.
+
+    What an edit cannot touch is the point of the operation. ``id``, ``kind``,
+    ``created_at`` and every [[Recipe Provenance]] field are absent from the
+    signature rather than merely ignored: provenance records where the recipe
+    came from, and rewriting it would turn a description of something that
+    happened into a claim about something that did not. Switching ``kind``
+    would be a capture, not an edit — a recipe carries exactly one half by
+    design, and the other one does not exist to be filled in.
+
+    Values are **sparse**: a field the mapping does not name keeps what it
+    stores. That is what lets a card built against an older contract correct
+    one shot size without silently resetting a setpoint it never knew about.
+
+    Pure, and total in the sense that matters: every refusal is raised before
+    anything is built, so a caller that stores the result stores either the
+    whole edit or none of it.
+
+    Raises:
+        RecipeEditError: for a blank name, the half this recipe's ``kind`` is
+            not, a half the recipe does not hold, or an unknown field name.
+    """
+    if crop_steering is not None:
+        _refuse_wrong_half(recipe, IrrigationRecipeKind.CROP_STEERING, "crop_steering")
+    if schedule is not None:
+        _refuse_wrong_half(recipe, IrrigationRecipeKind.SCHEDULE, "schedule")
+
+    changes: dict[str, Any] = {}
+
+    if name is not None:
+        stripped = name.strip()
+        if not stripped:
+            raise RecipeEditError("A recipe's name cannot be blank.")
+        changes["name"] = stripped
+
+    if crop_steering is not None:
+        if recipe.crop_steering is None:
+            raise RecipeEditError(
+                f"Recipe '{recipe.id}' holds no crop_steering half to edit."
+            )
+        _refuse_unknown_fields(
+            crop_steering, CROP_STEERING_RECIPE_EDIT_FIELDS, "crop_steering"
+        )
+        changes["crop_steering"] = replace(recipe.crop_steering, **dict(crop_steering))
+
+    if schedule is not None:
+        if recipe.schedule is None:
+            raise RecipeEditError(
+                f"Recipe '{recipe.id}' holds no schedule half to edit."
+            )
+        _refuse_unknown_fields(schedule, SCHEDULE_RECIPE_EDIT_FIELDS, "schedule")
+        changes["schedule"] = replace(recipe.schedule, **dict(schedule))
+
+    return replace(recipe, **changes)
+
+
+def _refuse_wrong_half(
+    recipe: IrrigationRecipe, required: IrrigationRecipeKind, label: str
+) -> None:
+    """Refuse an edit naming the half this recipe's kind is not."""
+    if recipe.kind is not required:
+        raise RecipeEditError(
+            f"Recipe '{recipe.id}' is a {recipe.kind.value} recipe; it has no "
+            f"{label} values to edit."
+        )
+
+
+def _refuse_unknown_fields(
+    values: Mapping[str, Any], accepted: frozenset[str], label: str
+) -> None:
+    """Refuse an edit naming a field the half does not store."""
+    unknown = sorted(set(values) - accepted)
+    if unknown:
+        raise RecipeEditError(
+            f"{', '.join(unknown)} "
+            f"{'are' if len(unknown) > 1 else 'is'} not part of a {label} recipe."
+        )
 
 
 def _derive_percent(

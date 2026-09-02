@@ -15,6 +15,7 @@ from custom_components.growspace_manager.data_access.growspace_repository import
 )
 from custom_components.growspace_manager.domain.irrigation_recipe import (
     RecipeCaptureError,
+    RecipeEditError,
 )
 from custom_components.growspace_manager.exceptions import (
     EntityNotFoundError,
@@ -240,3 +241,145 @@ def test_load_data_replaces_the_library(library) -> None:
     library.load_data({"r1": recipe})
 
     assert library.recipes == {"r1": recipe}
+
+
+# ---------------------------------------------------------------------------
+# Editing a stored recipe (#109)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rename_needs_no_values(library, save_callback) -> None:
+    """A rename is a whole edit on its own — no values to re-supply."""
+    saved = await library.async_save_from_growspace(
+        "tent_a", "Flower wk3", IrrigationRecipeKind.CROP_STEERING
+    )
+    before = saved.crop_steering
+    save_callback.reset_mock()
+
+    edited = await library.async_update_recipe(saved.id, name="Flower wk4")
+
+    assert edited.name == "Flower wk4"
+    assert edited.crop_steering == before
+    save_callback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_editing_values_is_sparse(library) -> None:
+    """An unnamed field keeps what the recipe stores."""
+    saved = await library.async_save_from_growspace(
+        "tent_a", "Flower wk3", IrrigationRecipeKind.CROP_STEERING
+    )
+    assert saved.crop_steering is not None
+    interval_before = saved.crop_steering.p1_shot_interval_minutes
+
+    edited = await library.async_update_recipe(
+        saved.id, crop_steering={"p1_shot_volume_percent": 7.5}
+    )
+
+    assert edited.crop_steering is not None
+    assert edited.crop_steering.p1_shot_volume_percent == 7.5
+    assert edited.crop_steering.p1_shot_interval_minutes == interval_before
+
+
+@pytest.mark.asyncio
+async def test_an_edit_keeps_identity_kind_and_provenance(library) -> None:
+    """The edit reaches the name and the values, and nothing else."""
+    saved = await library.async_save_from_growspace(
+        "tent_a", "Flower wk3", IrrigationRecipeKind.CROP_STEERING
+    )
+    provenance_before = saved.provenance
+    created_before = saved.created_at
+
+    edited = await library.async_update_recipe(
+        saved.id, name="Renamed", crop_steering={"target_vwc_percent": 61.0}
+    )
+
+    assert edited.id == saved.id
+    assert edited.kind is IrrigationRecipeKind.CROP_STEERING
+    assert edited.created_at == created_before
+    assert edited.provenance == provenance_before
+
+
+@pytest.mark.asyncio
+async def test_an_edit_is_visible_through_the_stored_instance(library) -> None:
+    """Editing mutates the library's own object, as get_recipe promises."""
+    saved = await library.async_save_from_growspace(
+        "tent_a", "Flower wk3", IrrigationRecipeKind.CROP_STEERING
+    )
+    held = library.get_recipe(saved.id)
+
+    await library.async_update_recipe(saved.id, name="Renamed")
+
+    assert held.name == "Renamed"
+    assert library.recipes[saved.id] is held
+
+
+@pytest.mark.asyncio
+async def test_editing_the_wrong_half_is_refused_and_changes_nothing(
+    library, save_callback
+) -> None:
+    """A crop-steering recipe has no schedule values to correct."""
+    saved = await library.async_save_from_growspace(
+        "tent_a", "Flower wk3", IrrigationRecipeKind.CROP_STEERING
+    )
+    save_callback.reset_mock()
+
+    with pytest.raises(RecipeEditError):
+        await library.async_update_recipe(
+            saved.id, name="Renamed", schedule={"skip_during_dark": True}
+        )
+
+    assert saved.name == "Flower wk3"
+    save_callback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_field_is_refused_and_changes_nothing(
+    library, save_callback
+) -> None:
+    """Naming a field the half does not store refuses the whole edit."""
+    saved = await library.async_save_from_growspace(
+        "tent_a", "Flower wk3", IrrigationRecipeKind.CROP_STEERING
+    )
+    assert saved.crop_steering is not None
+    before = saved.crop_steering.target_vwc_percent
+    save_callback.reset_mock()
+
+    with pytest.raises(RecipeEditError, match="not part of a crop_steering recipe"):
+        await library.async_update_recipe(
+            saved.id,
+            crop_steering={"target_vwc_percent": 61.0, "liters_per_pot": 9.0},
+        )
+
+    assert saved.crop_steering.target_vwc_percent == before
+    save_callback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_editing_an_unknown_recipe_is_a_typed_not_found(
+    library, save_callback
+) -> None:
+    """A stale edit reports not-found and stores nothing."""
+    with pytest.raises(EntityNotFoundError):
+        await library.async_update_recipe("missing", name="Ghost")
+
+    save_callback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_edited_recipe_round_trips_through_storage(library) -> None:
+    """The corrected values survive serialization like captured ones do."""
+    saved = await library.async_save_from_growspace(
+        "tent_a", "Veg timer", IrrigationRecipeKind.SCHEDULE
+    )
+    await library.async_update_recipe(
+        saved.id, name="Veg timer v2", schedule={"max_cycles_per_day": 5}
+    )
+
+    stored = library.get_serialization_data()["irrigation_recipes"][saved.id]
+    reloaded = IrrigationRecipe.from_dict(stored)
+
+    assert reloaded.name == "Veg timer v2"
+    assert reloaded.schedule is not None
+    assert reloaded.schedule.max_cycles_per_day == 5

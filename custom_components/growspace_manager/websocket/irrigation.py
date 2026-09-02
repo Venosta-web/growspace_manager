@@ -16,6 +16,10 @@ from custom_components.growspace_manager.crop_steering_history import (
     CropSteeringHistoryAnalyzer,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.schemas import (
+    CROP_STEERING_RECIPE_VALUES_SCHEMA,
+    SCHEDULE_RECIPE_VALUES_SCHEMA,
+)
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
@@ -70,6 +74,17 @@ SCHEMA_WS_SAVE_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.ext
         vol.Required("name"): str,
         vol.Required("kind"): vol.In([k.value for k in IrrigationRecipeKind]),
         vol.Optional("recipe_id"): str,
+    }
+)
+
+WS_TYPE_UPDATE_IRRIGATION_RECIPE = f"{DOMAIN}/update_irrigation_recipe"
+SCHEMA_WS_UPDATE_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPDATE_IRRIGATION_RECIPE,
+        vol.Required("recipe_id"): str,
+        vol.Optional("name"): str,
+        vol.Optional("crop_steering"): CROP_STEERING_RECIPE_VALUES_SCHEMA,
+        vol.Optional("schedule"): SCHEDULE_RECIPE_VALUES_SCHEMA,
     }
 )
 
@@ -206,6 +221,23 @@ async def websocket_save_irrigation_recipe(
     return recipe.to_dict()
 
 
+async def websocket_update_irrigation_recipe(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Rename a recipe and/or correct the values it stores.
+
+    Returns the whole edited recipe so the library editor need not re-read the
+    library to show what it now holds.
+    """
+    recipe = await coordinator.services.config.update_irrigation_recipe(
+        msg["recipe_id"],
+        name=msg.get("name"),
+        crop_steering=msg.get("crop_steering"),
+        schedule=msg.get("schedule"),
+    )
+    return recipe.to_dict()
+
+
 async def websocket_remove_irrigation_recipe(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> None:
@@ -268,6 +300,12 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_SAVE_IRRIGATION_RECIPE,
         websocket_save_irrigation_recipe,
         SCHEMA_WS_SAVE_IRRIGATION_RECIPE,
+    ),
+    WSCommand(
+        WS_TYPE_UPDATE_IRRIGATION_RECIPE,
+        websocket_update_irrigation_recipe,
+        SCHEMA_WS_UPDATE_IRRIGATION_RECIPE,
+        resolve="any",
     ),
     WSCommand(
         WS_TYPE_REMOVE_IRRIGATION_RECIPE,

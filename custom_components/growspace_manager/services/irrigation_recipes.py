@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING
 from custom_components.growspace_manager.const import (
     ATTR_GROWSPACE_ID,
     ATTR_NAME,
+    ATTR_RECIPE_CROP_STEERING,
     ATTR_RECIPE_ID,
     ATTR_RECIPE_KIND,
+    ATTR_RECIPE_SCHEDULE,
     GrowspaceService,
     IrrigationRecipeKind,
 )
@@ -17,6 +19,7 @@ from custom_components.growspace_manager.schemas import (
     APPLY_IRRIGATION_RECIPE_SCHEMA,
     REMOVE_IRRIGATION_RECIPE_SCHEMA,
     SAVE_IRRIGATION_RECIPE_SCHEMA,
+    UPDATE_IRRIGATION_RECIPE_SCHEMA,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 
@@ -39,6 +42,25 @@ async def handle_save_irrigation_recipe(
         name=call.data[ATTR_NAME],
         kind=IrrigationRecipeKind(call.data[ATTR_RECIPE_KIND]),
         recipe_id=call.data.get(ATTR_RECIPE_ID),
+    )
+
+
+@handle_service_errors
+async def handle_update_irrigation_recipe(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, call: ServiceCall
+) -> None:
+    """Rename a recipe and/or correct the values it stores.
+
+    Sparse: a field the call does not name keeps what the recipe stores, and
+    the recipe's id, kind, creation time and provenance are not reachable from
+    here at all. No growspace is touched — applying is a by-value stamp, so a
+    growspace that carries this recipe simply reads as drifted afterwards.
+    """
+    await coordinator.services.config.update_irrigation_recipe(
+        call.data[ATTR_RECIPE_ID],
+        name=call.data.get(ATTR_NAME),
+        crop_steering=call.data.get(ATTR_RECIPE_CROP_STEERING),
+        schedule=call.data.get(ATTR_RECIPE_SCHEDULE),
     )
 
 
@@ -73,6 +95,11 @@ SERVICES = [
         GrowspaceService.SAVE_IRRIGATION_RECIPE,
         handle_save_irrigation_recipe,
         SAVE_IRRIGATION_RECIPE_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.UPDATE_IRRIGATION_RECIPE,
+        handle_update_irrigation_recipe,
+        UPDATE_IRRIGATION_RECIPE_SCHEMA,
     ),
     ServiceDefinition(
         GrowspaceService.REMOVE_IRRIGATION_RECIPE,

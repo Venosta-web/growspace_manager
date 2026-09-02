@@ -1855,6 +1855,40 @@ save_irrigation_recipe:
       selector:
         text:
 
+update_irrigation_recipe:
+  description: >-
+    Rename an Irrigation Recipe and/or correct the values it stores, in place.
+    Sparse: a field this call does not name keeps what the recipe stores. The
+    recipe's kind, provenance and creation time are not editable, and no
+    growspace is changed — applying is a one-time stamp, so a growspace
+    carrying this recipe simply reads as drifted afterwards.
+  fields:
+    recipe_id:
+      description: ID of the recipe to edit.
+      required: true
+      selector:
+        text:
+    name:
+      description: New name for the recipe (optional).
+      required: false
+      selector:
+        text:
+    crop_steering:
+      description: >-
+        Crop-steering values to correct, as a mapping of field name to value.
+        Only for a recipe whose kind is crop_steering. Shot sizes are percents
+        of substrate volume, never pump seconds.
+      required: false
+      selector:
+        object:
+    schedule:
+      description: >-
+        Schedule values to correct, as a mapping of field name to value. Only
+        for a recipe whose kind is schedule.
+      required: false
+      selector:
+        object:
+
 remove_irrigation_recipe:
   description: Remove an Irrigation Recipe from the global library.
   fields:

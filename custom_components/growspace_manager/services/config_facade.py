@@ -6,6 +6,7 @@ the strain library.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -171,6 +172,19 @@ class ConfigFacade:
         """Save a growspace's current irrigation settings as a named recipe."""
         return await self._coordinator._recipe_library.async_save_from_growspace(
             growspace_id, name, kind, recipe_id
+        )
+
+    async def update_irrigation_recipe(
+        self,
+        recipe_id: str,
+        *,
+        name: str | None = None,
+        crop_steering: Mapping[str, Any] | None = None,
+        schedule: Mapping[str, Any] | None = None,
+    ) -> IrrigationRecipe:
+        """Edit a stored recipe in place — rename it, correct its values."""
+        return await self._coordinator._recipe_library.async_update_recipe(
+            recipe_id, name=name, crop_steering=crop_steering, schedule=schedule
         )
 
     async def remove_irrigation_recipe(self, recipe_id: str) -> None:

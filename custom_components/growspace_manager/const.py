@@ -456,6 +456,8 @@ ATTR_AMOUNT_PER_PLANT = "amount_per_plant"
 ATTR_PRESET_ID = "preset_id"
 ATTR_RECIPE_ID = "recipe_id"
 ATTR_RECIPE_KIND = "kind"
+ATTR_RECIPE_CROP_STEERING = "crop_steering"
+ATTR_RECIPE_SCHEDULE = "schedule"
 ATTR_PRESET_NAME = "preset_name"
 ATTR_MIN_DAYS_IN_STAGE = "min_days_in_stage"
 
@@ -682,6 +684,7 @@ class GrowspaceService(StrEnum):
     REMOVE_NUTRIENT_PRESET = "remove_nutrient_preset"
     # Irrigation Recipe Services
     SAVE_IRRIGATION_RECIPE = "save_irrigation_recipe"
+    UPDATE_IRRIGATION_RECIPE = "update_irrigation_recipe"
     REMOVE_IRRIGATION_RECIPE = "remove_irrigation_recipe"
     APPLY_IRRIGATION_RECIPE = "apply_irrigation_recipe"
     # Training Services
