@@ -339,6 +339,13 @@ class IrrigationConfig(BaseModel):
     ec_target_ranges: list[ECTargetRange] = field(default_factory=list)
     auto_advance_p1_to_p2: bool = False
     auto_advance_p2_to_p3: bool = False
+    # Whether reaching a new week of the bound [[Irrigation Program]] stamps
+    # that slot's recipe unattended. Opt-in and defaulting off, exactly as the
+    # two phase flags above are, because it is the same kind of consent: the
+    # grower saying in advance that something other than their own gesture may
+    # move water. With it off the growspace reports that a new week's recipe is
+    # available and waits (ADR-0045).
+    program_auto_advance: bool = False
     halt_on_runoff_ec_threshold: float | None = None
     active_steering_phase: str = "p2"
     phase_changed_at: str | None = None

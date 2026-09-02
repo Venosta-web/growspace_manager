@@ -25,6 +25,7 @@ from .event_bus_pkg import GrowspaceEventBus
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .integration_types import DateInput
+from .irrigation_program_progression import IrrigationProgramProgression
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
 from .managers.irrigation_program import IrrigationProgramLibrary
@@ -199,6 +200,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         environment_reporter: EnvironmentReporter,
         notification_manager: NotificationManager,
         notification_settings: NotificationSettingsManager,
+        program_progression: IrrigationProgramProgression,
         subsystem_manager: SubsystemManager,
         services: ServiceFacade,
         vision_connection: VisionConnection,
@@ -225,6 +227,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.environment_reporter = environment_reporter
         self._notification_manager = notification_manager
         self.notification_settings = notification_settings
+        self.program_progression = program_progression
         self._subsystem_manager = subsystem_manager
         self.services = services
         self.vision_connection = vision_connection
@@ -322,9 +325,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         This method is called automatically based on the update_interval (15 minutes).
         It performs the following operations:
         1. Invalidates all caches to ensure fresh calculations
-        2. Rebuilds the data property for all entities
-        3. Checks for timed notifications that need to be sent
-        4. Updates air exchange recommendations based on current conditions
+        2. Carries bound Irrigation Programs into the week they have reached
+        3. Rebuilds the data property for all entities
+        4. Checks for timed notifications that need to be sent
+        5. Updates air exchange recommendations based on current conditions
 
         Returns:
             The updated data dictionary containing all growspace and plant data.
@@ -332,6 +336,13 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Periodic refresh implies environment data might have changed (VPD, etc).
         # We must invalidate ALL caches to ensure calculations are fresh.
         self.cache.invalidate(None)
+
+        # Before the payload is built, not after: a growspace that has crossed
+        # into a new week of its [[Irrigation Program]] should be reported as
+        # already carrying that week's recipe, not as owing a stamp the tick
+        # has in fact just written. With auto-advance off this writes nothing
+        # and only decides what the payload will say ([[Program Hold]]).
+        await self.program_progression.async_evaluate_all()
 
         self.data = self.view_model_builder.build_data_property()
         await self._notification_manager.async_check_timed_notifications()

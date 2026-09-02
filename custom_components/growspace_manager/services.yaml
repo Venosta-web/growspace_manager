@@ -1530,6 +1530,15 @@ set_irrigation_settings:
       required: false
       selector:
         boolean:
+    program_auto_advance:
+      description: >-
+        Automatically apply the bound irrigation program's recipe when the
+        growspace reaches a new week. Off by default; the program holds and
+        changes nothing whenever the week has no slot, the program is
+        complete, or the growspace has been hand-tuned since its last apply.
+      required: false
+      selector:
+        boolean:
     halt_on_runoff_ec_threshold:
       description: Halt irrigation when runoff EC reaches this threshold; omit to disable.
       required: false

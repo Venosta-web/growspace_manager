@@ -308,6 +308,12 @@ def _maximal_growspace() -> Growspace:
             ],
             auto_advance_p1_to_p2=True,
             auto_advance_p2_to_p3=True,
+            # [[Program Hold]] consent, on rather than at its default so a drop
+            # on the way to the card fails here (ADR-0030). The growspace
+            # already holds its flower-week-3 slot's recipe, so the payload's
+            # progression is a real ``up_to_date`` answer and the fixture never
+            # depends on a stamp having fired.
+            program_auto_advance=True,
             halt_on_runoff_ec_threshold=2.8,
             active_steering_phase="p2",
             phase_changed_at="2026-08-11T06:00:00+00:00",

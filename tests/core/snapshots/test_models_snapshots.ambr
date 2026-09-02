@@ -371,6 +371,7 @@
       'max_cycles_per_day': None,
       'pause_on_low_tank': True,
       'phase_changed_at': None,
+      'program_auto_advance': False,
       'pump_flow_rate_ml_per_sec': 0.0,
       'skip_during_dark': False,
       'soil_trigger_percent': None,

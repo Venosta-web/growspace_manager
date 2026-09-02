@@ -12,12 +12,11 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .crop_steering import get_crop_steering_state
-from .domain.ec_state import resolve_feed_stage_week
-from .domain.irrigation_program import resolve_program_slot
 from .domain.irrigation_recipe import recipe_has_drifted
 from .domain.plant_metrics import count_live_plants
 from .domain.stage import StageDays
 from .domain.water_aggregation import compute_growspace_water
+from .irrigation_program_progression import resolve_program_position
 from .models import Plant
 from .notifications.timed import normalize_timed_notifications
 from .presentation import GrowspaceViewModelBuilder
@@ -329,28 +328,36 @@ class ViewModelBuilder:
         ``stage``/``week`` are reported even when nothing matched, so the card
         can say *which* week found no slot rather than only that none was
         found.
+
+        ``progression`` is what the layer will *do* about that position, and it
+        is the same decision the coordinator's tick acts on — one resolution,
+        two readers, so the card can never say a week is held while the tick
+        stamps it. A hold names its cause, which is what separates "the plan
+        skips this week", "the run is finished" and "the recipe was deleted"
+        from each other and from nothing having happened at all. ``due`` is
+        transient by nature: it means auto-advance owes a stamp that the next
+        evaluation will write.
         """
-        program_id = growspace.irrigation_strategy.irrigation_program_id
-        if program_id is None:
-            return None
-        program = self.coordinator.services.config.find_irrigation_program(program_id)
-        if program is None:
+        position = resolve_program_position(self.coordinator, growspace, plants)
+        if position is None:
             return None
 
-        stage, week = resolve_feed_stage_week(plants)
-        slot = resolve_program_slot(program, stage=stage, week=week)
-        recipe = (
-            self.coordinator.services.config.find_irrigation_recipe(slot.recipe_id)
-            if slot is not None
-            else None
-        )
+        progression = position.progression
         return {
-            "program_id": program.id,
-            "name": program.name,
-            "stage": stage,
-            "week": week,
-            "slot": slot.to_dict() if slot is not None else None,
-            "recipe": recipe.to_dict() if recipe is not None else None,
+            "program_id": position.program.id,
+            "name": position.program.name,
+            "stage": position.stage,
+            "week": position.week,
+            "slot": position.slot.to_dict() if position.slot is not None else None,
+            "recipe": (
+                position.recipe.to_dict() if position.recipe is not None else None
+            ),
+            "auto_advance": position.auto_advance,
+            "progression": {
+                "state": progression.state.value,
+                "hold": progression.hold.value if progression.hold else None,
+                "detail": progression.detail,
+            },
         }
 
     def build_data_property(

@@ -755,6 +755,7 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("log_to_logbook"): bool,
             vol.Optional("auto_advance_p1_to_p2"): bool,
             vol.Optional("auto_advance_p2_to_p3"): bool,
+            vol.Optional("program_auto_advance"): bool,
             vol.Optional("halt_on_runoff_ec_threshold"): vol.Any(
                 None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
             ),
