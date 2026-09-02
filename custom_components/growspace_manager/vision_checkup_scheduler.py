@@ -81,6 +81,7 @@ from .models.vision_evidence import (
     VisionFusionOutcome,
     VisualComparisonResult,
 )
+from .presentation.vision import async_serialize_vision_checkup
 from .vision_connection import VisionAvailability
 
 if TYPE_CHECKING:
@@ -149,6 +150,27 @@ class VisionCheckupScheduler:
         self._store = evidence_store
         self._unsub_timers: dict[str, list[CALLBACK_TYPE]] = {}
         self._comparison_engine = VisualComparisonEngine()
+        self._latest_checkups: dict[str, dict[str, Any]] = {}
+
+    def latest_checkup(self, growspace_id: str) -> dict[str, Any] | None:
+        """Return the cached projection used by the retained sensor entity."""
+        return self._latest_checkups.get(growspace_id)
+
+    async def async_load_latest_checkups(self, growspace_ids: list[str]) -> None:
+        """Rebuild sensor projections from durable evidence after restart."""
+        if self._store is None:
+            self._latest_checkups.clear()
+            return
+        for growspace_id in growspace_ids:
+            checkups = await self._store.async_get_checkups(growspace_id, limit=1)
+            if not checkups:
+                self._latest_checkups.pop(growspace_id, None)
+                continue
+            self._latest_checkups[growspace_id] = await async_serialize_vision_checkup(
+                self._store,
+                checkups[0],
+                media_source=self._media_source(),
+            )
 
     def _get_ai_task_entity_id(self) -> str | None:
         settings = self.coordinator.options.get("ai_settings", {})
@@ -322,7 +344,12 @@ class VisionCheckupScheduler:
         checkup = await self._store.async_finish_checkup(
             checkup_id, status=checkup_status, completed_at=utcnow()
         )
-        return VisionCheckupOutcome(checkup=checkup, captures=tuple(outcomes))
+        result = VisionCheckupOutcome(checkup=checkup, captures=tuple(outcomes))
+        self._latest_checkups[growspace_id] = await async_serialize_vision_checkup(
+            self._store, checkup, media_source=self._media_source()
+        )
+        self.coordinator.async_update_listeners()
+        return result
 
     async def _run_capture(
         self,
@@ -757,9 +784,13 @@ class VisionCheckupScheduler:
         return self._media_content_id(processed_file.relative_path), True
 
     def _media_content_id(self, relative_path: str) -> str:
-        media_dirs = self.hass.config.media_dirs
-        source = "local" if "local" in media_dirs else next(iter(media_dirs))
+        source = self._media_source()
         return f"media-source://media_source/{source}/growspace_vision/{relative_path}"
+
+    def _media_source(self) -> str:
+        """Return the configured HA media source that owns vision evidence."""
+        media_dirs = self.hass.config.media_dirs
+        return "local" if "local" in media_dirs else next(iter(media_dirs))
 
     async def _maybe_explain(
         self,

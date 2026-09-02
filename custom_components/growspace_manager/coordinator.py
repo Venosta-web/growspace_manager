@@ -528,6 +528,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Probe Growspace Vision once at setup so the status the card reads is
         # populated before the first coordinator tick.
         await self.vision_connection.async_refresh()
+        await self.vision_scheduler.async_load_latest_checkups(list(self.growspaces))
 
         # Schedule vision checkups for all loaded growspaces
         self.vision_scheduler.schedule_all_growspaces()
