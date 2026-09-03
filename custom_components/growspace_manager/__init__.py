@@ -29,6 +29,7 @@ from .data_access.vision_evidence_store import (
     DEFAULT_IMAGE_RETENTION_DAYS,
     VisionEvidenceStore,
 )
+from .ec_ramp_migration import evaluate_ec_ramp_migration_issues
 from .exhaust_migration import evaluate_exhaust_migration_issues
 from .intent import async_setup_intents
 from .services.seedfinder_scraper import SeedfinderScraper
@@ -196,6 +197,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
     # Raise/clear the exhaust-fan sole-ownership migration repair (ADR-0019)
     evaluate_exhaust_migration_issues(hass, coordinator)
+
+    # Raise/clear the unmigrated EC ramp curve repair (ADR-0046)
+    evaluate_ec_ramp_migration_issues(hass, coordinator)
 
     entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
 

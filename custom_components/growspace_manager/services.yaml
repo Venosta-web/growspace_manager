@@ -2175,8 +2175,16 @@ reset_water_tracking:
         text:
 
 save_ec_ramp_curve:
-  description: Create or update an EC ramp curve for a growth stage
+  description: Create or update a growspace's EC ramp curve for a growth stage
   fields:
+    growspace_id:
+      description: >
+        The growspace that owns this curve. A curve drives only its own
+        growspace's feed EC target, and a growspace has at most one curve per
+        stage.
+      required: true
+      selector:
+        text:
     name:
       description: Name of the EC ramp curve
       required: true

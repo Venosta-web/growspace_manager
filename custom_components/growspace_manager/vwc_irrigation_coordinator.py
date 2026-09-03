@@ -445,7 +445,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         stage, week = resolve_feed_stage_week(plants)
         ramp_curves = self._main_coordinator.services.config.ec_ramp_curves
         return resolve_active_feed_ec(
-            stage, week, ramp_curves, growspace.irrigation_config.ec_target_ranges
+            self._growspace_id,
+            stage,
+            week,
+            ramp_curves,
+            growspace.irrigation_config.ec_target_ranges,
         )
 
     def ec_state(self) -> ECState:

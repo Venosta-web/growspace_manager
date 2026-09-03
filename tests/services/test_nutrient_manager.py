@@ -311,12 +311,14 @@ def test_get_serialization_data(manager) -> None:
 async def test_save_ec_ramp_curve_new(manager, save_callback_mock) -> None:
     """Test creating a new EC ramp curve."""
     curve = await manager.async_save_ec_ramp_curve(
+        growspace_id="gs_1",
         name="Bloom EC",
         stage="flower",
         points=[{"week": 1, "ec_min": 1.2, "ec_max": 1.6}],
     )
 
     assert curve.id in manager.ec_ramp_curves
+    assert curve.growspace_id == "gs_1"
     assert curve.name == "Bloom EC"
     assert curve.stage == "flower"
     assert len(curve.points) == 1
@@ -331,6 +333,7 @@ async def test_save_ec_ramp_curve_update(manager, save_callback_mock) -> None:
     """Test updating an existing EC ramp curve."""
     existing = ECRampCurve(
         id="c1",
+        growspace_id="gs_1",
         name="Old Curve",
         stage="veg",
         points=[ECRampPoint(week=1, ec_min=0.8, ec_max=1.0)],
@@ -339,6 +342,7 @@ async def test_save_ec_ramp_curve_update(manager, save_callback_mock) -> None:
     manager.ec_ramp_curves = {"c1": existing}
 
     curve = await manager.async_save_ec_ramp_curve(
+        growspace_id="gs_1",
         curve_id="c1",
         name="Updated Curve",
         stage="flower",
@@ -351,6 +355,69 @@ async def test_save_ec_ramp_curve_update(manager, save_callback_mock) -> None:
     assert len(curve.points) == 1
     assert curve.points[0].week == 2
     save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_save_ec_ramp_curve_refuses_a_second_curve_for_the_stage(
+    manager,
+) -> None:
+    """A growspace has at most one curve per stage (ADR-0046).
+
+    Storing two made which one drove the growspace an accident of dictionary
+    insertion order, so the second save is refused by name instead.
+    """
+    await manager.async_save_ec_ramp_curve(
+        growspace_id="gs_1",
+        name="Bloom EC",
+        stage="flower",
+        points=[{"week": 1, "ec_min": 1.2, "ec_max": 1.6}],
+    )
+
+    with pytest.raises(ValueError, match="Bloom EC"):
+        await manager.async_save_ec_ramp_curve(
+            growspace_id="gs_1",
+            name="Bloom EC (alt)",
+            stage="flower",
+            points=[{"week": 1, "ec_min": 2.0, "ec_max": 2.4}],
+        )
+
+    assert len(manager.ec_ramp_curves) == 1
+
+
+@pytest.mark.asyncio
+async def test_save_ec_ramp_curve_allows_the_stage_per_growspace(manager) -> None:
+    """The uniqueness rule is per growspace, not global."""
+    for growspace_id in ("gs_1", "gs_2"):
+        await manager.async_save_ec_ramp_curve(
+            growspace_id=growspace_id,
+            name=f"Bloom EC {growspace_id}",
+            stage="flower",
+            points=[{"week": 1, "ec_min": 1.2, "ec_max": 1.6}],
+        )
+
+    assert len(manager.ec_ramp_curves) == 2
+
+
+@pytest.mark.asyncio
+async def test_save_ec_ramp_curve_update_does_not_clash_with_itself(manager) -> None:
+    """Editing a curve in place is not a second curve for its own stage."""
+    curve = await manager.async_save_ec_ramp_curve(
+        growspace_id="gs_1",
+        name="Bloom EC",
+        stage="flower",
+        points=[{"week": 1, "ec_min": 1.2, "ec_max": 1.6}],
+    )
+
+    updated = await manager.async_save_ec_ramp_curve(
+        growspace_id="gs_1",
+        curve_id=curve.id,
+        name="Bloom EC v2",
+        stage="flower",
+        points=[{"week": 1, "ec_min": 1.3, "ec_max": 1.7}],
+    )
+
+    assert updated is curve
+    assert updated.name == "Bloom EC v2"
 
 
 @pytest.mark.asyncio

@@ -1224,6 +1224,7 @@ EC_RAMP_POINT_SCHEMA = vol.Schema(
 
 SAVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
     {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
         vol.Required(ATTR_NAME): str,
         vol.Required(ATTR_STAGE): str,
         vol.Required(ATTR_POINTS): vol.All([EC_RAMP_POINT_SCHEMA], vol.Length(min=1)),

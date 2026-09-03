@@ -90,31 +90,30 @@ class ConfigFacade:
 
     async def save_ec_ramp_curve(
         self,
-        growspace_id: str | None = None,
-        name: str | None = None,
-        points: list[dict[str, Any]] | None = None,
+        growspace_id: str,
+        name: str,
+        stage: str,
+        points: list[dict[str, Any]],
         curve_id: str | None = None,
-        **kwargs: Any,
     ) -> ECRampCurve:
-        """Save an EC ramp curve."""
-        if growspace_id is None:
-            gids = list(self._coordinator.growspaces.keys())
-            if not gids:
-                raise ValueError("No growspaces available to save EC ramp curve")
-            growspace_id = gids[0]
-            _LOGGER.warning(
-                "Legacy call to save_ec_ramp_curve missing growspace_id. Using default: %s",
-                growspace_id,
-            )
-        if name is None or points is None:
-            raise TypeError("save_ec_ramp_curve() missing required arguments")
+        """Save one growspace's EC ramp curve for a stage.
+
+        Every parameter is required and named exactly as the manager names it,
+        and the manager is called **by keyword**. The signature previously ended
+        in ``**kwargs`` and omitted ``stage`` entirely, so the handler's ``stage``
+        was swallowed and dropped while the remaining arguments were passed
+        positionally into a differing signature — every curve was stored corrupt
+        (workspace#108). A mismatched call now raises ``TypeError``.
+        """
         return await self._coordinator._nutrient_manager.async_save_ec_ramp_curve(
-            growspace_id, name, points, curve_id
+            growspace_id=growspace_id,
+            name=name,
+            stage=stage,
+            points=points,
+            curve_id=curve_id,
         )
 
-    async def remove_ec_ramp_curve(
-        self, growspace_id: str | None, curve_id: str
-    ) -> None:
+    async def remove_ec_ramp_curve(self, curve_id: str) -> None:
         """Remove an EC ramp curve."""
         await self._coordinator._nutrient_manager.async_remove_ec_ramp_curve(curve_id)
 

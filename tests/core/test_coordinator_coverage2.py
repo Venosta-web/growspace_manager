@@ -743,7 +743,10 @@ async def test_async_save_ec_ramp_curve(hass: HomeAssistant) -> None:
     coordinator.services.config.save_ec_ramp_curve = AsyncMock(return_value=mock_preset)
 
     await coordinator.services.config.save_ec_ramp_curve(
-        name="Bloom Ramp", points=[{"day": 1, "ec": 1.8}]
+        growspace_id="gs1",
+        name="Bloom Ramp",
+        stage="flower",
+        points=[{"week": 1, "ec_min": 1.6, "ec_max": 1.8}],
     )
 
     coordinator.services.config.save_ec_ramp_curve.assert_called_once()
@@ -755,11 +758,9 @@ async def test_async_remove_ec_ramp_curve(hass: HomeAssistant) -> None:
     coordinator = create_test_coordinator(hass)
     coordinator.services.config.remove_ec_ramp_curve = AsyncMock()
 
-    await coordinator.services.config.remove_ec_ramp_curve(None, "curve_1")
+    await coordinator.services.config.remove_ec_ramp_curve("curve_1")
 
-    coordinator.services.config.remove_ec_ramp_curve.assert_called_once_with(
-        None, "curve_1"
-    )
+    coordinator.services.config.remove_ec_ramp_curve.assert_called_once_with("curve_1")
 
 
 # =============================================================================

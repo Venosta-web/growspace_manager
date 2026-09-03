@@ -420,9 +420,16 @@ class ECRampPoint(BaseModel):
 
 @dataclass(slots=True)
 class ECRampCurve(BaseModel):
-    """EC target curve for a growth stage."""
+    """EC target curve for one growth stage of one growspace (ADR-0046).
+
+    ``growspace_id`` is the explicit owner: a curve drives only its own
+    growspace's [[Active Feed EC Target]], and at most one curve exists per
+    ``(growspace_id, stage)``. An empty ``growspace_id`` marks a curve stored by
+    the version that discarded the binding — it is inert and raises a repair.
+    """
 
     id: str = ""
+    growspace_id: str = ""
     name: str = ""
     stage: str = ""
     points: list[ECRampPoint] = field(default_factory=list)

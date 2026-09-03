@@ -747,6 +747,7 @@ def _make_ec_sensor():
 def _flower_curve() -> ECRampCurve:
     return ECRampCurve(
         id="c1",
+        growspace_id="gs1",
         name="Bloom",
         stage="flower",
         points=[
@@ -797,7 +798,12 @@ def test_ec_sensor_get_active_curve_no_match() -> None:
     """_get_active_curve returns None when no curve matches the feed stage."""
     sensor, coordinator = _make_ec_sensor()
     veg_curve = ECRampCurve(
-        id="c1", name="Veg", stage="veg", points=[], created_at="2026-01-01"
+        id="c1",
+        growspace_id="gs1",
+        name="Veg",
+        stage="veg",
+        points=[],
+        created_at="2026-01-01",
     )
     coordinator.services.config.ec_ramp_curves = {"c1": veg_curve}
     coordinator.growspaces = {"gs1": Mock()}
@@ -842,6 +848,7 @@ def test_ec_sensor_native_value_fallback_last_point() -> None:
     sensor, coordinator = _make_ec_sensor()
     curve = ECRampCurve(
         id="c1",
+        growspace_id="gs1",
         name="Ramp",
         stage="flower",
         points=[ECRampPoint(week=1, ec_min=1.2, ec_max=1.6)],
@@ -888,6 +895,7 @@ def test_ec_sensor_extra_state_attributes_fallback_last_point() -> None:
     sensor, coordinator = _make_ec_sensor()
     curve = ECRampCurve(
         id="c1",
+        growspace_id="gs1",
         name="Ramp",
         stage="flower",
         points=[ECRampPoint(week=1, ec_min=1.2, ec_max=1.6)],
@@ -1008,6 +1016,7 @@ def test_ec_sensor_native_value_before_first_point() -> None:
     sensor, coordinator = _make_ec_sensor()
     curve = ECRampCurve(
         id="c1",
+        growspace_id="gs1",
         name="Ramp",
         stage="flower",
         points=[ECRampPoint(week=5, ec_min=1.6, ec_max=2.0)],
