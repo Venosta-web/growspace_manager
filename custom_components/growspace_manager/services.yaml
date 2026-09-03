@@ -559,205 +559,181 @@ configure_environment:
       example: "4x4_tent"
       selector:
         text:
-    temperature_sensors:
-      name: Temperature Sensors
-      description: Temperature sensor entities.
-      selector: &sensor_list
-        entity:
-          domain: sensor
-          multiple: true
-    humidity_sensors:
-      name: Humidity Sensors
-      description: Humidity sensor entities.
-      selector: *sensor_list
-    vpd_sensors:
-      name: VPD Sensors
-      description: VPD sensor entities.
-      selector: *sensor_list
-    co2_sensor:
-      name: CO2 Sensor
-      description: Carbon-dioxide sensor entity; clear with an empty value.
+
+    temperature_sensor:
+      name: Temperature Sensor
+      description: Temperature sensor entity (°C)
+      required: false
+      example: "sensor.4x4_tent_temperature"
       selector:
         entity:
           domain: sensor
-    light_sensors:
-      name: Light Sensors
-      description: Entities indicating the light state.
+          device_class: temperature
+
+    humidity_sensor:
+      name: Humidity Sensor
+      description: Humidity sensor entity (%)
+      required: false
+      example: "sensor.4x4_tent_humidity"
+      selector:
+        entity:
+          domain: sensor
+          device_class: humidity
+
+    vpd_sensor:
+      name: VPD Sensor
+      description: VPD sensor entity (kPa)
+      required: false
+      example: "sensor.4x4_tent_vpd"
+      selector:
+        entity:
+          domain: sensor
+
+    co2_sensor:
+      name: CO2 Sensor (Optional)
+      description: CO2 sensor entity (ppm)
+      required: false
+      example: "sensor.4x4_tent_co2"
+      selector:
+        entity:
+          domain: sensor
+          device_class: carbon_dioxide
+
+    circulation_fan_entities:
+      name: Circulation Fans (Optional)
+      description: Fan entities for mold risk detection
+      required: false
+      selector:
+        entity:
+          domain: fan
+          multiple: true
+
+    stress_threshold:
+      name: Stress Detection Threshold
+      description: Probability threshold for stress detection (0-1)
+      required: false
+      example: 0.70
+      selector:
+        number:
+          min: 0.5
+          max: 0.95
+          step: 0.05
+
+    mold_threshold:
+      name: Mold Risk Threshold
+      description: Probability threshold for mold risk detection (0-1)
+      required: false
+      example: 0.75
+      selector:
+        number:
+          min: 0.5
+          max: 0.95
+          step: 0.05
+
+    light_sensor:
+      name: Light Sensor / Switch
+      description: Sensor or switch indicating if lights are on
+      required: false
       selector:
         entity:
           domain: [light, switch, binary_sensor, sensor, input_boolean]
-          multiple: true
-    soil_moisture_sensor:
-      name: Soil Moisture Sensor
-      description: Substrate VWC or moisture sensor entity.
+
+    exhaust_entity:
+      name: Exhaust Fan
+      description: Fan or switch controlling exhaust
+      required: false
       selector:
-        entity:
-          domain: sensor
-    soil_moisture_min:
-      name: Soil Moisture Minimum
-      description: Lower bound of the atomic acceptable moisture band.
-      selector: &moisture_bound
-        number:
-          min: 0
-          max: 100
-          step: 0.1
-    soil_moisture_max:
-      name: Soil Moisture Maximum
-      description: Upper bound of the atomic acceptable moisture band.
-      selector: *moisture_bound
-    stress_threshold:
-      name: Stress Detection Threshold
-      description: Probability threshold for stress detection.
-      selector: &probability
-        number:
-          min: 0
-          max: 1
-          step: 0.01
-    mold_threshold:
-      name: Mold Risk Threshold
-      description: Probability threshold for mold-risk detection.
-      selector: *probability
-    control_humidifier:
-      name: Control Humidifier
-      description: Enable automated humidifier control.
-      selector:
-        boolean:
-    control_dehumidifier:
-      name: Control Dehumidifier
-      description: Enable automated dehumidifier control.
-      selector:
-        boolean:
-    exhaust_fan_entities:
-      name: Exhaust Fan Entities
-      description: Exhaust fan, switch, or input-boolean entities.
-      selector: &fan_entities
         entity:
           domain: [fan, switch, input_boolean]
-          multiple: true
-    circulation_fan_entities:
-      name: Circulation Fan Entities
-      description: Circulation fan, switch, or input-boolean entities.
-      selector: *fan_entities
-    humidifier_entities:
-      name: Humidifier Entities
-      description: Humidifier actuator entities.
-      selector: &humidity_devices
-        entity:
-          domain: [humidifier, switch, input_boolean]
-          multiple: true
-    dehumidifier_entities:
-      name: Dehumidifier Entities
-      description: Dehumidifier actuator entities.
-      selector: *humidity_devices
-    growlight_entities:
-      name: Grow Light Entities
-      description: Grow-light actuator entities.
+
+    humidifier_entity:
+      name: Humidifier
+      description: Humidifier device or switch
+      required: false
       selector:
         entity:
-          domain: [light, switch]
-          multiple: true
-    exhaust_fan_ac_infinity_devices:
-      name: Exhaust Fan AC Infinity Devices
-      description: Exhaust AC Infinity port bundles.
-      selector: &object_list
-        object:
-          multiple: true
-    circulation_fan_ac_infinity_devices:
-      name: Circulation Fan AC Infinity Devices
-      description: Circulation AC Infinity port bundles.
-      selector: *object_list
-    humidifier_ac_infinity_devices:
-      name: Humidifier AC Infinity Devices
-      description: Humidifier AC Infinity port bundles.
-      selector: *object_list
-    dehumidifier_ac_infinity_devices:
-      name: Dehumidifier AC Infinity Devices
-      description: Dehumidifier AC Infinity port bundles.
-      selector: *object_list
-    growlight_ac_infinity_devices:
-      name: Grow Light AC Infinity Devices
-      description: Grow-light AC Infinity configurator bundles.
-      selector: *object_list
-    humidifier_thresholds:
-      name: Humidifier Thresholds
-      description: Stage and day/night humidifier threshold table.
-      selector: &object_value
-        object:
-    dehumidifier_thresholds:
-      name: Dehumidifier Thresholds
-      description: Stage and day/night dehumidifier threshold table.
-      selector: *object_value
+          domain: [humidifier, switch, input_boolean]
+
+    dehumidifier_entity:
+      name: Dehumidifier
+      description: Dehumidifier device or switch
+      required: false
+      selector:
+        entity:
+          domain: [humidifier, switch, input_boolean]
+
+    soil_moisture_sensor:
+      name: Soil Moisture Sensor
+      description: Sensor for soil VWC/moisture
+      required: false
+      selector:
+        entity:
+          domain: [sensor]
+          device_class: moisture
+
+    control_dehumidifier:
+      name: Control Dehumidifier
+      description: Enable automated control of the dehumidifier
+      required: false
+      selector:
+        boolean:
+
     sensor_groups:
       name: Sensor Groups
-      description: Sensor groups used by the spatial heatmap.
-      selector: *object_list
+      description: List of sensor groups for 3D heatmap
+      required: false
+      selector:
+        object:
+
     sensor_coordinates:
       name: Sensor Coordinates
-      description: Sensor-coordinate mapping used by the spatial heatmap.
-      selector: *object_value
+      description: Dictionary of sensor coordinates for 3D mapping
+      required: false
+      selector:
+        object:
+
     irrigation_tanks:
       name: Irrigation Tanks
-      description: Irrigation Tank Config entries.
-      selector: *object_list
-    circulation_fan_config:
-      name: Circulation Fan Config
-      description: Complete circulation-fan controller sub-config.
-      selector: *object_value
-    growlight_config:
-      name: Grow Light Config
-      description: Complete grow-light controller sub-config.
-      selector: *object_value
-    vpd_optimal_overrides:
-      name: Optimal VPD Overrides
-      description: Per-stage day/night optimal VPD bands.
-      selector: *object_value
-    substrate_temperature_sensors:
-      name: Substrate Temperature Sensors
-      description: Substrate temperature sensor entities.
-      selector: *sensor_list
-    ph_sensors:
-      name: pH Sensors
-      description: pH sensor entities.
-      selector: *sensor_list
-    feed_ec_sensors:
-      name: Feed EC Sensors
-      description: Feed EC sensor entities.
-      selector: *sensor_list
-    bulk_ec_sensors:
-      name: Bulk EC Sensors
-      description: Bulk EC sensor entities.
-      selector: *sensor_list
-    pore_ec_sensors:
-      name: Pore EC Sensors
-      description: Pore EC sensor entities.
-      selector: *sensor_list
-    runoff_ec_sensors:
-      name: Runoff EC Sensors
-      description: Runoff EC sensor entities.
-      selector: *sensor_list
-    drain_volume_sensors:
-      name: Drain Volume Sensors
-      description: Drain volume sensor entities.
-      selector: *sensor_list
-    irrigation_flow_sensors:
-      name: Irrigation Flow Sensors
-      description: Irrigation flow sensor entities.
-      selector: *sensor_list
-    power_sensors:
-      name: Power Sensors
-      description: Power sensor entities.
-      selector: *sensor_list
-    energy_sensors:
-      name: Energy Sensors
-      description: Energy sensor entities.
-      selector: *sensor_list
-    lung_room_temp_sensors:
-      name: Lung Room Temperature Sensors
-      description: Source-air temperature sensor entities.
-      selector: *sensor_list
+      description: Configuration for irrigation tanks
+      required: false
+      selector:
+        object:
+    exhaust_fan_ac_infinity_devices:
+      name: Exhaust Fan AC Infinity Devices
+      description: >-
+        AC Infinity exhaust-fan ports as {mode_entity, speed_entity, on_speed}
+        bundles. Omit to preserve existing devices.
+      required: false
+      selector:
+        object:
+    circulation_fan_ac_infinity_devices:
+      name: Circulation Fan AC Infinity Devices
+      description: >-
+        AC Infinity circulation-fan ports as {mode_entity, speed_entity,
+        on_speed} bundles. Omit to preserve existing devices.
+      required: false
+      selector:
+        object:
+    humidifier_ac_infinity_devices:
+      name: Humidifier AC Infinity Devices
+      description: >-
+        AC Infinity humidifier ports as {mode_entity, speed_entity, on_speed}
+        bundles. Omit to preserve existing devices.
+      required: false
+      selector:
+        object:
+    dehumidifier_ac_infinity_devices:
+      name: Dehumidifier AC Infinity Devices
+      description: >-
+        AC Infinity dehumidifier ports as {mode_entity, speed_entity, on_speed}
+        bundles. Omit to preserve existing devices.
+      required: false
+      selector:
+        object:
     camera_entities:
       name: Camera Entities
       description: Cameras used for snapshots and Vision Checkups.
+      required: false
       selector:
         entity:
           domain: camera
@@ -765,28 +741,13 @@ configure_environment:
     snapshot_interval_hours:
       name: Snapshot Interval
       description: Hours between scheduled camera snapshots.
+      required: false
       selector:
         number:
           min: 1
           max: 168
           step: 1
           unit_of_measurement: h
-    electricity_cost_per_kwh:
-      name: Electricity Cost per kWh
-      description: Local electricity cost per kilowatt-hour.
-      selector:
-        number:
-          min: 0
-          step: 0.01
-          mode: box
-    lst_offset:
-      name: Leaf Surface Temperature Offset
-      description: Leaf-to-air temperature offset used for VPD calculation.
-      selector:
-        number:
-          min: -10
-          max: 10
-          step: 0.1
 
 remove_environment:
   description: Remove environment configuration for a growspace

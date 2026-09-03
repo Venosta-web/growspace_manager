@@ -27,6 +27,7 @@ async def registered_environment_service(
     coordinator.growspaces = {growspace.id: growspace}
     coordinator.services.save = AsyncMock()
     coordinator.services.request_refresh = AsyncMock()
+    coordinator._subsystem_manager.get_circulation_fan_controller.return_value = None
 
     entry = MockConfigEntry(domain=DOMAIN, entry_id="service_boundary")
     entry.add_to_hass(hass)
@@ -58,6 +59,27 @@ async def test_configure_environment_persists_moisture_band_through_service_regi
 
     assert growspace.environment_config.soil_moisture_min == 32.5
     assert growspace.environment_config.soil_moisture_max == 54.0
+    coordinator.services.save.assert_awaited_once()
+
+
+async def test_configure_environment_accepts_documented_circulation_fans(
+    hass: HomeAssistant,
+    registered_environment_service: tuple[MagicMock, Growspace],
+) -> None:
+    """The documented plural fan field crosses the public service boundary."""
+    coordinator, growspace = registered_environment_service
+
+    await hass.services.async_call(
+        DOMAIN,
+        "configure_environment",
+        {
+            "growspace_id": growspace.id,
+            "circulation_fan_entities": ["fan.airflow"],
+        },
+        blocking=True,
+    )
+
+    assert growspace.environment_config.circulation_fan_entities == ["fan.airflow"]
     coordinator.services.save.assert_awaited_once()
 
 
