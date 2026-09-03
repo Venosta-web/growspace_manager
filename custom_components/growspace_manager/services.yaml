@@ -1569,6 +1569,27 @@ apply_steering_mode:
             - "balanced"
             - "generative"
 
+set_steering_phase:
+  description: >-
+    Override the active crop-steering phase by hand. The phase is otherwise
+    decided each tick by the steering machine, which leaves the override in
+    place until it next transitions on its own.
+  fields:
+    growspace_id:
+      description: The ID of the growspace to configure.
+      required: true
+      selector:
+        text:
+    steering_phase:
+      description: The phase to display and steer from until the machine moves on.
+      required: true
+      selector:
+        select:
+          options:
+            - "p1"
+            - "p2"
+            - "p3"
+
 add_irrigation_time:
   description: Add a specific time to the irrigation schedule.
   fields:

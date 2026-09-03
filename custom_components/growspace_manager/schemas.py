@@ -765,6 +765,17 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
 )
 
 
+# The manual phase override (ADR-0012). Its own action rather than a settings
+# field: the phase is decided by the Steering Phase Machine every tick, so a
+# grower-facing write of it is a distinct gesture, not part of saving a form.
+SET_STEERING_PHASE_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Required("steering_phase"): vol.In(["p1", "p2", "p3"]),
+    }
+)
+
+
 _ADD_SCHEDULE_TIME_BASE = {
     vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
     vol.Required("time"): str,  # Use string for HH:MM:SS format

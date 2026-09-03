@@ -386,6 +386,7 @@ ATTR_DRYBACK_PERCENT = "dryback_percent"
 ATTR_PEAK_VWC = "peak_vwc"
 ATTR_TROUGH_VWC = "trough_vwc"
 ATTR_STEERING_MODE = "steering_mode"
+ATTR_STEERING_PHASE = "steering_phase"
 ATTR_EC_TREND = "ec_trend"
 
 # Drain EC Attributes
@@ -667,6 +668,7 @@ class GrowspaceService(StrEnum):
     SET_IRRIGATION_SETTINGS = "set_irrigation_settings"
     SET_IRRIGATION_STRATEGY = "set_irrigation_strategy"
     APPLY_STEERING_MODE = "apply_steering_mode"
+    SET_STEERING_PHASE = "set_steering_phase"
     ADD_IRRIGATION_TIME = "add_irrigation_time"
     REMOVE_IRRIGATION_TIME = "remove_irrigation_time"
     ADD_DRAIN_TIME = "add_drain_time"

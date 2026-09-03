@@ -14,6 +14,7 @@ from custom_components.growspace_manager.const import (
     ATTR_IRRIGATION_TIMES,
     ATTR_STAGE,
     ATTR_STEERING_MODE,
+    ATTR_STEERING_PHASE,
     ATTR_TIME,
     GrowspaceService,
     SteeringMode,
@@ -28,6 +29,7 @@ from custom_components.growspace_manager.schemas import (
     SET_EC_TARGET_RANGE_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     SET_IRRIGATION_STRATEGY_SCHEMA,
+    SET_STEERING_PHASE_SCHEMA,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
@@ -122,6 +124,31 @@ async def handle_set_irrigation_strategy(
     except IrrigationChangeError as err:
         raise ServiceValidationError(str(err)) from err
     _LOGGER.info("Set irrigation strategy for growspace '%s'", growspace_id)
+
+
+@handle_service_errors
+async def handle_set_steering_phase(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Override the active crop-steering phase by hand (ADR-0012).
+
+    Its own action rather than a settings field: the phase is the [[Steering
+    Phase Machine]]'s to decide every tick, so writing it is a distinct gesture
+    and an unrelated settings save must not be able to carry a stale one.
+    """
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    phase = call.data[ATTR_STEERING_PHASE]
+    await _get_irrigation_coordinator(coordinator, growspace_id)
+
+    try:
+        await coordinator.services.growspaces.set_steering_phase(growspace_id, phase)
+    except IrrigationChangeError as err:
+        raise ServiceValidationError(str(err)) from err
+    _LOGGER.info(
+        "Set active steering phase to %s for growspace '%s'", phase, growspace_id
+    )
 
 
 @handle_service_errors
@@ -274,6 +301,11 @@ SERVICES = [
         GrowspaceService.APPLY_STEERING_MODE,
         handle_apply_steering_mode,
         APPLY_STEERING_MODE_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.SET_STEERING_PHASE,
+        handle_set_steering_phase,
+        SET_STEERING_PHASE_SCHEMA,
     ),
     ServiceDefinition(
         GrowspaceService.ADD_IRRIGATION_TIME,
