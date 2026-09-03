@@ -313,6 +313,26 @@ class GrowspaceFacade:
             ),
         )
 
+    async def set_steering_phase(
+        self, growspace_id: str, phase: str
+    ) -> IrrigationChangeResult:
+        """Override the active crop-steering phase by hand (ADR-0012).
+
+        The [[Steering Phase Machine]] decides the phase every tick and keeps
+        its own state; this writes the value the frontend reads, which the
+        machine leaves alone until it next transitions on its own. So the
+        override holds until the machine genuinely changes phase — it is a
+        correction, not a lock.
+        """
+        return await async_apply_irrigation_change(
+            self._coordinator,
+            growspace_id,
+            IrrigationChange(
+                operation=IrrigationChangeOperation.STEERING_PHASE,
+                values={"active_steering_phase": phase},
+            ),
+        )
+
     async def apply_steering_mode(self, growspace_id: str, mode: SteeringMode) -> None:
         """Stamp a Steering Mode's preset values into the strategy (ADR-0012).
 

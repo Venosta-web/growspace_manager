@@ -375,3 +375,81 @@ async def test_dripper_throughput_and_a_direct_flow_rate_conflict() -> None:
         )
 
     coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["p1", "p2", "p3"])
+async def test_steering_phase_change_writes_the_phase(phase: str) -> None:
+    """The steering-phase operation writes the one field it owns."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_config.active_steering_phase = "p1"
+    coordinator = _coordinator(growspace)
+
+    result = await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.STEERING_PHASE,
+            values={"active_steering_phase": phase},
+        ),
+    )
+
+    assert growspace.irrigation_config.active_steering_phase == phase
+    # Re-selecting the phase already showing is not a change, exactly as it is
+    # not for any other field the seam writes.
+    expected_changed = {
+        "p1": frozenset(),
+        "p2": frozenset({"active_steering_phase"}),
+        "p3": frozenset({"active_steering_phase", "phase_changed_at"}),
+    }[phase]
+    assert result.changed_config_fields == expected_changed
+    assert result.changed_strategy_fields == frozenset()
+    coordinator.async_commit.assert_awaited_once()
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_steering_phase_change_stamps_the_timestamp_only_for_p3() -> None:
+    """The dryback readout's clock starts on entry to P3, as it does on a tick."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.STEERING_PHASE,
+            values={"active_steering_phase": "p1"},
+        ),
+    )
+    assert growspace.irrigation_config.phase_changed_at is None
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.STEERING_PHASE,
+            values={"active_steering_phase": "p3"},
+        ),
+    )
+    assert growspace.irrigation_config.phase_changed_at is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["irrigation_duration", "phase_changed_at"])
+async def test_steering_phase_change_writes_nothing_else(field: str) -> None:
+    """The phase operation is the phase alone: no settings ride along with it."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match=field):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.STEERING_PHASE,
+                values={"active_steering_phase": "p2", field: 45},
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()

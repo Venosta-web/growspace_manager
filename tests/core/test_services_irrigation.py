@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.const import ShotSizingMode
 from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.services.growspace_facade import (
     GrowspaceFacade,
@@ -17,6 +18,7 @@ from custom_components.growspace_manager.services.irrigation import (
     handle_run_irrigation_cycle,
     handle_set_irrigation_settings,
     handle_set_irrigation_strategy,
+    handle_set_steering_phase,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
@@ -247,6 +249,68 @@ class TestHandleSetIrrigationSettings:
             "Field 'active_steering_phase' is not writable by the settings "
             "irrigation operation"
         )
+
+
+class TestHandleSetSteeringPhase:
+    """Tests for the manual phase override action (ADR-0012)."""
+
+    @pytest.mark.asyncio
+    async def test_set_steering_phase_writes_the_phase(
+        self,
+        mock_hass: MagicMock,
+        mock_irrigation_coordinator: MagicMock,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """The action writes the phase the frontend reads."""
+        growspace = _install_real_irrigation_action_stack(
+            mock_coordinator, mock_irrigation_coordinator
+        )
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "steering_phase": "p3"}
+
+        await handle_set_steering_phase(mock_hass, mock_coordinator, call)
+
+        assert growspace.irrigation_config.active_steering_phase == "p3"
+        assert growspace.irrigation_config.phase_changed_at is not None
+
+    @pytest.mark.asyncio
+    async def test_set_steering_phase_presents_change_validation_error(
+        self,
+        mock_hass: MagicMock,
+        mock_irrigation_coordinator: MagicMock,
+        mock_coordinator: MagicMock,
+    ) -> None:
+        """A candidate state the seam refuses is presented, not rewritten.
+
+        The phase carries no settings of its own, but the change seam validates
+        the whole post-change state — so a growspace already left in Volume Mode
+        without the numbers that mode needs refuses the override too, naming what
+        is missing rather than failing opaquely.
+        """
+        growspace = _install_real_irrigation_action_stack(
+            mock_coordinator, mock_irrigation_coordinator
+        )
+        growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.VOLUME
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "steering_phase": "p3"}
+
+        with pytest.raises(ServiceValidationError, match="Volume Mode requires"):
+            await handle_set_steering_phase(mock_hass, mock_coordinator, call)
+
+        assert growspace.irrigation_config.active_steering_phase == "p2"
+
+    @pytest.mark.asyncio
+    async def test_set_steering_phase_growspace_not_found(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """An unknown growspace is refused before anything is written."""
+        mock_coordinator._subsystem_manager.irrigation_coordinators = {}
+        mock_coordinator.growspaces = {}
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "missing", "steering_phase": "p2"}
+
+        with pytest.raises(ServiceValidationError):
+            await handle_set_steering_phase(mock_hass, mock_coordinator, call)
 
 
 class TestHandleAddIrrigationTime:

@@ -19,6 +19,7 @@ from custom_components.growspace_manager.domain.shot_sizing import (
 )
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import SubstrateProfile
+from homeassistant.util.dt import now
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -34,11 +35,14 @@ class IrrigationChangeOperation(StrEnum):
     SETTINGS = "settings"
     STRATEGY = "strategy"
     OPTIONS = "options"
+    STEERING_PHASE = "steering_phase"
 
 
 # Fields owned by the grower-facing settings interface. Schedule collections,
 # EC target ranges, the active steering phase and its timestamp have dedicated
-# owners and are deliberately absent.
+# owners and are deliberately absent — the phase belongs to the steering-phase
+# operation below, so an unrelated settings save can never carry a stale phase
+# over what the [[Steering Phase Machine]] decided.
 IRRIGATION_CONFIG_CHANGE_FIELDS: frozenset[str] = frozenset(
     {
         "irrigation_pump_entity",
@@ -90,6 +94,21 @@ IRRIGATION_STRATEGY_CHANGE_FIELDS: frozenset[str] = frozenset(
     }
 )
 
+# The one field a grower may write through the steering-phase operation
+# (ADR-0012's manual phase override). ``phase_changed_at`` is derived here, not
+# submitted: it records when the phase became what it is, and a transport that
+# could state it separately could state a time the phase never changed.
+IRRIGATION_PHASE_CHANGE_FIELDS: frozenset[str] = frozenset({"active_steering_phase"})
+
+# Config fields this seam may write, whatever the operation. The phase pair is
+# reachable only through the steering-phase operation; it is listed here so the
+# derived timestamp survives the config/strategy split below.
+_WRITABLE_CONFIG_FIELDS: frozenset[str] = (
+    IRRIGATION_CONFIG_CHANGE_FIELDS
+    | IRRIGATION_PHASE_CHANGE_FIELDS
+    | frozenset({"phase_changed_at"})
+)
+
 # Compatibility spellings accepted by existing action/config-flow payloads.
 _STRATEGY_ALIASES = frozenset(
     {
@@ -134,6 +153,8 @@ def _accepted_fields(operation: IrrigationChangeOperation) -> frozenset[str]:
         return IRRIGATION_CONFIG_CHANGE_FIELDS | _CONFIG_ALIASES
     if operation is IrrigationChangeOperation.STRATEGY:
         return IRRIGATION_STRATEGY_CHANGE_FIELDS | _STRATEGY_ALIASES
+    if operation is IrrigationChangeOperation.STEERING_PHASE:
+        return IRRIGATION_PHASE_CHANGE_FIELDS
     return (
         IRRIGATION_CONFIG_CHANGE_FIELDS
         | IRRIGATION_STRATEGY_CHANGE_FIELDS
@@ -148,6 +169,13 @@ def _normalize_values(
 ) -> dict[str, Any]:
     """Translate compatibility spellings into canonical typed model values."""
     values = dict(change.values)
+
+    # The steering-phase operation derives the timestamp the phase display and
+    # the dryback readout both key off, exactly as the machine does when it
+    # decides the same transition itself: stamped on entry to P3, and otherwise
+    # left alone, because only a dryback is measured from it.
+    if values.get("active_steering_phase") == "p3":
+        values["phase_changed_at"] = now().isoformat()
 
     if "use_vwc_steering" in values:
         values.setdefault("enabled", bool(values.pop("use_vwc_steering")))
@@ -269,7 +297,7 @@ async def async_apply_irrigation_change(
     config_updates = {
         field: value
         for field, value in values.items()
-        if field in IRRIGATION_CONFIG_CHANGE_FIELDS
+        if field in _WRITABLE_CONFIG_FIELDS
     }
     strategy_updates = {
         field: value
