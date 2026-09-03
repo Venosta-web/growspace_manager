@@ -667,6 +667,7 @@ class GrowspaceService(StrEnum):
     SET_HUMIDIFIER_CONTROL = "set_humidifier_control"
     SET_IRRIGATION_SETTINGS = "set_irrigation_settings"
     SET_IRRIGATION_STRATEGY = "set_irrigation_strategy"
+    CLEAR_IRRIGATION = "clear_irrigation"
     APPLY_STEERING_MODE = "apply_steering_mode"
     SET_STEERING_PHASE = "set_steering_phase"
     ADD_IRRIGATION_TIME = "add_irrigation_time"

@@ -1249,6 +1249,14 @@ SET_EC_TARGET_RANGE_SCHEMA = vol.Schema(
     }
 )
 
+# A clear names the growspace and nothing else: it restores the model's own
+# defaults rather than writing values, so there is no field to carry.
+CLEAR_IRRIGATION_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+    }
+)
+
 APPLY_STEERING_MODE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),

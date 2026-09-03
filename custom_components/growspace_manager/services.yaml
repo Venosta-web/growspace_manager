@@ -1509,6 +1509,19 @@ set_irrigation_settings:
           step: 0.1
           unit_of_measurement: "mS/cm"
 
+clear_irrigation:
+  description: >-
+    Reset a growspace's irrigation configuration to its defaults and disable
+    VWC crop steering. Pump entities, durations, caps, thresholds, schedules
+    and per-stage EC target ranges are all cleared; the rest of the steering
+    strategy keeps its values but stops running.
+  fields:
+    growspace_id:
+      description: ID of the growspace
+      required: true
+      selector:
+        text:
+
 apply_steering_mode:
   description: >-
     Stamp a Steering Mode's recommended setpoints into the growspace's

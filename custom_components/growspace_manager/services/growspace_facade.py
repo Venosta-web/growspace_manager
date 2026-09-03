@@ -50,7 +50,6 @@ from custom_components.growspace_manager.services.strategy_stamp import (
     StrategyStamp,
     async_apply_strategy_stamp,
 )
-from custom_components.growspace_manager.steering_presets import resolve_steering_preset
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.substrate_tracker import SubstrateTracker
 from custom_components.growspace_manager.tank_water_tracker import TankWaterTracker
@@ -333,40 +332,50 @@ class GrowspaceFacade:
             ),
         )
 
-    async def apply_steering_mode(self, growspace_id: str, mode: SteeringMode) -> None:
-        """Stamp a Steering Mode's preset values into the strategy (ADR-0012).
+    async def clear_irrigation(self, growspace_id: str) -> IrrigationChangeResult:
+        """Apply a clear Irrigation Change: reset the config, stop steering.
 
-        Looks up the preset for (mode, stored media type, active shot sizing
-        mode) and hands it to the shared [[Strategy Stamp]] seam, which writes
-        those values into the ordinary editable strategy fields and records the
-        mode as the declared intent. The coordinator never reads the mode
-        afterwards — only the explicit fields. Always re-stamps, so
-        re-selecting the current mode resets the fields to that mode's defaults
-        (discarding hand tweaks). ``target_vwc_percent`` is never written.
-        Writes one logbook entry naming the mode and media.
+        The irrigation counterpart of ``remove_environment``, but routed
+        through the change seam rather than around it, so the reset gets the
+        same validation, atomic swap, persistence ordering and rollback as
+        every other irrigation write. The whole ``IrrigationConfig`` goes back
+        to its defaults — schedules and per-stage EC ranges included, since
+        times pointed at a pump that is no longer configured are not a setting
+        worth keeping — and the strategy is disabled without otherwise being
+        rewritten.
         """
-        growspace = self._coordinator.growspaces.get(growspace_id)
-        if not growspace:
-            raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
-
-        strategy = growspace.irrigation_strategy
-        media_type = strategy.substrate_profile.media_type
-        await async_apply_strategy_stamp(
+        return await async_apply_irrigation_change(
             self._coordinator,
             growspace_id,
-            StrategyStamp(
-                values=resolve_steering_preset(
-                    mode, media_type, strategy.shot_sizing_mode
-                ),
-                records={"declared_steering_mode": mode},
-                logbook_message=(
-                    f"Applied {mode.value} steering mode ({media_type.value})"
-                ),
+            IrrigationChange(operation=IrrigationChangeOperation.CLEAR, values={}),
+        )
+
+    async def apply_steering_mode(
+        self, growspace_id: str, mode: SteeringMode
+    ) -> IrrigationChangeResult:
+        """Stamp a Steering Mode's preset values into the strategy (ADR-0012).
+
+        The grower names the mode; the change seam looks up the preset for
+        (mode, stored media type, active shot sizing mode), writes those values
+        into the ordinary editable strategy fields and records the mode as the
+        declared intent. The coordinator never reads the mode afterwards — only
+        the explicit fields. Always re-stamps, so re-selecting the current mode
+        resets the fields to that mode's defaults (discarding hand tweaks).
+        ``target_vwc_percent`` is never written. One logbook entry naming the
+        mode and media follows a successful persist.
+        """
+        result = await async_apply_irrigation_change(
+            self._coordinator,
+            growspace_id,
+            IrrigationChange(
+                operation=IrrigationChangeOperation.STEERING_MODE,
+                values={"steering_mode": mode},
             ),
         )
         _LOGGER.info(
             "Applied %s steering mode for growspace '%s'", mode.value, growspace_id
         )
+        return result
 
     async def apply_irrigation_recipe(
         self, growspace_id: str, recipe_id: str

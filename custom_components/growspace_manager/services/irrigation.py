@@ -23,6 +23,7 @@ from custom_components.growspace_manager.schemas import (
     ADD_DRAIN_TIME_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
     APPLY_STEERING_MODE_SCHEMA,
+    CLEAR_IRRIGATION_SCHEMA,
     REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
     RUN_IRRIGATION_CYCLE_SCHEMA,
@@ -127,6 +128,28 @@ async def handle_set_irrigation_strategy(
 
 
 @handle_service_errors
+async def handle_clear_irrigation(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Reset a growspace's irrigation configuration and stop its steering.
+
+    The irrigation counterpart of ``remove_environment``, and unlike it this
+    one goes through the Irrigation Change seam rather than around it, so the
+    reset is validated, atomic and rolled back on a persistence failure like
+    every other irrigation write (ADR-0046).
+    """
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+
+    try:
+        await coordinator.services.growspaces.clear_irrigation(growspace_id)
+    except IrrigationChangeError as err:
+        raise ServiceValidationError(str(err)) from err
+    _LOGGER.info("Cleared irrigation configuration for growspace '%s'", growspace_id)
+
+
+@handle_service_errors
 async def handle_set_steering_phase(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -164,7 +187,11 @@ async def handle_apply_steering_mode(
     """
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     mode = SteeringMode(call.data[ATTR_STEERING_MODE])
-    await coordinator.services.growspaces.apply_steering_mode(growspace_id, mode)
+
+    try:
+        await coordinator.services.growspaces.apply_steering_mode(growspace_id, mode)
+    except IrrigationChangeError as err:
+        raise ServiceValidationError(str(err)) from err
     _LOGGER.info(
         "Applied %s steering mode for growspace '%s'", mode.value, growspace_id
     )
@@ -296,6 +323,11 @@ SERVICES = [
         GrowspaceService.SET_IRRIGATION_STRATEGY,
         handle_set_irrigation_strategy,
         SET_IRRIGATION_STRATEGY_SCHEMA,
+    ),
+    ServiceDefinition(
+        GrowspaceService.CLEAR_IRRIGATION,
+        handle_clear_irrigation,
+        CLEAR_IRRIGATION_SCHEMA,
     ),
     ServiceDefinition(
         GrowspaceService.APPLY_STEERING_MODE,

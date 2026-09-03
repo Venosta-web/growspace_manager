@@ -13,6 +13,7 @@ from custom_components.growspace_manager.services.irrigation import (
     _get_irrigation_coordinator,
     handle_add_drain_time,
     handle_add_irrigation_time,
+    handle_clear_irrigation,
     handle_remove_drain_time,
     handle_remove_irrigation_time,
     handle_run_irrigation_cycle,
@@ -586,6 +587,43 @@ class TestHandleApplySteeringMode:
         mock_coordinator.services.growspaces.apply_steering_mode.assert_awaited_once_with(
             "gs1", SteeringMode.GENERATIVE
         )
+
+
+class TestHandleClearIrrigation:
+    """Tests for handle_clear_irrigation service handler (ADR-0046)."""
+
+    @pytest.mark.asyncio
+    async def test_clear_irrigation_routes_to_facade(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """The handler names the growspace and delegates the reset."""
+        mock_coordinator.services.growspaces.clear_irrigation = AsyncMock()
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1"}
+
+        await handle_clear_irrigation(mock_hass, mock_coordinator, call)
+
+        mock_coordinator.services.growspaces.clear_irrigation.assert_awaited_once_with(
+            "gs1"
+        )
+
+    @pytest.mark.asyncio
+    async def test_clear_irrigation_reports_a_refused_change(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """A refused clear surfaces as a validation error, not a stack trace."""
+        from custom_components.growspace_manager.services.irrigation_change import (
+            IrrigationChangeError,
+        )
+
+        mock_coordinator.services.growspaces.clear_irrigation = AsyncMock(
+            side_effect=IrrigationChangeError("nope")
+        )
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1"}
+
+        with pytest.raises(ServiceValidationError, match="nope"):
+            await handle_clear_irrigation(mock_hass, mock_coordinator, call)
 
 
 class TestHandleRunIrrigationCycle:
