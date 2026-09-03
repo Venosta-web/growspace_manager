@@ -641,6 +641,10 @@
     "exhaust_fan_migration": {
       "title": "Exhaust fans need to be re-enabled for {growspace}",
       "description": "Exhaust fans are now controlled by the dedicated exhaust fan controller instead of the dehumidifier. Because of this change, the exhaust fans in {growspace} are no longer being cycled automatically. Open the Exhaust panel for {growspace} and enable the exhaust fan controller to restore automatic control. This was not migrated automatically because the old on/off humidity thresholds do not map onto the new speed-based settings."
+    },
+    "ec_ramp_curve_unmigrated": {
+      "title": "EC ramp curve \"{curve}\" needs to be saved again",
+      "description": "The EC ramp curve \"{curve}\" was stored by a version that discarded both the growth stage you chose and the growspace the curve belongs to, so it has never driven a feed EC target — feed EC fell back to the per-stage EC target range instead. Open the growspace's Irrigation panel, go to the EC Ramp tab, set the curve's name and growth stage, and save it. This was not repaired automatically because the growth stage was never written to storage and cannot be recovered. Your ramp points are intact."
     }
   },
   "entity": {

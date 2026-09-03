@@ -206,7 +206,34 @@ def band_for_week(points: list[ECRampPoint], week: int) -> tuple[float, float] |
     return None
 
 
+def active_curve_for(
+    growspace_id: str,
+    stage: str | None,
+    ec_ramp_curves: dict[str, ECRampCurve],
+) -> ECRampCurve | None:
+    """Return the growspace's own ``ECRampCurve`` for ``stage``, or None.
+
+    The single owner of curve selection (ADR-0046), shared by the feed-target
+    seam and the ``ECTargetSensor``. A curve belongs to exactly one growspace and
+    there is at most one per ``(growspace_id, stage)``, so this is a lookup, not a
+    choice: another growspace's curve never matches, and neither does a curve
+    with an empty ``growspace_id`` — one stored before the binding existed, which
+    raises a repair instead of silently driving an arbitrary growspace.
+    """
+    if stage is None or not growspace_id:
+        return None
+    return next(
+        (
+            c
+            for c in ec_ramp_curves.values()
+            if c.growspace_id == growspace_id and c.stage == stage
+        ),
+        None,
+    )
+
+
 def resolve_active_feed_ec(
+    growspace_id: str,
     stage: str | None,
     week: int,
     ec_ramp_curves: dict[str, ECRampCurve],
@@ -214,14 +241,15 @@ def resolve_active_feed_ec(
 ) -> tuple[tuple[float, float] | None, str]:
     """Resolve the [[Active Feed EC Target]] as ``(band, source)``.
 
-    The weekly ``ECRampCurve`` for the stage wins; failing that, the per-stage
-    ``ECTargetRange`` (which has no week dimension). ``(None, "none")`` when the
-    stage is unknown or neither is configured — a graceful Sensor-Gated absence.
+    The growspace's own weekly ``ECRampCurve`` for the stage wins; failing that,
+    the per-stage ``ECTargetRange`` (which has no week dimension).
+    ``(None, "none")`` when the stage is unknown or neither is configured — a
+    graceful Sensor-Gated absence.
     """
     if stage is None:
         return None, "none"
 
-    curve = next((c for c in ec_ramp_curves.values() if c.stage == stage), None)
+    curve = active_curve_for(growspace_id, stage, ec_ramp_curves)
     if curve is not None and curve.points:
         band = band_for_week(curve.points, week)
         if band is not None:

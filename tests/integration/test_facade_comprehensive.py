@@ -853,68 +853,74 @@ async def test_configure_tank_unknown_entity(mock_coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_ec_ramp_curve(mock_coordinator) -> None:
+async def test_save_ec_ramp_curve_forwards_every_argument_by_keyword(
+    mock_coordinator,
+) -> None:
+    """The facade names what the manager names and passes it by keyword.
+
+    The old signature omitted ``stage``, ended in ``**kwargs`` and called the
+    manager positionally, so the grower's stage was dropped and the remaining
+    arguments landed in the wrong parameters (workspace#108).
+    """
     facade = ServiceFacade(mock_coordinator)
     curve = MagicMock()
     mock_coordinator._nutrient_manager.async_save_ec_ramp_curve = AsyncMock(
         return_value=curve
     )
-    mock_coordinator.growspaces = {"gs1": MagicMock()}
 
     result = await facade.config.save_ec_ramp_curve(
-        growspace_id="gs1", name="Flower Ramp", points=[{"week": 1, "ec_min": 1.0}]
+        growspace_id="gs1",
+        name="Flower Ramp",
+        stage="flower",
+        points=[{"week": 1, "ec_min": 1.0}],
     )
+
     assert result is curve
-
-
-@pytest.mark.asyncio
-async def test_save_ec_ramp_curve_no_growspace_id_fallback(mock_coordinator) -> None:
-    """When growspace_id is None, use the first available growspace."""
-    facade = ServiceFacade(mock_coordinator)
-    curve = MagicMock()
-    mock_coordinator._nutrient_manager.async_save_ec_ramp_curve = AsyncMock(
-        return_value=curve
+    mock_coordinator._nutrient_manager.async_save_ec_ramp_curve.assert_awaited_once_with(
+        growspace_id="gs1",
+        name="Flower Ramp",
+        stage="flower",
+        points=[{"week": 1, "ec_min": 1.0}],
+        curve_id=None,
     )
-    mock_coordinator.growspaces = {"gs1": MagicMock()}
-
-    result = await facade.config.save_ec_ramp_curve(
-        growspace_id=None, name="Curve", points=[{"week": 1}]
-    )
-    assert result is curve
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"name": "Curve", "stage": "flower", "points": []},  # no growspace_id
+        {"growspace_id": "gs1", "stage": "flower", "points": []},  # no name
+        {"growspace_id": "gs1", "name": "Curve", "points": []},  # no stage
+        {"growspace_id": "gs1", "name": "Curve", "stage": "flower"},  # no points
+        # An argument the facade does not know must not be swallowed.
+        {
+            "growspace_id": "gs1",
+            "name": "Curve",
+            "stage": "flower",
+            "points": [],
+            "phase": "p2",
+        },
+    ],
+)
 @pytest.mark.asyncio
-async def test_save_ec_ramp_curve_no_growspace_raises(mock_coordinator) -> None:
-    """When no growspaces exist and growspace_id is None, raise ValueError."""
+async def test_save_ec_ramp_curve_refuses_a_mismatched_call(
+    mock_coordinator, kwargs
+) -> None:
+    """A mismatched call fails loudly instead of storing partial data."""
     facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.growspaces = {}
-    with pytest.raises(ValueError, match="No growspaces"):
-        await facade.config.save_ec_ramp_curve(
-            growspace_id=None, name="Curve", points=[{"week": 1}]
-        )
+    mock_coordinator._nutrient_manager.async_save_ec_ramp_curve = AsyncMock()
 
-
-@pytest.mark.asyncio
-async def test_save_ec_ramp_curve_missing_name_raises(mock_coordinator) -> None:
-    facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.growspaces = {"gs1": MagicMock()}
     with pytest.raises(TypeError):
-        await facade.config.save_ec_ramp_curve(growspace_id="gs1", points=[])
+        await facade.config.save_ec_ramp_curve(**kwargs)
 
-
-@pytest.mark.asyncio
-async def test_save_ec_ramp_curve_missing_points_raises(mock_coordinator) -> None:
-    facade = ServiceFacade(mock_coordinator)
-    mock_coordinator.growspaces = {"gs1": MagicMock()}
-    with pytest.raises(TypeError):
-        await facade.config.save_ec_ramp_curve(growspace_id="gs1", name="Curve")
+    mock_coordinator._nutrient_manager.async_save_ec_ramp_curve.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_remove_ec_ramp_curve(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     mock_coordinator._nutrient_manager.async_remove_ec_ramp_curve = AsyncMock()
-    await facade.config.remove_ec_ramp_curve("gs1", "curve_1")
+    await facade.config.remove_ec_ramp_curve("curve_1")
     mock_coordinator._nutrient_manager.async_remove_ec_ramp_curve.assert_awaited_once_with(
         "curve_1"
     )
@@ -1382,22 +1388,6 @@ async def test_save_ipm_preset_items_in_kwargs(mock_coordinator) -> None:
         "Test", preset_type="Foliar", items=[{"name": "Neem"}]
     )
     assert result is preset
-
-
-@pytest.mark.asyncio
-async def test_save_ec_ramp_curve_points_name_in_kwargs(mock_coordinator) -> None:
-    """save_ec_ramp_curve should pick points/name from **kwargs if provided there."""
-    facade = ServiceFacade(mock_coordinator)
-    curve = MagicMock()
-    mock_coordinator._nutrient_manager.async_save_ec_ramp_curve = AsyncMock(
-        return_value=curve
-    )
-    mock_coordinator.growspaces = {"gs1": MagicMock()}
-
-    result = await facade.config.save_ec_ramp_curve(
-        growspace_id="gs1", points=[{"week": 1}], name="My Curve"
-    )
-    assert result is curve
 
 
 @pytest.mark.asyncio

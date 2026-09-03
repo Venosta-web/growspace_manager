@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.const import (
     ATTR_CURVE_ID,
+    ATTR_GROWSPACE_ID,
     ATTR_NAME,
     ATTR_POINTS,
     ATTR_STAGE,
@@ -38,14 +39,17 @@ async def handle_save_ec_ramp_curve(
     Args:
         hass: The Home Assistant instance.
         coordinator: The GrowspaceCoordinator instance.
-        call: The service call with name, stage, points, and optional curve_id.
+        call: The service call with growspace_id, name, stage, points, and an
+            optional curve_id.
     """
+    growspace_id: str = call.data[ATTR_GROWSPACE_ID]
     name: str = call.data[ATTR_NAME]
     stage: str = call.data[ATTR_STAGE]
     points: list[dict[str, Any]] = call.data[ATTR_POINTS]
     curve_id: str | None = call.data.get(ATTR_CURVE_ID)
 
     await coordinator.services.config.save_ec_ramp_curve(
+        growspace_id=growspace_id,
         name=name,
         stage=stage,
         points=points,
@@ -53,7 +57,11 @@ async def handle_save_ec_ramp_curve(
     )
 
     _LOGGER.info(
-        "Saved EC ramp curve '%s' for stage %s with %d points", name, stage, len(points)
+        "Saved EC ramp curve '%s' for growspace %s stage %s with %d points",
+        name,
+        growspace_id,
+        stage,
+        len(points),
     )
 
 
@@ -72,9 +80,7 @@ async def handle_remove_ec_ramp_curve(
     """
     curve_id: str = call.data[ATTR_CURVE_ID]
 
-    await coordinator.services.config.remove_ec_ramp_curve(
-        growspace_id=None, curve_id=curve_id
-    )
+    await coordinator.services.config.remove_ec_ramp_curve(curve_id=curve_id)
 
     _LOGGER.info("Removed EC ramp curve %s", curve_id)
 
