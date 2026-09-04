@@ -6,6 +6,8 @@ import voluptuous as vol
 import yaml
 
 from custom_components.growspace_manager.schemas import (
+    APPLY_STEERING_MODE_SCHEMA,
+    CLEAR_IRRIGATION_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     SET_IRRIGATION_STRATEGY_SCHEMA,
     SET_STEERING_PHASE_SCHEMA,
@@ -13,6 +15,7 @@ from custom_components.growspace_manager.schemas import (
 from custom_components.growspace_manager.services.irrigation_change import (
     IRRIGATION_CONFIG_CHANGE_FIELDS,
     IRRIGATION_PHASE_CHANGE_FIELDS,
+    IRRIGATION_STEERING_MODE_CHANGE_FIELDS,
     IRRIGATION_STRATEGY_CHANGE_FIELDS,
 )
 
@@ -75,3 +78,22 @@ def test_steering_phase_action_owns_the_phase_alone() -> None:
     settings_schema = SET_IRRIGATION_SETTINGS_SCHEMA.validators[0]
     assert "active_steering_phase" not in _fields(settings_schema)
     assert "steering_phase" not in _fields(settings_schema)
+
+
+def test_clear_action_carries_no_setpoint() -> None:
+    """A clear names the growspace alone — it restores defaults, it sets nothing."""
+    metadata = yaml.safe_load(SERVICES_YAML.read_text(encoding="utf-8"))
+    expected = {"growspace_id"}
+
+    assert _fields(CLEAR_IRRIGATION_SCHEMA) == expected
+    assert set(metadata["clear_irrigation"]["fields"]) == expected
+
+
+def test_steering_mode_action_names_a_mode_and_no_preset_values() -> None:
+    """The wire carries the mode; the server owns what that mode means."""
+    metadata = yaml.safe_load(SERVICES_YAML.read_text(encoding="utf-8"))
+    expected = {"growspace_id", "steering_mode"}
+
+    assert set(IRRIGATION_STEERING_MODE_CHANGE_FIELDS) == {"steering_mode"}
+    assert _fields(APPLY_STEERING_MODE_SCHEMA) == expected
+    assert set(metadata["apply_steering_mode"]["fields"]) == expected

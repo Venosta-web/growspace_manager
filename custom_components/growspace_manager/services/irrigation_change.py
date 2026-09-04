@@ -1,24 +1,47 @@
-"""Irrigation Change — the one write seam for sparse irrigation changes.
+"""Irrigation Change — the one write seam for irrigation configuration writes.
 
 The interface owns canonical field classification, normalization, validation,
 atomic replacement and the effects that follow a successful change. Home
 Assistant actions and config-flow handlers are transport adapters for it.
+
+Three kinds of operation share the seam (ADR-0046):
+
+- a **sparse patch** — the settings, strategy, options-flow and steering-phase
+  transports each submit the fields a grower edited;
+- a **clear** — a whole reset of ``IrrigationConfig`` that disables steering;
+- a **Steering Mode stamp** — a mode name the seam expands into ordinary
+  strategy fields from the server-owned preset table (ADR-0012).
+
+They differ only in how the candidate state is *resolved*. Everything after
+that — post-change validation, the atomic swap, persistence, rollback, the
+logbook entry and the refresh — is identical, which is why they share one
+function rather than three that drift apart.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields as dataclass_fields, replace
 from enum import StrEnum
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
+from custom_components.growspace_manager.const import (
+    ATTR_GROWSPACE_ID,
+    EVENT_GROWSPACE_LOG_ENTRY,
+    ShotSizingMode,
+    SteeringMode,
+    SubstrateMediaType,
+)
 from custom_components.growspace_manager.domain.shot_sizing import (
     dripper_flow_rate_ml_per_sec,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
-from custom_components.growspace_manager.models import SubstrateProfile
+from custom_components.growspace_manager.models import (
+    IrrigationConfig,
+    SubstrateProfile,
+)
+from custom_components.growspace_manager.steering_presets import resolve_steering_preset
 from homeassistant.util.dt import now
 
 if TYPE_CHECKING:
@@ -36,6 +59,8 @@ class IrrigationChangeOperation(StrEnum):
     STRATEGY = "strategy"
     OPTIONS = "options"
     STEERING_PHASE = "steering_phase"
+    CLEAR = "clear"
+    STEERING_MODE = "steering_mode"
 
 
 # Fields owned by the grower-facing settings interface. Schedule collections,
@@ -100,6 +125,29 @@ IRRIGATION_STRATEGY_CHANGE_FIELDS: frozenset[str] = frozenset(
 # could state it separately could state a time the phase never changed.
 IRRIGATION_PHASE_CHANGE_FIELDS: frozenset[str] = frozenset({"active_steering_phase"})
 
+# The one field the Steering Mode stamp accepts. It is not a stored field: the
+# seam expands it into ordinary strategy setpoints from the server-owned preset
+# table and records the mode itself as declared intent, so a transport names a
+# mode and can never hand-write the values that mode is supposed to mean.
+IRRIGATION_STEERING_MODE_CHANGE_FIELDS: frozenset[str] = frozenset({"steering_mode"})
+
+# Every field of IrrigationConfig, used to describe what a clear reset.
+_IRRIGATION_CONFIG_FIELD_NAMES: frozenset[str] = frozenset(
+    field.name for field in dataclass_fields(IrrigationConfig)
+)
+
+# What a clear leaves on the strategy. A clear resets the config and stops the
+# growspace steering; it deliberately does not reset the rest of the strategy,
+# which stays as the grower left it. ``shot_sizing_mode`` goes back to Seconds
+# because Volume Mode is defined by a pump flow rate and a substrate profile
+# and the clear has just taken the flow rate away — a growspace left in Volume
+# Mode with no way to size a shot is a state the seam refuses to persist for
+# every other operation, so a clear must not create it either.
+_CLEARED_STRATEGY_VALUES: dict[str, Any] = {
+    "enabled": False,
+    "shot_sizing_mode": ShotSizingMode.SECONDS,
+}
+
 # Config fields this seam may write, whatever the operation. The phase pair is
 # reachable only through the steering-phase operation; it is listed here so the
 # derived timestamp survives the config/strategy split below.
@@ -155,6 +203,13 @@ def _accepted_fields(operation: IrrigationChangeOperation) -> frozenset[str]:
         return IRRIGATION_STRATEGY_CHANGE_FIELDS | _STRATEGY_ALIASES
     if operation is IrrigationChangeOperation.STEERING_PHASE:
         return IRRIGATION_PHASE_CHANGE_FIELDS
+    if operation is IrrigationChangeOperation.STEERING_MODE:
+        return IRRIGATION_STEERING_MODE_CHANGE_FIELDS
+    if operation is IrrigationChangeOperation.CLEAR:
+        # A clear carries no values: it names no setpoint, it restores the
+        # model's own defaults. Anything sent with it is a caller confusing a
+        # reset with a patch, and saying so beats writing half of each.
+        return frozenset()
     return (
         IRRIGATION_CONFIG_CHANGE_FIELDS
         | IRRIGATION_STRATEGY_CHANGE_FIELDS
@@ -275,12 +330,103 @@ def _validate_candidate(config: Any, strategy: Any) -> None:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _Candidate:
+    """The complete post-change state one operation asks for.
+
+    ``config_fields`` and ``strategy_fields`` name what the operation set out
+    to write, so the result can report which of them actually differ. They are
+    not the same as "what changed": a re-stamp writes every preset field and
+    changes none of them.
+    """
+
+    config: Any
+    strategy: Any
+    config_fields: frozenset[str]
+    strategy_fields: frozenset[str]
+    logbook_message: str | None = None
+
+
+def _resolve_steering_mode(
+    change: IrrigationChange, strategy: Any
+) -> tuple[SteeringMode, SubstrateMediaType, dict[str, Any]]:
+    """Expand a named Steering Mode into the strategy values it stamps."""
+    submitted = change.values.get("steering_mode")
+    if submitted is None:
+        raise IrrigationChangeError(
+            "A steering mode change must name the steering_mode to stamp"
+        )
+    try:
+        mode = SteeringMode(submitted)
+    except ValueError as err:
+        raise IrrigationChangeError(f"Unknown steering mode '{submitted}'") from err
+
+    media_type = strategy.substrate_profile.media_type
+    # Resolved from the *stored* media type and the *active* Shot Sizing Mode:
+    # the preset table keys agronomic levers by media and writes only the
+    # representation the coordinator actually reads (ADR-0012).
+    updates = dict(resolve_steering_preset(mode, media_type, strategy.shot_sizing_mode))
+    updates["declared_steering_mode"] = mode
+    return mode, media_type, updates
+
+
+def _resolve_candidate(change: IrrigationChange, growspace: Any) -> _Candidate:
+    """Build the post-change config and strategy one operation asks for."""
+    prior_config = growspace.irrigation_config
+    prior_strategy = growspace.irrigation_strategy
+
+    if change.operation is IrrigationChangeOperation.CLEAR:
+        return _Candidate(
+            config=IrrigationConfig(),
+            strategy=replace(prior_strategy, **_CLEARED_STRATEGY_VALUES),
+            config_fields=_IRRIGATION_CONFIG_FIELD_NAMES,
+            strategy_fields=frozenset(_CLEARED_STRATEGY_VALUES),
+        )
+
+    if change.operation is IrrigationChangeOperation.STEERING_MODE:
+        mode, media_type, updates = _resolve_steering_mode(change, prior_strategy)
+        return _Candidate(
+            config=prior_config,
+            strategy=replace(prior_strategy, **updates),
+            config_fields=frozenset(),
+            strategy_fields=frozenset(updates),
+            logbook_message=(
+                f"Applied {mode.value} steering mode ({media_type.value})"
+            ),
+        )
+
+    values = _normalize_values(change, prior_strategy.substrate_profile)
+    config_updates = {
+        field: value
+        for field, value in values.items()
+        if field in _WRITABLE_CONFIG_FIELDS
+    }
+    strategy_updates = {
+        field: value
+        for field, value in values.items()
+        if field in IRRIGATION_STRATEGY_CHANGE_FIELDS
+    }
+    return _Candidate(
+        config=replace(prior_config, **config_updates),
+        strategy=replace(prior_strategy, **strategy_updates),
+        config_fields=frozenset(config_updates),
+        strategy_fields=frozenset(strategy_updates),
+    )
+
+
 async def async_apply_irrigation_change(
     coordinator: GrowspaceCoordinator,
     growspace_id: str,
     change: IrrigationChange,
 ) -> IrrigationChangeResult:
-    """Apply one strict, atomic Irrigation Change."""
+    """Apply one strict, atomic Irrigation Change.
+
+    Ordering, whatever the operation: resolve and validate the candidate
+    before the live growspace is touched, swap both models at once,
+    invalidate, persist, and only then narrate and refresh. A persistence
+    failure restores the prior models, so a refused write leaves neither
+    changed state nor a logbook entry claiming it happened.
+    """
     accepted = _accepted_fields(change.operation)
     for field in change.values:
         if field not in accepted:
@@ -293,35 +439,23 @@ async def async_apply_irrigation_change(
     if growspace is None:
         raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
-    values = _normalize_values(change, growspace.irrigation_strategy.substrate_profile)
-    config_updates = {
-        field: value
-        for field, value in values.items()
-        if field in _WRITABLE_CONFIG_FIELDS
-    }
-    strategy_updates = {
-        field: value
-        for field, value in values.items()
-        if field in IRRIGATION_STRATEGY_CHANGE_FIELDS
-    }
     prior_config = growspace.irrigation_config
     prior_strategy = growspace.irrigation_strategy
-    candidate_config = replace(prior_config, **config_updates)
-    candidate_strategy = replace(prior_strategy, **strategy_updates)
-    _validate_candidate(candidate_config, candidate_strategy)
+    candidate = _resolve_candidate(change, growspace)
+    _validate_candidate(candidate.config, candidate.strategy)
     changed_config_fields = frozenset(
         field
-        for field in config_updates
-        if getattr(prior_config, field) != getattr(candidate_config, field)
+        for field in candidate.config_fields
+        if getattr(prior_config, field) != getattr(candidate.config, field)
     )
     changed_strategy_fields = frozenset(
         field
-        for field in strategy_updates
-        if getattr(prior_strategy, field) != getattr(candidate_strategy, field)
+        for field in candidate.strategy_fields
+        if getattr(prior_strategy, field) != getattr(candidate.strategy, field)
     )
 
-    growspace.irrigation_config = candidate_config
-    growspace.irrigation_strategy = candidate_strategy
+    growspace.irrigation_config = candidate.config
+    growspace.irrigation_strategy = candidate.strategy
     coordinator.cache.invalidate(growspace_id)
     try:
         await coordinator.async_commit()
@@ -329,6 +463,17 @@ async def async_apply_irrigation_change(
         growspace.irrigation_config = prior_config
         growspace.irrigation_strategy = prior_strategy
         raise
+
+    if candidate.logbook_message and candidate.config.log_to_logbook:
+        coordinator.hass.bus.async_fire(
+            EVENT_GROWSPACE_LOG_ENTRY,
+            {
+                ATTR_GROWSPACE_ID: growspace_id,
+                "message": candidate.logbook_message,
+                "category": "irrigation",
+                "timestamp": now().isoformat(),
+            },
+        )
     await coordinator.async_request_refresh()
 
     return IrrigationChangeResult(

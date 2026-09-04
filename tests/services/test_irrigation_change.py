@@ -6,8 +6,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
+from custom_components.growspace_manager.const import (
+    ShotSizingMode,
+    SteeringMode,
+    SubstrateMediaType,
+)
 from custom_components.growspace_manager.models import Growspace, SubstrateProfile
+from custom_components.growspace_manager.models.types import IrrigationScheduleItem
 from custom_components.growspace_manager.services.irrigation_change import (
     IrrigationChange,
     IrrigationChangeError,
@@ -23,6 +28,7 @@ def _coordinator(growspace: Growspace) -> SimpleNamespace:
         cache=MagicMock(),
         async_commit=AsyncMock(),
         async_request_refresh=AsyncMock(),
+        hass=MagicMock(),
     )
     return coordinator
 
@@ -449,6 +455,421 @@ async def test_steering_phase_change_writes_nothing_else(field: str) -> None:
             IrrigationChange(
                 operation=IrrigationChangeOperation.STEERING_PHASE,
                 values={"active_steering_phase": "p2", field: 45},
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()
+
+
+# --- Clear (ADR-0046) -------------------------------------------------------
+
+
+def _configured_growspace() -> Growspace:
+    """Return a growspace whose irrigation is configured in every direction."""
+    growspace = Growspace(id="tent", name="Tent")
+    config = growspace.irrigation_config
+    config.irrigation_pump_entity = "switch.pump"
+    config.drain_pump_entity = "switch.drain"
+    config.irrigation_duration = 45
+    config.pump_flow_rate_ml_per_sec = 20.0
+    config.daily_volume_cap_liters = 12.0
+    config.halt_on_runoff_ec_threshold = 8.0
+    config.active_steering_phase = "p3"
+    config.irrigation_times = [IrrigationScheduleItem(time="08:00", duration=30)]
+    config.ec_target_ranges = []
+    strategy = growspace.irrigation_strategy
+    strategy.enabled = True
+    strategy.shot_sizing_mode = ShotSizingMode.VOLUME
+    strategy.substrate_profile = SubstrateProfile(liters_per_pot=6.0)
+    strategy.target_vwc_percent = 62.0
+    strategy.declared_steering_mode = SteeringMode.GENERATIVE
+    return growspace
+
+
+@pytest.mark.asyncio
+async def test_clear_resets_the_config_and_stops_the_strategy() -> None:
+    """A clear restores the config defaults and leaves steering switched off."""
+    growspace = _configured_growspace()
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(operation=IrrigationChangeOperation.CLEAR, values={}),
+    )
+
+    config = growspace.irrigation_config
+    assert config.irrigation_pump_entity is None
+    assert config.drain_pump_entity is None
+    assert config.irrigation_duration is None
+    assert config.pump_flow_rate_ml_per_sec == 0.0
+    assert config.daily_volume_cap_liters is None
+    assert config.halt_on_runoff_ec_threshold is None
+    assert config.active_steering_phase == "p2"
+    # Times pointed at a pump that is no longer configured go with it.
+    assert config.irrigation_times == []
+    assert growspace.irrigation_strategy.enabled is False
+
+
+@pytest.mark.asyncio
+async def test_clear_keeps_the_rest_of_the_strategy() -> None:
+    """Clearing stops the strategy; it does not rewrite what the grower tuned."""
+    growspace = _configured_growspace()
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(operation=IrrigationChangeOperation.CLEAR, values={}),
+    )
+
+    strategy = growspace.irrigation_strategy
+    assert strategy.target_vwc_percent == 62.0
+    assert strategy.declared_steering_mode is SteeringMode.GENERATIVE
+    assert strategy.substrate_profile == SubstrateProfile(liters_per_pot=6.0)
+
+
+@pytest.mark.asyncio
+async def test_clear_returns_shot_sizing_to_seconds() -> None:
+    """Volume Mode cannot survive losing the flow rate the clear just removed."""
+    growspace = _configured_growspace()
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(operation=IrrigationChangeOperation.CLEAR, values={}),
+    )
+
+    assert growspace.irrigation_strategy.shot_sizing_mode is ShotSizingMode.SECONDS
+    coordinator.async_commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_clear_reports_every_field_it_reset() -> None:
+    """The result names what the reset actually changed, and nothing settled."""
+    growspace = _configured_growspace()
+    coordinator = _coordinator(growspace)
+
+    result = await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(operation=IrrigationChangeOperation.CLEAR, values={}),
+    )
+
+    assert result.operation is IrrigationChangeOperation.CLEAR
+    assert "irrigation_pump_entity" in result.changed_config_fields
+    assert "irrigation_times" in result.changed_config_fields
+    # Untouched because it already held its default.
+    assert "skip_during_dark" not in result.changed_config_fields
+    assert result.changed_strategy_fields == frozenset({"enabled", "shot_sizing_mode"})
+
+
+@pytest.mark.asyncio
+async def test_clear_of_an_untouched_growspace_reports_nothing_changed() -> None:
+    """Clearing defaults is a valid no-op, not a silent half-write."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    result = await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(operation=IrrigationChangeOperation.CLEAR, values={}),
+    )
+
+    assert result.changed_config_fields == frozenset()
+    assert result.changed_strategy_fields == frozenset()
+    coordinator.async_commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_clear_refuses_to_carry_values() -> None:
+    """A clear names no setpoint; a caller sending one is confusing two gestures."""
+    growspace = _configured_growspace()
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match="irrigation_duration"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.CLEAR,
+                values={"irrigation_duration": 30},
+            ),
+        )
+
+    assert growspace.irrigation_config.irrigation_duration == 45
+    coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_clear_restores_prior_state_when_persistence_fails() -> None:
+    """A refused clear leaves the growspace exactly as configured as it was."""
+    growspace = _configured_growspace()
+    prior_config = growspace.irrigation_config
+    prior_strategy = growspace.irrigation_strategy
+    coordinator = _coordinator(growspace)
+    coordinator.async_commit.side_effect = OSError("disk full")
+
+    with pytest.raises(OSError, match="disk full"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(operation=IrrigationChangeOperation.CLEAR, values={}),
+        )
+
+    assert growspace.irrigation_config is prior_config
+    assert growspace.irrigation_strategy is prior_strategy
+    assert growspace.irrigation_config.irrigation_pump_entity == "switch.pump"
+    assert growspace.irrigation_strategy.enabled is True
+    coordinator.async_request_refresh.assert_not_awaited()
+
+
+# --- Steering Mode stamp (ADR-0012) ----------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_steering_mode_stamps_the_volume_representation() -> None:
+    """Volume Mode stamps percent shot sizes beside the agronomic levers."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_config.pump_flow_rate_ml_per_sec = 20.0
+    growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.VOLUME
+    growspace.irrigation_strategy.substrate_profile = SubstrateProfile(
+        media_type=SubstrateMediaType.COCO, liters_per_pot=5.0
+    )
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.STEERING_MODE,
+            values={"steering_mode": SteeringMode.GENERATIVE},
+        ),
+    )
+
+    strategy = growspace.irrigation_strategy
+    assert strategy.p2_shot_volume_percent == 4.0
+    assert strategy.p2_shot_interval_minutes == 60
+    assert strategy.maintenance_dryback_percent == 5.0
+    assert strategy.p2_stop_before_lights_off_minutes == 210
+    assert strategy.pore_ec_target_min == 4.0
+    assert strategy.pore_ec_target_max == 6.5
+
+
+@pytest.mark.asyncio
+async def test_steering_mode_stamps_only_the_active_representation() -> None:
+    """Seconds Mode writes seconds; the percent fields keep what they held."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_strategy.p2_shot_volume_percent = 9.9
+    coordinator = _coordinator(growspace)
+
+    result = await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.STEERING_MODE,
+            values={"steering_mode": SteeringMode.GENERATIVE},
+        ),
+    )
+
+    assert growspace.irrigation_strategy.p2_shot_duration_seconds == 12
+    assert growspace.irrigation_strategy.p2_shot_volume_percent == 9.9
+    assert "p2_shot_volume_percent" not in result.changed_strategy_fields
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("media_type", "expected_dryback"),
+    [
+        (SubstrateMediaType.COCO, 5.0),
+        (SubstrateMediaType.ROCKWOOL, 4.0),
+        (SubstrateMediaType.SOIL, 3.0),
+    ],
+)
+async def test_steering_mode_resolves_the_preset_from_the_stored_media(
+    media_type: SubstrateMediaType, expected_dryback: float
+) -> None:
+    """The media column comes from the growspace, never from the payload."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_strategy.substrate_profile = SubstrateProfile(
+        media_type=media_type, liters_per_pot=5.0
+    )
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.STEERING_MODE,
+            values={"steering_mode": SteeringMode.GENERATIVE},
+        ),
+    )
+
+    assert growspace.irrigation_strategy.maintenance_dryback_percent == expected_dryback
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", list(SteeringMode))
+async def test_steering_mode_records_the_declared_intent(mode: SteeringMode) -> None:
+    """Every mode stamps its values and records itself as the declared intent."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    result = await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.STEERING_MODE,
+            values={"steering_mode": mode},
+        ),
+    )
+
+    assert growspace.irrigation_strategy.declared_steering_mode is mode
+    assert "declared_steering_mode" in result.changed_strategy_fields
+    assert result.changed_config_fields == frozenset()
+    assert growspace.irrigation_strategy.target_vwc_percent == 55.0
+
+
+@pytest.mark.asyncio
+async def test_steering_mode_re_stamp_overwrites_hand_tweaks() -> None:
+    """Re-selecting the declared mode is a reset, not a skipped no-op."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+    change = IrrigationChange(
+        operation=IrrigationChangeOperation.STEERING_MODE,
+        values={"steering_mode": SteeringMode.GENERATIVE},
+    )
+    await async_apply_irrigation_change(coordinator, "tent", change)
+    growspace.irrigation_strategy.maintenance_dryback_percent = 99.0
+
+    result = await async_apply_irrigation_change(coordinator, "tent", change)
+
+    assert growspace.irrigation_strategy.maintenance_dryback_percent == 5.0
+    assert result.changed_strategy_fields == frozenset({"maintenance_dryback_percent"})
+
+
+@pytest.mark.asyncio
+async def test_steering_mode_writes_the_logbook_entry_after_persistence() -> None:
+    """The entry names the mode and media, and follows the commit that earned it."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+    ordering: list[str] = []
+    coordinator.async_commit.side_effect = lambda: ordering.append("commit")
+    coordinator.hass.bus.async_fire.side_effect = lambda *_: ordering.append("logbook")
+    coordinator.async_request_refresh.side_effect = lambda: ordering.append("refresh")
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.STEERING_MODE,
+            values={"steering_mode": SteeringMode.GENERATIVE},
+        ),
+    )
+
+    assert ordering == ["commit", "logbook", "refresh"]
+    _event, data = coordinator.hass.bus.async_fire.call_args.args
+    assert data["message"] == "Applied generative steering mode (coco)"
+    assert data["category"] == "irrigation"
+
+
+@pytest.mark.asyncio
+async def test_steering_mode_respects_the_logbook_opt_out() -> None:
+    """A growspace with logbook entries disabled is stamped but not narrated."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_config.log_to_logbook = False
+    coordinator = _coordinator(growspace)
+
+    await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.STEERING_MODE,
+            values={"steering_mode": SteeringMode.BALANCED},
+        ),
+    )
+
+    coordinator.hass.bus.async_fire.assert_not_called()
+    assert growspace.irrigation_strategy.declared_steering_mode is SteeringMode.BALANCED
+
+
+@pytest.mark.asyncio
+async def test_steering_mode_leaves_no_stamp_or_entry_when_persistence_fails() -> None:
+    """A failed stamp changes no strategy and narrates nothing that never was."""
+    growspace = Growspace(id="tent", name="Tent")
+    prior_strategy = growspace.irrigation_strategy
+    coordinator = _coordinator(growspace)
+    coordinator.async_commit.side_effect = OSError("disk full")
+
+    with pytest.raises(OSError, match="disk full"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.STEERING_MODE,
+                values={"steering_mode": SteeringMode.GENERATIVE},
+            ),
+        )
+
+    assert growspace.irrigation_strategy is prior_strategy
+    assert growspace.irrigation_strategy.declared_steering_mode is None
+    assert growspace.irrigation_strategy.maintenance_dryback_percent == 2.0
+    coordinator.hass.bus.async_fire.assert_not_called()
+    coordinator.async_request_refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_steering_mode_needs_a_mode() -> None:
+    """A stamp that names no mode is refused rather than stamping a default."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match="must name the steering_mode"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.STEERING_MODE, values={}
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_steering_mode_rejects_an_unknown_mode() -> None:
+    """An unknown mode has no preset column, so it cannot be stamped."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match="Unknown steering mode"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.STEERING_MODE,
+                values={"steering_mode": "aggressive"},
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["maintenance_dryback_percent", "target_vwc_percent"])
+async def test_steering_mode_refuses_hand_written_preset_values(field: str) -> None:
+    """A mode is named, never spelled out: the server owns the preset table."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match=field):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.STEERING_MODE,
+                values={"steering_mode": SteeringMode.BALANCED, field: 42.0},
             ),
         )
 
