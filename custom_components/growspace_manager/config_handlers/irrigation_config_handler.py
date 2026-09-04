@@ -388,6 +388,12 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 "auto_advance_p2_to_p3",
                 default=irrigation_options.get("auto_advance_p2_to_p3", False),
             ): selector.BooleanSelector(),
+            # Skip P2 (workspace#131). Sits beside the P2 fields it bypasses,
+            # which it deliberately leaves stored: clearing it restores them.
+            vol.Optional(
+                "skip_p2_after_p1",
+                default=irrigation_options.get("skip_p2_after_p1", False),
+            ): selector.BooleanSelector(),
             vol.Optional(
                 "halt_on_runoff_ec_threshold",
                 description={

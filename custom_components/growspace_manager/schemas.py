@@ -677,6 +677,9 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
         vol.Optional("shot_interval_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
         ),
+        # Skip P2 (workspace#131): a phase-transition rule, not a timing value —
+        # the P2 fields above keep their values while it bypasses them.
+        vol.Optional("skip_p2_after_p1"): bool,
         vol.Optional("auto_light_tracking"): bool,
         # Shot Sizing Mode + Substrate Profile (Volume Mode, ADR-0011).
         vol.Optional("shot_sizing_mode"): vol.In(

@@ -331,6 +331,10 @@ def _maximal_growspace() -> Growspace:
             p1_shot_interval_minutes=20,
             p2_shot_duration_seconds=9,
             p2_shot_interval_minutes=30,
+            # [[Skip P2]] on rather than at its default, so the P2 pair above
+            # travelling to the card alongside it is what proves the skip
+            # bypasses that configuration instead of clearing it.
+            skip_p2_after_p1=True,
             auto_light_tracking=True,
             detected_lights_on_time="05:58:00",
             shot_sizing_mode=ShotSizingMode.VOLUME,

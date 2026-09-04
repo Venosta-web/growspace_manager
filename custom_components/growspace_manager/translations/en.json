@@ -220,6 +220,7 @@
           "p2_shot_duration_seconds": "P2 Shot Duration (seconds)",
           "p2_shot_interval_minutes": "P2 Shot Interval (minutes)",
           "p2_stop_before_lights_off_minutes": "Stop P2 Before Lights Off (minutes)",
+          "skip_p2_after_p1": "Skip P2 After P1",
           "auto_advance_p2_to_p3": "Auto-Advance P2 to P3",
           "ec_modulation_enabled": "Enable EC Modulation",
           "pore_ec_target_min": "Minimum Pore EC Target",
@@ -228,6 +229,7 @@
         },
         "data_description": {
           "shot_sizing_mode": "Duration Mode uses fixed shot durations; Volume Mode derives them from the pump flow rate and substrate volume.",
+          "skip_p2_after_p1": "When enabled, irrigation transitions directly from P1 to P3 once P1 is complete. The P2 settings above are kept, not cleared.",
           "growspace_id_read_only": "The growspace these settings apply to. Read-only."
         }
       },

@@ -1262,6 +1262,14 @@ set_irrigation_strategy:
         number:
           min: 0
           unit_of_measurement: "minutes"
+    skip_p2_after_p1:
+      description: >-
+        Transition straight from P1 to P3 once P1 completes, bypassing P2. The
+        P2 shot settings are kept, not cleared, so turning this off restores the
+        ordinary P1 to P2 to P3 progression with the values already configured.
+      required: false
+      selector:
+        boolean:
     auto_light_tracking:
       description: Use observed light transitions instead of the configured lights-on time.
       required: false

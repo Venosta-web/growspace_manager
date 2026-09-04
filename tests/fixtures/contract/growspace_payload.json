@@ -472,6 +472,7 @@
       "shot_duration_seconds": 12,
       "shot_interval_minutes": 20,
       "shot_sizing_mode": "volume",
+      "skip_p2_after_p1": true,
       "substrate_profile": {
         "liters_per_pot": 7.5,
         "media_type": "rockwool"
