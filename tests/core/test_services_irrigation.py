@@ -588,6 +588,29 @@ class TestHandleApplySteeringMode:
             "gs1", SteeringMode.GENERATIVE
         )
 
+    @pytest.mark.asyncio
+    async def test_apply_steering_mode_reports_a_refused_change(
+        self, mock_hass: MagicMock, mock_coordinator: MagicMock
+    ) -> None:
+        """A refused stamp surfaces as a validation error, not a stack trace."""
+        from custom_components.growspace_manager.services.irrigation import (
+            handle_apply_steering_mode,
+        )
+        from custom_components.growspace_manager.services.irrigation_change import (
+            IrrigationChangeError,
+        )
+
+        mock_coordinator.services.growspaces.apply_steering_mode = AsyncMock(
+            side_effect=IrrigationChangeError("invalid Steering Mode candidate")
+        )
+        call = MagicMock(spec=ServiceCall)
+        call.data = {"growspace_id": "gs1", "steering_mode": "generative"}
+
+        with pytest.raises(
+            ServiceValidationError, match="invalid Steering Mode candidate"
+        ):
+            await handle_apply_steering_mode(mock_hass, mock_coordinator, call)
+
 
 class TestHandleClearIrrigation:
     """Tests for handle_clear_irrigation service handler (ADR-0046)."""
