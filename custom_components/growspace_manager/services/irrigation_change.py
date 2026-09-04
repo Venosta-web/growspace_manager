@@ -103,6 +103,7 @@ IRRIGATION_STRATEGY_CHANGE_FIELDS: frozenset[str] = frozenset(
         "p1_shot_interval_minutes",
         "p2_shot_duration_seconds",
         "p2_shot_interval_minutes",
+        "skip_p2_after_p1",
         "auto_light_tracking",
         "shot_sizing_mode",
         "substrate_profile",

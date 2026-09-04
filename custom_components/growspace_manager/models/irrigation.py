@@ -87,6 +87,14 @@ class IrrigationStrategy(BaseModel):
     auto_light_tracking: bool = False
     detected_lights_on_time: str | None = None
 
+    # ── Skip P2 (workspace#131) ─────────────────────────────────────────────
+    # A phase-transition rule, not a timing value: when True the [[Steering
+    # Phase Machine]] sends a completed P1 straight to P3 and P2 never runs.
+    # Deliberately stored beside the P2 fields it bypasses rather than clearing
+    # them — the P2 pair keeps whatever the grower configured, so turning this
+    # back off restores the ordinary P1 → P2 → P3 day with nothing to re-enter.
+    skip_p2_after_p1: bool = False
+
     # Shot Sizing Mode (ADR-0011). SECONDS is the default first-class behavior;
     # VOLUME expresses shot sizes as a percent of substrate volume and is only
     # active when a substrate profile and pump flow rate are both configured.

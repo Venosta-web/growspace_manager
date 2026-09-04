@@ -294,6 +294,7 @@
         'shot_duration_seconds': 10,
         'shot_interval_minutes': 15,
         'shot_sizing_mode': 'seconds',
+        'skip_p2_after_p1': False,
         'substrate_profile': dict({
           'liters_per_pot': 0.0,
           'media_type': 'coco',

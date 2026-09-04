@@ -281,6 +281,121 @@ def test_p2_soil_trigger_percent_overrides_calculated_trigger() -> None:
     assert verdict.fire is not None
 
 
+# ── Skip P2 (workspace#131) ───────────────────────────────────────────────────
+
+
+def _skipping(**overrides) -> IrrigationStrategy:
+    """A strategy that skips P2, carrying P2 values distinct from P1's.
+
+    The distinct P2 pair is the point: every assertion below that P2 was
+    bypassed rather than emptied is made against values the skip would have to
+    have rewritten to be wrong.
+    """
+    overrides.setdefault("skip_p2_after_p1", True)
+    overrides.setdefault("p2_shot_duration_seconds", 7)
+    overrides.setdefault("p2_shot_interval_minutes", 20)
+    return _strategy(**overrides)
+
+
+def test_skip_off_keeps_the_ordinary_p1_to_p2_progression() -> None:
+    strategy = _skipping(skip_p2_after_p1=False)
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=40.0, strategy=strategy))
+    assert (
+        machine.tick(_inputs(_at(9, 1), vwc=56.0, strategy=strategy)).phase == PHASE_P1
+    )
+    assert (
+        machine.tick(_inputs(_at(9, 2), vwc=56.0, strategy=strategy)).phase == PHASE_P2
+    )
+
+
+def test_skip_sends_a_completed_p1_straight_to_p3() -> None:
+    strategy = _skipping()
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=40.0, strategy=strategy))
+    verdict = machine.tick(_inputs(_at(9, 1), vwc=56.0, strategy=strategy))
+    assert verdict.phase == PHASE_P3
+    assert verdict.canonical == "p3"
+    assert (
+        verdict.transition_message == f"VWC phase transition: {PHASE_P1} → {PHASE_P3}"
+    )
+    assert verdict.fire is None
+
+
+def test_skip_leaves_p1_ramp_up_untouched() -> None:
+    """Only the P1 completion boundary moves; the ramp itself waters as before."""
+    strategy = _skipping()
+    machine = SteeringPhaseMachine("gs1")
+    verdict = machine.tick(_inputs(_at(9), vwc=40.0, strategy=strategy))
+    assert verdict.phase == PHASE_P1
+    assert verdict.fire is not None
+    assert verdict.fire.phase == "P1"
+    assert verdict.fire.base_seconds == strategy.p1_shot_duration_seconds
+
+
+def test_skip_holds_p3_for_the_rest_of_the_shot_window() -> None:
+    strategy = _skipping()
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=56.0, strategy=strategy))
+    # Well below the maintenance trigger (55 − 2 = 53): P2 would have watered.
+    verdict = machine.tick(_inputs(_at(15, 59), vwc=45.0, strategy=strategy))
+    assert verdict.phase == PHASE_P3
+    assert verdict.fire is None
+    assert verdict.phase_changed is False
+
+
+def test_skip_ignores_the_p2_direct_trigger() -> None:
+    strategy = _skipping()
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=56.0, strategy=strategy))
+    verdict = machine.tick(
+        _inputs(_at(9, 1), vwc=40.0, strategy=strategy, soil_trigger_percent=54.5)
+    )
+    assert verdict.phase == PHASE_P3
+    assert verdict.fire is None
+
+
+def test_skip_does_not_mutate_the_p2_configuration() -> None:
+    strategy = _skipping()
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=56.0, strategy=strategy))
+    machine.tick(_inputs(_at(10), vwc=40.0, strategy=strategy))
+    assert strategy.p2_shot_duration_seconds == 7
+    assert strategy.p2_shot_interval_minutes == 20
+    assert strategy.p2_stop_before_lights_off_minutes == 120
+    assert strategy.maintenance_dryback_percent == 2.0
+    assert shot_params_for_phase(strategy, "P2") == (7, 20)
+
+
+def test_clearing_skip_restores_p2_with_the_configured_values() -> None:
+    """Disabling the option mid-day hands the same day back to P2, unedited."""
+    skipping = _skipping()
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=56.0, strategy=skipping))
+    assert (
+        machine.tick(_inputs(_at(9, 1), vwc=40.0, strategy=skipping)).phase == PHASE_P3
+    )
+
+    restored = _skipping(skip_p2_after_p1=False)
+    verdict = machine.tick(_inputs(_at(9, 2), vwc=40.0, strategy=restored))
+    assert verdict.phase == PHASE_P2
+    assert verdict.fire is not None
+    assert verdict.fire.phase == "P2"
+    assert verdict.fire.base_seconds == 7
+
+
+def test_skip_projects_tomorrows_window_once_p1_completes() -> None:
+    """P3 fires nothing more today, so the projection rolls forward."""
+    strategy = _skipping()
+    machine = SteeringPhaseMachine("gs1")
+    machine.tick(_inputs(_at(9), vwc=56.0, strategy=strategy))
+    window = machine.projected_shot_window(strategy, 12, None, 1.0, _at(9, 1))
+    assert window == {
+        "start": _at(7, 0, day=16).isoformat(),
+        "end": _at(16, 0, day=16).isoformat(),
+    }
+
+
 # ── daily reset guard ─────────────────────────────────────────────────────────
 
 

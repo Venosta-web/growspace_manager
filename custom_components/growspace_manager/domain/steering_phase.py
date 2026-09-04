@@ -379,12 +379,20 @@ class SteeringPhaseMachine:
         if not self._target_reached_today:
             # We are in P1: Ramp Up
             if inputs.vwc >= target:
+                self._target_reached_today = True
+                if inputs.strategy.skip_p2_after_p1:
+                    _LOGGER.info(
+                        "Growspace %s reached target VWC %.1f%%. P2 is skipped; "
+                        "switching to P3",
+                        self._name,
+                        target,
+                    )
+                    return self._finish(PHASE_P3, gate_held=False)
                 _LOGGER.info(
                     "Growspace %s reached target VWC %.1f%%. Switching to P2",
                     self._name,
                     target,
                 )
-                self._target_reached_today = True
                 # No watering this tick, just switch state
                 return self._finish(PHASE_P1)
             fire, note, suppressed = self._evaluate_shot(
@@ -397,6 +405,14 @@ class SteeringPhaseMachine:
                 suppressed_by=suppressed,
                 gate_held=suppressed == SUPPRESSED_BY_INFILTRATING,
             )
+
+        # P1 is complete. Normally that means P2: Maintenance — unless the
+        # grower asked for it to be skipped, in which case the day is already in
+        # P3 and stays there. Asked on every post-P1 tick, not latched at the
+        # boundary, so the P2 configuration below is bypassed rather than
+        # rewritten and clearing the flag hands the same day straight back.
+        if inputs.strategy.skip_p2_after_p1:
+            return self._finish(PHASE_P3, gate_held=False)
 
         # We are in P2: Maintenance
         # Dynamic trigger: soil_trigger_percent overrides the calculated threshold
