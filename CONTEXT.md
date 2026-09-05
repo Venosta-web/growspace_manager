@@ -298,14 +298,18 @@ An immutable `Applied`, `NoChange`, or `Rejected` proposal. It carries before/af
 **Lifecycle Correction**
 An explicit repair proposal that replaces the ambiguous current interval, preserves the maximal trustworthy and graph-compatible earlier prefix, rebuilds Compatibility Data, and drafts a Lifecycle Repair Event. It requires the corrected stage, its start date, the correction date, and a non-empty grower reason.
 
+**Lifecycle Reschedule**
+The repair proposal for an edit that moves more than one boundary at once: it rebuilds [[Stage History]] from a set of stage starts, retaining every interval the edit does not name. A supplied date retargets that stage's latest interval, a stage the Plant has never been in is inserted where its date places it, and boundaries are re-derived so the result is gapless by construction. Retained stages are never reordered — a set that would require it, one that predates its successor, one dated after the correction date, or an insertion that breaks the transition graph is refused naming the stages that conflict. The Plant ends up in the stage owning the last interval, so correcting existing dates cannot change [[Current Stage]] while entering a later stage's start advances it. `update_plant` selects it structurally: no explicit `stage` and two or more populated `*_start` fields. One save is one [[Lifecycle Repair Event]] listing every boundary it moved. See ADR-0047.
+_Avoid_: bulk date edit, multi-stage transition
+
 **Lifecycle Repair Warning**
 A machine-readable diagnosis produced for malformed, overlapping, nonchronological, future-dated, unknown-stage, or graph-invalid lifecycle data. Warnings fail lifecycle facts closed to Unknown Stage rather than activating a legacy fallback.
 
 **Lifecycle Repair Event**
-The immutable event draft produced by Lifecycle Correction, recording the prior/corrected stage, correction and stage-start dates, grower reason, discarded interval count, and warning codes. The domain module drafts it; an outer shell decides whether and where to publish it.
+The immutable event draft produced by [[Lifecycle Correction]] or [[Lifecycle Reschedule]], recording the prior/corrected stage, correction and stage-start dates, every corrected boundary, grower reason, discarded interval count, and warning codes. The domain module drafts it; an outer shell decides whether and where to publish it.
 
 **Compatibility Data**
-The lifecycle-owned projection for legacy Plant consumers: the shadow `stage`, latest per-stage `*_start` values, and Stage History. It is rebuilt from trusted intervals after every Applied transition or Lifecycle Correction so legacy fields cannot disagree with the domain result.
+The lifecycle-owned projection for legacy Plant consumers: the shadow `stage`, latest per-stage `*_start` values, and Stage History. It is rebuilt from trusted intervals after every Applied transition, Lifecycle Correction, or [[Lifecycle Reschedule]] so legacy fields cannot disagree with the domain result.
 
 **Current Stage Resolution**
 The read path's single rule for reporting [[Current Stage]], implemented in `domain/current_stage.py` and shared by the plant view model the card renders, the plant sensor's state and `stage` attribute, nutrient-preset stage matching, environmental stage-day assembly, and feed-EC week selection. Stored [[Stage History]] wins whenever it parses; older Plants without history are reconstructed by the [[Plant Lifecycle]] module from legacy lifecycle dates, while malformed present history fails closed to [[Unknown Stage]]. There is no separate growspace/date heuristic. Consequences: after a Reveg the stale `flower_start` no longer outranks the newer veg interval, and a promoted clone still sitting in the clone growspace reads as veg rather than taking a special-growspace shortcut.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import fields
 from datetime import date
@@ -252,32 +253,66 @@ class PlantManager(BaseService):
             history[-2]["end"] = corrected_timestamp
         return history
 
+    @classmethod
+    def _reschedule_history(
+        cls,
+        plant: Plant,
+        correction: LifecycleCorrection,
+        supplied_timestamps: Mapping[str, str],
+    ) -> list[dict[str, str | None]]:
+        """Project a reschedule, stamping only the boundaries the grower moved."""
+        projected = correction.compatibility_data.as_dict()["stage_history"]
+        history = [dict(item) for item in projected]
+        # `*_start` names a stage's latest interval, so that is the one a
+        # supplied date moved; an earlier interval of the same stage is retained
+        # and keeps whatever precision it was stored with.
+        latest = {item["stage"]: index for index, item in enumerate(history)}
+        raw_history = list(plant.stage_history or [])
+        cursor = 0
+        for index, item in enumerate(history):
+            supplied = supplied_timestamps.get(str(item["stage"]))
+            if supplied is not None and latest[item["stage"]] == index:
+                item["start"] = supplied
+                continue
+            for offset in range(cursor, len(raw_history)):
+                raw = raw_history[offset]
+                if raw["stage"] == item["stage"] and cls._same_lifecycle_day(
+                    raw["start"], item["start"]
+                ):
+                    item["start"] = str(raw["start"])
+                    cursor = offset + 1
+                    break
+            else:
+                # History reconstructed from legacy dates has no raw interval to
+                # borrow precision from; the legacy field itself is the source.
+                stored = getattr(plant, f"{item['stage']}_start", None)
+                if stored is not None and cls._same_lifecycle_day(
+                    stored, item["start"]
+                ):
+                    item["start"] = str(stored)
+
+        for index in range(len(history) - 1):
+            history[index]["end"] = history[index + 1]["start"]
+        history[-1]["end"] = None
+        return history
+
     def _lifecycle_compatibility_updates(
         self,
         plant: Plant,
         decision: LifecycleDecision | LifecycleCorrection,
-        lifecycle: PlantLifecycle,
-        target_stage: LifecycleStage,
-        target_timestamp: str,
+        history: list[dict[str, str | None]],
+        target_fields: Mapping[str, str],
     ) -> dict[str, Any]:
         """Build one timestamp-preserving update for every lifecycle-owned field."""
         projected = decision.compatibility_data.as_dict()
-        if isinstance(decision, LifecycleCorrection):
-            projected["stage_history"] = self._correction_history(
-                plant, decision, target_timestamp
-            )
-        else:
-            projected["stage_history"] = self._transition_history(
-                plant, lifecycle, decision, target_timestamp
-            )
+        projected["stage_history"] = history
 
-        target_field = f"{target_stage.value}_start"
         for field_name in DATE_FIELDS:
             projected_value = projected[field_name]
             if projected_value is None:
                 continue
-            if field_name == target_field:
-                projected[field_name] = target_timestamp
+            if field_name in target_fields:
+                projected[field_name] = target_fields[field_name]
                 continue
             stored_value = getattr(plant, field_name)
             if stored_value is not None and self._same_lifecycle_day(
@@ -285,6 +320,30 @@ class PlantManager(BaseService):
             ):
                 projected[field_name] = stored_value
         return projected
+
+    @staticmethod
+    def _lifecycle_reschedule_request(
+        requested_updates: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Resolve a multi-date edit into its supplied stage starts, else ``None``.
+
+        Two or more populated ``*_start`` fields name no single stage, so they
+        are a Lifecycle Reschedule rather than a transition or a single-stage
+        repair.  An explicit ``stage`` still selects one of those older shapes.
+        """
+        if requested_updates.get("stage") is not None:
+            return None
+        supplied = {
+            field_name: value
+            for field_name in DATE_FIELDS
+            if (value := requested_updates.get(field_name)) is not None
+        }
+        if len(supplied) < 2:
+            return None
+        return {
+            _as_lifecycle_stage(field_name.removesuffix("_start")).value: value
+            for field_name, value in supplied.items()
+        }
 
     @staticmethod
     def _lifecycle_edit_request(
@@ -302,9 +361,11 @@ class PlantManager(BaseService):
             if value is not None
         ]
         if (requested_stage := requested_updates.get("stage")) is None:
-            if len(non_empty_date_fields) != 1:
+            # Several populated dates are routed to the reschedule before this,
+            # so the only remaining ambiguity is a payload that names none.
+            if not non_empty_date_fields:
                 raise ValidationChangeError(
-                    "A lifecycle date edit must identify exactly one current stage"
+                    "A lifecycle date edit must supply a stage start"
                 )
             target = _as_lifecycle_stage(
                 non_empty_date_fields[0].removesuffix("_start")
@@ -335,6 +396,22 @@ class PlantManager(BaseService):
             return lifecycle.repair_current(
                 target,
                 target_timestamp,
+                observed_on,
+                _LIFECYCLE_CORRECTION_REASON,
+            )
+        except ValueError as err:
+            raise ValidationChangeError(str(err)) from err
+
+    @staticmethod
+    def _reschedule_lifecycle(
+        lifecycle: PlantLifecycle,
+        stage_timestamps: Mapping[str, str],
+        observed_on: date,
+    ) -> LifecycleCorrection:
+        """Translate reschedule input errors into the manager validation vocabulary."""
+        try:
+            return lifecycle.reschedule(
+                stage_timestamps,
                 observed_on,
                 _LIFECYCLE_CORRECTION_REASON,
             )
@@ -375,7 +452,11 @@ class PlantManager(BaseService):
     ) -> None:
         """Publish the domain repair draft to the plant-filterable timeline."""
         repair = correction.repair_event
-        stage_label = repair.corrected_stage.value.replace("_", " ").title()
+        reasons = [
+            f"Corrected {stage.value.replace('_', ' ').title()} start to "
+            f"{started_on.isoformat()}"
+            for stage, started_on in repair.corrected_starts
+        ]
         self.hass.bus.async_fire(
             EVENT_GROWSPACE_LOG_ENTRY,
             {
@@ -385,10 +466,7 @@ class PlantManager(BaseService):
                 "category": CATEGORY_MILESTONE,
                 "timestamp": dt_util.now().isoformat(),
                 "notes": repair.reason,
-                "reasons": [
-                    f"Corrected {stage_label} start to "
-                    f"{repair.corrected_stage_started_on.isoformat()}"
-                ],
+                "reasons": reasons,
                 "previous_stage": repair.previous_stage.value,
                 "corrected_stage": repair.corrected_stage.value,
                 "corrected_stage_started_on": (
@@ -592,12 +670,73 @@ class PlantManager(BaseService):
         async_fire_plant_event(self.hass, EVENT_PLANT_UPDATED, plant, updates)
         return plant
 
+    def _single_stage_edit(
+        self,
+        plant: Plant,
+        lifecycle: PlantLifecycle,
+        request: tuple[LifecycleStage, Any, bool],
+        observed_on: date,
+    ) -> tuple[LifecycleCorrection | None, dict[str, Any]]:
+        """Decide and project an edit that names one stage: transition or repair."""
+        canonical_target, target_date, target_start_supplied = request
+        if target_date is None:
+            target_date = dt_util.now()
+        target_timestamp = to_lifecycle_timestamp(target_date)
+
+        decision, correction = self._lifecycle_editor_decision(
+            lifecycle,
+            canonical_target,
+            target_timestamp,
+            observed_on,
+            target_start_supplied,
+        )
+        if not isinstance(decision, (Applied, LifecycleCorrection)):
+            return correction, {}
+
+        history = (
+            self._correction_history(plant, decision, target_timestamp)
+            if isinstance(decision, LifecycleCorrection)
+            else self._transition_history(plant, lifecycle, decision, target_timestamp)
+        )
+        updates = self._lifecycle_compatibility_updates(
+            plant,
+            decision,
+            history,
+            {f"{canonical_target.value}_start": target_timestamp},
+        )
+        return correction, updates
+
+    def _reschedule_edit(
+        self,
+        plant: Plant,
+        lifecycle: PlantLifecycle,
+        supplied_dates: dict[str, Any],
+        observed_on: date,
+    ) -> tuple[LifecycleCorrection, dict[str, Any]]:
+        """Decide and project an edit that moves several boundaries at once."""
+        timestamps = {
+            stage: to_lifecycle_timestamp(value)
+            for stage, value in supplied_dates.items()
+        }
+        correction = self._reschedule_lifecycle(lifecycle, timestamps, observed_on)
+        history = self._reschedule_history(plant, correction, timestamps)
+        updates = self._lifecycle_compatibility_updates(
+            plant,
+            correction,
+            history,
+            {f"{stage}_start": value for stage, value in timestamps.items()},
+        )
+        return correction, updates
+
     async def _commit_lifecycle_update(
         self, plant_id: str, requested_updates: dict[str, Any]
     ) -> Plant:
         """Commit an editor lifecycle correction/transition and other fields once."""
-        canonical_target, target_date, target_start_supplied = (
-            self._lifecycle_edit_request(requested_updates)
+        supplied_dates = self._lifecycle_reschedule_request(requested_updates)
+        single_stage_request = (
+            None
+            if supplied_dates is not None
+            else self._lifecycle_edit_request(requested_updates)
         )
 
         async with self._lock:
@@ -609,29 +748,15 @@ class PlantManager(BaseService):
             lifecycle = self._plant_lifecycle(
                 plant, observed_on=observed_on, allow_repair=True
             )
-            if target_date is None:
-                target_date = dt_util.now()
-            try:
-                target_timestamp = to_lifecycle_timestamp(target_date)
-            except (TypeError, ValueError) as err:
-                raise ValidationChangeError(str(err)) from err
-
-            decision, correction = self._lifecycle_editor_decision(
-                lifecycle,
-                canonical_target,
-                target_timestamp,
-                observed_on,
-                target_start_supplied,
-            )
-
-            lifecycle_updates: dict[str, Any] = {}
-            if isinstance(decision, (Applied, LifecycleCorrection)):
-                lifecycle_updates = self._lifecycle_compatibility_updates(
-                    plant,
-                    decision,
-                    lifecycle,
-                    canonical_target,
-                    target_timestamp,
+            correction: LifecycleCorrection | None
+            if supplied_dates is not None:
+                correction, lifecycle_updates = self._reschedule_edit(
+                    plant, lifecycle, supplied_dates, observed_on
+                )
+            else:
+                assert single_stage_request is not None
+                correction, lifecycle_updates = self._single_stage_edit(
+                    plant, lifecycle, single_stage_request, observed_on
                 )
 
             regular_updates = {

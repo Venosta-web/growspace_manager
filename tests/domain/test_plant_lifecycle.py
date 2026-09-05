@@ -542,6 +542,187 @@ def test_repair_rejects_invalid_correction_inputs(
         lifecycle.repair_current(stage, start, corrected, reason)
 
 
+def test_reschedule_moves_several_boundaries_and_retains_the_rest() -> None:
+    """A multi-date correction rewrites only the stages the grower named."""
+    lifecycle = lifecycle_for(
+        ("seedling", "2026-05-01", "2026-05-08"),
+        ("veg", "2026-05-08", "2026-07-01"),
+        ("flower", "2026-07-01", None),
+    )
+
+    correction = lifecycle.reschedule(
+        {"veg": "2026-05-06", "flower": "2026-06-28"},
+        TODAY,
+        "Grower corrected both flip dates",
+    )
+
+    assert [
+        (item.stage.value, item.started_on.isoformat(), item.ended_on)
+        for item in correction.after.stage_history
+    ] == [
+        ("seedling", "2026-05-01", date(2026, 5, 6)),
+        ("veg", "2026-05-06", date(2026, 6, 28)),
+        ("flower", "2026-06-28", None),
+    ]
+    assert correction.after.current_stage is LifecycleStage.FLOWER
+    assert correction.compatibility_data.seedling_start == "2026-05-01"
+    assert correction.compatibility_data.veg_start == "2026-05-06"
+    assert correction.compatibility_data.flower_start == "2026-06-28"
+    assert correction.lifecycle.history.is_valid
+    assert correction.repair_event.discarded_interval_count == 0
+    assert correction.repair_event.corrected_starts == (
+        (LifecycleStage.VEG, date(2026, 5, 6)),
+        (LifecycleStage.FLOWER, date(2026, 6, 28)),
+    )
+
+
+def test_reschedule_inserts_a_stage_the_plant_has_never_been_in() -> None:
+    """A date for an unrecorded stage joins the history where it belongs."""
+    lifecycle = lifecycle_for(("veg", "2026-06-01", None))
+
+    correction = lifecycle.reschedule(
+        {"seedling": "2026-05-20", "veg": "2026-05-28"},
+        TODAY,
+        "Grower recorded the seedling start",
+    )
+
+    assert [item.stage.value for item in correction.after.stage_history] == [
+        "seedling",
+        "veg",
+    ]
+    assert correction.after.current_stage is LifecycleStage.VEG
+    assert correction.after.current_stage_started_on == date(2026, 5, 28)
+
+
+def test_reschedule_can_advance_the_current_stage() -> None:
+    """The latest supplied start owns the open interval once boundaries move."""
+    lifecycle = lifecycle_for(("veg", "2026-06-01", None))
+
+    correction = lifecycle.reschedule(
+        {"veg": "2026-05-28", "flower": "2026-07-10"},
+        TODAY,
+        "Grower recorded the flip",
+    )
+
+    assert correction.before.current_stage is LifecycleStage.VEG
+    assert correction.after.current_stage is LifecycleStage.FLOWER
+    assert correction.repair_event.previous_stage is LifecycleStage.VEG
+    assert correction.repair_event.corrected_stage is LifecycleStage.FLOWER
+
+
+def test_reschedule_retargets_only_the_latest_interval_of_a_stage() -> None:
+    """After a Reveg, ``veg_start`` names the newer veg interval, not the first."""
+    lifecycle = lifecycle_for(
+        ("veg", "2026-04-01", "2026-05-01"),
+        ("flower", "2026-05-01", "2026-06-01"),
+        ("veg", "2026-06-01", None),
+    )
+
+    correction = lifecycle.reschedule(
+        {"flower": "2026-05-04", "veg": "2026-06-05"},
+        TODAY,
+        "Grower corrected the reveg",
+    )
+
+    assert [
+        (item.stage.value, item.started_on.isoformat())
+        for item in correction.after.stage_history
+    ] == [("veg", "2026-04-01"), ("flower", "2026-05-04"), ("veg", "2026-06-05")]
+
+
+def test_reschedule_rebuilds_untrustworthy_history_from_the_supplied_starts() -> None:
+    """History the parser cannot trust is rebuilt, and the loss is counted."""
+    lifecycle = lifecycle_for(
+        ("veg", "2026-05-08", "2026-07-01"),
+        ("flower", "2026-06-20", None),
+    )
+    assert lifecycle.current_stage is LifecycleStage.UNKNOWN
+
+    correction = lifecycle.reschedule(
+        {"veg": "2026-05-08", "flower": "2026-07-01"},
+        TODAY,
+        "Grower re-entered both dates",
+    )
+
+    assert correction.lifecycle.history.is_valid
+    assert correction.after.current_stage is LifecycleStage.FLOWER
+    assert correction.repair_event.discarded_interval_count == 1
+    assert RepairWarningCode.OVERLAPPING_INTERVALS in (
+        correction.repair_event.warning_codes
+    )
+
+
+@pytest.mark.parametrize(
+    ("starts", "message"),
+    [
+        (
+            {"veg": "2026-07-05", "flower": "2026-07-01"},
+            "veg start 2026-07-05 is after flower start 2026-07-01",
+        ),
+        (
+            {"veg": "2026-05-08", "flower": "2026-09-01"},
+            "flower start 2026-09-01 is in the future",
+        ),
+        (
+            {"veg": "2026-05-08", "cure": "2026-07-10"},
+            "Stage order flower->cure is not allowed",
+        ),
+        ({"veg": "2026-05-08", "mystery": "2026-07-01"}, "Unknown stage"),
+        ({"veg": "2026-05-08", "flower": "not-a-date"}, "not a valid date"),
+        ({}, "must supply a stage start"),
+    ],
+)
+def test_reschedule_refuses_a_contradictory_set_by_name(
+    starts: dict[str, str], message: str
+) -> None:
+    """Every refusal names the stages that conflict, never a single-stage rule."""
+    lifecycle = lifecycle_for(
+        ("seedling", "2026-05-01", "2026-05-08"),
+        ("veg", "2026-05-08", "2026-07-01"),
+        ("flower", "2026-07-01", None),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        lifecycle.reschedule(starts, TODAY, "Grower corrected the dates")
+
+
+def test_reschedule_refuses_a_retained_interval_dated_after_the_correction() -> None:
+    """The rebuilt history is re-validated, so a retained future start refuses too."""
+    lifecycle = lifecycle_for(
+        ("veg", "2026-08-01", "2026-08-10"),
+        ("flower", "2026-08-10", None),
+    )
+
+    with pytest.raises(ValueError, match="future date"):
+        lifecycle.reschedule(
+            {"veg": "2026-07-01"},
+            date(2026, 8, 5),
+            "Grower corrected the veg start",
+        )
+
+
+@pytest.mark.parametrize(
+    ("corrected_on", "message"),
+    [("not-a-date", "corrected_on must be a valid date"), (None, "valid date")],
+)
+def test_reschedule_requires_a_correction_date(
+    corrected_on: str | None, message: str
+) -> None:
+    """A reschedule is dated, like every other correction."""
+    lifecycle = lifecycle_for(("veg", "2026-07-01", None))
+
+    with pytest.raises(ValueError, match=message):
+        lifecycle.reschedule({"veg": "2026-06-01"}, corrected_on, "Grower corrected it")
+
+
+def test_reschedule_requires_a_reason() -> None:
+    """A correction stays explainable however many boundaries it moves."""
+    lifecycle = lifecycle_for(("veg", "2026-07-01", None))
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        lifecycle.reschedule({"veg": "2026-06-01"}, TODAY, "   ")
+
+
 def test_unknown_and_negative_age_have_unknown_cultivation_band() -> None:
     """Band classification has an explicit fail-closed identity."""
     assert cultivation_band_for("unknown", 1).identity is CultivationBandId.UNKNOWN

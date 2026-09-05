@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from datetime import date
 from unittest.mock import AsyncMock, Mock
 
@@ -460,6 +461,244 @@ async def test_update_plant_ambiguous_correction_discards_later_intervals(
     assert repair_event["discarded_interval_count"] == 3
 
 
+@pytest.fixture
+def rescheduled_plant(repository: GrowspaceRepository) -> Plant:
+    """A grown plant whose three boundaries carry full stored timestamps."""
+    plant = Plant(
+        plant_id="multi-date-edit",
+        growspace_id="main",
+        genetics=PlantGenetics(strain_name="Test"),
+        stage=PlantStage.FLOWER,
+        seedling_start="2026-08-01T09:15:00+00:00",
+        veg_start="2026-08-05T11:30:00+00:00",
+        flower_start="2026-08-10T18:45:00+00:00",
+        stage_history=[
+            {
+                "stage": "seedling",
+                "start": "2026-08-01T09:15:00+00:00",
+                "end": "2026-08-05T11:30:00+00:00",
+            },
+            {
+                "stage": "veg",
+                "start": "2026-08-05T11:30:00+00:00",
+                "end": "2026-08-10T18:45:00+00:00",
+            },
+            {
+                "stage": "flower",
+                "start": "2026-08-10T18:45:00+00:00",
+                "end": None,
+            },
+        ],
+    )
+    repository.add_plant(plant)
+    return plant
+
+
+@pytest.mark.asyncio
+async def test_update_plant_multi_date_edit_rebuilds_stage_history(
+    manager_factory, rescheduled_plant: Plant
+) -> None:
+    """Two corrected dates save at once and leave every value agreeing."""
+    manager = manager_factory()
+
+    await manager.update_plant(
+        "multi-date-edit",
+        veg_start=date(2026, 8, 3),
+        flower_start=date(2026, 8, 12),
+        sex="female",
+    )
+
+    assert rescheduled_plant.stage == PlantStage.FLOWER
+    assert rescheduled_plant.sex == "female"
+    assert rescheduled_plant.veg_start == "2026-08-03T00:00:00+00:00"
+    assert rescheduled_plant.flower_start == "2026-08-12T00:00:00+00:00"
+    # The untouched boundary keeps the precision it was stored with (ADR-0013).
+    assert rescheduled_plant.seedling_start == "2026-08-01T09:15:00+00:00"
+    assert rescheduled_plant.stage_history == [
+        {
+            "stage": "seedling",
+            "start": "2026-08-01T09:15:00+00:00",
+            "end": "2026-08-03T00:00:00+00:00",
+        },
+        {
+            "stage": "veg",
+            "start": "2026-08-03T00:00:00+00:00",
+            "end": "2026-08-12T00:00:00+00:00",
+        },
+        {
+            "stage": "flower",
+            "start": "2026-08-12T00:00:00+00:00",
+            "end": None,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_plant_multi_date_edit_is_one_timeline_repair(
+    manager_factory, rescheduled_plant: Plant
+) -> None:
+    """One save is one lifecycle repair, naming every boundary it moved."""
+    manager = manager_factory()
+
+    await manager.update_plant(
+        "multi-date-edit",
+        veg_start=date(2026, 8, 3),
+        flower_start=date(2026, 8, 12),
+    )
+
+    repair_events = [
+        call.args[1]
+        for call in manager.hass.bus.async_fire.call_args_list
+        if call.args[0] == EVENT_GROWSPACE_LOG_ENTRY
+    ]
+    assert len(repair_events) == 1
+    assert repair_events[0]["sensor_type"] == "lifecycle_repair"
+    assert repair_events[0]["reasons"] == [
+        "Corrected Veg start to 2026-08-03",
+        "Corrected Flower start to 2026-08-12",
+    ]
+    assert repair_events[0]["previous_stage"] == "flower"
+    assert repair_events[0]["corrected_stage"] == "flower"
+    assert repair_events[0]["corrected_stage_started_on"] == "2026-08-12"
+    assert repair_events[0]["discarded_interval_count"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        (
+            {"veg_start": date(2026, 8, 14), "flower_start": date(2026, 8, 12)},
+            "veg start 2026-08-14 is after flower start 2026-08-12",
+        ),
+        (
+            {"veg_start": date(2026, 8, 3), "flower_start": date(2099, 1, 1)},
+            "flower start 2099-01-01 is in the future",
+        ),
+        (
+            {"veg_start": date(2026, 8, 3), "cure_start": date(2026, 8, 15)},
+            "Stage order flower->cure is not allowed",
+        ),
+    ],
+)
+async def test_update_plant_rejects_contradictory_multi_date_edit(
+    manager_factory,
+    rescheduled_plant: Plant,
+    updates: dict[str, object],
+    message: str,
+) -> None:
+    """A contradictory set is named and leaves the Plant completely untouched."""
+    manager = manager_factory()
+    before = deepcopy(rescheduled_plant)
+
+    with pytest.raises(ValidationChangeError, match=message):
+        await manager.update_plant("multi-date-edit", sex="female", **updates)
+
+    assert rescheduled_plant.stage == before.stage
+    assert rescheduled_plant.sex is None
+    assert rescheduled_plant.stage_history == before.stage_history
+    assert {
+        field: getattr(rescheduled_plant, field)
+        for field in ("seedling_start", "veg_start", "flower_start", "cure_start")
+    } == {
+        "seedling_start": "2026-08-01T09:15:00+00:00",
+        "veg_start": "2026-08-05T11:30:00+00:00",
+        "flower_start": "2026-08-10T18:45:00+00:00",
+        "cure_start": None,
+    }
+    manager.hass.bus.async_fire.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_plant_multi_date_edit_can_add_a_stage(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """Filling in an unrecorded stage alongside a correction flips the plant."""
+    manager = manager_factory()
+    plant = _plant("added-stage", PlantStage.VEG, "2026-08-01")
+    repository.add_plant(plant)
+
+    await manager.update_plant(
+        "added-stage",
+        veg_start=date(2026, 7, 30),
+        flower_start=date(2026, 8, 20),
+    )
+
+    assert plant.stage == PlantStage.FLOWER
+    assert plant.veg_start == "2026-07-30T00:00:00+00:00"
+    assert plant.flower_start == "2026-08-20T00:00:00+00:00"
+    assert plant.stage_history == [
+        {
+            "stage": "veg",
+            "start": "2026-07-30T00:00:00+00:00",
+            "end": "2026-08-20T00:00:00+00:00",
+        },
+        {
+            "stage": "flower",
+            "start": "2026-08-20T00:00:00+00:00",
+            "end": None,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_multi_date_edit_keeps_legacy_timestamp_precision(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """A Plant whose history is reconstructed still keeps its stored moments."""
+    manager = manager_factory()
+    plant = Plant(
+        plant_id="legacy-edit",
+        growspace_id="main",
+        genetics=PlantGenetics(strain_name="Test"),
+        stage=PlantStage.VEG,
+        seedling_start="2026-08-01T09:15:00+00:00",
+        veg_start="2026-08-05T11:30:00+00:00",
+        stage_history=[],
+    )
+    repository.add_plant(plant)
+
+    await manager.update_plant(
+        "legacy-edit",
+        veg_start=date(2026, 8, 3),
+        flower_start=date(2026, 8, 12),
+    )
+
+    assert plant.seedling_start == "2026-08-01T09:15:00+00:00"
+    assert plant.stage_history[0] == {
+        "stage": "seedling",
+        "start": "2026-08-01T09:15:00+00:00",
+        "end": "2026-08-03T00:00:00+00:00",
+    }
+    assert [item["stage"] for item in plant.stage_history] == [
+        "seedling",
+        "veg",
+        "flower",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_failed_multi_date_edit_restores_every_lifecycle_field(
+    manager_factory, rescheduled_plant: Plant
+) -> None:
+    """A persistence failure rolls the whole reschedule back as one write."""
+    manager = manager_factory(AsyncMock(side_effect=RuntimeError("disk failed")))
+    before = deepcopy(rescheduled_plant)
+
+    with pytest.raises(RuntimeError, match="disk failed"):
+        await manager.update_plant(
+            "multi-date-edit",
+            veg_start=date(2026, 8, 3),
+            flower_start=date(2026, 8, 12),
+            sex="female",
+        )
+
+    assert rescheduled_plant.sex is None
+    assert rescheduled_plant.veg_start == before.veg_start
+    assert rescheduled_plant.flower_start == before.flower_start
+    assert rescheduled_plant.stage_history == before.stage_history
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("updates", "message"),
@@ -489,6 +728,23 @@ async def test_update_plant_rejects_invalid_lifecycle_edit_without_mutation(
     assert plant.stage == PlantStage.VEG
     assert plant.veg_start == "2026-08-01"
     assert plant.flower_start is None
+    assert plant.stage_history == [{"stage": "veg", "start": "2026-08-01", "end": None}]
+
+
+@pytest.mark.asyncio
+async def test_update_plant_rejects_a_lifecycle_edit_naming_no_stage_start(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """Clearing the only supplied date names nothing to correct, and is refused."""
+    manager = manager_factory()
+    plant = _plant("cleared-edit", PlantStage.VEG, "2026-08-01")
+    repository.add_plant(plant)
+
+    with pytest.raises(ValidationChangeError, match="must supply a stage start"):
+        await manager.update_plant("cleared-edit", veg_start=None, sex="female")
+
+    assert plant.sex is None
+    assert plant.veg_start == "2026-08-01"
     assert plant.stage_history == [{"stage": "veg", "start": "2026-08-01", "end": None}]
 
 

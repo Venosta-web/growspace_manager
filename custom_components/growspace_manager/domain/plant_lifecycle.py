@@ -236,6 +236,13 @@ class LifecycleRepairEventDraft:
     corrected_stage_started_on: date
     discarded_interval_count: int
     warning_codes: tuple[RepairWarningCode, ...]
+    corrected_starts: tuple[tuple[LifecycleStage, date], ...] = ()
+    """Every boundary this correction moved, in Stage History order.
+
+    A single-stage repair moves exactly one, so this restates
+    :attr:`corrected_stage`; a Lifecycle Reschedule moves several and one
+    repair has to name all of them.
+    """
 
 
 class DecisionStatus(StrEnum):
@@ -524,6 +531,130 @@ class PlantLifecycle:
             corrected_stage_started_on=start,
             discarded_interval_count=discarded_count,
             warning_codes=tuple(warning.code for warning in self.history.warnings),
+            corrected_starts=((corrected_stage, start),),
+        )
+        return LifecycleCorrection(
+            lifecycle=lifecycle,
+            before=self.values(),
+            after=lifecycle.values(),
+            before_facts=self.facts(on=corrected),
+            after_facts=lifecycle.facts(on=corrected),
+            compatibility_data=lifecycle.compatibility_data,
+            repair_event=event,
+        )
+
+    def reschedule(
+        self,
+        stage_starts: Mapping[str, DateInput],
+        corrected_on: DateInput,
+        reason: str,
+    ) -> LifecycleCorrection:
+        """Rebuild Stage History from a set of stage starts, retaining the rest.
+
+        Moving several boundaries at once is neither a transition nor a
+        single-stage repair.  Each supplied stage retargets the last interval
+        the Plant already has in that stage, a stage it has never been in is
+        inserted where its date places it, and every interval the caller did
+        not name keeps its start.  Boundaries are then re-derived so the result
+        is gapless by construction; a set that would disorder the stages or
+        break the transition graph is refused by name instead.
+        """
+        corrected = _coerce_date(corrected_on)
+        if corrected is None:
+            raise ValueError("corrected_on must be a valid date")
+        if not reason.strip():
+            raise ValueError("reason must not be empty")
+        if not stage_starts:
+            raise ValueError("A lifecycle reschedule must supply a stage start")
+
+        supplied: dict[LifecycleStage, date] = {}
+        for raw_stage, raw_start in stage_starts.items():
+            stage = _stage_or_unknown(raw_stage)
+            if stage is LifecycleStage.UNKNOWN:
+                raise ValueError(f"Unknown stage: {raw_stage}")
+            start = _coerce_date(raw_start)
+            if start is None:
+                raise ValueError(f"{stage.value} start is not a valid date")
+            if start > corrected:
+                raise ValueError(
+                    f"{stage.value} start {start.isoformat()} is in the future"
+                )
+            supplied[stage] = start
+
+        # Only the trustworthy prefix may be retained: an interval the parser
+        # could not trust is not a boundary this edit is allowed to keep.
+        basis = self.history.trustworthy_intervals
+        rescheduled = [(item.stage, item.started_on) for item in basis]
+        inserted: list[tuple[LifecycleStage, date]] = []
+        for stage, start in supplied.items():
+            for index in reversed(range(len(rescheduled))):
+                if rescheduled[index][0] is stage:
+                    rescheduled[index] = (stage, start)
+                    break
+            else:
+                inserted.append((stage, start))
+
+        # Retained stages keep their order, so a start that jumps past its
+        # successor is a contradiction rather than a re-ordering request.
+        for index in range(len(rescheduled) - 1):
+            earlier, later = rescheduled[index], rescheduled[index + 1]
+            if earlier[1] > later[1]:
+                raise ValueError(
+                    f"{earlier[0].value} start {earlier[1].isoformat()} is after "
+                    f"{later[0].value} start {later[1].isoformat()}"
+                )
+
+        for stage, start in sorted(inserted, key=lambda item: item[1]):
+            position = next(
+                (
+                    index
+                    for index, (_, existing) in enumerate(rescheduled)
+                    if existing > start
+                ),
+                len(rescheduled),
+            )
+            rescheduled.insert(position, (stage, start))
+
+        for index in range(len(rescheduled) - 1):
+            previous_stage, next_stage = (
+                rescheduled[index][0],
+                rescheduled[index + 1][0],
+            )
+            if next_stage not in TRANSITION_GRAPH[previous_stage]:
+                raise ValueError(
+                    f"Stage order {previous_stage.value}->{next_stage.value} "
+                    "is not allowed"
+                )
+
+        intervals = tuple(
+            StageInterval(
+                stage,
+                start,
+                rescheduled[index + 1][1] if index + 1 < len(rescheduled) else None,
+            )
+            for index, (stage, start) in enumerate(rescheduled)
+        )
+        residual, _ = _validate_intervals(intervals, corrected, current_stage=None)
+        if residual:
+            raise ValueError(residual[0].message)
+
+        lifecycle = PlantLifecycle(
+            StageHistory(intervals=intervals, trustworthy_intervals=intervals)
+        )
+        current = intervals[-1]
+        event = LifecycleRepairEventDraft(
+            corrected_on=corrected,
+            reason=reason.strip(),
+            previous_stage=self.current_stage,
+            corrected_stage=current.stage,
+            corrected_stage_started_on=current.started_on,
+            discarded_interval_count=max(len(self.history.intervals) - len(basis), 0),
+            warning_codes=tuple(warning.code for warning in self.history.warnings),
+            corrected_starts=tuple(
+                (item.stage, item.started_on)
+                for item in intervals
+                if supplied.get(item.stage) == item.started_on
+            ),
         )
         return LifecycleCorrection(
             lifecycle=lifecycle,
