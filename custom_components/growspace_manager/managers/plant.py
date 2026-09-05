@@ -670,14 +670,6 @@ class PlantManager(BaseService):
         async_fire_plant_event(self.hass, EVENT_PLANT_UPDATED, plant, updates)
         return plant
 
-    @staticmethod
-    def _lifecycle_timestamp(value: DateInput) -> str:
-        """Route a supplied lifecycle date through the one write seam."""
-        try:
-            return to_lifecycle_timestamp(value)
-        except (TypeError, ValueError) as err:
-            raise ValidationChangeError(str(err)) from err
-
     def _single_stage_edit(
         self,
         plant: Plant,
@@ -689,7 +681,7 @@ class PlantManager(BaseService):
         canonical_target, target_date, target_start_supplied = request
         if target_date is None:
             target_date = dt_util.now()
-        target_timestamp = self._lifecycle_timestamp(target_date)
+        target_timestamp = to_lifecycle_timestamp(target_date)
 
         decision, correction = self._lifecycle_editor_decision(
             lifecycle,
@@ -723,7 +715,7 @@ class PlantManager(BaseService):
     ) -> tuple[LifecycleCorrection, dict[str, Any]]:
         """Decide and project an edit that moves several boundaries at once."""
         timestamps = {
-            stage: self._lifecycle_timestamp(value)
+            stage: to_lifecycle_timestamp(value)
             for stage, value in supplied_dates.items()
         }
         correction = self._reschedule_lifecycle(lifecycle, timestamps, observed_on)

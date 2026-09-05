@@ -732,6 +732,23 @@ async def test_update_plant_rejects_invalid_lifecycle_edit_without_mutation(
 
 
 @pytest.mark.asyncio
+async def test_update_plant_rejects_a_lifecycle_edit_naming_no_stage_start(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """Clearing the only supplied date names nothing to correct, and is refused."""
+    manager = manager_factory()
+    plant = _plant("cleared-edit", PlantStage.VEG, "2026-08-01")
+    repository.add_plant(plant)
+
+    with pytest.raises(ValidationChangeError, match="must supply a stage start"):
+        await manager.update_plant("cleared-edit", veg_start=None, sex="female")
+
+    assert plant.sex is None
+    assert plant.veg_start == "2026-08-01"
+    assert plant.stage_history == [{"stage": "veg", "start": "2026-08-01", "end": None}]
+
+
+@pytest.mark.asyncio
 async def test_update_plant_plain_edit_skips_lifecycle_parse(
     manager_factory, repository: GrowspaceRepository
 ) -> None:

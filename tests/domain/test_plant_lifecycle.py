@@ -686,6 +686,35 @@ def test_reschedule_refuses_a_contradictory_set_by_name(
         lifecycle.reschedule(starts, TODAY, "Grower corrected the dates")
 
 
+def test_reschedule_refuses_a_retained_interval_dated_after_the_correction() -> None:
+    """The rebuilt history is re-validated, so a retained future start refuses too."""
+    lifecycle = lifecycle_for(
+        ("veg", "2026-08-01", "2026-08-10"),
+        ("flower", "2026-08-10", None),
+    )
+
+    with pytest.raises(ValueError, match="future date"):
+        lifecycle.reschedule(
+            {"veg": "2026-07-01"},
+            date(2026, 8, 5),
+            "Grower corrected the veg start",
+        )
+
+
+@pytest.mark.parametrize(
+    ("corrected_on", "message"),
+    [("not-a-date", "corrected_on must be a valid date"), (None, "valid date")],
+)
+def test_reschedule_requires_a_correction_date(
+    corrected_on: str | None, message: str
+) -> None:
+    """A reschedule is dated, like every other correction."""
+    lifecycle = lifecycle_for(("veg", "2026-07-01", None))
+
+    with pytest.raises(ValueError, match=message):
+        lifecycle.reschedule({"veg": "2026-06-01"}, corrected_on, "Grower corrected it")
+
+
 def test_reschedule_requires_a_reason() -> None:
     """A correction stays explainable however many boundaries it moves."""
     lifecycle = lifecycle_for(("veg", "2026-07-01", None))
