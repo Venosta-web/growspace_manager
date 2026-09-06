@@ -18,7 +18,7 @@ its bug class was structural rather than incidental:
 
 - **Validation ran on the payload, not on the result.** Volume Mode's
   prerequisites and the Pore EC Target Band's ordering are properties of the
-  *post-change* state, so a sparse edit could remove a prerequisite the change
+  _post-change_ state, so a sparse edit could remove a prerequisite the change
   itself never mentioned.
 - **A write was not atomic.** Fields were assigned onto the live models one at
   a time, so a persistence failure left the growspace running a half-applied
@@ -39,18 +39,19 @@ post-change validation, the atomic swap of both models, persistence ordering,
 rollback and the immutable `IrrigationChangeResult`. Transports translate their
 input and present failures; they hold no write rules.
 
-### Three operations, one tail
+### Four operations, one tail
 
-Operations differ only in how the candidate state is *resolved*:
+Operations differ only in how the candidate state is _resolved_:
 
-| operation | resolves to |
-|---|---|
-| **patch** (`settings`, `strategy`, `options`, `steering_phase`) | the sparse fields the grower edited, normalized from the transport's compatibility spellings |
-| **clear** | a default `IrrigationConfig`, with the strategy disabled |
-| **Steering Mode stamp** | the preset the server's table gives for (named mode × stored media type × active Shot Sizing Mode), plus the mode recorded as declared intent |
+| operation                                                       | resolves to                                                                                                                                   |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **patch** (`settings`, `strategy`, `options`, `steering_phase`) | the sparse fields the grower edited, normalized from the transport's compatibility spellings                                                  |
+| **clear**                                                       | a default `IrrigationConfig`, with the strategy disabled                                                                                      |
+| **Recipe Stamp** (`recipe`)                                     | a stored recipe named by `recipe_id`, resolved against current target settings and live plant count, plus derived recipe provenance           |
+| **Steering Mode stamp**                                         | the preset the server's table gives for (named mode × stored media type × active Shot Sizing Mode), plus the mode recorded as declared intent |
 
 Everything after resolution is identical and lives once: validate the complete
-candidate → swap both models → invalidate → commit → *then* narrate → refresh.
+candidate → swap both models → invalidate → commit → _then_ narrate → refresh.
 A commit failure restores the prior models and returns, so a refused write
 leaves neither changed state nor a logbook entry claiming it happened. Ordering
 the logbook after the commit is the point of moving the stamp here.
@@ -102,14 +103,48 @@ API, and these deliberately keep their own owners:
 
 Each is a collection or a runtime action rather than a sparse edit to the two
 configuration models, and folding them in would buy a shared name for
-operations that share no rule. `IrrigationConfig` still *holds* the schedule
+operations that share no rule. `IrrigationConfig` still _holds_ the schedule
 and EC-range collections, which is why a clear resets them and why no patch
 operation may write them.
 
-The [[Irrigation Recipe]] and [[Irrigation Program]] stamps (ADR-0045) remain
-on `StrategyStamp`. They resolve a mapping from stored recipes rather than from
-a server-owned table, and moving them is a change to recipe semantics, not to
-this seam; until then they keep the pre-#711 effect ordering.
+### Explicit Recipe Stamps join Irrigation Change (#743)
+
+The explicit `apply_irrigation_recipe` action and WebSocket command now submit
+only recipe identity to Irrigation Change. The module resolves the stored
+recipe against the current target, validates the complete candidate, derives
+`applied_recipe_id` and `recipe_applied_at`, and uses the same commit-effects
+implementation as ordinary changes. Callers cannot supply setpoints or
+provenance through the recipe operation. Settings and strategy patches still
+refuse recipe metadata and schedule collections; collection actions retain
+their existing owners.
+
+ADR-0045 remains unchanged: wrong-kind applications refuse; Seconds Mode
+resolves against target flow, pot volume and live plant count; Volume Mode
+retains percentages and inactive seconds. Neither changes the enabled flag,
+Shot Sizing Mode or plumbing. Cross-media applies warn and proceed unscaled,
+and authoring stage/week remain descriptive. Every explicit re-application
+writes and renews provenance, even with identical setpoints. Schedule items are
+detached from the recipe, and unrelated settings survive.
+
+`resolve_validated_recipe_application` is the read-only candidate validation
+shared by explicit application and Program Progression. A new validation
+refusal becomes `NOT_APPLICABLE` with the same detail in the applicability
+payload and automatic decision. Existing decision precedence remains intact,
+including an already-applied slot winning over applicability. Invalid new
+candidates cannot reach the automatic writer.
+
+Only automatic Program Progression remains on `StrategyStamp`, temporarily
+retaining its legacy effect ordering until a separate migration. It shares
+candidate validation, not commit restoration. Explicit stamps restore both
+prior in-memory irrigation models, including provenance, when commit raises;
+failed operations produce neither a success logbook entry nor a subsequent
+refresh. Successful operations commit before logbook before refresh, with
+logbook opt-out respected.
+
+This is **in-memory restoration, not durable atomicity** across configuration,
+plant and genetics stores. A later-store failure can still require persistence
+recovery; this change does not solve rollback after restart. Public payloads
+and persisted schemas are unchanged.
 
 ## Consequences
 
@@ -123,6 +158,6 @@ this seam; until then they keep the pre-#711 effect ordering.
 - `clear_irrigation` is new public surface. Nothing calls it from the card yet;
   it exists so the reset gesture has one honest implementation rather than
   being open-coded the first time a caller needs it.
-- Two stamp seams coexist until recipes move. That is a known, bounded
-  duplication, recorded here so the next reader does not have to rediscover
-  which one is canonical: this one is.
+- Two stamp seams coexist until automatic Program Progression moves. That
+  is a known, bounded duplication, recorded here so the next reader does not
+  have to rediscover which one is canonical: this one is.

@@ -37,6 +37,10 @@ def _coordinator(growspace: Growspace) -> SimpleNamespace:
     "field",
     [
         "unknown_field",
+        "applied_recipe_id",
+        "recipe_applied_at",
+        "irrigation_times",
+        "drain_times",
         "active_steering_phase",
         "phase_changed_at",
         "detected_lights_on_time",
@@ -874,3 +878,37 @@ async def test_steering_mode_refuses_hand_written_preset_values(field: str) -> N
         )
 
     coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.parametrize("recipe_id", [None, "", "   ", 7])
+@pytest.mark.asyncio
+async def test_recipe_change_without_a_usable_id_refuses_before_any_write(
+    recipe_id: object,
+) -> None:
+    """The recipe operation names a recipe or it does nothing at all.
+
+    A blank or non-string id would otherwise reach the library as a lookup for
+    nothing, so it is refused where every other malformed change is — before
+    the live growspace is read for its values.
+    """
+    growspace = Growspace(id="tent", name="Tent")
+    prior_config = growspace.irrigation_config
+    prior_strategy = growspace.irrigation_strategy
+    coordinator = _coordinator(growspace)
+    coordinator._recipe_library = MagicMock()
+
+    with pytest.raises(IrrigationChangeError, match="recipe_id"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.RECIPE,
+                values={"recipe_id": recipe_id},
+            ),
+        )
+
+    coordinator._recipe_library.get_recipe.assert_not_called()
+    assert growspace.irrigation_config is prior_config
+    assert growspace.irrigation_strategy is prior_strategy
+    coordinator.async_commit.assert_not_awaited()
+    coordinator.async_request_refresh.assert_not_awaited()

@@ -53,9 +53,12 @@ from .domain.irrigation_recipe import (
     RecipeApplication,
     RecipeApplyError,
     recipe_has_drifted,
-    resolve_recipe_application,
 )
 from .domain.plant_metrics import count_live_plants
+from .services.irrigation_change import (
+    IrrigationChangeError,
+    resolve_validated_recipe_application,
+)
 from .services.strategy_stamp import StrategyStamp, async_apply_strategy_stamp
 
 if TYPE_CHECKING:
@@ -143,13 +146,12 @@ def resolve_program_position(
     apply_error: str | None = None
     if recipe is not None:
         try:
-            application = resolve_recipe_application(
+            application = resolve_validated_recipe_application(
                 recipe,
-                strategy=strategy,
-                config=config,
+                growspace,
                 live_plant_count=live_plant_count,
             )
-        except RecipeApplyError as err:
+        except (RecipeApplyError, IrrigationChangeError) as err:
             apply_error = str(err)
 
     progression = resolve_program_progression(
@@ -284,9 +286,12 @@ class IrrigationProgramProgression:
     async def _async_stamp(self, growspace_id: str, position: ProgramPosition) -> None:
         """Write the slot's recipe into the growspace, once, with one log line.
 
-        The same [[Recipe Stamp]] a grower's explicit apply performs, through
-        the same [[Strategy Stamp]] seam and recording the same provenance —
-        the only difference is who asked. That provenance is what makes the
+        The same [[Recipe Stamp]] a grower's explicit apply performs, and
+        recording the same provenance — the difference is who asked, and
+        that this path temporarily retains the legacy [[Strategy Stamp]]
+        effect writer where an explicit apply goes through Irrigation
+        Change and gets its commit restoration (ADR-0046). The candidate
+        validation is shared either way. That provenance is what makes the
         stamp happen once: the next evaluation sees ``applied_recipe_id``
         already naming this slot's recipe and has nothing to do.
         """

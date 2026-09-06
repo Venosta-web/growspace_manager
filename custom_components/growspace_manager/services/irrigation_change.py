@@ -4,18 +4,19 @@ The interface owns canonical field classification, normalization, validation,
 atomic replacement and the effects that follow a successful change. Home
 Assistant actions and config-flow handlers are transport adapters for it.
 
-Three kinds of operation share the seam (ADR-0046):
+Four kinds of operation share the seam (ADR-0046):
 
 - a **sparse patch** — the settings, strategy, options-flow and steering-phase
   transports each submit the fields a grower edited;
 - a **clear** — a whole reset of ``IrrigationConfig`` that disables steering;
+- a **Recipe Stamp** — a recipe identity resolved against the live target;
 - a **Steering Mode stamp** — a mode name the seam expands into ordinary
   strategy fields from the server-owned preset table (ADR-0012).
 
 They differ only in how the candidate state is *resolved*. Everything after
 that — post-change validation, the atomic swap, persistence, rollback, the
 logbook entry and the refresh — is identical, which is why they share one
-function rather than three that drift apart.
+function rather than separate writers that drift apart.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, fields as dataclass_fields, replace
 from enum import StrEnum
+import logging
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -33,6 +35,11 @@ from custom_components.growspace_manager.const import (
     SteeringMode,
     SubstrateMediaType,
 )
+from custom_components.growspace_manager.domain.irrigation_recipe import (
+    RecipeApplication,
+    resolve_recipe_application,
+)
+from custom_components.growspace_manager.domain.plant_metrics import count_live_plants
 from custom_components.growspace_manager.domain.shot_sizing import (
     dripper_flow_rate_ml_per_sec,
 )
@@ -42,10 +49,16 @@ from custom_components.growspace_manager.models import (
     SubstrateProfile,
 )
 from custom_components.growspace_manager.steering_presets import resolve_steering_preset
-from homeassistant.util.dt import now
+from homeassistant.util.dt import now, utcnow
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.models import Growspace
+    from custom_components.growspace_manager.models.irrigation_recipe import (
+        IrrigationRecipe,
+    )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class IrrigationChangeError(ValueError):
@@ -61,6 +74,7 @@ class IrrigationChangeOperation(StrEnum):
     STEERING_PHASE = "steering_phase"
     CLEAR = "clear"
     STEERING_MODE = "steering_mode"
+    RECIPE = "recipe"
 
 
 # Fields owned by the grower-facing settings interface. Schedule collections,
@@ -194,10 +208,13 @@ class IrrigationChangeResult:
     operation: IrrigationChangeOperation
     changed_config_fields: frozenset[str]
     changed_strategy_fields: frozenset[str]
+    media_warning: str | None = None
 
 
 def _accepted_fields(operation: IrrigationChangeOperation) -> frozenset[str]:
     """Return the compatibility surface for one public operation."""
+    if operation is IrrigationChangeOperation.RECIPE:
+        return frozenset({"recipe_id"})
     if operation is IrrigationChangeOperation.SETTINGS:
         return IRRIGATION_CONFIG_CHANGE_FIELDS | _CONFIG_ALIASES
     if operation is IrrigationChangeOperation.STRATEGY:
@@ -346,6 +363,68 @@ class _Candidate:
     config_fields: frozenset[str]
     strategy_fields: frozenset[str]
     logbook_message: str | None = None
+    media_warning: str | None = None
+
+
+def resolve_validated_recipe_application(
+    recipe: IrrigationRecipe,
+    growspace: Growspace,
+    *,
+    live_plant_count: int,
+) -> RecipeApplication:
+    """Read what a Recipe Stamp accepts, including complete-state invariants.
+
+    Program applicability and its temporary automatic writer use this same
+    validation as explicit application. No live model or provenance is changed.
+    """
+    application = resolve_recipe_application(
+        recipe,
+        strategy=growspace.irrigation_strategy,
+        config=growspace.irrigation_config,
+        live_plant_count=live_plant_count,
+    )
+    _validate_candidate(
+        replace(growspace.irrigation_config, **application.config_values),
+        replace(growspace.irrigation_strategy, **application.values),
+    )
+    return application
+
+
+def _resolve_recipe_candidate(
+    change: IrrigationChange,
+    growspace: Growspace,
+    coordinator: GrowspaceCoordinator,
+) -> _Candidate:
+    """Resolve identity, target units and provenance inside the write owner."""
+    recipe_id = change.values.get("recipe_id")
+    if not isinstance(recipe_id, str) or not recipe_id.strip():
+        raise IrrigationChangeError("A recipe change must name the recipe_id to stamp")
+    recipe = coordinator._recipe_library.get_recipe(recipe_id)
+    application = resolve_validated_recipe_application(
+        recipe,
+        growspace,
+        live_plant_count=count_live_plants(
+            coordinator.services.growspaces.get_growspace_plants(growspace.id)
+        ),
+    )
+    updates = {
+        **application.values,
+        "applied_recipe_id": recipe.id,
+        "recipe_applied_at": utcnow().isoformat(),
+    }
+    authored_media = recipe.provenance.media_type.value
+    target_media = growspace.irrigation_strategy.substrate_profile.media_type.value
+    return _Candidate(
+        config=replace(growspace.irrigation_config, **application.config_values),
+        strategy=replace(growspace.irrigation_strategy, **updates),
+        config_fields=frozenset(application.config_values),
+        strategy_fields=frozenset(updates),
+        logbook_message=(
+            f"Applied irrigation recipe '{recipe.name}' "
+            f"({authored_media} → {target_media})"
+        ),
+        media_warning=application.media_warning,
+    )
 
 
 def _resolve_steering_mode(
@@ -442,7 +521,11 @@ async def async_apply_irrigation_change(
 
     prior_config = growspace.irrigation_config
     prior_strategy = growspace.irrigation_strategy
-    candidate = _resolve_candidate(change, growspace)
+    candidate = (
+        _resolve_recipe_candidate(change, growspace, coordinator)
+        if change.operation is IrrigationChangeOperation.RECIPE
+        else _resolve_candidate(change, growspace)
+    )
     _validate_candidate(candidate.config, candidate.strategy)
     changed_config_fields = frozenset(
         field
@@ -475,10 +558,13 @@ async def async_apply_irrigation_change(
                 "timestamp": now().isoformat(),
             },
         )
+    if candidate.media_warning:
+        _LOGGER.warning("%s", candidate.media_warning)
     await coordinator.async_request_refresh()
 
     return IrrigationChangeResult(
         operation=change.operation,
         changed_config_fields=changed_config_fields,
         changed_strategy_fields=changed_strategy_fields,
+        media_warning=candidate.media_warning,
     )

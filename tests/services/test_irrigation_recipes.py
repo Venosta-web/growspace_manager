@@ -1,6 +1,6 @@
 """Tests for the Irrigation Recipe service and WebSocket surface (ADR-0045)."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -31,6 +31,9 @@ from custom_components.growspace_manager.models import (
     Plant,
     SubstrateProfile,
 )
+from custom_components.growspace_manager.services.irrigation_change import (
+    IrrigationChangeError,
+)
 from custom_components.growspace_manager.services.irrigation_recipes import (
     handle_apply_irrigation_recipe,
     handle_remove_irrigation_recipe,
@@ -38,7 +41,9 @@ from custom_components.growspace_manager.services.irrigation_recipes import (
     handle_update_irrigation_recipe,
 )
 from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
+from custom_components.growspace_manager.websocket._common import register_ws_command
 from custom_components.growspace_manager.websocket.irrigation import (
+    COMMANDS,
     websocket_apply_irrigation_recipe,
     websocket_get_irrigation_recipes,
     websocket_remove_irrigation_recipe,
@@ -335,13 +340,13 @@ async def test_re_applying_overwrites_hand_tweaks(hass, coordinator) -> None:
     """Applying always writes, so it doubles as "reset to this recipe"."""
     _steer(coordinator, "tent_a")
     recipe_id = await _saved_steering_recipe(coordinator)
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
-
     await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe_id)
+    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
     strategy.p1_shot_volume_percent = 99.0
     strategy.p2_shot_interval_minutes = 99
     await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe_id)
 
+    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
     assert strategy.p1_shot_volume_percent == 3.0
     assert strategy.p2_shot_interval_minutes == 15
 
@@ -659,3 +664,284 @@ async def test_an_edited_recipe_is_read_from_every_growspace(hass, coordinator) 
             "recipes"
         ]
         assert recipes[recipe_id]["name"] == "Flower wk4"
+
+
+@pytest.mark.parametrize("kind", list(IrrigationRecipeKind))
+@pytest.mark.asyncio
+async def test_recipe_commit_failure_restores_models_and_provenance(
+    hass, coordinator, kind
+) -> None:
+    """A persistence failure restores both original objects and emits no success."""
+    if kind is IrrigationRecipeKind.CROP_STEERING:
+        _steer(coordinator, "tent_a", "tent_b")
+    recipe = await coordinator.services.config.save_irrigation_recipe(
+        "tent_a", "Restore me", kind
+    )
+    target = coordinator.growspaces["tent_b"]
+    prior_config, prior_strategy = target.irrigation_config, target.irrigation_strategy
+    prior_strategy.applied_recipe_id = "previous"
+    prior_strategy.recipe_applied_at = "2026-01-01T00:00:00+00:00"
+    before = target.to_dict()
+    entries = []
+    hass.bus.async_listen(EVENT_GROWSPACE_LOG_ENTRY, entries.append)
+    coordinator.async_request_refresh = AsyncMock()
+
+    async def fail_save():
+        assert target.irrigation_config is not prior_config
+        assert target.irrigation_strategy.applied_recipe_id == recipe.id
+        raise RuntimeError("store failed")
+
+    coordinator.storage_manager.async_force_save.side_effect = fail_save
+    with pytest.raises(RuntimeError, match="store failed"):
+        await coordinator.services.growspaces.apply_irrigation_recipe(
+            "tent_b", recipe.id
+        )
+    await hass.async_block_till_done()
+
+    assert target.irrigation_config is prior_config
+    assert target.irrigation_strategy is prior_strategy
+    assert target.to_dict() == before
+    assert entries == []
+    coordinator.async_request_refresh.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kind", list(IrrigationRecipeKind))
+@pytest.mark.parametrize("log_enabled", [True, False])
+@pytest.mark.asyncio
+async def test_recipe_commit_precedes_narration_and_refresh(
+    hass, coordinator, kind, log_enabled
+) -> None:
+    """Observe the real commit boundary and synchronous logbook publication."""
+    if kind is IrrigationRecipeKind.CROP_STEERING:
+        _steer(coordinator, "tent_a", "tent_b")
+    recipe = await coordinator.services.config.save_irrigation_recipe(
+        "tent_a", "Order", kind
+    )
+    coordinator.growspaces["tent_b"].irrigation_config.log_to_logbook = log_enabled
+    order = []
+    original_commit = coordinator.async_commit
+    original_fire = hass.bus.async_fire
+
+    async def commit():
+        await original_commit()
+        order.append("committed")
+
+    def fire(event_type, *args, **kwargs):
+        if event_type == EVENT_GROWSPACE_LOG_ENTRY:
+            order.append("logbook")
+        return original_fire(event_type, *args, **kwargs)
+
+    async def refresh():
+        order.append("refresh")
+
+    coordinator.async_commit = commit
+    coordinator.async_request_refresh = refresh
+    with patch.object(type(hass.bus), "async_fire", side_effect=fire):
+        await coordinator.services.growspaces.apply_irrigation_recipe(
+            "tent_b", recipe.id
+        )
+    assert order == (
+        ["committed", "logbook", "refresh"] if log_enabled else ["committed", "refresh"]
+    )
+
+
+@pytest.mark.parametrize("failure", ["band", "flow", "pot", "schedule_band"])
+@pytest.mark.asyncio
+async def test_recipe_complete_candidate_refusal_through_transports(
+    hass, coordinator, failure
+) -> None:
+    """Both adapters reach real candidate validation before changing either model."""
+    kind = (
+        IrrigationRecipeKind.SCHEDULE
+        if failure == "schedule_band"
+        else IrrigationRecipeKind.CROP_STEERING
+    )
+    if kind is IrrigationRecipeKind.CROP_STEERING:
+        _steer(coordinator, "tent_a", "tent_b")
+    recipe = await coordinator.services.config.save_irrigation_recipe(
+        "tent_a", "Invalid", kind
+    )
+    target = coordinator.growspaces["tent_b"]
+    if failure == "band":
+        await coordinator.services.config.update_irrigation_recipe(
+            recipe.id,
+            crop_steering={"pore_ec_target_min": 5.0, "pore_ec_target_max": 2.0},
+        )
+    elif failure == "schedule_band":
+        target.irrigation_strategy.pore_ec_target_min = 5.0
+        target.irrigation_strategy.pore_ec_target_max = 2.0
+    elif failure == "flow":
+        target.irrigation_config.pump_flow_rate_ml_per_sec = 0.0
+    else:
+        target.irrigation_strategy.substrate_profile.liters_per_pot = 0.0
+    expected = (
+        "Pore EC target band invalid" if "band" in failure else "Volume Mode requires"
+    )
+    prior_config, prior_strategy = target.irrigation_config, target.irrigation_strategy
+    coordinator.storage_manager.async_force_save.reset_mock()
+    coordinator.async_request_refresh = AsyncMock()
+    with pytest.raises(ServiceValidationError, match=expected):
+        await handle_apply_irrigation_recipe(
+            hass, coordinator, _call(growspace_id="tent_b", recipe_id=recipe.id)
+        )
+    with pytest.raises(IrrigationChangeError, match=expected):
+        await websocket_apply_irrigation_recipe(
+            hass,
+            coordinator,
+            {"id": 1, "growspace_id": "tent_b", "recipe_id": recipe.id},
+        )
+    assert target.irrigation_config is prior_config
+    assert target.irrigation_strategy is prior_strategy
+    coordinator.storage_manager.async_force_save.assert_not_awaited()
+    coordinator.async_request_refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_seconds_recipe_uses_live_target_and_preserves_settings(
+    hass, coordinator
+) -> None:
+    """The direct writer derives seconds from the target's pot, pump and plants."""
+    _steer(coordinator, "tent_a", "tent_b")
+    recipe_id = await _saved_steering_recipe(coordinator)
+    target = coordinator.growspaces["tent_b"]
+    target.irrigation_strategy.shot_sizing_mode = ShotSizingMode.SECONDS
+    target.irrigation_strategy.substrate_profile.liters_per_pot = 12.0
+    target.irrigation_config.pump_flow_rate_ml_per_sec = 25.0
+    target.irrigation_config.irrigation_pump_entity = "switch.target"
+    for index in range(4):
+        coordinator._data_repository.add_plant(
+            Plant(
+                plant_id=f"target_{index}",
+                growspace_id="tent_b",
+                stage=PlantStage.VEG.value,
+            )
+        )
+    await coordinator.services.growspaces.apply_irrigation_recipe("tent_b", recipe_id)
+    assert target.irrigation_strategy.p1_shot_duration_seconds == 58
+    assert target.irrigation_strategy.p1_shot_volume_percent == 3.0
+    assert target.irrigation_strategy.shot_sizing_mode is ShotSizingMode.SECONDS
+    assert target.irrigation_strategy.enabled is True
+    assert target.irrigation_strategy.substrate_profile.liters_per_pot == 12.0
+    assert target.irrigation_config.pump_flow_rate_ml_per_sec == 25.0
+    assert target.irrigation_config.irrigation_pump_entity == "switch.target"
+
+
+@pytest.mark.parametrize("kind", list(IrrigationRecipeKind))
+@pytest.mark.asyncio
+async def test_identical_recipe_reapply_commits_and_renews_provenance(
+    hass, coordinator, freezer, kind
+) -> None:
+    """Even a stamp with no changed setpoint persists a fresh application time."""
+    if kind is IrrigationRecipeKind.CROP_STEERING:
+        _steer(coordinator, "tent_a")
+    recipe = await coordinator.services.config.save_irrigation_recipe(
+        "tent_a", "Again", kind
+    )
+    await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe.id)
+    target = coordinator.growspaces["tent_a"]
+    prior = target.irrigation_strategy
+    freezer.tick(1)
+    coordinator.storage_manager.async_force_save.reset_mock()
+    await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe.id)
+    assert target.irrigation_strategy.recipe_applied_at != prior.recipe_applied_at
+    assert target.irrigation_strategy.applied_recipe_id == recipe.id
+    coordinator.storage_manager.async_force_save.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_schedule_stamp_detaches_items_and_keeps_unrelated_settings(
+    hass, coordinator
+) -> None:
+    """Editing a stamped schedule never edits the shared recipe or source tent."""
+    source = coordinator.growspaces["tent_a"]
+    source.irrigation_config.irrigation_times = [{"time": "07:30:00", "duration": 45}]
+    source.irrigation_config.drain_times = [{"time": "08:30:00", "duration": 15}]
+    recipe = await coordinator.services.config.save_irrigation_recipe(
+        "tent_a", "Timer", IrrigationRecipeKind.SCHEDULE
+    )
+    target = coordinator.growspaces["tent_b"]
+    target.irrigation_config.pause_on_low_tank = False
+    target.irrigation_config.irrigation_pump_entity = "switch.target"
+    target.irrigation_strategy.p1_shot_duration_seconds = 123
+    await coordinator.services.growspaces.apply_irrigation_recipe("tent_b", recipe.id)
+    config = target.irrigation_config
+    config.irrigation_times[0]["duration"] = 99
+    config.drain_times[0]["duration"] = 88
+    assert recipe.schedule.irrigation_times[0]["duration"] == 45
+    assert recipe.schedule.drain_times[0]["duration"] == 15
+    assert source.irrigation_config.irrigation_times[0]["duration"] == 45
+    assert config.pause_on_low_tank is False
+    assert config.irrigation_pump_entity == "switch.target"
+    assert target.irrigation_strategy.enabled is False
+    assert target.irrigation_strategy.p1_shot_duration_seconds == 123
+    await coordinator.services.growspaces.apply_irrigation_recipe("tent_b", recipe.id)
+    assert target.irrigation_config.irrigation_times[0]["duration"] == 45
+
+
+@pytest.mark.parametrize("outcome", ["warning", "band", "wrong_kind", "commit"])
+@pytest.mark.asyncio
+async def test_registered_recipe_websocket_keeps_wire_contract(
+    hass, coordinator, outcome
+) -> None:
+    """The registered lifecycle reports real writer results and typed refusals."""
+    _steer(coordinator, "tent_a", "tent_b")
+    recipe_id = await _saved_steering_recipe(coordinator)
+    target = coordinator.growspaces["tent_b"]
+    if outcome == "band":
+        await coordinator.services.config.update_irrigation_recipe(
+            recipe_id,
+            crop_steering={"pore_ec_target_min": 5.0, "pore_ec_target_max": 2.0},
+        )
+    elif outcome == "wrong_kind":
+        target.irrigation_strategy.enabled = False
+    elif outcome == "commit":
+        coordinator.storage_manager.async_force_save.side_effect = RuntimeError(
+            "store failed"
+        )
+    else:
+        target.irrigation_strategy.substrate_profile.media_type = (
+            SubstrateMediaType.ROCKWOOL
+        )
+    command = next(
+        command
+        for command in COMMANDS
+        if command.type == f"{DOMAIN}/apply_irrigation_recipe"
+    )
+    with patch(
+        "custom_components.growspace_manager.websocket._common.websocket_api"
+    ) as ws_api:
+        ws_api.async_response = lambda handler: handler
+        register_ws_command(hass, command)
+        wrapper = ws_api.async_register_command.call_args[0][2]
+    connection = MagicMock()
+    msg = {
+        "id": 7,
+        "type": command.type,
+        "growspace_id": "tent_b",
+        "recipe_id": recipe_id,
+    }
+    with patch.object(
+        GrowspaceCoordinator, "get_for_service_call", return_value=coordinator
+    ):
+        await wrapper(hass, connection, command.schema(msg))
+    if outcome == "warning":
+        connection.send_error.assert_not_called()
+        result = connection.send_result.call_args.args[1]
+        assert result["growspace_id"] == "tent_b"
+        assert result["applied_recipe_id"] == recipe_id
+        assert "coco" in result["warning"] and "rockwool" in result["warning"]
+    else:
+        connection.send_result.assert_not_called()
+        error = connection.send_error.call_args.args
+        assert error[:2] == (
+            7,
+            "internal_error" if outcome == "commit" else "validation_failed",
+        )
+        assert (
+            "store failed"
+            if outcome == "commit"
+            else "Pore EC"
+            if outcome == "band"
+            else "running schedule"
+        ) in error[2]
+        assert target.irrigation_strategy.applied_recipe_id is None

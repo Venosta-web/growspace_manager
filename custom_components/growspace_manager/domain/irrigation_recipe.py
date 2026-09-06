@@ -373,8 +373,9 @@ def resolve_recipe_application(
 ) -> RecipeApplication:
     """Resolve what applying ``recipe`` to this growspace would write.
 
-    Pure: it computes and refuses, it never writes. The [[Strategy Stamp]]
-    seam owns the writing, and ``recipe_has_drifted`` calls this same function
+    Pure: it computes and refuses, it never writes. Irrigation Change owns
+    explicit writes and complete-candidate validation; ``recipe_has_drifted``
+    calls this same function
     to ask what *should* be there — which is why no drift hash is stored.
 
     Shot sizes arrive as a percent of substrate volume and are re-expressed in
