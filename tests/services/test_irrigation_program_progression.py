@@ -450,7 +450,9 @@ async def test_with_auto_advance_off_the_payload_recommends_and_nothing_moves(
 
     # Until the grower applies it explicitly.
     await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe_id)
-    assert strategy.target_vwc_percent == 61.0
+    assert (
+        coordinator.growspaces["tent_a"].irrigation_strategy.target_vwc_percent == 61.0
+    )
     assert _reported(coordinator)["progression"]["state"] == "up_to_date"
 
 
@@ -520,3 +522,48 @@ async def test_one_impossible_growspace_does_not_break_the_refresh(
     )
 
     await coordinator.program_progression.async_evaluate_all()
+
+
+@pytest.mark.parametrize("failure", ["band", "flow", "pot"])
+@pytest.mark.parametrize("auto_advance", [False, True])
+@pytest.mark.asyncio
+async def test_program_and_explicit_apply_share_complete_validation(
+    hass, coordinator, notified, failure, auto_advance
+) -> None:
+    """An invalid candidate is displayed as held and cannot reach the auto writer."""
+    recipe_id = await _recipe(coordinator, "Invalid week", target_vwc=61.0)
+    await _bind(coordinator, (CURRENT_STAGE, CURRENT_WEEK, recipe_id))
+    target = coordinator.growspaces["tent_a"]
+    target.irrigation_config.program_auto_advance = auto_advance
+    if failure == "band":
+        await coordinator.services.config.update_irrigation_recipe(
+            recipe_id,
+            crop_steering={"pore_ec_target_min": 5.0, "pore_ec_target_max": 2.0},
+        )
+    elif failure == "flow":
+        target.irrigation_config.pump_flow_rate_ml_per_sec = 0.0
+    else:
+        target.irrigation_strategy.substrate_profile.liters_per_pot = 0.0
+    before = target.to_dict()
+    coordinator.storage_manager.async_force_save.reset_mock()
+    with pytest.raises(ValueError) as refused:
+        await coordinator.services.growspaces.apply_irrigation_recipe(
+            "tent_a", recipe_id
+        )
+    reported = _reported(coordinator)["progression"]
+    assert reported["hold"] == ProgramHold.NOT_APPLICABLE.value
+    assert reported["detail"] == str(refused.value)
+    result = await coordinator.program_progression.async_evaluate("tent_a")
+    assert result.hold is ProgramHold.NOT_APPLICABLE
+    assert result.detail == str(refused.value)
+    assert target.to_dict() == before
+    coordinator.storage_manager.async_force_save.assert_not_awaited()
+    if auto_advance:
+        notified.assert_awaited_once()
+    else:
+        notified.assert_not_awaited()
+    # Already carrying the slot still wins over applicability, as before.
+    target.irrigation_strategy.applied_recipe_id = recipe_id
+    result = await coordinator.program_progression.async_evaluate("tent_a")
+    assert result.state is ProgramProgressionState.UP_TO_DATE
+    coordinator.storage_manager.async_force_save.assert_not_awaited()

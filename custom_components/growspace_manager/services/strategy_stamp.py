@@ -1,23 +1,9 @@
-"""Strategy Stamp — the one write-and-record seam for preset stamps.
+"""Legacy effect writer retained only for automatic Program Progression.
 
-A stamp writes a flat mapping of resolved irrigation fields into the ordinary
-editable fields once, records what was stamped, and lets the coordinator read
-nothing but those explicit fields afterwards (ADR-0012). Resolving the mapping
-is the caller's business — a [[Steering Mode]] resolves it from the preset
-table, an [[Irrigation Recipe]] resolves it from its stored percents, other
-sources resolve it their own way — but everything downstream of the mapping is
-identical, so it lives here rather than being copied per source: write the
-values, record the provenance, write one logbook entry, invalidate the cache,
-commit and refresh.
-
-Most stamped fields live on the growspace's ``IrrigationStrategy``; a schedule
-recipe's times and caps live on its ``IrrigationConfig`` instead. Both are the
-same gesture writing the same growspace's irrigation settings, so they share
-this seam rather than splitting it by which model happens to hold the field.
-
-Stamps deliberately **always write**. Re-stamping the same source is a "reset
-to these values", discarding hand tweaks, so this seam never diffs and never
-skips.
+Explicit Recipe Stamps and Steering Mode stamps use Irrigation Change.
+Program Progression shares its read-only candidate validation, but temporarily
+retains this writer's in-place mutation and pre-commit narration (ADR-0046).
+It does not provide Irrigation Change's in-memory commit restoration.
 """
 
 from __future__ import annotations

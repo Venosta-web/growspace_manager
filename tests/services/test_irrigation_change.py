@@ -37,6 +37,10 @@ def _coordinator(growspace: Growspace) -> SimpleNamespace:
     "field",
     [
         "unknown_field",
+        "applied_recipe_id",
+        "recipe_applied_at",
+        "irrigation_times",
+        "drain_times",
         "active_steering_phase",
         "phase_changed_at",
         "detected_lights_on_time",
