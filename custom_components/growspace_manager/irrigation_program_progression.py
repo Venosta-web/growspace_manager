@@ -39,8 +39,6 @@ from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.util import dt as dt_util
-
 from .domain.ec_state import resolve_feed_stage_week
 from .domain.irrigation_program import (
     ProgramHold,
@@ -56,10 +54,13 @@ from .domain.irrigation_recipe import (
 )
 from .domain.plant_metrics import count_live_plants
 from .services.irrigation_change import (
+    IrrigationChange,
     IrrigationChangeError,
+    IrrigationChangeOperation,
+    ProgramAdvance,
+    async_apply_irrigation_change,
     resolve_validated_recipe_application,
 )
-from .services.strategy_stamp import StrategyStamp, async_apply_strategy_stamp
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -233,10 +234,12 @@ class IrrigationProgramProgression:
         """Evaluate every growspace, letting no single one break the refresh.
 
         This runs inside the coordinator's periodic update, so a growspace with
-        an impossible program must not take the whole payload down with it —
-        the [[Program Hold]] promise is that the tent keeps doing what it was
-        doing, and an exception escaping here would break far more than
-        irrigation.
+        an impossible program — or one whose stamp could not be persisted —
+        must not take the whole payload down with it. The [[Program Hold]]
+        promise is that the tent keeps doing what it was doing, and an
+        exception escaping here would break far more than irrigation. A
+        growspace caught here is logged and left exactly as it was, so the next
+        tick evaluates it again from the state it actually holds.
         """
         for growspace_id in self._coordinator.growspaces:
             try:
@@ -286,39 +289,41 @@ class IrrigationProgramProgression:
     async def _async_stamp(self, growspace_id: str, position: ProgramPosition) -> None:
         """Write the slot's recipe into the growspace, once, with one log line.
 
-        The same [[Recipe Stamp]] a grower's explicit apply performs, and
-        recording the same provenance — the difference is who asked, and
-        that this path temporarily retains the legacy [[Strategy Stamp]]
-        effect writer where an explicit apply goes through Irrigation
-        Change and gets its commit restoration (ADR-0046). The candidate
-        validation is shared either way. That provenance is what makes the
-        stamp happen once: the next evaluation sees ``applied_recipe_id``
-        already naming this slot's recipe and has nothing to do.
+        Literally the same [[Recipe Stamp]] a grower's explicit apply performs
+        (ADR-0046): this submits the recipe's identity and the one fact
+        [[Irrigation Change]] cannot know — that a program advanced — and that
+        module resolves the recipe against this growspace, validates the whole
+        candidate, derives the provenance, commits, and only then narrates. The
+        difference between the two paths is now who asked and what the logbook
+        entry says, nothing else.
+
+        So a raised commit restores the prior setpoints, schedules and
+        provenance here too, and produces neither a success entry nor a
+        refresh. It propagates: with the growspace left as it was, the next
+        eligible evaluation still reads ``due`` and retries. A successful
+        stamp is what makes it happen **once** — the next evaluation sees
+        ``applied_recipe_id`` already naming this slot's recipe and has
+        nothing to do.
         """
         recipe = position.recipe
-        application = position.application
-        if recipe is None or application is None:  # pragma: no cover - rule invariant
-            return
+        if recipe is None or position.application is None:  # pragma: no cover
+            return  # rule invariant: a due progression resolved an application
 
-        await async_apply_strategy_stamp(
+        await async_apply_irrigation_change(
             self._coordinator,
             growspace_id,
-            StrategyStamp(
-                values=application.values,
-                config_values=application.config_values,
-                records={
-                    "applied_recipe_id": recipe.id,
-                    "recipe_applied_at": dt_util.utcnow().isoformat(),
+            IrrigationChange(
+                operation=IrrigationChangeOperation.RECIPE,
+                values={
+                    "recipe_id": recipe.id,
+                    "program_advance": ProgramAdvance(
+                        program_name=position.program.name,
+                        stage=position.stage,
+                        week=position.week,
+                    ),
                 },
-                logbook_message=(
-                    f"Irrigation program '{position.program.name}' advanced to "
-                    f"{position.stage} week {position.week}: applied recipe "
-                    f"'{recipe.name}'"
-                ),
             ),
         )
-        if application.media_warning:
-            _LOGGER.warning("%s", application.media_warning)
         _LOGGER.info(
             "Irrigation program '%s' advanced growspace '%s' to %s week %s "
             "(recipe '%s')",

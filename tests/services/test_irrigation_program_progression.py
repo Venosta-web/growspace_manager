@@ -190,6 +190,8 @@ async def test_crossing_into_a_week_with_a_slot_stamps_it_once(
     )
 
     assert await coordinator.program_progression.async_evaluate("tent_a") is not None
+    # Re-read: the stamp replaces both models rather than mutating them.
+    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
     assert strategy.target_vwc_percent == 61.0
     assert strategy.applied_recipe_id == recipe_id
     await hass.async_block_till_done()
@@ -508,20 +510,183 @@ async def test_unassigning_reports_no_program_at_all(hass, coordinator) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _arm(coordinator: GrowspaceCoordinator, growspace_id: str = "tent_a") -> None:
+    """Turn auto-advance on *after* binding, so the next evaluation owes a stamp.
+
+    ``_bind`` sets the flag first on purpose, which makes the assignment itself
+    perform the stamp. The cases below need the stamp to happen in an
+    evaluation they control, with the store already sabotaged — and set the
+    field rather than writing it through the settings seam, whose own refresh
+    would spend the stamp before the test got to it.
+    """
+    coordinator.growspaces[growspace_id].irrigation_config.program_auto_advance = True
+
+
 @pytest.mark.asyncio
-async def test_one_impossible_growspace_does_not_break_the_refresh(
+async def test_a_failed_advance_changes_nothing_and_is_retried(
+    hass, coordinator
+) -> None:
+    """The write module's restoration, reached through the automatic path.
+
+    The failure is injected into the real store, underneath the real stamp, so
+    what is under test is the seam Program Progression actually calls rather
+    than a stand-in for it.
+    """
+    recipe_id = await _recipe(coordinator, "Flower wk3", target_vwc=61.0)
+    await _bind(coordinator, (CURRENT_STAGE, CURRENT_WEEK, recipe_id))
+    _arm(coordinator)
+
+    target = coordinator.growspaces["tent_a"]
+    prior_config, prior_strategy = target.irrigation_config, target.irrigation_strategy
+    before = target.to_dict()
+    events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
+    coordinator.async_request_refresh = AsyncMock()
+
+    async def fail_save() -> None:
+        # Mid-stamp: both models already carry the recipe that is about to be
+        # taken back off them.
+        assert target.irrigation_strategy.applied_recipe_id == recipe_id
+        raise RuntimeError("store failed")
+
+    coordinator.storage_manager.async_force_save.side_effect = fail_save
+    with pytest.raises(RuntimeError, match="store failed"):
+        await coordinator.program_progression.async_evaluate("tent_a")
+    await hass.async_block_till_done()
+
+    assert target.irrigation_config is prior_config
+    assert target.irrigation_strategy is prior_strategy
+    assert target.to_dict() == before
+    assert events == []
+    coordinator.async_request_refresh.assert_not_awaited()
+
+    # Nothing was written, so the week is still owed: the next tick retries.
+    coordinator.storage_manager.async_force_save.side_effect = None
+    progression = await coordinator.program_progression.async_evaluate("tent_a")
+    await hass.async_block_till_done()
+
+    assert progression.state is ProgramProgressionState.DUE
+    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    assert strategy.target_vwc_percent == 61.0
+    assert strategy.applied_recipe_id == recipe_id
+    assert len(events) == 1
+    assert "advanced to flower week 3" in events[0].data["message"]
+
+    # And having succeeded, it is done: the retry does not become a loop.
+    progression = await coordinator.program_progression.async_evaluate("tent_a")
+    await hass.async_block_till_done()
+    assert progression.state is ProgramProgressionState.UP_TO_DATE
+    assert len(events) == 1
+
+
+@pytest.mark.asyncio
+async def test_one_failing_growspace_does_not_stop_the_refresh(
     hass, coordinator
 ) -> None:
     """The hold promise is inertness; an exception here would break far more."""
+    coordinator._data_repository.add_plant(
+        Plant(
+            plant_id="p2",
+            growspace_id="tent_b",
+            stage=PlantStage.FLOWER.value,
+            flower_start=(dt_util.now().date() - timedelta(days=15)).isoformat(),
+        )
+    )
     recipe_id = await _recipe(coordinator, "Flower wk3", target_vwc=61.0)
-    await _bind(
-        coordinator, (CURRENT_STAGE, CURRENT_WEEK, recipe_id), auto_advance=True
-    )
-    coordinator.program_progression.async_evaluate = AsyncMock(
-        side_effect=RuntimeError("boom")
-    )
+    for growspace_id in ("tent_a", "tent_b"):
+        await _bind(
+            coordinator,
+            (CURRENT_STAGE, CURRENT_WEEK, recipe_id),
+            growspace_id=growspace_id,
+        )
+    # Armed only once both are bound: binding refreshes, and a refresh
+    # evaluates, which would spend the stamp this test wants to watch.
+    for growspace_id in ("tent_a", "tent_b"):
+        _arm(coordinator, growspace_id)
+
+    async def fail_for_tent_a() -> None:
+        # tent_a is the only growspace whose stamp is in flight when its own
+        # provenance already names the recipe.
+        if (
+            coordinator.growspaces["tent_a"].irrigation_strategy.applied_recipe_id
+            == recipe_id
+        ):
+            raise RuntimeError("store failed")
+
+    coordinator.storage_manager.async_force_save.side_effect = fail_for_tent_a
 
     await coordinator.program_progression.async_evaluate_all()
+    await hass.async_block_till_done()
+
+    assert coordinator.growspaces["tent_a"].irrigation_strategy.applied_recipe_id is (
+        None
+    )
+    assert coordinator.growspaces["tent_a"].irrigation_strategy.target_vwc_percent == (
+        55.0
+    )
+    tent_b = coordinator.growspaces["tent_b"].irrigation_strategy
+    assert tent_b.applied_recipe_id == recipe_id
+    assert tent_b.target_vwc_percent == 61.0
+
+
+@pytest.mark.asyncio
+async def test_a_schedule_slot_advances_the_config_half(hass, coordinator) -> None:
+    """Both recipe kinds advance through the one write module, unchanged.
+
+    Also the assignment-with-consent path: the flag is already on when the
+    program is bound, so the binding itself performs this stamp.
+    """
+    for growspace_id in ("tent_a", "tent_b"):
+        coordinator.growspaces[growspace_id].irrigation_strategy.enabled = False
+    source = coordinator.growspaces["tent_b"].irrigation_config
+    source.max_cycles_per_day = 8
+    source.skip_during_dark = True
+    source.irrigation_times = [{"time": "07:30:00", "duration": 45}]
+    recipe = await coordinator.services.config.save_irrigation_recipe(
+        "tent_b", "Flower timer", IrrigationRecipeKind.SCHEDULE
+    )
+
+    events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
+    await _bind(
+        coordinator, (CURRENT_STAGE, CURRENT_WEEK, recipe.id), auto_advance=True
+    )
+    await hass.async_block_till_done()
+
+    config = coordinator.growspaces["tent_a"].irrigation_config
+    assert config.max_cycles_per_day == 8
+    assert config.skip_during_dark is True
+    assert config.irrigation_times == [{"time": "07:30:00", "duration": 45}]
+    assert (
+        coordinator.growspaces["tent_a"].irrigation_strategy.applied_recipe_id
+        == recipe.id
+    )
+    assert len(events) == 1
+    assert "advanced to flower week 3" in events[0].data["message"]
+
+    # Detached from the library's copy, exactly as an explicit stamp is.
+    config.irrigation_times[0]["duration"] = 99
+    assert recipe.schedule.irrigation_times[0]["duration"] == 45
+    assert source.irrigation_times[0]["duration"] == 45
+
+
+@pytest.mark.asyncio
+async def test_an_automatic_advance_respects_the_logbook_opt_out(
+    hass, coordinator
+) -> None:
+    """Opting out of logbook entries opts out of the automatic ones too."""
+    recipe_id = await _recipe(coordinator, "Flower wk3", target_vwc=61.0)
+    await _bind(coordinator, (CURRENT_STAGE, CURRENT_WEEK, recipe_id))
+    coordinator.growspaces["tent_a"].irrigation_config.log_to_logbook = False
+    _arm(coordinator)
+
+    events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
+    await coordinator.program_progression.async_evaluate("tent_a")
+    await hass.async_block_till_done()
+
+    assert events == []
+    assert (
+        coordinator.growspaces["tent_a"].irrigation_strategy.applied_recipe_id
+        == recipe_id
+    )
 
 
 @pytest.mark.parametrize("failure", ["band", "flow", "pot"])

@@ -9,7 +9,9 @@ Four kinds of operation share the seam (ADR-0046):
 - a **sparse patch** — the settings, strategy, options-flow and steering-phase
   transports each submit the fields a grower edited;
 - a **clear** — a whole reset of ``IrrigationConfig`` that disables steering;
-- a **Recipe Stamp** — a recipe identity resolved against the live target;
+- a **Recipe Stamp** — a recipe identity resolved against the live target,
+  optionally carrying the [[Program Progression]] context that makes the entry
+  read as an automatic advance rather than a grower's own apply;
 - a **Steering Mode stamp** — a mode name the seam expands into ordinary
   strategy fields from the server-owned preset table (ADR-0012).
 
@@ -190,6 +192,24 @@ _OPTIONS_ALIASES = frozenset({"use_vwc_steering"})
 
 
 @dataclass(frozen=True, slots=True)
+class ProgramAdvance:
+    """Why a Recipe Stamp is happening, when nobody asked for it directly.
+
+    The one thing [[Program Progression]] knows that this module does not: an
+    automatic stamp is an *advance*, and its logbook entry has to say which
+    program carried a growspace into which week. Progression keeps slot
+    selection, consent and the [[Program Hold]] decision; it hands over the
+    subject of that one sentence and nothing else, so the recipe, the
+    provenance and the commit effects stay owned here exactly as they are for
+    a grower's explicit apply.
+    """
+
+    program_name: str
+    stage: str | None
+    week: int
+
+
+@dataclass(frozen=True, slots=True)
 class IrrigationChange:
     """One sparse irrigation edit from a public operation."""
 
@@ -214,7 +234,7 @@ class IrrigationChangeResult:
 def _accepted_fields(operation: IrrigationChangeOperation) -> frozenset[str]:
     """Return the compatibility surface for one public operation."""
     if operation is IrrigationChangeOperation.RECIPE:
-        return frozenset({"recipe_id"})
+        return frozenset({"recipe_id", "program_advance"})
     if operation is IrrigationChangeOperation.SETTINGS:
         return IRRIGATION_CONFIG_CHANGE_FIELDS | _CONFIG_ALIASES
     if operation is IrrigationChangeOperation.STRATEGY:
@@ -399,6 +419,12 @@ def _resolve_recipe_candidate(
     recipe_id = change.values.get("recipe_id")
     if not isinstance(recipe_id, str) or not recipe_id.strip():
         raise IrrigationChangeError("A recipe change must name the recipe_id to stamp")
+    advance = change.values.get("program_advance")
+    if advance is not None and not isinstance(advance, ProgramAdvance):
+        raise IrrigationChangeError(
+            "program_advance must be a ProgramAdvance describing the automatic "
+            "advance; a recipe change cannot author its own logbook entry"
+        )
     recipe = coordinator._recipe_library.get_recipe(recipe_id)
     application = resolve_validated_recipe_application(
         recipe,
@@ -414,15 +440,24 @@ def _resolve_recipe_candidate(
     }
     authored_media = recipe.provenance.media_type.value
     target_media = growspace.irrigation_strategy.substrate_profile.media_type.value
+    # The entry says who asked. An advance names the program and the week it
+    # moved to, because that is the whole of what the grower did not do; an
+    # explicit apply names both media, because choosing across them is theirs.
+    logbook_message = (
+        f"Irrigation program '{advance.program_name}' advanced to "
+        f"{advance.stage} week {advance.week}: applied recipe '{recipe.name}'"
+        if advance is not None
+        else (
+            f"Applied irrigation recipe '{recipe.name}' "
+            f"({authored_media} → {target_media})"
+        )
+    )
     return _Candidate(
         config=replace(growspace.irrigation_config, **application.config_values),
         strategy=replace(growspace.irrigation_strategy, **updates),
         config_fields=frozenset(application.config_values),
         strategy_fields=frozenset(updates),
-        logbook_message=(
-            f"Applied irrigation recipe '{recipe.name}' "
-            f"({authored_media} → {target_media})"
-        ),
+        logbook_message=logbook_message,
         media_warning=application.media_warning,
     )
 

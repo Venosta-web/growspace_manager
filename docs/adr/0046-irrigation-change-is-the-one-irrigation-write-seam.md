@@ -133,18 +133,49 @@ payload and automatic decision. Existing decision precedence remains intact,
 including an already-applied slot winning over applicability. Invalid new
 candidates cannot reach the automatic writer.
 
-Only automatic Program Progression remains on `StrategyStamp`, temporarily
-retaining its legacy effect ordering until a separate migration. It shares
-candidate validation, not commit restoration. Explicit stamps restore both
-prior in-memory irrigation models, including provenance, when commit raises;
-failed operations produce neither a success logbook entry nor a subsequent
-refresh. Successful operations commit before logbook before refresh, with
-logbook opt-out respected.
+Explicit stamps restore both prior in-memory irrigation models, including
+provenance, when commit raises; failed operations produce neither a success
+logbook entry nor a subsequent refresh. Successful operations commit before
+logbook before refresh, with logbook opt-out respected.
 
 This is **in-memory restoration, not durable atomicity** across configuration,
 plant and genetics stores. A later-store failure can still require persistence
 recovery; this change does not solve rollback after restart. Public payloads
 and persisted schemas are unchanged.
+
+### Automatic Program stamps join them, and `StrategyStamp` goes (#744)
+
+The deferred exception is now closed. Automatic [[Program Progression]]
+submits the same `recipe` operation an explicit apply does, so both recipe
+kinds take one resolution, one validation, one provenance derivation and one
+commit tail. `StrategyStamp` — the last writer with its own `setattr` loop and
+its own pre-commit narration — is **deleted**; its behaviour is covered
+through the shared interface instead of through a second implementation of it.
+
+Progression keeps what only it knows: slot selection, the auto-advance consent
+decision and the Program Hold. It hands over one typed value, `ProgramAdvance`,
+naming the program and the stage/week it advanced to, purely so the entry reads
+as an advance rather than a grower's own apply. Nothing else about the write is
+the caller's: the recipe is resolved from its id here, the provenance is
+derived here, and a caller cannot author a logbook entry — a `program_advance`
+that is not the typed context is refused with every other malformed change.
+
+An automatic stamp therefore gains the restoration the explicit one already
+had. A raised commit puts back the prior setpoints, schedules and recipe
+provenance and emits no success entry and no refresh, so the growspace still
+reads as owing the week and the next eligible evaluation retries; after a
+successful retry the provenance makes further evaluations `up_to_date`, so
+one advance is still stamped exactly once. The exception propagates to
+`async_evaluate_all`, which already contains a single growspace's failure so
+the rest of the tick continues.
+
+The limit is unchanged and unextended: the automatic path gets the same
+in-memory restoration, not durable atomicity across stores. Auto-advance is
+still off by default, and assignment still binds without applying unless
+consent is already on — that path now goes through the shared operation too.
+Every existing hold, precedence rule and ADR-0045 semantic is preserved: a
+successful advance does not overwrite later hand tweaks, and deleting the
+applied recipe still means unknown drift rather than a new hold.
 
 ## Consequences
 
@@ -158,6 +189,11 @@ and persisted schemas are unchanged.
 - `clear_irrigation` is new public surface. Nothing calls it from the card yet;
   it exists so the reset gesture has one honest implementation rather than
   being open-coded the first time a caller needs it.
-- Two stamp seams coexist until automatic Program Progression moves. That
-  is a known, bounded duplication, recorded here so the next reader does not
-  have to rediscover which one is canonical: this one is.
+- There is one irrigation stamp writer. `StrategyStamp` and its tests are
+  gone, so "which one is canonical?" is no longer a question a reader of this
+  code can be asked to answer.
+- Every irrigation configuration write now shares one failure guarantee, and
+  it is precisely the in-memory one: a raised commit leaves the growspace as
+  it was and narrates nothing. Recovering a partly persisted write across the
+  configuration, plant and genetics stores after a restart remains separate,
+  unsolved work.

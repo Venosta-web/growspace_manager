@@ -11,6 +11,7 @@ from custom_components.growspace_manager.const import (
     SteeringMode,
     SubstrateMediaType,
 )
+from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import Growspace, SubstrateProfile
 from custom_components.growspace_manager.models.types import IrrigationScheduleItem
 from custom_components.growspace_manager.services.irrigation_change import (
@@ -912,3 +913,70 @@ async def test_recipe_change_without_a_usable_id_refuses_before_any_write(
     assert growspace.irrigation_strategy is prior_strategy
     coordinator.async_commit.assert_not_awaited()
     coordinator.async_request_refresh.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "advance",
+    ["Irrigation program 'Full run' advanced", {"program_name": "Full run"}, 7],
+)
+@pytest.mark.asyncio
+async def test_recipe_change_refuses_a_hand_written_advance_context(
+    advance: object,
+) -> None:
+    """Only Program Progression's own context may retitle a Recipe Stamp.
+
+    ``program_advance`` exists so the automatic path can say *which program
+    advanced to which week*, which is the one fact this module cannot know. It
+    is not a place for a caller to author a logbook entry, so anything that is
+    not the typed context is refused with every other malformed change —
+    before the growspace is read.
+    """
+    growspace = Growspace(id="tent", name="Tent")
+    prior_strategy = growspace.irrigation_strategy
+    coordinator = _coordinator(growspace)
+    coordinator._recipe_library = MagicMock()
+
+    with pytest.raises(IrrigationChangeError, match="program_advance"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.RECIPE,
+                values={"recipe_id": "recipe-1", "program_advance": advance},
+            ),
+        )
+
+    coordinator._recipe_library.get_recipe.assert_not_called()
+    assert growspace.irrigation_strategy is prior_strategy
+    coordinator.async_commit.assert_not_awaited()
+    coordinator.async_request_refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_change_refuses_an_unknown_growspace_before_any_write() -> None:
+    """There is nothing to resolve a candidate against, so nothing happens."""
+    coordinator = _coordinator(Growspace(id="tent", name="Tent"))
+
+    with pytest.raises(GrowspaceNotFoundError):
+        await async_apply_irrigation_change(
+            coordinator,
+            "nope",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.SETTINGS,
+                values={"max_cycles_per_day": 8},
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()
+    coordinator.async_request_refresh.assert_not_awaited()
+
+
+def test_change_snapshots_the_transport_payload() -> None:
+    """A caller's dict cannot keep editing the change after submitting it."""
+    values = {"max_cycles_per_day": 8}
+    change = IrrigationChange(
+        operation=IrrigationChangeOperation.SETTINGS, values=values
+    )
+    values["max_cycles_per_day"] = 99
+
+    assert change.values["max_cycles_per_day"] == 8
