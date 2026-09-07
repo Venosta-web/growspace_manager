@@ -896,15 +896,24 @@ class GrowspaceFacade:
         strain_library: StrainLibrary,
         call: ServiceCall,
     ) -> None:
-        """Unpack an update_growspace ServiceCall and delegate to update_growspace."""
+        """Unpack an update_growspace ServiceCall and delegate to update_growspace.
+
+        Every field but the id is optional, and this service is a patch like the
+        rest: forward only what the caller actually sent, so an omitted name is
+        left alone rather than written through as None.
+        """
         growspace_id = call.data[ATTR_GROWSPACE_ID]
-        await self.update_growspace(
-            growspace_id=growspace_id,
-            name=call.data.get(ATTR_NAME),
-            rows=call.data.get(ATTR_ROWS),
-            plants_per_row=call.data.get(ATTR_PLANTS_PER_ROW),
-            notification_target=call.data.get(ATTR_NOTIFICATION_TARGET),
-        )
+        updates = {
+            attr: call.data[attr]
+            for attr in (
+                ATTR_NAME,
+                ATTR_ROWS,
+                ATTR_PLANTS_PER_ROW,
+                ATTR_NOTIFICATION_TARGET,
+            )
+            if attr in call.data
+        }
+        await self.update_growspace(growspace_id=growspace_id, **updates)
         _LOGGER.info("Growspace %s updated successfully", growspace_id)
 
     @handle_service_errors
