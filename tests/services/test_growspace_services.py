@@ -119,7 +119,6 @@ async def test_handle_update_growspace(
         name="Updated GS",
         rows=5,
         plants_per_row=5,
-        notification_target=None,
     )
 
 
@@ -565,3 +564,41 @@ async def test_async_add_growspace_note_no_image_manager(
 
     fired_data = mock_hass.bus.async_fire.call_args[0][1]
     assert fired_data["images"] == []
+
+
+@pytest.mark.asyncio
+async def test_handle_update_growspace_omits_absent_fields(
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+) -> None:
+    """An update that resizes the grid must not blank the fields it left out."""
+    mock_call.data = {"growspace_id": "gs1", "rows": 4, "plants_per_row": 5}
+
+    await mock_coordinator.services.growspaces.update_growspace_from_call(
+        mock_hass, mock_strain_library, mock_call
+    )
+
+    mock_coordinator._growspace_manager.update_growspace.assert_awaited_once_with(
+        "gs1", rows=4, plants_per_row=5
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_update_growspace_forwards_only_the_name(
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+) -> None:
+    """A rename must not carry a grid the caller never asked to change."""
+    mock_call.data = {"growspace_id": "gs1", "name": "Renamed"}
+
+    await mock_coordinator.services.growspaces.update_growspace_from_call(
+        mock_hass, mock_strain_library, mock_call
+    )
+
+    mock_coordinator._growspace_manager.update_growspace.assert_awaited_once_with(
+        "gs1", name="Renamed"
+    )

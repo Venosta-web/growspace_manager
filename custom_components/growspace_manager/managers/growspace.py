@@ -60,6 +60,24 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _is_given(kwargs: dict[str, Any], key: str) -> bool:
+    """Return whether an update actually carries a value for `key`.
+
+    Updates are patches, and a caller that omits a field expects it left alone.
+    A `None` reaching here is an adapter filling in a blank for a field nobody
+    sent, never an intent: a growspace has no nameless or gridless state to be
+    put into, so absence and `None` mean the same thing. `notification_target`
+    is deliberately not read through this — clearing it is a real intent, and
+    it is expressed by an empty value.
+    """
+    return kwargs.get(key) is not None
+
+
+def _given(kwargs: dict[str, Any], key: str, current: Any) -> Any:
+    """Return the update's value for `key`, or `current` when it gave none."""
+    return kwargs[key] if _is_given(kwargs, key) else current
+
+
 class GrowspaceManager(BaseService):
     """Handles all growspace CRUD operations and management logic."""
 
@@ -212,9 +230,9 @@ class GrowspaceManager(BaseService):
 
             growspace = self.repository.require_growspace(growspace_id)
             changes: list[str] = []
-            new_rows = int(kwargs.get("rows", growspace.rows))
+            new_rows = int(_given(kwargs, "rows", growspace.rows))
             new_plants_per_row = int(
-                kwargs.get("plants_per_row", growspace.plants_per_row)
+                _given(kwargs, "plants_per_row", growspace.plants_per_row)
             )
             grid_changed = (
                 new_rows != growspace.rows
@@ -309,14 +327,14 @@ class GrowspaceManager(BaseService):
     ) -> bool:
         """Update growspace structure (dimensions)."""
         updated = False
-        if "rows" in kwargs:
+        if _is_given(kwargs, "rows"):
             rows = int(kwargs["rows"])
             if rows != growspace.rows:
                 changes.append(f"rows: {growspace.rows} -> {rows}")
                 growspace.rows = rows
                 updated = True
 
-        if "plants_per_row" in kwargs:
+        if _is_given(kwargs, "plants_per_row"):
             ppr = int(kwargs["plants_per_row"])
             if ppr != growspace.plants_per_row:
                 changes.append(f"plants_per_row: {growspace.plants_per_row} -> {ppr}")
@@ -329,7 +347,7 @@ class GrowspaceManager(BaseService):
     ) -> bool:
         """Update growspace configuration."""
         updated = False
-        if "name" in kwargs:
+        if _is_given(kwargs, "name"):
             name = kwargs["name"]
             if name != growspace.name:
                 changes.append(f"name: {growspace.name} -> {name}")
