@@ -271,7 +271,17 @@ async def test_unreadable_stored_streak_is_discarded(alert_monitor) -> None:
     store = _MemoryStore(
         {
             "streaks": [
-                {"growspace_id": "tent2", "camera_id": "camera.broken"},
+                {"growspace_id": "tent2", "camera_id": "camera.missing-fields"},
+                {
+                    "growspace_id": "tent2",
+                    "camera_id": "camera.bad-timestamp",
+                    "streak_started_at": "the day before yesterday",
+                    "consecutive_count": 2,
+                    "reason_counts": {"frame_rejected": 2},
+                    "latest_capture_id": "capture-2",
+                    "latest_captured_at": BASE_TIME.isoformat(),
+                    "condition_active": False,
+                },
                 {
                     "growspace_id": GROWSPACE_ID,
                     "camera_id": CAMERA_ID,
@@ -289,5 +299,6 @@ async def test_unreadable_stored_streak_is_discarded(alert_monitor) -> None:
 
     await monitor.async_start()
 
-    assert monitor.active_streak("tent2", "camera.broken") is None
+    assert monitor.active_streak("tent2", "camera.missing-fields") is None
+    assert monitor.active_streak("tent2", "camera.bad-timestamp") is None
     assert monitor.active_streak(GROWSPACE_ID, CAMERA_ID) is not None
