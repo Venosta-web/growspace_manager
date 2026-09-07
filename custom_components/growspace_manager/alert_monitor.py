@@ -211,11 +211,7 @@ class AlertMonitor:
     ) -> dict[str, Any]:
         """Create one equipment Triage Alert per active continuity streak."""
         for active_alert in reversed(self._alerts):
-            if (
-                active_alert["alert_type"] == "capture_continuity_break"
-                and active_alert["camera_id"] == state.camera_id
-                and active_alert["condition_active"]
-            ):
+            if _is_active_condition(active_alert, state.growspace_id, state.camera_id):
                 active_alert.update(_continuity_evidence(state))
                 await self._async_save()
                 return active_alert
@@ -241,17 +237,19 @@ class AlertMonitor:
 
     async def async_clear_capture_continuity_break(
         self,
+        growspace_id: str,
         camera_id: str,
         *,
         cleared_at: datetime,
     ) -> bool:
-        """Clear a camera condition without acknowledging its durable alert."""
+        """Clear one Camera Assignment's condition without acknowledging it.
+
+        The durable Triage Alert and any grower resolution survive: only the
+        condition status moves, so a short recovery — or the camera leaving
+        this Growspace — cannot erase an equipment event before it is seen.
+        """
         for alert in reversed(self._alerts):
-            if (
-                alert["alert_type"] == "capture_continuity_break"
-                and alert["camera_id"] == camera_id
-                and alert["condition_active"]
-            ):
+            if _is_active_condition(alert, growspace_id, camera_id):
                 alert["condition_active"] = False
                 alert["cleared_at"] = cleared_at.isoformat()
                 await self._async_save()
@@ -345,6 +343,24 @@ class AlertMonitor:
     async def _async_save(self) -> None:
         """Persist the current alerts list to the Store."""
         await self._store.async_save({"alerts": self._alerts})
+
+
+def _is_active_condition(
+    alert: dict[str, Any],
+    growspace_id: str,
+    camera_id: str,
+) -> bool:
+    """Match the live condition of one camera's assignment to one growspace.
+
+    Streak ownership is the pair, not the camera alone: one camera assigned to
+    two growspaces keeps two conditions, and neither may answer for the other.
+    """
+    return bool(
+        alert["alert_type"] == "capture_continuity_break"
+        and alert["growspace_id"] == growspace_id
+        and alert["camera_id"] == camera_id
+        and alert["condition_active"]
+    )
 
 
 def _continuity_evidence(state: CaptureContinuityState) -> dict[str, Any]:

@@ -17,6 +17,7 @@ def _continuity_state(
     *,
     latest_capture_id: str = "capture-3",
     camera_id: str = "camera.canopy",
+    growspace_id: str = GROWSPACE_ID,
 ):
     from custom_components.growspace_manager.domain.capture_continuity import (
         CaptureContinuityState,
@@ -24,7 +25,7 @@ def _continuity_state(
     )
 
     return CaptureContinuityState(
-        growspace_id=GROWSPACE_ID,
+        growspace_id=growspace_id,
         camera_id=camera_id,
         streak_started_at=datetime(2026, 9, 1, 6, tzinfo=UTC),
         consecutive_count=3,
@@ -147,7 +148,7 @@ async def test_cleared_continuity_condition_rearms_without_resolving_alert(
     cleared_at = datetime(2026, 9, 1, 9, tzinfo=UTC)
 
     assert await monitor.async_clear_capture_continuity_break(
-        "camera.canopy", cleared_at=cleared_at
+        GROWSPACE_ID, "camera.canopy", cleared_at=cleared_at
     )
     second = await monitor.async_record_capture_continuity_break(
         _continuity_state(latest_capture_id="capture-7")
@@ -193,9 +194,27 @@ async def test_clear_continuity_break_returns_false_without_active_alert(
 ) -> None:
     """Clearing an unknown or already-cleared camera is an idempotent no-op."""
     assert not await monitor.async_clear_capture_continuity_break(
+        GROWSPACE_ID,
         "camera.missing",
         cleared_at=datetime(2026, 9, 1, 9, tzinfo=UTC),
     )
+
+
+async def test_one_camera_in_two_growspaces_keeps_two_conditions(monitor) -> None:
+    """Streak ownership is the assignment pair, so neither answers for the other."""
+    await monitor.async_record_capture_continuity_break(_continuity_state())
+    await monitor.async_record_capture_continuity_break(
+        _continuity_state(growspace_id="tent2", latest_capture_id="capture-t2-3")
+    )
+
+    assert await monitor.async_clear_capture_continuity_break(
+        "tent2", "camera.canopy", cleared_at=datetime(2026, 9, 1, 9, tzinfo=UTC)
+    )
+
+    alerts = monitor.get_alerts(alert_type="capture_continuity_break")
+    assert len(alerts) == 2
+    assert [alert["growspace_id"] for alert in alerts] == [GROWSPACE_ID, "tent2"]
+    assert [alert["condition_active"] for alert in alerts] == [True, False]
 
 
 # ---------------------------------------------------------------------------

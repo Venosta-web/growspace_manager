@@ -1321,3 +1321,73 @@ async def test_handle_configure_environment_parses_growlight_config_and_bundle(
             sunrise_duration_entity="number.d",
         )
     ]
+
+
+def _camera_growspace(*cameras: str) -> MagicMock:
+    """A growspace whose real EnvironmentConfig makes `changed()` meaningful."""
+    growspace = MagicMock()
+    growspace.id = "gs1"
+    growspace.name = "Test GS"
+    growspace.environment_config = EnvironmentConfig(camera_entities=list(cameras))
+    return growspace
+
+
+@pytest.mark.asyncio
+async def test_camera_assignment_change_reaches_continuity_after_the_save(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """An un-assigned camera's streak is retired, and only once the config is saved."""
+    growspace = _camera_growspace("camera.canopy", "camera.side")
+    mock_coordinator.growspaces = {"gs1": growspace}
+    assign = mock_coordinator.capture_continuity.async_apply_camera_assignment
+    order = MagicMock()
+    order.attach_mock(mock_coordinator.async_commit, "save")
+    order.attach_mock(assign, "assign")
+
+    mock_call.data = {
+        "growspace_id": "gs1",
+        "camera_entities": ["camera.side"],
+    }
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assign.assert_awaited_once_with("gs1", ["camera.side"])
+    assert [call[0] for call in order.mock_calls] == ["save", "assign"]
+
+
+@pytest.mark.asyncio
+async def test_environment_change_that_keeps_the_cameras_touches_no_streak(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """Continuity is an assignment concern, not a general configuration one."""
+    growspace = _camera_growspace("camera.canopy")
+    mock_coordinator.growspaces = {"gs1": growspace}
+
+    mock_call.data = {"growspace_id": "gs1", CONF_TEMP_SENSOR: "sensor.temp"}
+
+    await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert growspace.environment_config.camera_entities == ["camera.canopy"]
+    mock_coordinator.capture_continuity.async_apply_camera_assignment.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_refused_environment_change_cannot_reset_a_streak(
+    mock_hass, mock_coordinator, mock_call
+) -> None:
+    """A configuration the seam rejects never reaches the continuity effect."""
+    growspace = _camera_growspace("camera.canopy")
+    mock_coordinator.growspaces = {"gs1": growspace}
+
+    mock_call.data = {
+        "growspace_id": "gs1",
+        "camera_entities": [],
+        # Half an Acceptable Moisture Band: the seam refuses the whole patch.
+        "soil_moisture_min": 30.0,
+    }
+
+    with pytest.raises(ServiceValidationError):
+        await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
+
+    assert growspace.environment_config.camera_entities == ["camera.canopy"]
+    mock_coordinator.capture_continuity.async_apply_camera_assignment.assert_not_awaited()
