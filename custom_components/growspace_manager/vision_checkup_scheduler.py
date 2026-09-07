@@ -16,11 +16,6 @@ from homeassistant.util.dt import now as ha_now, utcnow
 
 from .const import CONF_AI_TASK_ENTITY_ID, CONF_VISION_EXPLAINER_SEES_IMAGE
 from .data_access.vision_evidence_store import VisionEvidenceStore
-from .domain.capture_continuity import (
-    CaptureContinuityEvent,
-    ContinuityTransition,
-    evaluate_capture_continuity,
-)
 from .domain.environmental_evidence import (
     NormalizedEnvironmentalEvidence,
     environmental_evidence_at,
@@ -69,7 +64,6 @@ from .models.vision_evidence import (
     CaptureTrigger,
     CheckupStatus,
     ComparisonOutcome,
-    ComparisonVerdict,
     EmbeddingSource,
     LightState,
     LightWindow,
@@ -639,7 +633,9 @@ class VisionCheckupScheduler:
         )
         fusion = _fusion_record(capture, environment, fused)
         await self._store.async_record_fusion_outcome(fusion)
-        await self._update_continuity(capture, comparison)
+        await self.coordinator.capture_continuity.async_record_capture(
+            capture, comparison
+        )
         report = await self._maybe_explain(
             capture,
             comparison=comparison,
@@ -699,61 +695,6 @@ class VisionCheckupScheduler:
             decision = evaluate_visual_persistence(state, event)
             state = decision.state
         return bool(decision and decision.persistence_met)
-
-    async def _update_continuity(
-        self,
-        capture: VisionCapture,
-        comparison: VisualComparisonResult | None,
-    ) -> None:
-        quality_accepted: bool | None
-        if capture.analysis_state is AnalysisState.ANALYZED:
-            quality_accepted = True
-        elif capture.analysis_state is AnalysisState.REJECTED:
-            quality_accepted = False
-        else:
-            quality_accepted = None
-        if capture.trigger_source is CaptureTrigger.MANUAL or quality_accepted is None:
-            return
-        if quality_accepted and (
-            comparison is None
-            or comparison.verdict is not ComparisonVerdict.MATERIAL_SCENE_CHANGE
-        ):
-            await self.coordinator.alert_monitor.async_clear_capture_continuity_break(
-                capture.camera_id,
-                cleared_at=datetime.fromisoformat(capture.captured_at),
-            )
-            return
-        assert self._store is not None
-        state = None
-        decision = None
-        for historical in await self._store.async_get_recent_scheduled_captures(
-            capture.camera_id, limit=3
-        ):
-            historical_comparison = await self._latest_comparison(historical.capture_id)
-            decision = evaluate_capture_continuity(
-                state,
-                CaptureContinuityEvent(
-                    growspace_id=historical.growspace_id,
-                    camera_id=historical.camera_id,
-                    capture_id=historical.capture_id,
-                    captured_at=datetime.fromisoformat(historical.captured_at),
-                    trigger_source=historical.trigger_source,
-                    quality_accepted=(
-                        historical.analysis_state is AnalysisState.ANALYZED
-                    ),
-                    comparison_verdict=(
-                        historical_comparison.verdict if historical_comparison else None
-                    ),
-                ),
-            )
-            state = decision.state
-        if decision is None:
-            return
-        if decision.transition is ContinuityTransition.ACTIVATED:
-            assert decision.state is not None
-            await self.coordinator.alert_monitor.async_record_capture_continuity_break(
-                decision.state
-            )
 
     async def _latest_comparison(
         self, capture_id: str

@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
+from .capture_continuity_monitor import CaptureContinuityMonitor
 from .const import COORDINATOR_UPDATE_INTERVAL_MINUTES, DOMAIN, VERSION
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
@@ -208,6 +209,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         briefing_scheduler: BriefingScheduler,
         photoperiod_checker: PhotoperiodFlipChecker,
         alert_monitor: AlertMonitor,
+        capture_continuity: CaptureContinuityMonitor,
         conversation_store: ConversationStore,
         tank_monitor: TankLevelMonitor,
     ) -> None:
@@ -235,6 +237,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.briefing_scheduler = briefing_scheduler
         self.photoperiod_checker = photoperiod_checker
         self.alert_monitor = alert_monitor
+        self.capture_continuity = capture_continuity
         self.conversation_store = conversation_store
         self.tank_monitor = tank_monitor
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
@@ -550,6 +553,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.photoperiod_checker.schedule_all_growspaces()
         await self.tank_monitor.async_start()
         await self.alert_monitor.async_start()
+        await self.capture_continuity.async_start()
         await self.conversation_store.async_load()
 
         # Initialize environment reporter after data load

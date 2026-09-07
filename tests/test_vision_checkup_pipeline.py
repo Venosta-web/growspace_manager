@@ -1,12 +1,17 @@
 """Public-boundary tests for the V1 Vision Checkup pipeline."""
 
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.alert_monitor import AlertMonitor
+from custom_components.growspace_manager.capture_continuity_monitor import (
+    CaptureContinuityMonitor,
+)
 from custom_components.growspace_manager.data_access.vision_evidence_store import (
     VisionEvidenceStore,
 )
@@ -16,6 +21,7 @@ from custom_components.growspace_manager.domain.evidence_fusion import (
     EvidenceCoverage,
     EvidenceFusionState,
 )
+from custom_components.growspace_manager.domain.visual_comparison import BASELINE_SIZE
 from custom_components.growspace_manager.models.vision_evidence import (
     AnalysisState,
     CheckupStatus,
@@ -50,6 +56,32 @@ from custom_components.growspace_manager.vision_models import (
 )
 
 NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
+REJECTED_ANALYSIS = VisionAnalysis(
+    schema_version=1,
+    request_id="request-rejected",
+    status=AnalysisStatus.REJECTED,
+    quality=FrameQualityResult(
+        signals=QualitySignals(
+            mean_luminance=1.0,
+            clipped_pixel_fraction=0.0,
+            mean_absolute_gradient=1.0,
+        ),
+        reasons=(QualityReason.TOO_DARK,),
+    ),
+)
+
+
+class _MemoryStore:
+    """Stand-in for a Home Assistant Store that keeps one payload in memory."""
+
+    def __init__(self) -> None:
+        self.data: dict | None = None
+
+    async def async_load(self) -> dict | None:
+        return self.data
+
+    async def async_save(self, data: dict) -> None:
+        self.data = data
 
 
 def _evaluation(sensor_type: str) -> EvaluationSnapshot:
@@ -83,25 +115,22 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
             model=model,
             embedding_dimension=2,
         )
-        client = SimpleNamespace(
-            async_analyze=AsyncMock(
-                return_value=VisionAnalysis(
-                    schema_version=1,
-                    request_id="request-1",
-                    status=AnalysisStatus.ANALYZED,
-                    quality=FrameQualityResult(
-                        signals=QualitySignals(
-                            mean_luminance=100.0,
-                            clipped_pixel_fraction=0.01,
-                            mean_absolute_gradient=10.0,
-                        ),
-                        reasons=(),
-                    ),
-                    model=model,
-                    embedding=SimpleNamespace(dimension=2, values=(1.0, 0.0)),
-                )
-            )
+        analyzed = VisionAnalysis(
+            schema_version=1,
+            request_id="request-1",
+            status=AnalysisStatus.ANALYZED,
+            quality=FrameQualityResult(
+                signals=QualitySignals(
+                    mean_luminance=100.0,
+                    clipped_pixel_fraction=0.01,
+                    mean_absolute_gradient=10.0,
+                ),
+                reasons=(),
+            ),
+            model=model,
+            embedding=SimpleNamespace(dimension=2, values=(1.0, 0.0)),
         )
+        client = SimpleNamespace(async_analyze=AsyncMock(return_value=analyzed))
         ready = VisionStatus(
             availability=VisionAvailability.READY,
             connection_source=VisionConnectionSource.MANUAL,
@@ -140,14 +169,24 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
             vision_connection=connection,
             options={"ai_settings": ai_settings or {}},
             services=SimpleNamespace(notifications=notifications),
-            alert_monitor=SimpleNamespace(
-                async_record_capture_continuity_break=AsyncMock(),
-                async_clear_capture_continuity_break=AsyncMock(),
-            ),
             async_update_listeners=MagicMock(),
         )
         hass = MagicMock()
         hass.config.media_dirs = {"local": str(tmp_path / "media")}
+        # The durable alert path is the thing under test, so the checkup runs
+        # against the real Alert Monitor and the real continuity owner rather
+        # than mocks that would accept any policy the scheduler invented.
+        alert_monitor = AlertMonitor(
+            hass,
+            coordinator=coordinator,
+            store=_MemoryStore(),
+            ai_assistant_factory=None,
+        )
+        await alert_monitor.async_start()
+        capture_continuity = CaptureContinuityMonitor(_MemoryStore(), alert_monitor)
+        await capture_continuity.async_start()
+        coordinator.alert_monitor = alert_monitor
+        coordinator.capture_continuity = capture_continuity
         scheduler = VisionCheckupScheduler(hass, coordinator, evidence_store=store)
         with (
             patch(
@@ -166,6 +205,9 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
                 client=client,
                 growspace=growspace,
                 coordinator=coordinator,
+                analyzed=analyzed,
+                alert_monitor=alert_monitor,
+                capture_continuity=capture_continuity,
             )
     finally:
         await store.async_close()
@@ -312,47 +354,187 @@ async def test_local_analysis_failure_is_durable_and_explainer_degrades(
         assert generate.await_count == 2
 
 
+def _continuity_alerts(pipeline) -> list[dict]:
+    return pipeline.alert_monitor.get_alerts(alert_type="capture_continuity_break")
+
+
+async def _reject(pipeline, count: int = 1) -> None:
+    """Run scheduled checkups whose frames the quality gate rejects."""
+    pipeline.client.async_analyze.side_effect = None
+    pipeline.client.async_analyze.return_value = REJECTED_ANALYSIS
+    for _ in range(count):
+        await pipeline.scheduler.run_vision_analysis("tent1", "early")
+
+
+async def _accept(pipeline, count: int = 1) -> None:
+    """Run scheduled checkups the quality gate accepts."""
+    pipeline.client.async_analyze.side_effect = None
+    pipeline.client.async_analyze.return_value = pipeline.analyzed
+    for _ in range(count):
+        await pipeline.scheduler.run_vision_analysis("tent1", "early")
+
+
 @pytest.mark.asyncio
-async def test_scheduled_comparable_capture_clears_continuity_break(tmp_path) -> None:
+async def test_scheduled_comparable_capture_leaves_no_continuity_alert(
+    tmp_path,
+) -> None:
+    """A camera that is behaving raises nothing and stores no streak."""
     async with _pipeline(tmp_path) as pipeline:
         await pipeline.scheduler.run_vision_analysis("tent1", "early")
 
-        clear = pipeline.coordinator.alert_monitor.async_clear_capture_continuity_break
-        clear.assert_awaited_once_with("camera.canopy", cleared_at=NOW)
+        assert _continuity_alerts(pipeline) == []
+        assert pipeline.capture_continuity.active_streak("tent1", "camera.canopy") is (
+            None
+        )
 
 
 @pytest.mark.asyncio
-async def test_third_scheduled_rejection_raises_one_continuity_break(tmp_path) -> None:
+async def test_streak_activates_once_and_later_captures_update_one_alert(
+    tmp_path,
+) -> None:
+    """Four rejections raise one alert whose identity and streak start hold."""
     async with _pipeline(tmp_path) as pipeline:
-        pipeline.client.async_analyze.return_value = VisionAnalysis(
-            schema_version=1,
-            request_id="request-rejected",
-            status=AnalysisStatus.REJECTED,
-            quality=FrameQualityResult(
-                signals=QualitySignals(
-                    mean_luminance=1.0,
-                    clipped_pixel_fraction=0.0,
-                    mean_absolute_gradient=1.0,
-                ),
-                reasons=(QualityReason.TOO_DARK,),
-            ),
+        await _reject(pipeline, 4)
+
+        alerts = _continuity_alerts(pipeline)
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert["severity"] == "warning"
+        assert alert["camera_id"] == "camera.canopy"
+        assert alert["consecutive_count"] == 4
+        assert alert["reason_counts"] == {"frame_rejected": 4}
+        assert alert["condition_active"] is True
+        assert alert["streak_started_at"] == int(NOW.timestamp())
+        assert "bayesian_probability" not in alert
+
+        streak = pipeline.capture_continuity.active_streak("tent1", "camera.canopy")
+        assert streak is not None
+        assert streak.consecutive_count == 4
+        assert streak.streak_started_at == NOW
+
+
+@pytest.mark.asyncio
+async def test_transport_failures_and_manual_captures_do_not_move_the_streak(
+    tmp_path,
+) -> None:
+    """Only quality rejection and material scene change are qualifying evidence."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 2)
+
+        pipeline.client.async_analyze.side_effect = RuntimeError("vision unavailable")
+        await pipeline.scheduler.run_vision_analysis("tent1", "early")
+        assert _continuity_alerts(pipeline) == []
+
+        pipeline.client.async_analyze.side_effect = None
+        await pipeline.scheduler.run_vision_analysis("tent1", "manual")
+        assert _continuity_alerts(pipeline) == []
+        streak = pipeline.capture_continuity.active_streak("tent1", "camera.canopy")
+        assert streak is not None
+        assert streak.consecutive_count == 2
+
+        await _reject(pipeline)
+
+        alerts = _continuity_alerts(pipeline)
+        assert len(alerts) == 1
+        assert alerts[0]["consecutive_count"] == 3
+        assert alerts[0]["reason_counts"] == {"frame_rejected": 3}
+
+
+@pytest.mark.asyncio
+async def test_a_baseline_that_cannot_yet_score_neither_advances_nor_clears(
+    tmp_path,
+) -> None:
+    """An accepted capture with no verdict is unavailable evidence, not recovery."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 3)
+
+        await _accept(pipeline)
+
+        streak = pipeline.capture_continuity.active_streak("tent1", "camera.canopy")
+        assert streak is not None
+        assert streak.consecutive_count == 3
+        assert _continuity_alerts(pipeline)[0]["condition_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_comparable_capture_clears_the_condition_and_rearms(tmp_path) -> None:
+    """Recovery ends the condition without acknowledging the durable alert."""
+    async with _pipeline(tmp_path) as pipeline:
+        # A verdict needs a scoring baseline, and only comparable scheduled
+        # evidence builds one — so the recovery this asserts is the real thing.
+        await _accept(pipeline, BASELINE_SIZE)
+        await _reject(pipeline, 3)
+
+        await _accept(pipeline)
+
+        cleared = _continuity_alerts(pipeline)[0]
+        assert cleared["condition_active"] is False
+        assert cleared["cleared_at"] == int(NOW.timestamp())
+        assert cleared["resolved"] is False
+        assert pipeline.capture_continuity.active_streak("tent1", "camera.canopy") is (
+            None
         )
 
-        outcomes = [
-            await pipeline.scheduler.run_vision_analysis("tent1", "early")
-            for _ in range(3)
-        ]
+        await _reject(pipeline, 3)
 
-        assert [outcome.checkup.status for outcome in outcomes] == [
-            CheckupStatus.COMPLETED,
-            CheckupStatus.COMPLETED,
-            CheckupStatus.COMPLETED,
-        ]
-        record = (
-            pipeline.coordinator.alert_monitor.async_record_capture_continuity_break
+        alerts = _continuity_alerts(pipeline)
+        assert len(alerts) == 2
+        assert alerts[0]["id"] != alerts[1]["id"]
+        assert alerts[1]["condition_active"] is True
+        assert alerts[1]["consecutive_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_a_scored_visual_anomaly_creates_no_alert(tmp_path) -> None:
+    """ADR 0044: no Anomaly Score or fusion state may reach the durable inbox."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _accept(pipeline, BASELINE_SIZE)
+
+        pipeline.client.async_analyze.return_value = replace(
+            pipeline.analyzed,
+            embedding=SimpleNamespace(dimension=2, values=(0.0, 1.0)),
         )
-        record.assert_awaited_once()
-        assert record.await_args.args[0].consecutive_count == 3
+        outcome = await pipeline.scheduler.run_vision_analysis("tent1", "early")
+
+        capture = outcome.captures[0]
+        assert capture.comparison is not None
+        assert capture.comparison.verdict is ComparisonVerdict.MATERIAL_SCENE_CHANGE
+        assert capture.comparison.anomaly_score == 1.0
+        assert capture.fusion.fusion_state == EvidenceFusionState.VISUAL_ANOMALY.value
+        assert pipeline.alert_monitor.get_alerts() == []
+
+
+@pytest.mark.asyncio
+async def test_unassigning_the_camera_clears_without_erasing_the_alert(
+    tmp_path,
+) -> None:
+    """Removing an assignment ends the condition and starts the next one fresh."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 3)
+        assert await pipeline.alert_monitor.resolve_alert(
+            _continuity_alerts(pipeline)[0]["id"], "swapped the lens"
+        )
+
+        await pipeline.capture_continuity.async_apply_camera_assignment("tent1", [])
+
+        retired = _continuity_alerts(pipeline)[0]
+        assert retired["condition_active"] is False
+        assert retired["resolved"] is True
+        assert retired["resolution_note"] == "swapped the lens"
+        assert retired["consecutive_count"] == 3
+        assert pipeline.capture_continuity.active_streak("tent1", "camera.canopy") is (
+            None
+        )
+
+        await pipeline.capture_continuity.async_apply_camera_assignment(
+            "tent1", ["camera.canopy"]
+        )
+        await _reject(pipeline, 2)
+
+        assert len(_continuity_alerts(pipeline)) == 1
+        streak = pipeline.capture_continuity.active_streak("tent1", "camera.canopy")
+        assert streak is not None
+        assert streak.consecutive_count == 2
 
 
 def test_evidence_projection_helpers_cover_available_and_unavailable_shapes() -> None:

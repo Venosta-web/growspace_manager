@@ -13,6 +13,7 @@ from homeassistant.helpers.storage import Store
 from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
+from .capture_continuity_monitor import CaptureContinuityMonitor
 from .const import DOMAIN
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
@@ -106,6 +107,9 @@ class CoordinatorBuilder:
         # ------------------------------------------------------------------
         alert_store: Store[dict[str, Any]] = Store(
             self.hass, 1, "growspace_manager.ai_alerts"
+        )
+        continuity_store: Store[dict[str, Any]] = Store(
+            self.hass, 1, "growspace_manager.capture_continuity"
         )
         conversation_store = ConversationStore(
             Store(self.hass, 1, "growspace_manager.ai_conversations")
@@ -251,6 +255,7 @@ class CoordinatorBuilder:
             store=alert_store,
             ai_assistant_factory=_make_ai_assistant,
         )
+        capture_continuity = CaptureContinuityMonitor(continuity_store, alert_monitor)
 
         # ------------------------------------------------------------------
         # Phase 4 – attach all services to the coordinator
@@ -279,6 +284,7 @@ class CoordinatorBuilder:
             briefing_scheduler=briefing_scheduler,
             photoperiod_checker=photoperiod_checker,
             alert_monitor=alert_monitor,
+            capture_continuity=capture_continuity,
             conversation_store=conversation_store,
             tank_monitor=tank_monitor,
         )

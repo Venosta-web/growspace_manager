@@ -1,7 +1,7 @@
 """Effect shell for the Environment Patch write seam (ADR-0026).
 
-The one place the assign → save → refresh → targeted controller restarts →
-exhaust-repair re-evaluation ordering lives. Every runtime writer of
+The one place the assign → save → camera-assignment continuity → refresh →
+targeted controller restarts → exhaust-repair re-evaluation ordering lives. Every runtime writer of
 EnvironmentConfig commits through here; the pure merge law stays in
 ``domain/environment_patch.py``. A caller that bypasses this shell (the
 storage-manager migration, deliberately) re-assumes responsibility for
@@ -45,11 +45,16 @@ async def async_commit_environment_patch(
 ) -> EnvironmentPatchVerdict:
     """Apply an Environment Patch to the growspace and perform every effect.
 
-    Order: assign the merged config → save → request refresh → restart each
-    sub-controller named in the verdict (only controllers whose fields
-    actually changed) → re-evaluate the exhaust-migration repair (ADR-0019)
-    when a trigger field changed. Returns the verdict so callers can emit
-    logbook text.
+    Order: assign the merged config → save → retire the Capture Continuity
+    streaks of any camera this growspace no longer holds → request refresh →
+    restart each sub-controller named in the verdict (only controllers whose
+    fields actually changed) → re-evaluate the exhaust-migration repair
+    (ADR-0019) when a trigger field changed. Returns the verdict so callers
+    can emit logbook text.
+
+    The continuity effect follows the save deliberately: a patch this seam
+    refuses never reaches here, so a rejected configuration change cannot
+    reset a streak.
     """
     verdict = apply_environment_patch(growspace.environment_config, patch)
     for warning in verdict.warnings:
@@ -62,6 +67,12 @@ async def async_commit_environment_patch(
 
     growspace.environment_config = verdict.config
     await coordinator.services.save()
+
+    if verdict.changed("camera_entities"):
+        await coordinator.capture_continuity.async_apply_camera_assignment(
+            growspace.id, verdict.config.camera_entities
+        )
+
     await coordinator.services.request_refresh()
 
     for controller in sorted(verdict.controllers_to_restart):
