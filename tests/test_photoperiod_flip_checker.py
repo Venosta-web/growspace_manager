@@ -121,6 +121,34 @@ async def test_notification_sent_when_flower_start_is_today(
 
 
 @pytest.mark.asyncio
+async def test_notification_sent_for_stored_lifecycle_timestamp(
+    mock_hass: MagicMock, mock_coordinator: MagicMock
+) -> None:
+    """A full datetime flower_start (how it is stored, ADR-0013) flips today."""
+    gs = _make_growspace()
+    mock_coordinator.growspaces = {"tent1": gs}
+    mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        _make_plant(TODAY_DT.replace(hour=0, minute=0).isoformat())
+    ]
+
+    checker = PhotoperiodFlipChecker(mock_hass, mock_coordinator)
+
+    with (
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.async_track_point_in_utc_time"
+        ),
+        patch(
+            "custom_components.growspace_manager.photoperiod_flip_checker.ha_now",
+            return_value=TODAY_DT,
+        ),
+    ):
+        checker.schedule_growspace("tent1")
+        await _run_immediate_check(mock_coordinator)
+
+    mock_coordinator.services.notifications.manager.async_send_notification.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_no_notification_when_flower_start_is_future(
     mock_hass: MagicMock, mock_coordinator: MagicMock
 ) -> None:

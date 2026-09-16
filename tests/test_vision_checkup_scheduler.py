@@ -87,6 +87,30 @@ def test_schedule_registers_three_one_shot_timers() -> None:
     assert len(scheduler._unsub_timers["tent1"]) == 3
 
 
+def test_schedule_uses_flower_hours_for_a_stored_flower_start() -> None:
+    """A flowering tent's late checkup lands before lights-off, not 18h in."""
+    growspace = _growspace()
+    growspace.irrigation_strategy.lights_on_time = "11:00:00"
+    coordinator = _coordinator(growspace)
+    coordinator.services.growspaces.get_growspace_plants.return_value = [
+        SimpleNamespace(flower_start="2026-09-04T00:00:00+02:00")
+    ]
+    scheduler = VisionCheckupScheduler(MagicMock(), coordinator)
+    with (
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.ha_now",
+            return_value=datetime(2026, 9, 16, 5, tzinfo=UTC),
+        ),
+        patch(
+            "custom_components.growspace_manager.vision_checkup_scheduler.async_track_point_in_utc_time",
+            return_value=MagicMock(),
+        ) as track,
+    ):
+        scheduler.schedule_growspace("tent1")
+
+    assert sorted(call.args[2].hour for call in track.call_args_list) == [12, 17, 22]
+
+
 def test_schedule_replaces_timers_handles_short_time_and_stops() -> None:
     growspace = _growspace()
     growspace.irrigation_strategy.lights_on_time = "06:00"
