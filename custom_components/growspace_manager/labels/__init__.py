@@ -11,19 +11,32 @@ it — the strain library, a plant, each item of a batch, a preview or a print.
 Nothing upstream of `render` knows what a printer is, and nothing downstream of
 it decides what a label says or where anything sits.
 
-That ordering is the whole contract. The Classic fixed-coordinate design is
-currently what `render` composes and the Niimbot `imagespec` payload is
-currently what realises it; replacing either is a change behind this seam, not
-a change to it. See the hub specification at
+That ordering is the whole contract. The Niimbot `imagespec` payload is what
+realises a plan, and replacing it is a change behind this seam rather than to
+it. See the hub specification at
 `docs/design/label-layout-and-rendering-seam.md`.
+
+There are two compositions above that adapter, and they differ only in where
+the geometry came from:
+
+- `renderer.render` is the **Classic Path**: one fixed 400x240 design stretched
+  onto the requested stock, which is what every released card prints today.
+- `canonical` is the **Label Template Path**: a validated millimetre document
+  compiled against a [[Capability Profile]], which is what an editor will save
+  and what a preview can honestly claim to be the printed bitmap.
+
+Both end in the same adapter and the same `LabelRenderPlan`, so the Classic
+Path can be retired without anything downstream of it noticing.
 """
 
 from __future__ import annotations
 
+from . import canonical
 from .classic import ClassicPrintRequest, resolve_classic_request
 from .model import (
     Canvas,
     Divider,
+    FittedText,
     LabelContent,
     LabelElement,
     LabelRenderPlan,
@@ -48,6 +61,7 @@ __all__ = [
     "Canvas",
     "ClassicPrintRequest",
     "Divider",
+    "FittedText",
     "LabelContent",
     "LabelElement",
     "LabelRenderPlan",
@@ -56,6 +70,7 @@ __all__ = [
     "TextBlock",
     "TextLine",
     "async_print",
+    "canonical",
     "canvas_for",
     "render",
     "resolve_classic_request",
