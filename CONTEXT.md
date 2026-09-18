@@ -602,6 +602,23 @@ The declarative row a websocket module contributes: `(type, handler, schema, res
 **Typed Error Codes**
 The five-code wire vocabulary shared with the card (ADR-0005, completed backend-side by ADR-0027): `coordinator_not_ready`, `entity_not_found`, `validation_failed`, `internal_error`, `rate_limited`. Produced by the [[WS Command Lifecycle]] error table from typed exceptions — `EntityNotFoundError`, `CoordinatorNotReadyError`, `RateLimitedError` (subclasses of the existing hierarchy, so service-call paths behave as before) plus the validation family → `validation_failed` and everything else → `internal_error` (with traceback). The card's `errors.ts` types exactly this set and coerces anything else to `internal_error` — so ad-hoc codes are self-defeating and deliberately retired.
 
+## Label Rendering
+
+**Label Rendering Seam**
+The fixed order every printed label passes through, implemented in `labels/`: a request resolves to a [[Label Content]] snapshot, `renderer.render` composes that into a [[Label Render Plan]], and a printer adapter realises the plan. Strain-library, plant and batch printing, preview and print alike, all take that one path — which is what stops a preview and its print from disagreeing. Nothing upstream of `render` knows what a printer is; nothing downstream of it decides what a label says or where anything sits. Replacing the Classic fixed-coordinate composition with the canonical millimetre document, or adding a second printer brand, is a change behind this seam rather than to it.
+
+**Label Content**
+What one label says, resolved once: title, body lines, logo, QR payload, printed-on stamp. Already filtered — a suppressed breeder line is absent from `info_lines` and a suppressed logo is `None`, so the renderer never re-decides visibility. Immutable and transient: a label print creates no template, draft, or default.
+
+**Label Render Plan**
+One composed label — every element placed on a known [[Canvas]] in device pixels, plus a _symbolic_ density. A printer adapter's only input. Density stays a word here because the same word means different heat on different hardware; mapping it onto a device scale is the adapter's job.
+
+**Canvas**
+The printable extent of one label in device pixels. Five Label Size identities (`50x30`, `40x30`, `50x50`, `50x80`, `50x15`) resolve to canvases; an absent or unrecognised size resolves to the 400×240 reference, which Classic callers have always been allowed to rely on. Composition is written against that reference and scaled per axis, so a stock with a different aspect ratio stretches.
+
+**Compatibility Adapter**
+`labels/classic.py`, the only module that understands the pre-template `print_label` request: subject as `plant_id` or bare strain, breeder/lineage overrides over strain-library meta, `fields` visibility flags, `base_url`, `qr_target`. Caller-supplied URLs stay confined to it. See the cross-repository specification in the workspace hub, `docs/design/label-compatibility-rollout-and-acceptance.md`.
+
 ## Serialization
 
 **Plant View Model**

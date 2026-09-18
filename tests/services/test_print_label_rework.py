@@ -65,7 +65,7 @@ async def test_logo_excluded_when_fields_logo_false(
 ) -> None:
     """Logo dlimg element is omitted when fields['logo'] is False."""
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call(
@@ -100,7 +100,7 @@ async def test_qr_excluded_when_fields_qr_false(
     mock_coordinator.plants = {"p1": plant}
 
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call({"plant_id": "p1", "fields": {"qr": False}})
@@ -123,7 +123,7 @@ async def test_qr_included_by_default_when_plant_id_present(
     mock_coordinator.plants = {"p1": plant}
 
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call({"plant_id": "p1"})
@@ -146,7 +146,7 @@ async def test_phenotype_excluded_from_multiline_when_fields_phenotype_false(
 ) -> None:
     """Phenotype line absent from multiline block when fields['phenotype'] is False."""
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call(
@@ -175,7 +175,7 @@ async def test_logo_included_by_default_when_breeder_logo_present(
 ) -> None:
     """Logo element present when fields map absent and breeder_logo is provided."""
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call(
@@ -202,7 +202,7 @@ async def test_density_low_maps_to_3(
     mock_strain_library: MagicMock,
 ) -> None:
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call({"strain": "Vitamin Z", "density": "low"})
@@ -218,7 +218,7 @@ async def test_density_normal_maps_to_5(
     mock_strain_library: MagicMock,
 ) -> None:
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call({"strain": "Vitamin Z", "density": "normal"})
@@ -234,7 +234,7 @@ async def test_density_high_maps_to_8(
     mock_strain_library: MagicMock,
 ) -> None:
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call({"strain": "Vitamin Z", "density": "high"})
@@ -250,7 +250,7 @@ async def test_density_defaults_to_5_when_absent(
     mock_strain_library: MagicMock,
 ) -> None:
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call({"strain": "Vitamin Z"})
@@ -277,7 +277,7 @@ async def test_qr_target_web_uses_ha_base_url(
     mock_coordinator.plants = {"p1": plant}
 
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call({"plant_id": "p1", "qr_target": "web"})
@@ -301,7 +301,7 @@ async def test_qr_target_deeplink_uses_ha_scheme(
     mock_coordinator.plants = {"p1": plant}
 
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call({"plant_id": "p1", "qr_target": "deeplink"})
@@ -325,7 +325,7 @@ async def test_qr_target_absent_defaults_to_web_url(
     mock_coordinator.plants = {"p1": plant}
 
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://ha.local",
     ):
         call = _make_call({"plant_id": "p1"})
