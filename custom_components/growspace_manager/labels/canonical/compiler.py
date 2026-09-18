@@ -42,7 +42,7 @@ from .catalogue import (
     MONOCHROME_TOKENS,
     MissingPolicy,
 )
-from .content import LabelContentSnapshot, missing_policy
+from .content import ContentAbsence, LabelContentSnapshot, missing_policy
 from .diagnostics import Diagnostic, Layer, Severity
 from .document import (
     AssetSource,
@@ -144,13 +144,22 @@ class ElementOutcome:
 PLACED = "placed"
 #: An optional binding with nothing to say for this subject. No ink, frame kept.
 OMITTED_MISSING_CONTENT = "omitted_missing_content"
+#: A binding this subject's context does not have at all -- a plant line on a
+#: strain label. Distinct from missing content, because the correction is a
+#: different one: this template is being printed from somewhere it was not
+#: designed for, not this record is incomplete.
+OMITTED_UNSUPPORTED_CONTEXT = "omitted_unsupported_context"
 #: An element the compiler refused. Its diagnostic says why.
 BLOCKED = "blocked"
 
 
 @dataclass(frozen=True, slots=True)
 class CompiledLabel:
-    """A render plan, one outcome per element, and how it was arrived at."""
+    """A render plan, one outcome per element, and how it was arrived at.
+
+    Its diagnostics open with the snapshot's own record-level ones, so a
+    record that cannot print says so before any element does.
+    """
 
     plan: LabelRenderPlan
     outcomes: tuple[ElementOutcome, ...]
@@ -220,7 +229,11 @@ class _Compiler:
             density=self._density,
             density_level=self._profile.density_level(self._density),
         )
-        return CompiledLabel(plan, tuple(outcomes), tuple(self._diagnostics))
+        return CompiledLabel(
+            plan,
+            tuple(outcomes),
+            (*self._snapshot.diagnostics, *self._diagnostics),
+        )
 
     # -- profile -----------------------------------------------------------
 
@@ -406,46 +419,76 @@ class _Compiler:
         if not isinstance(source, BindingSource) or binding is None:
             return None
         if not self._snapshot.supports(binding):
+            return None
+        return self._snapshot.resolve(binding, source.parameters)
+
+    def _missing_status(self, element: LayoutElement, binding: str | None) -> str:
+        """Say why one element painted nothing, and what that does.
+
+        Four different silences, and none of them may read as another: a
+        literal or asset the validator admitted but that resolves to nothing,
+        a binding this context does not have, a resolution that recorded why
+        it found nothing, and a value the subject simply does not carry. Only
+        the last falls back to the catalogue's own missing policy.
+        """
+        if binding is None:
+            return BLOCKED
+        if not self._snapshot.supports(binding):
             self._add(
                 "content.unsupported_context",
-                Severity.ERROR,
+                Severity.WARNING,
                 (
                     f"Binding {binding} is not available when printing a "
-                    f"{self._snapshot.context}."
+                    f"{self._snapshot.context}, so its frame stays empty."
                 ),
                 element_id=element.id,
                 parameters={
                     "binding": binding,
                     "context": str(self._snapshot.context),
                 },
-            )
-            return None
-        return self._snapshot.resolve(binding, source.parameters)
-
-    def _missing_status(self, element: LayoutElement, binding: str | None) -> str:
-        """Apply one binding's missing policy and return the outcome status."""
-        if binding is None:
-            return BLOCKED
-        policy = missing_policy(binding)
-        if policy is MissingPolicy.WARN_AND_OMIT:
-            self._add(
-                "content.missing_optional",
-                Severity.WARNING,
-                f"{binding} has no value for {self._snapshot.subject}.",
-                element_id=element.id,
-                parameters={"binding": binding},
                 layer=Layer.CONTENT,
             )
-            return OMITTED_MISSING_CONTENT
+            return OMITTED_UNSUPPORTED_CONTEXT
+
+        absence = self._snapshot.absence(binding)
+        if absence is not None:
+            return self._absent(element, binding, absence)
+
+        policy = missing_policy(binding)
+        severity = (
+            Severity.WARNING
+            if policy is MissingPolicy.WARN_AND_OMIT
+            else Severity.ERROR
+        )
+        return self._absent(
+            element,
+            binding,
+            ContentAbsence(
+                code=(
+                    "content.missing_optional"
+                    if severity is Severity.WARNING
+                    else "content.missing_required"
+                ),
+                severity=severity,
+                parameters={"binding": binding},
+            ),
+        )
+
+    def _absent(
+        self, element: LayoutElement, binding: str, absence: ContentAbsence
+    ) -> str:
+        """Report one recorded absence against the element that asked for it."""
         self._add(
-            "content.missing_required",
-            Severity.ERROR,
+            absence.code,
+            absence.severity,
             f"{binding} has no value for {self._snapshot.subject}.",
             element_id=element.id,
-            parameters={"binding": binding},
+            parameters=dict(absence.parameters),
             layer=Layer.CONTENT,
         )
-        return BLOCKED
+        return (
+            OMITTED_MISSING_CONTENT if absence.severity is Severity.WARNING else BLOCKED
+        )
 
     # -- element variants --------------------------------------------------
 
