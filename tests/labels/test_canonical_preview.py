@@ -28,6 +28,7 @@ from PIL import Image
 import pytest
 
 from custom_components.growspace_manager.labels.canonical import (
+    DEFAULT_LABEL_SIZE_ID,
     FACTORY_50X30,
     NIIMBOT_B1_50X30,
     PRINT,
@@ -344,3 +345,149 @@ def test_the_recorded_raster_is_the_one_the_fixture_names() -> None:
 @pytest.mark.parametrize("key", ["factory_template", "profile", "content_fixture"])
 def test_the_fixture_records_what_it_was_taken_against(key: str) -> None:
     assert GOLDEN[key]
+
+
+# ---------------------------------------------------------------------------
+# Choosing the template and the profile
+# ---------------------------------------------------------------------------
+
+
+async def test_a_stock_with_no_shipped_template_is_named_rather_than_substituted() -> (
+    None
+):
+    """A preview of the wrong size is worse than no preview."""
+    hass = _hass()
+    with pytest.raises(HomeAssistantError, match="No Factory Template is shipped"):
+        await async_render_factory_preview(
+            hass, content=SNAPSHOT, label_size_id="growspace.stock.50x80.v1"
+        )
+
+
+async def test_a_stock_with_no_compatible_profile_is_named_too() -> None:
+    """The other half of the same question, and a different answer."""
+    hass = _hass()
+    unprofiled = replace(
+        FACTORY_50X30,
+        id="growspace.factory.50x80",
+        label_size_id="growspace.stock.50x80.v1",
+        document={
+            **FACTORY_50X30.document,
+            "label_size_id": "growspace.stock.50x80.v1",
+        },
+    )
+    with pytest.raises(HomeAssistantError, match="No Capability Profile can render"):
+        await async_render_factory_preview(hass, content=SNAPSHOT, template=unprofiled)
+
+
+async def test_the_default_stock_is_the_one_with_a_shipped_layout_and_a_profile() -> (
+    None
+):
+    hass = _hass()
+    explicit = await async_render_factory_preview(
+        hass, content=SNAPSHOT, label_size_id=DEFAULT_LABEL_SIZE_ID
+    )
+    implicit = await async_render_factory_preview(hass, content=SNAPSHOT)
+    assert explicit.cache_identity == implicit.cache_identity
+
+
+# ---------------------------------------------------------------------------
+# More of what the raster is checked for
+# ---------------------------------------------------------------------------
+
+
+def test_a_raster_that_is_not_a_png_is_returned_with_a_warning() -> None:
+    """It is still the renderer's bitmap; what it is not is what was expected."""
+    image = Image.new("RGB", (8, 8), "white")
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG")
+    mislabelled = (
+        f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+    )
+
+    raster, diagnostics = _decode_raster(mislabelled)
+    assert raster is not None
+    assert [item.code for item in diagnostics] == ["raster.unexpected_format"]
+    assert diagnostics[0].severity == "warning"
+
+
+def test_a_raster_measures_its_own_bytes_rather_than_trusting_the_response() -> None:
+    raster, diagnostics = _decode_raster(_png(width=120, height=64))
+    assert raster is not None
+    assert (raster.width, raster.height) == (120, 64)
+    assert raster.byte_length > 0
+    assert diagnostics == ()
+
+
+def test_a_one_bit_raster_is_monochrome() -> None:
+    """The mode the printer transport actually wants."""
+    image = Image.new("1", (16, 16), 1)
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    raster, _ = _decode_raster(
+        f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+    )
+    assert raster is not None
+    assert raster.monochrome is True
+
+
+def test_an_empty_response_is_a_missing_raster_rather_than_a_crash() -> None:
+    raster, diagnostics = _decode_raster("data:image/png;base64,")
+    assert raster is None
+    assert [item.code for item in diagnostics] == ["raster.unreadable"]
+
+
+async def test_a_response_of_none_is_reported_rather_than_assumed() -> None:
+    """The adapter returns whatever the printer integration did, `None` included."""
+    hass = _hass(response=None)
+    hass.services.async_call = AsyncMock(return_value=None)
+    result = await async_render_factory_preview(hass, content=SNAPSHOT)
+    assert result.status == "failed"
+    assert "raster.missing" in [item.code for item in result.diagnostics]
+
+
+async def test_a_raster_that_is_not_a_data_uri_is_refused() -> None:
+    hass = _hass({"image": "https://printer.test/last-label.png"})
+    result = await async_render_factory_preview(hass, content=SNAPSHOT)
+    assert result.status == "failed"
+    assert "raster.missing" in [item.code for item in result.diagnostics]
+
+
+async def test_decoding_happens_off_the_event_loop() -> None:
+    """Pillow initialises its native libraries lazily on the first decode."""
+    hass = _hass()
+    await async_render_factory_preview(hass, content=SNAPSHOT)
+    assert hass.async_add_executor_job.await_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics reach the result in layer order
+# ---------------------------------------------------------------------------
+
+
+async def test_compilation_diagnostics_precede_raster_ones() -> None:
+    """Errors are read top-down, and the attributable layer comes first."""
+    hass = _hass()
+    hass.services.async_call = AsyncMock(
+        side_effect=HomeAssistantError("Failed to create image")
+    )
+    result = await async_render(
+        hass,
+        layout=FACTORY_50X30.layout,
+        content=replace(SNAPSHOT, values={}),
+        profile=NIIMBOT_B1_50X30,
+    )
+    layers = [item.layer for item in result.diagnostics]
+    assert layers[-1] == "raster"
+    assert "content" in layers
+    assert layers.index("content") < layers.index("raster")
+
+
+async def test_a_failed_render_still_reports_every_element_outcome() -> None:
+    """The compilation happened; only the raster did not."""
+    hass = _hass()
+    hass.services.async_call = AsyncMock(side_effect=HomeAssistantError("no font"))
+    result = await async_render_factory_preview(hass, content=SNAPSHOT)
+    assert result.raster is None
+    assert [item.element_id for item in result.outcomes] == [
+        element.id for element in FACTORY_50X30.layout.elements
+    ]

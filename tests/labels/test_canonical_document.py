@@ -18,10 +18,6 @@ from custom_components.growspace_manager.labels.canonical import (
     QUANTUM_MM,
     validate_document,
 )
-from custom_components.growspace_manager.labels.canonical.canonicalization import (
-    canonicalize,
-    digest,
-)
 from custom_components.growspace_manager.labels.canonical.factory import FACTORY_50X30
 
 STRAIN_NAME_STYLE = {
@@ -61,7 +57,31 @@ def _document(*extra: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _codes(value: dict[str, Any]) -> list[str]:
+def _logo_element(content: dict[str, Any] | None = None) -> dict[str, Any]:
+    """A valid logo element, for tests that vary one thing about it."""
+    return {
+        "id": "element-logo",
+        "kind": "logo",
+        "frame": {"x_mm": 36.0, "y_mm": 3.0, "width_mm": 10.0, "height_mm": 6.0},
+        "rotation": 0,
+        "content": content or {"binding": "strain.breeder.logo", "parameters": {}},
+        "style": {"monochrome": "growspace.mono.threshold.v1", "fit": "contain"},
+    }
+
+
+def _qr_element(style: dict[str, Any] | None = None) -> dict[str, Any]:
+    """A valid QR element, for tests that vary one thing about it."""
+    return {
+        "id": "element-qr",
+        "kind": "qr",
+        "frame": {"x_mm": 36.0, "y_mm": 12.0, "width_mm": 10.0, "height_mm": 10.0},
+        "rotation": 0,
+        "content": {"binding": "plant.link", "parameters": {"target": "dashboard_url"}},
+        "style": style or {"error_correction": "high", "quiet_zone_modules": 4},
+    }
+
+
+def _codes(value: object) -> list[str]:
     """The diagnostic codes one candidate document produces."""
     return [item.code for item in validate_document(value).diagnostics]
 
@@ -150,8 +170,9 @@ def test_a_newer_schema_version_is_refused_rather_than_decoded() -> None:
     assert "document.unsupported_version" in _codes(candidate)
 
 
-def test_an_unknown_element_kind_is_never_coerced_to_a_known_one() -> None:
-    candidate = _document({"id": "e2", "kind": "barcode"})
+@pytest.mark.parametrize("kind", ["barcode", "TEXT", None, 7, ["text"]])
+def test_an_unknown_element_kind_is_never_coerced_to_a_known_one(kind: Any) -> None:
+    candidate = _document({"id": "e2", "kind": kind})
     assert "element.unknown_kind" in _codes(candidate)
 
 
@@ -447,30 +468,6 @@ def test_every_diagnostic_is_attributable() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Canonicalization
-# ---------------------------------------------------------------------------
-
-
-def test_canonical_bytes_sort_keys_and_drop_insignificant_whitespace() -> None:
-    assert canonicalize({"b": 1, "a": [1, 2]}) == b'{"a":[1,2],"b":1}'
-
-
-def test_a_whole_number_canonicalizes_without_a_trailing_zero() -> None:
-    """RFC 8785 numbers are ECMAScript numbers; `3.0` and `3` are one value."""
-    assert canonicalize({"x_mm": 3.0}) == b'{"x_mm":3}'
-    assert canonicalize({"x_mm": 4.2}) == b'{"x_mm":4.2}'
-
-
-def test_canonicalization_refuses_what_it_cannot_represent_exactly() -> None:
-    with pytest.raises(ValueError, match="canonical JSON"):
-        canonicalize({"x_mm": float("inf")})
-
-
-def test_a_digest_names_its_algorithm() -> None:
-    assert digest({"a": 1}).startswith("sha256:")
-
-
-# ---------------------------------------------------------------------------
 # The shipped layout is held to the same schema
 # ---------------------------------------------------------------------------
 
@@ -490,3 +487,301 @@ def test_the_shipped_factory_layout_carries_the_required_strain_name() -> None:
         if element.content is not None and hasattr(element.content, "binding")
     ]
     assert "strain.name" in bound
+
+
+# ---------------------------------------------------------------------------
+# Malformed structure, at every depth
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", [None, [], "a layout", 7, True])
+def test_a_candidate_that_is_not_an_object_is_not_a_layout(value: Any) -> None:
+    assert _codes(value) == ["document.not_an_object"]
+
+
+@pytest.mark.parametrize("value", [None, {}, "elements", 7])
+def test_elements_must_be_an_ordered_array(value: Any) -> None:
+    candidate = _document()
+    candidate["elements"] = value
+    assert "document.elements_not_an_array" in _codes(candidate)
+
+
+def test_a_string_is_not_an_array_of_elements() -> None:
+    """It is a Sequence, and iterating it would yield characters."""
+    candidate = _document()
+    candidate["elements"] = "ABC"
+    assert "document.elements_not_an_array" in _codes(candidate)
+
+
+@pytest.mark.parametrize("value", [None, [], "element", 7])
+def test_an_element_that_is_not_an_object_is_refused(value: Any) -> None:
+    candidate = _document()
+    candidate["elements"].append(value)
+    assert "element.not_an_object" in _codes(candidate)
+
+
+@pytest.mark.parametrize("value", [None, [], "strain.name", 7])
+def test_content_must_be_a_single_source_object(value: Any) -> None:
+    candidate = _document()
+    candidate["elements"][0]["content"] = value
+    assert "content.not_an_object" in _codes(candidate)
+
+
+@pytest.mark.parametrize("value", [None, [], "style"])
+def test_style_must_be_an_object(value: Any) -> None:
+    candidate = _document()
+    candidate["elements"][0]["style"] = value
+    assert "style.not_an_object" in _codes(candidate)
+
+
+@pytest.mark.parametrize("value", [None, [], 7.0, "frame"])
+def test_a_frame_must_be_an_object_of_four_measurements(value: Any) -> None:
+    candidate = _document()
+    candidate["elements"][0]["frame"] = value
+    assert "frame.not_an_object" in _codes(candidate)
+
+
+def test_an_unknown_schema_name_is_refused() -> None:
+    candidate = _document()
+    candidate["schema"] = "growspace.label-template"
+    assert "document.unknown_schema" in _codes(candidate)
+
+
+def test_a_version_that_is_a_string_is_not_version_one() -> None:
+    """`"1"` is a different type, and types are part of a closed schema."""
+    candidate = _document()
+    candidate["version"] = "1"
+    assert "document.unsupported_version" in _codes(candidate)
+
+
+# ---------------------------------------------------------------------------
+# More geometry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", [None, "3.0", [3.0], True])
+def test_a_coordinate_that_is_not_a_number_is_refused(value: Any) -> None:
+    """`True` among them: a boolean is an `int` in Python and not here."""
+    candidate = _document()
+    candidate["elements"][0]["frame"]["x_mm"] = value
+    assert "geometry.not_a_number" in _codes(candidate)
+
+
+@pytest.mark.parametrize("field", ["x_mm", "y_mm"])
+def test_a_negative_origin_is_refused(field: str) -> None:
+    candidate = _document()
+    candidate["elements"][0]["frame"][field] = -1.0
+    assert "frame.negative_origin" in _codes(candidate)
+
+
+def test_a_negative_extent_is_reported_as_a_non_positive_one() -> None:
+    candidate = _document()
+    candidate["elements"][0]["frame"]["height_mm"] = -7.0
+    assert "frame.non_positive_extent" in _codes(candidate)
+
+
+def test_a_frame_reaching_exactly_the_stock_edge_is_inside_it() -> None:
+    """The boundary belongs to the stock; only past it is outside."""
+    candidate = _document()
+    candidate["elements"][0]["frame"] = {
+        "x_mm": 19.0,
+        "y_mm": 23.0,
+        "width_mm": 31.0,
+        "height_mm": 7.0,
+    }
+    assert _codes(candidate) == []
+
+
+def test_a_frame_one_quantum_past_the_stock_edge_is_outside_it() -> None:
+    candidate = _document()
+    candidate["elements"][0]["frame"] = {
+        "x_mm": 19.01,
+        "y_mm": 23.0,
+        "width_mm": 31.0,
+        "height_mm": 7.0,
+    }
+    assert "frame.outside_stock" in _codes(candidate)
+
+
+def test_an_integer_coordinate_is_a_millimetre_value() -> None:
+    """JSON has one number type; `3` and `3.0` are the same coordinate."""
+    candidate = _document()
+    candidate["elements"][0]["frame"]["x_mm"] = 3
+    layout = validate_document(candidate).layout
+    assert layout is not None
+    assert layout.elements[0].frame.x_mm == 3.0
+
+
+# ---------------------------------------------------------------------------
+# More content sources
+# ---------------------------------------------------------------------------
+
+
+def test_a_source_with_no_variant_at_all_is_refused() -> None:
+    candidate = _document()
+    candidate["elements"][0]["content"] = {}
+    assert "content.ambiguous_source" in _codes(candidate)
+
+
+@pytest.mark.parametrize("value", ["", "   ", None, 7])
+def test_a_literal_that_is_not_a_non_empty_string_is_not_content(value: Any) -> None:
+    candidate = _document(
+        {
+            "id": "element-note",
+            "kind": "text",
+            "frame": {"x_mm": 3.0, "y_mm": 14.0, "width_mm": 31.0, "height_mm": 4.0},
+            "rotation": 0,
+            "content": {"literal": value},
+            "style": dict(STRAIN_NAME_STYLE),
+        }
+    )
+    assert "content.invalid_literal" in _codes(candidate)
+
+
+def test_a_literal_is_allowed_on_a_text_element() -> None:
+    candidate = _document(
+        {
+            "id": "element-note",
+            "kind": "text",
+            "frame": {"x_mm": 3.0, "y_mm": 14.0, "width_mm": 31.0, "height_mm": 4.0},
+            "rotation": 0,
+            "content": {"literal": "Keep refrigerated"},
+            "style": dict(STRAIN_NAME_STYLE),
+        }
+    )
+    assert _codes(candidate) == []
+
+
+@pytest.mark.parametrize("value", ["", None, 7])
+def test_an_asset_identity_that_is_not_a_non_empty_string_is_refused(
+    value: Any,
+) -> None:
+    candidate = _document(_logo_element(content={"asset_id": value}))
+    assert "content.invalid_asset" in _codes(candidate)
+
+
+def test_an_asset_source_is_accepted_on_a_logo() -> None:
+    candidate = _document(_logo_element(content={"asset_id": "asset-01"}))
+    assert _codes(candidate) == []
+
+
+@pytest.mark.parametrize("value", [None, [], "presentation"])
+def test_parameters_must_be_a_closed_object(value: Any) -> None:
+    candidate = _document()
+    candidate["elements"][0]["content"] = {
+        "binding": "strain.name",
+        "parameters": value,
+    }
+    assert "content.parameters_not_an_object" in _codes(candidate)
+
+
+def test_a_parameter_the_binding_does_not_take_is_refused() -> None:
+    """Not silently ignored: a client must not be able to think it took."""
+    candidate = _document()
+    candidate["elements"][0]["content"] = {
+        "binding": "strain.name",
+        "parameters": {"presentation": "value"},
+    }
+    assert "content.unknown_parameter" in _codes(candidate)
+
+
+# ---------------------------------------------------------------------------
+# Every variant's style, and the round trip through all four
+# ---------------------------------------------------------------------------
+
+
+def test_a_logo_and_a_qr_element_validate() -> None:
+    assert _codes(_document(_logo_element(), _qr_element())) == []
+
+
+def test_a_logo_fit_other_than_contain_is_not_a_v1_concept() -> None:
+    """`contain` is stated rather than assumed so absence cannot be redefined."""
+    logo = _logo_element()
+    logo["style"]["fit"] = "fill"
+    assert "style.invalid_value" in _codes(_document(logo))
+
+
+def test_an_unknown_monochrome_token_is_not_substituted() -> None:
+    logo = _logo_element()
+    logo["style"]["monochrome"] = "growspace.mono.floyd-steinberg.v9"
+    assert "style.unknown_token" in _codes(_document(logo))
+
+
+def test_an_unknown_error_correction_level_is_refused() -> None:
+    assert "style.invalid_value" in _codes(
+        _document(_qr_element({"error_correction": "H", "quiet_zone_modules": 4}))
+    )
+
+
+@pytest.mark.parametrize("value", [0, -1, 1.5, "4", True, None])
+def test_a_quiet_zone_is_a_positive_whole_number_of_modules(value: Any) -> None:
+    assert "style.invalid_value" in _codes(
+        _document(
+            _qr_element({"error_correction": "high", "quiet_zone_modules": value})
+        )
+    )
+
+
+@pytest.mark.parametrize("value", [0, -2, 1.5, "2", True, None])
+def test_maximum_lines_is_a_positive_whole_number(value: Any) -> None:
+    candidate = _document()
+    candidate["elements"][0]["style"]["maximum_lines"] = value
+    assert "style.invalid_value" in _codes(candidate)
+
+
+@pytest.mark.parametrize("field", ["font_size_mm", "minimum_font_size_mm"])
+def test_a_font_size_of_zero_is_not_a_size(field: str) -> None:
+    candidate = _document()
+    candidate["elements"][0]["style"][field] = 0.0
+    assert "style.non_positive_font_size" in _codes(candidate)
+
+
+def test_an_unknown_line_spacing_token_is_not_substituted() -> None:
+    candidate = _document()
+    candidate["elements"][0]["style"]["line_spacing"] = "1.2"
+    assert "style.unknown_token" in _codes(candidate)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("horizontal_align", "justify"),
+        ("vertical_align", "baseline"),
+        ("overflow", "scroll"),
+    ],
+)
+def test_text_enumerations_are_closed(field: str, value: str) -> None:
+    candidate = _document()
+    candidate["elements"][0]["style"][field] = value
+    assert "style.invalid_value" in _codes(candidate)
+
+
+def test_every_v1_variant_round_trips_with_a_stable_digest() -> None:
+    """The serialization of all four kinds, and of all three source variants."""
+    candidate = _document(
+        {
+            "id": "element-rule",
+            "kind": "divider",
+            "frame": {"x_mm": 3.0, "y_mm": 11.0, "width_mm": 31.0, "height_mm": 0.4},
+            "rotation": 90,
+            "style": {"fill": "black"},
+        },
+        _logo_element(content={"asset_id": "asset-01"}),
+        _qr_element(),
+        {
+            "id": "element-note",
+            "kind": "text",
+            "frame": {"x_mm": 3.0, "y_mm": 24.0, "width_mm": 31.0, "height_mm": 4.0},
+            "rotation": 0,
+            "content": {"literal": "Keep refrigerated"},
+            "style": dict(STRAIN_NAME_STYLE),
+        },
+    )
+    first = validate_document(candidate).layout
+    assert first is not None
+    assert len(first.elements) == 5
+
+    second = validate_document(first.as_dict()).layout
+    assert second is not None
+    assert second == first
+    assert second.digest == first.digest

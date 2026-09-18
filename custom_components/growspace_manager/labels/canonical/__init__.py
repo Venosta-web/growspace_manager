@@ -76,7 +76,13 @@ from .factory import (
     FactoryTemplate,
     factory_template_for_size,
 )
-from .preview import PREVIEW, PRINT, async_render, async_render_factory_preview
+from .preview import (
+    DEFAULT_LABEL_SIZE_ID,
+    PREVIEW,
+    PRINT,
+    async_render,
+    async_render_factory_preview,
+)
 from .profiles import (
     NIIMBOT_B1_50X30,
     PROFILES,
@@ -102,6 +108,7 @@ __all__ = [
     "CAPABILITY_GENERATION",
     "COMPILER_VERSION",
     "CURRENT",
+    "DEFAULT_LABEL_SIZE_ID",
     "FACTORY_50X30",
     "FACTORY_TEMPLATES",
     "FAILED",

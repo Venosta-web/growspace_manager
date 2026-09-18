@@ -8,8 +8,10 @@ speaks `LabelRenderPlan`.
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 from io import BytesIO
 import os
+import random
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from PIL import Image
@@ -18,6 +20,7 @@ import pytest
 from custom_components.growspace_manager.labels.model import (
     Canvas,
     Divider,
+    FittedText,
     LabelRenderPlan,
     Logo,
     QrCode,
@@ -237,3 +240,155 @@ def test_downscale_logo_if_needed_exception_handling() -> None:
     with patch("PIL.Image.open", side_effect=ValueError("Mock ValueError")):
         result = _downscale_logo_if_needed(large_logo)
         assert result == large_logo
+
+
+# ---------------------------------------------------------------------------
+# The elements the canonical path adds (hub issue #214)
+# ---------------------------------------------------------------------------
+
+
+def test_fitted_text_compiles_to_the_renderer_s_bounded_primitive() -> None:
+    compiled = _imagespec(
+        FittedText(
+            value="Blue Dream",
+            x=16,
+            y=16,
+            width=344,
+            height=67,
+            size=45,
+            font="ppb.ttf",
+            min_size=24,
+            max_lines=2,
+            line_spacing=2,
+            align="left",
+            valign="center",
+            fit="shrink_ellipsis",
+        )
+    )
+    assert compiled == {
+        "type": "text_fit",
+        "value": "Blue Dream",
+        "x": 16,
+        "y": 16,
+        "width": 344,
+        "height": 67,
+        "size": 45,
+        "min_size": 24,
+        "max_lines": 2,
+        "line_spacing": 2,
+        "align": "left",
+        "valign": "center",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "ppb.ttf",
+    }
+
+
+def test_an_unset_optional_key_is_absent_rather_than_null() -> None:
+    """The Classic golden payloads are exact, and a present key wins over a default."""
+    logo = _imagespec(Logo(url="u", x=0, y=1, xsize=2, ysize=3))
+    qr = _imagespec(QrCode(data="d", x=0, y=1, boxsize=3))
+    assert set(logo) == {"type", "url", "x", "y", "xsize", "ysize"}
+    assert set(qr) == {"type", "data", "x", "y", "boxsize"}
+
+
+def test_a_canonical_logo_carries_its_fit_and_its_monochrome_policy() -> None:
+    compiled = _imagespec(
+        Logo(url="u", x=0, y=1, xsize=2, ysize=3, mode="contain", dither=False)
+    )
+    assert compiled["mode"] == "contain"
+    # `False` is a choice the monochrome token made, not an unset key.
+    assert compiled["dither"] is False
+
+
+def test_a_canonical_qr_is_sized_by_its_box() -> None:
+    compiled = _imagespec(
+        QrCode(
+            data="http://ha.test/plant/1",
+            x=10,
+            y=20,
+            boxsize=1,
+            width=80,
+            height=80,
+            border=4,
+            error_correction="h",
+        )
+    )
+    assert compiled["width"] == compiled["height"] == 80
+    assert compiled["border"] == 4
+    assert compiled["eclevel"] == "h"
+
+
+# ---------------------------------------------------------------------------
+# Density
+# ---------------------------------------------------------------------------
+
+
+async def test_a_profile_resolved_density_wins_over_the_global_table() -> None:
+    """The global map's top value is out of range on every B-series printer."""
+    hass = _hass()
+    plan = replace(_plan(density="high"), density_level=5)
+    await async_print(hass, plan, subject="s")
+    assert hass.services.async_call.await_args.args[2]["density"] == 5
+
+
+async def test_a_plan_without_a_resolved_density_falls_back_unchanged() -> None:
+    hass = _hass()
+    await async_print(hass, _plan(density="high"), subject="s")
+    assert hass.services.async_call.await_args.args[2]["density"] == 8
+
+
+async def test_an_unknown_symbolic_density_still_has_a_default() -> None:
+    hass = _hass()
+    await async_print(hass, _plan(density="scorching"), subject="s")
+    assert hass.services.async_call.await_args.args[2]["density"] == 5
+
+
+# ---------------------------------------------------------------------------
+# The two outcomes of the logo downscaler's second pass
+# ---------------------------------------------------------------------------
+
+
+def test_a_logo_the_thumbnail_alone_shrinks_enough_keeps_its_greys() -> None:
+    """Flattening to one bit is the fallback, not the first move.
+
+    A large detailed logo whose 100x100 thumbnail compresses comfortably: the
+    ordinary case, and the one where throwing away every grey would be a
+    gratuitous loss of the breeder's mark.
+    """
+    detailed = Image.linear_gradient("L").resize((1200, 1200)).convert("RGB")
+    detailed.paste(
+        Image.frombytes("RGB", (150, 150), random.Random(0).randbytes(150 * 150 * 3)),
+        (0, 0),
+    )
+    buffer = BytesIO()
+    detailed.save(buffer, format="PNG")
+    original = f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+    assert len(original) >= 25000
+
+    result = _downscale_logo_if_needed(original)
+    assert len(result) < 25000
+    _, encoded = result.split(",", 1)
+    with Image.open(BytesIO(base64.b64decode(encoded))) as decoded:
+        assert decoded.size == (100, 100)
+        assert decoded.mode != "1"
+
+
+def test_an_opaque_logo_that_resists_the_thumbnail_is_flattened_to_one_bit() -> None:
+    """The RGBA case is covered above; this is the arc with no alpha to composite.
+
+    The bus limit is 32 KB and the printer's buffer is smaller still, so a
+    logo whose noise survives resizing loses its greys rather than its place.
+    """
+    noise = Image.frombytes("RGB", (200, 200), os.urandom(200 * 200 * 3))
+    buffer = BytesIO()
+    noise.save(buffer, format="PNG")
+    original = f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+    assert len(original) >= 25000
+
+    result = _downscale_logo_if_needed(original)
+    assert len(result) < len(original)
+    _, encoded = result.split(",", 1)
+    with Image.open(BytesIO(base64.b64decode(encoded))) as decoded:
+        assert decoded.mode == "1"
+        assert decoded.size == (100, 100)

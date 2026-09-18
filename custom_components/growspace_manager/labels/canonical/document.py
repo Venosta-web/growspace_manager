@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from .canonicalization import digest
@@ -571,12 +571,10 @@ class _Validator:
                 parameters={"value": value},
             )
             return None
-        quantum: Decimal | None = None
-        try:
-            quantum = Decimal(str(value))
-        except InvalidOperation:
-            quantum = None
-        if quantum is None or not quantum.is_finite():
+        # `str` of any int or float parses, infinities and NaN included, so
+        # finiteness is the question rather than parseability.
+        quantum = Decimal(str(value))
+        if not quantum.is_finite():
             self._error(
                 "geometry.not_finite",
                 "A millimetre value is a finite JSON number.",

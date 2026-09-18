@@ -390,12 +390,19 @@ class _Compiler:
     # -- content -----------------------------------------------------------
 
     def _content(self, element: LayoutElement, binding: str | None) -> str | None:
-        """Resolve one element's content source against the snapshot."""
+        """Resolve one element's content source against the snapshot.
+
+        An empty resolved value is absent, whichever variant produced it. The
+        validator already refuses a blank literal and a blank asset identity,
+        but a compiler that trusted that would report an element as `placed`
+        while painting nothing -- and an outcome that does not match the ink
+        is worse than no outcome.
+        """
         source = element.content
         if isinstance(source, LiteralSource):
-            return source.literal
+            return source.literal or None
         if isinstance(source, AssetSource):
-            return source.asset_id
+            return source.asset_id or None
         if not isinstance(source, BindingSource) or binding is None:
             return None
         if not self._snapshot.supports(binding):

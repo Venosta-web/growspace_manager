@@ -52,6 +52,11 @@ _DATA_URI_PREFIX = "data:image/png;base64,"
 PREVIEW = "preview"
 PRINT = "print"
 
+#: The stock a preview is of when the caller names none. The one size with a
+#: shipped layout and a profile today; it stops being a default the moment a
+#: second one has both.
+DEFAULT_LABEL_SIZE_ID = "growspace.stock.50x30.v1"
+
 
 async def async_render(
     hass: HomeAssistant,
@@ -107,6 +112,7 @@ async def async_render_factory_preview(
     hass: HomeAssistant,
     *,
     content: LabelContentSnapshot,
+    label_size_id: str = DEFAULT_LABEL_SIZE_ID,
     template: FactoryTemplate | None = None,
     profile: CapabilityProfile | None = None,
     density: str = "normal",
@@ -114,12 +120,17 @@ async def async_render_factory_preview(
     """Preview one shipped Factory Template against one subject.
 
     The convenience the editor and the acceptance tests both want: name a
-    template, or let the stock choose its designated one, and let the size
+    template, or let a stock choose its designated one, and let that stock
     choose a compatible profile. Everything after that is `async_render`.
+
+    A stock with no shipped layout, or no profile that can render it, is an
+    error naming which of the two is missing. Both are ordinary states while
+    the shipped set is still growing, and neither may quietly become a
+    preview of some other size.
     """
-    shipped = template or factory_template_for_size("growspace.stock.50x30.v1")
+    shipped = template or factory_template_for_size(label_size_id)
     if shipped is None:
-        raise HomeAssistantError("No Factory Template is shipped for that Label Size")
+        raise HomeAssistantError(f"No Factory Template is shipped for {label_size_id}")
     layout = shipped.layout
     selected = profile or _first_profile(layout.label_size_id)
     return await async_render(

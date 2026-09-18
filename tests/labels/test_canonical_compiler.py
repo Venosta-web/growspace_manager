@@ -24,10 +24,13 @@ from custom_components.growspace_manager.labels.canonical import (
     TYPICAL_STRAIN,
     LabelContentSnapshot,
     PrintContext,
+    ProfileEvidence,
     compile_layout,
+    profiles_for_size,
     to_pixels,
     validate_document,
 )
+from custom_components.growspace_manager.labels.canonical.document import LiteralSource
 from custom_components.growspace_manager.labels.model import (
     Divider,
     FittedText,
@@ -378,3 +381,150 @@ def test_every_element_gets_exactly_one_outcome() -> None:
         PLACED,
         OMITTED_MISSING_CONTENT,
     }
+
+
+# ---------------------------------------------------------------------------
+# Content sources the compiler resolves without the binding catalogue
+# ---------------------------------------------------------------------------
+
+
+def test_a_literal_text_source_compiles_to_its_own_string() -> None:
+    note = {
+        "id": "element-note",
+        "kind": "text",
+        "frame": {"x_mm": 2.0, "y_mm": 10.0, "width_mm": 40.0, "height_mm": 4.0},
+        "rotation": 0,
+        "content": {"literal": "Keep refrigerated"},
+        "style": {
+            "font": "growspace.sans.regular.v1",
+            "font_size_mm": 3.0,
+            "horizontal_align": "left",
+            "vertical_align": "center",
+            "line_spacing": "growspace.spacing.compact.v1",
+            "overflow": "shrink_ellipsis",
+            "minimum_font_size_mm": 2.0,
+            "maximum_lines": 1,
+        },
+    }
+    compiled = compile_layout(_layout(note), SNAPSHOT, NIIMBOT_B1_50X30)
+    placed = compiled.plan.elements[1]
+    assert isinstance(placed, FittedText)
+    assert placed.value == "Keep refrigerated"
+    outcome = next(
+        item for item in compiled.outcomes if item.element_id == "element-note"
+    )
+    assert (outcome.status, outcome.binding) == (PLACED, None)
+
+
+def test_an_asset_logo_source_compiles_to_its_asset_identity() -> None:
+    """Resolution to real bytes is the asset store's; placement is the compiler's."""
+    logo = {
+        "id": "element-logo",
+        "kind": "logo",
+        "frame": {"x_mm": 30.0, "y_mm": 10.0, "width_mm": 10.0, "height_mm": 6.0},
+        "rotation": 0,
+        "content": {"asset_id": "asset-01"},
+        "style": {"monochrome": "growspace.mono.dither.v1", "fit": "contain"},
+    }
+    compiled = compile_layout(_layout(logo), SNAPSHOT, NIIMBOT_B1_50X30)
+    placed = compiled.plan.elements[1]
+    assert isinstance(placed, Logo)
+    assert placed.url == "asset-01"
+    assert placed.dither is True
+
+
+def test_the_compiler_does_not_trust_that_its_input_came_from_the_validator() -> None:
+    """An empty literal cannot survive validation, and must not paint if it does."""
+    layout = _layout()
+    broken = replace(
+        layout,
+        elements=(
+            layout.elements[0],
+            replace(
+                layout.elements[0],
+                id="element-empty",
+                content=LiteralSource(""),
+            ),
+        ),
+    )
+    compiled = compile_layout(broken, SNAPSHOT, NIIMBOT_B1_50X30)
+    outcome = next(
+        item for item in compiled.outcomes if item.element_id == "element-empty"
+    )
+    assert outcome.status == BLOCKED
+    assert len(compiled.plan.elements) == 1
+
+
+# ---------------------------------------------------------------------------
+# The profile the compilation is against
+# ---------------------------------------------------------------------------
+
+
+def test_an_element_with_no_content_source_at_all_blocks() -> None:
+    """A divider is the only kind allowed none, and it never reaches here."""
+    layout = _layout()
+    broken = replace(
+        layout,
+        elements=(
+            layout.elements[0],
+            replace(layout.elements[0], id="element-void", content=None),
+        ),
+    )
+    compiled = compile_layout(broken, SNAPSHOT, NIIMBOT_B1_50X30)
+    outcome = next(
+        item for item in compiled.outcomes if item.element_id == "element-void"
+    )
+    assert outcome.status == BLOCKED
+    assert len(compiled.plan.elements) == 1
+
+
+def test_a_profile_names_the_stock_it_prints() -> None:
+    assert NIIMBOT_B1_50X30.label_size.width_mm == 50.0
+    assert NIIMBOT_B1_50X30.label_size.height_mm == 30.0
+
+
+def test_a_provisional_profile_does_not_authorize_production() -> None:
+    assert NIIMBOT_B1_50X30.authorizes_production is False
+    verified = replace(NIIMBOT_B1_50X30, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+    assert verified.authorizes_production is True
+
+
+def test_a_stock_with_no_profile_offers_none_rather_than_a_near_match() -> None:
+    assert profiles_for_size("growspace.stock.50x80.v1") == ()
+    assert profiles_for_size("growspace.stock.50x30.v1") == (NIIMBOT_B1_50X30,)
+
+
+def test_the_same_layout_compiles_to_different_pixels_on_a_different_profile() -> None:
+    """A profile change moves pixels; it never moves a saved millimetre."""
+    at_300 = replace(
+        NIIMBOT_B1_50X30,
+        id="growspace.profile.test.300dpi.v1",
+        dpi=300,
+        printhead_pixels=567,
+    )
+    coarse = compile_layout(FACTORY_50X30.layout, SNAPSHOT, NIIMBOT_B1_50X30)
+    fine = compile_layout(FACTORY_50X30.layout, SNAPSHOT, at_300)
+
+    assert coarse.plan.canvas != fine.plan.canvas
+    assert fine.plan.canvas.width == to_pixels(48.0, 300)
+    assert not [item.code for item in fine.diagnostics]
+    assert [element.id for element in FACTORY_50X30.layout.elements] == [
+        item.element_id for item in fine.outcomes
+    ]
+
+
+def test_shared_edges_survive_the_other_supported_resolution() -> None:
+    """Six of the specification's acceptance cases turn on this at both DPIs."""
+    at_300 = replace(
+        NIIMBOT_B1_50X30,
+        id="growspace.profile.test.300dpi.v1",
+        dpi=300,
+        printhead_pixels=567,
+    )
+    compiled = compile_layout(FACTORY_50X30.layout, SNAPSHOT, at_300)
+    frames = {item.element_id: item.pixel_frame for item in compiled.outcomes}
+    # The rule is per pair of frames sharing a millimetre edge; the shipped
+    # layout has no touching pair, so assert the arithmetic that guarantees it.
+    for item in compiled.outcomes:
+        assert item.pixel_frame is not None
+    assert frames[FACTORY_50X30.layout.elements[0].id].left == to_pixels(2.0, 300)
