@@ -1,0 +1,1297 @@
+{
+  "density_high": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 8,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "density_low": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 3,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "density_unknown_falls_back": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "device_id_targeted": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "device_id": "niimbot-b21",
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "plant_all_fields_off": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "NORTHERN LIGHTS",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "plant_base_url_qr": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "NORTHERN LIGHTS",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "Pheno A",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "boxsize": 3,
+          "data": "https://grow.example.test/p?plantId=plant-1",
+          "type": "qrcode",
+          "x": 290,
+          "y": 130
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "plant_deeplink_qr": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "NORTHERN LIGHTS",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "Pheno A",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "boxsize": 3,
+          "data": "homeassistant://navigate/growspace/plant/plant-1",
+          "type": "qrcode",
+          "x": 290,
+          "y": 130
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "plant_lineage_off": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "NORTHERN LIGHTS",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "Pheno A\nSensi",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "boxsize": 3,
+          "data": "http://homeassistant.local:8123/plant/plant-1",
+          "type": "qrcode",
+          "x": 290,
+          "y": 130
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "plant_qr_off_logo_on": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "NORTHERN LIGHTS",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "Pheno A\nSensi\nAfghani x Thai",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "type": "dlimg",
+          "url": "http://example.test/sensi.png",
+          "x": 290,
+          "xsize": 100,
+          "y": 20,
+          "ysize": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "plant_web_qr": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "NORTHERN LIGHTS",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "Pheno A",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "boxsize": 3,
+          "data": "http://homeassistant.local:8123/plant/plant-1",
+          "type": "qrcode",
+          "x": 290,
+          "y": 130
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "preview_true": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": true,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "size_40x30": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 200,
+          "x": 0,
+          "x_end": 208,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 208,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 200,
+          "x": 0,
+          "x_end": 208,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 232,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 320
+    }
+  },
+  "size_50x15": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 120,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 25,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 10
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 44,
+          "y_start": 42
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 50,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 50
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 112
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "size_50x30": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "size_50x50": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 400,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 83,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 33
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 147,
+          "y_start": 142
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 167,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 167
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 373
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "size_50x50_with_logo_and_qr": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 400,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 83,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "NORTHERN LIGHTS",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 33
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 147,
+          "y_start": 142
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 167,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "Pheno A\nSensi\nAfghani x Thai",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 167
+        },
+        {
+          "type": "dlimg",
+          "url": "http://example.test/sensi.png",
+          "x": 290,
+          "xsize": 100,
+          "y": 33,
+          "ysize": 167
+        },
+        {
+          "boxsize": 3,
+          "data": "http://homeassistant.local:8123/plant/plant-1",
+          "type": "qrcode",
+          "x": 290,
+          "y": 217
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 373
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "size_50x80": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 640,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 133,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 53
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 235,
+          "y_start": 227
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 267,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 267
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 597
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "size_unknown_falls_back": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "strain_full_overrides": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "WEDDING CAKE",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "Pheno 3\nSeed Junky\nTK91 x Animal Mints",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "type": "dlimg",
+          "url": "http://example.test/logo.png",
+          "x": 290,
+          "xsize": 100,
+          "y": 20,
+          "ysize": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "strain_library_meta_fallback": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "GELATO",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "Cookie Fam\nSunset Sherbet x TK",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "type": "dlimg",
+          "url": "http://example.test/cookiefam.png",
+          "x": 290,
+          "xsize": 100,
+          "y": 20,
+          "ysize": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "strain_minimal": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "strain_phenotype_default_collapses": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  },
+  "strain_small_data_uri_logo": {
+    "domain": "niimbot",
+    "service": "print",
+    "service_data": {
+      "density": 5,
+      "height": 240,
+      "payload": [
+        {
+          "fit": true,
+          "font": "ppb.ttf",
+          "height": 50,
+          "size": 50,
+          "type": "new_multiline",
+          "value": "BLUE DREAM",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 20
+        },
+        {
+          "fill": "black",
+          "type": "rectangle",
+          "x_end": 260,
+          "x_start": 0,
+          "y_end": 88,
+          "y_start": 85
+        },
+        {
+          "fit": true,
+          "font": "rbm.ttf",
+          "height": 100,
+          "size": 40,
+          "type": "new_multiline",
+          "value": "",
+          "width": 250,
+          "x": 0,
+          "x_end": 260,
+          "y": 100
+        },
+        {
+          "type": "dlimg",
+          "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==",
+          "x": 290,
+          "xsize": 100,
+          "y": 20,
+          "ysize": 100
+        },
+        {
+          "font": "rbm.ttf",
+          "size": 6,
+          "type": "text",
+          "value": "18.09.2026",
+          "x": 290,
+          "y": 224
+        }
+      ],
+      "preview": false,
+      "rotate": 0,
+      "width": 400
+    }
+  }
+}
