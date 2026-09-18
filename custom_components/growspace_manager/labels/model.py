@@ -58,6 +58,34 @@ class TextLine:
 
 
 @dataclass(frozen=True, slots=True)
+class FittedText:
+    """Text fitted into a fixed box: wrapped, aligned and auto-sized.
+
+    The bounded primitive the canonical millimetre document compiles to, and
+    the one that owns wrapping, line limits, alignment, shrinking and
+    ellipsis. `TextBlock` is the Classic design's unwrapped ancestor; both
+    exist while both paths do.
+    """
+
+    value: str
+    x: int
+    y: int
+    width: int
+    height: int
+    size: int
+    font: str
+    min_size: int
+    max_lines: int
+    line_spacing: int
+    align: str
+    valign: str
+    fit: str
+    #: Truncation mark. Empty spells the `clip` policy, whose glyphs are
+    #: dropped whole rather than cut mid-stroke.
+    ellipsis: str = "\u2026"
+
+
+@dataclass(frozen=True, slots=True)
 class Divider:
     """A filled rectangle. The only v1 use is a horizontal rule."""
 
@@ -70,26 +98,43 @@ class Divider:
 
 @dataclass(frozen=True, slots=True)
 class Logo:
-    """An image placed by URL or inline data URI, drawn into its box."""
+    """An image placed by URL or inline data URI, drawn into its box.
+
+    `mode` and `dither` are the canonical path's: `contain` preserves the
+    source's own aspect ratio inside the frame, and the monochrome Style Token
+    decides whether the conversion dithers. Both stay `None` on the Classic
+    path, which stretches and never dithers, so its payload is unchanged.
+    """
 
     url: str
     x: int
     y: int
     xsize: int
     ysize: int
+    mode: str | None = None
+    dither: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class QrCode:
-    """A QR code whose module size, not its box, fixes its extent."""
+    """A QR code, sized either by module or by the box it must fit.
+
+    The Classic path sets `boxsize` and lets the extent fall where it may. The
+    canonical path sets `width`/`height` instead, because a saved frame is a
+    promise about millimetres that a module-sized code cannot keep.
+    """
 
     data: str
     x: int
     y: int
     boxsize: int
+    width: int | None = None
+    height: int | None = None
+    border: int | None = None
+    error_correction: str | None = None
 
 
-LabelElement = TextBlock | TextLine | Divider | Logo | QrCode
+LabelElement = TextBlock | TextLine | FittedText | Divider | Logo | QrCode
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +166,10 @@ class LabelRenderPlan:
     canvas: Canvas
     elements: tuple[LabelElement, ...]
     density: str
+    #: The device value a [[Capability Profile]] resolved `density` to. The
+    #: canonical path sets it; the Classic path leaves it unset and the
+    #: adapter falls back to its own global table.
+    density_level: int | None = None
 
     def scaled_to(self, canvas: Canvas) -> LabelRenderPlan:
         """Return this plan re-expressed on `canvas`.
@@ -155,6 +204,10 @@ def _scale_element(
     placed: dict[str, Any] = {}
     for field in fields(element):
         value = getattr(element, field.name)
+        if value is None:
+            # An optional geometry field the Classic path never sets.
+            placed[field.name] = None
+            continue
         if field.name in _X_FIELDS:
             value = round(value * scale_x)
         elif field.name in _Y_FIELDS:

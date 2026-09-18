@@ -619,6 +619,42 @@ The printable extent of one label in device pixels. Five Label Size identities (
 **Compatibility Adapter**
 `labels/classic.py`, the only module that understands the pre-template `print_label` request: subject as `plant_id` or bare strain, breeder/lineage overrides over strain-library meta, `fields` visibility flags, `base_url`, `qr_target`. Caller-supplied URLs stay confined to it. See the cross-repository specification in the workspace hub, `docs/design/label-compatibility-rollout-and-acceptance.md`.
 
+**Classic Path**
+The composition every released card prints today: one fixed 400×240 design stretched per axis onto the requested stock. It reaches the same adapter as the [[Label Template Path]] and produces the same [[Label Render Plan]] shape, so retiring it is a deletion rather than a migration.
+
+**Label Template Path**
+The canonical composition in `labels/canonical/`: a validated [[Label Layout]] compiled against a [[Capability Profile]] into a [[Label Render Plan]], then rastered by the same printer adapter. Preview and print are the same call with one argument different — which is the only arrangement in which a preview can honestly stand in for a print. See the workspace hub's `docs/design/label-layout-and-rendering-seam.md`.
+
+**Label Layout**
+One complete printable design, as saved: a versioned [[Label Size]] reference and an ordered list of stable [[Label Element]]s with absolute millimetre frames, in the closed `growspace.label-layout` v1 schema. It holds no CSS, no browser pixels, no `imagespec`, no DPI, no density, no device and no resolved plant data; every one of those is chosen at render time, which is what lets one saved design print on different hardware without being rewritten. The `elements` array is back-to-front paint order and there is no separate z-index. Unknown fields are rejected rather than dropped, because dropping them is how a future document quietly becomes a lossy v1 one.
+
+**Label Size**
+A physical stock identity in millimetres, versioned (`growspace.stock.50x30.v1`) so a size is never inferred from a display name or from the Classic `50x30` spelling beside it. A [[Label Layout]] references one and never repeats its dimensions; a template's size cannot change, because converting a design between stocks is a transform, not an edit.
+
+**Label Element**
+One placed thing on a [[Label Layout]]: an opaque layout-unique `id`, an [[Element Frame]], a clockwise rotation from 0/90/180/270, a single content source, and one closed style object. Four variants only — `text`, `logo`, `qr`, `divider`. The ID is stable across moves, resizing, styling, reordering, publication and historical restore, which is what lets a diagnostic name an element and an editor select it.
+
+**Element Frame**
+An element's axis-aligned rectangle in physical millimetres on the unrotated stock, quantized to 0.01 mm. It is the post-rotation occupied and clipped rectangle, so rotating never moves an element. Geometry finer than the quantum is rejected rather than rounded, and geometry outside the stock cannot publish; neither is ever repaired.
+
+**Content Binding**
+A symbolic request for content — a catalogue ID plus a closed parameter object — never a resolved string, a generated URL, a format string or an expression. The v1 catalogue is `growspace.label-bindings.v1`; each entry fixes which element kinds and print contexts it serves, what its parameters mean, and whether absence blocks, warns and omits, or cannot happen. Every publishable [[Label Layout]] carries at least one text element bound to `strain.name`; a literal does not satisfy it.
+
+**Style Token**
+An opaque, versioned backend-owned printable resource or policy — a font face, a leading, a monochrome conversion rule. A token resolves to a deterministic file or rule, never to browser CSS, and a changed definition gets a new version rather than a new meaning. A missing token is a named incompatibility, never a substitution.
+
+**Capability Profile**
+One immutable printer-class, stock, orientation, resolution, printhead, Printable Area, safe area and density contract, selected per render. It is why "203 dpi" is not a global property: the same [[Label Layout]] compiles to different pixels on different profiles without changing a millimetre. A **provisional** profile has enough known geometry to render and cannot authorize a production print; promotion to product-verified is a physical-evidence decision. The first one is `growspace.profile.niimbot-b1.50x30.v1`, whose Printable Area is 48 mm rather than the stock's 50 — 384 printhead pixels at 203 dpi — because a 400-pixel raster for a 384-pixel head is a failure the transport does not reject and no preview would show.
+
+**Render Context**
+The complete identity of one render: layout digest, content-snapshot identity, profile, density and its device value, locale, time zone, captured instant, and the compiler, renderer, adapter and catalogue versions, each recorded separately. Its digest is the **cache identity** — two requests sharing it share a raster, and anything else, however similar, does not. A font, profile or compiler update therefore invalidates a cached raster without pretending the saved layout changed.
+
+**Render Result**
+What the canonical operation returns: the authoritative monochrome PNG as the renderer produced it, the [[Render Context]], one outcome per stable element ID, every diagnostic of every layer, and print eligibility. Eligibility is decided here and read by the card; it is never inferred from a warning count on the other side of the wire. A provisional profile yields an exact raster and `printable: false`, because an exact bitmap is a claim about the driver and not about the paper.
+
+**Factory Template**
+A layout the integration ships, at a shipped revision, identified by a stable namespaced ID. An upgrade may append a new revision and advance the head; it never edits a revision in place and never changes a template someone copied. Factory and named templates cross the same renderer interface — factory status creates no second rendering implementation.
+
 ## Serialization
 
 **Plant View Model**

@@ -1,0 +1,245 @@
+{
+  "_comment": "The exact payload the canonical compiler produces for the shipped 50x30 Factory Template at revision 1, rendered for the typical strain fixture on the provisional Niimbot B1 profile. Regenerate deliberately: a change here is a change to what every label prints.",
+  "factory_template": {
+    "id": "growspace.factory.50x30",
+    "revision": 1
+  },
+  "profile": "growspace.profile.niimbot-b1.50x30.v1",
+  "content_fixture": "growspace.fixture.strain.typical.v1",
+  "as_of": "2026-09-18T00:00:00+00:00",
+  "layout_digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32",
+  "content_identity": "sha256:0dfbfbfacdb126dfef1b596266c126c677291f15ee0926a007b8fa2cc1617bbc",
+  "canvas": {
+    "width": 384,
+    "height": 240
+  },
+  "density": {
+    "symbolic": "normal",
+    "device": 3
+  },
+  "outcomes": [
+    {
+      "element_id": "01M2V1PQB882FPJSG6H1GTFKX2",
+      "kind": "text",
+      "status": "placed",
+      "binding": "strain.name",
+      "pixel_frame": {
+        "left": 16,
+        "top": 16,
+        "right": 360,
+        "bottom": 83,
+        "width": 344,
+        "height": 67
+      },
+      "notes": {
+        "requested_font_size_px": 45,
+        "minimum_font_size_px": 24,
+        "maximum_lines": 2,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 67]
+      }
+    },
+    {
+      "element_id": "01M2V1PQB82ZAZR3V5NKXZDS0Z",
+      "kind": "divider",
+      "status": "placed",
+      "binding": null,
+      "pixel_frame": {
+        "left": 16,
+        "top": 88,
+        "right": 360,
+        "bottom": 91,
+        "width": 344,
+        "height": 3
+      },
+      "notes": {}
+    },
+    {
+      "element_id": "01M2V1PQB83XP8GJZZAP08DDKM",
+      "kind": "text",
+      "status": "placed",
+      "binding": "strain.phenotype",
+      "pixel_frame": {
+        "left": 16,
+        "top": 98,
+        "right": 360,
+        "bottom": 133,
+        "width": 344,
+        "height": 35
+      },
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
+    },
+    {
+      "element_id": "01M2V1PQB8CH61GQ903X1XF808",
+      "kind": "text",
+      "status": "placed",
+      "binding": "strain.breeder",
+      "pixel_frame": {
+        "left": 16,
+        "top": 136,
+        "right": 360,
+        "bottom": 171,
+        "width": 344,
+        "height": 35
+      },
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
+    },
+    {
+      "element_id": "01M2V1PQB8QKBBEH26QWK9FHT8",
+      "kind": "text",
+      "status": "placed",
+      "binding": "strain.lineage",
+      "pixel_frame": {
+        "left": 16,
+        "top": 174,
+        "right": 360,
+        "bottom": 209,
+        "width": 344,
+        "height": 35
+      },
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
+    },
+    {
+      "element_id": "01M2V1PQB8NNQA4TA7RZEJZCCW",
+      "kind": "text",
+      "status": "placed",
+      "binding": "print.date",
+      "pixel_frame": {
+        "left": 16,
+        "top": 213,
+        "right": 360,
+        "bottom": 235,
+        "width": 344,
+        "height": 22
+      },
+      "notes": {
+        "requested_font_size_px": 19,
+        "minimum_font_size_px": 16,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 22]
+      }
+    }
+  ],
+  "imagespec_payload": [
+    {
+      "type": "text_fit",
+      "value": "Blue Dream",
+      "x": 16,
+      "y": 16,
+      "width": 344,
+      "height": 67,
+      "size": 45,
+      "min_size": 24,
+      "max_lines": 2,
+      "line_spacing": 2,
+      "align": "left",
+      "valign": "center",
+      "fit": "shrink_ellipsis",
+      "ellipsis": "…",
+      "font": "ppb.ttf"
+    },
+    {
+      "type": "rectangle",
+      "x_start": 16,
+      "x_end": 360,
+      "y_start": 88,
+      "y_end": 91,
+      "fill": "black"
+    },
+    {
+      "type": "text_fit",
+      "value": "Pheno 3",
+      "x": 16,
+      "y": 98,
+      "width": 344,
+      "height": 35,
+      "size": 26,
+      "min_size": 18,
+      "max_lines": 1,
+      "line_spacing": 1,
+      "align": "left",
+      "valign": "center",
+      "fit": "shrink_ellipsis",
+      "ellipsis": "…",
+      "font": "rbm.ttf"
+    },
+    {
+      "type": "text_fit",
+      "value": "Breeder: Humboldt Seed Co.",
+      "x": 16,
+      "y": 136,
+      "width": 344,
+      "height": 35,
+      "size": 26,
+      "min_size": 18,
+      "max_lines": 1,
+      "line_spacing": 1,
+      "align": "left",
+      "valign": "center",
+      "fit": "shrink_ellipsis",
+      "ellipsis": "…",
+      "font": "rbm.ttf"
+    },
+    {
+      "type": "text_fit",
+      "value": "Lineage: Blueberry x Haze",
+      "x": 16,
+      "y": 174,
+      "width": 344,
+      "height": 35,
+      "size": 26,
+      "min_size": 18,
+      "max_lines": 1,
+      "line_spacing": 1,
+      "align": "left",
+      "valign": "center",
+      "fit": "shrink_ellipsis",
+      "ellipsis": "…",
+      "font": "rbm.ttf"
+    },
+    {
+      "type": "text_fit",
+      "value": "18 Sep 2026",
+      "x": 16,
+      "y": 213,
+      "width": 344,
+      "height": 22,
+      "size": 19,
+      "min_size": 16,
+      "max_lines": 1,
+      "line_spacing": 1,
+      "align": "right",
+      "valign": "center",
+      "fit": "shrink_ellipsis",
+      "ellipsis": "…",
+      "font": "rbm.ttf"
+    }
+  ],
+  "raster_evidence": {
+    "_comment": "Produced out of band by imagespec 0.4.0 -- the renderer the niimbot integration pins -- from the payload above, with the two font files that integration ships. Kept beside it as tests/fixtures/labels/canonical_factory_50x30.png so the shipped layout's paper is inspectable without a printer.",
+    "imagespec_version": "0.4.0",
+    "sha256": "949439776116045a8a0086bfbe19f43c4261f0e9bd5996f86bac23dd72517b20",
+    "width": 384,
+    "height": 240,
+    "colours": 2
+  }
+}

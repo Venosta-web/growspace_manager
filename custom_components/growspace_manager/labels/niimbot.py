@@ -25,6 +25,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from .model import (
     Divider,
+    FittedText,
     LabelElement,
     LabelRenderPlan,
     Logo,
@@ -94,7 +95,7 @@ async def async_print(
         "width": plan.canvas.width,
         "height": plan.canvas.height,
         "rotate": 0,
-        "density": _DENSITY_LEVELS.get(plan.density, _DEFAULT_DENSITY),
+        "density": _density(plan),
         "payload": [_imagespec(element) for element in plan.elements],
         "preview": preview,
     }
@@ -115,6 +116,19 @@ async def async_print(
     else:
         _LOGGER.info("Sent label to Niimbot for %s", subject)
         return response
+
+
+def _density(plan: LabelRenderPlan) -> int:
+    """Resolve the plan's density to this hardware's 1-8 scale.
+
+    A plan compiled against a [[Capability Profile]] arrives with the device
+    value already chosen from that printer class's own valid range, and it
+    wins: the global table below is the Classic path's, and its top value is
+    out of range on several printers this adapter can reach.
+    """
+    if plan.density_level is not None:
+        return plan.density_level
+    return _DENSITY_LEVELS.get(plan.density, _DEFAULT_DENSITY)
 
 
 def _imagespec(element: LabelElement) -> dict[str, Any]:
@@ -141,6 +155,24 @@ def _imagespec(element: LabelElement) -> dict[str, Any]:
             "size": element.size,
             "font": element.font,
         }
+    if isinstance(element, FittedText):
+        return {
+            "type": "text_fit",
+            "value": element.value,
+            "x": element.x,
+            "y": element.y,
+            "width": element.width,
+            "height": element.height,
+            "size": element.size,
+            "min_size": element.min_size,
+            "max_lines": element.max_lines,
+            "line_spacing": element.line_spacing,
+            "align": element.align,
+            "valign": element.valign,
+            "fit": element.fit,
+            "ellipsis": element.ellipsis,
+            "font": element.font,
+        }
     if isinstance(element, Divider):
         return {
             "type": "rectangle",
@@ -151,23 +183,43 @@ def _imagespec(element: LabelElement) -> dict[str, Any]:
             "fill": element.fill,
         }
     if isinstance(element, Logo):
-        return {
-            "type": "dlimg",
-            "url": element.url,
-            "x": element.x,
-            "y": element.y,
-            "xsize": element.xsize,
-            "ysize": element.ysize,
-        }
+        return _optional(
+            {
+                "type": "dlimg",
+                "url": element.url,
+                "x": element.x,
+                "y": element.y,
+                "xsize": element.xsize,
+                "ysize": element.ysize,
+            },
+            mode=element.mode,
+            dither=element.dither,
+        )
     if isinstance(element, QrCode):
-        return {
-            "type": "qrcode",
-            "data": element.data,
-            "x": element.x,
-            "y": element.y,
-            "boxsize": element.boxsize,
-        }
+        return _optional(
+            {
+                "type": "qrcode",
+                "data": element.data,
+                "x": element.x,
+                "y": element.y,
+                "boxsize": element.boxsize,
+            },
+            width=element.width,
+            height=element.height,
+            border=element.border,
+            eclevel=element.error_correction,
+        )
     raise TypeError(f"No Niimbot compilation for label element {element!r}")
+
+
+def _optional(payload: dict[str, Any], **extra: Any) -> dict[str, Any]:
+    """Add the keys the canonical path sets, leaving the Classic payload alone.
+
+    An unset key is absent rather than null: the Classic golden payloads are
+    exact, and `imagespec` reads a present key before it reads its default.
+    """
+    payload.update({key: value for key, value in extra.items() if value is not None})
+    return payload
 
 
 async def _with_printable_logos(
