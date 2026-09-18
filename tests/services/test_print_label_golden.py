@@ -179,7 +179,7 @@ async def _capture(spec: dict[str, Any]) -> dict[str, Any]:
 
     with (
         patch(
-            "custom_components.growspace_manager.services.strain_library.get_url",
+            "custom_components.growspace_manager.labels.classic.get_url",
             return_value=INTERNAL_URL,
         ),
         freeze_time(FROZEN_NOW),

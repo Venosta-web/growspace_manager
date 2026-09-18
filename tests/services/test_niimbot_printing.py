@@ -113,7 +113,7 @@ async def test_handle_print_label(mock_hass, mock_coordinator, strain_library) -
     call.data = {"plant_id": plant_id, "device_id": "printer_1", "preview": True}
 
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://homeassistant.local",
     ):
         await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
@@ -184,7 +184,7 @@ async def test_handle_print_label_service_error(
     mock_hass.services.async_call.side_effect = ValueError("Service error")
     with (
         patch(
-            "custom_components.growspace_manager.services.strain_library.get_url",
+            "custom_components.growspace_manager.labels.classic.get_url",
             return_value="http://homeassistant.local",
         ),
         pytest.raises(
@@ -227,7 +227,7 @@ async def test_handle_print_label_with_base64_downscaling(
     call.data = {"plant_id": plant_id}
 
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://homeassistant.local",
     ):
         await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
