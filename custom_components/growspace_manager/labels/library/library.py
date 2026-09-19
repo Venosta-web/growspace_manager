@@ -30,11 +30,22 @@ factory rather than being quietly re-pointed.
 once, under a lock, and the in-memory state is only replaced after the write
 returns. A failed write therefore leaves the library exactly as it was.
 
-Draft autosave is compare-and-swap-*ready* rather than compare-and-swap: every
-draft carries a monotonic version and every publication records the draft it
-consumed, which is what a replayed publication recognises itself by. Rejecting
-a stale autosave, the library-generation change events and idempotency keys
-across every command are the concurrency route's, and land on these fields.
+**Nobody's work is lost to somebody else's.** More than one client edits this
+library at once, so the last three rules have a fourth behind them. An autosave
+is compare-and-swap on the draft version and a publication compares the draft's
+base with the current head, so neither can overwrite something it has not seen.
+A refused write keeps its payload in the draft's recovery slot rather than
+dropping it. Every mutation may carry an idempotency key, so the retry of a
+call whose answer was lost finds the first attempt. And every committed
+mutation fires one change event naming the new generation and the one it
+replaced, which is what lets a client detect the events it missed and refresh
+its snapshot -- without its own open draft being touched by anybody.
+
+What deliberately does *not* happen is a merge. Two layouts that diverged are
+structurally mergeable and physically unsafe to merge: independent moves,
+resizes and typography changes compose into overlap, clipping and unreadable
+text that neither editor asked for. A stale draft is therefore kept whole and
+previewable, and its owner chooses.
 """
 
 from __future__ import annotations
@@ -67,13 +78,29 @@ from ..canonical import (
 )
 from .actor import Actor
 from .blank import blank_document
+from .commits import (
+    AUTOSAVE_DRAFT,
+    CLEAR_DEFAULT,
+    CREATE_DRAFT,
+    DISCARD_DRAFT,
+    DISCARD_RECOVERY,
+    PUBLISH_DRAFT,
+    RELOAD_DRAFT,
+    SET_DEFAULT,
+    committed,
+    record_of,
+    request_digest,
+)
 from .errors import (
+    DraftIsStale,
     DraftNotFound,
     DraftNotPublishable,
+    DraftVersionConflict,
     DuplicateTemplateName,
     LabelSizeImmutable,
     LabelTemplateError,
     NoEffectiveDefault,
+    NoRecoveryPayload,
     RevisionNotFound,
     TemplateNameRequired,
     TemplateNotFound,
@@ -81,6 +108,7 @@ from .errors import (
     TemplateProtected,
     UnsupportedLabelSize,
 )
+from .events import DEFAULT_CLEARED, DEFAULT_SET, PUBLISHED, async_fire_library_changed
 from .publication import PublicationCheck, check_document
 from .records import (
     FACTORY,
@@ -89,9 +117,13 @@ from .records import (
     FROM_NAMED,
     NAMED,
     PUBLISH,
+    REJECTED_SAVE,
+    RELOADED,
+    CommitRecord,
     LibraryState,
     NamedTemplate,
     Provenance,
+    RecoveryPayload,
     TemplateDraft,
     TemplateRef,
     TemplateRevision,
@@ -153,15 +185,62 @@ class DraftSaved:
 
     The check travels with the draft because an editor needs both at once, and
     because being told the work was kept and being told it cannot yet be
-    published are two different sentences.
+    published are two different sentences. Staleness is a third: a draft can be
+    perfectly valid and still unpublishable because somebody else published
+    first, and that is not a diagnostic about the layout.
     """
 
     draft: TemplateDraft
     check: PublicationCheck
+    #: Whether the template has moved past the revision this draft is based on.
+    stale: bool = False
+    #: The template's current head, so the editor can name what it would be
+    #: publishing over. `None` for an untitled draft, which has no template.
+    head_revision: int | None = None
+    #: True when this call found its own earlier autosave rather than writing.
+    replayed: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         """Return the autosave's wire form."""
-        return {"draft": self.draft.as_dict(), "validation": self.check.as_dict()}
+        return {
+            "draft": self.draft.as_dict(),
+            "validation": self.check.as_dict(),
+            "stale": self.stale,
+            "head_revision": self.head_revision,
+            "replayed": self.replayed,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DraftDiscarded:
+    """One removed draft, named by what it was.
+
+    The removed draft travels back whole, because an editor that has just
+    thrown work away is the one place an undo could still be offered. A replay
+    carries no draft: the key's first attempt is what removed it, this call
+    removed nothing, and inventing a payload to return would be a lie about
+    which of the two happened.
+    """
+
+    draft_id: str
+    owner: str
+    label_size_id: str
+    template_id: str | None
+    version: int
+    draft: TemplateDraft | None = None
+    replayed: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the discard's wire form."""
+        return {
+            "draft_id": self.draft_id,
+            "owner": self.owner,
+            "label_size_id": self.label_size_id,
+            "template_id": self.template_id,
+            "version": self.version,
+            "draft": self.draft.as_dict() if self.draft else None,
+            "replayed": self.replayed,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +279,8 @@ class DefaultChanged:
     generation: int
     #: True when the override already had this value, so nothing was written.
     unchanged: bool = False
+    #: True when this call found its own earlier change rather than making one.
+    replayed: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         """Return the change's wire form.
@@ -214,6 +295,7 @@ class DefaultChanged:
             "effective": _effective_summary(self.effective),
             "generation": self.generation,
             "unchanged": self.unchanged,
+            "replayed": self.replayed,
         }
 
 
@@ -247,11 +329,23 @@ class LabelTemplateLibrary:
             )
         return self._state
 
-    async def _async_commit(self, state: LibraryState) -> LibraryState:
-        """Write one complete next state, and publish it only once it landed."""
-        await self._store.async_save(state)
-        self._state = state
-        return state
+    async def _async_commit(
+        self, state: LibraryState, record: CommitRecord | None = None
+    ) -> LibraryState:
+        """Write one complete next state, and publish it only once it landed.
+
+        The idempotency record goes into the same write as what it describes.
+        A ledger written separately could survive a mutation that did not, and
+        a replay would then report a commit that never happened.
+        """
+        next_state = (
+            state
+            if record is None
+            else replace(state, commits=state.with_commit(record))
+        )
+        await self._store.async_save(next_state)
+        self._state = next_state
+        return next_state
 
     # -- reading -----------------------------------------------------------
 
@@ -263,12 +357,17 @@ class LabelTemplateLibrary:
         printing a label needs. Drafts are unpublished and private, so only an
         administrator's own appear -- and a non-administrator's list is empty
         rather than absent, which is the same answer as having none.
+
+        This is also the refresh a client falls back to after a missed change
+        event, so it is complete rather than incremental -- and it *reads*:
+        taking a snapshot never rebases, merges or clears anybody's draft, so
+        recovering from a gap cannot cost an editor its unsaved work.
         """
         user_id = actor.authenticated()
         state = await self.async_load()
         drafts = (
             [
-                draft.as_dict()
+                _draft_wire(state, draft)
                 for draft in state.drafts.values()
                 if draft.owner == user_id
             ]
@@ -337,6 +436,7 @@ class LabelTemplateLibrary:
         *,
         label_size_id: str | None = None,
         derive_from: TemplateRef | None = None,
+        idempotency_key: str | None = None,
     ) -> TemplateDraft:
         """Start an untitled draft: blank, or derived from a published template.
 
@@ -347,8 +447,23 @@ class LabelTemplateLibrary:
         useful place to start.
         """
         owner = actor.administrator()
+        digest = request_digest(
+            CREATE_DRAFT,
+            owner,
+            label_size_id=label_size_id,
+            derive_from=derive_from.as_dict() if derive_from else None,
+        )
         async with self._lock:
             state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=CREATE_DRAFT,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_draft(state, record)
             if derive_from is None:
                 if label_size_id is None:
                     raise LabelTemplateError(
@@ -399,7 +514,17 @@ class LabelTemplateLibrary:
                 modified_at=now,
                 provenance=provenance,
             )
-            await self._async_commit(_with_draft(state, draft))
+            await self._async_commit(
+                _with_draft(state, draft),
+                record_of(
+                    key=idempotency_key,
+                    operation=CREATE_DRAFT,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation,
+                    locator={"draft_key": draft.key, "draft_id": draft.id},
+                ),
+            )
             return draft
 
     async def async_open_draft(self, actor: Actor, template_id: str) -> TemplateDraft:
@@ -452,6 +577,8 @@ class LabelTemplateLibrary:
         label_size_id: str | None = None,
         document: Any,
         name: Any = _UNSET,
+        expected_version: int | None = None,
+        idempotency_key: str | None = None,
     ) -> DraftSaved:
         """Keep whatever the editor last had, valid or not.
 
@@ -460,28 +587,99 @@ class LabelTemplateLibrary:
         is passing through states that do not yet validate. What comes back
         beside the stored draft is the publication check, so the editor can say
         why the Publish control is unavailable without guessing.
+
+        It does refuse on *version*. Passing `expected_version` makes the save
+        a compare-and-swap: one administrator with the editor open in two
+        places cannot have the older tab silently write over the newer one's
+        work. The refused payload is not discarded -- it goes into the draft's
+        recovery slot and comes back on the error -- and the stored draft is
+        left exactly as it was. Omitting the version is a save that has not
+        read anything, and is taken at its word.
         """
         owner = actor.administrator()
+        named = name is not _UNSET
+        digest = request_digest(
+            AUTOSAVE_DRAFT,
+            owner,
+            template_id=template_id,
+            label_size_id=label_size_id,
+            document=document,
+            name_set=named,
+            name=name if named else None,
+            expected_version=expected_version,
+        )
         async with self._lock:
             state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=AUTOSAVE_DRAFT,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                saved = _replayed_draft(state, record)
+                return DraftSaved(
+                    draft=saved,
+                    check=check_document(saved.document),
+                    stale=_is_stale(state, saved),
+                    head_revision=_head_revision(state, saved),
+                    replayed=True,
+                )
             draft = self._locate_draft(
                 state, owner, template_id=template_id, label_size_id=label_size_id
             )
+            now = dt_util.utcnow().isoformat()
+            resolved_name = (
+                None if not named or name is None else display_name(str(name))
+            )
+            if named and draft.template_id is not None:
+                raise LabelTemplateError(
+                    "A template-bound draft carries no name: renaming a "
+                    "Label Template is its own operation."
+                )
+            if expected_version is not None and expected_version != draft.version:
+                kept = replace(
+                    draft,
+                    recovery=RecoveryPayload(
+                        reason=REJECTED_SAVE,
+                        document=document,
+                        expected_version=expected_version,
+                        draft_version=draft.version,
+                        at=now,
+                        name=resolved_name,
+                    ),
+                )
+                await self._async_commit(_with_draft(state, kept))
+                raise DraftVersionConflict(
+                    expected=expected_version, found=draft.version, draft=kept
+                )
+
             fields: dict[str, Any] = {
                 "document": document,
                 "version": draft.version + 1,
-                "modified_at": dt_util.utcnow().isoformat(),
+                "modified_at": now,
             }
-            if name is not _UNSET:
-                if draft.template_id is not None:
-                    raise LabelTemplateError(
-                        "A template-bound draft carries no name: renaming a "
-                        "Label Template is its own operation."
-                    )
-                fields["name"] = None if name is None else display_name(str(name))
+            if named:
+                fields["name"] = resolved_name
             saved = replace(draft, **fields)
-            await self._async_commit(_with_draft(state, saved))
-            return DraftSaved(draft=saved, check=check_document(saved.document))
+            await self._async_commit(
+                _with_draft(state, saved),
+                record_of(
+                    key=idempotency_key,
+                    operation=AUTOSAVE_DRAFT,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation,
+                    locator={"draft_key": saved.key, "draft_id": saved.id},
+                ),
+            )
+            return DraftSaved(
+                draft=saved,
+                check=check_document(saved.document),
+                stale=_is_stale(state, saved),
+                head_revision=_head_revision(state, saved),
+            )
 
     async def async_discard_draft(
         self,
@@ -489,7 +687,8 @@ class LabelTemplateLibrary:
         *,
         template_id: str | None = None,
         label_size_id: str | None = None,
-    ) -> TemplateDraft:
+        idempotency_key: str | None = None,
+    ) -> DraftDiscarded:
         """Remove unpublished work explicitly, and return what was removed.
 
         Explicit because the alternatives are not the same thing: discarding a
@@ -498,16 +697,191 @@ class LabelTemplateLibrary:
         which of them happened.
         """
         owner = actor.administrator()
+        digest = request_digest(
+            DISCARD_DRAFT,
+            owner,
+            template_id=template_id,
+            label_size_id=label_size_id,
+        )
         async with self._lock:
             state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=DISCARD_DRAFT,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return DraftDiscarded(
+                    draft_id=str(record.locator["draft_id"]),
+                    owner=owner,
+                    label_size_id=str(record.locator["label_size_id"]),
+                    template_id=_optional(record.locator.get("template_id")),
+                    version=int(record.locator["version"]),
+                    replayed=True,
+                )
             draft = self._locate_draft(
                 state, owner, template_id=template_id, label_size_id=label_size_id
             )
             remaining = {
                 key: value for key, value in state.drafts.items() if key != draft.key
             }
-            await self._async_commit(replace(state, drafts=remaining))
-            return draft
+            await self._async_commit(
+                replace(state, drafts=remaining),
+                record_of(
+                    key=idempotency_key,
+                    operation=DISCARD_DRAFT,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation,
+                    locator={
+                        "draft_id": draft.id,
+                        "label_size_id": draft.label_size_id,
+                        "template_id": draft.template_id,
+                        "version": draft.version,
+                    },
+                ),
+            )
+            return DraftDiscarded(
+                draft_id=draft.id,
+                owner=draft.owner,
+                label_size_id=draft.label_size_id,
+                template_id=draft.template_id,
+                version=draft.version,
+                draft=draft,
+            )
+
+    async def async_reload_draft(
+        self,
+        actor: Actor,
+        template_id: str,
+        *,
+        idempotency_key: str | None = None,
+    ) -> TemplateDraft:
+        """Replace a draft with a fresh one at the template's current head.
+
+        What an owner of a stale draft does when the newer revision is the one
+        they want: the draft is discarded and started again from the head, in
+        one commit, so there is no window in which the editor has no draft.
+
+        Nothing is merged. The payload that was there moves into the new
+        draft's recovery slot, so reapplying the parts worth keeping is a thing
+        the editor can do by hand -- which is the only safe way to do it, since
+        two independently moved layouts compose into overlap and clipping
+        neither editor asked for.
+        """
+        owner = actor.administrator()
+        digest = request_digest(RELOAD_DRAFT, owner, template_id=template_id)
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=RELOAD_DRAFT,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_draft(state, record)
+            template = _require_template(state, template_id)
+            previous = self._locate_draft(
+                state, owner, template_id=template_id, label_size_id=None
+            )
+            head = template.head
+            now = dt_util.utcnow().isoformat()
+            reloaded = TemplateDraft(
+                id=ulid_now(),
+                owner=owner,
+                label_size_id=template.label_size_id,
+                template_id=template.id,
+                base_revision=head.revision,
+                version=1,
+                document=dict(head.document),
+                created_at=now,
+                modified_at=now,
+                provenance=Provenance(
+                    source=FROM_NAMED,
+                    source_template_id=template.id,
+                    source_revision=head.revision,
+                ),
+                recovery=RecoveryPayload(
+                    reason=RELOADED,
+                    document=previous.document,
+                    expected_version=None,
+                    draft_version=previous.version,
+                    at=now,
+                    name=previous.name,
+                ),
+            )
+            await self._async_commit(
+                _with_draft(state, reloaded),
+                record_of(
+                    key=idempotency_key,
+                    operation=RELOAD_DRAFT,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation,
+                    locator={"draft_key": reloaded.key, "draft_id": reloaded.id},
+                ),
+            )
+            return reloaded
+
+    async def async_discard_recovery(
+        self,
+        actor: Actor,
+        *,
+        template_id: str | None = None,
+        label_size_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> TemplateDraft:
+        """Drop the work kept beside a draft, once its owner is done with it.
+
+        The only thing that clears the slot short of the draft itself going.
+        An ordinary autosave deliberately leaves it alone: a client saving
+        newer work has not necessarily looked at what was kept, and quietly
+        dropping it on the next keystroke would make the promise worthless.
+        """
+        owner = actor.administrator()
+        digest = request_digest(
+            DISCARD_RECOVERY,
+            owner,
+            template_id=template_id,
+            label_size_id=label_size_id,
+        )
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=DISCARD_RECOVERY,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_draft(state, record)
+            draft = self._locate_draft(
+                state, owner, template_id=template_id, label_size_id=label_size_id
+            )
+            if draft.recovery is None:
+                raise NoRecoveryPayload(
+                    f"template {template_id!r}"
+                    if template_id
+                    else f"Label Size {label_size_id!r}"
+                )
+            cleared = replace(draft, recovery=None)
+            await self._async_commit(
+                _with_draft(state, cleared),
+                record_of(
+                    key=idempotency_key,
+                    operation=DISCARD_RECOVERY,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation,
+                    locator={"draft_key": cleared.key, "draft_id": cleared.id},
+                ),
+            )
+            return cleared
 
     async def async_publish_draft(
         self,
@@ -516,6 +890,7 @@ class LabelTemplateLibrary:
         template_id: str | None = None,
         label_size_id: str | None = None,
         draft_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> Publication:
         """Turn one draft into an immutable revision, and clear it, in one commit.
 
@@ -524,14 +899,36 @@ class LabelTemplateLibrary:
         append, the draft removal and the generation advance are one write, so
         a crash between them is not a state this store can be in.
 
-        Passing the `draft_id` makes a retry safe. If the draft is gone because
-        the first attempt actually succeeded and only its answer was lost, the
-        revision that draft became is found and returned unchanged rather than
-        published a second time.
+        A draft whose base revision is no longer the head is refused. Somebody
+        published while this one was open, and appending over them would drop
+        their revision from a template whose history claims to be complete. The
+        draft is left untouched and remains previewable; reloading it or
+        publishing it as a template of its own are both its owner's to choose.
+
+        Passing the `draft_id` makes a retry safe without a key: if the draft
+        is gone because the first attempt actually succeeded and only its
+        answer was lost, the revision that draft became is found and returned
+        unchanged rather than published a second time.
         """
         owner = actor.administrator()
+        digest = request_digest(
+            PUBLISH_DRAFT,
+            owner,
+            template_id=template_id,
+            label_size_id=label_size_id,
+            draft_id=draft_id,
+        )
         async with self._lock:
             state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=PUBLISH_DRAFT,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_revision(state, record)
             draft = self._find_draft(
                 state, owner, template_id=template_id, label_size_id=label_size_id
             )
@@ -546,6 +943,12 @@ class LabelTemplateLibrary:
                 )
             if draft_id is not None and draft_id != draft.id:
                 raise DraftNotFound(f"draft {draft_id!r}")
+            if _is_stale(state, draft):
+                raise DraftIsStale(
+                    template_id=str(draft.template_id),
+                    base_revision=int(draft.base_revision or 0),
+                    head=int(_head_revision(state, draft) or 0),
+                )
 
             check = check_document(draft.document)
             if check.layout is None or not check.publishable:
@@ -569,22 +972,46 @@ class LabelTemplateLibrary:
             drafts = {
                 key: value for key, value in state.drafts.items() if key != draft.key
             }
-            committed = await self._async_commit(
+            landed = await self._async_commit(
                 replace(
                     state,
                     templates=templates,
                     drafts=drafts,
                     generation=state.generation + 1,
-                )
+                ),
+                record_of(
+                    key=idempotency_key,
+                    operation=PUBLISH_DRAFT,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation + 1,
+                    locator={
+                        "template_id": template.id,
+                        "revision": revision.revision,
+                    },
+                ),
+            )
+            self._announce(
+                landed,
+                previous=state.generation,
+                operation=PUBLISHED,
+                template_id=template.id,
+                revision=revision.revision,
+                label_size_id=template.label_size_id,
             )
             return Publication(
-                template=template, revision=revision, generation=committed.generation
+                template=template, revision=revision, generation=landed.generation
             )
 
     # -- defaults ----------------------------------------------------------
 
     async def async_set_default(
-        self, actor: Actor, label_size_id: str, ref: TemplateRef
+        self,
+        actor: Actor,
+        label_size_id: str,
+        ref: TemplateRef,
+        *,
+        idempotency_key: str | None = None,
     ) -> DefaultChanged:
         """Select one template as the override for one Label Size.
 
@@ -594,10 +1021,22 @@ class LabelTemplateLibrary:
         selected writes nothing and does not advance the generation -- there is
         no change for a client to be told about.
         """
-        actor.administrator()
+        owner = actor.administrator()
         _require_known_size(label_size_id)
+        digest = request_digest(
+            SET_DEFAULT, owner, label_size_id=label_size_id, ref=ref.as_dict()
+        )
         async with self._lock:
             state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=SET_DEFAULT,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return self._replayed_default(state, label_size_id)
             resolved = self._validate_override(state, label_size_id, ref)
             if state.defaults.get(label_size_id) == ref:
                 return DefaultChanged(
@@ -607,22 +1046,37 @@ class LabelTemplateLibrary:
                     generation=state.generation,
                     unchanged=True,
                 )
-            committed = await self._async_commit(
+            landed = await self._async_commit(
                 replace(
                     state,
                     defaults={**state.defaults, label_size_id: ref},
                     generation=state.generation + 1,
-                )
+                ),
+                record_of(
+                    key=idempotency_key,
+                    operation=SET_DEFAULT,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation + 1,
+                    locator={"label_size_id": label_size_id},
+                ),
+            )
+            self._announce(
+                landed,
+                previous=state.generation,
+                operation=DEFAULT_SET,
+                template_id=ref.id if ref.kind == NAMED else None,
+                label_size_id=label_size_id,
             )
             return DefaultChanged(
                 label_size_id=label_size_id,
                 override=ref,
                 effective=resolved,
-                generation=committed.generation,
+                generation=landed.generation,
             )
 
     async def async_clear_default(
-        self, actor: Actor, label_size_id: str
+        self, actor: Actor, label_size_id: str, *, idempotency_key: str | None = None
     ) -> DefaultChanged:
         """Remove one Label Size's override, exposing the factory fallback.
 
@@ -632,10 +1086,20 @@ class LabelTemplateLibrary:
         own selection would be worse off than a stock that says it cannot
         print.
         """
-        actor.administrator()
+        owner = actor.administrator()
         _require_known_size(label_size_id)
+        digest = request_digest(CLEAR_DEFAULT, owner, label_size_id=label_size_id)
         async with self._lock:
             state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=CLEAR_DEFAULT,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return self._replayed_default(state, label_size_id)
             if label_size_id not in state.defaults:
                 return DefaultChanged(
                     label_size_id=label_size_id,
@@ -653,12 +1117,28 @@ class LabelTemplateLibrary:
                 },
                 generation=state.generation + 1,
             )
-            committed = await self._async_commit(next_state)
+            landed = await self._async_commit(
+                next_state,
+                record_of(
+                    key=idempotency_key,
+                    operation=CLEAR_DEFAULT,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation + 1,
+                    locator={"label_size_id": label_size_id},
+                ),
+            )
+            self._announce(
+                landed,
+                previous=state.generation,
+                operation=DEFAULT_CLEARED,
+                label_size_id=label_size_id,
+            )
             return DefaultChanged(
                 label_size_id=label_size_id,
                 override=None,
-                effective=self._effective_default(committed, label_size_id),
-                generation=committed.generation,
+                effective=self._effective_default(landed, label_size_id),
+                generation=landed.generation,
             )
 
     # -- rendering ---------------------------------------------------------
@@ -681,6 +1161,11 @@ class LabelTemplateLibrary:
         that does not pass hard validation cannot be compiled at all, so the
         diagnostics come back as a refusal rather than as an approximate
         picture of an invalid layout.
+
+        Staleness is not a reason to refuse. A draft somebody else has
+        published past is still the work its owner did, and seeing it beside
+        the revision that overtook it is exactly how they decide whether to
+        reload, reapply by hand, or keep it as a template of its own.
         """
         owner = actor.administrator()
         state = await self.async_load()
@@ -737,6 +1222,46 @@ class LabelTemplateLibrary:
         )
 
     # -- internals ---------------------------------------------------------
+
+    def _announce(
+        self,
+        state: LibraryState,
+        *,
+        previous: int,
+        operation: str,
+        template_id: str | None = None,
+        revision: int | None = None,
+        label_size_id: str | None = None,
+    ) -> None:
+        """Fire one change event for a mutation that has already landed.
+
+        After the commit, never before: an event for a write that failed would
+        send every client to fetch a snapshot identical to the one it has, and
+        an event for one that has not landed yet would send them to fetch the
+        state it replaced.
+        """
+        async_fire_library_changed(
+            self.hass,
+            entry_id=self.entry_id,
+            generation=state.generation,
+            previous_generation=previous,
+            operation=operation,
+            template_id=template_id,
+            revision=revision,
+            label_size_id=label_size_id,
+        )
+
+    def _replayed_default(
+        self, state: LibraryState, label_size_id: str
+    ) -> DefaultChanged:
+        """Answer a replayed default change by re-reading what is selected now."""
+        return DefaultChanged(
+            label_size_id=label_size_id,
+            override=state.defaults.get(label_size_id),
+            effective=self._effective_default(state, label_size_id),
+            generation=state.generation,
+            replayed=True,
+        )
 
     def _effective_default(
         self, state: LibraryState, label_size_id: str
@@ -941,6 +1466,90 @@ def _replayed_publication(
 
 
 # ---------------------------------------------------------------------------
+# Replaying a committed key
+# ---------------------------------------------------------------------------
+
+
+def _replayed_draft(state: LibraryState, record: CommitRecord) -> TemplateDraft:
+    """Return the draft one committed key produced, as it stands now.
+
+    The record locates a slot and names the draft that went into it. If the
+    slot is empty or holds a different draft, the key's work has since been
+    discarded or published -- which is a truthful "no such draft", and not a
+    reason to create a second one under a key that has already been spent.
+    """
+    draft = state.drafts.get(str(record.locator.get("draft_key")))
+    if draft is None or draft.id != record.locator.get("draft_id"):
+        raise DraftNotFound(f"idempotency key {record.key!r}")
+    return draft
+
+
+def _replayed_revision(state: LibraryState, record: CommitRecord) -> Publication:
+    """Return the publication one committed key produced.
+
+    Revisions are immutable and never removed, so unlike a draft this is always
+    findable. The generation reported is the library's now rather than the one
+    the original call returned: a replay answers what is true, and the client
+    asking is about to reconcile against exactly that number.
+    """
+    template = state.templates.get(str(record.locator.get("template_id")))
+    revision = (
+        None if template is None else template.revision(int(record.locator["revision"]))
+    )
+    if template is None or revision is None:
+        raise RevisionNotFound(
+            template_id=str(record.locator.get("template_id")),
+            revision=int(record.locator.get("revision", 0)),
+        )
+    return Publication(
+        template=template,
+        revision=revision,
+        generation=state.generation,
+        replayed=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Staleness
+# ---------------------------------------------------------------------------
+
+
+def _head_revision(state: LibraryState, draft: TemplateDraft) -> int | None:
+    """Return the current head of the template one draft is bound to."""
+    if draft.template_id is None:
+        return None
+    template = state.templates.get(draft.template_id)
+    return None if template is None else template.head.revision
+
+
+def _is_stale(state: LibraryState, draft: TemplateDraft) -> bool:
+    """Whether the template has moved past the revision this draft is based on.
+
+    An untitled draft is never stale: it is based on nothing, and publishing it
+    creates a template rather than appending to one. Nor is a draft whose
+    template is gone -- that is an orphan, which is a different condition with
+    a different remedy, and calling it stale would offer a reload of something
+    that no longer exists.
+    """
+    head = _head_revision(state, draft)
+    return head is not None and draft.base_revision != head
+
+
+def _draft_wire(state: LibraryState, draft: TemplateDraft) -> dict[str, Any]:
+    """Return one draft's wire form with what it cannot know about itself.
+
+    Staleness is a fact about the draft *and* the template, so it is computed
+    where both are in hand rather than stored on the draft, where a publication
+    by somebody else would have to go back and rewrite it.
+    """
+    return {
+        **draft.as_dict(),
+        "stale": _is_stale(state, draft),
+        "head_revision": _head_revision(state, draft),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
@@ -1060,6 +1669,11 @@ def _first_profile(label_size_id: str) -> CapabilityProfile:
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+
+def _optional(value: object) -> str | None:
+    """Read a locator field that is either a string or genuinely absent."""
+    return None if value is None else str(value)
 
 
 def _require_known_size(label_size_id: str) -> None:

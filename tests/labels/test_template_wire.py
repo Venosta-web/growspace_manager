@@ -16,11 +16,15 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from custom_components.growspace_manager.labels.canonical import FACTORY_50X30
 from custom_components.growspace_manager.labels.library import (
     FACTORY_FALLBACK,
     OVERRIDE,
     PUBLISH,
+    REJECTED_SAVE,
+    DraftVersionConflict,
     LabelTemplateLibrary,
     TemplateRef,
     blank_document,
@@ -163,3 +167,64 @@ async def test_templates_are_listed_in_a_stable_order(
         "mid",
         "zinnia",
     ]
+
+
+async def test_an_autosave_carries_the_staleness_the_draft_cannot_know(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """Three answers in one payload: kept, publishable, and current.
+
+    Staleness is a fact about the draft *and* its template, so it travels with
+    the answer rather than being stored on the draft -- where somebody else's
+    publication would have to reach back and rewrite it.
+    """
+    await library.async_create_draft(admin, label_size_id=SIZE)
+
+    wire = (
+        await library.async_autosave_draft(
+            admin, label_size_id=SIZE, document=blank_document(SIZE), name="Clone tags"
+        )
+    ).as_dict()
+
+    assert wire["stale"] is False
+    assert wire["head_revision"] is None
+    assert wire["replayed"] is False
+    assert wire["draft"]["recovery"] is None
+
+
+async def test_a_discard_answers_with_what_it_removed(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """Identity first, payload beside it: an editor that has just thrown work
+    away is the one place an undo could still be offered."""
+    created = await library.async_create_draft(admin, label_size_id=SIZE)
+
+    wire = (await library.async_discard_draft(admin, label_size_id=SIZE)).as_dict()
+
+    assert wire["draft_id"] == created.id
+    assert wire["owner"] == admin.user_id
+    assert wire["label_size_id"] == SIZE
+    assert wire["template_id"] is None
+    assert wire["version"] == created.version
+    assert wire["draft"]["id"] == created.id
+    assert wire["replayed"] is False
+
+
+async def test_a_refused_save_answers_with_the_payload_it_kept(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """The recovery slot is part of the draft's wire form, so one read of the
+    library tells an editor there is work waiting to be looked at."""
+    await library.async_create_draft(admin, label_size_id=SIZE)
+    with pytest.raises(DraftVersionConflict):
+        await library.async_autosave_draft(
+            admin, label_size_id=SIZE, document={"refused": True}, expected_version=99
+        )
+
+    snapshot = await library.async_snapshot(admin)
+
+    kept = snapshot["drafts"][0]["recovery"]
+    assert kept["reason"] == REJECTED_SAVE
+    assert kept["document"] == {"refused": True}
+    assert kept["expected_version"] == 99
+    assert kept["draft_version"] == 1

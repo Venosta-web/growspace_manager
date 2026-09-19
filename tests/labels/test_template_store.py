@@ -167,6 +167,7 @@ async def test_the_persisted_document_names_itself(
         "templates",
         "drafts",
         "defaults",
+        "commits",
     }
 
 
