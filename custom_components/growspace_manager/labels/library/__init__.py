@@ -7,6 +7,11 @@ the only place in the integration that does:
     blank / factory / named  ->  create_draft   ->  Template Draft
     Template Draft           ->  autosave       ->  Template Draft (any state)
     Template Draft           ->  publish        ->  Template Revision
+    Named Template           ->  rename         ->  Template Revision
+    Named Template           ->  duplicate      ->  a second Named Template
+    Template Draft           ->  save_as        ->  a second Named Template
+    Template Revision        ->  restore        ->  Template Revision (a new head)
+    Named Template           ->  replace_from_factory -> Template Draft
     Label Size               ->  resolve        ->  one concrete revision
 
 One Home Assistant config entry owns one library. Inside it are the Factory
@@ -15,10 +20,16 @@ one optional default override per Label Size, the immutable revision history
 beneath each template, and each administrator's own durable drafts. Another
 config entry's library is another `.storage` document that shares none of it.
 
-The three invariants worth knowing before changing anything here:
+The invariants worth knowing before changing anything here:
 
 - **A published revision is immutable.** The head moves by appending, never by
   editing. That is what lets a print reference a revision and stay truthful.
+  Renaming and restoring an older layout are appends too: nothing in this
+  package rewinds, rewrites or removes a revision.
+- **An identity outlives every name it has had.** A template is its UUID. A
+  rename keeps it, a duplicate and a Save As mint a new one, and a default
+  override names an identity -- so no display name change can move anybody's
+  default onto a different design.
 - **A draft may be anything.** Autosave keeps invalid work, because half of
   editing is passing through states that do not validate yet. Publication is
   the one moment a document must be a valid `LabelLayout`.
@@ -48,8 +59,13 @@ from .commits import (
     CREATE_DRAFT,
     DISCARD_DRAFT,
     DISCARD_RECOVERY,
+    DUPLICATE_TEMPLATE,
     PUBLISH_DRAFT,
     RELOAD_DRAFT,
+    RENAME_TEMPLATE,
+    REPLACE_FROM_FACTORY,
+    RESTORE_REVISION,
+    SAVE_AS_TEMPLATE,
     SET_DEFAULT,
 )
 from .errors import (
@@ -63,6 +79,7 @@ from .errors import (
     LabelSizeImmutable,
     LabelTemplateError,
     NoEffectiveDefault,
+    NoFactoryTemplate,
     NoRecoveryPayload,
     RevisionNotFound,
     TemplateNameRequired,
@@ -74,8 +91,12 @@ from .errors import (
 from .events import (
     DEFAULT_CLEARED,
     DEFAULT_SET,
+    DUPLICATED,
     EVENT_LABEL_TEMPLATE_LIBRARY_CHANGED,
     PUBLISHED,
+    RENAMED,
+    RESTORED,
+    SAVED_AS,
     LibraryChangedEventPayload,
     async_fire_library_changed,
 )
@@ -95,6 +116,7 @@ from .library import (
 from .publication import PublicationCheck, check_document
 from .records import (
     COMMIT_LEDGER_LIMIT,
+    DUPLICATE,
     FACTORY,
     FROM_BLANK,
     FROM_FACTORY,
@@ -103,6 +125,10 @@ from .records import (
     PUBLISH,
     REJECTED_SAVE,
     RELOADED,
+    RENAME,
+    REPLACED_FROM_FACTORY,
+    RESTORE,
+    SAVE_AS,
     STORE_SCHEMA,
     STORE_VERSION,
     CommitRecord,
@@ -128,6 +154,9 @@ __all__ = [
     "DEFAULT_SET",
     "DISCARD_DRAFT",
     "DISCARD_RECOVERY",
+    "DUPLICATE",
+    "DUPLICATED",
+    "DUPLICATE_TEMPLATE",
     "EVENT_LABEL_TEMPLATE_LIBRARY_CHANGED",
     "EXPLICIT",
     "FACTORY",
@@ -145,6 +174,17 @@ __all__ = [
     "REJECTED_SAVE",
     "RELOADED",
     "RELOAD_DRAFT",
+    "RENAME",
+    "RENAMED",
+    "RENAME_TEMPLATE",
+    "REPLACED_FROM_FACTORY",
+    "REPLACE_FROM_FACTORY",
+    "RESTORE",
+    "RESTORED",
+    "RESTORE_REVISION",
+    "SAVED_AS",
+    "SAVE_AS",
+    "SAVE_AS_TEMPLATE",
     "SET_DEFAULT",
     "STORAGE_KEY_PREFIX",
     "STORE_SCHEMA",
@@ -169,6 +209,7 @@ __all__ = [
     "LibraryState",
     "NamedTemplate",
     "NoEffectiveDefault",
+    "NoFactoryTemplate",
     "NoRecoveryPayload",
     "Provenance",
     "Publication",

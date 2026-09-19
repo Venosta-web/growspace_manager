@@ -24,6 +24,8 @@ from custom_components.growspace_manager.labels.library import (
     OVERRIDE,
     PUBLISH,
     REJECTED_SAVE,
+    RENAME,
+    RESTORE,
     DraftVersionConflict,
     LabelTemplateLibrary,
     TemplateRef,
@@ -228,3 +230,46 @@ async def test_a_refused_save_answers_with_the_payload_it_kept(
     assert kept["document"] == {"refused": True}
     assert kept["expected_version"] == 99
     assert kept["draft_version"] == 1
+
+
+async def test_a_managed_revision_says_which_act_appended_it(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """History is a record of deliberate acts, so each names the one it was.
+
+    A client reading a template's revisions has to be able to tell a restore
+    from the edit it reached back past, and a rename from a layout change --
+    which is what turns a list of numbers into something worth showing.
+    """
+    published = await _named_template(library, admin)
+    renamed = (
+        await library.async_rename_template(admin, published.template.id, "Mother tags")
+    ).as_dict()
+    restored = (
+        await library.async_restore_revision(admin, published.template.id, 1)
+    ).as_dict()
+
+    assert renamed["revision"]["operation"] == RENAME
+    assert renamed["unchanged"] is False
+    assert restored["revision"]["operation"] == RESTORE
+    assert restored["revision"]["provenance"]["source_revision"] == 1
+    assert [item["operation"] for item in restored["template"]["revisions"]] == [
+        PUBLISH,
+        RENAME,
+        RESTORE,
+    ]
+    assert all("document" not in item for item in restored["template"]["revisions"])
+
+
+async def test_a_call_that_asked_for_the_status_quo_says_so(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """`unchanged` is how a client distinguishes "nothing to do" from a write."""
+    published = await _named_template(library, admin)
+
+    wire = (
+        await library.async_rename_template(admin, published.template.id, "Clone tags")
+    ).as_dict()
+
+    assert wire["unchanged"] is True
+    assert wire["generation"] == published.generation
