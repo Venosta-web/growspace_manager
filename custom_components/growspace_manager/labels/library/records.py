@@ -13,6 +13,14 @@ Keeping them separate is what lets a name change without the identity moving,
 history stay truthful while the head advances, and unfinished work survive a
 restart without ever being mistaken for something that was published.
 
+Two more records exist only because more than one client edits this library at
+once. A **Recovery Payload** sits beside a draft and holds work the server
+declined to make current -- a rejected autosave, or the payload a reload
+replaced -- because no arrangement of versions justifies losing what somebody
+typed. A **Commit Record** remembers one idempotency key and where what it
+committed can be re-read, so a retry of a call whose answer was lost finds the
+first attempt instead of performing a second one.
+
 A draft's `document` is deliberately **opaque**. It is whatever the editor last
 had, valid or not, and this module does not validate it: an autosave that
 refused invalid work would make every diagnostic a threat to the draft. The
@@ -57,6 +65,20 @@ FROM_NAMED = "named"
 #: duplicate and historical restore append their own kinds, and each records
 #: the one it was -- which is why this is a value rather than an assumption.
 PUBLISH = "publish"
+
+#: Why a payload is sitting in a draft's recovery slot rather than being the
+#: draft itself. Both are work the server declined to make current, and an
+#: editor says different things about them, so the reason is recorded rather
+#: than inferred from which call happened to put it there.
+REJECTED_SAVE = "rejected_save"
+RELOADED = "reloaded"
+
+#: How many idempotency keys one library remembers. A key exists to make a
+#: retry of a call whose answer was lost safe, which is a window of seconds --
+#: so this is generous rather than a history. It is capped at all because the
+#: ledger is persisted, and an unbounded one would grow with every autosave for
+#: the life of the installation.
+COMMIT_LEDGER_LIMIT = 64
 
 
 def normalized_name(name: str) -> str:
@@ -281,6 +303,55 @@ class NamedTemplate:
 
 
 @dataclass(frozen=True, slots=True)
+class RecoveryPayload:
+    """Editing work the server declined to make the draft, kept beside it.
+
+    Two things put a payload here, and both are the same promise: nothing a
+    client sent is thrown away because the server preferred something else. A
+    rejected autosave -- a second client writing over a version it has not
+    seen -- keeps the payload it was refused, and a reload keeps the payload it
+    replaced, which is what "manually reapply my changes" reads from.
+
+    One slot, most recent wins. It is never merged into the document and never
+    published from: an editor shows it, copies what it wants out of it, and
+    discards it.
+    """
+
+    reason: str
+    document: Any
+    #: The draft version the client believed it was writing over, and the
+    #: version the draft really held. Together they are the whole of why this
+    #: payload is here rather than being the draft.
+    expected_version: int | None
+    draft_version: int
+    at: str
+    name: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the recovery payload's persisted and wire form."""
+        return {
+            "reason": self.reason,
+            "document": self.document,
+            "expected_version": self.expected_version,
+            "draft_version": self.draft_version,
+            "at": self.at,
+            "name": self.name,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> RecoveryPayload:
+        """Read one persisted recovery payload."""
+        return cls(
+            reason=str(value["reason"]),
+            document=value.get("document"),
+            expected_version=_optional_int(value.get("expected_version")),
+            draft_version=int(value["draft_version"]),
+            at=str(value["at"]),
+            name=_optional_str(value.get("name")),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class TemplateDraft:
     """One administrator's unpublished editing state.
 
@@ -308,6 +379,8 @@ class TemplateDraft:
     #: The `growspace.label-layout` version the payload was written at, kept
     #: beside the payload so a migration can tell what it is looking at.
     layout_schema_version: int = 1
+    #: Work this draft declined to take, kept for its owner to recover from.
+    recovery: RecoveryPayload | None = None
 
     @property
     def key(self) -> str:
@@ -341,6 +414,7 @@ class TemplateDraft:
             "created_at": self.created_at,
             "modified_at": self.modified_at,
             "provenance": self.provenance.as_dict(),
+            "recovery": self.recovery.as_dict() if self.recovery else None,
         }
 
     @classmethod
@@ -359,6 +433,11 @@ class TemplateDraft:
             created_at=str(value["created_at"]),
             modified_at=str(value["modified_at"]),
             provenance=Provenance.from_dict(value["provenance"]),
+            recovery=(
+                RecoveryPayload.from_dict(stored)
+                if (stored := value.get("recovery"))
+                else None
+            ),
         )
 
 
@@ -367,6 +446,57 @@ def draft_key(owner: str, *, template_id: str | None, label_size_id: str) -> str
     if template_id is not None:
         return f"{owner}:template:{template_id}"
     return f"{owner}:size:{label_size_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class CommitRecord:
+    """One committed mutation, remembered by the idempotency key that made it.
+
+    What it holds is a *locator*, never a result: which draft slot, which
+    template and revision, which Label Size. A replay is answered by re-reading
+    the library at that locator, so the ledger cannot drift from the state it
+    describes and does not carry a second copy of anybody's document.
+
+    The owner is part of the record because a key is a client's private token.
+    Another administrator presenting the same string gets the same answer as
+    presenting one nobody has used, which is that it has not been used.
+    """
+
+    key: str
+    owner: str
+    operation: str
+    #: A digest of the call's own arguments. Replaying a key with identical
+    #: input returns the original result; reusing it with different input is a
+    #: client bug and is refused rather than silently doing the second thing.
+    request: str
+    generation: int
+    at: str
+    locator: Mapping[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the record's persisted form."""
+        return {
+            "key": self.key,
+            "owner": self.owner,
+            "operation": self.operation,
+            "request": self.request,
+            "generation": self.generation,
+            "at": self.at,
+            "locator": dict(self.locator),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> CommitRecord:
+        """Read one persisted record."""
+        return cls(
+            key=str(value["key"]),
+            owner=str(value["owner"]),
+            operation=str(value["operation"]),
+            request=str(value["request"]),
+            generation=int(value["generation"]),
+            at=str(value["at"]),
+            locator=dict(value.get("locator") or {}),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -383,6 +513,10 @@ class LibraryState:
     templates: Mapping[str, NamedTemplate] = field(default_factory=dict)
     drafts: Mapping[str, TemplateDraft] = field(default_factory=dict)
     defaults: Mapping[str, TemplateRef] = field(default_factory=dict)
+    #: The idempotency keys this library has already committed, oldest first.
+    #: Persisted, because the retry a key protects is at its most useful across
+    #: exactly the failure that loses an answer -- and a restart is one.
+    commits: tuple[CommitRecord, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         """Return the persisted document this state is saved as."""
@@ -395,6 +529,7 @@ class LibraryState:
             },
             "drafts": {key: draft.as_dict() for key, draft in self.drafts.items()},
             "defaults": {size: ref.as_dict() for size, ref in self.defaults.items()},
+            "commits": [record.as_dict() for record in self.commits],
         }
 
     @classmethod
@@ -419,7 +554,29 @@ class LibraryState:
                 size: TemplateRef.from_dict(item)
                 for size, item in (value.get("defaults") or {}).items()
             },
+            commits=tuple(
+                CommitRecord.from_dict(item) for item in (value.get("commits") or ())
+            ),
         )
+
+    def commit_record(self, key: str) -> CommitRecord | None:
+        """Return what this idempotency key already committed, if anything."""
+        for record in reversed(self.commits):
+            if record.key == key:
+                return record
+        return None
+
+    def with_commit(self, record: CommitRecord | None) -> tuple[CommitRecord, ...]:
+        """Return the ledger with one more record on it, oldest evicted.
+
+        A `None` record is a mutation made without a key, which is allowed:
+        idempotency is a client's protection against its own retry, and a
+        caller that does not retry does not have to carry one.
+        """
+        if record is None:
+            return self.commits
+        kept = tuple(item for item in self.commits if item.key != record.key)
+        return (*kept, record)[-COMMIT_LEDGER_LIMIT:]
 
     def name_holder(
         self, name: str, label_size_id: str, *, excluding: str | None = None

@@ -136,6 +136,78 @@ class DraftNotPublishable(LabelTemplateError):
         super().__init__(f"This Template Draft cannot be published: {codes}.")
 
 
+class DraftVersionConflict(LabelTemplateError):
+    """An autosave was written over a draft version the client had not seen.
+
+    The stored draft is not replaced and the rejected payload is not thrown
+    away: it is kept in the draft's recovery slot, and this error carries the
+    draft it was kept on, so one answer tells the client both what the server
+    holds and that its own work survived.
+    """
+
+    def __init__(self, *, expected: int, found: int, draft: object) -> None:
+        """Name both versions, and hand back the draft the payload is on."""
+        self.expected = expected
+        self.found = found
+        #: The stored draft, with the rejected payload in its recovery slot.
+        self.draft = draft
+        super().__init__(
+            f"This Template Draft is at version {found}; the save expected "
+            f"{expected}. Nothing was overwritten and the rejected payload is "
+            "kept for recovery."
+        )
+
+
+class DraftIsStale(LabelTemplateError):
+    """The draft was based on a revision that is no longer the head.
+
+    Somebody published while this draft was open. Publishing it anyway would
+    silently drop their revision, and the two layouts cannot be merged:
+    independent moves, resizes and typography changes are structurally
+    mergeable while producing physically unsafe output. So the draft is kept,
+    stays previewable, and its owner chooses -- discard and reload, reapply by
+    hand, or publish it as a template of its own.
+    """
+
+    def __init__(self, *, template_id: str, base_revision: int, head: int) -> None:
+        """Name the revision this draft was started from, and the current one."""
+        self.template_id = template_id
+        self.base_revision = base_revision
+        self.head = head
+        super().__init__(
+            f"This Template Draft is based on revision {base_revision} of Label "
+            f"Template {template_id!r}, which is now at revision {head}. It "
+            "cannot be published over the newer revision."
+        )
+
+
+class IdempotencyKeyReused(LabelTemplateError):
+    """One idempotency key was presented for two different calls.
+
+    A key identifies one intended mutation, so replaying it with the same input
+    is a retry and returns the first result. Presenting it with different input
+    is a client bug, and performing the second call under the first one's key
+    would leave the ledger describing something that never happened.
+    """
+
+    def __init__(self, *, key: str, operation: str) -> None:
+        """Name the key and what it was already spent on."""
+        self.key = key
+        self.operation = operation
+        super().__init__(
+            f"Idempotency key {key!r} has already been used for a different "
+            f"{operation} request."
+        )
+
+
+class NoRecoveryPayload(LabelTemplateError):
+    """There is no declined work kept beside this draft to act on."""
+
+    def __init__(self, detail: str) -> None:
+        """Say which draft has nothing kept beside it."""
+        super().__init__(f"No recovery payload is kept for {detail}.")
+
+
 class NoEffectiveDefault(LabelTemplateError):
     """This Label Size has no selectable template at all.
 
