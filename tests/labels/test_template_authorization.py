@@ -11,6 +11,10 @@ Drafts are the other half of this. A draft is unpublished work owned by one
 administrator: another administrator cannot read it, save over it, discard it,
 publish it, save it as a template of its own or preview it, and it does not
 appear in their snapshot.
+
+The recovery operations are in the same matrix (hub issue #220), export
+included: a bundle carries the complete saved design of every template in it,
+which is more than a user who prints labels has ever been shown.
 """
 
 from __future__ import annotations
@@ -91,6 +95,17 @@ MUTATIONS: dict[
     "preview_draft": lambda lib, actor: lib.async_preview_draft(
         actor, label_size_id=SIZE
     ),
+    "delete_template": lambda lib, actor: lib.async_delete_template(
+        actor, "any-template"
+    ),
+    "restore_template": lambda lib, actor: lib.async_restore_template(
+        actor, "any-template"
+    ),
+    "collect_tombstones": lambda lib, actor: lib.async_collect_tombstones(actor),
+    "export_templates": lambda lib, actor: lib.async_export_templates(actor),
+    "import_templates": lambda lib, actor: lib.async_import_templates(actor, {}),
+    "backup": lambda lib, actor: lib.async_backup(actor),
+    "restore_backup": lambda lib, actor: lib.async_restore_backup(actor, {}),
 }
 
 READS: dict[str, Callable[[LabelTemplateLibrary, Actor], Coroutine[Any, Any, Any]]] = {

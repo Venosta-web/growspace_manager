@@ -32,6 +32,7 @@ from custom_components.growspace_manager.labels.library import (
     TemplateNotFound,
     TemplateRef,
     TemplateRevision,
+    Tombstone,
     async_get_library,
     async_release_library,
     blank_document,
@@ -40,6 +41,7 @@ from custom_components.growspace_manager.labels.library import (
     storage_key,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 
 SIZE = "growspace.stock.50x30.v1"
 
@@ -167,6 +169,7 @@ async def test_the_persisted_document_names_itself(
         "templates",
         "drafts",
         "defaults",
+        "tombstones",
         "commits",
     }
 
@@ -356,3 +359,52 @@ def test_a_stored_number_that_is_not_one_is_refused() -> None:
     assert (
         Provenance.from_dict({"source": "blank", "draft_version": 3}).draft_version == 3
     )
+
+
+def test_a_tombstone_round_trips_and_refuses_an_instant_it_cannot_read() -> None:
+    """The window is a stored string, and a string that is not an instant is not one.
+
+    `expires_at` is persisted rather than computed from `deleted_at`, so it is
+    read back out of somebody's store rather than produced here -- which makes
+    "that is not a date" a state this record can genuinely be handed.
+    """
+    template = NamedTemplate(
+        id="t1",
+        label_size_id=SIZE,
+        created_at="2026-09-19T00:00:00+00:00",
+        created_by="admin-user",
+        revisions=(
+            TemplateRevision(
+                revision=1,
+                name="Clone tags",
+                document=blank_document(SIZE),
+                digest="sha256:one",
+                published_at="2026-09-19T00:00:00+00:00",
+                published_by="admin-user",
+                operation="publish",
+                parent_revision=None,
+                provenance=Provenance(source="blank"),
+            ),
+        ),
+    )
+    stone = Tombstone(
+        template=template,
+        deleted_at="2026-09-19T00:00:00+00:00",
+        deleted_by="admin-user",
+        expires_at="2026-10-19T00:00:00+00:00",
+    )
+
+    assert Tombstone.from_dict(stone.as_dict()) == stone
+    assert stone.id == "t1"
+    assert stone.name == "Clone tags"
+    assert stone.label_size_id == SIZE
+    assert (
+        stone.has_expired(dt_util.parse_datetime("2026-10-20T00:00:00+00:00")) is True
+    )
+    assert (
+        stone.has_expired(dt_util.parse_datetime("2026-10-18T00:00:00+00:00")) is False
+    )
+    assert "document" not in stone.summary()["template"]
+
+    with pytest.raises(ValueError, match="not a stored instant"):
+        replace(stone, expires_at="whenever").has_expired(dt_util.utcnow())

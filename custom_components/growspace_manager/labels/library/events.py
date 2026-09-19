@@ -44,6 +44,12 @@ EVENT_LABEL_TEMPLATE_LIBRARY_CHANGED = f"{DOMAIN}_label_template_library_changed
 #: Replacing a draft from the factory is deliberately not here. It changes one
 #: administrator's private draft and no saved state, so it advances no
 #: generation and announces nothing -- the same rule autosave follows.
+#:
+#: The recovery operations each have one too. A deletion, a restoration and an
+#: import all change what another client may select, and `RESTORED_BACKUP` is
+#: the one that can move the generation *backwards* -- which is exactly why it
+#: announces itself, rather than leaving clients to find a lower number and
+#: conclude they are the ones who are ahead.
 PUBLISHED = "published"
 RENAMED = "renamed"
 DUPLICATED = "duplicated"
@@ -51,6 +57,11 @@ SAVED_AS = "saved_as"
 RESTORED = "restored"
 DEFAULT_SET = "default_set"
 DEFAULT_CLEARED = "default_cleared"
+DELETED = "deleted"
+UNDELETED = "undeleted"
+COLLECTED = "collected"
+IMPORTED = "imported"
+RESTORED_BACKUP = "restored_backup"
 
 
 class LibraryChangedEventPayload(TypedDict):

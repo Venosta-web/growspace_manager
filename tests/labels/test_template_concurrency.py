@@ -53,7 +53,7 @@ from custom_components.growspace_manager.labels.library import (
     TemplateRef,
     blank_document,
 )
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import Unauthorized
 
 SIZE = "growspace.stock.50x30.v1"
@@ -84,7 +84,15 @@ def changes(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Collect every library change event this instance fires."""
     seen: list[dict[str, Any]] = []
 
+    @callback
     def record(event: Event) -> None:
+        """Record one event, synchronously.
+
+        A listener that is not a `callback` is dispatched as a job, so the
+        assertion that follows a mutation races it. Every one of these
+        suites reads the list immediately after the call that fires into it,
+        which makes running in the loop part of what is being asserted.
+        """
         seen.append(dict(event.data))
 
     hass.bus.async_listen(EVENT_LABEL_TEMPLATE_LIBRARY_CHANGED, record)
