@@ -56,12 +56,28 @@ structurally mergeable and physically unsafe to merge: independent moves,
 resizes and typography changes compose into overlap, clipping and unreadable
 text that neither editor asked for. A stale draft is therefore kept whole and
 previewable, and its owner chooses.
+
+**Nothing is destroyed to make something work.** The recovery operations are
+the same three rules again, at the scale of a whole library. Deleting a
+template sets it aside for thirty days with its identity and history intact and
+turns its drafts into orphans rather than removing them. A template whose head
+has stopped validating is quarantined -- kept, listed, exportable, openable as
+a draft, and refused only where using it would mean printing it. Importing a
+bundle stages all of it and commits all of it or none. Restoring a backup
+replaces, because two libraries cannot be reconciled without silently choosing
+for somebody. And a store written by a newer integration is not read at all:
+the library reports itself contained, Home Assistant raises a repair issue
+naming both versions, and every other feature carries on.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from datetime import timedelta
+import logging
+from types import MappingProxyType
 from typing import Any
 import uuid
 
@@ -87,19 +103,25 @@ from ..canonical import (
     profiles_for_size,
 )
 from .actor import Actor
+from .backup import build_backup, read_backup
 from .blank import blank_document
 from .commits import (
     AUTOSAVE_DRAFT,
     CLEAR_DEFAULT,
+    COLLECT_TOMBSTONES,
     CREATE_DRAFT,
+    DELETE_TEMPLATE,
     DISCARD_DRAFT,
     DISCARD_RECOVERY,
     DUPLICATE_TEMPLATE,
+    IMPORT_TEMPLATES,
     PUBLISH_DRAFT,
     RELOAD_DRAFT,
     RENAME_TEMPLATE,
     REPLACE_FROM_FACTORY,
+    RESTORE_BACKUP,
     RESTORE_REVISION,
+    RESTORE_TEMPLATE,
     SAVE_AS_TEMPLATE,
     SET_DEFAULT,
     committed,
@@ -107,40 +129,63 @@ from .commits import (
     request_digest,
 )
 from .errors import (
+    BundleNotReadable,
+    DraftIsOrphaned,
     DraftIsStale,
     DraftNotFound,
     DraftNotPublishable,
     DraftVersionConflict,
     DuplicateTemplateName,
+    ImportCollision,
+    IncompatibleTemplateStore,
     LabelSizeImmutable,
     LabelTemplateError,
     NoEffectiveDefault,
     NoFactoryTemplate,
     NoRecoveryPayload,
     RevisionNotFound,
+    TemplateDeleted,
     TemplateNameRequired,
     TemplateNotFound,
     TemplateNotResolvable,
     TemplateProtected,
+    TombstoneExpired,
+    TombstoneNotFound,
+    UnsupportedDependency,
     UnsupportedLabelSize,
 )
 from .events import (
+    COLLECTED,
     DEFAULT_CLEARED,
     DEFAULT_SET,
+    DELETED,
     DUPLICATED,
+    IMPORTED,
     PUBLISHED,
     RENAMED,
     RESTORED,
+    RESTORED_BACKUP,
     SAVED_AS,
+    UNDELETED,
     async_fire_library_changed,
 )
+from .portable import (
+    BundleEntry,
+    TemplateBundle,
+    build_bundle,
+    read_bundle,
+    unknown_dependencies,
+)
 from .publication import PublicationCheck, check_document
+from .quarantine import quarantine_of
 from .records import (
     DUPLICATE,
     FACTORY,
     FROM_BLANK,
     FROM_FACTORY,
+    FROM_IMPORT,
     FROM_NAMED,
+    IMPORT,
     NAMED,
     PUBLISH,
     REJECTED_SAVE,
@@ -149,6 +194,8 @@ from .records import (
     REPLACED_FROM_FACTORY,
     RESTORE,
     SAVE_AS,
+    STORE_VERSION,
+    TOMBSTONE_DAYS,
     CommitRecord,
     LibraryState,
     NamedTemplate,
@@ -157,10 +204,14 @@ from .records import (
     TemplateDraft,
     TemplateRef,
     TemplateRevision,
+    Tombstone,
     display_name,
     draft_key,
 )
+from .repair import async_clear_store_issue, async_raise_store_issue
 from .store import LabelTemplateStore
+
+_LOGGER = logging.getLogger(__name__)
 
 #: Where the per-entry libraries are kept once opened.
 _LIBRARIES = "label_template_libraries"
@@ -173,6 +224,9 @@ FACTORY_FALLBACK = "factory_fallback"
 #: Distinguishes "leave the name alone" from "set the name to nothing" on an
 #: autosave, which `None` cannot do.
 _UNSET = object()
+
+#: An import that minted no copies, as a default nobody can mutate.
+_EMPTY_COPIES: Mapping[str, str] = MappingProxyType({})
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +395,162 @@ class DefaultChanged:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class TemplateDeletion:
+    """One soft-deleted template, and everything the deletion moved with it.
+
+    Three things travel back, because a deletion is three consequences at
+    once and an interface that reported only the first would be hiding two.
+    The tombstone says what was set aside and until when. `effective` says
+    what the stock prints now, which is how "deleting the default falls back
+    atomically" is observed rather than assumed. And the orphans name the
+    drafts that were aimed at this template and are now recovery work.
+    """
+
+    tombstone: Tombstone
+    generation: int
+    #: What the deleted template's Label Size resolves to now. `None` means
+    #: nothing does, which is the packaging failure a stock with no valid
+    #: Factory Template has, not something this deletion caused.
+    effective: ResolvedTemplate | None
+    #: The drafts this deletion orphaned, by ID. Somebody else's included:
+    #: an administrator deleting a template is entitled to know that other
+    #: people had unpublished work aimed at it.
+    orphaned: tuple[str, ...] = ()
+    #: True when this deletion also cleared the Label Size's override, in the
+    #: same commit.
+    cleared_default: bool = False
+    replayed: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the deletion's wire form."""
+        return {
+            "tombstone": self.tombstone.summary(),
+            "generation": self.generation,
+            "effective": _effective_summary(self.effective),
+            "orphaned_drafts": list(self.orphaned),
+            "cleared_default": self.cleared_default,
+            "replayed": self.replayed,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateRestored:
+    """One template brought back from its tombstone, whole.
+
+    The same UUID and the same revisions: a restoration is the deletion
+    undone, not a new template that resembles the old one. `renamed` says
+    whether the old name had been taken in the meantime and a rename revision
+    was appended to settle it, and `reconnected` names the orphaned drafts
+    that are drafts of a live template again.
+    """
+
+    template: NamedTemplate
+    generation: int
+    renamed: bool = False
+    reconnected: tuple[str, ...] = ()
+    replayed: bool = False
+
+    @property
+    def revision(self) -> TemplateRevision:
+        """The head this template came back at."""
+        return self.template.head
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the restoration's wire form."""
+        return {
+            "template": self.template.summary(),
+            "revision": self.revision.summary(),
+            "generation": self.generation,
+            "renamed": self.renamed,
+            "reconnected_drafts": list(self.reconnected),
+            "replayed": self.replayed,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TombstonesCollected:
+    """What one garbage collection removed for good.
+
+    The only operation in this package that destroys anything, which is why it
+    is explicit, administrator-only, and says exactly what it took. A run that
+    found nothing expired writes nothing and moves no generation.
+    """
+
+    collected: tuple[str, ...] = ()
+    drafts: tuple[str, ...] = ()
+    generation: int = 0
+    unchanged: bool = False
+    replayed: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the collection's wire form."""
+        return {
+            "collected": list(self.collected),
+            "drafts": list(self.drafts),
+            "generation": self.generation,
+            "unchanged": self.unchanged,
+            "replayed": self.replayed,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TemplatesImported:
+    """What one portable import committed, entry by entry.
+
+    Three outcomes and no fourth, because every entry of a bundle is one of
+    them: it arrived under the identity it came with, it was already here
+    identically and nothing happened, or the administrator asked for it under
+    a fresh identity. Anything else refused the whole import before this
+    existed.
+    """
+
+    imported: tuple[NamedTemplate, ...] = ()
+    unchanged: tuple[str, ...] = ()
+    copies: Mapping[str, str] = _EMPTY_COPIES
+    generation: int = 0
+    replayed: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the import's wire form."""
+        return {
+            "imported": [template.summary() for template in self.imported],
+            "unchanged": list(self.unchanged),
+            "copies": dict(self.copies),
+            "generation": self.generation,
+            "replayed": self.replayed,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class LibraryRestored:
+    """One library replaced wholesale by a backup.
+
+    `previous_generation` is here rather than derivable because a restore is
+    the one operation whose generation can go *down*: the backup's number is
+    restored exactly, and a client holding a higher one must be told that the
+    library moved rather than left to conclude it is ahead.
+    """
+
+    generation: int
+    previous_generation: int
+    templates: int = 0
+    drafts: int = 0
+    tombstones: int = 0
+    replayed: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the restore's wire form."""
+        return {
+            "generation": self.generation,
+            "previous_generation": self.previous_generation,
+            "templates": self.templates,
+            "drafts": self.drafts,
+            "tombstones": self.tombstones,
+            "replayed": self.replayed,
+        }
+
+
 class LabelTemplateLibrary:
     """One config entry's authoritative Label Template library."""
 
@@ -353,14 +563,45 @@ class LabelTemplateLibrary:
         self._store = store if store is not None else LabelTemplateStore(hass, entry_id)
         self._state: LibraryState | None = None
         self._lock = asyncio.Lock()
+        #: Set once a load finds a store this integration cannot read. From
+        #: then on every operation raises it: containment is a property of the
+        #: library rather than something each caller has to remember to check.
+        self._incompatible: IncompatibleTemplateStore | None = None
 
     # -- loading -----------------------------------------------------------
 
     async def async_load(self) -> LibraryState:
-        """Read the committed library, once."""
+        """Read the committed library, once, or refuse a store from the future.
+
+        A store written at a newer version is not read at all, and this is the
+        one place that is decided: every operation in this class goes through
+        here, so containment cannot be forgotten at one of them. The refusal
+        is remembered rather than retried, because the store does not become
+        readable while Home Assistant is running and re-reading it once per
+        call would only mean logging the same failure all day.
+
+        Raising the repair issue happens here too, on the transition rather
+        than on every call, and a load that succeeds withdraws it -- so the
+        report heals itself when the newer integration comes back, with no
+        second place remembering whether it was ever raised.
+        """
+        if self._incompatible is not None:
+            raise self._incompatible
         if self._state is None:
-            self._state = await self._store.async_load()
+            try:
+                loaded = await self._store.async_load()
+            except IncompatibleTemplateStore as err:
+                self._incompatible = err
+                async_raise_store_issue(self.hass, self.entry_id, err)
+                raise
+            self._state = loaded
+            async_clear_store_issue(self.hass, self.entry_id)
         return self._state
+
+    @property
+    def read_only(self) -> bool:
+        """Whether this library is contained behind a store it cannot read."""
+        return self._incompatible is not None
 
     @property
     def state(self) -> LibraryState:
@@ -404,8 +645,16 @@ class LabelTemplateLibrary:
         event, so it is complete rather than incremental -- and it *reads*:
         taking a snapshot never rebases, merges or clears anybody's draft, so
         recovering from a gap cannot cost an editor its unsaved work.
+
+        A contained library answers too, with the containment instead of the
+        contents. That is the one place in this class where being unable to
+        read the store is not an exception: a client that got an error here
+        would have nothing to show but an error, when what an administrator
+        needs is the two version numbers and the news that nothing was lost.
         """
         user_id = actor.authenticated()
+        if self._incompatible is not None:
+            return self._contained_snapshot(self._incompatible)
         state = await self.async_load()
         drafts = (
             [
@@ -419,11 +668,12 @@ class LabelTemplateLibrary:
         return {
             "entry_id": self.entry_id,
             "generation": state.generation,
+            "store": {"readable": True, "version": STORE_VERSION},
             "factory_templates": [
                 _factory_summary(template) for template in FACTORY_TEMPLATES.values()
             ],
             "templates": [
-                template.summary()
+                _template_summary(template)
                 for template in sorted(
                     state.templates.values(), key=lambda item: item.name.casefold()
                 )
@@ -436,6 +686,45 @@ class LabelTemplateLibrary:
                 for size in LABEL_SIZES
             },
             "drafts": drafts,
+            "tombstones": (
+                [
+                    stone.summary()
+                    for stone in sorted(
+                        state.tombstones.values(), key=lambda item: item.deleted_at
+                    )
+                ]
+                if actor.is_admin
+                else []
+            ),
+        }
+
+    def _contained_snapshot(
+        self, contained: IncompatibleTemplateStore
+    ) -> dict[str, Any]:
+        """Return what a library behind an unreadable store can honestly say.
+
+        The lists are empty because nothing was read, not because nothing is
+        there, and `store.readable` is what says which -- so a client renders
+        the repair rather than an empty library somebody might start
+        recreating templates into. The Factory Templates are still listed:
+        they are the installed integration's own and were never in the store.
+        """
+        return {
+            "entry_id": self.entry_id,
+            "generation": None,
+            "store": {
+                "readable": False,
+                "version": contained.supported,
+                "found_version": contained.found,
+            },
+            "factory_templates": [
+                _factory_summary(template) for template in FACTORY_TEMPLATES.values()
+            ],
+            "templates": [],
+            "defaults": {},
+            "effective_defaults": {},
+            "drafts": [],
+            "tombstones": [],
         }
 
     async def async_resolve_default(
@@ -671,6 +960,7 @@ class LabelTemplateLibrary:
             draft = self._locate_draft(
                 state, owner, template_id=template_id, label_size_id=label_size_id
             )
+            _require_live(state, draft)
             now = dt_util.utcnow().isoformat()
             resolved_name = (
                 None if not named or name is None else display_name(str(name))
@@ -985,6 +1275,7 @@ class LabelTemplateLibrary:
                 )
             if draft_id is not None and draft_id != draft.id:
                 raise DraftNotFound(f"draft {draft_id!r}")
+            _require_live(state, draft)
             if _is_stale(state, draft):
                 raise DraftIsStale(
                     template_id=str(draft.template_id),
@@ -1667,6 +1958,543 @@ class LabelTemplateLibrary:
                 generation=landed.generation,
             )
 
+    # -- deleting, and undeleting ------------------------------------------
+
+    async def async_delete_template(
+        self,
+        actor: Actor,
+        template_id: str,
+        *,
+        idempotency_key: str | None = None,
+    ) -> TemplateDeletion:
+        """Set one Named Template aside for thirty days, whole.
+
+        Not a removal. The template -- identity, name, every revision and all
+        of their provenance -- moves into a tombstone that holds it until it
+        expires, which is what lets a restoration return the same UUID and the
+        same history rather than something that resembles them. A print whose
+        audit record names this template still names something that exists.
+
+        Three things happen in the one commit, because any two of them apart
+        would be a state somebody could observe. The template leaves ordinary
+        selection. If it was a Label Size's override, that override is
+        cleared, so the stock falls back to its Factory Template instead of
+        resolving through an identity that is no longer selectable. And the
+        drafts aimed at it become Orphaned Drafts: kept, readable, previewable
+        and available to Save As, because deleting a template is not a
+        decision about somebody else's unpublished work.
+
+        Factory Templates cannot be deleted, which `_require_template` already
+        says: they are the integration's, and they are what everything else
+        falls back to.
+        """
+        owner = actor.administrator()
+        digest = request_digest(DELETE_TEMPLATE, owner, template_id=template_id)
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=DELETE_TEMPLATE,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return self._replayed_deletion(state, record)
+            template = _require_template(state, template_id)
+            now = dt_util.utcnow()
+            held = tuple(
+                size
+                for size, ref in state.defaults.items()
+                if ref.kind == NAMED and ref.id == template_id
+            )
+            stone = Tombstone(
+                template=template,
+                deleted_at=now.isoformat(),
+                deleted_by=owner,
+                expires_at=(now + timedelta(days=TOMBSTONE_DAYS)).isoformat(),
+                was_default=bool(held),
+            )
+            orphaned = tuple(
+                draft.id
+                for draft in state.drafts.values()
+                if draft.template_id == template_id
+            )
+            landed = await self._async_commit(
+                replace(
+                    state,
+                    templates={
+                        key: value
+                        for key, value in state.templates.items()
+                        if key != template_id
+                    },
+                    tombstones={**state.tombstones, template_id: stone},
+                    defaults={
+                        size: ref
+                        for size, ref in state.defaults.items()
+                        if size not in held
+                    },
+                    generation=state.generation + 1,
+                ),
+                record_of(
+                    key=idempotency_key,
+                    operation=DELETE_TEMPLATE,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation + 1,
+                    locator={
+                        "template_id": template_id,
+                        "label_size_id": template.label_size_id,
+                    },
+                ),
+            )
+            self._announce(
+                landed,
+                previous=state.generation,
+                operation=DELETED,
+                template_id=template_id,
+                label_size_id=template.label_size_id,
+            )
+            return TemplateDeletion(
+                tombstone=stone,
+                generation=landed.generation,
+                effective=self._effective_default(landed, template.label_size_id),
+                orphaned=orphaned,
+                cleared_default=bool(held),
+            )
+
+    async def async_restore_template(
+        self,
+        actor: Actor,
+        template_id: str,
+        *,
+        name: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> TemplateRestored:
+        """Bring one deleted template back, with the identity it always had.
+
+        The same UUID and the same revisions, because that is what was set
+        aside; every default override, print reference and draft that named
+        this identity means this template again without being rewritten.
+
+        Two things it deliberately does not do. It **does not reclaim the
+        default**: whatever was selected while this template was gone has been
+        printing ever since, and taking that back silently would change what
+        comes out of the printer for a reason nobody asked for. And it does
+        not take a name that somebody else has used in the meantime -- the
+        deletion freed the name, so a conflict is refused and an administrator
+        supplies a new one, which is appended as a rename revision because a
+        name lives on a revision and revisions are not rewritten.
+
+        Orphaned drafts reconnect by doing nothing at all: a draft names the
+        template it is for, so restoring the template makes it a draft again.
+        One based on the revision that was the head before a rename is stale
+        afterwards, which is the ordinary rule rather than a special case.
+
+        An expired tombstone is refused rather than quietly honoured. Thirty
+        days that sometimes meant ninety would be a promise nobody could plan
+        around.
+        """
+        owner = actor.administrator()
+        digest = request_digest(
+            RESTORE_TEMPLATE, owner, template_id=template_id, name=name
+        )
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=RESTORE_TEMPLATE,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return self._replayed_restoration(state, record)
+            stone = state.tombstones.get(template_id)
+            if stone is None:
+                raise TombstoneNotFound(template_id)
+            if stone.has_expired(dt_util.utcnow()):
+                raise TombstoneExpired(
+                    template_id=template_id, expires_at=stone.expires_at
+                )
+            template = stone.template
+            wanted = display_name(name) if name is not None else template.name
+            if not wanted:
+                raise TemplateNameRequired
+            _require_free_name(
+                state, wanted, template.label_size_id, excluding=template.id
+            )
+            renamed = wanted != template.name
+            if renamed:
+                head = template.head
+                template = template.with_revision(
+                    TemplateRevision(
+                        revision=head.revision + 1,
+                        name=wanted,
+                        document=dict(head.document),
+                        digest=head.digest,
+                        published_at=dt_util.utcnow().isoformat(),
+                        published_by=owner,
+                        operation=RENAME,
+                        parent_revision=head.revision,
+                        provenance=Provenance(
+                            source=FROM_NAMED,
+                            source_template_id=template.id,
+                            source_revision=head.revision,
+                        ),
+                    )
+                )
+            reconnected = tuple(
+                draft.id
+                for draft in state.drafts.values()
+                if draft.template_id == template_id
+            )
+            landed = await self._async_commit(
+                replace(
+                    state,
+                    templates={**state.templates, template.id: template},
+                    tombstones={
+                        key: value
+                        for key, value in state.tombstones.items()
+                        if key != template_id
+                    },
+                    generation=state.generation + 1,
+                ),
+                record_of(
+                    key=idempotency_key,
+                    operation=RESTORE_TEMPLATE,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation + 1,
+                    locator={
+                        "template_id": template_id,
+                        "revision": template.head.revision,
+                        "renamed": renamed,
+                    },
+                ),
+            )
+            self._announce(
+                landed,
+                previous=state.generation,
+                operation=UNDELETED,
+                template_id=template.id,
+                revision=template.head.revision,
+                label_size_id=template.label_size_id,
+            )
+            return TemplateRestored(
+                template=template,
+                generation=landed.generation,
+                renamed=renamed,
+                reconnected=reconnected,
+            )
+
+    async def async_collect_tombstones(
+        self, actor: Actor, *, idempotency_key: str | None = None
+    ) -> TombstonesCollected:
+        """Remove the deletions whose recovery window has closed, for good.
+
+        The one operation here that destroys anything, which is why it is
+        explicit rather than something a load quietly does on the way past.
+        Opening a library must not write, and a sweep that ran on every start
+        would make "your templates were collected" a thing that happened
+        while nobody was looking.
+
+        An expired tombstone takes its remaining Orphaned Drafts with it. They
+        were work aimed at a template that has now genuinely gone, they have
+        had the same thirty days, and leaving them behind would be keeping a
+        draft of nothing forever.
+
+        Nothing expired means nothing written and no generation advanced:
+        there is no change for another client to hear about.
+        """
+        owner = actor.administrator()
+        digest = request_digest(COLLECT_TOMBSTONES, owner)
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=COLLECT_TOMBSTONES,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return TombstonesCollected(
+                    collected=tuple(
+                        str(item) for item in record.locator.get("collected", ())
+                    ),
+                    drafts=tuple(
+                        str(item) for item in record.locator.get("drafts", ())
+                    ),
+                    generation=state.generation,
+                    replayed=True,
+                )
+            now = dt_util.utcnow()
+            expired = tuple(
+                key for key, stone in state.tombstones.items() if stone.has_expired(now)
+            )
+            if not expired:
+                return TombstonesCollected(generation=state.generation, unchanged=True)
+            abandoned = tuple(
+                draft.key
+                for draft in state.drafts.values()
+                if draft.template_id in expired
+            )
+            landed = await self._async_commit(
+                replace(
+                    state,
+                    tombstones={
+                        key: value
+                        for key, value in state.tombstones.items()
+                        if key not in expired
+                    },
+                    drafts={
+                        key: value
+                        for key, value in state.drafts.items()
+                        if key not in abandoned
+                    },
+                    generation=state.generation + 1,
+                ),
+                record_of(
+                    key=idempotency_key,
+                    operation=COLLECT_TOMBSTONES,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation + 1,
+                    locator={
+                        "collected": list(expired),
+                        "drafts": [
+                            state.drafts[key].id
+                            for key in abandoned
+                            if key in state.drafts
+                        ],
+                    },
+                ),
+            )
+            collected = TombstonesCollected(
+                collected=expired,
+                drafts=tuple(state.drafts[key].id for key in abandoned),
+                generation=landed.generation,
+            )
+            self._announce(landed, previous=state.generation, operation=COLLECTED)
+            return collected
+
+    # -- moving a library --------------------------------------------------
+
+    async def async_export_templates(
+        self, actor: Actor, refs: Sequence[TemplateRef] | None = None
+    ) -> dict[str, Any]:
+        """Bundle the current revisions of these templates, for somebody else.
+
+        Administrator-only, like every other library operation that is not
+        resolving or rendering a published template: a bundle is the complete
+        saved design of every template in it, which is more than a user who
+        prints labels has ever been shown.
+
+        `refs` names Named Templates, and all of them when it is omitted. A
+        Factory Template is refused rather than bundled -- it is the
+        installed integration's, the other installation already has its own,
+        and shipping a copy is how two installations end up disagreeing about
+        what the factory design is. Duplicating one into a Named Template
+        first is the documented way to share it.
+
+        What comes back is unvalidated on purpose. A Quarantined Template is
+        exactly what an administrator most needs to hand to somebody with a
+        newer integration, and refusing to export what cannot be printed today
+        would make export useless at the one moment it matters.
+        """
+        actor.administrator()
+        state = await self.async_load()
+        chosen = (
+            sorted(state.templates.values(), key=lambda item: item.name.casefold())
+            if refs is None
+            else [_require_named(state, ref) for ref in refs]
+        )
+        return build_bundle(chosen, exported_at=dt_util.utcnow().isoformat()).as_dict()
+
+    async def async_import_templates(
+        self,
+        actor: Actor,
+        bundle: object,
+        *,
+        as_copy: Sequence[str] = (),
+        names: Mapping[str, str] | None = None,
+        idempotency_key: str | None = None,
+    ) -> TemplatesImported:
+        """Add somebody else's templates, all of them or none of them.
+
+        The whole bundle is staged before anything is written: format,
+        checksum, every Label Size, every document against the publication
+        gate, every dependency against the installed catalogues, and every
+        identity and name collision. A refusal at any of them leaves the
+        library untouched, which is the only way an import can be safe to
+        retry -- a half-applied bundle would have to be un-applied by hand.
+
+        Collisions are the administrator's to resolve, never this method's.
+        An identity nobody here has arrives as itself. The same identity
+        carrying the same content is already here, so nothing happens. The
+        same identity carrying *different* content is refused: whichever side
+        this picked, it would be silently discarding a design somebody made.
+        Naming that entry in `as_copy` mints a fresh identity for it instead,
+        and `names` settles a name another template of that stock already
+        holds.
+
+        What an import never does is publish a draft, change a default, or
+        touch history. Everything it commits arrives as a saved, non-default
+        Named Template at revision 1, recording in its provenance which
+        template and revision it came from.
+        """
+        owner = actor.administrator()
+        digest = request_digest(
+            IMPORT_TEMPLATES,
+            owner,
+            bundle=bundle.get("checksum") if isinstance(bundle, Mapping) else None,
+            as_copy=sorted(as_copy),
+            names=dict(sorted((names or {}).items())),
+        )
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=IMPORT_TEMPLATES,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_import(state, record)
+            staged = _stage_import(
+                state,
+                read_bundle(bundle),
+                as_copy=frozenset(as_copy),
+                names=names or {},
+                owner=owner,
+                now=dt_util.utcnow().isoformat(),
+            )
+            if not staged.templates:
+                return TemplatesImported(
+                    unchanged=staged.unchanged, generation=state.generation
+                )
+            landed = await self._async_commit(
+                replace(
+                    state,
+                    templates={
+                        **state.templates,
+                        **{item.id: item for item in staged.templates},
+                    },
+                    generation=state.generation + 1,
+                ),
+                record_of(
+                    key=idempotency_key,
+                    operation=IMPORT_TEMPLATES,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation + 1,
+                    locator={
+                        "template_ids": [item.id for item in staged.templates],
+                        "unchanged": list(staged.unchanged),
+                        "copies": dict(staged.copies),
+                    },
+                ),
+            )
+            self._announce(landed, previous=state.generation, operation=IMPORTED)
+            return TemplatesImported(
+                imported=staged.templates,
+                unchanged=staged.unchanged,
+                copies=staged.copies,
+                generation=landed.generation,
+            )
+
+    async def async_backup(self, actor: Actor) -> dict[str, Any]:
+        """Return this entry's complete library as a restorable document.
+
+        Everything, including the parts a portable bundle deliberately leaves
+        out: full revision history, every administrator's drafts with whatever
+        invalid work is in them, the default overrides, the tombstones with
+        their recovery windows still ticking, the idempotency ledger and the
+        Library Generation. A backup that dropped any of those would restore a
+        library that had quietly lost something nobody asked it to lose.
+        """
+        actor.administrator()
+        state = await self.async_load()
+        return build_backup(
+            self.entry_id, state, created_at=dt_util.utcnow().isoformat()
+        )
+
+    async def async_restore_backup(
+        self,
+        actor: Actor,
+        document: object,
+        *,
+        idempotency_key: str | None = None,
+    ) -> LibraryRestored:
+        """Replace this entry's library with a backup, once all of it validates.
+
+        Replacement rather than merge, and the reason is that a merge would
+        have to choose: the same UUID may hold different history on each side,
+        and the same name may belong to different identities. There is no rule
+        that picks correctly without being told, and picking silently is how
+        somebody's templates disappear into a successful-looking restore.
+
+        Everything is staged and validated first -- format, checksum, every
+        record, and that the dictionaries agree with the records in them -- so
+        a failure is a refusal rather than a partial library. The write itself
+        is the ordinary one commit, and the in-memory state is replaced only
+        once the store returned.
+
+        The generation comes back exactly as the backup held it, which can be
+        *lower* than the one this library was at. That is why the change event
+        matters here more than anywhere else: a client compares the event's
+        previous generation with its own, finds a gap, and refreshes the whole
+        snapshot rather than believing it is ahead of the server.
+        """
+        owner = actor.administrator()
+        digest = request_digest(
+            RESTORE_BACKUP,
+            owner,
+            checksum=(
+                document.get("checksum") if isinstance(document, Mapping) else None
+            ),
+        )
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=RESTORE_BACKUP,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return LibraryRestored(
+                    generation=state.generation,
+                    previous_generation=int(record.locator.get("previous", 0)),
+                    templates=len(state.templates),
+                    drafts=len(state.drafts),
+                    tombstones=len(state.tombstones),
+                    replayed=True,
+                )
+            staged = read_backup(document)
+            landed = await self._async_commit(
+                staged,
+                record_of(
+                    key=idempotency_key,
+                    operation=RESTORE_BACKUP,
+                    owner=owner,
+                    digest=digest,
+                    generation=staged.generation,
+                    locator={"previous": state.generation},
+                ),
+            )
+            self._announce(landed, previous=state.generation, operation=RESTORED_BACKUP)
+            return LibraryRestored(
+                generation=landed.generation,
+                previous_generation=state.generation,
+                templates=len(landed.templates),
+                drafts=len(landed.drafts),
+                tombstones=len(landed.tombstones),
+            )
+
     # -- rendering ---------------------------------------------------------
 
     async def async_preview_draft(
@@ -1789,6 +2617,52 @@ class LabelTemplateLibrary:
             replayed=True,
         )
 
+    def _replayed_deletion(
+        self, state: LibraryState, record: CommitRecord
+    ) -> TemplateDeletion:
+        """Answer a replayed deletion by re-reading the tombstone it made.
+
+        A tombstone that has since been collected is gone for good, and
+        saying so is truthful where reconstructing one from the ledger would
+        be inventing a recovery window that has already expired.
+        """
+        template_id = str(record.locator["template_id"])
+        stone = state.tombstones.get(template_id)
+        if stone is None:
+            raise TombstoneNotFound(template_id)
+        return TemplateDeletion(
+            tombstone=stone,
+            generation=state.generation,
+            effective=self._effective_default(state, stone.label_size_id),
+            orphaned=tuple(
+                draft.id
+                for draft in state.drafts.values()
+                if draft.template_id == template_id
+            ),
+            cleared_default=stone.was_default,
+            replayed=True,
+        )
+
+    def _replayed_restoration(
+        self, state: LibraryState, record: CommitRecord
+    ) -> TemplateRestored:
+        """Answer a replayed restoration by re-reading the template it revived."""
+        template_id = str(record.locator["template_id"])
+        template = state.templates.get(template_id)
+        if template is None:
+            raise TemplateNotFound(template_id)
+        return TemplateRestored(
+            template=template,
+            generation=state.generation,
+            renamed=bool(record.locator.get("renamed", False)),
+            reconnected=tuple(
+                draft.id
+                for draft in state.drafts.values()
+                if draft.template_id == template_id
+            ),
+            replayed=True,
+        )
+
     def _effective_default(
         self, state: LibraryState, label_size_id: str
     ) -> ResolvedTemplate | None:
@@ -1850,12 +2724,11 @@ class LabelTemplateLibrary:
                 "and by exactly one of them."
             )
         if template_id is not None:
-            template = _require_template(state, template_id)
             return state.drafts.get(
                 draft_key(
                     owner,
                     template_id=template_id,
-                    label_size_id=template.label_size_id,
+                    label_size_id=_draft_subject(state, template_id),
                 )
             )
         return state.drafts.get(
@@ -2102,6 +2975,176 @@ def _replayed_revision(state: LibraryState, record: CommitRecord) -> Publication
 
 
 # ---------------------------------------------------------------------------
+# Staging one import
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class _StagedImport:
+    """One fully validated bundle, composed but not yet written."""
+
+    templates: tuple[NamedTemplate, ...]
+    unchanged: tuple[str, ...]
+    copies: Mapping[str, str]
+
+
+def _stage_import(
+    state: LibraryState,
+    bundle: TemplateBundle,
+    *,
+    as_copy: frozenset[str],
+    names: Mapping[str, str],
+    owner: str,
+    now: str,
+) -> _StagedImport:
+    """Validate and compose every entry of a bundle, writing nothing.
+
+    All of it before any of it, which is what makes an import atomic in the
+    only sense that matters to the person running one: the twelfth entry
+    colliding is a reason for the first eleven not to arrive, because a
+    partial library is one nobody can reason about afterwards.
+
+    Names are checked against the library *as this import would leave it*, so
+    two entries of one bundle claiming the same name collide with each other
+    rather than the second quietly overwriting the first.
+    """
+    minted: list[NamedTemplate] = []
+    unchanged: list[str] = []
+    copies: dict[str, str] = {}
+    working = state
+    for entry in bundle.entries:
+        layout = _importable(entry)
+        target = _import_target(working, entry, as_copy=as_copy)
+        wanted = display_name(names.get(entry.id, entry.name))
+        if not wanted:
+            raise TemplateNameRequired
+        if target is None:
+            _require_free_name(working, wanted, entry.label_size_id, excluding=entry.id)
+            unchanged.append(entry.id)
+            continue
+        _require_free_name(working, wanted, entry.label_size_id)
+        template = NamedTemplate(
+            id=target,
+            label_size_id=entry.label_size_id,
+            created_at=now,
+            created_by=owner,
+            revisions=(
+                TemplateRevision(
+                    revision=1,
+                    name=wanted,
+                    document=layout.as_dict(),
+                    digest=layout.digest,
+                    published_at=now,
+                    published_by=owner,
+                    operation=IMPORT,
+                    parent_revision=None,
+                    provenance=Provenance(
+                        source=FROM_IMPORT,
+                        source_template_id=entry.id,
+                        source_revision=entry.revision,
+                    ),
+                ),
+            ),
+        )
+        if target != entry.id:
+            copies[entry.id] = target
+        minted.append(template)
+        working = replace(
+            working, templates={**working.templates, template.id: template}
+        )
+    return _StagedImport(
+        templates=tuple(minted),
+        unchanged=tuple(unchanged),
+        copies=copies,
+    )
+
+
+def _importable(entry: BundleEntry) -> LabelLayout:
+    """Return the layout one entry carries, or refuse to import it.
+
+    Three questions, in the order whose answers are most useful: is this stock
+    one we have, is everything the document refers to installed, and does the
+    document itself still pass the gate every published revision passes. An
+    entry that fails any of them is refused by name -- never imported with the
+    unknown parts dropped, which would be the one outcome that looks like
+    success and prints wrongly.
+    """
+    _require_known_size(entry.label_size_id)
+    missing = unknown_dependencies(entry.dependencies)
+    if missing:
+        raise UnsupportedDependency(template_id=entry.id, missing=missing)
+    check = check_document(entry.document)
+    if check.layout is None or not check.publishable:
+        raise TemplateNotResolvable(
+            template_id=entry.id,
+            revision=entry.revision,
+            diagnostics=check.diagnostics,
+        )
+    if check.layout.label_size_id != entry.label_size_id:
+        raise LabelSizeImmutable(
+            template_id=entry.id,
+            expected=entry.label_size_id,
+            found=check.layout.label_size_id,
+        )
+    if entry.digest != check.layout.digest:
+        raise BundleNotReadable(
+            f"template {entry.id!r} carries a digest that does not describe "
+            "its own layout."
+        )
+    return check.layout
+
+
+def _import_target(
+    state: LibraryState, entry: BundleEntry, *, as_copy: frozenset[str]
+) -> str | None:
+    """Return the identity this entry should arrive under, or nothing at all.
+
+    `None` means it is already here, identically, and an import of something
+    that is already here is not an event. A fresh UUID means the
+    administrator asked for a copy. Anything else that cannot be taken as
+    given is a collision they have to answer, because both available answers
+    -- overwrite theirs, or discard the import -- destroy a design somebody
+    made.
+    """
+    if entry.id in as_copy:
+        return str(uuid.uuid4())
+    existing = state.templates.get(entry.id)
+    if existing is not None:
+        if existing.head.digest == entry.digest:
+            return None
+        raise ImportCollision(
+            template_id=entry.id,
+            reason="a different layout is already saved under that identity here",
+        )
+    if entry.id in state.tombstones:
+        raise ImportCollision(
+            template_id=entry.id,
+            reason="it was deleted here and is still recoverable",
+        )
+    return entry.id
+
+
+def _replayed_import(state: LibraryState, record: CommitRecord) -> TemplatesImported:
+    """Answer a replayed import by re-reading the templates it committed."""
+    imported = []
+    for template_id in record.locator.get("template_ids", ()):
+        template = state.templates.get(str(template_id))
+        if template is None:
+            raise TemplateNotFound(str(template_id))
+        imported.append(template)
+    return TemplatesImported(
+        imported=tuple(imported),
+        unchanged=tuple(str(item) for item in record.locator.get("unchanged", ())),
+        copies={
+            str(key): str(value)
+            for key, value in (record.locator.get("copies") or {}).items()
+        },
+        generation=state.generation,
+        replayed=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Staleness
 # ---------------------------------------------------------------------------
 
@@ -2138,6 +3181,33 @@ def _draft_wire(state: LibraryState, draft: TemplateDraft) -> dict[str, Any]:
         **draft.as_dict(),
         "stale": _is_stale(state, draft),
         "head_revision": _head_revision(state, draft),
+        "orphaned": _is_orphaned(state, draft),
+    }
+
+
+def _is_orphaned(state: LibraryState, draft: TemplateDraft) -> bool:
+    """Whether this draft's template has been deleted out from under it.
+
+    Reported beside staleness rather than folded into it, because the two have
+    opposite remedies: a stale draft reloads from a newer head, and an orphan
+    has no head to reload from. An editor offering "reload" for an orphan
+    would be offering to fetch something that is not there.
+    """
+    return draft.template_id is not None and draft.template_id not in state.templates
+
+
+def _template_summary(template: NamedTemplate) -> dict[str, Any]:
+    """Return one template's listing entry, with why it cannot print if so.
+
+    Quarantine is attached here rather than stored on the record because it is
+    a fact about a document and *today's* catalogues: a flag written onto the
+    template would survive the upgrade that fixed it.
+    """
+    quarantine = quarantine_of(template)
+    return {
+        **template.summary(),
+        "quarantined": quarantine is not None,
+        "quarantine": quarantine.as_dict() if quarantine is not None else None,
     }
 
 
@@ -2195,12 +3265,19 @@ def _resolve_factory(
 def _resolve_named(
     template: NamedTemplate, revision: int | None, *, via: str
 ) -> ResolvedTemplate:
-    """Resolve one Named Template, at its head or at a named revision."""
+    """Resolve one Named Template, at its head or at a named revision.
+
+    The gate is the Publication Gate, exactly: what could not be published
+    today cannot be printed today either. Holding resolution to a weaker
+    standard is how a library ends up able to print something it would refuse
+    to save -- and a template whose head fails it is a Quarantined Template,
+    which is this refusal seen from the listing rather than a second rule.
+    """
     selected = template.head if revision is None else template.revision(revision)
     if selected is None:
         raise RevisionNotFound(template_id=template.id, revision=int(revision or 0))
     check = check_document(selected.document)
-    if check.layout is None:
+    if check.layout is None or not check.publishable:
         raise TemplateNotResolvable(
             template_id=template.id,
             revision=selected.revision,
@@ -2275,19 +3352,63 @@ def _require_known_size(label_size_id: str) -> None:
 
 
 def _require_template(state: LibraryState, template_id: str) -> NamedTemplate:
-    """Return one Named Template of this library, or say it is not here.
+    """Return one Named Template of this library, or say why it is not here.
 
-    A Factory Template ID reaches this too, and is equally "not found": a
-    shipped template is not a member of anybody's library and cannot be
-    published to. It is named as protected rather than as absent, because the
-    two suggest different next steps.
+    Three different absences, because they call for three different next
+    steps. A Factory Template ID is *protected*: it is the integration's, not
+    a member of anybody's library, and the way to change one is to copy it. A
+    soft-deleted identity is *deleted*: it is still here, still complete, and
+    restoring it is one call away. Anything else genuinely does not exist.
     """
     template = state.templates.get(template_id)
     if template is None:
         if template_id in FACTORY_TEMPLATES:
             raise TemplateProtected(template_id)
+        stone = state.tombstones.get(template_id)
+        if stone is not None:
+            raise TemplateDeleted(template_id=template_id, expires_at=stone.expires_at)
         raise TemplateNotFound(template_id)
     return template
+
+
+def _require_named(state: LibraryState, ref: TemplateRef) -> NamedTemplate:
+    """Return the Named Template one reference names, refusing any other kind."""
+    if ref.kind != NAMED:
+        raise TemplateProtected(ref.id)
+    return _require_template(state, ref.id)
+
+
+def _draft_subject(state: LibraryState, template_id: str) -> str:
+    """Return the stock a draft's template is for, deleted or not.
+
+    A draft outlives the deletion of its template, so addressing one cannot
+    go through the live templates alone. The slot itself does not depend on
+    the answer -- a template-bound draft is keyed by its template -- but the
+    question of whether this identity means anything at all does, and an
+    identity nobody has ever heard of is still a genuine "not found".
+    """
+    template = state.templates.get(template_id)
+    if template is not None:
+        return template.label_size_id
+    stone = state.tombstones.get(template_id)
+    if stone is not None:
+        return stone.label_size_id
+    if template_id in FACTORY_TEMPLATES:
+        raise TemplateProtected(template_id)
+    raise TemplateNotFound(template_id)
+
+
+def _require_live(state: LibraryState, draft: TemplateDraft) -> None:
+    """Refuse a draft whose template has been deleted out from under it.
+
+    Applied where the operation only makes sense against a template that is
+    there: editing towards a revision that can never be appended, reloading
+    from a head that is gone, publishing onto nothing. Reading, previewing,
+    discarding and Save As are deliberately not in that list -- an orphan is
+    recovery work, and every one of those is how somebody recovers it.
+    """
+    if draft.template_id is not None and draft.template_id not in state.templates:
+        raise DraftIsOrphaned(template_id=draft.template_id)
 
 
 def _with_draft(state: LibraryState, draft: TemplateDraft) -> LibraryState:
@@ -2312,6 +3433,13 @@ async def async_get_library(hass: HomeAssistant, entry_id: str) -> LabelTemplate
 
     One instance per entry, because the lock that makes a mutation one commit
     only serializes the callers that share it.
+
+    A store this integration cannot read comes back as a **contained**
+    library rather than as an exception. That is what "other Growspace Manager
+    features continue" is made of: setting up an entry must not fail because
+    its templates were written by a newer version, and every call that needed
+    to read the store raises for itself anyway. The repair issue naming both
+    versions has been raised by the time this returns.
     """
     libraries: dict[str, LabelTemplateLibrary] = hass.data.setdefault(
         DOMAIN, {}
@@ -2320,7 +3448,15 @@ async def async_get_library(hass: HomeAssistant, entry_id: str) -> LabelTemplate
     if library is None:
         library = LabelTemplateLibrary(hass, entry_id)
         libraries[entry_id] = library
-    await library.async_load()
+    try:
+        await library.async_load()
+    except IncompatibleTemplateStore:
+        _LOGGER.error(
+            "The Label Template library of config entry %s was written by a "
+            "newer Growspace Manager and has been left untouched; template "
+            "management and template-based printing are unavailable for it",
+            entry_id,
+        )
     return library
 
 

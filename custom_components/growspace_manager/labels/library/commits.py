@@ -59,6 +59,11 @@ DUPLICATE_TEMPLATE = "duplicate_template"
 SAVE_AS_TEMPLATE = "save_as_template"
 REPLACE_FROM_FACTORY = "replace_from_factory"
 RESTORE_REVISION = "restore_revision"
+DELETE_TEMPLATE = "delete_template"
+RESTORE_TEMPLATE = "restore_template"
+COLLECT_TOMBSTONES = "collect_tombstones"
+IMPORT_TEMPLATES = "import_templates"
+RESTORE_BACKUP = "restore_backup"
 
 
 def request_digest(operation: str, owner: str, **arguments: Any) -> str:

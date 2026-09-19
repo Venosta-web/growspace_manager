@@ -250,10 +250,12 @@ class IncompatibleTemplateStore(LabelTemplateError):
     """The stored library was written by a newer integration.
 
     Nothing here downgrades it. The stored document is left byte-for-byte as
-    found and this library refuses to operate, because a best-effort read is
-    how a newer store quietly becomes a lossy older one. Raising the Home
-    Assistant repair issue and running read-only alongside it belongs to the
-    recovery route.
+    found and this library refuses to operate -- reads included, because a
+    best-effort read is how a newer store quietly becomes a lossy older one,
+    and half a library answered confidently is worse than no library at all.
+    The entry raises a Home Assistant repair issue naming both versions and
+    every other Growspace Manager feature carries on; the way out is the newer
+    integration or a restore, never a downgrade and never a reset.
     """
 
     def __init__(self, *, found: int, supported: int) -> None:
@@ -272,9 +274,10 @@ class TemplateNotResolvable(LabelTemplateError):
     Reachable when a catalogue this document references has moved on beneath
     it. The revision is never rewritten or repaired to fit -- default
     resolution steps past it to the valid factory fallback, and naming it
-    explicitly says why it cannot be used. Preserving it as a Quarantined
-    Template, with everything an administrator needs to repair or replace it,
-    belongs to the recovery route.
+    explicitly says why it cannot be used. A template whose *head* is in this
+    state is a Quarantined Template: it stays listed, readable, exportable and
+    openable as a draft, and is refused only where using it would mean
+    printing it.
     """
 
     def __init__(
@@ -309,3 +312,167 @@ class RevisionNotFound(EntityNotFoundError):
         self.template_id = template_id
         self.revision = revision
         super().__init__(f"Label Template {template_id!r} has no revision {revision}.")
+
+
+class TemplateDeleted(LabelTemplateError):
+    """That identity is soft-deleted, and is not a template you can use.
+
+    Deliberately not "not found". A deleted template is still here, still
+    complete, and still restorable until its tombstone expires -- so the next
+    step is to restore it or to stop referring to it, and those are different
+    actions from the ones a genuinely unknown identity calls for.
+    """
+
+    def __init__(self, *, template_id: str, expires_at: str) -> None:
+        """Name the identity and when it stops being recoverable."""
+        self.template_id = template_id
+        self.expires_at = expires_at
+        super().__init__(
+            f"Label Template {template_id!r} was deleted and is recoverable "
+            f"until {expires_at}. Restore it before using it again."
+        )
+
+
+class TombstoneNotFound(EntityNotFoundError):
+    """Nothing was deleted under this identity.
+
+    Which is also the answer for a template that is still here: asking to
+    restore something that was never deleted is a question about a deletion,
+    and inventing one would be the wrong kind of helpful.
+    """
+
+    def __init__(self, template_id: str) -> None:
+        """Name the identity no deletion is held for."""
+        self.template_id = template_id
+        super().__init__(f"No deleted Label Template {template_id!r} is recoverable.")
+
+
+class TombstoneExpired(LabelTemplateError):
+    """The recovery window on this deletion has closed.
+
+    The record may still be sitting in the store waiting to be collected, and
+    it is deliberately not restorable anyway: a thirty-day promise that
+    quietly held for ninety would be a promise nobody could plan around, and
+    an administrator who reads the expiry date is entitled to it.
+    """
+
+    def __init__(self, *, template_id: str, expires_at: str) -> None:
+        """Name the identity and the instant it stopped being recoverable."""
+        self.template_id = template_id
+        self.expires_at = expires_at
+        super().__init__(
+            f"The deletion of Label Template {template_id!r} expired at "
+            f"{expires_at} and can no longer be restored."
+        )
+
+
+class DraftIsOrphaned(LabelTemplateError):
+    """The template this draft belongs to has been deleted.
+
+    An orphan is kept, not corrected: its owner may read it, preview it,
+    export it, discard it, or publish it under a fresh identity with Save As.
+    What it may not do is carry on editing towards a template that is not
+    there -- an autosave into an orphan would be work aimed at a revision that
+    can never be appended.
+    """
+
+    def __init__(self, *, template_id: str) -> None:
+        """Name the template this draft is still pointed at."""
+        self.template_id = template_id
+        super().__init__(
+            f"This Template Draft belongs to Label Template {template_id!r}, "
+            "which has been deleted. It can be read, previewed, saved as a "
+            "new template or discarded, but not edited."
+        )
+
+
+class BundleNotReadable(LabelTemplateError):
+    """A portable bundle is not one, or has been damaged in transit.
+
+    Structure and checksum are the same refusal on purpose: both mean the
+    bytes offered are not a bundle this integration can vouch for, and neither
+    is a reason to import the parts that happen to parse.
+    """
+
+    def __init__(self, detail: str) -> None:
+        """Say what about the bundle could not be trusted."""
+        super().__init__(f"This Label Template bundle cannot be read: {detail}")
+
+
+class IncompatibleBundle(LabelTemplateError):
+    """The bundle was written in a format this integration does not know.
+
+    A newer bundle fails preflight without writing anything and names the
+    version that can read it, because the remedy is an upgrade rather than a
+    partial import of the fields that happen to be familiar.
+    """
+
+    def __init__(self, *, found: int, supported: int) -> None:
+        """Name both formats, which is what the remedy is read from."""
+        self.found = found
+        self.supported = supported
+        super().__init__(
+            f"This Label Template bundle is at format version {found}; this "
+            f"integration reads {supported}. Upgrade Growspace Manager to "
+            "import it. Nothing has been changed."
+        )
+
+
+class UnsupportedDependency(LabelTemplateError):
+    """An imported template needs something this installation does not have.
+
+    A Label Size, a binding, a font, a spacing or a monochrome token that is
+    not in the catalogues here. Never silently dropped and never substituted
+    with the nearest thing: a label missing its lineage line is a label that
+    prints wrongly without saying so, and the remedy -- the integration or
+    version that ships the missing catalogue entry -- is only findable if the
+    refusal names it.
+    """
+
+    def __init__(self, *, template_id: str, missing: Sequence[str]) -> None:
+        """Name the template and every dependency it is missing."""
+        self.template_id = template_id
+        self.missing: tuple[str, ...] = tuple(missing)
+        super().__init__(
+            f"Label Template {template_id!r} needs "
+            f"{', '.join(self.missing)}, which this installation does not "
+            "have. Nothing has been changed."
+        )
+
+
+class ImportCollision(LabelTemplateError):
+    """An imported identity already means something else here.
+
+    The same UUID carrying different content is the one thing an import must
+    never resolve on its own: whichever side it picked would silently replace
+    somebody's design or silently discard the one being imported. The
+    administrator says which, by importing that entry as a copy under a fresh
+    identity or by leaving it out.
+    """
+
+    def __init__(self, *, template_id: str, reason: str) -> None:
+        """Name the identity and why it could not be taken as given."""
+        self.template_id = template_id
+        self.reason = reason
+        super().__init__(
+            f"Label Template {template_id!r} cannot be imported as itself: "
+            f"{reason}. Import it as a copy, or leave it out of the bundle. "
+            "Nothing has been changed."
+        )
+
+
+class BackupNotRestorable(LabelTemplateError):
+    """A backup document cannot be staged, so nothing is replaced.
+
+    Restore is replacement rather than merge, so everything is validated
+    before anything is written: a backup that fails here leaves the library
+    exactly as it was, which is the only safe outcome for an operation whose
+    success would overwrite all of it.
+    """
+
+    def __init__(self, detail: str) -> None:
+        """Say what about the backup could not be staged."""
+        super().__init__(
+            f"This Label Template backup cannot be restored: {detail} "
+            "The current library has not been changed."
+        )

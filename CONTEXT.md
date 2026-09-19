@@ -741,6 +741,30 @@ One committed mutation, remembered by the idempotency key that made it, so a ret
 **Library Change Event**
 The one Home Assistant bus event a committed library mutation fires, naming the new [[Library Generation]], the one it replaced, the operation kind and the identities it touched — never the document. Only an authenticated Home Assistant client can subscribe to the bus, which is the whole of its authentication. `previous_generation` is what makes a gap detectable: a client holding generation N applies an event whose previous is N and refreshes its whole snapshot when it is anything else. Taking that snapshot is a read, so recovering from a gap cannot cost an editor its unsaved work.
 
+**Template Tombstone**
+One soft-deleted [[Named Template]], kept whole for 30 days: the record _is_ the template, so restoring returns the same UUID and the same revision history rather than something resembling them. Deletion, clearing any [[Effective Default]] override that named it, and orphaning its drafts are one commit. A [[Factory Template]] cannot be deleted. The expiry instant is stored rather than computed, so shortening the window later cannot retroactively expire somebody's deletion, and an expired tombstone is refused restoration rather than quietly honoured.
+
+**Restore Deletion**
+Bringing a [[Template Tombstone]]'s template back under the identity it always had. It never reclaims the default — whatever was selected while it was gone has been printing ever since — and it never takes a name another template of that stock has used in the meantime: a conflict is refused, and the new name an administrator supplies arrives as a [[Rename]] revision, because a name lives on a revision. [[Orphaned Draft]]s reconnect by doing nothing, since a draft names the template it is for.
+
+**Orphaned Draft**
+A [[Template Draft]] whose template has been deleted. Kept rather than removed with it, because deleting a template is not a decision about somebody else's unpublished work. It is read-only recovery work: its owner may read it, preview it, export it, discard it, or publish it under a fresh identity with [[Save As]], but not carry on editing towards a revision that can never be appended. Distinct from a [[Stale Draft]], which has a newer head to reload from where an orphan has none. It expires with the [[Template Tombstone]] it belongs to.
+
+**Tombstone Collection**
+The one operation in the library that destroys anything: removing the [[Template Tombstone]]s whose window has closed, together with the [[Orphaned Draft]]s still waiting on them. Explicit and administrator-only rather than something a load does on the way past — opening a library must not write, and "your templates were collected" must not be a thing that happened while nobody was looking. A run that finds nothing expired writes nothing and advances no [[Library Generation]].
+
+**Quarantined Template**
+A [[Named Template]] whose head [[Template Revision]] no longer passes the [[Publication Gate]], because a catalogue it references has moved on beneath it. It is kept exactly as saved — never clamped, re-pointed, stripped or migrated — and stays listed with its diagnostics, exportable, openable as a draft for repair, and available for a [[Historical Restore]] of a revision that still validates. It is refused only where using it would mean printing it: resolution and default selection. Quarantine is computed from today's catalogues rather than stored, so it clears itself when the upgrade that fixes it arrives.
+
+**Portable Bundle**
+A document sharing published [[Named Template]]s with another installation: current revisions with their identities, [[Label Size]], structural provenance and dependency lists, under a format version and a checksum. It carries no history, drafts, defaults, tombstones, [[Factory Template]] definitions or Home Assistant user IDs — a share that carried those would be a restore wearing a share's name. Importing is additive, administrator-only, and all-or-nothing: everything is staged and validated before anything is written. An identity nobody holds arrives as itself; the same identity with the same content is a no-op; the same identity with different content, or an identity deleted here, is refused until the administrator asks for a copy under a fresh UUID. Unknown dependencies and layouts that no longer compile are refused by name, never dropped or substituted.
+
+**Library Backup**
+The complete document one [[Template Library]] is: every [[Named Template]] with its full history, the default overrides, every administrator's [[Template Draft]]s, the [[Template Tombstone]]s with their windows still running, the idempotency ledger and the [[Library Generation]]. Restoring one _replaces_ rather than merges, because two libraries cannot be reconciled without silently choosing for every UUID they both hold. Everything is validated before the single write, so a failure leaves the current library untouched, and the generation comes back exactly as the backup held it — which can be lower than the current one, which is why the [[Library Change Event]] matters most here.
+
+**Store Containment**
+What happens when a [[Template Library]]'s `.storage` document was written at a newer store version: it is left byte-for-byte, nothing is read out of it — reads included, since half a library answered confidently is how a newer store becomes a lossy older one — the library reports itself read-only, and a Home Assistant repair issue names the found and supported versions. Every other Growspace Manager feature carries on; the way out is the newer integration or a [[Library Backup]] this version can read. There is deliberately no downgrade and no reset.
+
 ## Serialization
 
 **Plant View Model**
