@@ -526,6 +526,30 @@ async def test_save_as_needs_a_draft_to_save(
         )
 
 
+async def test_save_as_with_another_drafts_identity_is_refused(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """A draft ID names one draft, so presenting another's is not a retry.
+
+    The slot holds work; the ID says which work. A client that addressed the
+    right slot with the wrong ID has lost track of what it is saving, and
+    guessing on its behalf would publish the wrong layout under a new name.
+    """
+    published = await _named_template(library, admin)
+    draft = await library.async_open_draft(admin, published.template.id)
+
+    with pytest.raises(DraftNotFound):
+        await library.async_save_as(
+            admin,
+            "Clone tags, spare",
+            template_id=published.template.id,
+            draft_id="01ANOTHERDRAFTTHATNEVERWAS",
+        )
+
+    assert library.state.drafts[draft.key].id == draft.id
+    assert len(library.state.templates) == 1
+
+
 async def test_a_replayed_save_as_returns_its_own_revision(
     library: LabelTemplateLibrary, admin: Any
 ) -> None:
