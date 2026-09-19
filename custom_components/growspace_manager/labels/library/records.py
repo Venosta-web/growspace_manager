@@ -21,6 +21,19 @@ typed. A **Commit Record** remembers one idempotency key and where what it
 committed can be re-read, so a retry of a call whose answer was lost finds the
 first attempt instead of performing a second one.
 
+A **Tombstone** is the fifth, and it is the whole of a deleted template: the
+record is the `NamedTemplate` itself, set aside with the instant it was deleted
+and the instant it stops being recoverable. Deletion moves a template between
+two dictionaries rather than destroying anything, which is what lets the same
+UUID and the same history come back thirty days later.
+
+A **Tombstone** is the fifth, and it is the whole of a deleted template: the
+record *is* the `NamedTemplate`, set aside with the instant it was deleted and
+the instant it stops being recoverable. Deletion moves a template between two
+dictionaries rather than destroying anything, which is what lets the same UUID
+and the same history come back thirty days later instead of an approximation
+of them.
+
 A draft's `document` is deliberately **opaque**. It is whatever the editor last
 had, valid or not, and this module does not validate it: an autosave that
 refused invalid work would make every diagnostic a threat to the draft. The
@@ -37,7 +50,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import Any
+
+from homeassistant.util import dt as dt_util
 
 from .errors import IncompatibleTemplateStore
 
@@ -60,6 +76,7 @@ NAMED = "named"
 FROM_BLANK = "blank"
 FROM_FACTORY = "factory"
 FROM_NAMED = "named"
+FROM_IMPORT = "import"
 
 #: Which act appended a revision. Each is a deliberate thing an administrator
 #: did, and a history that recorded them all as "publish" could not tell a
@@ -70,12 +87,16 @@ FROM_NAMED = "named"
 #: `DUPLICATE` and `SAVE_AS` open a template of their own at revision 1 -- from
 #: a saved head and from the active draft respectively. `RESTORE` copies a
 #: historical document forward as a new head, which is the only way back to an
-#: old layout: history is appended to and never rewound.
+#: old layout: history is appended to and never rewound. `IMPORT` opens a
+#: template at revision 1 from a portable bundle, which carries one current
+#: revision rather than a history -- so an imported template's first revision
+#: says it arrived rather than claiming somebody published it here.
 PUBLISH = "publish"
 RENAME = "rename"
 DUPLICATE = "duplicate"
 SAVE_AS = "save_as"
 RESTORE = "restore"
+IMPORT = "import"
 
 #: Why a payload is sitting in a draft's recovery slot rather than being the
 #: draft itself. All three are work the server declined to make current, and an
@@ -453,6 +474,90 @@ class TemplateDraft:
         )
 
 
+#: How long a soft-deleted Named Template stays recoverable. Long enough that
+#: somebody who deleted the wrong thing finds out and comes back, short enough
+#: that a library is not a graveyard.
+TOMBSTONE_DAYS = 30
+
+
+@dataclass(frozen=True, slots=True)
+class Tombstone:
+    """One soft-deleted Named Template, kept whole with a clock on it.
+
+    The record *is* the template -- identity, name, every revision and all of
+    their provenance -- set aside rather than reduced to a note that something
+    used to be here. That is the whole of why restoring returns the same UUID
+    and the same history rather than an approximation of them.
+
+    It also remembers whether the deletion cleared a default. Restoring never
+    reclaims that selection -- whatever was chosen instead has been printing
+    ever since -- but an administrator deciding whether to restore deserves to
+    be told that this was the template their labels were coming from.
+    """
+
+    template: NamedTemplate
+    deleted_at: str
+    deleted_by: str | None
+    #: The instant after which this is no longer restorable and may be
+    #: collected. Stored rather than computed from `deleted_at`, so shortening
+    #: the window later cannot retroactively expire somebody's deletion.
+    expires_at: str
+    was_default: bool = False
+
+    @property
+    def id(self) -> str:
+        """The identity this tombstone holds, which is the template's own."""
+        return self.template.id
+
+    @property
+    def label_size_id(self) -> str:
+        """The stock the deleted template belonged to."""
+        return self.template.label_size_id
+
+    @property
+    def name(self) -> str:
+        """The name it had when it was deleted."""
+        return self.template.name
+
+    def has_expired(self, now: datetime) -> bool:
+        """Whether this tombstone's recovery window has already closed."""
+        expires = dt_util.parse_datetime(self.expires_at)
+        if expires is None:
+            raise ValueError(f"{self.expires_at!r} is not a stored instant.")
+        return now >= expires
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the tombstone's persisted form, template and all."""
+        return {
+            "template": self.template.as_dict(),
+            "deleted_at": self.deleted_at,
+            "deleted_by": self.deleted_by,
+            "expires_at": self.expires_at,
+            "was_default": self.was_default,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> Tombstone:
+        """Read one persisted tombstone."""
+        return cls(
+            template=NamedTemplate.from_dict(value["template"]),
+            deleted_at=str(value["deleted_at"]),
+            deleted_by=_optional_str(value.get("deleted_by")),
+            expires_at=str(value["expires_at"]),
+            was_default=bool(value.get("was_default", False)),
+        )
+
+    def summary(self) -> dict[str, Any]:
+        """Return what an administrator choosing what to restore is shown."""
+        return {
+            "template": self.template.summary(),
+            "deleted_at": self.deleted_at,
+            "deleted_by": self.deleted_by,
+            "expires_at": self.expires_at,
+            "was_default": self.was_default,
+        }
+
+
 def draft_key(owner: str, *, template_id: str | None, label_size_id: str) -> str:
     """Return the store slot one administrator's draft occupies."""
     if template_id is not None:
@@ -519,12 +624,21 @@ class LibraryState:
     in memory and writes it in one go, so there is no arrangement in which a
     revision lands without its draft being cleared or a default change lands
     without its generation.
+
+    It is also exactly what a full backup holds and what a restore replaces,
+    which is why the deleted templates live here beside the live ones: a
+    backup that carried no tombstones would quietly shorten every recovery
+    window it was restored over.
     """
 
     generation: int = 0
     templates: Mapping[str, NamedTemplate] = field(default_factory=dict)
     drafts: Mapping[str, TemplateDraft] = field(default_factory=dict)
     defaults: Mapping[str, TemplateRef] = field(default_factory=dict)
+    #: Soft-deleted templates, by the identity they still hold. Kept beside
+    #: the live ones rather than inside them, so nothing that lists, resolves
+    #: or names a template has to remember to exclude the deleted.
+    tombstones: Mapping[str, Tombstone] = field(default_factory=dict)
     #: The idempotency keys this library has already committed, oldest first.
     #: Persisted, because the retry a key protects is at its most useful across
     #: exactly the failure that loses an answer -- and a restart is one.
@@ -541,6 +655,9 @@ class LibraryState:
             },
             "drafts": {key: draft.as_dict() for key, draft in self.drafts.items()},
             "defaults": {size: ref.as_dict() for size, ref in self.defaults.items()},
+            "tombstones": {
+                key: stone.as_dict() for key, stone in self.tombstones.items()
+            },
             "commits": [record.as_dict() for record in self.commits],
         }
 
@@ -565,6 +682,10 @@ class LibraryState:
             defaults={
                 size: TemplateRef.from_dict(item)
                 for size, item in (value.get("defaults") or {}).items()
+            },
+            tombstones={
+                key: Tombstone.from_dict(item)
+                for key, item in (value.get("tombstones") or {}).items()
             },
             commits=tuple(
                 CommitRecord.from_dict(item) for item in (value.get("commits") or ())
