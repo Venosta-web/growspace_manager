@@ -121,6 +121,39 @@ class RenderContext:
         """
         return digest(self.as_dict())
 
+    @property
+    def raster_identity(self) -> str:
+        """The digest two requests must share to produce the same bitmap.
+
+        The cache identity without the two fields that decide what a raster is
+        *allowed to do* rather than what it looks like:
+
+        - `operation`, because a preview, a test print, a production print and
+          a retry of any of them draw the same thing and are permitted
+          different things; and
+        - `local_calibration`, because a measurement of where this printer
+          lands ink changes nothing about the bitmap sent to it.
+
+        That is what makes "the operator is printing what they approved" a
+        comparison rather than an assurance. An operator who previews, is told
+        the printer needs calibrating, calibrates it and prints is printing
+        the raster they looked at -- and the print is still judged afresh
+        against the calibration that now exists, because eligibility is a
+        separate question asked at the moment of the print.
+
+        It is not a substitute for the cache identity. Two results sharing a
+        raster identity can have different eligibility, and a client that
+        cached on this would serve a preview's raster for a print request and
+        lose the refusal that came with it.
+        """
+        return digest(
+            {
+                key: value
+                for key, value in self.as_dict().items()
+                if key not in _AUTHORIZATION_ONLY
+            }
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Raster:
@@ -148,6 +181,11 @@ class Raster:
         }
 
 
+#: The Render Context fields that decide what a raster may do rather than
+#: what it looks like. Excluded from the raster identity, and deliberately
+#: kept in the cache identity.
+_AUTHORIZATION_ONLY = frozenset({"operation", "local_calibration"})
+
 #: A result whose raster matches the request that asked for it.
 CURRENT = "current"
 #: A result that could not be rastered. Its diagnostics say why.
@@ -172,11 +210,20 @@ class RenderResult:
     overlaps: tuple[OverlapPair, ...] = ()
     #: One answer per operation, with the reasons for each refusal.
     eligibility: Mapping[str, OperationEligibility] = field(default_factory=dict)
+    #: The digest of the exact inputs the printer adapter was handed. Two
+    #: results sharing it were drawn from byte-identical instructions; a
+    #: result whose raster never came back has none.
+    raster_input_digest: str | None = None
 
     @property
     def cache_identity(self) -> str:
         """The identity this result may be reused under."""
         return self.context.cache_identity
+
+    @property
+    def raster_identity(self) -> str:
+        """The identity every operation drawing this bitmap shares."""
+        return self.context.raster_identity
 
     @property
     def printable(self) -> bool:
@@ -194,6 +241,8 @@ class RenderResult:
             "status": self.status,
             "printable": self.printable,
             "cache_identity": self.cache_identity,
+            "raster_identity": self.raster_identity,
+            "raster_input_digest": self.raster_input_digest,
             "render_context": self.context.as_dict(),
             "profile": self.profile.as_dict() if self.profile else None,
             "raster": self.raster.as_dict() if self.raster else None,
@@ -213,6 +262,7 @@ def eligibility_for(
     *,
     profile: CapabilityProfile,
     local_calibration: str | None = None,
+    calibration_stale_reasons: Sequence[str] = (),
 ) -> Mapping[str, OperationEligibility]:
     """Decide every operation this result could be asked to authorize."""
     return decide_eligibility(
@@ -220,6 +270,7 @@ def eligibility_for(
         has_raster=raster is not None,
         profile=profile,
         local_calibration=local_calibration,
+        calibration_stale_reasons=calibration_stale_reasons,
     )
 
 

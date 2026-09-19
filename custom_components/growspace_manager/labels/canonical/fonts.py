@@ -29,6 +29,8 @@ from typing import Protocol
 
 from PIL import Image, ImageDraw, ImageFont
 
+from .catalogue import FONT_TOKENS
+
 #: Bumped when measurement or rasterization here stops matching the pinned
 #: renderer's own.
 TEXT_TOOLCHAIN_VERSION = "growspace.text-toolchain.v1"
@@ -155,6 +157,25 @@ def niimbot_font_library(config_directory: str | None) -> NiimbotFontLibrary:
 def toolchain_identity(library: FontLibrary, files: Iterable[str]) -> Mapping[str, str]:
     """Return one digest per font file, for the Render Context to carry."""
     return {file: library.digest(file) for file in sorted(set(files))}
+
+
+def shipped_font_identity(library: FontLibrary) -> Mapping[str, str]:
+    """Return the digest of every face this product ships, resolved here.
+
+    The installation's font identity, as opposed to one render's. A Render
+    Context carries the digests of the faces that render actually measured,
+    which is right for a cache key and wrong for anything that has to compare
+    two different labels: a calibration sheet and a strain label legitimately
+    use different faces, so comparing their per-render identities would find a
+    difference on every print.
+
+    This asks the other question -- have the installed font files changed? --
+    and it is the one a calibration depends on. Every shipped token is
+    resolved whether or not any layout currently uses it, because a face
+    arriving or disappearing changes what the next layout can be measured
+    with.
+    """
+    return toolchain_identity(library, (token.file for token in FONT_TOKENS.values()))
 
 
 @lru_cache(maxsize=64)

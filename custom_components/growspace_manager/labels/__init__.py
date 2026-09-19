@@ -27,11 +27,20 @@ the geometry came from:
 
 Both end in the same adapter and the same `LabelRenderPlan`, so the Classic
 Path can be retired without anything downstream of it noticing.
+
+Two packages sit beside the renderer rather than inside it, because neither is
+about turning millimetres into dots:
+
+- `library` owns *which* layout -- templates, drafts, revisions and defaults.
+- `calibration` owns where one installed printer really puts ink, and
+  `printing` is the three routes that put a label on paper: the standardized
+  calibration sheet, an administrator's test print, and a production print of
+  one real record.
 """
 
 from __future__ import annotations
 
-from . import canonical
+from . import calibration, canonical
 from .classic import ClassicPrintRequest, resolve_classic_request
 from .model import (
     Canvas,
@@ -45,7 +54,16 @@ from .model import (
     TextBlock,
     TextLine,
 )
-from .niimbot import async_print
+from .niimbot import async_print, async_print_inputs, async_raster_inputs
+from .printing import (
+    CalibrationPrint,
+    LayoutSource,
+    PrintOutcome,
+    PrintRefused,
+    async_print_calibration_label,
+    async_print_record,
+    async_test_print,
+)
 from .renderer import (
     DEFAULT_LABEL_SIZE,
     LABEL_SIZE_CANVASES,
@@ -58,6 +76,7 @@ __all__ = [
     "DEFAULT_LABEL_SIZE",
     "LABEL_SIZE_CANVASES",
     "REFERENCE_CANVAS",
+    "CalibrationPrint",
     "Canvas",
     "ClassicPrintRequest",
     "Divider",
@@ -65,11 +84,20 @@ __all__ = [
     "LabelContent",
     "LabelElement",
     "LabelRenderPlan",
+    "LayoutSource",
     "Logo",
+    "PrintOutcome",
+    "PrintRefused",
     "QrCode",
     "TextBlock",
     "TextLine",
     "async_print",
+    "async_print_calibration_label",
+    "async_print_inputs",
+    "async_print_record",
+    "async_raster_inputs",
+    "async_test_print",
+    "calibration",
     "canonical",
     "canvas_for",
     "render",
