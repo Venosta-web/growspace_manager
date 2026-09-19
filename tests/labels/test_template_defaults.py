@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -30,11 +31,15 @@ from custom_components.growspace_manager.labels.library import (
     FACTORY_FALLBACK,
     OVERRIDE,
     LabelSizeImmutable,
+    LabelTemplateError,
     LabelTemplateLibrary,
     LibraryState,
     NoEffectiveDefault,
+    RevisionNotFound,
     TemplateNotFound,
+    TemplateNotResolvable,
     TemplateRef,
+    UnsupportedLabelSize,
     blank_document,
 )
 
@@ -344,3 +349,169 @@ def test_an_empty_library_is_the_shape_a_fresh_install_starts_at() -> None:
     assert state.templates == {}
     assert state.drafts == {}
     assert state.defaults == {}
+
+
+# ---------------------------------------------------------------------------
+# References nothing answers
+# ---------------------------------------------------------------------------
+
+
+async def test_an_unknown_stock_is_refused_by_name(
+    library: LabelTemplateLibrary, admin: Any, viewer: Any
+) -> None:
+    """A size is a catalogue identity, never a string a client invents."""
+    for call in (
+        library.async_resolve_default(viewer, "growspace.stock.99x99.v1"),
+        library.async_clear_default(admin, "growspace.stock.99x99.v1"),
+    ):
+        with pytest.raises(UnsupportedLabelSize):
+            await call
+
+
+async def test_a_reference_of_an_unknown_kind_is_refused(
+    library: LabelTemplateLibrary, admin: Any, viewer: Any
+) -> None:
+    """Only the two kinds of template exist, and neither is inferred."""
+    invented = TemplateRef(kind="borrowed", id=FACTORY_50X30.id)
+
+    with pytest.raises(TemplateNotFound):
+        await library.async_resolve(viewer, invented)
+    with pytest.raises(LabelTemplateError, match="not a kind of template"):
+        await library.async_set_default(admin, SIZE, invented)
+
+
+async def test_an_override_of_an_unknown_kind_falls_back_rather_than_raising(
+    libraries: Any, library: LabelTemplateLibrary, admin: Any, viewer: Any
+) -> None:
+    """Resolution reads a stored override it cannot interpret and steps past it."""
+    await library._store.async_save(
+        replace(
+            library.state, defaults={SIZE: TemplateRef(kind="borrowed", id="whatever")}
+        )
+    )
+    reopened = libraries()
+    await reopened.async_load()
+
+    assert (await reopened.async_resolve_default(viewer, SIZE)).via == FACTORY_FALLBACK
+
+
+async def test_a_factory_identity_nothing_ships_is_not_found(
+    library: LabelTemplateLibrary, viewer: Any
+) -> None:
+    """A namespaced ID is still an identity that has to exist."""
+    with pytest.raises(TemplateNotFound):
+        await library.async_resolve(viewer, TemplateRef.factory("growspace.factory.x"))
+
+
+async def test_a_revision_a_template_never_had_is_not_found(
+    library: LabelTemplateLibrary, admin: Any, viewer: Any
+) -> None:
+    """Distinct from one that exists and stopped validating."""
+    published = await _named_template(library, admin)
+
+    with pytest.raises(RevisionNotFound):
+        await library.async_resolve(
+            viewer, TemplateRef.named(published.template.id), revision=7
+        )
+    with pytest.raises(RevisionNotFound):
+        await library.async_resolve(
+            viewer,
+            TemplateRef.factory(FACTORY_50X30.id),
+            revision=FACTORY_50X30.revision + 1,
+        )
+
+
+async def test_a_historical_revision_resolves_at_the_number_asked_for(
+    library: LabelTemplateLibrary, admin: Any, viewer: Any
+) -> None:
+    """History stays readable; the head is only the default answer."""
+    first = await _named_template(library, admin)
+    await library.async_open_draft(admin, first.template.id)
+    moved = blank_document(SIZE)
+    moved["elements"][0]["frame"]["x_mm"] = 3.0
+    await library.async_autosave_draft(
+        admin, template_id=first.template.id, document=moved
+    )
+    await library.async_publish_draft(admin, template_id=first.template.id)
+
+    head = await library.async_resolve(viewer, TemplateRef.named(first.template.id))
+    original = await library.async_resolve(
+        viewer, TemplateRef.named(first.template.id), revision=1
+    )
+
+    assert head.revision == 2
+    assert original.revision == 1
+    assert original.layout.digest == first.revision.digest
+
+
+# ---------------------------------------------------------------------------
+# A shipped template that stopped being valid
+# ---------------------------------------------------------------------------
+
+
+def _broken_factory() -> Any:
+    """A shipped template whose document no longer validates."""
+    return replace(FACTORY_50X30, document={"schema": "growspace.label-layout"})
+
+
+async def test_an_invalid_shipped_template_disables_only_its_stock(
+    library: LabelTemplateLibrary, viewer: Any, admin: Any
+) -> None:
+    """A packaging failure is reported, never worked around.
+
+    The integration does not invent an approximate emergency layout and does
+    not quietly print a known-invalid one: the stock says it has no Effective
+    Default, and every other stock is untouched.
+    """
+    broken = _broken_factory()
+    with (
+        patch.dict(
+            "custom_components.growspace_manager.labels.library.library.FACTORY_TEMPLATES",
+            {broken.id: broken},
+            clear=True,
+        ),
+        patch(
+            "custom_components.growspace_manager.labels.library.library.factory_template_for_size",
+            lambda size: broken if size == broken.label_size_id else None,
+        ),
+    ):
+        with pytest.raises(NoEffectiveDefault):
+            await library.async_resolve_default(viewer, SIZE)
+        with pytest.raises(TemplateNotResolvable):
+            await library.async_resolve(viewer, TemplateRef.factory(broken.id))
+        with pytest.raises(TemplateNotResolvable):
+            await library.async_set_default(admin, SIZE, TemplateRef.factory(broken.id))
+        snapshot = await library.async_snapshot(admin)
+
+    assert snapshot["factory_templates"] == [
+        {
+            "kind": "factory",
+            "id": broken.id,
+            "revision": broken.revision,
+            "name": broken.name,
+            "label_size_id": broken.label_size_id,
+            "valid": False,
+        }
+    ]
+    assert snapshot["effective_defaults"][SIZE] is None
+    # And with the shipped set back, the same stock resolves again.
+    assert (await library.async_resolve_default(viewer, SIZE)).via == FACTORY_FALLBACK
+
+
+async def test_an_override_naming_an_invalid_shipped_template_falls_back(
+    libraries: Any, library: LabelTemplateLibrary, admin: Any, viewer: Any
+) -> None:
+    """Even the override cannot make an invalid layout the one that prints."""
+    await library.async_set_default(admin, SIZE, TemplateRef.factory(FACTORY_50X30.id))
+    reopened = libraries()
+    await reopened.async_load()
+    broken = _broken_factory()
+
+    with patch.dict(
+        "custom_components.growspace_manager.labels.library.library.FACTORY_TEMPLATES",
+        {broken.id: broken},
+    ):
+        with pytest.raises(NoEffectiveDefault):
+            await reopened.async_resolve_default(viewer, SIZE)
+
+    assert reopened.state.defaults[SIZE] == TemplateRef.factory(FACTORY_50X30.id)

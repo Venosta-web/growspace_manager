@@ -202,11 +202,16 @@ class DefaultChanged:
     unchanged: bool = False
 
     def as_dict(self) -> dict[str, Any]:
-        """Return the change's wire form."""
+        """Return the change's wire form.
+
+        What now resolves is summarized rather than resolved: a client that
+        just chose a default is choosing, not rendering, and the layout comes
+        back when something asks to resolve one.
+        """
         return {
             "label_size_id": self.label_size_id,
             "override": self.override.as_dict() if self.override else None,
-            "effective": self.effective.as_dict() if self.effective else None,
+            "effective": _effective_summary(self.effective),
             "generation": self.generation,
             "unchanged": self.unchanged,
         }

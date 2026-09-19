@@ -21,6 +21,7 @@ from custom_components.growspace_manager.labels.canonical import (
     FACTORY_50X30,
     LABEL_SIZES,
     REQUIRED_BINDING,
+    LabelSize,
     validate_document,
 )
 from custom_components.growspace_manager.labels.library import (
@@ -32,11 +33,14 @@ from custom_components.growspace_manager.labels.library import (
     DraftNotPublishable,
     DuplicateTemplateName,
     LabelSizeImmutable,
+    LabelTemplateError,
     LabelTemplateLibrary,
     TemplateNameRequired,
     TemplateProtected,
     TemplateRef,
+    UnsupportedLabelSize,
     blank_document,
+    blank_layout,
 )
 
 SIZE = "growspace.stock.50x30.v1"
@@ -579,3 +583,88 @@ async def test_a_strain_name_off_the_paper_cannot_be_published(
         await library.async_publish_draft(admin, label_size_id=SIZE)
 
     assert "frame.outside_stock" in {item.code for item in refusal.value.diagnostics}
+
+
+# ---------------------------------------------------------------------------
+# Refusals that are programming errors rather than states
+# ---------------------------------------------------------------------------
+
+
+async def test_the_library_must_be_loaded_before_it_is_read(
+    libraries: Any,
+) -> None:
+    """Reading the committed state is not an implicit load."""
+    unopened = libraries()
+
+    with pytest.raises(Exception, match="not been loaded"):
+        _ = unopened.state
+
+
+@pytest.mark.parametrize(
+    ("template_id", "label_size_id"),
+    [(None, None), ("some-template", SIZE)],
+    ids=["neither", "both"],
+)
+async def test_a_draft_is_addressed_by_exactly_one_thing(
+    library: LabelTemplateLibrary,
+    admin: Any,
+    template_id: str | None,
+    label_size_id: str | None,
+) -> None:
+    """A template draft and an untitled one are different slots, not a fallback."""
+    with pytest.raises(Exception, match="exactly one of them"):
+        await library.async_discard_draft(
+            admin, template_id=template_id, label_size_id=label_size_id
+        )
+
+
+async def test_publishing_with_another_drafts_identity_is_refused(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """A retry key names one draft. A live draft that is not it is not published."""
+    await library.async_create_draft(admin, label_size_id=SIZE)
+    await library.async_autosave_draft(
+        admin, label_size_id=SIZE, document=blank_document(SIZE), name="Clone tags"
+    )
+
+    with pytest.raises(DraftNotFound):
+        await library.async_publish_draft(
+            admin, label_size_id=SIZE, draft_id="01SOMEOTHERDRAFTENTIRELY00"
+        )
+
+    assert library.state.templates == {}
+    assert library.state.drafts
+
+
+# ---------------------------------------------------------------------------
+# The blank layout itself
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("label_size_id", list(LABEL_SIZES))
+def test_the_blank_layout_is_handed_over_validated(label_size_id: str) -> None:
+    """The one document nothing upstream of it would have checked."""
+    layout = blank_layout(label_size_id)
+
+    assert layout.label_size_id == label_size_id
+    assert len(layout.elements) == 1
+
+
+def test_a_blank_for_a_stock_nobody_ships_is_refused_by_name() -> None:
+    """A Label Size is a catalogue identity, not a string with millimetres in it."""
+    with pytest.raises(UnsupportedLabelSize):
+        blank_document("growspace.stock.99x99.v1")
+
+
+def test_a_stock_too_thin_for_the_blank_margins_says_so() -> None:
+    """The guard behind "valid by construction", for a catalogue that grows."""
+    thin = LabelSize("growspace.stock.50x3.v1", 50.0, 3.0, "50x3")
+
+    with (
+        patch.dict(
+            "custom_components.growspace_manager.labels.library.blank.LABEL_SIZES",
+            {thin.id: thin},
+        ),
+        pytest.raises(LabelTemplateError, match="too small"),
+    ):
+        blank_layout(thin.id)

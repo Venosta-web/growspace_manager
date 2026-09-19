@@ -324,3 +324,34 @@ def test_a_reference_names_a_kind_as_well_as_an_identity() -> None:
     assert TemplateRef.from_dict(
         TemplateRef.named("abc").as_dict()
     ) == TemplateRef.named("abc")
+
+
+async def test_removing_a_library_document_is_the_entry_lifecycle(
+    hass: HomeAssistant, hass_storage: dict[str, Any], admin: Any
+) -> None:
+    """Deleting the config entry deletes its templates. Nothing else does.
+
+    No lifecycle operation calls this: a template is soft-deleted and
+    recoverable, and dropping the whole document is the enclosing Home
+    Assistant data lifecycle rather than a management shortcut.
+    """
+    library = LabelTemplateLibrary(hass, "entry-a")
+    await library.async_load()
+    await _named_template(library, admin)
+    assert storage_key("entry-a") in hass_storage
+
+    await library._store.async_remove()
+
+    assert storage_key("entry-a") not in hass_storage
+    assert await LabelTemplateLibrary(hass, "entry-a").async_load() == LibraryState()
+
+
+def test_a_stored_number_that_is_not_one_is_refused() -> None:
+    """A store read never coerces: `True` is not revision 1."""
+    with pytest.raises(TypeError):
+        Provenance.from_dict({"source": "blank", "draft_version": True})
+
+    assert Provenance.from_dict({"source": "blank"}).draft_version is None
+    assert (
+        Provenance.from_dict({"source": "blank", "draft_version": 3}).draft_version == 3
+    )
