@@ -566,15 +566,13 @@ class LibraryState:
                 return record
         return None
 
-    def with_commit(self, record: CommitRecord | None) -> tuple[CommitRecord, ...]:
+    def with_commit(self, record: CommitRecord) -> tuple[CommitRecord, ...]:
         """Return the ledger with one more record on it, oldest evicted.
 
-        A `None` record is a mutation made without a key, which is allowed:
-        idempotency is a client's protection against its own retry, and a
-        caller that does not retry does not have to carry one.
+        A mutation made without a key never reaches here: idempotency is a
+        client's protection against its own retry, and a caller that does not
+        retry does not have to carry one.
         """
-        if record is None:
-            return self.commits
         kept = tuple(item for item in self.commits if item.key != record.key)
         return (*kept, record)[-COMMIT_LEDGER_LIMIT:]
 

@@ -28,6 +28,7 @@ revision that overtook it.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -46,7 +47,9 @@ from custom_components.growspace_manager.labels.library import (
     DraftVersionConflict,
     IdempotencyKeyReused,
     LabelTemplateLibrary,
+    LabelTemplateStore,
     NoRecoveryPayload,
+    RevisionNotFound,
     TemplateRef,
     blank_document,
 )
@@ -940,3 +943,92 @@ async def test_reload_and_recovery_are_administrators_only(
         await library.async_reload_draft(viewer, published.template.id)
     with pytest.raises(Unauthorized):
         await library.async_discard_recovery(viewer, label_size_id=SIZE)
+
+
+async def test_a_replayed_creation_whose_draft_has_gone_says_so(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """A spent key does not get to create a second draft in an empty slot.
+
+    The first attempt's work was discarded between the two calls. Answering
+    with a fresh draft would be indistinguishable from the retry having worked,
+    and would quietly undo the discard.
+    """
+    await library.async_create_draft(
+        admin, label_size_id=SIZE, idempotency_key="create-1"
+    )
+    await library.async_discard_draft(admin, label_size_id=SIZE)
+
+    with pytest.raises(DraftNotFound):
+        await library.async_create_draft(
+            admin, label_size_id=SIZE, idempotency_key="create-1"
+        )
+
+    assert library.state.drafts == {}
+
+
+async def test_a_replayed_publication_whose_revision_has_gone_says_so(
+    hass: HomeAssistant, libraries: Any, admin: Any
+) -> None:
+    """Revisions are immutable and nothing removes one today, so this is the
+    ledger outliving what it points at -- which soft deletion will make real."""
+    library = libraries()
+    await library.async_load()
+    await library.async_create_draft(admin, label_size_id=SIZE)
+    await library.async_autosave_draft(
+        admin, label_size_id=SIZE, document=blank_document(SIZE), name="Clone tags"
+    )
+    await library.async_publish_draft(
+        admin, label_size_id=SIZE, idempotency_key="publish-1"
+    )
+    await LabelTemplateStore(hass, library.entry_id).async_save(
+        replace(library.state, templates={})
+    )
+
+    reopened = libraries()
+    await reopened.async_load()
+
+    with pytest.raises(RevisionNotFound):
+        await reopened.async_publish_draft(
+            admin, label_size_id=SIZE, idempotency_key="publish-1"
+        )
+
+
+async def test_a_retried_recovery_discard_returns_the_cleared_draft(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """Rather than refusing because there is nothing left to clear."""
+    await library.async_create_draft(admin, label_size_id=SIZE)
+    with pytest.raises(DraftVersionConflict):
+        await library.async_autosave_draft(
+            admin, label_size_id=SIZE, document={"refused": True}, expected_version=99
+        )
+
+    first = await library.async_discard_recovery(
+        admin, label_size_id=SIZE, idempotency_key="clear-1"
+    )
+    again = await library.async_discard_recovery(
+        admin, label_size_id=SIZE, idempotency_key="clear-1"
+    )
+
+    assert first.recovery is None
+    assert again.id == first.id
+    assert again.recovery is None
+
+
+async def test_a_retried_clear_of_a_default_advances_the_generation_once(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """The same guarantee selecting one has, for the call that undoes it."""
+    published = await _named_template(library, admin)
+    await library.async_set_default(
+        admin, SIZE, TemplateRef.named(published.template.id)
+    )
+
+    first = await library.async_clear_default(admin, SIZE, idempotency_key="clear-1")
+    again = await library.async_clear_default(admin, SIZE, idempotency_key="clear-1")
+
+    assert first.generation == 3
+    assert again.generation == 3
+    assert again.replayed is True
+    assert again.override is None
