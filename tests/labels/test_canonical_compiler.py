@@ -199,7 +199,8 @@ def test_a_qr_is_sized_by_its_frame_rather_than_by_a_module_count() -> None:
         context=PrintContext.PLANT,
         subject="plant-1",
         as_of=AS_OF,
-        values={"strain.name": "Blue Dream", "plant.link": "http://ha.test/plant/1"},
+        values={"strain.name": "Blue Dream"},
+        links={"dashboard_url": "http://ha.test/plant/1"},
     )
     qr = {
         "id": "element-qr",
@@ -333,9 +334,9 @@ def test_a_missing_required_value_blocks_that_record() -> None:
     assert "content.missing_required" in codes
 
 
-def test_a_binding_its_context_does_not_support_is_an_error() -> None:
+def test_a_binding_its_context_does_not_support_warns_and_keeps_its_frame() -> None:
     """A strain has no instance to point at, and saying so is not the same as
-    having nothing to print."""
+    having nothing to print -- nor a reason to stop the label."""
     qr = {
         "id": "element-qr",
         "kind": "qr",
@@ -345,7 +346,61 @@ def test_a_binding_its_context_does_not_support_is_an_error() -> None:
         "style": {"error_correction": "high", "quiet_zone_modules": 4},
     }
     compiled = compile_layout(_layout(qr), SNAPSHOT, NIIMBOT_B1_50X30)
-    assert "content.unsupported_context" in [item.code for item in compiled.diagnostics]
+
+    unsupported = next(
+        item
+        for item in compiled.diagnostics
+        if item.code == "content.unsupported_context"
+    )
+    assert unsupported.severity == "warning"
+    assert unsupported.layer == "content"
+    assert unsupported.element_id == "element-qr"
+
+    outcome = next(
+        item for item in compiled.outcomes if item.element_id == "element-qr"
+    )
+    assert outcome.status == "omitted_unsupported_context"
+    assert outcome.pixel_frame is not None
+
+
+def test_an_unsupported_context_reads_differently_from_missing_content() -> None:
+    """Two silences, two corrections: this template is being printed from
+    somewhere it was not designed for, not this record is incomplete."""
+    missing = compile_layout(
+        _layout(
+            {
+                "id": "element-breeder",
+                "kind": "text",
+                "frame": {
+                    "x_mm": 2.0,
+                    "y_mm": 14.0,
+                    "width_mm": 30.0,
+                    "height_mm": 4.0,
+                },
+                "rotation": 0,
+                "content": {
+                    "binding": "strain.breeder",
+                    "parameters": {"presentation": "value"},
+                },
+                "style": {
+                    "font": "growspace.sans.regular.v1",
+                    "font_size_mm": 3.2,
+                    "horizontal_align": "left",
+                    "vertical_align": "center",
+                    "line_spacing": "growspace.spacing.compact.v1",
+                    "overflow": "clip",
+                    "minimum_font_size_mm": 2.2,
+                    "maximum_lines": 1,
+                },
+            }
+        ),
+        replace(SNAPSHOT, values={"strain.name": "Blue Dream"}),
+        NIIMBOT_B1_50X30,
+    )
+    assert "content.missing_optional" in [item.code for item in missing.diagnostics]
+    assert "content.unsupported_context" not in [
+        item.code for item in missing.diagnostics
+    ]
 
 
 def test_the_print_date_comes_from_the_captured_instant() -> None:

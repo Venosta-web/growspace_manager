@@ -8,7 +8,7 @@
   "content_fixture": "growspace.fixture.strain.typical.v1",
   "as_of": "2026-09-18T00:00:00+00:00",
   "layout_digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32",
-  "content_identity": "sha256:0dfbfbfacdb126dfef1b596266c126c677291f15ee0926a007b8fa2cc1617bbc",
+  "content_identity": "sha256:249700f3a8cbbdcbce28498e167e59d7c70a51e5149c42bbe326947a2f8249e7",
   "canvas": {
     "width": 384,
     "height": 240

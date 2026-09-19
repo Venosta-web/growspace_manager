@@ -19,7 +19,7 @@ from enum import StrEnum
 
 #: Bumped when any catalogue below gains, loses or redefines an entry. The
 #: capability response carries it so an editor can invalidate stale choices.
-CAPABILITY_GENERATION = 1
+CAPABILITY_GENERATION = 2
 
 LABEL_SIZE_CATALOGUE_VERSION = "growspace.label-sizes.v1"
 STYLE_TOKEN_CATALOGUE_VERSION = "growspace.label-style-tokens.v1"
@@ -161,11 +161,15 @@ _PLANT_CONTEXTS = (PrintContext.PLANT, PrintContext.BATCH_ITEM)
 #: The closed set of presentation choices a captioned text binding accepts.
 PRESENTATIONS = ("value", "labeled")
 
-#: The closed set of date styles a date binding accepts.
-DATE_STYLES = ("short", "medium", "long")
+#: The closed set of date styles a date binding accepts. `short` and
+#: `medium` follow the captured locale; `iso` is `YYYY-MM-DD` whatever the
+#: locale, which is what makes it the one shape a scanner or a spreadsheet
+#: can rely on.
+DATE_STYLES = ("short", "medium", "iso")
 
-#: The closed set of QR targets `plant.link` accepts.
-QR_TARGETS = ("dashboard_url", "deeplink")
+#: The closed set of QR targets `plant.link` accepts. Both name the same
+#: configured plant route; they differ only in the URI form that reaches it.
+QR_TARGETS = ("dashboard_url", "home_assistant_app")
 
 
 @dataclass(frozen=True, slots=True)

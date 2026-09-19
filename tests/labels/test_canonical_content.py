@@ -74,17 +74,39 @@ def test_a_labeled_presentation_on_a_binding_with_no_caption_adds_nothing() -> N
 @pytest.mark.parametrize(
     ("style", "expected"),
     [
-        ("short", "2026-09-18"),
+        ("short", "18/09/2026"),
         ("medium", "18 Sep 2026"),
-        ("long", "18 September 2026"),
+        ("iso", "2026-09-18"),
     ],
 )
 def test_the_closed_date_styles_are_spelled_once(style: str, expected: str) -> None:
     assert SNAPSHOT.resolve("print.date", {"date_style": style}) == expected
 
 
-def test_an_unrecognised_date_style_falls_back_to_the_medium_shape() -> None:
-    assert SNAPSHOT.resolve("print.date", {"date_style": "epoch"}) == "18 Sep 2026"
+@pytest.mark.parametrize(
+    ("locale", "style", "expected"),
+    [
+        ("en-US", "short", "9/18/2026"),
+        ("en-GB", "short", "18/09/2026"),
+        ("en-US", "medium", "Sep 18, 2026"),
+        ("en-GB", "medium", "18 Sep 2026"),
+        # The one shape a scanner or a spreadsheet can rely on, whatever the
+        # locale printed the rest of the label in.
+        ("en-US", "iso", "2026-09-18"),
+        ("en-GB", "iso", "2026-09-18"),
+    ],
+)
+def test_a_supported_locale_decides_civil_date_order(
+    locale: str, style: str, expected: str
+) -> None:
+    localized = replace(SNAPSHOT, locale=locale)
+    assert localized.resolve("print.date", {"date_style": style}) == expected
+
+
+def test_an_unrecognised_date_style_falls_back_to_the_catalogue_default() -> None:
+    """The validator fills the default in, so reaching this is a defect --
+    which is exactly why it must not become a third date shape."""
+    assert SNAPSHOT.resolve("print.date", {"date_style": "epoch"}) == "18/09/2026"
 
 
 def test_the_print_date_needs_no_value_on_the_subject() -> None:
@@ -92,7 +114,7 @@ def test_the_print_date_needs_no_value_on_the_subject() -> None:
     bare = LabelContentSnapshot(
         context=PrintContext.STRAIN, subject="x", as_of=AS_OF, values={}
     )
-    assert bare.resolve("print.date", {}) == "18 Sep 2026"
+    assert bare.resolve("print.date", {}) == "18/09/2026"
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +186,7 @@ def test_identity_follows_every_input_the_render_depends_on(change: dict) -> Non
 
 def test_a_fixture_says_it_is_a_fixture() -> None:
     """So a raster of a fixture cannot be cached as one of a record."""
-    assert SNAPSHOT.source == "growspace.label-fixtures.v1"
+    assert SNAPSHOT.source == "growspace.label-fixtures.v2"
     assert (
         LabelContentSnapshot(
             context=PrintContext.STRAIN, subject="x", as_of=AS_OF
