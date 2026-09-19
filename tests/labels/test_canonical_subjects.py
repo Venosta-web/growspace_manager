@@ -888,7 +888,7 @@ def _layout_with_every_binding() -> Any:
                     "binding": "plant.link",
                     "parameters": {"target": "dashboard_url"},
                 },
-                "style": {"error_correction": "medium", "quiet_zone_modules": 2},
+                "style": {"error_correction": "medium", "quiet_zone_modules": 4},
             },
         ],
     }

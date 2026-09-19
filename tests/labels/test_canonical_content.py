@@ -268,6 +268,7 @@ def test_a_diagnostic_serializes_every_field_a_client_needs() -> None:
         "path": "/elements/3/content",
         "element_id": "element-breeder",
         "parameters": {"binding": "strain.breeder"},
+        "recovery": "edit_content",
     }
 
 

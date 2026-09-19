@@ -8,8 +8,14 @@ second renderer is the fidelity bug this route exists to end.
 
 What comes back is the raster the printer driver would receive, decoded and
 measured rather than taken on trust, alongside the complete Render Context, an
-outcome per stable element ID, every diagnostic of every layer, and the cache
-identity the pair may be reused under.
+outcome per stable element ID, the ink each one laid down, where that ink
+overlaps, every diagnostic of every layer, one eligibility answer per
+operation, and the cache identity the pair may be reused under.
+
+Safety is judged before the raster is asked for, not after it comes back: the
+policy layer reads the compiled plan and the pinned toolchain, so a layout
+that cannot print says why even when the printer integration is missing
+entirely.
 
 `imagespec` appears nowhere in this module's interface. A caller supplies a
 validated layout, an immutable content snapshot and a profile; the payload
@@ -35,6 +41,7 @@ from .content import LabelContentSnapshot
 from .diagnostics import Diagnostic, Layer, Severity
 from .document import LabelLayout
 from .factory import FactoryTemplate, factory_template_for_size
+from .fonts import FontLibrary, niimbot_font_library
 from .profiles import CapabilityProfile, profiles_for_size
 from .result import (
     CURRENT,
@@ -42,9 +49,10 @@ from .result import (
     Raster,
     RenderContext,
     RenderResult,
-    decide_printable,
+    eligibility_for,
     merged_diagnostics,
 )
+from .safety import evaluate_safety
 
 #: What the renderer returns its PNG in.
 _DATA_URI_PREFIX = "data:image/png;base64,"
@@ -67,14 +75,24 @@ async def async_render(
     density: str = "normal",
     device_id: str | None = None,
     operation: str = PREVIEW,
+    local_calibration: str | None = None,
+    fonts: FontLibrary | None = None,
 ) -> RenderResult:
     """Render one label, as a preview or on paper, through one implementation."""
     compiled = compile_layout(layout, content, profile, density=density)
+    library = fonts or _font_library(hass)
+    # Measuring ink decodes images and rasterizes glyphs, which is exactly the
+    # kind of work the event loop must not do.
+    report = await hass.async_add_executor_job(
+        evaluate_safety, layout, compiled, profile, library
+    )
+
     context = RenderContext(
         layout_digest=layout.digest,
         label_size_id=layout.label_size_id,
         profile_id=profile.id,
         profile_evidence=str(profile.evidence),
+        local_calibration=local_calibration,
         content_identity=content.identity,
         content_context=str(content.context),
         content_source=content.source,
@@ -84,6 +102,7 @@ async def async_render(
         density=density,
         density_level=profile.density_level(density),
         operation=operation,
+        font_identity=report.font_identity,
     )
 
     raster, raster_diagnostics = await _async_raster(
@@ -93,18 +112,38 @@ async def async_render(
         device_id=device_id,
         subject=content.subject,
     )
-    diagnostics = merged_diagnostics(compiled.diagnostics, raster_diagnostics)
+    diagnostics = merged_diagnostics(
+        compiled.diagnostics, report.diagnostics, raster_diagnostics
+    )
     return RenderResult(
         context=context,
         status=CURRENT if raster is not None else FAILED,
         raster=raster,
         outcomes=compiled.outcomes,
         diagnostics=diagnostics,
-        printable=decide_printable(
+        profile=profile,
+        ink=report.ink,
+        overlaps=report.overlaps,
+        eligibility=eligibility_for(
             diagnostics,
             raster,
-            profile_authorizes_production=profile.authorizes_production,
+            profile=profile,
+            local_calibration=local_calibration,
         ),
+    )
+
+
+def _font_library(hass: HomeAssistant) -> FontLibrary:
+    """Resolve the printer integration's fonts for this installation.
+
+    The two faces belong to `niimbot`, not to this integration, so they are
+    looked up where that integration keeps them and nowhere else. An
+    installation without them measures no text and says so, rather than
+    measuring a similarly named face and calling the answer fidelity.
+    """
+    config_directory = getattr(getattr(hass, "config", None), "config_dir", None)
+    return niimbot_font_library(
+        config_directory if isinstance(config_directory, str) else None
     )
 
 
@@ -116,6 +155,7 @@ async def async_render_factory_preview(
     template: FactoryTemplate | None = None,
     profile: CapabilityProfile | None = None,
     density: str = "normal",
+    fonts: FontLibrary | None = None,
 ) -> RenderResult:
     """Preview one shipped Factory Template against one subject.
 
@@ -140,6 +180,7 @@ async def async_render_factory_preview(
         profile=selected,
         density=density,
         operation=PREVIEW,
+        fonts=fonts,
     )
 
 

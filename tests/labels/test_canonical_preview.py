@@ -33,6 +33,7 @@ from custom_components.growspace_manager.labels.canonical import (
     NIIMBOT_B1_50X30,
     PRINT,
     TYPICAL_STRAIN,
+    InkBasis,
     ProfileEvidence,
     async_render,
     async_render_factory_preview,
@@ -40,6 +41,7 @@ from custom_components.growspace_manager.labels.canonical import (
 from custom_components.growspace_manager.labels.canonical.preview import _decode_raster
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from tests.labels.support import STUB_FONT_DIGEST, StubFonts
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "labels"
 GOLDEN = json.loads((FIXTURES / "canonical_factory_50x30.json").read_text())
@@ -165,9 +167,13 @@ async def test_the_whole_result_serializes_for_the_wire() -> None:
         "printable",
         "cache_identity",
         "render_context",
+        "profile",
         "raster",
         "elements",
+        "ink",
+        "overlaps",
         "diagnostics",
+        "eligibility",
     }
     json.dumps(wire)
 
@@ -231,6 +237,7 @@ async def test_a_verified_profile_with_a_clean_render_is_printable() -> None:
         layout=FACTORY_50X30.layout,
         content=SNAPSHOT,
         profile=verified,
+        local_calibration="calibration-1",
     )
     assert result.printable is True
 
@@ -257,6 +264,7 @@ async def test_warnings_leave_a_result_printable_and_visible() -> None:
         layout=FACTORY_50X30.layout,
         content=replace(SNAPSHOT, values={"strain.name": "Blue Dream"}),
         profile=verified,
+        local_calibration="calibration-1",
     )
     assert result.printable is True
     assert {item.severity for item in result.diagnostics} == {"warning"}
@@ -491,3 +499,159 @@ async def test_a_failed_render_still_reports_every_element_outcome() -> None:
     assert [item.element_id for item in result.outcomes] == [
         element.id for element in FACTORY_50X30.layout.elements
     ]
+
+
+# ---------------------------------------------------------------------------
+# What the result carries about safety (hub issue #216)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_result_reports_the_ink_of_every_stable_element_id() -> None:
+    hass = _hass()
+    result = await async_render_factory_preview(
+        hass, content=SNAPSHOT, fonts=StubFonts()
+    )
+    assert [item.element_id for item in result.ink] == [
+        element.id for element in FACTORY_50X30.layout.elements
+    ]
+    rule = next(item for item in result.ink if item.kind == "divider")
+    assert rule.basis is InkBasis.EXACT
+    assert rule.bounds is not None
+    assert rule.mask_digest
+
+
+async def test_the_result_carries_the_profile_it_was_judged_against() -> None:
+    """A card explaining why Print is disabled must not need a second request
+    to find out what the limits were."""
+    hass = _hass()
+    result = await async_render_factory_preview(hass, content=SNAPSHOT)
+    assert result.profile is NIIMBOT_B1_50X30
+    wire = result.as_dict()["profile"]
+    assert wire["limits"]["measured"] is False
+    assert wire["printable_area"]["width_mm"] == 48.0
+
+
+async def test_the_result_answers_every_operation_rather_than_one_boolean() -> None:
+    hass = _hass()
+    result = await async_render_factory_preview(hass, content=SNAPSHOT)
+    assert result.eligibility["preview"].allowed is True
+    assert result.eligibility["test_print"].allowed is True
+    assert result.eligibility["single_print"].allowed is False
+    assert result.eligibility["single_print"].blocked_by == (
+        "profile_not_product_verified",
+        "local_calibration_missing",
+    )
+    assert result.printable is result.eligibility["single_print"].allowed
+
+
+async def test_the_render_context_carries_the_toolchain_that_measured_it() -> None:
+    hass = _hass()
+    result = await async_render_factory_preview(
+        hass, content=SNAPSHOT, fonts=StubFonts()
+    )
+    context = result.context.as_dict()
+    assert context["font_identity"] == {
+        "ppb.ttf": STUB_FONT_DIGEST,
+        "rbm.ttf": STUB_FONT_DIGEST,
+    }
+    for key in ("text_toolchain_version", "qr_model_version", "safety_policy_version"):
+        assert context[key]
+
+
+async def test_a_font_change_invalidates_a_cached_raster() -> None:
+    """The saved layout did not move, and the old raster still cannot stand
+    for the new one."""
+
+    class _OtherFonts(StubFonts):
+        def digest(self, file: str) -> str:
+            return "another-font"
+
+        def load(self, file: str, size: int):
+            return replace(super().load(file, size), digest="another-font")
+
+    hass = _hass()
+    first = await async_render_factory_preview(
+        hass, content=SNAPSHOT, fonts=StubFonts()
+    )
+    second = await async_render_factory_preview(
+        hass, content=SNAPSHOT, fonts=_OtherFonts()
+    )
+    assert first.context.layout_digest == second.context.layout_digest
+    assert first.cache_identity != second.cache_identity
+
+
+async def test_calibration_is_part_of_the_identity_a_raster_is_reused_under() -> None:
+    hass = _hass()
+    uncalibrated = await async_render(
+        hass, layout=FACTORY_50X30.layout, content=SNAPSHOT, profile=NIIMBOT_B1_50X30
+    )
+    calibrated = await async_render(
+        hass,
+        layout=FACTORY_50X30.layout,
+        content=SNAPSHOT,
+        profile=NIIMBOT_B1_50X30,
+        local_calibration="cal-1",
+    )
+    assert uncalibrated.cache_identity != calibrated.cache_identity
+
+
+async def test_safety_is_judged_even_when_no_raster_comes_back() -> None:
+    """A layout that cannot print says why whether or not the printer
+    integration answered."""
+    hass = _hass()
+    hass.services.async_call = AsyncMock(
+        side_effect=HomeAssistantError("Failed to create image")
+    )
+    result = await async_render(
+        hass,
+        layout=FACTORY_50X30.layout,
+        content=SNAPSHOT,
+        profile=NIIMBOT_B1_50X30,
+        fonts=StubFonts(),
+    )
+    assert result.status == "failed"
+    assert result.ink
+    assert result.eligibility["preview"].blocked_by == ("no_raster",)
+
+
+async def test_the_safety_measurement_does_not_run_on_the_event_loop() -> None:
+    hass = _hass()
+    await async_render_factory_preview(hass, content=SNAPSHOT)
+    assert any(
+        call.args and getattr(call.args[0], "__name__", "") == "evaluate_safety"
+        for call in hass.async_add_executor_job.call_args_list
+    )
+
+
+async def test_overlapping_ink_reaches_the_result_as_a_pair() -> None:
+    from tests.labels.support import divider_element, layout_of, text_element
+
+    layout = layout_of(
+        text_element(
+            "name",
+            {"x_mm": 2.0, "y_mm": 2.0, "width_mm": 30.0, "height_mm": 6.0},
+            binding="strain.name",
+            size_mm=5.0,
+            minimum_mm=5.0,
+        ),
+        divider_element(
+            "rule", {"x_mm": 2.0, "y_mm": 4.0, "width_mm": 30.0, "height_mm": 0.6}
+        ),
+    )
+    hass = _hass()
+    result = await async_render(
+        hass,
+        layout=layout,
+        content=SNAPSHOT,
+        profile=NIIMBOT_B1_50X30,
+        fonts=StubFonts(),
+    )
+    assert result.overlaps
+    wire = result.as_dict()["overlaps"][0]
+    assert set(wire) == {
+        "first_element_id",
+        "second_element_id",
+        "region",
+        "kind",
+        "severity",
+    }

@@ -5,6 +5,7 @@ One seam, and a rule about who owns each stage of it:
     candidate JSON   ->  document.validate_document  ->  LabelLayout
     subject id       ->  subjects.async_capture_*    ->  LabelContentSnapshot
     both + a profile ->  compiler.compile_layout     ->  LabelRenderPlan
+    compiled plan    ->  safety.evaluate_safety      ->  SafetyReport
     LabelRenderPlan  ->  preview.async_render        ->  RenderResult
 
 A Label Layout is absolute millimetre geometry on a named stock, validated
@@ -17,7 +18,10 @@ density range one render is against. The compiler converts edges rather than
 extents, so adjacent frames cannot acquire a rounding gap. The adapter
 produces the raster, and what comes back is the bitmap the printer driver
 would receive -- decoded and measured here rather than approximated anywhere
-else.
+else. Between the compiler and the adapter sits the safety policy, which
+measures what each element really inks and judges it against that profile's
+calibrated limits; what it decides is one eligibility answer per operation,
+not a boolean the card has to interpret.
 
 Preview and print are the same call with one argument different, which is the
 only arrangement in which a preview can honestly stand in for a print.
@@ -73,7 +77,7 @@ from .content import (
     resolve_subject,
     stage_display_name,
 )
-from .diagnostics import Diagnostic, Layer, Severity, has_blocking
+from .diagnostics import Diagnostic, Layer, Recovery, Severity, has_blocking
 from .document import (
     QUANTUM_MM,
     SCHEMA,
@@ -84,6 +88,7 @@ from .document import (
     LayoutElement,
     validate_document,
 )
+from .eligibility import Blocker, Operation, OperationEligibility, decide_eligibility
 from .factory import (
     FACTORY_50X30,
     FACTORY_TEMPLATES,
@@ -108,6 +113,15 @@ from .fixtures import (
     RepresentativeSubject,
     representative_subject,
 )
+from .fonts import (
+    TEXT_TOOLCHAIN_VERSION,
+    FontLibrary,
+    MeasuredFont,
+    NiimbotFontLibrary,
+    niimbot_font_library,
+)
+from .geometry import AreaMm
+from .ink import ElementInk, InkBasis, element_ink, fit_text
 from .preview import (
     DEFAULT_LABEL_SIZE_ID,
     PREVIEW,
@@ -117,11 +131,15 @@ from .preview import (
 )
 from .profiles import (
     NIIMBOT_B1_50X30,
+    NIIMBOT_B1_DECLARED_LIMITS,
     PROFILES,
+    CalibratedLimits,
     CapabilityProfile,
     ProfileEvidence,
+    StockOrientation,
     profiles_for_size,
 )
+from .qr import QR_MODEL_VERSION, QrDataOverflow, QrSymbol, symbol_for
 from .result import (
     ADAPTER_VERSION,
     CURRENT,
@@ -130,6 +148,16 @@ from .result import (
     Raster,
     RenderContext,
     RenderResult,
+    eligibility_for,
+)
+from .safety import (
+    OVERLAP_INK,
+    OVERLAP_QR_QUIET_ZONE,
+    OVERLAP_REQUIRED_CONTENT,
+    SAFETY_POLICY_VERSION,
+    OverlapPair,
+    SafetyReport,
+    evaluate_safety,
 )
 from .subjects import (
     PLANT_ROUTE,
@@ -164,55 +192,78 @@ __all__ = [
     "MISSING_OPTIONAL",
     "MONOCHROME_TOKENS",
     "NIIMBOT_B1_50X30",
+    "NIIMBOT_B1_DECLARED_LIMITS",
     "OMITTED_MISSING_CONTENT",
     "OMITTED_UNSUPPORTED_CONTEXT",
+    "OVERLAP_INK",
+    "OVERLAP_QR_QUIET_ZONE",
+    "OVERLAP_REQUIRED_CONTENT",
     "PLACED",
     "PLANT_ROUTE",
     "PREVIEW",
     "PRINT",
     "PROFILES",
+    "QR_MODEL_VERSION",
     "QUANTUM_MM",
     "RECORD_SOURCE",
     "RENDERER_VERSION",
     "REPRESENTATIVE_FAMILIES",
     "REPRESENTATIVE_SUBJECTS",
+    "SAFETY_POLICY_VERSION",
     "SCHEMA",
     "SPARSE_BATCH_ITEM",
     "SPARSE_PLANT",
     "SPARSE_STRAIN",
     "STYLE_TOKEN_CATALOGUE_VERSION",
     "SUPPORTED_LOCALES",
+    "TEXT_TOOLCHAIN_VERSION",
     "TYPICAL",
     "TYPICAL_BATCH_ITEM",
     "TYPICAL_PLANT",
     "TYPICAL_STRAIN",
     "VERSION",
+    "AreaMm",
     "BindingDefinition",
+    "Blocker",
+    "CalibratedLimits",
     "CapabilityProfile",
     "CompiledLabel",
     "ContentAbsence",
     "Diagnostic",
     "DocumentValidation",
+    "ElementInk",
     "ElementKind",
     "ElementOutcome",
     "ErrorCorrection",
     "FactoryTemplate",
+    "FontLibrary",
     "Frame",
+    "InkBasis",
     "LabelAsset",
     "LabelContentSnapshot",
     "LabelLayout",
     "LabelSize",
     "Layer",
     "LayoutElement",
+    "MeasuredFont",
     "MissingPolicy",
+    "NiimbotFontLibrary",
+    "Operation",
+    "OperationEligibility",
+    "OverlapPair",
     "PixelFrame",
     "PrintContext",
     "ProfileEvidence",
+    "QrDataOverflow",
+    "QrSymbol",
     "Raster",
+    "Recovery",
     "RenderContext",
     "RenderResult",
     "RepresentativeSubject",
+    "SafetyReport",
     "Severity",
+    "StockOrientation",
     "SubjectFacts",
     "UnsupportedLocaleError",
     "async_capture_batch",
@@ -222,18 +273,25 @@ __all__ = [
     "async_render_factory_preview",
     "canonicalize",
     "compile_layout",
+    "decide_eligibility",
     "digest",
+    "element_ink",
+    "eligibility_for",
+    "evaluate_safety",
     "factory_template_for_size",
+    "fit_text",
     "format_age",
     "format_date",
     "has_blocking",
     "missing_policy",
+    "niimbot_font_library",
     "profiles_for_size",
     "representative_subject",
     "resolve_locale",
     "resolve_subject",
     "stage_display_name",
     "stage_started_at",
+    "symbol_for",
     "to_pixels",
     "validate_document",
 ]

@@ -1,24 +1,27 @@
 """The [[Render Context]] and the [[Render Result]] one render produces.
 
 A Render Context is the complete identity of one render: which layout, which
-subject, which profile, which compiler, renderer and adapter, which catalogues
-and which instant. It exists so that "is this preview still the truth?" is a
-comparison rather than a guess -- and so that a font, profile or compiler
-update invalidates a cached raster without anyone pretending the saved layout
-changed.
+subject, which profile and calibration, which compiler, renderer, adapter,
+fonts, QR model and safety policy, which catalogues and which instant. It
+exists so that "is this preview still the truth?" is a comparison rather than
+a guess -- and so that a font, profile or compiler update invalidates a cached
+raster without anyone pretending the saved layout changed.
 
 The cache identity is a digest of that whole context. Two requests sharing it
 share their raster; anything else, however similar it looks, does not.
 
-A Render Result is the authoritative raster plus the outcomes and diagnostics
-that explain it. Print eligibility is decided here and read by the card -- it
-is never inferred from a warning count on the other side of the wire.
+A Render Result is the authoritative raster plus everything that explains it:
+what became of each element, what ink each one laid down, where that ink
+overlaps, which limits it was judged against, every diagnostic with the kind
+of correction that clears it, and one eligibility answer per operation.
+Eligibility is decided here and read by the card -- it is never inferred from
+a warning count on the other side of the wire.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 from .canonicalization import digest
@@ -29,7 +32,13 @@ from .catalogue import (
     STYLE_TOKEN_CATALOGUE_VERSION,
 )
 from .compiler import COMPILER_VERSION, ElementOutcome
-from .diagnostics import Diagnostic, has_blocking
+from .diagnostics import Diagnostic
+from .eligibility import Operation, OperationEligibility, decide_eligibility
+from .fonts import TEXT_TOOLCHAIN_VERSION
+from .ink import ElementInk
+from .profiles import CapabilityProfile
+from .qr import QR_MODEL_VERSION
+from .safety import SAFETY_POLICY_VERSION, OverlapPair
 
 #: Bumped when this module's own composition of a result changes.
 RENDERER_VERSION = "growspace.label-renderer.v1"
@@ -56,9 +65,17 @@ class RenderContext:
     density: str
     density_level: int | None
     operation: str
+    #: The installation's own calibration record for this printer and stock.
+    #: `None` is a state, not a gap: it refuses production printing by name.
+    local_calibration: str | None = None
+    #: Font file to the digest of the bytes this render measured.
+    font_identity: Mapping[str, str] = field(default_factory=dict)
     compiler_version: str = COMPILER_VERSION
     renderer_version: str = RENDERER_VERSION
     adapter_version: str = ADAPTER_VERSION
+    text_toolchain_version: str = TEXT_TOOLCHAIN_VERSION
+    qr_model_version: str = QR_MODEL_VERSION
+    safety_policy_version: str = SAFETY_POLICY_VERSION
     binding_catalogue_version: str = BINDING_CATALOGUE_VERSION
     style_token_catalogue_version: str = STYLE_TOKEN_CATALOGUE_VERSION
     label_size_catalogue_version: str = LABEL_SIZE_CATALOGUE_VERSION
@@ -71,6 +88,7 @@ class RenderContext:
             "label_size_id": self.label_size_id,
             "profile_id": self.profile_id,
             "profile_evidence": self.profile_evidence,
+            "local_calibration": self.local_calibration,
             "content_identity": self.content_identity,
             "content_context": self.content_context,
             "content_source": self.content_source,
@@ -80,9 +98,13 @@ class RenderContext:
             "density": self.density,
             "density_level": self.density_level,
             "operation": self.operation,
+            "font_identity": dict(self.font_identity),
             "compiler_version": self.compiler_version,
             "renderer_version": self.renderer_version,
             "adapter_version": self.adapter_version,
+            "text_toolchain_version": self.text_toolchain_version,
+            "qr_model_version": self.qr_model_version,
+            "safety_policy_version": self.safety_policy_version,
             "binding_catalogue_version": self.binding_catalogue_version,
             "style_token_catalogue_version": self.style_token_catalogue_version,
             "label_size_catalogue_version": self.label_size_catalogue_version,
@@ -134,20 +156,37 @@ FAILED = "failed"
 
 @dataclass(frozen=True, slots=True)
 class RenderResult:
-    """One render: the raster, what happened to each element, and whether it may print."""
+    """One render: the raster, what it did, and what it may authorize."""
 
     context: RenderContext
     status: str
     raster: Raster | None
     outcomes: tuple[ElementOutcome, ...]
     diagnostics: tuple[Diagnostic, ...]
-    #: Whether this exact result may reach paper. Decided here.
-    printable: bool
+    #: The profile this render was against, regions and calibrated limits
+    #: included, so a client can explain a refusal without a second request.
+    profile: CapabilityProfile | None = None
+    #: What each element really inked.
+    ink: tuple[ElementInk, ...] = ()
+    #: Every pair of elements whose ink coincides, graded.
+    overlaps: tuple[OverlapPair, ...] = ()
+    #: One answer per operation, with the reasons for each refusal.
+    eligibility: Mapping[str, OperationEligibility] = field(default_factory=dict)
 
     @property
     def cache_identity(self) -> str:
         """The identity this result may be reused under."""
         return self.context.cache_identity
+
+    @property
+    def printable(self) -> bool:
+        """Whether this exact result may put one real record on paper.
+
+        The same question as `eligibility["single_print"]`, kept as a property
+        so there is one answer rather than two that can disagree.
+        """
+        decision = self.eligibility.get(str(Operation.SINGLE_PRINT))
+        return bool(decision and decision.allowed)
 
     def as_dict(self) -> dict[str, Any]:
         """Return the complete wire form of this result."""
@@ -156,29 +195,32 @@ class RenderResult:
             "printable": self.printable,
             "cache_identity": self.cache_identity,
             "render_context": self.context.as_dict(),
+            "profile": self.profile.as_dict() if self.profile else None,
             "raster": self.raster.as_dict() if self.raster else None,
             "elements": [outcome.as_dict() for outcome in self.outcomes],
+            "ink": [item.as_dict() for item in self.ink],
+            "overlaps": [pair.as_dict() for pair in self.overlaps],
             "diagnostics": [item.as_dict() for item in self.diagnostics],
+            "eligibility": {
+                name: decision.as_dict() for name, decision in self.eligibility.items()
+            },
         }
 
 
-def decide_printable(
+def eligibility_for(
     diagnostics: Sequence[Diagnostic],
     raster: Raster | None,
     *,
-    profile_authorizes_production: bool,
-) -> bool:
-    """Decide whether one result may reach paper.
-
-    Three independent reasons it may not, and each is reported as itself: a
-    blocking diagnostic, no raster at all, or a profile whose physical
-    evidence has not been recorded. A provisional profile renders an exact
-    bitmap and still cannot authorize a print, because an exact bitmap is a
-    claim about the driver and not about the paper.
-    """
-    if raster is None or has_blocking(diagnostics):
-        return False
-    return profile_authorizes_production
+    profile: CapabilityProfile,
+    local_calibration: str | None = None,
+) -> Mapping[str, OperationEligibility]:
+    """Decide every operation this result could be asked to authorize."""
+    return decide_eligibility(
+        diagnostics,
+        has_raster=raster is not None,
+        profile=profile,
+        local_calibration=local_calibration,
+    )
 
 
 def merged_diagnostics(*groups: Sequence[Diagnostic]) -> tuple[Diagnostic, ...]:
