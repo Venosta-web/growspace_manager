@@ -32,6 +32,32 @@ class Severity(StrEnum):
     INFO = "info"
 
 
+class Recovery(StrEnum):
+    """The kind of correction that clears one diagnostic.
+
+    It names a destination, not a repair: nothing here is applied for the
+    user. A layout error routes to the element that carries it, a device
+    error to profile selection or calibration rather than into the element
+    controls, and a renderer or transport failure to retrying the same
+    request. "Fix it for me" is deliberately absent.
+    """
+
+    #: Change this element's geometry or style.
+    EDIT_ELEMENT = "edit_element"
+    #: Change the record this label is about, or print a different one.
+    EDIT_CONTENT = "edit_content"
+    #: Choose a printer, stock or density this layout can reach.
+    SELECT_PROFILE = "select_profile"
+    #: Run the guided calibration flow for this printer and stock.
+    CALIBRATE = "calibrate"
+    #: Reload, restore or replace the template itself.
+    RESTORE_TEMPLATE = "restore_template"
+    #: Ask again; nothing about the layout has to change.
+    RETRY = "retry"
+    #: Nothing to correct.
+    NONE = "none"
+
+
 class Layer(StrEnum):
     """Which validation layer produced a diagnostic."""
 
@@ -61,6 +87,16 @@ class Diagnostic:
     element_id: str | None = None
     #: Named values the message is built from, for a client that localizes it.
     parameters: Mapping[str, Any] = field(default_factory=dict)
+    #: Where a user goes to clear this. Left unset, the layer decides, so a
+    #: diagnostic raised before this field existed still routes somewhere.
+    recovery: Recovery | None = None
+
+    @property
+    def recovery_action(self) -> Recovery:
+        """The correction kind this diagnostic routes to."""
+        if self.recovery is not None:
+            return self.recovery
+        return DEFAULT_RECOVERY[self.layer]
 
     def as_dict(self) -> dict[str, Any]:
         """Return the wire form of this diagnostic."""
@@ -72,7 +108,18 @@ class Diagnostic:
             "path": self.path,
             "element_id": self.element_id,
             "parameters": dict(self.parameters),
+            "recovery": str(self.recovery_action),
         }
+
+
+#: Where each layer's diagnostics route when one does not say for itself.
+DEFAULT_RECOVERY: Mapping[Layer, Recovery] = {
+    Layer.DOCUMENT: Recovery.EDIT_ELEMENT,
+    Layer.CONTENT: Recovery.EDIT_CONTENT,
+    Layer.PROFILE_COMPILATION: Recovery.SELECT_PROFILE,
+    Layer.RASTER: Recovery.RETRY,
+    Layer.TRANSPORT: Recovery.RETRY,
+}
 
 
 def has_blocking(diagnostics: Iterable[Diagnostic]) -> bool:

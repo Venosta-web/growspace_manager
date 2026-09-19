@@ -179,6 +179,9 @@ def test_the_clip_policy_truncates_without_a_mark() -> None:
 
 
 def test_a_divider_s_frame_is_its_complete_inked_extent() -> None:
+    """The renderer's rectangle is inclusive on both edges, so the last inked
+    pixel is what it is given -- one short of the frame's exclusive edge,
+    which is what makes the ink and the saved millimetres the same rectangle."""
     rule = {
         "id": "element-rule",
         "kind": "divider",
@@ -189,8 +192,30 @@ def test_a_divider_s_frame_is_its_complete_inked_extent() -> None:
     compiled = compile_layout(_layout(rule), SNAPSHOT, NIIMBOT_B1_50X30)
     placed = compiled.plan.elements[1]
     assert isinstance(placed, Divider)
-    assert (placed.x_start, placed.x_end) == (to_pixels(2.0, 203), to_pixels(42.0, 203))
-    assert (placed.y_start, placed.y_end) == (to_pixels(9.0, 203), to_pixels(9.4, 203))
+    assert (placed.x_start, placed.x_end) == (
+        to_pixels(2.0, 203),
+        to_pixels(42.0, 203) - 1,
+    )
+    assert (placed.y_start, placed.y_end) == (
+        to_pixels(9.0, 203),
+        to_pixels(9.4, 203) - 1,
+    )
+
+
+def test_a_divider_thinner_than_one_pixel_still_names_one_row() -> None:
+    """Zero inclusive rows is not a thinner rule, it is a renderer error. The
+    thickness policy is what reports a rule this printer cannot draw."""
+    rule = {
+        "id": "element-rule",
+        "kind": "divider",
+        "frame": {"x_mm": 2.0, "y_mm": 9.0, "width_mm": 40.0, "height_mm": 0.01},
+        "rotation": 0,
+        "style": {"fill": "black"},
+    }
+    compiled = compile_layout(_layout(rule), SNAPSHOT, NIIMBOT_B1_50X30)
+    placed = compiled.plan.elements[1]
+    assert isinstance(placed, Divider)
+    assert placed.y_end == placed.y_start
 
 
 def test_a_qr_is_sized_by_its_frame_rather_than_by_a_module_count() -> None:
@@ -250,10 +275,22 @@ def test_element_rotation_is_refused_by_name_rather_than_guessed_at() -> None:
     layout = validate_document(document).layout
     compiled = compile_layout(layout, SNAPSHOT, NIIMBOT_B1_50X30)
     assert [item.code for item in compiled.diagnostics] == [
-        "compiler.rotation_unsupported"
+        "profile.rotation_unsupported"
     ]
+    assert compiled.diagnostics[0].parameters["supported"] == [0]
     assert compiled.outcomes[0].status == BLOCKED
     assert compiled.plan.elements == ()
+
+
+def test_a_profile_that_supports_a_rotation_places_it() -> None:
+    """Which angles are realisable is the profile's statement, not a constant."""
+    document = _layout().as_dict()
+    document["elements"][0]["rotation"] = 90
+    layout = validate_document(document).layout
+    rotating = replace(NIIMBOT_B1_50X30, supported_element_rotations=(0, 90))
+    compiled = compile_layout(layout, SNAPSHOT, rotating)
+    assert [item.code for item in compiled.diagnostics] == []
+    assert compiled.outcomes[0].status == PLACED
 
 
 def test_a_profile_for_another_stock_is_refused() -> None:

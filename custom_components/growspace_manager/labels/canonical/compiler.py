@@ -43,7 +43,7 @@ from .catalogue import (
     MissingPolicy,
 )
 from .content import ContentAbsence, LabelContentSnapshot, missing_policy
-from .diagnostics import Diagnostic, Layer, Severity
+from .diagnostics import Diagnostic, Layer, Recovery, Severity
 from .document import (
     AssetSource,
     BindingSource,
@@ -56,6 +56,7 @@ from .document import (
     QrStyle,
     TextStyle,
 )
+from .geometry import PixelFrame
 from .profiles import MM_PER_INCH, CapabilityProfile
 
 #: Bumped when the arithmetic, the fitting search or the element mapping
@@ -77,38 +78,14 @@ _OVERFLOW = {
     "shrink_ellipsis": ("shrink_ellipsis", "…"),
 }
 
+#: Document vertical alignment to the renderer's own word for the middle one.
+#: The document says `center` because that is what it says horizontally; the
+#: renderer spells the vertical one `middle` and treats every other value as
+#: `top`. Passing the document's word through therefore did not centre text --
+#: it top-aligned it, silently, on every shipped layout that asked for centring.
+_VERTICAL_ALIGN = {"top": "top", "center": "middle", "bottom": "bottom"}
+
 _DECIMAL_MM_PER_INCH = Decimal(str(MM_PER_INCH))
-
-
-@dataclass(frozen=True, slots=True)
-class PixelFrame:
-    """One element's compiled extent, in device pixels on the raster."""
-
-    left: int
-    top: int
-    right: int
-    bottom: int
-
-    @property
-    def width(self) -> int:
-        """Pixel width, as the difference of two converted edges."""
-        return self.right - self.left
-
-    @property
-    def height(self) -> int:
-        """Pixel height, as the difference of two converted edges."""
-        return self.bottom - self.top
-
-    def as_dict(self) -> dict[str, int]:
-        """Return the frame's wire form."""
-        return {
-            "left": self.left,
-            "top": self.top,
-            "right": self.right,
-            "bottom": self.bottom,
-            "width": self.width,
-            "height": self.height,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +141,10 @@ class CompiledLabel:
     plan: LabelRenderPlan
     outcomes: tuple[ElementOutcome, ...]
     diagnostics: tuple[Diagnostic, ...]
+    #: Stable element ID to the plan element it became, in paint order. The
+    #: plan itself is printer-neutral and carries no identities, so this is
+    #: how a later layer attributes ink back to the element that made it.
+    placed: Mapping[str, LabelElement] = field(default_factory=dict)
 
 
 def compile_layout(
@@ -217,11 +198,13 @@ class _Compiler:
         self._check_profile()
         elements: list[LabelElement] = []
         outcomes: list[ElementOutcome] = []
+        placed_by_id: dict[str, LabelElement] = {}
         for element in self._layout.elements:
             placed, outcome = self._element(element)
             outcomes.append(outcome)
             if placed is not None:
                 elements.append(placed)
+                placed_by_id[element.id] = placed
 
         plan = LabelRenderPlan(
             canvas=self._canvas,
@@ -233,6 +216,7 @@ class _Compiler:
             plan,
             tuple(outcomes),
             (*self._snapshot.diagnostics, *self._diagnostics),
+            placed=placed_by_id,
         )
 
     # -- profile -----------------------------------------------------------
@@ -291,20 +275,27 @@ class _Compiler:
             else None
         )
 
-        if element.rotation != 0:
+        if not self._profile.supports_rotation(element.rotation):
             # The renderer expresses element rotation through a rotating group
-            # whose anchoring needs golden renders this compiler version has
-            # not earned. Refusing by name beats emitting untested geometry.
+            # whose anchoring needs golden renders no profile has earned yet.
+            # Refusing by name beats emitting untested geometry -- and beats
+            # mapping the angle to the nearest one that is supported, which
+            # would print a label nobody designed.
             return None, self._blocked(
                 element,
                 frame,
                 binding,
-                "compiler.rotation_unsupported",
+                "profile.rotation_unsupported",
                 (
-                    f"Compiler {COMPILER_VERSION} places unrotated elements "
-                    f"only; element {element.id} is rotated {element.rotation}."
+                    f"Profile {self._profile.id} places elements rotated "
+                    f"{sorted(self._profile.supported_element_rotations)}; "
+                    f"element {element.id} is rotated {element.rotation}."
                 ),
-                {"rotation": element.rotation},
+                {
+                    "rotation": element.rotation,
+                    "supported": list(self._profile.supported_element_rotations),
+                },
+                recovery=Recovery.EDIT_ELEMENT,
             )
 
         if not self._inside_printable_area(frame):
@@ -319,6 +310,7 @@ class _Compiler:
                     "Printable Area."
                 ),
                 {"pixel_frame": frame.as_dict()},
+                recovery=Recovery.EDIT_ELEMENT,
             )
 
         style = element.style
@@ -364,6 +356,7 @@ class _Compiler:
         code: str,
         message: str,
         parameters: Mapping[str, Any],
+        recovery: Recovery | None = None,
     ) -> ElementOutcome:
         """Record a compilation refusal and its outcome."""
         self._add(
@@ -372,6 +365,7 @@ class _Compiler:
             message,
             element_id=element.id,
             parameters=parameters,
+            recovery=recovery,
         )
         return ElementOutcome(
             element_id=element.id,
@@ -511,7 +505,7 @@ class _Compiler:
                 self._profile.dpi,
             ),
             align=style.horizontal_align,
-            valign=style.vertical_align,
+            valign=_VERTICAL_ALIGN[style.vertical_align],
             fit=fit,
             ellipsis=ellipsis,
             font=FONT_TOKENS[style.font].file,
@@ -548,12 +542,20 @@ class _Compiler:
         )
 
     def _divider(self, style: DividerStyle, frame: PixelFrame) -> Divider:
-        """Place one divider: its frame is its complete inked extent."""
+        """Place one divider: its frame is its complete inked extent.
+
+        The renderer's rectangle is inclusive on both edges, so the last
+        inked pixel is what it must be given. Handing it the frame's
+        exclusive right and bottom edges painted a rule one pixel wider and
+        one taller than the millimetres anyone saved -- small, invisible in a
+        preview, and enough to put ink outside a Printable Area that the
+        geometry said was clear.
+        """
         return Divider(
             x_start=frame.left,
-            x_end=frame.right,
+            x_end=max(frame.right - 1, frame.left),
             y_start=frame.top,
-            y_end=frame.bottom,
+            y_end=max(frame.bottom - 1, frame.top),
             fill=style.fill,
         )
 
@@ -584,6 +586,7 @@ class _Compiler:
         element_id: str | None = None,
         parameters: Mapping[str, Any] | None = None,
         layer: Layer = Layer.PROFILE_COMPILATION,
+        recovery: Recovery | None = None,
     ) -> None:
         """Record one diagnostic of the layer that produced it."""
         self._diagnostics.append(
@@ -595,5 +598,6 @@ class _Compiler:
                 path="",
                 element_id=element_id,
                 parameters=parameters or {},
+                recovery=recovery,
             )
         )
