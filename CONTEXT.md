@@ -686,7 +686,30 @@ What one exact Render Result is allowed to do, answered per operation rather tha
 The kind of correction one diagnostic leads to — the element, the record, profile selection, calibration, the template itself, or simply asking again. It names a destination, never a repair: nothing is applied for the user, and there is no "fix all". A device error routes to profile selection or calibration rather than sending someone searching through element controls.
 
 **Factory Template**
-A layout the integration ships, at a shipped revision, identified by a stable namespaced ID. An upgrade may append a new revision and advance the head; it never edits a revision in place and never changes a template someone copied. Factory and named templates cross the same renderer interface — factory status creates no second rendering implementation.
+A layout the integration ships, at a shipped revision, identified by a stable namespaced ID. An upgrade may append a new revision and advance the head; it never edits a revision in place and never changes a template someone copied. Factory and named templates cross the same renderer interface — factory status creates no second rendering implementation. It is also the designated fallback for its [[Label Size]] and cannot be renamed, published to or deleted, which is what makes it safe to be the thing every other failure resolves to.
+
+## Label Template Library
+
+**Template Library**
+One Home Assistant config entry's authoritative templates, defaults, revision history and drafts, in `labels/library/`. The config entry ID is in the `.storage` key, so the isolation is the store rather than a rule applied over a shared one: an identity minted under one entry is simply absent from another, and two entries may hold the same names without sharing anything. The card is an authenticated editor and consumer of this model, never a second source of truth — browser storage may cache it for responsiveness and cannot establish a template, default, revision or draft. See the workspace hub's `docs/design/label-template-lifecycle.md`.
+
+**Named Template**
+An administrator-created [[Label Layout]] under an opaque UUID, belonging permanently to one [[Label Size]]. The UUID survives rename, revision and restore; the name is the current [[Template Revision]]'s, trimmed and case-insensitively unique within that size and free at any other. The size never changes, because converting a design between stocks is a transform rather than an edit.
+
+**Template Revision**
+One immutable published state beneath a [[Named Template]]'s UUID, numbered from 1. Immutable after commit means the head moves only by appending: nothing edits a revision, which is what lets a print reference one and stay truthful about what it printed. Each records its instant, the acting user, the operation kind, its parent, and the structural provenance of where its content came from — the [[Factory Template]] revision, the source template revision, or the blank it started as.
+
+**Template Draft**
+One administrator's unpublished, durable editing state, based on one [[Template Revision]] or on a [[Label Size]] alone. Exactly one per administrator and template, and one untitled one per administrator and size. Its payload is opaque and may be invalid: autosave keeps whatever the editor last had, because an autosave that dropped invalid work would make every diagnostic a threat to the work. It is private to its owner, survives a restart, and becomes a `LabelLayout` at exactly one moment — publication.
+
+**Publication Gate**
+What a [[Template Draft]] must pass to become a [[Template Revision]]: the document layer in full — the closed schema, the 0.01 mm quantum, identity and paint order, supported rotation, and the required `strain.name` text element inside a frame that really fits the stock. Deliberately not the profile-relative layers. A [[Capability Profile]] is chosen per render, so judging ink coverage or safe areas at publication would pin a saved design to today's one profile and refuse a perfectly good 50×50 layout for the sole reason that no 50×50 profile has shipped. Those judgements are [[Print Eligibility]]'s, where a profile exists.
+
+**Effective Default**
+What one [[Label Size]] resolves to: the administrator's optional override where there is a usable one, and that size's [[Factory Template]] where there is not. Resolution produces one concrete revision at the start of an operation, so a later save or default change cannot reach back into a render or print that already has one. An override naming a template that has gone, or a revision the catalogues have moved past, exposes the fallback rather than failing — losing an override must not cost a stock its printing — and an override is never silently re-pointed to make that true.
+
+**Library Generation**
+A monotonic integer identifying one [[Template Library]]'s committed state, advanced once per committed mutation of templates or defaults. Draft autosave does not advance it: the generation identifies the library other clients can see, and announcing every keystroke as a library change would make everybody refresh for something none of them can read.
 
 ## Serialization
 
