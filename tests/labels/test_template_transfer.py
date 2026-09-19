@@ -31,8 +31,11 @@ import pytest
 
 from custom_components.growspace_manager.labels.canonical import FACTORY_50X30, digest
 from custom_components.growspace_manager.labels.library import (
+    BACKUP_SCHEMA,
+    BACKUP_VERSION,
     BUNDLE_SCHEMA,
     BUNDLE_VERSION,
+    DEPENDENCY_KINDS,
     EVENT_LABEL_TEMPLATE_LIBRARY_CHANGED,
     FROM_IMPORT,
     IMPORT,
@@ -46,16 +49,23 @@ from custom_components.growspace_manager.labels.library import (
     ImportCollision,
     IncompatibleBundle,
     IncompatibleTemplateStore,
+    LabelSizeImmutable,
     LabelTemplateLibrary,
+    TemplateNameRequired,
+    TemplateNotFound,
     TemplateNotResolvable,
     TemplateProtected,
     TemplateRef,
     UnsupportedDependency,
     blank_document,
+    dependencies_of,
+    read_backup,
+    read_bundle,
 )
 from homeassistant.core import Event, HomeAssistant, callback
 
 SIZE = "growspace.stock.50x30.v1"
+OTHER_SIZE = "growspace.stock.50x50.v1"
 
 
 async def _named_template(
@@ -819,3 +829,324 @@ async def test_a_backup_restores_a_quarantined_template_as_it_was(
     }
     snapshot = await reopened.async_snapshot(admin)
     assert snapshot["templates"][0]["quarantined"] is True
+
+
+# ---------------------------------------------------------------------------
+# Reading a document nobody here wrote
+# ---------------------------------------------------------------------------
+#
+# A bundle and a backup both arrive as bytes from outside: a file somebody was
+# sent, an export edited by hand, a document assembled by a tool that meant
+# well. The readers are therefore tested directly as well as through the
+# library, because every one of these refusals has to happen before a caller
+# has written anything -- and reaching them through a library would prove the
+# refusal without proving where it happened.
+
+
+@pytest.mark.parametrize(
+    ("document", "detail"),
+    [
+        pytest.param("not a bundle", "JSON object", id="not_an_object"),
+        pytest.param(
+            {"schema": BUNDLE_SCHEMA, "version": "one"}, "format version", id="version"
+        ),
+        pytest.param(
+            {"schema": BUNDLE_SCHEMA, "version": 0}, "format version", id="zero"
+        ),
+        pytest.param(
+            {"schema": BUNDLE_SCHEMA, "version": BUNDLE_VERSION, "templates": {}},
+            "not a list",
+            id="templates_not_a_list",
+        ),
+        pytest.param(
+            {"schema": BUNDLE_SCHEMA, "version": BUNDLE_VERSION, "templates": ["no"]},
+            "not an object",
+            id="entry_not_an_object",
+        ),
+        pytest.param(
+            {
+                "schema": BUNDLE_SCHEMA,
+                "version": BUNDLE_VERSION,
+                "templates": [{"id": "a"}],
+            },
+            "malformed",
+            id="entry_missing_fields",
+        ),
+        pytest.param(
+            {
+                "schema": BUNDLE_SCHEMA,
+                "version": BUNDLE_VERSION,
+                "templates": [
+                    {
+                        "id": 7,
+                        "name": "Clone tags",
+                        "label_size_id": SIZE,
+                        "revision": 1,
+                        "document": {},
+                        "digest": "sha256:x",
+                        "provenance": {"source": "blank"},
+                    }
+                ],
+            },
+            "malformed",
+            id="entry_id_not_a_string",
+        ),
+        pytest.param(
+            {
+                "schema": BUNDLE_SCHEMA,
+                "version": BUNDLE_VERSION,
+                "templates": [
+                    {
+                        "id": "a",
+                        "name": "Clone tags",
+                        "label_size_id": SIZE,
+                        "revision": 1,
+                        "document": "not an object",
+                        "digest": "sha256:x",
+                        "provenance": {"source": "blank"},
+                    }
+                ],
+            },
+            "malformed",
+            id="entry_document_not_an_object",
+        ),
+    ],
+)
+def test_a_bundle_that_is_not_one_is_refused_before_anything_is_read(
+    document: object, detail: str
+) -> None:
+    """Structural damage is the same refusal as a wrong checksum, and as early."""
+    with pytest.raises(BundleNotReadable, match=detail):
+        read_bundle(document)
+
+
+def test_a_bundle_without_a_checksum_cannot_be_vouched_for() -> None:
+    """An unsigned bundle is not a bundle with a benefit of the doubt."""
+    with pytest.raises(BundleNotReadable, match="checksum"):
+        read_bundle(
+            {"schema": BUNDLE_SCHEMA, "version": BUNDLE_VERSION, "templates": []}
+        )
+
+
+def test_dependencies_are_read_off_whatever_the_document_turns_out_to_be() -> None:
+    """Including an asset, and including a document that is not one at all.
+
+    The documents that most need their dependencies named are exactly the ones
+    that no longer parse, so this reads the raw shape rather than a layout.
+    """
+    found = dependencies_of(
+        {
+            "label_size_id": SIZE,
+            "elements": [
+                "not an element",
+                {
+                    "kind": "logo",
+                    "content": {"asset_id": "growspace.asset.badge"},
+                    "style": {"monochrome": "growspace.mono.threshold.v1"},
+                },
+            ],
+        }
+    )
+
+    assert found["assets"] == ("growspace.asset.badge",)
+    assert found["label_sizes"] == (SIZE,)
+    assert found["monochromes"] == ("growspace.mono.threshold.v1",)
+    assert dependencies_of("not a document") == dict.fromkeys(DEPENDENCY_KINDS, ())
+    assert dependencies_of({"elements": "not a list"})["bindings"] == ()
+
+
+@pytest.mark.parametrize(
+    ("document", "detail"),
+    [
+        pytest.param("not a backup", "JSON object", id="not_an_object"),
+        pytest.param(
+            {"schema": BACKUP_SCHEMA, "version": None}, "format version", id="version"
+        ),
+        pytest.param(
+            {"schema": BACKUP_SCHEMA, "version": BACKUP_VERSION},
+            "carries no checksum",
+            id="no_checksum",
+        ),
+    ],
+)
+def test_a_backup_that_is_not_one_is_refused_before_it_is_staged(
+    document: object, detail: str
+) -> None:
+    """Every refusal happens before a caller has written anything."""
+    with pytest.raises(BackupNotRestorable, match=detail):
+        read_backup(document)
+
+
+def _backup_of(library: dict[str, Any]) -> dict[str, Any]:
+    """Seal one hand-written library document as a backup of it."""
+    return _resealed(
+        {
+            "schema": BACKUP_SCHEMA,
+            "version": BACKUP_VERSION,
+            "store_version": STORE_VERSION,
+            "entry_id": "entry-a",
+            "created_at": "2026-09-19T00:00:00+00:00",
+            "library": library,
+        }
+    )
+
+
+def _one_template(**changes: Any) -> dict[str, Any]:
+    """One persisted template, as a backup would carry it."""
+    revision = {
+        "revision": 1,
+        "name": "Clone tags",
+        "document": blank_document(SIZE),
+        "digest": "sha256:one",
+        "published_at": "2026-09-19T00:00:00+00:00",
+        "published_by": "admin-user",
+        "operation": "publish",
+        "parent_revision": None,
+        "provenance": {"source": "blank"},
+    }
+    return {
+        "id": "t1",
+        "label_size_id": SIZE,
+        "created_at": "2026-09-19T00:00:00+00:00",
+        "created_by": "admin-user",
+        "revisions": [revision],
+        **changes,
+    }
+
+
+@pytest.mark.parametrize(
+    ("library", "detail"),
+    [
+        pytest.param(
+            {"templates": {"t1": {"id": "t1"}}}, "malformed", id="malformed_record"
+        ),
+        pytest.param(
+            {"templates": {"elsewhere": _one_template()}},
+            "filed under",
+            id="misfiled_template",
+        ),
+        pytest.param(
+            {"templates": {"t1": _one_template(revisions=[])}},
+            "no revisions",
+            id="no_revisions",
+        ),
+        pytest.param(
+            {
+                "templates": {
+                    "t1": _one_template(
+                        revisions=[
+                            {**_one_template()["revisions"][0], "revision": 2},
+                            _one_template()["revisions"][0],
+                        ]
+                    )
+                }
+            },
+            "not in order",
+            id="history_out_of_order",
+        ),
+        pytest.param(
+            {
+                "drafts": {
+                    "somebody:else": {
+                        "id": "d1",
+                        "owner": "admin-user",
+                        "label_size_id": SIZE,
+                        "version": 1,
+                        "document": {},
+                        "created_at": "2026-09-19T00:00:00+00:00",
+                        "modified_at": "2026-09-19T00:00:00+00:00",
+                        "provenance": {"source": "blank"},
+                    }
+                }
+            },
+            "in slot",
+            id="misfiled_draft",
+        ),
+        pytest.param(
+            {
+                "tombstones": {
+                    "elsewhere": {
+                        "template": _one_template(),
+                        "deleted_at": "2026-09-19T00:00:00+00:00",
+                        "deleted_by": "admin-user",
+                        "expires_at": "2026-10-19T00:00:00+00:00",
+                    }
+                }
+            },
+            "filed under",
+            id="misfiled_tombstone",
+        ),
+        pytest.param(
+            {
+                "templates": {"t1": _one_template()},
+                "tombstones": {
+                    "t1": {
+                        "template": _one_template(),
+                        "deleted_at": "2026-09-19T00:00:00+00:00",
+                        "deleted_by": "admin-user",
+                        "expires_at": "2026-10-19T00:00:00+00:00",
+                    }
+                },
+            },
+            "both live and deleted",
+            id="live_and_deleted",
+        ),
+        pytest.param({"generation": -1}, "negative", id="negative_generation"),
+    ],
+)
+def test_a_library_whose_records_disagree_with_their_slots_is_refused(
+    library: dict[str, Any], detail: str
+) -> None:
+    """The one class of damage a checksum cannot catch: a document assembled wrong."""
+    with pytest.raises(BackupNotRestorable, match=detail):
+        read_backup(_backup_of(library))
+
+
+async def test_an_entry_must_still_be_named_and_must_agree_with_its_own_stock(
+    libraries: Callable[..., LabelTemplateLibrary], admin: Any
+) -> None:
+    """Two refusals staging reaches that a well-formed export never produces.
+
+    A bundle arrives from outside, so the entry's own claims about itself are
+    checked rather than trusted: a name resolved to whitespace is not a name,
+    and an entry that says one stock while its layout says another is a
+    template whose Label Size would be decided by whichever field was read.
+    """
+    source = libraries("entry-a")
+    target = libraries("entry-b")
+    await source.async_load()
+    await target.async_load()
+    published = await _named_template(source, admin)
+    bundle = await source.async_export_templates(admin)
+
+    with pytest.raises(TemplateNameRequired):
+        await target.async_import_templates(
+            admin, bundle, names={published.template.id: "   "}
+        )
+
+    moved = {**bundle["templates"][0], "label_size_id": OTHER_SIZE}
+    with pytest.raises(LabelSizeImmutable) as refused:
+        await target.async_import_templates(
+            admin, _resealed({**bundle, "templates": [moved]})
+        )
+
+    assert refused.value.expected == OTHER_SIZE
+    assert refused.value.found == SIZE
+    assert target.state.templates == {}
+
+
+async def test_a_replayed_import_of_a_deleted_template_says_so(
+    libraries: Callable[..., LabelTemplateLibrary], admin: Any
+) -> None:
+    """A replay answers what is true now, and what is true now is that it is gone."""
+    source = libraries("entry-a")
+    target = libraries("entry-b")
+    await source.async_load()
+    await target.async_load()
+    published = await _named_template(source, admin)
+    bundle = await source.async_export_templates(admin)
+    await target.async_import_templates(admin, bundle, idempotency_key="key-1")
+    await target.async_delete_template(admin, published.template.id)
+
+    with pytest.raises(TemplateNotFound):
+        await target.async_import_templates(admin, bundle, idempotency_key="key-1")

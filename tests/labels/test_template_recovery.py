@@ -44,6 +44,7 @@ from custom_components.growspace_manager.labels.library import (
     IncompatibleTemplateStore,
     LabelTemplateLibrary,
     TemplateDeleted,
+    TemplateNameRequired,
     TemplateNotFound,
     TemplateNotResolvable,
     TemplateProtected,
@@ -920,3 +921,70 @@ async def test_a_recovery_call_survives_a_restart(
     await reopened.async_load()
 
     assert reopened.state.as_dict() == expected.as_dict()
+
+
+# ---------------------------------------------------------------------------
+# The refusals on the way in
+# ---------------------------------------------------------------------------
+
+
+async def test_a_restoration_still_needs_a_name(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """Asking for one and then supplying whitespace is not supplying one."""
+    published = await _named_template(library, admin)
+    await library.async_delete_template(admin, published.template.id)
+
+    with pytest.raises(TemplateNameRequired):
+        await library.async_restore_template(admin, published.template.id, name="   ")
+
+    assert published.template.id in library.state.tombstones
+
+
+async def test_a_draft_slot_is_addressed_by_something_that_could_hold_one(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """A Factory Template and an identity nobody has are different refusals.
+
+    Both reach the draft lookup, which has to answer about the *template*
+    before it can say whether there is a draft of it -- a shipped template
+    cannot have one, and an unknown identity is not a slot at all.
+    """
+    with pytest.raises(TemplateProtected):
+        await library.async_discard_draft(admin, template_id=FACTORY_50X30.id)
+    with pytest.raises(TemplateNotFound):
+        await library.async_discard_draft(admin, template_id="nobody-has-this")
+
+
+async def test_a_replayed_deletion_whose_tombstone_was_collected_says_so(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """Reconstructing one from the ledger would invent a window that has closed."""
+    published = await _named_template(library, admin)
+    await library.async_delete_template(
+        admin, published.template.id, idempotency_key="key-1"
+    )
+    _expire(library, published.template.id)
+    await library.async_collect_tombstones(admin)
+
+    with pytest.raises(TombstoneNotFound):
+        await library.async_delete_template(
+            admin, published.template.id, idempotency_key="key-1"
+        )
+
+
+async def test_a_replayed_restoration_of_a_deleted_template_says_so(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """A replay answers what is true now, and what is true now is that it is gone."""
+    published = await _named_template(library, admin)
+    await library.async_delete_template(admin, published.template.id)
+    await library.async_restore_template(
+        admin, published.template.id, idempotency_key="key-1"
+    )
+    await library.async_delete_template(admin, published.template.id)
+
+    with pytest.raises(TemplateNotFound):
+        await library.async_restore_template(
+            admin, published.template.id, idempotency_key="key-1"
+        )

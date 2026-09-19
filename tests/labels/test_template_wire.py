@@ -273,3 +273,126 @@ async def test_a_call_that_asked_for_the_status_quo_says_so(
 
     assert wire["unchanged"] is True
     assert wire["generation"] == published.generation
+
+
+# ---------------------------------------------------------------------------
+# What the recovery route answers in (hub issue #220)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_deletion_answers_with_all_three_of_its_consequences(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """The tombstone, what the stock prints now, and whose work was orphaned.
+
+    An interface that reported only the first would be hiding the two an
+    administrator is most likely to be surprised by.
+    """
+    published = await _named_template(library, admin)
+    await library.async_set_default(
+        admin, SIZE, TemplateRef.named(published.template.id)
+    )
+    draft = await library.async_open_draft(admin, published.template.id)
+
+    wire = (await library.async_delete_template(admin, published.template.id)).as_dict()
+
+    assert wire["tombstone"]["template"]["id"] == published.template.id
+    assert wire["tombstone"]["was_default"] is True
+    assert wire["tombstone"]["expires_at"]
+    assert "document" not in wire["tombstone"]["template"]
+    assert all(
+        "document" not in item for item in wire["tombstone"]["template"]["revisions"]
+    )
+    assert wire["effective"]["via"] == FACTORY_FALLBACK
+    assert wire["orphaned_drafts"] == [draft.id]
+    assert wire["cleared_default"] is True
+    assert wire["replayed"] is False
+
+
+async def test_a_restoration_answers_with_the_identity_it_brought_back(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """Including whether a name conflict made it append a rename."""
+    published = await _named_template(library, admin)
+    draft = await library.async_open_draft(admin, published.template.id)
+    await library.async_delete_template(admin, published.template.id)
+
+    wire = (
+        await library.async_restore_template(
+            admin, published.template.id, name="Clone tags (2026)"
+        )
+    ).as_dict()
+
+    assert wire["template"]["id"] == published.template.id
+    assert wire["template"]["name"] == "Clone tags (2026)"
+    assert wire["revision"]["operation"] == RENAME
+    assert "document" not in wire["revision"]
+    assert wire["renamed"] is True
+    assert wire["reconnected_drafts"] == [draft.id]
+
+
+async def test_a_collection_answers_with_what_it_destroyed(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """The one operation that destroys anything says exactly what it took."""
+    published = await _named_template(library, admin)
+    await library.async_delete_template(admin, published.template.id)
+
+    wire = (await library.async_collect_tombstones(admin)).as_dict()
+
+    assert wire["collected"] == []
+    assert wire["drafts"] == []
+    assert wire["unchanged"] is True
+    assert wire["generation"] == library.state.generation
+
+
+async def test_an_import_answers_with_one_outcome_per_entry(
+    libraries: Any, admin: Any
+) -> None:
+    """Arrived as itself, already here, or copied under a fresh identity."""
+    source = libraries("entry-a")
+    target = libraries("entry-b")
+    await source.async_load()
+    await target.async_load()
+    published = await _named_template(source, admin)
+    bundle = await source.async_export_templates(admin)
+
+    arrived = (await target.async_import_templates(admin, bundle)).as_dict()
+    copied = (
+        await target.async_import_templates(
+            admin,
+            bundle,
+            as_copy=[published.template.id],
+            names={published.template.id: "Clone tags (copy)"},
+        )
+    ).as_dict()
+    again = (await target.async_import_templates(admin, bundle)).as_dict()
+
+    assert [item["id"] for item in arrived["imported"]] == [published.template.id]
+    assert all("document" not in item for item in arrived["imported"])
+    assert arrived["unchanged"] == []
+    assert arrived["copies"] == {}
+    assert list(copied["copies"]) == [published.template.id]
+    assert again["unchanged"] == [published.template.id]
+    assert again["imported"] == []
+
+
+async def test_a_restore_answers_with_the_generation_it_moved_to(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """Both numbers, because this is the one operation that can move back."""
+    await _named_template(library, admin)
+    document = await library.async_backup(admin)
+    await library.async_rename_template(
+        admin, next(iter(library.state.templates)), "Mother tags"
+    )
+    ahead = library.state.generation
+
+    wire = (await library.async_restore_backup(admin, document)).as_dict()
+
+    assert wire["previous_generation"] == ahead
+    assert wire["generation"] < ahead
+    assert wire["templates"] == 1
+    assert wire["drafts"] == 0
+    assert wire["tombstones"] == 0
+    assert wire["replayed"] is False
