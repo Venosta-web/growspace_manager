@@ -78,6 +78,13 @@ _OVERFLOW = {
     "shrink_ellipsis": ("shrink_ellipsis", "…"),
 }
 
+#: Document vertical alignment to the renderer's own word for the middle one.
+#: The document says `center` because that is what it says horizontally; the
+#: renderer spells the vertical one `middle` and treats every other value as
+#: `top`. Passing the document's word through therefore did not centre text --
+#: it top-aligned it, silently, on every shipped layout that asked for centring.
+_VERTICAL_ALIGN = {"top": "top", "center": "middle", "bottom": "bottom"}
+
 _DECIMAL_MM_PER_INCH = Decimal(str(MM_PER_INCH))
 
 
@@ -498,7 +505,7 @@ class _Compiler:
                 self._profile.dpi,
             ),
             align=style.horizontal_align,
-            valign=style.vertical_align,
+            valign=_VERTICAL_ALIGN[style.vertical_align],
             fit=fit,
             ellipsis=ellipsis,
             font=FONT_TOKENS[style.font].file,

@@ -29,13 +29,16 @@ from custom_components.growspace_manager.labels.canonical import (
     InkBasis,
     compile_layout,
 )
+from custom_components.growspace_manager.labels.canonical.geometry import PixelFrame
 from custom_components.growspace_manager.labels.canonical.ink import (
     element_ink,
     fit_text,
     ink_pixels,
+    occluded_pixels,
+    omitted_ink,
     overlap_of,
 )
-from custom_components.growspace_manager.labels.model import FittedText
+from custom_components.growspace_manager.labels.model import FittedText, TextLine
 from tests.labels.support import (
     NoFonts,
     StubFonts,
@@ -402,3 +405,202 @@ def test_two_elements_sharing_a_frame_but_not_ink_do_not_overlap() -> None:
         for outcome in compiled.outcomes
     ]
     assert overlap_of(inks[0], inks[1]) is None
+
+
+# ---------------------------------------------------------------------------
+# Placement inside the frame
+# ---------------------------------------------------------------------------
+
+
+def _top_of(valign: str) -> int:
+    ink = _ink(
+        text_element(
+            "name",
+            {"x_mm": 2.0, "y_mm": 2.0, "width_mm": 30.0, "height_mm": 12.0},
+            binding="strain.name",
+            size_mm=3.0,
+            minimum_mm=3.0,
+            valign=valign,
+        )
+    )
+    assert ink.bounds is not None
+    return ink.bounds.top
+
+
+def test_vertical_alignment_moves_the_ink_down_its_frame() -> None:
+    assert _top_of("top") < _top_of("center") < _top_of("bottom")
+
+
+def test_centring_reaches_the_renderer_as_the_word_it_understands() -> None:
+    """The document says `center`, as it does horizontally; the renderer spells
+    the vertical one `middle` and top-aligns everything else. Handing the
+    document's word straight through therefore centred nothing."""
+    assert _top_of("center") != _top_of("top")
+
+
+def test_centred_text_sits_between_the_left_and_right_aligned_ones() -> None:
+    lefts = {}
+    for align in ("left", "center", "right"):
+        ink = _ink(
+            text_element(
+                "name",
+                {"x_mm": 2.0, "y_mm": 2.0, "width_mm": 40.0, "height_mm": 8.0},
+                binding="strain.name",
+                align=align,
+            )
+        )
+        assert ink.bounds is not None
+        lefts[align] = ink.bounds.left
+    assert lefts["left"] < lefts["center"] < lefts["right"]
+
+
+def test_rows_that_do_not_fit_the_box_are_dropped_and_the_last_kept_is_marked() -> None:
+    """The renderer always draws at least one row, then stops at whatever the
+    box holds -- it never shrinks under an `ellipsis` policy."""
+    fitted = _fit(
+        "Northern Lights Automatic Extra Long Name",
+        fit="ellipsis",
+        max_lines=6,
+        width=80,
+        height=30,
+    )
+    assert len(fitted.lines) < 6
+    assert fitted.truncated is True
+    assert fitted.lines[-1].endswith("…")
+
+
+def test_a_box_too_short_for_even_one_line_still_draws_one() -> None:
+    fitted = _fit("Blue Dream", fit="ellipsis", max_lines=3, width=80, height=4)
+    assert len(fitted.lines) == 1
+
+
+# ---------------------------------------------------------------------------
+# Contain, both ways round
+# ---------------------------------------------------------------------------
+
+
+def test_an_image_wider_than_its_box_is_letterboxed_top_and_bottom() -> None:
+    ink = _ink(
+        logo_element(
+            "logo",
+            {"x_mm": 30.0, "y_mm": 2.0, "width_mm": 12.0, "height_mm": 12.0},
+            asset=_png(64, 16),
+        )
+    )
+    measurements = ink.measurements
+    assert measurements["painted_width"] > measurements["painted_height"]
+    assert measurements["painted_width"] == 96
+
+
+def test_an_image_taller_than_its_box_is_pillarboxed_left_and_right() -> None:
+    ink = _ink(
+        logo_element(
+            "logo",
+            {"x_mm": 30.0, "y_mm": 2.0, "width_mm": 12.0, "height_mm": 12.0},
+            asset=_png(16, 64),
+        )
+    )
+    measurements = ink.measurements
+    assert measurements["painted_height"] > measurements["painted_width"]
+
+
+@pytest.mark.parametrize(
+    "asset",
+    [
+        "data:image/png;base64,",
+        "data:image/png;base64,not-base-64-at-all!!",
+        "data:image/png;base64,QUJD",
+    ],
+    ids=["empty", "undecodable", "not-an-image"],
+)
+def test_an_inline_image_that_cannot_be_read_falls_back_to_its_frame(
+    asset: str,
+) -> None:
+    ink = _ink(
+        logo_element(
+            "logo",
+            {"x_mm": 30.0, "y_mm": 2.0, "width_mm": 10.0, "height_mm": 10.0},
+            asset=asset,
+        )
+    )
+    assert ink.basis is InkBasis.FRAME
+    assert ink.measurements["decoded"] is False
+
+
+# ---------------------------------------------------------------------------
+# Elements and answers outside the canonical set
+# ---------------------------------------------------------------------------
+
+
+def test_an_element_this_model_cannot_measure_stands_for_its_frame() -> None:
+    """The Classic path's primitives still reach the same plan type, and one
+    arriving here must read as unmeasured rather than as no ink at all."""
+    frame = PixelFrame(left=10, top=10, right=60, bottom=40)
+    ink = element_ink(
+        TextLine(value="Blue Dream", x=10, y=10, size=20, font="rbm.ttf"),
+        element_id="classic",
+        kind="text",
+        frame=frame,
+        canvas_width=384,
+        canvas_height=240,
+        dpi=203,
+        fonts=StubFonts(),
+    )
+    assert ink.basis is InkBasis.FRAME
+    assert ink.bounds == frame
+
+
+def test_an_element_that_reached_no_plan_has_no_ink_and_no_mask() -> None:
+    ink = omitted_ink("element-breeder", "text")
+    assert ink.basis is InkBasis.NONE
+    assert ink.bounds is None
+    assert ink.mask is None
+    assert ink_pixels(ink) == 0
+    assert occluded_pixels(ink, None) == 0
+
+
+def test_nothing_overlaps_an_element_that_painted_nothing() -> None:
+    painted = _ink(
+        divider_element(
+            "rule", {"x_mm": 2.0, "y_mm": 11.0, "width_mm": 43.0, "height_mm": 0.4}
+        )
+    )
+    assert overlap_of(painted, omitted_ink("gone", "text")) is None
+    assert overlap_of(omitted_ink("gone", "text"), painted) is None
+
+
+def test_the_wire_form_of_ink_never_carries_the_bitmap() -> None:
+    ink = _ink(
+        qr_element(
+            "code", {"x_mm": 30.0, "y_mm": 10.0, "width_mm": 14.0, "height_mm": 14.0}
+        )
+    )
+    wire = ink.as_dict()
+    assert set(wire) == {
+        "element_id",
+        "kind",
+        "basis",
+        "bounds",
+        "mask_digest",
+        "protected_area",
+        "measurements",
+    }
+    assert wire["protected_area"] == wire["bounds"]
+
+
+def test_a_value_of_nothing_but_spaces_draws_no_line_at_all() -> None:
+    """The renderer wraps on words, and a string with none produces none --
+    which is a different silence from a frame that could not be measured."""
+    assert _fit("   ").lines == ()
+
+
+def test_an_unmeasurable_element_in_a_frame_with_no_extent_inks_nothing() -> None:
+    ink = _ink(
+        logo_element(
+            "logo",
+            {"x_mm": 30.0, "y_mm": 2.0, "width_mm": 0.01, "height_mm": 10.0},
+            asset="growspace.asset.missing.v1",
+        )
+    )
+    assert ink.basis is InkBasis.FRAME
+    assert ink_pixels(ink) == 0

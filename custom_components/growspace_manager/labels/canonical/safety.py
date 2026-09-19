@@ -21,7 +21,7 @@ specification settled:
     text a shrink policy cannot fit at its own minimum ........... error
     a glyph the selected font does not have ..................... error
     an image below the calibrated effective resolution .......... warning
-    an image, divider or logo that leaves no ink ................ warning
+    an image or logo that converts to no ink .................... warning
     a divider below the profile's reproducible thickness ........ warning
 
 Three properties hold throughout. **Nothing is repaired**: no frame moves, no
@@ -546,16 +546,6 @@ class _Evaluation:
                 },
                 Recovery.EDIT_ELEMENT,
             )
-        if ink_pixels(ink) == 0:
-            self._add(
-                "raster.divider_leaves_no_ink",
-                Severity.WARNING,
-                f"Element {ink.element_id} draws no ink at this resolution.",
-                ink.element_id,
-                {},
-                Recovery.EDIT_ELEMENT,
-                layer=Layer.RASTER,
-            )
 
     # -- overlap and occlusion --------------------------------------------
 
@@ -575,7 +565,7 @@ class _Evaluation:
         self, first: ElementInk, second: ElementInk, region: PixelFrame
     ) -> OverlapPair:
         """Grade one overlapping pair, and record the diagnostic it earns."""
-        protector = self._protecting(first, second, region)
+        protector = self._protecting(first, second)
         if protector is not None:
             other = second if protector is first else first
             self._add(
@@ -627,14 +617,18 @@ class _Evaluation:
             severity=str(Severity.WARNING),
         )
 
-    def _protecting(
-        self, first: ElementInk, second: ElementInk, region: PixelFrame
-    ) -> ElementInk | None:
-        """Return whichever of a pair owns a Protected QR Area the other enters."""
-        for candidate, other in ((first, second), (second, first)):
-            if candidate.protected is None or other.protected is not None:
-                continue
-            if candidate.protected.intersection(region) is not None:
+    def _protecting(self, first: ElementInk, second: ElementInk) -> ElementInk | None:
+        """Return whichever of a pair owns a Protected QR Area the other enters.
+
+        A QR's protected area is exactly the square it inks, so a pair that
+        overlaps at all and includes a QR overlaps inside that square: owning
+        one and being in the overlap are the same fact, and the region is not
+        re-tested. Another QR's ink is other ink, so two codes overlapping is
+        the same refusal as a divider crossing one rather than a milder
+        version of it.
+        """
+        for candidate in (first, second):
+            if candidate.protected is not None:
                 return candidate
         return None
 

@@ -152,7 +152,7 @@
       "max_lines": 2,
       "line_spacing": 2,
       "align": "left",
-      "valign": "center",
+      "valign": "middle",
       "fit": "shrink_ellipsis",
       "ellipsis": "\u2026",
       "font": "ppb.ttf"
@@ -177,7 +177,7 @@
       "max_lines": 1,
       "line_spacing": 1,
       "align": "left",
-      "valign": "center",
+      "valign": "middle",
       "fit": "shrink_ellipsis",
       "ellipsis": "\u2026",
       "font": "rbm.ttf"
@@ -194,7 +194,7 @@
       "max_lines": 1,
       "line_spacing": 1,
       "align": "left",
-      "valign": "center",
+      "valign": "middle",
       "fit": "shrink_ellipsis",
       "ellipsis": "\u2026",
       "font": "rbm.ttf"
@@ -211,7 +211,7 @@
       "max_lines": 1,
       "line_spacing": 1,
       "align": "left",
-      "valign": "center",
+      "valign": "middle",
       "fit": "shrink_ellipsis",
       "ellipsis": "\u2026",
       "font": "rbm.ttf"
@@ -228,7 +228,7 @@
       "max_lines": 1,
       "line_spacing": 1,
       "align": "right",
-      "valign": "center",
+      "valign": "middle",
       "fit": "shrink_ellipsis",
       "ellipsis": "\u2026",
       "font": "rbm.ttf"
@@ -237,7 +237,7 @@
   "raster_evidence": {
     "_comment": "Produced out of band by imagespec 0.4.0 -- the renderer the niimbot integration pins -- from the payload above, with the two font files that integration ships. Kept beside it as tests/fixtures/labels/canonical_factory_50x30.png so the shipped layout's paper is inspectable without a printer.",
     "imagespec_version": "0.4.0",
-    "sha256": "949439776116045a8a0086bfbe19f43c4261f0e9bd5996f86bac23dd72517b20",
+    "sha256": "27ff61b9c7546f72aa7770417a0f5b201a9011d112af478d08376b0c43b223f6",
     "width": 384,
     "height": 240,
     "colours": 2

@@ -57,10 +57,24 @@ def test_modules_follow_the_version_by_the_standard_s_formula() -> None:
     assert symbol_for("1", "low").modules == 21
 
 
+@pytest.mark.parametrize(
+    ("data", "version"),
+    [("12345", 1), ("HELLO WORLD", 1), ("Blue Dream \u00e4", 1)],
+    ids=["numeric", "alphanumeric", "byte"],
+)
+def test_a_short_target_takes_one_mode_for_the_whole_string(
+    data: str, version: int
+) -> None:
+    """Below the generator's optimization threshold nothing is split, and the
+    whole string takes the most compact mode that can carry all of it --
+    reading it as three chunks would choose the wrong version."""
+    assert symbol_for(data, "low").version == version
+
+
 def test_a_short_target_is_not_split_into_chunks() -> None:
-    """Below the generator's optimization threshold the whole string takes one
-    mode, and reading it as three would choose the wrong version."""
-    assert symbol_for("12345", "low").version == 1
+    """A digit run inside a short string is not worth a mode switch, so the
+    whole thing stays one byte-mode chunk."""
+    assert symbol_for("ab123456cd", "low").version == 1
 
 
 def test_a_long_mixed_target_is_split_the_way_the_generator_splits_it() -> None:
@@ -77,6 +91,14 @@ def test_more_correction_needs_a_longer_version_for_the_same_target() -> None:
 def test_a_target_no_version_can_carry_is_refused_rather_than_truncated() -> None:
     with pytest.raises(QrDataOverflow):
         symbol_for("x" * 5000, "high")
+
+
+def test_the_widest_count_indicator_band_is_reached_by_a_long_target() -> None:
+    """Past version 26 the indicator widens a second time, and a model that
+    only knew two bands would under-count every large symbol."""
+    symbol = symbol_for("x" * 1600, "low")
+    assert symbol.version == 29
+    assert symbol.modules == 4 * symbol.version + 17
 
 
 def test_the_widening_count_indicator_is_accounted_for() -> None:

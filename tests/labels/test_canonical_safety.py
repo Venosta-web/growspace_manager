@@ -596,3 +596,89 @@ def test_the_font_identity_records_what_was_really_measured() -> None:
     )
     assert set(report.font_identity) == {"rbm.ttf"}
     assert all(report.font_identity.values())
+
+
+def test_required_content_that_never_reached_the_plan_is_not_an_occlusion() -> None:
+    """A record with no strain name is a content refusal, and reporting it a
+    second time as "something painted over it" would send the operator to the
+    wrong control."""
+    from custom_components.growspace_manager.labels.canonical import compile_layout
+    from custom_components.growspace_manager.labels.canonical.safety import (
+        evaluate_safety,
+    )
+    from tests.labels.support import StubFonts
+
+    layout = layout_of(
+        text_element(
+            "name",
+            {"x_mm": 2.0, "y_mm": 2.0, "width_mm": 30.0, "height_mm": 6.0},
+            binding="strain.name",
+        ),
+        divider_element(
+            "cover", {"x_mm": 1.0, "y_mm": 1.0, "width_mm": 34.0, "height_mm": 8.0}
+        ),
+    )
+    nameless = replace(STRAIN, values={})
+    compiled = compile_layout(layout, nameless, PROFILE)
+    report = evaluate_safety(layout, compiled, PROFILE, StubFonts())
+
+    assert "content.missing_required" in [item.code for item in compiled.diagnostics]
+    assert "raster.required_content_occluded" not in codes(report)
+    name = next(item for item in report.ink if item.element_id == "name")
+    assert name.basis.value == "none"
+    assert name.bounds is None
+
+
+def test_required_content_that_resolved_to_no_ink_is_not_an_occlusion_either() -> None:
+    """A `clip` policy in a frame with no width drops every glyph, so the
+    strain name is absent from the raster without anything being painted over
+    it. Truncation says that; occlusion would say something untrue about a
+    different element."""
+    report = _judge(
+        text_element(
+            "name",
+            {"x_mm": 2.0, "y_mm": 2.0, "width_mm": 0.01, "height_mm": 6.0},
+            binding="strain.name",
+            overflow="clip",
+        ),
+        divider_element(
+            "cover", {"x_mm": 1.0, "y_mm": 1.0, "width_mm": 20.0, "height_mm": 8.0}
+        ),
+    )
+    name = next(item for item in report.ink if item.element_id == "name")
+    assert name.bounds is None
+    assert "raster.text_truncated" in codes(report)
+    assert "raster.required_content_occluded" not in codes(report)
+
+
+def test_two_overlapping_qr_codes_block_each_other() -> None:
+    """Another code's ink is other ink. A scanner reading either one sees the
+    same ruined quiet zone a divider would have left."""
+    report = _judge(
+        qr_element(
+            "first", {"x_mm": 20.0, "y_mm": 6.0, "width_mm": 16.0, "height_mm": 16.0}
+        ),
+        qr_element(
+            "second", {"x_mm": 28.0, "y_mm": 6.0, "width_mm": 16.0, "height_mm": 16.0}
+        ),
+    )
+    diagnostic = _of(report, "raster.qr_quiet_zone_violated")
+    assert diagnostic.severity is Severity.ERROR
+    assert [pair.kind for pair in report.overlaps] == [OVERLAP_QR_QUIET_ZONE]
+
+
+def test_a_high_resolution_logo_does_not_warn_about_its_own_resolution() -> None:
+    detailed = Image.new("RGB", (256, 256), "white")
+    detailed.paste(Image.new("RGB", (256, 128), "black"), (0, 0))
+    buffer = BytesIO()
+    detailed.save(buffer, format="PNG")
+    uri = f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+    report = _judge(
+        logo_element(
+            "logo",
+            {"x_mm": 34.0, "y_mm": 2.0, "width_mm": 10.0, "height_mm": 10.0},
+            asset=uri,
+        )
+    )
+    assert "profile.image_below_effective_resolution" not in codes(report)
+    assert "raster.image_leaves_no_ink" not in codes(report)
