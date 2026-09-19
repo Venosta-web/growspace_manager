@@ -9,7 +9,8 @@ its draft and refuses its next save.
 
 Drafts are the other half of this. A draft is unpublished work owned by one
 administrator: another administrator cannot read it, save over it, discard it,
-publish it or preview it, and it does not appear in their snapshot.
+publish it, save it as a template of its own or preview it, and it does not
+appear in their snapshot.
 """
 
 from __future__ import annotations
@@ -61,8 +62,27 @@ MUTATIONS: dict[
     "discard_draft": lambda lib, actor: lib.async_discard_draft(
         actor, label_size_id=SIZE
     ),
+    "reload_draft": lambda lib, actor: lib.async_reload_draft(actor, "any-template"),
+    "discard_recovery": lambda lib, actor: lib.async_discard_recovery(
+        actor, label_size_id=SIZE
+    ),
     "publish_draft": lambda lib, actor: lib.async_publish_draft(
         actor, label_size_id=SIZE
+    ),
+    "rename_template": lambda lib, actor: lib.async_rename_template(
+        actor, "any-template", "Mine now"
+    ),
+    "duplicate_template": lambda lib, actor: lib.async_duplicate_template(
+        actor, TemplateRef.factory(FACTORY_50X30.id), "Mine now"
+    ),
+    "save_as": lambda lib, actor: lib.async_save_as(
+        actor, "Mine now", label_size_id=SIZE
+    ),
+    "replace_from_factory": lambda lib, actor: lib.async_replace_from_factory(
+        actor, "any-template"
+    ),
+    "restore_revision": lambda lib, actor: lib.async_restore_revision(
+        actor, "any-template", 1
     ),
     "set_default": lambda lib, actor: lib.async_set_default(
         actor, SIZE, TemplateRef.factory(FACTORY_50X30.id)
@@ -168,7 +188,7 @@ async def test_one_administrator_sees_only_their_own_drafts(
 
 @pytest.mark.parametrize(
     "operation",
-    ["autosave_draft", "discard_draft", "publish_draft", "preview_draft"],
+    ["autosave_draft", "discard_draft", "publish_draft", "save_as", "preview_draft"],
 )
 async def test_another_administrator_cannot_reach_a_draft(
     library: LabelTemplateLibrary, admin: Actor, other_admin: Actor, operation: str

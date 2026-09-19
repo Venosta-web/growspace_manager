@@ -73,6 +73,26 @@ class TemplateProtected(LabelTemplateError):
         )
 
 
+class NoFactoryTemplate(LabelTemplateError):
+    """The integration ships no Factory Template for this stock.
+
+    What "replace this layout from the factory" runs into on a Label Size the
+    integration has never shipped a design for. Distinct from a stock nothing
+    *resolves* for: an administrator here has a perfectly good template and
+    asked for a starting point that does not exist, which is a packaging gap
+    rather than a broken library -- and never a reason to invent an
+    approximate layout to hand them.
+    """
+
+    def __init__(self, label_size_id: str) -> None:
+        """Name the stock nothing is shipped for."""
+        self.label_size_id = label_size_id
+        super().__init__(
+            f"The integration ships no Factory Template for {label_size_id!r}, "
+            "so there is nothing to replace this layout from."
+        )
+
+
 class LabelSizeImmutable(LabelTemplateError):
     """A publication tried to move a template to another stock.
 

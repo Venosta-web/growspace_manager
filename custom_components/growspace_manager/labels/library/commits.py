@@ -54,6 +54,11 @@ DISCARD_RECOVERY = "discard_recovery"
 PUBLISH_DRAFT = "publish_draft"
 SET_DEFAULT = "set_default"
 CLEAR_DEFAULT = "clear_default"
+RENAME_TEMPLATE = "rename_template"
+DUPLICATE_TEMPLATE = "duplicate_template"
+SAVE_AS_TEMPLATE = "save_as_template"
+REPLACE_FROM_FACTORY = "replace_from_factory"
+RESTORE_REVISION = "restore_revision"
 
 
 def request_digest(operation: str, owner: str, **arguments: Any) -> str:

@@ -36,8 +36,19 @@ if TYPE_CHECKING:  # pragma: no cover
 #: Fired once per committed Label Template library mutation.
 EVENT_LABEL_TEMPLATE_LIBRARY_CHANGED = f"{DOMAIN}_label_template_library_changed"
 
-#: The kinds of change the event names.
+#: The kinds of change the event names. Every management operation that
+#: appends a revision has its own, because a client deciding whether to warn
+#: somebody that their open editor has been overtaken wants to know whether the
+#: layout moved or only the name did.
+#:
+#: Replacing a draft from the factory is deliberately not here. It changes one
+#: administrator's private draft and no saved state, so it advances no
+#: generation and announces nothing -- the same rule autosave follows.
 PUBLISHED = "published"
+RENAMED = "renamed"
+DUPLICATED = "duplicated"
+SAVED_AS = "saved_as"
+RESTORED = "restored"
 DEFAULT_SET = "default_set"
 DEFAULT_CLEARED = "default_cleared"
 

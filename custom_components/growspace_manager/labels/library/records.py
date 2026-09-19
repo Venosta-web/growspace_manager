@@ -61,17 +61,29 @@ FROM_BLANK = "blank"
 FROM_FACTORY = "factory"
 FROM_NAMED = "named"
 
-#: The only operation that appends a revision in this route. Rename, Save As,
-#: duplicate and historical restore append their own kinds, and each records
-#: the one it was -- which is why this is a value rather than an assumption.
+#: Which act appended a revision. Each is a deliberate thing an administrator
+#: did, and a history that recorded them all as "publish" could not tell a
+#: restore from the edit it was reaching back past.
+#:
+#: `PUBLISH` is a draft becoming its template's next revision. `RENAME` carries
+#: the previous revision's document forward unchanged under a new name.
+#: `DUPLICATE` and `SAVE_AS` open a template of their own at revision 1 -- from
+#: a saved head and from the active draft respectively. `RESTORE` copies a
+#: historical document forward as a new head, which is the only way back to an
+#: old layout: history is appended to and never rewound.
 PUBLISH = "publish"
+RENAME = "rename"
+DUPLICATE = "duplicate"
+SAVE_AS = "save_as"
+RESTORE = "restore"
 
 #: Why a payload is sitting in a draft's recovery slot rather than being the
-#: draft itself. Both are work the server declined to make current, and an
+#: draft itself. All three are work the server declined to make current, and an
 #: editor says different things about them, so the reason is recorded rather
 #: than inferred from which call happened to put it there.
 REJECTED_SAVE = "rejected_save"
 RELOADED = "reloaded"
+REPLACED_FROM_FACTORY = "replaced_from_factory"
 
 #: How many idempotency keys one library remembers. A key exists to make a
 #: retry of a call whose answer was lost safe, which is a window of seconds --

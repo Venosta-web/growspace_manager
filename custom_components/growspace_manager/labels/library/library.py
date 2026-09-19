@@ -15,6 +15,16 @@ default override then selects a template per Label Size, and what resolves for
 that size is the override where there is one and the designated Factory
 Template where there is not.
 
+Managing a template afterwards is five more operations, each of them one of
+two shapes and never a third. Rename and historical restore **append a
+revision** to an identity that does not move. Duplicate and Save As **mint an
+identity**, from the saved head and from the active draft respectively.
+Replacing a layout from the factory touches **only a draft**, which is why it
+is the one of the five that announces nothing. What none of them is, is a
+generic "reset": discarding a draft, restoring a revision and replacing from
+the factory have three different consequences, and one control that guessed
+between them would be a control nobody could safely press.
+
 Three rules run through all of it.
 
 **Authorization is per request.** Every operation takes an `Actor` and asks it
@@ -84,8 +94,13 @@ from .commits import (
     CREATE_DRAFT,
     DISCARD_DRAFT,
     DISCARD_RECOVERY,
+    DUPLICATE_TEMPLATE,
     PUBLISH_DRAFT,
     RELOAD_DRAFT,
+    RENAME_TEMPLATE,
+    REPLACE_FROM_FACTORY,
+    RESTORE_REVISION,
+    SAVE_AS_TEMPLATE,
     SET_DEFAULT,
     committed,
     record_of,
@@ -100,6 +115,7 @@ from .errors import (
     LabelSizeImmutable,
     LabelTemplateError,
     NoEffectiveDefault,
+    NoFactoryTemplate,
     NoRecoveryPayload,
     RevisionNotFound,
     TemplateNameRequired,
@@ -108,9 +124,19 @@ from .errors import (
     TemplateProtected,
     UnsupportedLabelSize,
 )
-from .events import DEFAULT_CLEARED, DEFAULT_SET, PUBLISHED, async_fire_library_changed
+from .events import (
+    DEFAULT_CLEARED,
+    DEFAULT_SET,
+    DUPLICATED,
+    PUBLISHED,
+    RENAMED,
+    RESTORED,
+    SAVED_AS,
+    async_fire_library_changed,
+)
 from .publication import PublicationCheck, check_document
 from .records import (
+    DUPLICATE,
     FACTORY,
     FROM_BLANK,
     FROM_FACTORY,
@@ -119,6 +145,10 @@ from .records import (
     PUBLISH,
     REJECTED_SAVE,
     RELOADED,
+    RENAME,
+    REPLACED_FROM_FACTORY,
+    RESTORE,
+    SAVE_AS,
     CommitRecord,
     LibraryState,
     NamedTemplate,
@@ -245,7 +275,12 @@ class DraftDiscarded:
 
 @dataclass(frozen=True, slots=True)
 class Publication:
-    """One committed publication."""
+    """One committed revision, however it came to be appended.
+
+    What publishing a draft returns, and what rename, duplicate, Save As and
+    historical restore return too: all five end in one immutable revision, and
+    a client that has just performed one asks the same things about it.
+    """
 
     template: NamedTemplate
     revision: TemplateRevision
@@ -253,6 +288,12 @@ class Publication:
     #: True when this call found the revision its own draft had already
     #: become, rather than creating one. A retry after a lost response.
     replayed: bool = False
+    #: True when the library already held exactly what was asked for, so
+    #: nothing was appended and the generation did not move. Renaming a
+    #: template to the name it has and restoring the revision that is already
+    #: the head are the two ways here: a history that recorded them would be
+    #: recording that nothing happened.
+    unchanged: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         """Return the publication's wire form."""
@@ -261,6 +302,7 @@ class Publication:
             "revision": self.revision.summary(),
             "generation": self.generation,
             "replayed": self.replayed,
+            "unchanged": self.unchanged,
         }
 
 
@@ -1003,6 +1045,490 @@ class LabelTemplateLibrary:
                 template=template, revision=revision, generation=landed.generation
             )
 
+    # -- managing templates ------------------------------------------------
+
+    async def async_rename_template(
+        self,
+        actor: Actor,
+        template_id: str,
+        name: str,
+        *,
+        idempotency_key: str | None = None,
+    ) -> Publication:
+        """Give one template a new name, keeping its identity and its layout.
+
+        The UUID does not move, which is the whole point: a default override,
+        a print that referenced this template and every draft of it name the
+        identity, and none of them should follow a display name around.
+
+        The new name is appended as a revision rather than written over the
+        head, because the name is part of what a revision says about itself --
+        a print's audit record names the template it used, and rewriting the
+        name in place would silently change what an old print claims. The
+        appended revision carries the previous one's document byte for byte.
+
+        Renaming therefore advances the head, and a draft based on the
+        previous one becomes stale exactly as it would after any other
+        publication. That is the documented rule rather than an exception
+        carved out for renames: its owner reloads, or saves their work as a
+        template of its own.
+        """
+        owner = actor.administrator()
+        digest = request_digest(
+            RENAME_TEMPLATE, owner, template_id=template_id, name=name
+        )
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=RENAME_TEMPLATE,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_revision(state, record)
+            template = _require_template(state, template_id)
+            wanted = display_name(name)
+            if not wanted:
+                raise TemplateNameRequired
+            head = template.head
+            if wanted == head.name:
+                return Publication(
+                    template=template,
+                    revision=head,
+                    generation=state.generation,
+                    unchanged=True,
+                )
+            _require_free_name(
+                state, wanted, template.label_size_id, excluding=template.id
+            )
+            revision = TemplateRevision(
+                revision=head.revision + 1,
+                name=wanted,
+                document=dict(head.document),
+                digest=head.digest,
+                published_at=dt_util.utcnow().isoformat(),
+                published_by=owner,
+                operation=RENAME,
+                parent_revision=head.revision,
+                provenance=Provenance(
+                    source=FROM_NAMED,
+                    source_template_id=template.id,
+                    source_revision=head.revision,
+                ),
+            )
+            return await self._async_append(
+                state,
+                template.with_revision(revision),
+                revision,
+                owner=owner,
+                event=RENAMED,
+                key=idempotency_key,
+                operation=RENAME_TEMPLATE,
+                digest=digest,
+            )
+
+    async def async_duplicate_template(
+        self,
+        actor: Actor,
+        ref: TemplateRef,
+        name: str,
+        *,
+        idempotency_key: str | None = None,
+    ) -> Publication:
+        """Copy one template's saved head into a template of its own.
+
+        The *saved* head, never a draft. An administrator with unpublished
+        work open who duplicates is asking for a copy of what the library
+        holds -- if they wanted their draft under a new identity, that is Save
+        As, and the two must not be one control that guesses.
+
+        A Factory Template can be duplicated as well as a named one: taking a
+        copy is the documented way to own a shipped design, and the copy stops
+        following the installed version from that moment. Nothing about the
+        source changes either way.
+        """
+        owner = actor.administrator()
+        digest = request_digest(DUPLICATE_TEMPLATE, owner, ref=ref.as_dict(), name=name)
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=DUPLICATE_TEMPLATE,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_revision(state, record)
+            source = (
+                _resolve_factory(ref.id, None, via=EXPLICIT)
+                if ref.kind == FACTORY
+                else _resolve_named(
+                    _require_template(state, ref.id), None, via=EXPLICIT
+                )
+            )
+            provenance = (
+                Provenance(
+                    source=FROM_FACTORY,
+                    factory_id=source.ref.id,
+                    factory_revision=source.revision,
+                )
+                if ref.kind == FACTORY
+                else Provenance(
+                    source=FROM_NAMED,
+                    source_template_id=source.ref.id,
+                    source_revision=source.revision,
+                )
+            )
+            template, revision = _new_template(
+                state,
+                name=name,
+                label_size_id=source.label_size_id,
+                layout=source.layout,
+                owner=owner,
+                now=dt_util.utcnow().isoformat(),
+                operation=DUPLICATE,
+                provenance=provenance,
+            )
+            return await self._async_append(
+                state,
+                template,
+                revision,
+                owner=owner,
+                event=DUPLICATED,
+                key=idempotency_key,
+                operation=DUPLICATE_TEMPLATE,
+                digest=digest,
+            )
+
+    async def async_save_as(
+        self,
+        actor: Actor,
+        name: str,
+        *,
+        template_id: str | None = None,
+        label_size_id: str | None = None,
+        draft_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> Publication:
+        """Publish the active draft under a fresh identity, and clear it.
+
+        The remedy for every situation in which a draft is good work that
+        cannot become its template's next revision: somebody published first
+        and it is stale, or its owner simply decided it should be a second
+        label rather than a new version of the first. Staleness is therefore
+        deliberately not a refusal here -- it is the reason this exists.
+
+        The source template is not touched, at all. What this appends is
+        revision 1 of a new UUID, and the draft it consumed is removed in the
+        same commit, so an editor switching to the new template cannot end up
+        with the old draft still sitting in its slot.
+        """
+        owner = actor.administrator()
+        digest = request_digest(
+            SAVE_AS_TEMPLATE,
+            owner,
+            template_id=template_id,
+            label_size_id=label_size_id,
+            draft_id=draft_id,
+            name=name,
+        )
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=SAVE_AS_TEMPLATE,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_revision(state, record)
+            draft = self._find_draft(
+                state, owner, template_id=template_id, label_size_id=label_size_id
+            )
+            if draft is None:
+                replay = _replayed_publication(state, draft_id, owner)
+                if replay is not None:
+                    return replay
+                raise DraftNotFound(
+                    f"template {template_id!r}"
+                    if template_id
+                    else f"Label Size {label_size_id!r}"
+                )
+            if draft_id is not None and draft_id != draft.id:
+                raise DraftNotFound(f"draft {draft_id!r}")
+
+            check = check_document(draft.document)
+            if check.layout is None or not check.publishable:
+                raise DraftNotPublishable(check.diagnostics)
+            template, revision = _new_template(
+                state,
+                name=name,
+                label_size_id=draft.label_size_id,
+                layout=check.layout,
+                owner=owner,
+                now=dt_util.utcnow().isoformat(),
+                operation=SAVE_AS,
+                provenance=replace(
+                    draft.provenance, draft_id=draft.id, draft_version=draft.version
+                ),
+            )
+            return await self._async_append(
+                state,
+                template,
+                revision,
+                owner=owner,
+                event=SAVED_AS,
+                key=idempotency_key,
+                operation=SAVE_AS_TEMPLATE,
+                digest=digest,
+                consuming=draft,
+            )
+
+    async def async_replace_from_factory(
+        self,
+        actor: Actor,
+        template_id: str,
+        *,
+        factory_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> TemplateDraft:
+        """Start this template's draft again from a shipped layout.
+
+        A **draft** operation, and only that. The template keeps its UUID, its
+        name and every revision it has; what changes is one administrator's
+        unpublished editing state, which is why nothing here advances the
+        Library Generation or announces anything. The saved layout changes
+        when that draft is published and at no other moment.
+
+        The payload that was in the draft moves to its recovery slot rather
+        than being dropped -- the same promise a reload makes, for the same
+        reason: an administrator who reaches for the factory design and then
+        wants one measurement back off their own must be able to read it.
+
+        Which shipped layout is named explicitly or is the one designated for
+        this template's stock; either way it has to be for that stock, because
+        a template's Label Size does not move.
+        """
+        owner = actor.administrator()
+        digest = request_digest(
+            REPLACE_FROM_FACTORY, owner, template_id=template_id, factory_id=factory_id
+        )
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=REPLACE_FROM_FACTORY,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_draft(state, record)
+            template = _require_template(state, template_id)
+            source = _resolve_factory(
+                _designated_factory(template.label_size_id, factory_id),
+                None,
+                via=EXPLICIT,
+            )
+            if source.label_size_id != template.label_size_id:
+                raise LabelSizeImmutable(
+                    template_id=template.id,
+                    expected=template.label_size_id,
+                    found=source.label_size_id,
+                )
+
+            previous = self._find_draft(
+                state, owner, template_id=template_id, label_size_id=None
+            )
+            now = dt_util.utcnow().isoformat()
+            head = template.head
+            replaced = TemplateDraft(
+                id=ulid_now(),
+                owner=owner,
+                label_size_id=template.label_size_id,
+                template_id=template.id,
+                base_revision=head.revision,
+                version=1,
+                document=source.document,
+                created_at=now,
+                modified_at=now,
+                provenance=Provenance(
+                    source=FROM_FACTORY,
+                    factory_id=source.ref.id,
+                    factory_revision=source.revision,
+                ),
+                recovery=(
+                    None
+                    if previous is None
+                    else RecoveryPayload(
+                        reason=REPLACED_FROM_FACTORY,
+                        document=previous.document,
+                        expected_version=None,
+                        draft_version=previous.version,
+                        at=now,
+                        name=previous.name,
+                    )
+                ),
+            )
+            await self._async_commit(
+                _with_draft(state, replaced),
+                record_of(
+                    key=idempotency_key,
+                    operation=REPLACE_FROM_FACTORY,
+                    owner=owner,
+                    digest=digest,
+                    generation=state.generation,
+                    locator={"draft_key": replaced.key, "draft_id": replaced.id},
+                ),
+            )
+            return replaced
+
+    async def async_restore_revision(
+        self,
+        actor: Actor,
+        template_id: str,
+        revision: int,
+        *,
+        idempotency_key: str | None = None,
+    ) -> Publication:
+        """Bring one historical layout back, by appending it as the new head.
+
+        Never by rewinding. The revisions in between stay exactly where they
+        are, and the restored content arrives as the next number up with
+        provenance naming what it was copied from -- so the history of a
+        template that was taken back to an older design still shows the
+        design it was taken back from.
+
+        The name does not travel with the layout. Content and identity are
+        separate axes here, and an administrator restoring a layout has not
+        asked to be renamed to whatever the template was called then.
+
+        A revision that no longer validates cannot be restored. It is history,
+        it is preserved, and making it the head would put a layout nothing can
+        render in front of every print that resolves this template.
+        """
+        owner = actor.administrator()
+        digest = request_digest(
+            RESTORE_REVISION, owner, template_id=template_id, revision=revision
+        )
+        async with self._lock:
+            state = await self.async_load()
+            record = committed(
+                state,
+                key=idempotency_key,
+                operation=RESTORE_REVISION,
+                owner=owner,
+                digest=digest,
+            )
+            if record is not None:
+                return _replayed_revision(state, record)
+            template = _require_template(state, template_id)
+            source = template.revision(revision)
+            if source is None:
+                raise RevisionNotFound(template_id=template_id, revision=revision)
+            head = template.head
+            if source.revision == head.revision:
+                return Publication(
+                    template=template,
+                    revision=head,
+                    generation=state.generation,
+                    unchanged=True,
+                )
+            check = check_document(source.document)
+            if check.layout is None or not check.publishable:
+                raise TemplateNotResolvable(
+                    template_id=template_id,
+                    revision=source.revision,
+                    diagnostics=check.diagnostics,
+                )
+            restored = TemplateRevision(
+                revision=head.revision + 1,
+                name=head.name,
+                document=check.layout.as_dict(),
+                digest=check.layout.digest,
+                published_at=dt_util.utcnow().isoformat(),
+                published_by=owner,
+                operation=RESTORE,
+                parent_revision=head.revision,
+                provenance=Provenance(
+                    source=FROM_NAMED,
+                    source_template_id=template.id,
+                    source_revision=source.revision,
+                ),
+            )
+            return await self._async_append(
+                state,
+                template.with_revision(restored),
+                restored,
+                owner=owner,
+                event=RESTORED,
+                key=idempotency_key,
+                operation=RESTORE_REVISION,
+                digest=digest,
+            )
+
+    async def _async_append(
+        self,
+        state: LibraryState,
+        template: NamedTemplate,
+        revision: TemplateRevision,
+        *,
+        owner: str,
+        event: str,
+        key: str | None,
+        operation: str,
+        digest: str,
+        consuming: TemplateDraft | None = None,
+    ) -> Publication:
+        """Commit one appended revision, and announce it once it landed.
+
+        The tail every management operation shares: write the template, drop
+        the draft that became it where there was one, advance the generation,
+        record the idempotency key, and fire the change event -- all in the
+        one order that cannot leave a revision without its generation or an
+        event for a write that did not happen.
+        """
+        drafts = (
+            state.drafts
+            if consuming is None
+            else {
+                item: value
+                for item, value in state.drafts.items()
+                if item != consuming.key
+            }
+        )
+        landed = await self._async_commit(
+            replace(
+                state,
+                templates={**state.templates, template.id: template},
+                drafts=drafts,
+                generation=state.generation + 1,
+            ),
+            record_of(
+                key=key,
+                operation=operation,
+                owner=owner,
+                digest=digest,
+                generation=state.generation + 1,
+                locator={"template_id": template.id, "revision": revision.revision},
+            ),
+        )
+        self._announce(
+            landed,
+            previous=state.generation,
+            operation=event,
+            template_id=template.id,
+            revision=revision.revision,
+            label_size_id=template.label_size_id,
+        )
+        return Publication(
+            template=template, revision=revision, generation=landed.generation
+        )
+
     # -- defaults ----------------------------------------------------------
 
     async def async_set_default(
@@ -1374,37 +1900,103 @@ def _publish_new_template(
     """Turn one untitled draft into a Named Template at revision 1."""
     if not draft.name:
         raise TemplateNameRequired
-    name = display_name(draft.name)
-    if layout.label_size_id != draft.label_size_id:
+    return _new_template(
+        state,
+        name=draft.name,
+        label_size_id=draft.label_size_id,
+        layout=layout,
+        owner=owner,
+        now=now,
+        operation=PUBLISH,
+        provenance=provenance,
+    )
+
+
+def _new_template(
+    state: LibraryState,
+    *,
+    name: str,
+    label_size_id: str,
+    layout: LabelLayout,
+    owner: str,
+    now: str,
+    operation: str,
+    provenance: Provenance,
+) -> tuple[NamedTemplate, TemplateRevision]:
+    """Mint one Named Template at revision 1 from a validated layout.
+
+    What publishing an untitled draft, duplicating a saved head and Save As
+    all come down to: a fresh UUID, a free name within the stock, and one
+    revision recording which of the three it was. The identity is minted here
+    and nowhere else, so there is exactly one place a template can be born.
+    """
+    wanted = display_name(name)
+    if not wanted:
+        raise TemplateNameRequired
+    if layout.label_size_id != label_size_id:
         raise LabelSizeImmutable(
             template_id="(untitled)",
-            expected=draft.label_size_id,
+            expected=label_size_id,
             found=layout.label_size_id,
         )
-    holder = state.name_holder(name, draft.label_size_id)
-    if holder is not None:
-        raise DuplicateTemplateName(
-            name=name, label_size_id=draft.label_size_id, template_id=holder.id
-        )
+    _require_free_name(state, wanted, label_size_id)
     revision = TemplateRevision(
         revision=1,
-        name=name,
+        name=wanted,
         document=layout.as_dict(),
         digest=layout.digest,
         published_at=now,
         published_by=owner,
-        operation=PUBLISH,
+        operation=operation,
         parent_revision=None,
         provenance=provenance,
     )
     template = NamedTemplate(
         id=str(uuid.uuid4()),
-        label_size_id=draft.label_size_id,
+        label_size_id=label_size_id,
         created_at=now,
         created_by=owner,
         revisions=(revision,),
     )
     return template, revision
+
+
+def _require_free_name(
+    state: LibraryState,
+    name: str,
+    label_size_id: str,
+    *,
+    excluding: str | None = None,
+) -> None:
+    """Refuse a name another template of this stock already holds.
+
+    Trimmed and case-insensitively, and only within the Label Size: the same
+    name on different paper is a different label, not a collision. `excluding`
+    is how a rename asks the question without the template answering it about
+    itself.
+    """
+    holder = state.name_holder(name, label_size_id, excluding=excluding)
+    if holder is not None:
+        raise DuplicateTemplateName(
+            name=name, label_size_id=label_size_id, template_id=holder.id
+        )
+
+
+def _designated_factory(label_size_id: str, factory_id: str | None) -> str:
+    """Return the shipped template to start from, or say none is shipped.
+
+    An explicit ID is taken as given -- whether it exists is `_resolve_factory`
+    to answer, and whether it is for the right stock is the caller's. With no
+    ID it is the one designated for this stock, and a stock the integration
+    ships nothing for says exactly that rather than producing an approximate
+    layout from somewhere else.
+    """
+    if factory_id is not None:
+        return factory_id
+    shipped = factory_template_for_size(label_size_id)
+    if shipped is None:
+        raise NoFactoryTemplate(label_size_id)
+    return shipped.id
 
 
 def _publish_next_revision(
