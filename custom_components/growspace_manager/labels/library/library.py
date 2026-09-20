@@ -858,6 +858,64 @@ class LabelTemplateLibrary:
             )
             return draft
 
+    async def async_open_editing_draft(
+        self,
+        actor: Actor,
+        *,
+        label_size_id: str | None = None,
+        template_id: str | None = None,
+        derive_from: TemplateRef | None = None,
+    ) -> tuple[TemplateDraft, bool]:
+        """Open what an editor is about to edit, resuming rather than replacing.
+
+        One entry point for both slots, because "open the editor" is one act
+        whichever it lands in: a Named Template's own draft when `template_id`
+        names one, and this administrator's untitled draft for the stock
+        otherwise.
+
+        Resuming is the whole point, and it is why this is not
+        :meth:`async_create_draft`. One untitled draft per administrator and
+        Label Size *is* the store's slot, so a second create for the same
+        stock replaces whatever was in it -- an editor that opened by creating
+        would throw away the work it was reopening every time the page
+        reloaded, the connection dropped, or the administrator opened a second
+        client.
+
+        A resume deliberately ignores `derive_from`: the existing work wins,
+        because re-deriving would be the same destruction wearing an argument.
+        The returned flag says which happened, so an editor can tell its user
+        it came back to unsaved work instead of silently showing something
+        other than the layout they just chose to start from.
+        """
+        owner = actor.administrator()
+        if template_id is not None:
+            state = await self.async_load()
+            _require_template(state, template_id)
+            existed = (
+                self._find_draft(
+                    state, owner, template_id=template_id, label_size_id=None
+                )
+                is not None
+            )
+            return await self.async_open_draft(actor, template_id), existed
+
+        if label_size_id is None:
+            raise LabelTemplateError(
+                "Opening an editor needs either a Label Template or the Label "
+                "Size an untitled draft is for."
+            )
+        _require_known_size(label_size_id)
+        state = await self.async_load()
+        existing = self._find_draft(
+            state, owner, template_id=None, label_size_id=label_size_id
+        )
+        if existing is not None:
+            return existing, True
+        created = await self.async_create_draft(
+            actor, label_size_id=label_size_id, derive_from=derive_from
+        )
+        return created, False
+
     async def async_open_draft(self, actor: Actor, template_id: str) -> TemplateDraft:
         """Return this administrator's draft of one template, starting one if needed.
 
@@ -2507,6 +2565,7 @@ class LabelTemplateLibrary:
         profile: CapabilityProfile | None = None,
         density: str = "normal",
         fonts: FontLibrary | None = None,
+        expected_version: int | None = None,
     ) -> RenderResult:
         """Render one administrator's own draft, through the canonical path.
 
@@ -2520,12 +2579,23 @@ class LabelTemplateLibrary:
         published past is still the work its owner did, and seeing it beside
         the revision that overtook it is exactly how they decide whether to
         reload, reapply by hand, or keep it as a template of its own.
+
+        `expected_version` is. A render is slow and an editor is fast, so a
+        preview asked for before the last autosave landed would come back as a
+        picture of an older layout with nothing on it saying so. Passing the
+        version makes the render a read of exactly that state or nothing:
+        refused, the editor keeps a raster it knows is stale, which is the
+        honest state and the one the user can see.
         """
         owner = actor.administrator()
         state = await self.async_load()
         draft = self._locate_draft(
             state, owner, template_id=template_id, label_size_id=label_size_id
         )
+        if expected_version is not None and expected_version != draft.version:
+            raise DraftVersionConflict(
+                expected=expected_version, found=draft.version, draft=draft
+            )
         check = check_document(draft.document)
         if check.layout is None or not check.publishable:
             raise DraftNotPublishable(check.diagnostics)

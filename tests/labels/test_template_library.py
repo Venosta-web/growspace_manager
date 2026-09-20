@@ -200,6 +200,81 @@ async def test_a_factory_template_cannot_be_opened_as_a_draft(
 
 
 # ---------------------------------------------------------------------------
+# Opening an editor (hub issue #225)
+# ---------------------------------------------------------------------------
+
+
+async def test_opening_an_editor_resumes_an_untitled_draft_rather_than_replacing_it(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """One untitled draft per administrator and stock *is* the slot, so an
+    editor that opened by creating would destroy the work it reopened."""
+    first, created = await library.async_open_editing_draft(
+        admin, label_size_id=FACTORY_50X30.label_size_id
+    )
+    await library.async_autosave_draft(
+        admin,
+        label_size_id=FACTORY_50X30.label_size_id,
+        document={"mid": "edit"},
+    )
+
+    resumed, again = await library.async_open_editing_draft(
+        admin, label_size_id=FACTORY_50X30.label_size_id
+    )
+
+    assert created is False
+    assert again is True
+    assert resumed.id == first.id
+    assert resumed.document == {"mid": "edit"}
+
+
+async def test_resuming_ignores_the_template_it_was_asked_to_derive_from(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """Re-deriving over unsaved work is the same destruction with an argument."""
+    await library.async_open_editing_draft(
+        admin, label_size_id=FACTORY_50X30.label_size_id
+    )
+    await library.async_autosave_draft(
+        admin, label_size_id=FACTORY_50X30.label_size_id, document={"mine": True}
+    )
+
+    resumed, again = await library.async_open_editing_draft(
+        admin,
+        label_size_id=FACTORY_50X30.label_size_id,
+        derive_from=TemplateRef.factory(FACTORY_50X30.id),
+    )
+
+    assert again is True
+    assert resumed.document == {"mine": True}
+
+
+async def test_opening_an_editor_on_a_template_reports_whether_it_resumed(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    published = await _named_template(library, admin)
+
+    first, created = await library.async_open_editing_draft(
+        admin, template_id=published.template.id
+    )
+    again, resumed = await library.async_open_editing_draft(
+        admin, template_id=published.template.id
+    )
+
+    assert created is False
+    assert resumed is True
+    assert again.id == first.id
+
+
+async def test_opening_an_editor_needs_a_template_or_a_label_size(
+    library: LabelTemplateLibrary, admin: Any
+) -> None:
+    """Neither addresses a slot, and guessing one would open somebody's work."""
+    with pytest.raises(LabelTemplateError):
+        await library.async_open_editing_draft(admin)
+
+
+# ---------------------------------------------------------------------------
 # Autosave keeps the work
 # ---------------------------------------------------------------------------
 

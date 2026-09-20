@@ -96,6 +96,13 @@ def _send_ws_error(
     raise err
 
 
+#: Where the lifecycle puts the acting Home Assistant user for a command that
+#: declared ``actor=True``. Leading underscore because it is not part of the
+#: command's schema: a client cannot send it, and one that tries has its value
+#: overwritten before the handler runs.
+WS_MSG_USER = "_ha_user"
+
+
 @dataclass(frozen=True, slots=True)
 class WSCommand:
     """One declarative WS command row (ADR-0027, [[WSCommand]]).
@@ -105,6 +112,15 @@ class WSCommand:
     ``sync=True`` registers a ``@callback`` wrapper for cheap reads.
     ``error_map`` overrides the default Typed Error Codes table for modules
     with a genuinely different message policy.
+
+    ``actor=True`` puts the acting Home Assistant user into the message under
+    :data:`WS_MSG_USER`. ADR-0027 kept the connection away from handlers on
+    the finding that none of them needed it, which held until the Label
+    Template library: every one of its operations takes an ``Actor`` and
+    re-derives ownership and authority *per request* on purpose, and the
+    acting user exists nowhere but the connection. This carries that one value
+    and nothing else -- the handler signature is unchanged, and a handler still
+    cannot send, subscribe or close.
     """
 
     type: str
@@ -113,6 +129,7 @@ class WSCommand:
     resolve: str = "targeted"
     sync: bool = False
     error_map: WSErrorMap | None = None
+    actor: bool = False
 
 
 def _resolve_coordinator(
@@ -130,7 +147,9 @@ def register_ws_command(hass: HomeAssistant, command: WSCommand) -> None:
     The wrapper owns resolve → execute → ``send_result`` → error mapping;
     the handler is a payload-returning function that never sees the
     connection. Its return value is sent as the result payload (``None``
-    for mutations).
+    for mutations). A command declaring ``actor=True`` is handed the acting
+    user under :data:`WS_MSG_USER` -- the one thing a handler cannot derive
+    for itself and the library's authority checks cannot do without.
     """
     error_map = command.error_map or DEFAULT_WS_ERROR_MAP
 
@@ -145,6 +164,8 @@ def register_ws_command(hass: HomeAssistant, command: WSCommand) -> None:
         ) -> None:
             try:
                 coordinator = _resolve_coordinator(hass, msg, command.resolve)
+                if command.actor:
+                    msg[WS_MSG_USER] = connection.user
                 payload = command.handler(hass, coordinator, msg)
                 connection.send_result(msg["id"], payload)
             except Exception as err:  # noqa: BLE001
@@ -165,6 +186,8 @@ def register_ws_command(hass: HomeAssistant, command: WSCommand) -> None:
     ) -> None:
         try:
             coordinator = _resolve_coordinator(hass, msg, command.resolve)
+            if command.actor:
+                msg[WS_MSG_USER] = connection.user
             payload = await command.handler(hass, coordinator, msg)
             connection.send_result(msg["id"], payload)
         except Exception as err:  # noqa: BLE001

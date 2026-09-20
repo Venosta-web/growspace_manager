@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, callback
 from . import (
     ai_assistant,
     data,
+    drafts,
     environment,
     genetics,
     irrigation,
@@ -197,6 +198,7 @@ _MODULES = [
     vision,
     irrigation,
     labels,
+    drafts,
     notifications,
     ai_assistant,
 ]

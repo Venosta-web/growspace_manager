@@ -23,6 +23,7 @@ from custom_components.growspace_manager.exceptions import (
 )
 from custom_components.growspace_manager.websocket._common import (
     DEFAULT_WS_ERROR_MAP,
+    WS_MSG_USER,
     WSCommand,
     register_ws_command,
 )
@@ -208,3 +209,99 @@ def test_default_map_covers_the_full_typed_vocabulary() -> None:
         "validation_failed",
         "internal_error",
     }
+
+
+# ---------------------------------------------------------------------------
+# The acting user (ADR-0027 amendment)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_acting_user_reaches_a_command_that_asked_for_it(
+    hass: HomeAssistant,
+) -> None:
+    """`actor=True` is the one thing a handler cannot derive for itself."""
+    seen: list[Any] = []
+
+    async def handler(hass: HomeAssistant, coordinator: Any, msg: dict) -> None:
+        seen.append(msg.get(WS_MSG_USER))
+
+    wrapper = _registered_wrapper(
+        hass, WSCommand("growspace_manager/test", handler, _SCHEMA, actor=True)
+    )
+    connection = MagicMock()
+    connection.user = MagicMock(id="user-1", is_admin=True)
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator"
+    ) as coord_cls:
+        coord_cls.get_for_service_call.return_value = MagicMock()
+        await wrapper(hass, connection, {"id": 7})
+
+    assert seen == [connection.user]
+
+
+async def test_a_sync_command_can_ask_for_the_acting_user_too(
+    hass: HomeAssistant,
+) -> None:
+    seen: list[Any] = []
+
+    def handler(hass: HomeAssistant, coordinator: Any, msg: dict) -> None:
+        seen.append(msg.get(WS_MSG_USER))
+
+    wrapper = _registered_wrapper(
+        hass,
+        WSCommand("growspace_manager/test", handler, _SCHEMA, sync=True, actor=True),
+    )
+    connection = MagicMock()
+    connection.user = MagicMock(id="user-2", is_admin=False)
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator"
+    ) as coord_cls:
+        coord_cls.get_for_service_call.return_value = MagicMock()
+        wrapper(hass, connection, {"id": 8})
+
+    assert seen == [connection.user]
+
+
+async def test_a_client_cannot_supply_the_acting_user_itself(
+    hass: HomeAssistant,
+) -> None:
+    """The key is overwritten before the handler runs, not merged with."""
+    seen: list[Any] = []
+
+    async def handler(hass: HomeAssistant, coordinator: Any, msg: dict) -> None:
+        seen.append(msg.get(WS_MSG_USER))
+
+    wrapper = _registered_wrapper(
+        hass, WSCommand("growspace_manager/test", handler, _SCHEMA, actor=True)
+    )
+    connection = MagicMock()
+    connection.user = MagicMock(id="real-user", is_admin=False)
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator"
+    ) as coord_cls:
+        coord_cls.get_for_service_call.return_value = MagicMock()
+        await wrapper(hass, connection, {"id": 9, WS_MSG_USER: "an-administrator"})
+
+    assert seen == [connection.user]
+
+
+async def test_a_command_that_did_not_ask_is_handed_no_user(
+    hass: HomeAssistant,
+) -> None:
+    """Opt-in, so every other handler keeps the connection out of reach."""
+    seen: list[Any] = []
+
+    async def handler(hass: HomeAssistant, coordinator: Any, msg: dict) -> None:
+        seen.append(WS_MSG_USER in msg)
+
+    wrapper = _registered_wrapper(
+        hass, WSCommand("growspace_manager/test", handler, _SCHEMA)
+    )
+    connection = MagicMock()
+    with patch(
+        "custom_components.growspace_manager.websocket._common.GrowspaceCoordinator"
+    ) as coord_cls:
+        coord_cls.get_for_service_call.return_value = MagicMock()
+        await wrapper(hass, connection, {"id": 10})
+
+    assert seen == [False]

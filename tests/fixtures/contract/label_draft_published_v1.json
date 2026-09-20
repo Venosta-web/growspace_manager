@@ -1,0 +1,59 @@
+{
+  "contract": {
+    "family": "growspace.label-templates",
+    "generation": 3,
+    "major": 1,
+    "minor": 0
+  },
+  "generation": 1,
+  "outcome": "ok",
+  "replayed": false,
+  "revision": {
+    "digest": "sha256:a268709a860bc7194c7073caef997a178dfdbb1b50db591e966537e065c8e5f8",
+    "name": "Bench label",
+    "operation": "publish",
+    "parent_revision": null,
+    "provenance": {
+      "draft_id": "<opaque-2>",
+      "draft_version": 2,
+      "factory_id": "growspace.factory.50x30",
+      "factory_revision": 1,
+      "source": "factory",
+      "source_revision": null,
+      "source_template_id": null
+    },
+    "published_at": "2026-09-18T00:00:00+00:00",
+    "published_by": "admin-user",
+    "revision": 1
+  },
+  "template": {
+    "created_at": "2026-09-18T00:00:00+00:00",
+    "created_by": "admin-user",
+    "head_revision": 1,
+    "id": "<opaque-1>",
+    "kind": "named",
+    "label_size_id": "growspace.stock.50x30.v1",
+    "name": "Bench label",
+    "revisions": [
+      {
+        "digest": "sha256:a268709a860bc7194c7073caef997a178dfdbb1b50db591e966537e065c8e5f8",
+        "name": "Bench label",
+        "operation": "publish",
+        "parent_revision": null,
+        "provenance": {
+          "draft_id": "<opaque-2>",
+          "draft_version": 2,
+          "factory_id": "growspace.factory.50x30",
+          "factory_revision": 1,
+          "source": "factory",
+          "source_revision": null,
+          "source_template_id": null
+        },
+        "published_at": "2026-09-18T00:00:00+00:00",
+        "published_by": "admin-user",
+        "revision": 1
+      }
+    ]
+  },
+  "unchanged": false
+}
