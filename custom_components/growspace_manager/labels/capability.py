@@ -112,6 +112,8 @@ _IMPLEMENTATIONS: Mapping[str, tuple[Callable[..., Any], ...]] = {
     LIFECYCLE: (
         LabelTemplateLibrary.async_snapshot,
         LabelTemplateLibrary.async_create_draft,
+        LabelTemplateLibrary.async_open_editing_draft,
+        LabelTemplateLibrary.async_discard_draft,
         LabelTemplateLibrary.async_autosave_draft,
         LabelTemplateLibrary.async_publish_draft,
         LabelTemplateLibrary.async_set_default,

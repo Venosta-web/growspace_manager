@@ -1,0 +1,485 @@
+{
+  "contract": {
+    "family": "growspace.label-templates",
+    "generation": 3,
+    "major": 1,
+    "minor": 0
+  },
+  "draft_version": 2,
+  "fixture_family": "typical",
+  "label_size_id": "growspace.stock.50x30.v1",
+  "outcome": "ok",
+  "render": {
+    "cache_identity": "sha256:5d99afb1133de21c3b0d983ae2c99f32706ffcca77d1faf58c94c80ed84f721a",
+    "diagnostics": [
+      {
+        "code": "raster.text_unmeasured",
+        "element_id": "<opaque-1>",
+        "layer": "raster",
+        "message": "Font ppb.ttf is not installed beside this integration, so the text of element 01M2V1PQB882FPJSG6H1GTFKX2 could not be measured. Its frame stands in for its ink.",
+        "parameters": {
+          "font_file": "ppb.ttf"
+        },
+        "path": "",
+        "recovery": "retry",
+        "severity": "warning"
+      },
+      {
+        "code": "raster.text_unmeasured",
+        "element_id": "<opaque-3>",
+        "layer": "raster",
+        "message": "Font rbm.ttf is not installed beside this integration, so the text of element 01M2V1PQB83XP8GJZZAP08DDKM could not be measured. Its frame stands in for its ink.",
+        "parameters": {
+          "font_file": "rbm.ttf"
+        },
+        "path": "",
+        "recovery": "retry",
+        "severity": "warning"
+      },
+      {
+        "code": "raster.text_unmeasured",
+        "element_id": "<opaque-4>",
+        "layer": "raster",
+        "message": "Font rbm.ttf is not installed beside this integration, so the text of element 01M2V1PQB8CH61GQ903X1XF808 could not be measured. Its frame stands in for its ink.",
+        "parameters": {
+          "font_file": "rbm.ttf"
+        },
+        "path": "",
+        "recovery": "retry",
+        "severity": "warning"
+      },
+      {
+        "code": "raster.text_unmeasured",
+        "element_id": "<opaque-5>",
+        "layer": "raster",
+        "message": "Font rbm.ttf is not installed beside this integration, so the text of element 01M2V1PQB8QKBBEH26QWK9FHT8 could not be measured. Its frame stands in for its ink.",
+        "parameters": {
+          "font_file": "rbm.ttf"
+        },
+        "path": "",
+        "recovery": "retry",
+        "severity": "warning"
+      },
+      {
+        "code": "profile.ink_outside_safe_area",
+        "element_id": "<opaque-6>",
+        "layer": "profile_compilation",
+        "message": "Element 01M2V1PQB8NNQA4TA7RZEJZCCW inks outside the Safe Area. It prints, but close to an edge.",
+        "parameters": {
+          "ink_bounds": {
+            "bottom": 235,
+            "height": 22,
+            "left": 16,
+            "right": 360,
+            "top": 213,
+            "width": 344
+          },
+          "safe_area": {
+            "bottom": 232,
+            "height": 224,
+            "left": 8,
+            "right": 376,
+            "top": 8,
+            "width": 368
+          },
+          "safe_area_inset_mm": 1.0
+        },
+        "path": "",
+        "recovery": "edit_element",
+        "severity": "warning"
+      },
+      {
+        "code": "raster.text_unmeasured",
+        "element_id": "<opaque-6>",
+        "layer": "raster",
+        "message": "Font rbm.ttf is not installed beside this integration, so the text of element 01M2V1PQB8NNQA4TA7RZEJZCCW could not be measured. Its frame stands in for its ink.",
+        "parameters": {
+          "font_file": "rbm.ttf"
+        },
+        "path": "",
+        "recovery": "retry",
+        "severity": "warning"
+      }
+    ],
+    "elements": [
+      {
+        "binding": "strain.name",
+        "element_id": "<opaque-1>",
+        "kind": "text",
+        "notes": {
+          "box_pixels": [344, 67],
+          "maximum_lines": 2,
+          "minimum_font_size_px": 24,
+          "overflow": "shrink_ellipsis",
+          "requested_font_size_px": 45
+        },
+        "pixel_frame": {
+          "bottom": 83,
+          "height": 67,
+          "left": 20,
+          "right": 364,
+          "top": 16,
+          "width": 344
+        },
+        "status": "placed"
+      },
+      {
+        "binding": null,
+        "element_id": "<opaque-2>",
+        "kind": "divider",
+        "notes": {},
+        "pixel_frame": {
+          "bottom": 91,
+          "height": 3,
+          "left": 16,
+          "right": 360,
+          "top": 88,
+          "width": 344
+        },
+        "status": "placed"
+      },
+      {
+        "binding": "strain.phenotype",
+        "element_id": "<opaque-3>",
+        "kind": "text",
+        "notes": {
+          "box_pixels": [344, 35],
+          "maximum_lines": 1,
+          "minimum_font_size_px": 18,
+          "overflow": "shrink_ellipsis",
+          "requested_font_size_px": 26
+        },
+        "pixel_frame": {
+          "bottom": 133,
+          "height": 35,
+          "left": 16,
+          "right": 360,
+          "top": 98,
+          "width": 344
+        },
+        "status": "placed"
+      },
+      {
+        "binding": "strain.breeder",
+        "element_id": "<opaque-4>",
+        "kind": "text",
+        "notes": {
+          "box_pixels": [344, 35],
+          "maximum_lines": 1,
+          "minimum_font_size_px": 18,
+          "overflow": "shrink_ellipsis",
+          "requested_font_size_px": 26
+        },
+        "pixel_frame": {
+          "bottom": 171,
+          "height": 35,
+          "left": 16,
+          "right": 360,
+          "top": 136,
+          "width": 344
+        },
+        "status": "placed"
+      },
+      {
+        "binding": "strain.lineage",
+        "element_id": "<opaque-5>",
+        "kind": "text",
+        "notes": {
+          "box_pixels": [344, 35],
+          "maximum_lines": 1,
+          "minimum_font_size_px": 18,
+          "overflow": "shrink_ellipsis",
+          "requested_font_size_px": 26
+        },
+        "pixel_frame": {
+          "bottom": 209,
+          "height": 35,
+          "left": 16,
+          "right": 360,
+          "top": 174,
+          "width": 344
+        },
+        "status": "placed"
+      },
+      {
+        "binding": "print.date",
+        "element_id": "<opaque-6>",
+        "kind": "text",
+        "notes": {
+          "box_pixels": [344, 22],
+          "maximum_lines": 1,
+          "minimum_font_size_px": 16,
+          "overflow": "shrink_ellipsis",
+          "requested_font_size_px": 19
+        },
+        "pixel_frame": {
+          "bottom": 235,
+          "height": 22,
+          "left": 16,
+          "right": 360,
+          "top": 213,
+          "width": 344
+        },
+        "status": "placed"
+      }
+    ],
+    "eligibility": {
+      "batch_preflight": {
+        "allowed": false,
+        "blocked_by": [
+          "profile_not_product_verified",
+          "local_calibration_missing"
+        ],
+        "operation": "batch_preflight"
+      },
+      "candidate_validation": {
+        "allowed": true,
+        "blocked_by": [],
+        "operation": "candidate_validation"
+      },
+      "draft_autosave": {
+        "allowed": true,
+        "blocked_by": [],
+        "operation": "draft_autosave"
+      },
+      "preview": {
+        "allowed": true,
+        "blocked_by": [],
+        "operation": "preview"
+      },
+      "publish": {
+        "allowed": true,
+        "blocked_by": [],
+        "operation": "publish"
+      },
+      "single_print": {
+        "allowed": false,
+        "blocked_by": [
+          "profile_not_product_verified",
+          "local_calibration_missing"
+        ],
+        "operation": "single_print"
+      },
+      "test_print": {
+        "allowed": true,
+        "blocked_by": [],
+        "operation": "test_print"
+      }
+    },
+    "ink": [
+      {
+        "basis": "frame",
+        "bounds": {
+          "bottom": 83,
+          "height": 67,
+          "left": 20,
+          "right": 364,
+          "top": 16,
+          "width": 344
+        },
+        "element_id": "<opaque-1>",
+        "kind": "text",
+        "mask_digest": "b8c46008bdd60a2e",
+        "measurements": {
+          "font_file": "ppb.ttf",
+          "measured": false,
+          "requested_font_size_px": 45
+        },
+        "protected_area": null
+      },
+      {
+        "basis": "exact",
+        "bounds": {
+          "bottom": 91,
+          "height": 3,
+          "left": 16,
+          "right": 360,
+          "top": 88,
+          "width": 344
+        },
+        "element_id": "<opaque-2>",
+        "kind": "divider",
+        "mask_digest": "ce59ff12ef90fd8b",
+        "measurements": {
+          "length_px": 344,
+          "thickness_mm": 0.3754,
+          "thickness_px": 3
+        },
+        "protected_area": null
+      },
+      {
+        "basis": "frame",
+        "bounds": {
+          "bottom": 133,
+          "height": 35,
+          "left": 16,
+          "right": 360,
+          "top": 98,
+          "width": 344
+        },
+        "element_id": "<opaque-3>",
+        "kind": "text",
+        "mask_digest": "319586474c39ebcf",
+        "measurements": {
+          "font_file": "rbm.ttf",
+          "measured": false,
+          "requested_font_size_px": 26
+        },
+        "protected_area": null
+      },
+      {
+        "basis": "frame",
+        "bounds": {
+          "bottom": 171,
+          "height": 35,
+          "left": 16,
+          "right": 360,
+          "top": 136,
+          "width": 344
+        },
+        "element_id": "<opaque-4>",
+        "kind": "text",
+        "mask_digest": "5b0d01e007d8abdd",
+        "measurements": {
+          "font_file": "rbm.ttf",
+          "measured": false,
+          "requested_font_size_px": 26
+        },
+        "protected_area": null
+      },
+      {
+        "basis": "frame",
+        "bounds": {
+          "bottom": 209,
+          "height": 35,
+          "left": 16,
+          "right": 360,
+          "top": 174,
+          "width": 344
+        },
+        "element_id": "<opaque-5>",
+        "kind": "text",
+        "mask_digest": "b0ff39f34ab9dde9",
+        "measurements": {
+          "font_file": "rbm.ttf",
+          "measured": false,
+          "requested_font_size_px": 26
+        },
+        "protected_area": null
+      },
+      {
+        "basis": "frame",
+        "bounds": {
+          "bottom": 235,
+          "height": 22,
+          "left": 16,
+          "right": 360,
+          "top": 213,
+          "width": 344
+        },
+        "element_id": "<opaque-6>",
+        "kind": "text",
+        "mask_digest": "4841b9bedc97b630",
+        "measurements": {
+          "font_file": "rbm.ttf",
+          "measured": false,
+          "requested_font_size_px": 19
+        },
+        "protected_area": null
+      }
+    ],
+    "overlaps": [],
+    "printable": false,
+    "profile": {
+      "authorizes_production": false,
+      "density_levels": {
+        "high": 5,
+        "low": 2,
+        "normal": 3
+      },
+      "dpi": 203,
+      "evidence": "provisional",
+      "evidence_invalidated_by": [],
+      "evidence_recorded_at": null,
+      "evidence_reference": null,
+      "feed_axis": "y",
+      "id": "growspace.profile.niimbot-b1.50x30.v1",
+      "label_size_id": "growspace.stock.50x30.v1",
+      "limits": {
+        "divider_minimum_thickness_mm": 0.25,
+        "image_minimum_effective_dpi": 203.0,
+        "measured": false,
+        "qr_error_correction_levels": ["medium", "quartile", "high"],
+        "qr_maximum_encoded_bytes": 256,
+        "qr_minimum_dots_per_module": 2,
+        "qr_minimum_quiet_zone_modules": 4,
+        "text_comfort_threshold_mm": 2.2,
+        "text_readable_floor_mm": 1.6
+      },
+      "orientation": "landscape",
+      "printable_area": {
+        "height_mm": 30.0,
+        "width_mm": 48.0,
+        "x_mm": 0.0,
+        "y_mm": 0.0
+      },
+      "printer_class": "niimbot.b1",
+      "printhead_pixels": 384,
+      "safe_area": {
+        "height_mm": 28.0,
+        "width_mm": 46.0,
+        "x_mm": 1.0,
+        "y_mm": 1.0
+      },
+      "stock_area": {
+        "height_mm": 30.0,
+        "width_mm": 50.0,
+        "x_mm": 0.0,
+        "y_mm": 0.0
+      },
+      "supported_element_rotations": [0]
+    },
+    "raster": {
+      "byte_length": 848,
+      "content_type": "image/png",
+      "height": 240,
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYAAAADwCAIAAACG8CSdAAADF0lEQVR4nO3YsRGAQAgAQXDsv+U3swQvcDcjI7ph2HPOABTumdndd9Yj4DNXvQDwXwIEZAQIyKynD1BxAQEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjICBGQECMgIEJARICAjQEBGgICMAAEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjICBGQECMgIEJARICAjQEBGgICMAAEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjICBGQECMgIEJARICAjQEBGgICMAAEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjICBGQECMgIEJARICAjQEBGgICMAAEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjICBGQECMgIEJARICAjQEBGgICMAAEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjICBGQECMgIEJARICAjQEBGgICMAAEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjICBGQECMgIEJARICAjQEBGgICMAAEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjICBGQECMgIEJARICAjQEBGgICMAAEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjICBGQECMgIEJARICAjQEBGgICMAAEZAQIyAgRkBAjICBCQESAgI0BARoCAjAABGQECMgIEZAQIyAgQkBEgICNAQEaAgIwAARkBAjIPXUwK2//4NOEAAAAASUVORK5CYII=",
+      "monochrome": true,
+      "width": 384
+    },
+    "raster_identity": "sha256:e686c5c97b44289f880f227ce59ab210f38c6a5b6cb8aed9c79a22e5a5ca6d11",
+    "raster_input_digest": "sha256:38cd29107df1e40c1eecd06eadc092051f2a6ef8af31c328e5907a1c8af04056",
+    "render_context": {
+      "adapter_version": "growspace.niimbot-adapter.v1",
+      "as_of": "2026-09-18T00:00:00+00:00",
+      "binding_catalogue_version": "growspace.label-bindings.v1",
+      "capability_generation": 3,
+      "compiler_version": "growspace.label-compiler.v1",
+      "content_context": "strain",
+      "content_identity": "sha256:249700f3a8cbbdcbce28498e167e59d7c70a51e5149c42bbe326947a2f8249e7",
+      "content_source": "growspace.label-fixtures.v2",
+      "density": "normal",
+      "density_level": 3,
+      "font_identity": {
+        "ppb.ttf": "unresolved",
+        "rbm.ttf": "unresolved"
+      },
+      "label_size_catalogue_version": "growspace.label-sizes.v1",
+      "label_size_id": "growspace.stock.50x30.v1",
+      "layout_digest": "sha256:a268709a860bc7194c7073caef997a178dfdbb1b50db591e966537e065c8e5f8",
+      "local_calibration": null,
+      "locale": "en",
+      "operation": "preview",
+      "profile_evidence": "provisional",
+      "profile_id": "growspace.profile.niimbot-b1.50x30.v1",
+      "qr_model_version": "growspace.qr-model.v1",
+      "renderer_version": "growspace.label-renderer.v1",
+      "safety_policy_version": "growspace.label-safety.v1",
+      "style_token_catalogue_version": "growspace.label-style-tokens.v1",
+      "text_toolchain_version": "growspace.text-toolchain.v1",
+      "time_zone": "UTC"
+    },
+    "status": "current"
+  },
+  "subject": "growspace.fixture.strain.typical.v1"
+}
