@@ -89,7 +89,14 @@ from .document import (
     LayoutElement,
     validate_document,
 )
-from .eligibility import Blocker, Operation, OperationEligibility, decide_eligibility
+from .eligibility import (
+    Blocker,
+    Operation,
+    OperationEligibility,
+    PrintProvenance,
+    decide_eligibility,
+    decide_print_request,
+)
 from .factory import (
     FACTORY_50X30,
     FACTORY_TEMPLATES,
@@ -120,6 +127,8 @@ from .fonts import (
     MeasuredFont,
     NiimbotFontLibrary,
     niimbot_font_library,
+    shipped_font_identity,
+    toolchain_identity,
 )
 from .geometry import AreaMm
 from .ink import ElementInk, InkBasis, element_ink, fit_text
@@ -129,6 +138,7 @@ from .preview import (
     PRINT,
     async_render,
     async_render_factory_preview,
+    font_library_for,
 )
 from .profiles import (
     NIIMBOT_B1_50X30,
@@ -136,6 +146,7 @@ from .profiles import (
     PROFILES,
     CalibratedLimits,
     CapabilityProfile,
+    FeedAxis,
     ProfileEvidence,
     StockOrientation,
     profiles_for_size,
@@ -238,6 +249,7 @@ __all__ = [
     "ElementOutcome",
     "ErrorCorrection",
     "FactoryTemplate",
+    "FeedAxis",
     "FontLibrary",
     "Frame",
     "InkBasis",
@@ -255,6 +267,7 @@ __all__ = [
     "OverlapPair",
     "PixelFrame",
     "PrintContext",
+    "PrintProvenance",
     "ProfileEvidence",
     "QrDataOverflow",
     "QrSymbol",
@@ -276,12 +289,14 @@ __all__ = [
     "canonicalize",
     "compile_layout",
     "decide_eligibility",
+    "decide_print_request",
     "digest",
     "element_ink",
     "eligibility_for",
     "evaluate_safety",
     "factory_template_for_size",
     "fit_text",
+    "font_library_for",
     "format_age",
     "format_date",
     "has_blocking",
@@ -291,9 +306,11 @@ __all__ = [
     "representative_subject",
     "resolve_locale",
     "resolve_subject",
+    "shipped_font_identity",
     "stage_display_name",
     "stage_started_at",
     "symbol_for",
     "to_pixels",
+    "toolchain_identity",
     "validate_document",
 ]

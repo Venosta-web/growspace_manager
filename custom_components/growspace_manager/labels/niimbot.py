@@ -12,6 +12,7 @@ this module's private wire format.
 from __future__ import annotations
 
 import base64
+from collections.abc import Mapping
 from dataclasses import replace
 from io import BytesIO
 import logging
@@ -75,6 +76,33 @@ _LOGO_DECODE_ERRORS = (
 )
 
 
+async def async_raster_inputs(
+    hass: HomeAssistant, plan: LabelRenderPlan
+) -> dict[str, Any]:
+    """Return everything that decides the bitmap, and nothing else.
+
+    The split this function exists for is the whole of "a preview is the
+    print": `preview` says whether the printer commits the raster to paper and
+    `device_id` says which printer receives it, so neither belongs here.
+    Everything that is here changes what the renderer draws, which makes the
+    digest of this mapping the one honest answer to "is this the same bitmap?"
+    across a preview, a test print, a production print and a retry.
+
+    Logo re-encoding happens here rather than at the call, because a logo that
+    was downscaled to survive the event bus is what the renderer is going to
+    receive -- and a digest taken before that would describe a payload nobody
+    sent.
+    """
+    plan = await _with_printable_logos(hass, plan)
+    return {
+        "width": plan.canvas.width,
+        "height": plan.canvas.height,
+        "rotate": 0,
+        "density": _density(plan),
+        "payload": [_imagespec(element) for element in plan.elements],
+    }
+
+
 async def async_print(
     hass: HomeAssistant,
     plan: LabelRenderPlan,
@@ -89,16 +117,30 @@ async def async_print(
     returns the raster instead of committing it to paper. Preview and print
     therefore cannot drift, which is the property the seam exists to keep.
     """
-    plan = await _with_printable_logos(hass, plan)
+    return await async_print_inputs(
+        hass,
+        await async_raster_inputs(hass, plan),
+        device_id=device_id,
+        preview=preview,
+        subject=subject,
+    )
 
-    service_data: dict[str, Any] = {
-        "width": plan.canvas.width,
-        "height": plan.canvas.height,
-        "rotate": 0,
-        "density": _density(plan),
-        "payload": [_imagespec(element) for element in plan.elements],
-        "preview": preview,
-    }
+
+async def async_print_inputs(
+    hass: HomeAssistant,
+    inputs: Mapping[str, Any],
+    *,
+    device_id: str | None = None,
+    preview: bool = False,
+    subject: str,
+) -> ServiceResponse:
+    """Send raster inputs already built by `async_raster_inputs`.
+
+    For a caller that has to record what it sent before it sends it. Nothing
+    is recomputed here, so the payload that was digested is the payload that
+    reaches the printer integration.
+    """
+    service_data: dict[str, Any] = {**inputs, "preview": preview}
     if device_id:
         service_data["device_id"] = device_id
 

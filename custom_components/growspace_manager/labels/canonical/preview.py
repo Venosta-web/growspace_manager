@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from collections.abc import Sequence
 from io import BytesIO
 from typing import Any
 
@@ -35,7 +36,8 @@ from PIL import Image, UnidentifiedImageError
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from ..niimbot import async_print
+from ..niimbot import async_print_inputs, async_raster_inputs
+from .canonicalization import digest
 from .compiler import compile_layout
 from .content import LabelContentSnapshot
 from .diagnostics import Diagnostic, Layer, Severity
@@ -76,11 +78,12 @@ async def async_render(
     device_id: str | None = None,
     operation: str = PREVIEW,
     local_calibration: str | None = None,
+    calibration_stale_reasons: Sequence[str] = (),
     fonts: FontLibrary | None = None,
 ) -> RenderResult:
     """Render one label, as a preview or on paper, through one implementation."""
     compiled = compile_layout(layout, content, profile, density=density)
-    library = fonts or _font_library(hass)
+    library = fonts or font_library_for(hass)
     # Measuring ink decodes images and rasterizes glyphs, which is exactly the
     # kind of work the event loop must not do.
     report = await hass.async_add_executor_job(
@@ -105,7 +108,7 @@ async def async_render(
         font_identity=report.font_identity,
     )
 
-    raster, raster_diagnostics = await _async_raster(
+    raster, raster_diagnostics, input_digest = await _async_raster(
         hass,
         compiled.plan,
         preview=operation == PREVIEW,
@@ -129,11 +132,13 @@ async def async_render(
             raster,
             profile=profile,
             local_calibration=local_calibration,
+            calibration_stale_reasons=calibration_stale_reasons,
         ),
+        raster_input_digest=input_digest,
     )
 
 
-def _font_library(hass: HomeAssistant) -> FontLibrary:
+def font_library_for(hass: HomeAssistant) -> FontLibrary:
     """Resolve the printer integration's fonts for this installation.
 
     The two faces belong to `niimbot`, not to this integration, so they are
@@ -199,41 +204,56 @@ async def _async_raster(
     preview: bool,
     device_id: str | None,
     subject: str,
-) -> tuple[Raster | None, tuple[Diagnostic, ...]]:
+) -> tuple[Raster | None, tuple[Diagnostic, ...], str | None]:
     """Ask the printer adapter for the raster, and turn failure into diagnostics.
 
     A renderer failure and a transport failure are different diagnostics on
     purpose. "Printer offline" standing in for a missing font is exactly the
     conflation the layered model exists to prevent, so an adapter error is
     recorded at the layer it came from and never re-labelled.
+
+    The adapter's inputs are built once and digested before they are sent, so
+    the identity this returns describes the payload that really went to the
+    printer integration rather than one reconstructed beside it.
     """
+    inputs = await async_raster_inputs(hass, plan)
+    input_digest = digest(inputs)
     try:
-        response = await async_print(
-            hass, plan, device_id=device_id, preview=preview, subject=subject
+        response = await async_print_inputs(
+            hass, inputs, device_id=device_id, preview=preview, subject=subject
         )
     except HomeAssistantError as err:
-        return None, (
-            Diagnostic(
-                code="raster.render_failed",
-                severity=Severity.ERROR,
-                layer=Layer.RASTER,
-                message=f"The renderer did not produce a raster: {err}",
-                parameters={"error": str(err)},
+        return (
+            None,
+            (
+                Diagnostic(
+                    code="raster.render_failed",
+                    severity=Severity.ERROR,
+                    layer=Layer.RASTER,
+                    message=f"The renderer did not produce a raster: {err}",
+                    parameters={"error": str(err)},
+                ),
             ),
+            input_digest,
         )
 
     image = (response or {}).get("image")
     if not isinstance(image, str) or not image.startswith(_DATA_URI_PREFIX):
-        return None, (
-            Diagnostic(
-                code="raster.missing",
-                severity=Severity.ERROR,
-                layer=Layer.RASTER,
-                message="The renderer returned no PNG for this render.",
+        return (
+            None,
+            (
+                Diagnostic(
+                    code="raster.missing",
+                    severity=Severity.ERROR,
+                    layer=Layer.RASTER,
+                    message="The renderer returned no PNG for this render.",
+                ),
             ),
+            input_digest,
         )
 
-    return await hass.async_add_executor_job(_decode_raster, image)
+    raster, diagnostics = await hass.async_add_executor_job(_decode_raster, image)
+    return raster, diagnostics, input_digest
 
 
 def _decode_raster(image: str) -> tuple[Raster | None, tuple[Diagnostic, ...]]:

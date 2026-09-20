@@ -140,6 +140,7 @@ def test_the_wire_form_carries_every_region_limit_and_evidence_field() -> None:
         "dpi",
         "printhead_pixels",
         "orientation",
+        "feed_axis",
         "stock_area",
         "printable_area",
         "safe_area",

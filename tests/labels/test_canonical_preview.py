@@ -166,6 +166,8 @@ async def test_the_whole_result_serializes_for_the_wire() -> None:
         "status",
         "printable",
         "cache_identity",
+        "raster_identity",
+        "raster_input_digest",
         "render_context",
         "profile",
         "raster",

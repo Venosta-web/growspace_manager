@@ -16,8 +16,20 @@ installation's own calibration is current. Nothing here looks at how a result
 
 Local calibration is one of those inputs and not one of this module's
 concerns: the measured record, how it is captured and what stales it belong
-to the calibration route. What belongs here is that its absence is a named
-refusal of production printing rather than a silent one.
+to the calibration route. What belongs here is that its absence -- and,
+separately, its staleness -- is a named refusal of production printing rather
+than a silent one.
+
+There are two questions, and they are asked in two calls because they really
+are two. `decide_eligibility` answers what **one result** authorizes: it knows
+the diagnostics, the raster, the profile's evidence and this installation's
+calibration, and nothing about where the layout came from. `decide_print_request`
+answers what **one request** authorizes, starting from the result's own answer
+and adding the facts only the print route holds -- whether the layout is a
+published revision, whether the content is a real record's rather than a
+fixture's, and whether the result being printed is still the one the operator
+approved. Folding the second into the first would mean every preview render
+carrying refusals about provenance it was never asked to assert.
 """
 
 from __future__ import annotations
@@ -61,6 +73,17 @@ class Blocker(StrEnum):
     PROFILE_NOT_PRODUCT_VERIFIED = "profile_not_product_verified"
     #: This installation has not measured where its printer puts ink.
     LOCAL_CALIBRATION_MISSING = "local_calibration_missing"
+    #: It measured, and something the measurement depended on has changed.
+    #: Distinct from missing because the correction is the same and the
+    #: explanation is not: the reasons name what moved.
+    LOCAL_CALIBRATION_STALE = "local_calibration_stale"
+    #: The layout being printed is a draft, not a published revision.
+    REVISION_NOT_PUBLISHED = "revision_not_published"
+    #: The content is a representative fixture, not a real record's snapshot.
+    CONTENT_NOT_ACTUAL = "content_not_actual"
+    #: The result presented for printing is not the one that would be
+    #: produced now -- something upstream of the raster has changed since.
+    RESULT_NOT_CURRENT = "result_not_current"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,12 +103,87 @@ class OperationEligibility:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class PrintProvenance:
+    """Where one print request's layout, content and result came from.
+
+    Three assertions the print route makes and a render cannot. Each is a
+    fact somebody can check rather than a permission somebody granted: a
+    revision is published or it is a draft, a snapshot came from a record or
+    from the fixture catalogue, and the result presented either still matches
+    what would be rendered now or it does not.
+    """
+
+    #: Whether the layout is an immutable published revision.
+    published_revision: bool
+    #: Whether the content snapshot is one real record's.
+    actual_content: bool
+    #: Whether the result being printed is still current for its request.
+    result_current: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the provenance's wire form."""
+        return {
+            "published_revision": self.published_revision,
+            "actual_content": self.actual_content,
+            "result_current": self.result_current,
+        }
+
+
+def decide_print_request(
+    decisions: Mapping[str, OperationEligibility],
+    operation: Operation,
+    *,
+    provenance: PrintProvenance,
+) -> OperationEligibility:
+    """Decide one print request, from one result's answer plus its provenance.
+
+    The result's own refusals come first and keep their order, so an operator
+    reading them sees the same reasons in the same places whether they arrived
+    from the raster or from the request. Nothing here can *grant* what the
+    result refused: this only ever adds reasons.
+
+    A test print asserts none of the three. That is what makes it the
+    operation a provisional profile and an unpublished draft can both reach:
+    it puts an administrator's own work on paper to be looked at, and it never
+    claims to be a label about a record.
+    """
+    decision = decisions.get(
+        str(operation),
+        OperationEligibility(operation=str(operation), allowed=False, blocked_by=()),
+    )
+    if operation not in _PRODUCTION_OPERATIONS:
+        return decision
+
+    blocked = (
+        *decision.blocked_by,
+        *(
+            str(blocker)
+            for holds, blocker in (
+                (not provenance.published_revision, Blocker.REVISION_NOT_PUBLISHED),
+                (not provenance.actual_content, Blocker.CONTENT_NOT_ACTUAL),
+                (not provenance.result_current, Blocker.RESULT_NOT_CURRENT),
+            )
+            if holds
+        ),
+    )
+    return OperationEligibility(
+        operation=str(operation), allowed=not blocked, blocked_by=blocked
+    )
+
+
+#: The operations that put a real record on paper, and therefore the only ones
+#: provenance is asked about.
+_PRODUCTION_OPERATIONS = frozenset({Operation.SINGLE_PRINT, Operation.BATCH_PREFLIGHT})
+
+
 def decide_eligibility(
     diagnostics: Sequence[Diagnostic],
     *,
     has_raster: bool,
     profile: CapabilityProfile,
     local_calibration: str | None = None,
+    calibration_stale_reasons: Sequence[str] = (),
 ) -> Mapping[str, OperationEligibility]:
     """Decide every operation for one result, with the reasons for each.
 
@@ -96,7 +194,14 @@ def decide_eligibility(
     blocking = has_blocking(diagnostics)
     missing_raster = not has_raster
     provisional = not profile.authorizes_production
-    uncalibrated = local_calibration is None
+    # A stale calibration contributes no identity, so it would otherwise read
+    # as a missing one as well -- and the two are mutually exclusive accounts
+    # of the same printer. Telling an administrator that they never measured
+    # it *and* that their measurement moved is one sentence too many, and the
+    # wrong one of the two is the discouraging one. Stale is the more specific
+    # truth, so stale wins and missing means what it says.
+    stale = bool(calibration_stale_reasons)
+    uncalibrated = local_calibration is None and not stale
 
     def reasons(*conditions: tuple[bool, Blocker]) -> tuple[str, ...]:
         return tuple(str(blocker) for holds, blocker in conditions if holds)
@@ -109,6 +214,7 @@ def decide_eligibility(
         *printable,
         (provisional, Blocker.PROFILE_NOT_PRODUCT_VERIFIED),
         (uncalibrated, Blocker.LOCAL_CALIBRATION_MISSING),
+        (stale, Blocker.LOCAL_CALIBRATION_STALE),
     )
 
     decisions = {

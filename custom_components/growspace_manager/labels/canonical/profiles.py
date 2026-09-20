@@ -58,6 +58,23 @@ class StockOrientation(StrEnum):
     LANDSCAPE = "landscape"
 
 
+class FeedAxis(StrEnum):
+    """Which of the stock's own axes the media travels along.
+
+    Declared rather than derived, because "feed alignment" is a measurement
+    in one direction and there is no way to know which one from the stock's
+    dimensions: a 50x30 label can be fed either way round depending on how the
+    roll was slit. It is part of a calibration's identity for the same reason
+    -- a printer re-loaded with the roll turned is not the printer that was
+    measured.
+    """
+
+    #: Along the stock's width, in its own unrotated coordinate system.
+    X = "x"
+    #: Along the stock's height.
+    Y = "y"
+
+
 @dataclass(frozen=True, slots=True)
 class CalibratedLimits:
     """The thresholds below which this combination stops being readable.
@@ -133,6 +150,9 @@ class CapabilityProfile:
     #: How the stock is mounted. Whole-stock orientation is the profile's;
     #: element rotation is the layout's.
     orientation: StockOrientation = StockOrientation.LANDSCAPE
+    #: The axis the media travels along, which is the axis feed alignment is
+    #: measured in.
+    feed_axis: FeedAxis = FeedAxis.X
     #: Clockwise element rotations this profile and the compiler both realise.
     #: An angle outside this set is refused by name, never mapped to a
     #: neighbour.
@@ -192,6 +212,7 @@ class CapabilityProfile:
             "dpi": self.dpi,
             "printhead_pixels": self.printhead_pixels,
             "orientation": str(self.orientation),
+            "feed_axis": str(self.feed_axis),
             "stock_area": self.stock_area.as_dict(),
             "printable_area": self.printable_area.as_dict(),
             "safe_area": self.safe_area.as_dict(),
@@ -255,6 +276,12 @@ NIIMBOT_B1_50X30 = CapabilityProfile(
     evidence=ProfileEvidence.PROVISIONAL,
     limits=NIIMBOT_B1_DECLARED_LIMITS,
     orientation=StockOrientation.LANDSCAPE,
+    # The printhead is the 384-dot line across the stock's 50 mm axis, so the
+    # media advances along the other one. That is the same fact the printhead
+    # width above is: a head spanning x cannot also be the direction paper
+    # moves in. It is declared rather than derived because a roll slit the
+    # other way round would keep every number here and change this one.
+    feed_axis=FeedAxis.Y,
     # The renderer expresses element rotation through a rotating group whose
     # anchoring no golden render has pinned yet. Zero is what this compiler
     # realises, so zero is what the profile admits.
