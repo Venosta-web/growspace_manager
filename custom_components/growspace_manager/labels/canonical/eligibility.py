@@ -84,6 +84,10 @@ class Blocker(StrEnum):
     #: The result presented for printing is not the one that would be
     #: produced now -- something upstream of the raster has changed since.
     RESULT_NOT_CURRENT = "result_not_current"
+    #: This batch has warnings and nobody accepted this exact preflight.
+    WARNING_ACKNOWLEDGEMENT_REQUIRED = "warning_acknowledgement_required"
+    #: Consent or printer evidence belongs to another immutable preflight.
+    PREFLIGHT_NOT_CURRENT = "preflight_not_current"
 
 
 @dataclass(frozen=True, slots=True)
