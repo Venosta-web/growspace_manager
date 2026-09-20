@@ -41,6 +41,19 @@ about turning millimetres into dots:
 from __future__ import annotations
 
 from . import calibration, canonical
+from .batch import (
+    AttemptStatus,
+    BatchAttempt,
+    BatchAttemptResult,
+    BatchDiagnostic,
+    BatchPreflight,
+    BatchPrintResult,
+    BatchRecord,
+    BatchRefused,
+    async_preflight_batch,
+    async_print_batch,
+    async_retry_failed_batch,
+)
 from .classic import ClassicPrintRequest, resolve_classic_request
 from .model import (
     Canvas,
@@ -76,6 +89,14 @@ __all__ = [
     "DEFAULT_LABEL_SIZE",
     "LABEL_SIZE_CANVASES",
     "REFERENCE_CANVAS",
+    "AttemptStatus",
+    "BatchAttempt",
+    "BatchAttemptResult",
+    "BatchDiagnostic",
+    "BatchPreflight",
+    "BatchPrintResult",
+    "BatchRecord",
+    "BatchRefused",
     "CalibrationPrint",
     "Canvas",
     "ClassicPrintRequest",
@@ -91,11 +112,14 @@ __all__ = [
     "QrCode",
     "TextBlock",
     "TextLine",
+    "async_preflight_batch",
     "async_print",
+    "async_print_batch",
     "async_print_calibration_label",
     "async_print_inputs",
     "async_print_record",
     "async_raster_inputs",
+    "async_retry_failed_batch",
     "async_test_print",
     "calibration",
     "canonical",
