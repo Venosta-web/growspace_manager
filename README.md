@@ -87,12 +87,16 @@ after the cuttings taken from it have grown up.
 
 ### Step 1: Install frontend card via HACS
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Venosta-web&repository=lovelace-growspace-manager-card&category=lovelace)
+
 1. Go to **HACS** > **Frontend** in Home Assistant.
 2. Click the three vertical dots in the top-right corner and select **Custom repositories**.
 3. Add URL `https://github.com/Venosta-web/lovelace-growspace-manager-card` with category **Lovelace**.
 4. Search for `Growspace Manager Card` and click **Download**.
 
 ### Step 2: Install integration via HACS
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Venosta-web&repository=growspace_manager&category=integration)
 
 1. Go to **HACS** > **Integrations** in Home Assistant.
 2. Click the three vertical dots in the top-right corner and select **Custom repositories**.
