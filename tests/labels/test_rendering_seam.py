@@ -13,7 +13,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.labels.classic import resolve_classic_request
+from custom_components.growspace_manager.labels.classic import (
+    _canonical_size,
+    resolve_classic_request,
+)
 from custom_components.growspace_manager.labels.model import (
     Canvas,
     LabelContent,
@@ -163,7 +166,7 @@ def _plant(strain: str = "Northern Lights", phenotype: str | None = "Pheno A"):
 async def test_a_classic_request_writes_nothing() -> None:
     """A compatibility print is transient: no revision, draft, default, or save."""
     hass, coordinator, strain_library = _world()
-    await resolve_classic_request(
+    request = await resolve_classic_request(
         hass, coordinator, strain_library, {"strain": "Gelato"}
     )
 
@@ -171,6 +174,41 @@ async def test_a_classic_request_writes_nothing() -> None:
     assert {call[0] for call in strain_library.mock_calls} == {"load", "get_all"}
     # A strain request never even reaches the coordinator.
     assert coordinator.mock_calls == []
+    assert request.layout_id == "growspace.classic-layout.v1"
+    assert request.label_size_id == "growspace.stock.50x30.v1"
+
+
+@pytest.mark.asyncio
+async def test_classic_sizes_map_to_canonical_stock_identities() -> None:
+    hass, coordinator, strain_library = _world()
+    request = await resolve_classic_request(
+        hass,
+        coordinator,
+        strain_library,
+        {"strain": "Gelato", "label_size": "50x80"},
+    )
+    assert request.label_size_id == "growspace.stock.50x80.v1"
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_classic_size_keeps_the_documented_default_identity() -> None:
+    hass, coordinator, strain_library = _world()
+    request = await resolve_classic_request(
+        hass,
+        coordinator,
+        strain_library,
+        {"strain": "Gelato", "label_size": "99x99"},
+    )
+    assert request.label_size_id == "growspace.stock.50x30.v1"
+
+
+def test_a_broken_catalogue_cannot_invent_a_classic_default() -> None:
+    with patch(
+        "custom_components.growspace_manager.labels.classic.LABEL_SIZES",
+        {},
+    ):
+        with pytest.raises(RuntimeError, match="default Label Size is absent"):
+            _canonical_size(None)
 
 
 @pytest.mark.asyncio
@@ -251,7 +289,7 @@ async def test_the_service_handler_composes_only_through_the_renderer() -> None:
             return_value="http://ha.test",
         ),
         patch(
-            "custom_components.growspace_manager.services.strain_library.render",
+            "custom_components.growspace_manager.labels.classic.render",
             wraps=render,
         ) as spy,
     ):

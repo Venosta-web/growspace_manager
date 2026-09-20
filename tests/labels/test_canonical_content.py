@@ -17,6 +17,7 @@ import pytest
 from custom_components.growspace_manager.labels.canonical import (
     FACTORY_50X30,
     FACTORY_TEMPLATES,
+    LABEL_SIZES,
     TYPICAL_STRAIN,
     Diagnostic,
     FactoryTemplate,
@@ -204,8 +205,11 @@ def test_the_shipped_template_is_designated_for_its_own_stock() -> None:
     assert factory_template_for_size("growspace.stock.50x30.v1") is FACTORY_50X30
 
 
-def test_a_stock_with_no_shipped_template_gets_none_rather_than_another_size() -> None:
-    assert factory_template_for_size("growspace.stock.50x80.v1") is None
+def test_every_catalogued_stock_resolves_its_own_shipped_template() -> None:
+    for size_id in LABEL_SIZES:
+        shipped = factory_template_for_size(size_id)
+        assert shipped is not None
+        assert shipped.label_size_id == size_id
 
 
 def test_every_shipped_template_is_registered_under_its_own_id() -> None:

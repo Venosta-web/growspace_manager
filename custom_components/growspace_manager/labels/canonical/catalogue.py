@@ -19,7 +19,7 @@ from enum import StrEnum
 
 #: Bumped when any catalogue below gains, loses or redefines an entry. The
 #: capability response carries it so an editor can invalidate stale choices.
-CAPABILITY_GENERATION = 2
+CAPABILITY_GENERATION = 3
 
 LABEL_SIZE_CATALOGUE_VERSION = "growspace.label-sizes.v1"
 STYLE_TOKEN_CATALOGUE_VERSION = "growspace.label-style-tokens.v1"

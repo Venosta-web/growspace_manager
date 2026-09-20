@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+DIAGNOSTIC_VERSION = "growspace.label-diagnostics.v1"
+
 
 class Severity(StrEnum):
     """What a diagnostic does to the operation that produced it."""

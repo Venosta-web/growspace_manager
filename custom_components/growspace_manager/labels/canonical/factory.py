@@ -31,6 +31,18 @@ BREEDER_ELEMENT = "01M2V1PQB8CH61GQ903X1XF808"
 LINEAGE_ELEMENT = "01M2V1PQB8QKBBEH26QWK9FHT8"
 PRINT_DATE_ELEMENT = "01M2V1PQB8NNQA4TA7RZEJZCCW"
 
+# The remaining shipped templates use their own stable element identities.
+# Element identities are local to a layout, but keeping them distinct makes
+# diagnostics and golden fixture diffs unambiguous when two stocks are shown
+# beside one another.
+_IDS: Mapping[str, Mapping[str, str]] = {
+    size: {
+        role: f"growspace.factory.{size}.{role}.v1"
+        for role in ("strain", "rule", "phenotype", "breeder", "lineage", "date")
+    }
+    for size in ("40x30", "50x50", "50x80", "50x15")
+}
+
 _HEADING_FONT = "growspace.sans.bold.v1"
 _BODY_FONT = "growspace.sans.regular.v1"
 _COMPACT = "growspace.spacing.compact.v1"
@@ -139,6 +151,148 @@ _FACTORY_50X30_DOCUMENT: dict[str, Any] = {
 }
 
 
+def _standard_document(
+    size: str,
+    *,
+    width_mm: float,
+    title: tuple[float, float, float],
+    rule_y_mm: float,
+    rows: tuple[tuple[str, str, Mapping[str, str], float, float, int], ...],
+    date: tuple[float, float, float],
+) -> dict[str, Any]:
+    """Build one deliberately composed factory layout.
+
+    The dimensions are authored per stock below. This helper removes JSON
+    ceremony; it is not a scaling algorithm and never derives one stock from
+    another.
+    """
+    ids = _IDS[size]
+    left = 2.0
+    content_width = width_mm - 4.0
+    elements: list[dict[str, Any]] = [
+        _text(
+            ids["strain"],
+            "strain.name",
+            {},
+            {
+                "x_mm": left,
+                "y_mm": title[0],
+                "width_mm": content_width,
+                "height_mm": title[1],
+            },
+            font=_HEADING_FONT,
+            size_mm=title[2],
+            minimum_mm=2.4,
+            maximum_lines=2 if title[1] >= 7.0 else 1,
+        ),
+        {
+            "id": ids["rule"],
+            "kind": "divider",
+            "frame": {
+                "x_mm": left,
+                "y_mm": rule_y_mm,
+                "width_mm": content_width,
+                "height_mm": 0.4,
+            },
+            "rotation": 0,
+            "style": {"fill": "black"},
+        },
+    ]
+    for role, binding, parameters, y_mm, height_mm, maximum_lines in rows:
+        elements.append(
+            _text(
+                ids[role],
+                binding,
+                parameters,
+                {
+                    "x_mm": left,
+                    "y_mm": y_mm,
+                    "width_mm": content_width,
+                    "height_mm": height_mm,
+                },
+                font=_BODY_FONT,
+                size_mm=3.2,
+                minimum_mm=2.0,
+                maximum_lines=maximum_lines,
+            )
+        )
+    elements.append(
+        _text(
+            ids["date"],
+            "print.date",
+            {"date_style": "medium"},
+            {
+                "x_mm": left,
+                "y_mm": date[0],
+                "width_mm": content_width,
+                "height_mm": date[1],
+            },
+            font=_BODY_FONT,
+            size_mm=date[2],
+            minimum_mm=1.6,
+            align="right",
+        )
+    )
+    return {
+        "schema": "growspace.label-layout",
+        "version": 1,
+        "label_size_id": f"growspace.stock.{size}.v1",
+        "elements": elements,
+    }
+
+
+# Each composition uses the stock's extra or missing space intentionally. In
+# particular the 50x15 layout omits lineage and breeder instead of crushing a
+# 30 mm design to half-height, while the tall stocks give lineage two lines.
+_FACTORY_40X30_DOCUMENT = _standard_document(
+    "40x30",
+    width_mm=40.0,
+    title=(2.0, 8.4, 5.2),
+    rule_y_mm=11.0,
+    rows=(
+        ("phenotype", "strain.phenotype", {"presentation": "value"}, 12.2, 4.4, 1),
+        ("breeder", "strain.breeder", {"presentation": "labeled"}, 17.0, 4.4, 1),
+        ("lineage", "strain.lineage", {"presentation": "labeled"}, 21.8, 4.4, 1),
+    ),
+    date=(26.6, 2.8, 2.4),
+)
+
+_FACTORY_50X50_DOCUMENT = _standard_document(
+    "50x50",
+    width_mm=50.0,
+    title=(2.0, 10.0, 6.0),
+    rule_y_mm=12.8,
+    rows=(
+        ("phenotype", "strain.phenotype", {"presentation": "value"}, 14.0, 6.0, 1),
+        ("breeder", "strain.breeder", {"presentation": "labeled"}, 21.0, 6.0, 1),
+        ("lineage", "strain.lineage", {"presentation": "labeled"}, 28.0, 11.0, 2),
+    ),
+    date=(45.0, 3.0, 2.5),
+)
+
+_FACTORY_50X80_DOCUMENT = _standard_document(
+    "50x80",
+    width_mm=50.0,
+    title=(3.0, 12.0, 6.4),
+    rule_y_mm=16.0,
+    rows=(
+        ("phenotype", "strain.phenotype", {"presentation": "value"}, 18.0, 7.0, 1),
+        ("breeder", "strain.breeder", {"presentation": "labeled"}, 27.0, 7.0, 1),
+        ("lineage", "strain.lineage", {"presentation": "labeled"}, 36.0, 14.0, 2),
+    ),
+    date=(74.0, 3.5, 2.6),
+)
+
+_FACTORY_50X15_DOCUMENT = _standard_document(
+    "50x15",
+    width_mm=50.0,
+    title=(1.0, 5.0, 4.2),
+    rule_y_mm=6.3,
+    rows=(("phenotype", "strain.phenotype", {"presentation": "value"}, 7.1, 3.2, 1),),
+    date=(11.7, 2.0, 1.8),
+)
+
+
 @dataclass(frozen=True, slots=True)
 class FactoryTemplate:
     """One shipped layout, at one shipped revision."""
@@ -172,8 +326,47 @@ FACTORY_50X30 = FactoryTemplate(
     document=_FACTORY_50X30_DOCUMENT,
 )
 
+FACTORY_40X30 = FactoryTemplate(
+    id="growspace.factory.40x30",
+    revision=1,
+    name="Compact strain label",
+    label_size_id="growspace.stock.40x30.v1",
+    document=_FACTORY_40X30_DOCUMENT,
+)
+
+FACTORY_50X50 = FactoryTemplate(
+    id="growspace.factory.50x50",
+    revision=1,
+    name="Square strain label",
+    label_size_id="growspace.stock.50x50.v1",
+    document=_FACTORY_50X50_DOCUMENT,
+)
+
+FACTORY_50X80 = FactoryTemplate(
+    id="growspace.factory.50x80",
+    revision=1,
+    name="Tall strain label",
+    label_size_id="growspace.stock.50x80.v1",
+    document=_FACTORY_50X80_DOCUMENT,
+)
+
+FACTORY_50X15 = FactoryTemplate(
+    id="growspace.factory.50x15",
+    revision=1,
+    name="Slim strain label",
+    label_size_id="growspace.stock.50x15.v1",
+    document=_FACTORY_50X15_DOCUMENT,
+)
+
 FACTORY_TEMPLATES: Mapping[str, FactoryTemplate] = {
-    FACTORY_50X30.id: FACTORY_50X30,
+    template.id: template
+    for template in (
+        FACTORY_50X30,
+        FACTORY_40X30,
+        FACTORY_50X50,
+        FACTORY_50X80,
+        FACTORY_50X15,
+    )
 }
 
 

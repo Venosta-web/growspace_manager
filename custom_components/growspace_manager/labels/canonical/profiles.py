@@ -39,6 +39,8 @@ from .geometry import AreaMm
 #: Millimetres per inch, the one constant the whole compiler turns on.
 MM_PER_INCH = 25.4
 
+PROFILE_CATALOGUE_VERSION = "growspace.label-profiles.v1"
+
 
 class ProfileEvidence(StrEnum):
     """How far a profile has been proven."""

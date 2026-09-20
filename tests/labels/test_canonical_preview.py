@@ -362,12 +362,12 @@ def test_the_fixture_records_what_it_was_taken_against(key: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_a_stock_with_no_shipped_template_is_named_rather_than_substituted() -> (
+async def test_a_shipped_stock_with_no_profile_is_named_rather_than_substituted() -> (
     None
 ):
-    """A preview of the wrong size is worse than no preview."""
+    """Every stock has a layout, but it cannot borrow another stock's profile."""
     hass = _hass()
-    with pytest.raises(HomeAssistantError, match="No Factory Template is shipped"):
+    with pytest.raises(HomeAssistantError, match="No Capability Profile can render"):
         await async_render_factory_preview(
             hass, content=SNAPSHOT, label_size_id="growspace.stock.50x80.v1"
         )

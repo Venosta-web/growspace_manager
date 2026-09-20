@@ -111,12 +111,13 @@ async def test_a_fresh_library_already_resolves_the_factory_fallback(
     assert resolved.layout.digest == FACTORY_50X30.layout.digest
 
 
-async def test_a_stock_with_no_shipped_template_says_so(
+async def test_every_stock_has_a_factory_fallback(
     library: LabelTemplateLibrary, viewer: Any
 ) -> None:
-    """Never an invented emergency layout, and never a preview of another size."""
-    with pytest.raises(NoEffectiveDefault):
-        await library.async_resolve_default(viewer, UNSHIPPED_SIZE)
+    """The publication milestone ships one valid fallback for every stock."""
+    resolved = await library.async_resolve_default(viewer, UNSHIPPED_SIZE)
+    assert resolved.via == FACTORY_FALLBACK
+    assert resolved.layout.label_size_id == UNSHIPPED_SIZE
 
 
 async def test_publishing_from_a_factory_derived_draft_leaves_the_factory_alone(
@@ -217,7 +218,7 @@ async def test_clearing_an_absent_override_writes_nothing(
     assert cleared.generation == before
 
 
-async def test_clearing_a_stock_with_no_shipped_template_still_succeeds(
+async def test_clearing_a_stock_restores_its_factory_fallback(
     library: LabelTemplateLibrary, admin: Any
 ) -> None:
     """An administrator can always undo their own selection.
@@ -233,7 +234,9 @@ async def test_clearing_a_stock_with_no_shipped_template_still_succeeds(
     cleared = await library.async_clear_default(admin, UNSHIPPED_SIZE)
 
     assert cleared.override is None
-    assert cleared.effective is None
+    assert cleared.effective is not None
+    assert cleared.effective.via == FACTORY_FALLBACK
+    assert cleared.effective.label_size_id == UNSHIPPED_SIZE
     assert UNSHIPPED_SIZE not in library.state.defaults
 
 
@@ -327,14 +330,14 @@ async def test_an_override_whose_revision_stopped_validating_falls_back(
     assert reopened.state.templates[stale.id].head.document == {"gone": "stale"}
 
 
-async def test_a_default_for_a_stock_nothing_ships_reports_nothing(
+async def test_a_default_for_every_stock_reports_its_factory_fallback(
     library: LabelTemplateLibrary, admin: Any
 ) -> None:
     """The snapshot says which stocks can be printed and which cannot."""
     snapshot = await library.async_snapshot(admin)
 
     assert snapshot["effective_defaults"][SIZE]["via"] == FACTORY_FALLBACK
-    assert snapshot["effective_defaults"][UNSHIPPED_SIZE] is None
+    assert snapshot["effective_defaults"][UNSHIPPED_SIZE]["via"] == FACTORY_FALLBACK
     assert [item["id"] for item in snapshot["factory_templates"]] == list(
         FACTORY_TEMPLATES
     )

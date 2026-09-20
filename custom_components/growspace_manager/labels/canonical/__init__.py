@@ -78,7 +78,14 @@ from .content import (
     resolve_subject,
     stage_display_name,
 )
-from .diagnostics import Diagnostic, Layer, Recovery, Severity, has_blocking
+from .diagnostics import (
+    DIAGNOSTIC_VERSION,
+    Diagnostic,
+    Layer,
+    Recovery,
+    Severity,
+    has_blocking,
+)
 from .document import (
     QUANTUM_MM,
     SCHEMA,
@@ -98,7 +105,11 @@ from .eligibility import (
     decide_print_request,
 )
 from .factory import (
+    FACTORY_40X30,
+    FACTORY_50X15,
     FACTORY_50X30,
+    FACTORY_50X50,
+    FACTORY_50X80,
     FACTORY_TEMPLATES,
     FactoryTemplate,
     factory_template_for_size,
@@ -143,6 +154,7 @@ from .preview import (
 from .profiles import (
     NIIMBOT_B1_50X30,
     NIIMBOT_B1_DECLARED_LIMITS,
+    PROFILE_CATALOGUE_VERSION,
     PROFILES,
     CalibratedLimits,
     CapabilityProfile,
@@ -189,7 +201,12 @@ __all__ = [
     "COMPILER_VERSION",
     "CURRENT",
     "DEFAULT_LABEL_SIZE_ID",
+    "DIAGNOSTIC_VERSION",
+    "FACTORY_40X30",
+    "FACTORY_50X15",
     "FACTORY_50X30",
+    "FACTORY_50X50",
+    "FACTORY_50X80",
     "FACTORY_TEMPLATES",
     "FAILED",
     "FIXTURE_CATALOGUE_VERSION",
@@ -215,6 +232,7 @@ __all__ = [
     "PREVIEW",
     "PRINT",
     "PROFILES",
+    "PROFILE_CATALOGUE_VERSION",
     "QR_MODEL_VERSION",
     "QUANTUM_MM",
     "RECORD_SOURCE",

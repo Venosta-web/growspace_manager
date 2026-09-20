@@ -11,11 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.const import DOMAIN, GrowspaceService
 from custom_components.growspace_manager.exceptions import GrowspaceError
-from custom_components.growspace_manager.labels import (
-    async_print,
-    render,
-    resolve_classic_request,
-)
+from custom_components.growspace_manager.labels import async_compatibility_print
 from custom_components.growspace_manager.schemas import (
     ADD_STRAIN_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
@@ -422,18 +418,8 @@ async def handle_print_label(
     plan to a printer adapter. Every step lives in `labels/`; nothing about
     layout or `imagespec` belongs here.
     """
-    request = await resolve_classic_request(
-        hass, coordinator, strain_library, call.data
-    )
-    plan = render(
-        request.content, label_size=request.label_size, density=request.density
-    )
-    return await async_print(
-        hass,
-        plan,
-        device_id=request.device_id,
-        preview=request.preview,
-        subject=request.subject,
+    return await async_compatibility_print(
+        hass, coordinator, strain_library, dict(call.data)
     )
 
 

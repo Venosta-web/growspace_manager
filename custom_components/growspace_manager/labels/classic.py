@@ -28,7 +28,10 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.network import get_url
 from homeassistant.util import dt as dt_util
 
+from .canonical.catalogue import LABEL_SIZES
 from .model import LabelContent
+from .niimbot import async_print
+from .renderer import DEFAULT_LABEL_SIZE, render
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
@@ -46,7 +49,14 @@ _DATE_FORMAT = "%d.%m.%Y"
 
 @dataclass(frozen=True, slots=True)
 class ClassicPrintRequest:
-    """One resolved Classic request, ready to render and print."""
+    """Immutable transient canonical inputs for one Classic request.
+
+    These inputs have an explicit compatibility-layout identity and canonical
+    stock identity, but are never a Template Revision, draft, or default.  The
+    fixed compatibility layout remains behind the common renderer seam for the
+    deprecation window, so released clients keep byte-for-byte output while
+    every legacy request is isolated in this adapter.
+    """
 
     content: LabelContent
     label_size: str | None
@@ -55,6 +65,28 @@ class ClassicPrintRequest:
     preview: bool
     #: Plant id where there was one, else the strain — for logging only.
     subject: str
+    label_size_id: str
+    layout_id: str = "growspace.classic-layout.v1"
+
+
+async def async_compatibility_print(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    strain_library: StrainLibrary,
+    data: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Resolve, render, and adapt one legacy request without library state."""
+    request = await resolve_classic_request(hass, coordinator, strain_library, data)
+    plan = render(
+        request.content, label_size=request.label_size, density=request.density
+    )
+    return await async_print(
+        hass,
+        plan,
+        device_id=request.device_id,
+        preview=request.preview,
+        subject=request.subject,
+    )
 
 
 async def resolve_classic_request(
@@ -115,7 +147,25 @@ async def resolve_classic_request(
         device_id=data.get("device_id"),
         preview=data.get("preview", False),
         subject=plant_id or strain_name,
+        label_size_id=_canonical_size(data.get("label_size")),
     )
+
+
+def _canonical_size(classic_key: object) -> str:
+    """Map a legacy stock spelling to its canonical identity.
+
+    Unknown and absent sizes retain the Classic contract's documented 50x30
+    fallback.  The canonical Template path does not accept this coercion; it
+    exists only inside the deprecated adapter.
+    """
+    requested = classic_key if isinstance(classic_key, str) else None
+    for size in LABEL_SIZES.values():
+        if size.classic_key == requested:
+            return size.id
+    for size in LABEL_SIZES.values():
+        if size.classic_key == DEFAULT_LABEL_SIZE:
+            return size.id
+    raise RuntimeError("The Classic default Label Size is absent from the catalogue")
 
 
 def _info_lines(
