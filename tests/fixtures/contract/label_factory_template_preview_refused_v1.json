@@ -1,0 +1,19 @@
+{
+  "outcome": "refused",
+  "refusal": {
+    "code": "label_template.contract_incompatible",
+    "current": {
+      "family": "growspace.label-templates",
+      "generation": 3,
+      "major": 1,
+      "minor": 0
+    },
+    "reason": "stale",
+    "received": {
+      "family": "growspace.label-templates",
+      "generation": 2,
+      "major": 1
+    },
+    "recovery": "refresh_capability"
+  }
+}
