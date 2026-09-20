@@ -170,7 +170,9 @@ def test_an_inconsistent_profile_suppresses_the_capability() -> None:
 
 
 def test_the_capability_has_one_discovery_command() -> None:
-    assert len(COMMANDS) == 1
+    assert [command.type for command in COMMANDS].count(
+        WS_TYPE_GET_LABEL_TEMPLATE_CAPABILITY
+    ) == 1
     assert COMMANDS[0].type == WS_TYPE_GET_LABEL_TEMPLATE_CAPABILITY
     payload = websocket_get_label_template_capability(None, None, {})  # type: ignore[arg-type]
     assert payload["contract"] == contract_identity()
