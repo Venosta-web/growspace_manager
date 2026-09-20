@@ -43,9 +43,8 @@ The invariants worth knowing before changing anything here:
   retried. Divergent layouts are never merged: two independently edited
   designs compose into overlap and clipping that neither editor asked for.
 
-Nothing here is registered as a service or a websocket command yet. The
-Template Capability is advertised as one complete envelope once every required
-v1 operation exists, so that the card cannot assemble a guessed capability out
+These operations are published through one audited Template Capability rather
+than advertised piecemeal. The card cannot assemble a guessed capability out
 of which commands happen to be registered.
 """
 

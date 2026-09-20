@@ -78,7 +78,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--regenerate-contract-fixture",
         action="store_true",
-        help="Regenerate tests/fixtures/contract/growspace_payload.json",
+        help="Regenerate the contract fixture owned by the selected contract test",
     )
 
 

@@ -53,7 +53,6 @@ from custom_components.growspace_manager.labels.library import (
     IdempotencyKeyReused,
     LabelSizeImmutable,
     LabelTemplateLibrary,
-    NoFactoryTemplate,
     RevisionNotFound,
     TemplateNameRequired,
     TemplateNotFound,
@@ -656,19 +655,19 @@ async def test_replacing_from_the_factory_rebases_a_stale_draft(
     assert [item["stale"] for item in snapshot["drafts"]] == [False]
 
 
-async def test_a_stock_the_integration_ships_nothing_for_says_so(
+async def test_every_stock_can_replace_a_draft_from_its_factory(
     library: LabelTemplateLibrary, admin: Any
 ) -> None:
-    """A packaging gap is named, never worked around with another size's design."""
+    """The complete shipped set gives every stock an exact replacement."""
     published = await _named_template(
         library, admin, name="Bench tags", label_size_id=OTHER_SIZE
     )
 
-    with pytest.raises(NoFactoryTemplate) as refused:
-        await library.async_replace_from_factory(admin, published.template.id)
+    replaced = await library.async_replace_from_factory(admin, published.template.id)
 
-    assert refused.value.label_size_id == OTHER_SIZE
-    assert library.state.drafts == {}
+    assert replaced.label_size_id == OTHER_SIZE
+    assert replaced.document["label_size_id"] == OTHER_SIZE
+    assert library.state.drafts[replaced.key] == replaced
 
 
 async def test_a_shipped_layout_for_another_stock_is_refused(

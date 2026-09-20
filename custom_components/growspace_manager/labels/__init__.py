@@ -54,7 +54,11 @@ from .batch import (
     async_print_batch,
     async_retry_failed_batch,
 )
-from .classic import ClassicPrintRequest, resolve_classic_request
+from .classic import (
+    ClassicPrintRequest,
+    async_compatibility_print,
+    resolve_classic_request,
+)
 from .model import (
     Canvas,
     Divider,
@@ -112,6 +116,7 @@ __all__ = [
     "QrCode",
     "TextBlock",
     "TextLine",
+    "async_compatibility_print",
     "async_preflight_batch",
     "async_print",
     "async_print_batch",
