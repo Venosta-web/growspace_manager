@@ -33,9 +33,10 @@ new limits rather than the old ones.
 
     rule probes   the thinnest divider the profile claims, and twice it.
 
-    identity      which profile and density this is, and the print date, so
-                  the photograph of it can be attributed afterwards. It is
-                  printed at the readable floor, so it is a probe as well.
+    identity      which profile and density this is, so the photograph of it
+                  can be attributed afterwards; when it printed is the run
+                  record's. It is printed at the readable floor, so it is a
+                  probe as well.
 
 Two things it deliberately does not probe. A **logo** needs an asset this
 integration does not ship, so the logo row of the matrix is a real strain
@@ -52,7 +53,6 @@ from decimal import ROUND_CEILING, Decimal
 
 from ..canonical.catalogue import ElementKind, ErrorCorrection
 from ..canonical.document import (
-    BindingSource,
     DividerStyle,
     Frame,
     LabelLayout,
@@ -74,7 +74,7 @@ from .sheet import (
 
 #: Bumped when any probe moves or changes what it prints. It names the sheet
 #: a Release Evidence Record's measurements were read off.
-EVIDENCE_SHEET_VERSION = "growspace.label-evidence-sheet.v1"
+EVIDENCE_SHEET_VERSION = "growspace.label-evidence-sheet.v2"
 
 #: The prefix every element ID on this sheet carries.
 EVIDENCE_PREFIX = "growspace.evidence"
@@ -107,10 +107,12 @@ _BODY_FONT = "growspace.sans.regular.v1"
 _COMPACT = "growspace.spacing.compact.v1"
 
 #: How much taller than its font size a probe line's frame is. The renderer
-#: fits a line in its font's ascent plus descent plus the line spacing, which
-#: is about 1.46 of the size for the bold face; a frame shorter than that
-#: still draws one line, but silently refuses a second.
-_LINE_HEIGHT_RATIO = 1.5
+#: always draws a first line, so a single line needs only room for its
+#: descenders; a second line is drawn only when the frame holds two of the
+#: face's ascent plus descent plus spacing, about 1.46 of the size for the
+#: bold face.
+_LINE_HEIGHT_RATIO = 1.35
+_WRAPPED_LINE_HEIGHT_RATIO = 1.5
 
 #: The margin a QR box is given past its exact dot count, so rounding its two
 #: edges to device pixels can never take a dot away from it.
@@ -260,18 +262,25 @@ def _text_column(
 ) -> Iterator[LayoutElement]:
     """Each claimed size in each face, then the rules, then the density.
 
-    The density line is at the readable floor too, so it is one more probe
-    as well as the thing that says which of the three prints this is.
+    A profile whose floor and comfort threshold are the same size gets that
+    size once rather than twice. The density line is at the readable floor
+    too, so it is one more probe as well as the thing that says which of the
+    three prints this is.
     """
     limits = profile.limits
     floor = limits.text_readable_floor_mm
     comfort = limits.text_comfort_threshold_mm
     level = profile.density_level(density)
-    probes = (
+    probes = [
         _TextProbe("text.comfort.bold", f"Bold {comfort:g}", _HEADING_FONT, comfort),
         _TextProbe("text.comfort.regular", f"Mg {comfort:g} Ok", _BODY_FONT, comfort),
-        _TextProbe("text.floor.bold", f"Bold {floor:g}", _HEADING_FONT, floor),
-        _TextProbe("text.floor.regular", f"Hamburg {floor:g}", _BODY_FONT, floor),
+    ]
+    if floor < comfort:
+        probes += [
+            _TextProbe("text.floor.bold", f"Bold {floor:g}", _HEADING_FONT, floor),
+            _TextProbe("text.floor.regular", f"Hamburg {floor:g}", _BODY_FONT, floor),
+        ]
+    probes += [
         _TextProbe("text.floor.accented", ACCENTED_PROBE, _BODY_FONT, floor),
         _TextProbe(
             "text.floor.long",
@@ -280,10 +289,10 @@ def _text_column(
             floor,
             maximum_lines=2,
         ),
-    )
+    ]
     y = region.y_mm
     for probe in probes:
-        height = _line_height(probe.size_mm) * probe.maximum_lines
+        height = _line_height(probe.size_mm, lines=probe.maximum_lines)
         yield _text(
             probe.suffix,
             Frame(region.x_mm, y, region.width_mm, height),
@@ -306,37 +315,35 @@ def _text_column(
     yield _text(
         "identity.density",
         Frame(region.x_mm, y + CLEARANCE_MM, region.width_mm, _line_height(floor)),
-        LiteralSource(f"{density} ({'unmapped' if level is None else level})"),
+        LiteralSource(f"{density} {'unmapped' if level is None else level}"),
         font=_BODY_FONT,
         size_mm=floor,
     )
 
 
 def _identity(profile: CapabilityProfile, region: AreaMm) -> Iterator[LayoutElement]:
-    """Which profile this is a print of, and when, under the long QR."""
+    """Which profile this is a print of, under the long QR.
+
+    The model, stock and version part of the ID -- `b1.50x30.v1` -- because
+    that is what fits beside the long QR at the readable floor, and it is what
+    tells two profiles' sheets apart. When a copy printed is the run record's
+    to say, not the label's.
+    """
     floor = profile.limits.text_readable_floor_mm
-    lines = (
-        (
-            "identity.profile",
-            LiteralSource(profile.id.removeprefix("growspace.profile.")),
-        ),
-        ("identity.printed_on", BindingSource("print.date", {"date_style": "iso"})),
+    yield _text(
+        "identity.profile",
+        Frame(region.x_mm, region.y_mm, region.width_mm, _line_height(floor)),
+        LiteralSource(profile.id.rsplit("-", 1)[-1]),
+        font=_BODY_FONT,
+        size_mm=floor,
     )
-    y = region.y_mm
-    for suffix, content in lines:
-        yield _text(
-            suffix,
-            Frame(region.x_mm, y, region.width_mm, _line_height(floor)),
-            content,
-            font=_BODY_FONT,
-            size_mm=floor,
-        )
-        y += _line_height(floor)
 
 
-def _line_height(size_mm: float) -> float:
-    """The frame height one line of text at `size_mm` is given."""
-    return size_mm * _LINE_HEIGHT_RATIO
+def _line_height(size_mm: float, *, lines: int = 1) -> float:
+    """The frame height `lines` lines of text at `size_mm` are given."""
+    if lines == 1:
+        return size_mm * _LINE_HEIGHT_RATIO
+    return size_mm * _WRAPPED_LINE_HEIGHT_RATIO * lines
 
 
 def _refuse_overflow(
@@ -405,7 +412,7 @@ def _divider(suffix: str, frame: Frame) -> LayoutElement:
 def _text(
     suffix: str,
     frame: Frame,
-    content: LiteralSource | BindingSource,
+    content: LiteralSource,
     *,
     font: str,
     size_mm: float,

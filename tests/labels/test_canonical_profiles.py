@@ -16,6 +16,7 @@ plausible constant from being the last thing between a layout and paper.
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +28,12 @@ from custom_components.growspace_manager.labels.canonical import (
     ProfileEvidence,
     StockOrientation,
     profiles_for_size,
+)
+from custom_components.growspace_manager.labels.canonical.evidence import (
+    EvidenceDimension,
+)
+from custom_components.growspace_manager.labels.canonical.profiles import (
+    NIIMBOT_B1_50X30_EVIDENCE,
 )
 from tests.labels.support import product_verified
 
@@ -98,17 +105,63 @@ def test_the_profile_declares_which_element_rotations_it_realises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_shipped_profile_is_provisional_and_its_limits_are_declared() -> None:
-    assert PROFILE.evidence is ProfileEvidence.PROVISIONAL
-    assert PROFILE.limits.measured is False
-    assert PROFILE.authorizes_production is False
+def test_the_shipped_b1_profile_is_proven_by_its_own_record() -> None:
+    """Hub issue #231: one exact combination, promoted on physical evidence."""
+    assert PROFILE.evidence is ProfileEvidence.PRODUCT_VERIFIED
+    assert PROFILE.evidence_record is NIIMBOT_B1_50X30_EVIDENCE
+    assert PROFILE.evidence_problems == ()
+    assert PROFILE.limits.measured is True
+    assert PROFILE.authorizes_production is True
+
+
+def test_the_b1_record_is_for_this_printer_stock_and_procedure() -> None:
+    record = NIIMBOT_B1_50X30_EVIDENCE
+    assert record.profile_id == PROFILE.id
+    assert record.printer_model in PROFILE.device_models
+    assert record.stock == PROFILE.label_size_id
+    assert record.operator
+    assert record.reviewed_by
+    assert record.deviations
+
+
+def test_the_retained_evidence_is_in_the_repository() -> None:
+    """A reference nobody can open is not evidence anyone can review."""
+    root = Path(__file__).parents[2]
+    record = NIIMBOT_B1_50X30_EVIDENCE
+    assert (root / record.reference).is_dir()
+    for result in record.results.values():
+        for artifact in result.artifacts:
+            assert (root / artifact).is_file(), artifact
+
+
+def test_the_text_floor_is_the_one_the_evidence_proved_readable() -> None:
+    """Regular 1.6 mm was unreadable at every density; 2.2 mm was not."""
+    assert PROFILE.limits.text_readable_floor_mm == 2.2
+    measured = NIIMBOT_B1_50X30_EVIDENCE.results[EvidenceDimension.TEXT].measurements
+    assert measured["adopted_floor_mm"] == PROFILE.limits.text_readable_floor_mm
+
+
+def test_the_evidence_covers_only_the_tested_model() -> None:
+    """A B21 shares the printhead and the resolution, and is still not this."""
+    assert PROFILE.device_models == ("B1",)
+    assert PROFILE.covers_device_model("B1")
+    assert not PROFILE.covers_device_model("B21")
+    assert not PROFILE.covers_device_model("B1 Pro")
+    assert not PROFILE.covers_device_model(None)
+
+
+def test_the_tested_models_are_part_of_what_was_measured() -> None:
+    """Widening the models a record covers is a change the record must see."""
+    widened = replace(PROFILE, device_models=("B1", "B21"))
+    assert widened.definition_digest != PROFILE.definition_digest
+    assert "evidence.profile_changed" in widened.evidence_problems
 
 
 def test_no_shipped_profile_claims_evidence_nobody_recorded() -> None:
     for profile in PROFILES.values():
         assert (
             profile.evidence is ProfileEvidence.PROVISIONAL
-            or profile.evidence_recorded_at
+            or profile.evidence_record is not None
         )
 
 

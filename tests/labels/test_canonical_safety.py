@@ -259,10 +259,20 @@ def test_text_below_the_calibrated_readable_floor_blocks() -> None:
     )
     diagnostic = _of(report, "profile.text_below_readable_floor")
     assert diagnostic.severity is Severity.ERROR
-    assert diagnostic.parameters["readable_floor_mm"] == 1.6
+    assert diagnostic.parameters["readable_floor_mm"] == (
+        PROFILE.limits.text_readable_floor_mm
+    )
 
 
 def test_text_between_the_floor_and_the_comfort_threshold_warns() -> None:
+    """The B1's floor and comfort threshold are one size, so the band is
+    exercised on a profile that has one."""
+    banded = replace(
+        PROFILE,
+        limits=replace(
+            PROFILE.limits, text_readable_floor_mm=1.6, text_comfort_threshold_mm=2.2
+        ),
+    )
     report = _judge(
         text_element(
             "small",
@@ -270,7 +280,8 @@ def test_text_between_the_floor_and_the_comfort_threshold_warns() -> None:
             literal="Small",
             size_mm=1.8,
             minimum_mm=1.8,
-        )
+        ),
+        profile=banded,
     )
     diagnostic = _of(report, "profile.text_below_comfort_threshold")
     assert diagnostic.severity is Severity.WARNING

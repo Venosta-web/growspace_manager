@@ -1,17 +1,17 @@
 {
-  "case": "factory-50x30-r1.niimbot-b1.50x30.v1.long_content.plant.en",
+  "case": "factory-50x30-r2.niimbot-b1.50x30.v1.typical.batch_item.en",
   "layout": {
-    "name": "factory-50x30-r1",
-    "digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32"
+    "name": "factory-50x30-r2",
+    "digest": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242"
   },
   "profile": "growspace.profile.niimbot-b1.50x30.v1",
-  "subject": "growspace.fixture.plant.long.v1",
-  "family": "long_content",
-  "context": "plant",
+  "subject": "growspace.fixture.batch_item.typical.v1",
+  "family": "typical",
+  "context": "batch_item",
   "locale": "en",
   "as_of": "2026-09-18T00:00:00+00:00",
   "density": "normal",
-  "content_identity": "sha256:b9c4b079ec912919e417be07e37f400611a0c2dc56e244480f1574a780e38b2c",
+  "content_identity": "sha256:b5405240a870bd176af9c0639439172144ba23e54042a8fc8735af3f3a74c7a1",
   "raster_inputs": {
     "width": 384,
     "height": 240,
@@ -20,7 +20,7 @@
     "payload": [
       {
         "type": "text_fit",
-        "value": "Grandmommy Purple Auto Remix",
+        "value": "Blue Dream",
         "x": 16,
         "y": 16,
         "width": 344,
@@ -45,7 +45,7 @@
       },
       {
         "type": "text_fit",
-        "value": "Selection 14 (terpene-forward keeper)",
+        "value": "Pheno 3",
         "x": 16,
         "y": 98,
         "width": 344,
@@ -62,7 +62,7 @@
       },
       {
         "type": "text_fit",
-        "value": "Breeder: Anesia Seeds International Genetics",
+        "value": "Breeder: Humboldt Seed Co.",
         "x": 16,
         "y": 136,
         "width": 344,
@@ -79,11 +79,11 @@
       },
       {
         "type": "text_fit",
-        "value": "Lineage: Granddaddy Purple x Big Bud x Ruderalis Autoflower Line 7",
+        "value": "Lineage: Blueberry x Haze",
         "x": 16,
         "y": 174,
         "width": 344,
-        "height": 35,
+        "height": 34,
         "size": 26,
         "min_size": 18,
         "max_lines": 1,
@@ -98,11 +98,11 @@
         "type": "text_fit",
         "value": "18 Sep 2026",
         "x": 16,
-        "y": 213,
+        "y": 208,
         "width": 344,
-        "height": 22,
+        "height": 24,
         "size": 19,
-        "min_size": 16,
+        "min_size": 18,
         "max_lines": 1,
         "line_spacing": 1,
         "align": "right",
@@ -113,7 +113,7 @@
       }
     ]
   },
-  "raster_input_digest": "sha256:d013745a4bffa359c15a46029abcc4b22e4c71698fdc585fdfd660f65e5de42c",
+  "raster_input_digest": "sha256:02184cdc1146d7ced35696516e6bc69870c674349263ad020fd57d11a6301d5f",
   "outcomes": [
     {
       "element_id": "01M2V1PQB882FPJSG6H1GTFKX2",
@@ -202,16 +202,16 @@
         "left": 16,
         "top": 174,
         "right": 360,
-        "bottom": 209,
+        "bottom": 208,
         "width": 344,
-        "height": 35
+        "height": 34
       },
       "notes": {
         "requested_font_size_px": 26,
         "minimum_font_size_px": 18,
         "maximum_lines": 1,
         "overflow": "shrink_ellipsis",
-        "box_pixels": [344, 35]
+        "box_pixels": [344, 34]
       }
     },
     {
@@ -221,24 +221,24 @@
       "binding": "print.date",
       "pixel_frame": {
         "left": 16,
-        "top": 213,
+        "top": 208,
         "right": 360,
-        "bottom": 235,
+        "bottom": 232,
         "width": 344,
-        "height": 22
+        "height": 24
       },
       "notes": {
         "requested_font_size_px": 19,
-        "minimum_font_size_px": 16,
+        "minimum_font_size_px": 18,
         "maximum_lines": 1,
         "overflow": "shrink_ellipsis",
-        "box_pixels": [344, 22]
+        "box_pixels": [344, 24]
       }
     }
   ],
   "diagnostics": [],
   "evidence": {
-    "sha256": "ba97f0bf19bf4d18ae57e4934133a5160e822aaf306522e1567fab891f0e1cb6",
-    "rendered_from": "sha256:d013745a4bffa359c15a46029abcc4b22e4c71698fdc585fdfd660f65e5de42c"
+    "sha256": "12073785af101f6f05014bc0d089559e2e1846fb0247db63f93b8be0b840e137",
+    "rendered_from": "sha256:02184cdc1146d7ced35696516e6bc69870c674349263ad020fd57d11a6301d5f"
   }
 }

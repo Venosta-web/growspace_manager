@@ -188,8 +188,14 @@ def decide_eligibility(
     profile: CapabilityProfile,
     local_calibration: str | None = None,
     calibration_stale_reasons: Sequence[str] = (),
+    printer_covered: bool = True,
 ) -> Mapping[str, OperationEligibility]:
     """Decide every operation for one result, with the reasons for each.
+
+    `printer_covered` is false when the render names a printer whose model
+    the profile's evidence was not taken on. The profile is then not product
+    verified *for that printer*, which is the same correction -- choose a
+    profile, or a printer, that was proven -- so it is the same blocker.
 
     Reasons accumulate rather than short-circuit: an operation refused for
     three independent reasons says all three, because fixing one of them and
@@ -197,7 +203,7 @@ def decide_eligibility(
     """
     blocking = has_blocking(diagnostics)
     missing_raster = not has_raster
-    provisional = not profile.authorizes_production
+    provisional = not profile.authorizes_production or not printer_covered
     # A stale calibration contributes no identity, so it would otherwise read
     # as a missing one as well -- and the two are mutually exclusive accounts
     # of the same printer. Telling an administrator that they never measured

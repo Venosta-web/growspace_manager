@@ -42,6 +42,7 @@ from custom_components.growspace_manager.labels.canonical import (
     PROFILES,
     TYPICAL_STRAIN,
     factory_template_for_size,
+    preview,
     profile_by_id,
     profiles as profile_catalogue,
     select_profile,
@@ -64,7 +65,7 @@ from custom_components.growspace_manager.websocket._common import WS_MSG_USER
 from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.util.dt as dt_util
-from tests.labels.support import product_verified
+from tests.labels.support import product_verified, provisional
 
 from .conftest import ADMIN, VIEWER, _one_bit_png
 
@@ -230,6 +231,14 @@ def _committed(printer: list[dict[str, Any]]) -> list[dict[str, Any]]:
 async def _calibrated(hass: HomeAssistant) -> dict[str, Any]:
     sheet = await _sheet(hass)
     return await _record(hass, sheet_id=sheet["sheet_id"])
+
+
+@pytest.fixture
+def unproven(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Withdraw the shipped profile's evidence, as a dependency change would."""
+    monkeypatch.setattr(
+        profile_catalogue, "PROFILES", {PROFILE.id: provisional(PROFILE)}
+    )
 
 
 @pytest.fixture
@@ -732,6 +741,20 @@ async def test_an_invalid_draft_is_not_test_printed(
 # ---------------------------------------------------------------------------
 
 
+async def test_a_printer_the_evidence_was_not_taken_on_routes_to_profile_selection(
+    hass: HomeAssistant, printer: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A B21 on B1 evidence: same printhead, same resolution, not proven."""
+    monkeypatch.setattr(preview, "device_model", lambda _hass, _device_id: "B21")
+
+    payload = await _record_preview(hass, user=VIEWER_USER)
+
+    assert payload["decision"]["allowed"] is False
+    assert payload["decision"]["blocked_by"][0] == "profile_not_product_verified"
+    assert payload["recovery"] == "select_profile"
+
+
+@pytest.mark.usefixtures("unproven")
 async def test_a_provisional_profile_previews_but_routes_to_profile_selection(
     hass: HomeAssistant, printer: list[dict[str, Any]]
 ) -> None:

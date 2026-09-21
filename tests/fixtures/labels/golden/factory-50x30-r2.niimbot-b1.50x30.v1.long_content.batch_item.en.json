@@ -1,17 +1,17 @@
 {
-  "case": "factory-50x30-r1.niimbot-b1.50x30.v1.missing_optional.batch_item.en",
+  "case": "factory-50x30-r2.niimbot-b1.50x30.v1.long_content.batch_item.en",
   "layout": {
-    "name": "factory-50x30-r1",
-    "digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32"
+    "name": "factory-50x30-r2",
+    "digest": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242"
   },
   "profile": "growspace.profile.niimbot-b1.50x30.v1",
-  "subject": "growspace.fixture.batch_item.sparse.v1",
-  "family": "missing_optional",
+  "subject": "growspace.fixture.batch_item.long.v1",
+  "family": "long_content",
   "context": "batch_item",
   "locale": "en",
   "as_of": "2026-09-18T00:00:00+00:00",
   "density": "normal",
-  "content_identity": "sha256:6368fc1d262dd3f5701ad5c7b8f086d1660c86d00af7a155ac3312a9b7f3496c",
+  "content_identity": "sha256:543de7cf87c6ee3efb39d16ff96151dd8dadfc3e5d807b9c4ca6c9754a7b352c",
   "raster_inputs": {
     "width": 384,
     "height": 240,
@@ -20,7 +20,7 @@
     "payload": [
       {
         "type": "text_fit",
-        "value": "Northern Lights",
+        "value": "Grandmommy Purple Auto Remix",
         "x": 16,
         "y": 16,
         "width": 344,
@@ -45,13 +45,64 @@
       },
       {
         "type": "text_fit",
+        "value": "Selection 14 (terpene-forward keeper)",
+        "x": 16,
+        "y": 98,
+        "width": 344,
+        "height": 35,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "text_fit",
+        "value": "Breeder: Anesia Seeds International Genetics",
+        "x": 16,
+        "y": 136,
+        "width": 344,
+        "height": 35,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "text_fit",
+        "value": "Lineage: Granddaddy Purple x Big Bud x Ruderalis Autoflower Line 7",
+        "x": 16,
+        "y": 174,
+        "width": 344,
+        "height": 34,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "text_fit",
         "value": "18 Sep 2026",
         "x": 16,
-        "y": 213,
+        "y": 208,
         "width": 344,
-        "height": 22,
+        "height": 24,
         "size": 19,
-        "min_size": 16,
+        "min_size": 18,
         "max_lines": 1,
         "line_spacing": 1,
         "align": "right",
@@ -62,7 +113,7 @@
       }
     ]
   },
-  "raster_input_digest": "sha256:0119ba6044cca2c1a3ec06c16d6eeaeb065149aa635fce1b64935cba454d4942",
+  "raster_input_digest": "sha256:e48761d2421db45cba4261c29b866764470f96871a3656afb88b103794a2242f",
   "outcomes": [
     {
       "element_id": "01M2V1PQB882FPJSG6H1GTFKX2",
@@ -103,7 +154,7 @@
     {
       "element_id": "01M2V1PQB83XP8GJZZAP08DDKM",
       "kind": "text",
-      "status": "omitted_missing_content",
+      "status": "placed",
       "binding": "strain.phenotype",
       "pixel_frame": {
         "left": 16,
@@ -113,12 +164,18 @@
         "width": 344,
         "height": 35
       },
-      "notes": {}
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
     },
     {
       "element_id": "01M2V1PQB8CH61GQ903X1XF808",
       "kind": "text",
-      "status": "omitted_missing_content",
+      "status": "placed",
       "binding": "strain.breeder",
       "pixel_frame": {
         "left": 16,
@@ -128,22 +185,34 @@
         "width": 344,
         "height": 35
       },
-      "notes": {}
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
     },
     {
       "element_id": "01M2V1PQB8QKBBEH26QWK9FHT8",
       "kind": "text",
-      "status": "omitted_missing_content",
+      "status": "placed",
       "binding": "strain.lineage",
       "pixel_frame": {
         "left": 16,
         "top": 174,
         "right": 360,
-        "bottom": 209,
+        "bottom": 208,
         "width": 344,
-        "height": 35
+        "height": 34
       },
-      "notes": {}
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 34]
+      }
     },
     {
       "element_id": "01M2V1PQB8NNQA4TA7RZEJZCCW",
@@ -152,27 +221,24 @@
       "binding": "print.date",
       "pixel_frame": {
         "left": 16,
-        "top": 213,
+        "top": 208,
         "right": 360,
-        "bottom": 235,
+        "bottom": 232,
         "width": 344,
-        "height": 22
+        "height": 24
       },
       "notes": {
         "requested_font_size_px": 19,
-        "minimum_font_size_px": 16,
+        "minimum_font_size_px": 18,
         "maximum_lines": 1,
         "overflow": "shrink_ellipsis",
-        "box_pixels": [344, 22]
+        "box_pixels": [344, 24]
       }
     }
   ],
-  "diagnostics": [
-    ["content.missing_optional", "warning"],
-    ["content.source_unresolved", "warning"]
-  ],
+  "diagnostics": [],
   "evidence": {
-    "sha256": "d0d77c1171707c2d93548e132d48c6d242c57a014a8ad33e84347226c3ed8f26",
-    "rendered_from": "sha256:0119ba6044cca2c1a3ec06c16d6eeaeb065149aa635fce1b64935cba454d4942"
+    "sha256": "a6881b5c0d1f771662c28a0f2356a26f1e893859de30c382077ec2432b7eba17",
+    "rendered_from": "sha256:e48761d2421db45cba4261c29b866764470f96871a3656afb88b103794a2242f"
   }
 }

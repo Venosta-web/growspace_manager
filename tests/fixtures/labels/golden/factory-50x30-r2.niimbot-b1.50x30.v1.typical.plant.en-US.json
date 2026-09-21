@@ -1,17 +1,17 @@
 {
-  "case": "factory-50x30-r1.niimbot-b1.50x30.v1.typical.strain.en",
+  "case": "factory-50x30-r2.niimbot-b1.50x30.v1.typical.plant.en-US",
   "layout": {
-    "name": "factory-50x30-r1",
-    "digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32"
+    "name": "factory-50x30-r2",
+    "digest": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242"
   },
   "profile": "growspace.profile.niimbot-b1.50x30.v1",
-  "subject": "growspace.fixture.strain.typical.v1",
+  "subject": "growspace.fixture.plant.typical.v1",
   "family": "typical",
-  "context": "strain",
-  "locale": "en",
+  "context": "plant",
+  "locale": "en-US",
   "as_of": "2026-09-18T00:00:00+00:00",
   "density": "normal",
-  "content_identity": "sha256:249700f3a8cbbdcbce28498e167e59d7c70a51e5149c42bbe326947a2f8249e7",
+  "content_identity": "sha256:687c487c5032982145a5174c784bf7ea88c02191cbfa259f95871f5f7791ab03",
   "raster_inputs": {
     "width": 384,
     "height": 240,
@@ -83,7 +83,7 @@
         "x": 16,
         "y": 174,
         "width": 344,
-        "height": 35,
+        "height": 34,
         "size": 26,
         "min_size": 18,
         "max_lines": 1,
@@ -96,13 +96,13 @@
       },
       {
         "type": "text_fit",
-        "value": "18 Sep 2026",
+        "value": "Sep 18, 2026",
         "x": 16,
-        "y": 213,
+        "y": 208,
         "width": 344,
-        "height": 22,
+        "height": 24,
         "size": 19,
-        "min_size": 16,
+        "min_size": 18,
         "max_lines": 1,
         "line_spacing": 1,
         "align": "right",
@@ -113,7 +113,7 @@
       }
     ]
   },
-  "raster_input_digest": "sha256:6f715f1d2ec435ee477e8883b69c7c6d10c5dec2b7ae3c837d7f958f1139c085",
+  "raster_input_digest": "sha256:6707f7575e78e2a47c3fd231c88ba1a2bcff37aec3b2a4c3b4bb662c8317104c",
   "outcomes": [
     {
       "element_id": "01M2V1PQB882FPJSG6H1GTFKX2",
@@ -202,16 +202,16 @@
         "left": 16,
         "top": 174,
         "right": 360,
-        "bottom": 209,
+        "bottom": 208,
         "width": 344,
-        "height": 35
+        "height": 34
       },
       "notes": {
         "requested_font_size_px": 26,
         "minimum_font_size_px": 18,
         "maximum_lines": 1,
         "overflow": "shrink_ellipsis",
-        "box_pixels": [344, 35]
+        "box_pixels": [344, 34]
       }
     },
     {
@@ -221,24 +221,24 @@
       "binding": "print.date",
       "pixel_frame": {
         "left": 16,
-        "top": 213,
+        "top": 208,
         "right": 360,
-        "bottom": 235,
+        "bottom": 232,
         "width": 344,
-        "height": 22
+        "height": 24
       },
       "notes": {
         "requested_font_size_px": 19,
-        "minimum_font_size_px": 16,
+        "minimum_font_size_px": 18,
         "maximum_lines": 1,
         "overflow": "shrink_ellipsis",
-        "box_pixels": [344, 22]
+        "box_pixels": [344, 24]
       }
     }
   ],
   "diagnostics": [],
   "evidence": {
-    "sha256": "27ff61b9c7546f72aa7770417a0f5b201a9011d112af478d08376b0c43b223f6",
-    "rendered_from": "sha256:6f715f1d2ec435ee477e8883b69c7c6d10c5dec2b7ae3c837d7f958f1139c085"
+    "sha256": "2ad035a4cd635533d49dbfc34f45e7f1abe83eff4075b13c6f95ee6d088db842",
+    "rendered_from": "sha256:6707f7575e78e2a47c3fd231c88ba1a2bcff37aec3b2a4c3b4bb662c8317104c"
   }
 }

@@ -26,7 +26,7 @@ from custom_components.growspace_manager.labels.canonical.evidence import (
 from custom_components.growspace_manager.labels.canonical.profiles import (
     ProfileEvidence,
 )
-from tests.labels.support import complete_evidence, product_verified
+from tests.labels.support import complete_evidence, product_verified, provisional
 
 CAPABILITY_FIXTURE = (
     Path(__file__).parent.parent
@@ -35,7 +35,8 @@ CAPABILITY_FIXTURE = (
     / "label_template_capability_v1.json"
 )
 
-CLAIMED = replace(NIIMBOT_B1_50X30, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+UNPROVEN = provisional(NIIMBOT_B1_50X30)
+CLAIMED = replace(UNPROVEN, evidence=ProfileEvidence.PRODUCT_VERIFIED)
 
 
 def _problems(**changes: object) -> tuple[str, ...]:
@@ -69,8 +70,8 @@ def test_a_claim_without_a_record_is_provisional() -> None:
 
 
 def test_a_provisional_profile_has_nothing_to_prove() -> None:
-    assert NIIMBOT_B1_50X30.evidence_problems == ()
-    assert NIIMBOT_B1_50X30.authorizes_production is False
+    assert UNPROVEN.evidence_problems == ()
+    assert UNPROVEN.authorizes_production is False
 
 
 def test_a_record_for_another_profile_does_not_transfer() -> None:

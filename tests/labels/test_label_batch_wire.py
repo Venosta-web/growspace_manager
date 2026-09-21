@@ -330,13 +330,10 @@ async def test_a_preflight_renders_every_record_and_plans_copy_major(
     ] == [("A", 1, 0), ("B", 1, 1), ("A", 2, 2), ("B", 2, 3)]
     assert {attempt["status"] for attempt in preflight["attempts"]} == {"pending"}
     assert _committed(printer) == []
-    # Shipped profiles are provisional and this printer was never measured.
+    # The shipped profile is proven; this printer was never measured.
     assert preflight["allowed"] is False
-    assert preflight["blocked_by"] == [
-        "profile_not_product_verified",
-        "local_calibration_missing",
-    ]
-    assert payload["recovery"] == "select_profile"
+    assert preflight["blocked_by"] == ["local_calibration_missing"]
+    assert payload["recovery"] == "calibrate"
     assert payload["preflight_id"]
     json.dumps(payload)
 
@@ -349,7 +346,7 @@ async def test_a_blocked_preflight_is_refused_before_any_job_exists(
     payload = await _print(hass, preflight_id=preflight["preflight_id"])
 
     assert payload["refusal"]["code"] == "label_template.print_refused"
-    assert payload["refusal"]["recovery"] == "select_profile"
+    assert payload["refusal"]["recovery"] == "calibrate"
     assert batch_job_holder(hass, ENTRY_ID).values(BATCH_JOB) == []
     assert _committed(printer) == []
 

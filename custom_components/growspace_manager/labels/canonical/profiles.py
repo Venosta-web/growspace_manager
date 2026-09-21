@@ -40,7 +40,13 @@ from typing import Any
 
 from .canonicalization import digest
 from .catalogue import LABEL_SIZES, LabelSize
-from .evidence import ReleaseEvidenceRecord, evidence_problems
+from .evidence import (
+    EVIDENCE_PROCEDURE_VERSION,
+    DimensionResult,
+    EvidenceDimension,
+    ReleaseEvidenceRecord,
+    evidence_problems,
+)
 from .geometry import AreaMm
 
 #: Millimetres per inch, the one constant the whole compiler turns on.
@@ -174,6 +180,12 @@ class CapabilityProfile:
     evidence_invalidated_by: tuple[str, ...] = field(default_factory=tuple)
     #: The physical proof behind a product-verified claim.
     evidence_record: ReleaseEvidenceRecord | None = None
+    #: The printer models, as the printer integration reports them to Home
+    #: Assistant's device registry, that were physically tested on this
+    #: profile. Evidence does not transfer between models however alike
+    #: their datasheets are, so a production print to any other device is
+    #: refused. Empty means no model has been tested.
+    device_models: tuple[str, ...] = ()
 
     @property
     def label_size(self) -> LabelSize:
@@ -208,8 +220,7 @@ class CapabilityProfile:
         A Release Evidence Record names this, so moving an edge, a density
         level or a limit after the prints were made invalidates them.
         """
-        wire = self._definition()
-        return digest(wire)
+        return digest({**self._definition(), "device_models": list(self.device_models)})
 
     @property
     def evidence_problems(self) -> tuple[str, ...]:
@@ -237,6 +248,10 @@ class CapabilityProfile:
     def authorizes_production(self) -> bool:
         """Whether a render against this profile may reach paper."""
         return self.effective_evidence is ProfileEvidence.PRODUCT_VERIFIED
+
+    def covers_device_model(self, model: str | None) -> bool:
+        """Whether a printer of this model is one the evidence was taken on."""
+        return model is not None and model in self.device_models
 
     def density_level(self, density: str) -> int | None:
         """Resolve a symbolic density to this printer's own scale."""
@@ -290,20 +305,26 @@ class CapabilityProfile:
         }
 
 
-#: The B1's declared limits. Every one of them is a starting point taken from
-#: the symbology, the upstream device table or this printhead's own geometry
-#: -- not from a print anyone measured, which is exactly why `measured` is
-#: false and the profile carrying them is provisional.
+#: The B1's limits, as the physical evidence matrix measured them on
+#: 2026-09-22 (see `NIIMBOT_B1_50X30_EVIDENCE`).
 #:
-#: Two of them are worth saying out loud. The quiet zone is four modules
-#: because that is what ISO/IEC 18004 requires, not because anyone here
-#: chose it; it is the one number a physical matrix cannot lower. And two
-#: dots per module is this printhead's floor rather than a preference: 203
-#: dpi over a 12 mm code gives a typical plant URL exactly two, so a higher
-#: declared minimum would not be strict, it would make a QR impossible on
-#: 50x30 stock while claiming to be about readability.
-NIIMBOT_B1_DECLARED_LIMITS = CalibratedLimits(
-    text_readable_floor_mm=1.6,
+#: Text is the one limit the matrix moved. The declared 1.6 mm floor came from
+#: nowhere in particular, and on paper the regular face at 1.6 mm was
+#: unreadable at every density while bold at 1.6 mm was not. A profile has one
+#: floor for both faces, so it is the smaller of the two sizes that read in
+#: both: 2.2 mm. Nothing between 1.6 and 2.2 was printed, so the floor is the
+#: tested size rather than an interpolated one, and the comfort threshold sits
+#: on it because no size was shown to be readable-but-tight.
+#:
+#: The QR numbers held. The quiet zone is four modules because ISO/IEC 18004
+#: requires it, and two dots per module is this printhead's floor -- 203 dpi
+#: over a 12 mm code gives a typical plant URL exactly two -- and all three
+#: targets, the 256-byte one included, scanned at two dots per module on every
+#: density. Only `medium` correction was printed; `quartile` and `high` keep the
+#: same module size and add redundancy, so they are kept rather than narrowed,
+#: and the record says so.
+NIIMBOT_B1_MEASURED_LIMITS = CalibratedLimits(
+    text_readable_floor_mm=2.2,
     text_comfort_threshold_mm=2.2,
     qr_minimum_dots_per_module=2,
     qr_minimum_quiet_zone_modules=4,
@@ -311,12 +332,127 @@ NIIMBOT_B1_DECLARED_LIMITS = CalibratedLimits(
     qr_error_correction_levels=("medium", "quartile", "high"),
     image_minimum_effective_dpi=203.0,
     divider_minimum_thickness_mm=0.25,
-    measured=False,
+    measured=True,
 )
 
-#: The first profile, and deliberately provisional: a Niimbot B1 at 203 dpi on
-#: 50x30 mm stock. Its numbers come from the upstream device table rather than
-#: from a measured print, which is exactly why it cannot authorize one.
+#: Where the B1 record, its run log and its photograph are kept.
+_B1_EVIDENCE = "docs/evidence/labels/niimbot-b1.50x30.v1/2026-09-22"
+_B1_STRIP = f"{_B1_EVIDENCE}/strip.jpg"
+_B1_RUN = f"{_B1_EVIDENCE}/run.json"
+
+#: The physical proof behind the B1 profile: fifteen evidence labels, five at
+#: each density, on a Niimbot B1 at firmware 5.22 (hardware 5.1), read by the
+#: operator on 2026-09-22.
+#:
+#: `profile_definition` and `dependencies` are literals on purpose. They are
+#: what the prints were made with, so moving an edge, a limit or a density
+#: mapping, or shipping another compiler, renderer, font toolchain, QR model or
+#: safety policy, stops matching them -- and the profile falls back to
+#: provisional by name instead of carrying this record over a change nobody
+#: printed.
+NIIMBOT_B1_50X30_EVIDENCE = ReleaseEvidenceRecord(
+    reference=_B1_EVIDENCE,
+    profile_id="growspace.profile.niimbot-b1.50x30.v1",
+    profile_definition=(
+        "sha256:4c0430d3d9a240020d544741ac974905e10ebbb292c8a646e2554268583f8f91"
+    ),
+    printer_model="B1",
+    firmware="5.22",
+    driver="niimbot (Home Assistant integration) via growspace.niimbot-adapter.v1",
+    stock="growspace.stock.50x30.v1",
+    procedure=EVIDENCE_PROCEDURE_VERSION,
+    operator="Venosta-web",
+    reviewed_by="Venosta-web",
+    recorded_on="2026-09-22",
+    dependencies={
+        "compiler": "growspace.label-compiler.v1",
+        "renderer": "growspace.label-renderer.v1",
+        "adapter": "growspace.niimbot-adapter.v1",
+        "text_toolchain": "growspace.text-toolchain.v1",
+        "style_tokens": "growspace.label-style-tokens.v1",
+        "qr_model": "growspace.qr-model.v1",
+        "safety_policy": "growspace.label-safety.v1",
+    },
+    results={
+        EvidenceDimension.EDGES: DimensionResult(
+            passed=True,
+            measurements={
+                "ticks_printed_of_five": {"top": 3, "right": 5, "bottom": 5, "left": 5},
+                "top_reach_mm": 1.0,
+                "copies": 15,
+                "inside_safe_area": True,
+            },
+            artifacts=(_B1_STRIP, _B1_RUN),
+        ),
+        EvidenceDimension.ROTATION: DimensionResult(
+            passed=True,
+            measurements={"element_rotation_deg": 0, "orientation": "landscape"},
+            artifacts=(_B1_STRIP,),
+            covers=("0",),
+        ),
+        EvidenceDimension.TEXT: DimensionResult(
+            passed=True,
+            measurements={
+                "readable_mm": {"bold": [1.6, 2.2], "regular": [2.2]},
+                "unreadable_mm": {"regular": [1.6]},
+                "accented_at_1_6_mm": "unreadable",
+                "adopted_floor_mm": 2.2,
+            },
+            artifacts=(_B1_STRIP, _B1_RUN),
+        ),
+        EvidenceDimension.QR: DimensionResult(
+            passed=True,
+            measurements={
+                "phone": "Google Pixel 9",
+                "targets_bytes": [43, 74, 256],
+                "error_correction": "medium",
+                "dots_per_module": 2,
+                "quiet_zone_modules": 4,
+                "decoded": "all, at every density",
+            },
+            artifacts=(_B1_STRIP, _B1_RUN),
+        ),
+        EvidenceDimension.LOGO: DimensionResult(
+            passed=True,
+            measurements={"threshold": "readable", "dither": "readable"},
+            artifacts=(_B1_RUN,),
+        ),
+        EvidenceDimension.DENSITY: DimensionResult(
+            passed=True,
+            measurements={"device_levels": {"low": 2, "normal": 3, "high": 5}},
+            artifacts=(_B1_STRIP, _B1_RUN),
+            covers=("low", "normal", "high"),
+        ),
+        EvidenceDimension.REPEATABILITY: DimensionResult(
+            passed=True,
+            measurements={
+                "copies_per_density": 5,
+                "tick_counts_identical": True,
+                "raster_input_digests_per_density": 1,
+            },
+            artifacts=(_B1_STRIP, _B1_RUN),
+        ),
+        EvidenceDimension.BATCH: DimensionResult(
+            passed=True,
+            measurements={"skipped": 0, "doubled": 0, "misaligned": 0},
+            artifacts=(_B1_RUN,),
+        ),
+    },
+    deviations=(
+        "Top edge: the first 1.0 mm of the declared Printable Area did not print on "
+        "any copy; accepted because it lies outside the 1.0 mm Safe Area inset.",
+        "Text floor raised from the declared 1.6 mm to 2.2 mm: regular 1.6 mm was "
+        "unreadable at every density.",
+        "QR: only medium correction was printed; quartile and high are kept at the "
+        "same module size.",
+        "Logo and batch rows rest on the operator's attestation in run.json; no "
+        "photograph was retained for either.",
+    ),
+)
+
+#: The first profile: a Niimbot B1 at 203 dpi on 50x30 mm stock, promoted to
+#: product-verified by `NIIMBOT_B1_50X30_EVIDENCE`. It claims only that exact
+#: combination; a B21, a B1 Pro or any other stock proves itself separately.
 #:
 #: The Printable Area is 48 mm, not the stock's 50: the B1's printhead is 384
 #: pixels, and 384 pixels at 203 dpi is 48.05 mm. Compiling onto the stock's
@@ -336,8 +472,8 @@ NIIMBOT_B1_50X30 = CapabilityProfile(
     # The B1 accepts 1-5. The Classic path's global 3/5/8 is invalid here at
     # its top value, which is the kind of thing a profile exists to stop.
     density_levels={"low": 2, "normal": 3, "high": 5},
-    evidence=ProfileEvidence.PROVISIONAL,
-    limits=NIIMBOT_B1_DECLARED_LIMITS,
+    evidence=ProfileEvidence.PRODUCT_VERIFIED,
+    limits=NIIMBOT_B1_MEASURED_LIMITS,
     orientation=StockOrientation.LANDSCAPE,
     # The printhead is the 384-dot line across the stock's 50 mm axis, so the
     # media advances along the other one. That is the same fact the printhead
@@ -349,6 +485,11 @@ NIIMBOT_B1_50X30 = CapabilityProfile(
     # anchoring no golden render has pinned yet. Zero is what this compiler
     # realises, so zero is what the profile admits.
     supported_element_rotations=(0,),
+    evidence_record=NIIMBOT_B1_50X30_EVIDENCE,
+    # The model string the niimbot integration registers the tested printer
+    # under. A B21 shares the printhead and the resolution and is still not
+    # this evidence.
+    device_models=("B1",),
 )
 
 PROFILES: Mapping[str, CapabilityProfile] = {

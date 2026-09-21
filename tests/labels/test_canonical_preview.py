@@ -107,7 +107,7 @@ async def test_a_preview_carries_the_complete_render_context() -> None:
     assert context["layout_digest"] == FACTORY_50X30.layout.digest
     assert context["content_identity"] == SNAPSHOT.identity
     assert context["profile_id"] == NIIMBOT_B1_50X30.id
-    assert context["profile_evidence"] == "provisional"
+    assert context["profile_evidence"] == "product_verified"
     assert context["label_size_id"] == "growspace.stock.50x30.v1"
     assert context["density"] == "normal"
     assert context["density_level"] == 3
@@ -528,7 +528,7 @@ async def test_the_result_carries_the_profile_it_was_judged_against() -> None:
     result = await async_render_factory_preview(hass, content=SNAPSHOT)
     assert result.profile is NIIMBOT_B1_50X30
     wire = result.as_dict()["profile"]
-    assert wire["limits"]["measured"] is False
+    assert wire["limits"]["measured"] is True
     assert wire["printable_area"]["width_mm"] == 48.0
 
 
@@ -539,7 +539,6 @@ async def test_the_result_answers_every_operation_rather_than_one_boolean() -> N
     assert result.eligibility["test_print"].allowed is True
     assert result.eligibility["single_print"].allowed is False
     assert result.eligibility["single_print"].blocked_by == (
-        "profile_not_product_verified",
         "local_calibration_missing",
     )
     assert result.printable is result.eligibility["single_print"].allowed

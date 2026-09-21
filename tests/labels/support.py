@@ -287,3 +287,12 @@ def product_verified(profile: CapabilityProfile) -> CapabilityProfile:
     """The same profile, claiming product-verified with the proof attached."""
     claimed = replace(profile, evidence=ProfileEvidence.PRODUCT_VERIFIED)
     return replace(claimed, evidence_record=complete_evidence(claimed))
+
+
+def provisional(profile: CapabilityProfile) -> CapabilityProfile:
+    """The same profile before its evidence: claiming nothing, proving nothing.
+
+    The suites that are about what a provisional profile may and may not do
+    use this rather than the shipped profile, which is product verified.
+    """
+    return replace(profile, evidence=ProfileEvidence.PROVISIONAL, evidence_record=None)

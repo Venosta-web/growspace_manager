@@ -109,11 +109,12 @@ def test_no_two_probes_overlap() -> None:
     for index, one in enumerate(probes):
         for other in probes[index + 1 :]:
             a, b = one.frame, other.frame
+            touch = 1e-9
             apart = (
-                a.right_mm <= b.x_mm
-                or b.right_mm <= a.x_mm
-                or a.bottom_mm <= b.y_mm
-                or b.bottom_mm <= a.y_mm
+                a.right_mm <= b.x_mm + touch
+                or b.right_mm <= a.x_mm + touch
+                or a.bottom_mm <= b.y_mm + touch
+                or b.bottom_mm <= a.y_mm + touch
             )
             assert apart, (one.id, other.id)
 
@@ -197,11 +198,32 @@ def test_the_text_probes_sit_at_the_claimed_sizes_and_never_shrink() -> None:
     }
     assert sizes["text.comfort.bold"] == limits.text_comfort_threshold_mm
     assert sizes["text.comfort.regular"] == limits.text_comfort_threshold_mm
-    for suffix in ("text.floor.bold", "text.floor.regular", "text.floor.accented"):
-        assert sizes[suffix] == limits.text_readable_floor_mm
+    assert sizes["text.floor.accented"] == limits.text_readable_floor_mm
+    assert sizes["text.floor.long"] == limits.text_readable_floor_mm
     for element in _probes():
         if element.kind is ElementKind.TEXT:
             assert element.style.minimum_font_size_mm == element.style.font_size_mm
+
+
+def test_a_floor_below_the_comfort_threshold_is_probed_in_both_faces() -> None:
+    banded = replace(
+        PROFILE,
+        limits=replace(
+            PROFILE.limits, text_readable_floor_mm=1.6, text_comfort_threshold_mm=2.2
+        ),
+    )
+    layout = _sheet(banded)
+    assert _element("text.floor.bold", layout).style.font_size_mm == 1.6
+    assert _element("text.floor.regular", layout).style.font_size_mm == 1.6
+    assert _element("text.comfort.bold", layout).style.font_size_mm == 2.2
+
+
+def test_a_floor_at_the_comfort_threshold_is_probed_once() -> None:
+    """The B1's floor is its comfort threshold; printing it twice would spend
+    the room the long probe needs."""
+    ids = {element.id for element in _probes()}
+    assert f"{EVIDENCE_PREFIX}.text.floor.bold" not in ids
+    assert f"{EVIDENCE_PREFIX}.text.floor.regular" not in ids
 
 
 def test_the_long_text_probe_has_room_to_wrap() -> None:
@@ -223,18 +245,18 @@ def test_the_rules_are_the_claimed_minimum_and_twice_it() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_the_sheet_names_its_profile_its_density_and_its_date() -> None:
-    assert _element("identity.profile").content.literal == "niimbot-b1.50x30.v1"
-    assert _element("identity.density").content.literal == "normal (3)"
-    assert _element("identity.printed_on").content.binding == "print.date"
+def test_the_sheet_names_its_profile_and_its_density() -> None:
+    """When it printed is the run record's; the label says what it is."""
+    assert _element("identity.profile").content.literal == "b1.50x30.v1"
+    assert _element("identity.density").content.literal == "normal 3"
     assert _element("identity.density", _sheet(density="high")).content.literal == (
-        "high (5)"
+        "high 5"
     )
 
 
 def test_a_density_the_profile_does_not_map_is_named_as_such() -> None:
     assert _element("identity.density", _sheet(density="extra")).content.literal == (
-        "extra (unmapped)"
+        "extra unmapped"
     )
 
 

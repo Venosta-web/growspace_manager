@@ -31,6 +31,7 @@ from typing import Any
 from PIL import Image
 import pytest
 
+from custom_components.growspace_manager.labels.canonical import preview
 from custom_components.growspace_manager.labels.canonical.diagnostics import (
     DIAGNOSTIC_CATALOGUE,
     Diagnostic,
@@ -79,6 +80,18 @@ def diagnostics_keep_the_catalogue(monkeypatch: pytest.MonkeyPatch) -> None:
         assert not undeclared, f"{self.code} sends undeclared {sorted(undeclared)}"
 
     monkeypatch.setattr(Diagnostic, "__init__", checked)
+
+
+#: The printer the suites print to, and the model it reports. Real device IDs
+#: are registry UUIDs; the suites name their printers, so the registry lookup
+#: is answered here and exercised for real in `test_printer_model_coverage`.
+TESTED_MODEL = "B1"
+
+
+@pytest.fixture(autouse=True)
+def printers_are_the_tested_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every printer a suite names reports the model the B1 evidence covers."""
+    monkeypatch.setattr(preview, "device_model", lambda _hass, _device_id: TESTED_MODEL)
 
 
 @pytest.fixture

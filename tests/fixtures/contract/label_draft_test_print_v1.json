@@ -1,7 +1,7 @@
 {
   "contract": {
     "family": "growspace.label-templates",
-    "generation": 3,
+    "generation": 4,
     "major": 1,
     "minor": 0
   },
@@ -13,10 +13,10 @@
       "operation": "test_print"
     },
     "operation": "test_print",
-    "raster_identity": "sha256:29a004874726cd365dfc9cdcd9d3ec90be1c3d644f495653d921576c7f745806",
-    "raster_input_digest": "sha256:6aa2bc303ec0175a1123315570c0e9c450e8f5a4918bd99865356bbf345ee582",
+    "raster_identity": "sha256:5925da9e8b3e5292a0fc972b17fb4ec26b753c5168b1c324d7ddb2fc5a3e1130",
+    "raster_input_digest": "sha256:e173ec6044e1cb927d60c504f22d33b4aaf78e75199602dcf8ca74df10910ef2",
     "result": {
-      "cache_identity": "sha256:95b0e15facb7e51d05ca75dbeff0d52695abb7a2fba7c1946065e82e4b8eaa3e",
+      "cache_identity": "sha256:eec6147aafd47270f17683dad9876c83f49ab97286d244d651c5e8a1fb65eb1f",
       "diagnostics": [
         {
           "code": "raster.text_unmeasured",
@@ -64,34 +64,6 @@
           },
           "path": "",
           "recovery": "retry",
-          "severity": "warning"
-        },
-        {
-          "code": "profile.ink_outside_safe_area",
-          "element_id": "<opaque-7>",
-          "layer": "profile_compilation",
-          "message": "Element 01M2V1PQB8NNQA4TA7RZEJZCCW inks outside the Safe Area. It prints, but close to an edge.",
-          "parameters": {
-            "ink_bounds": {
-              "bottom": 235,
-              "height": 22,
-              "left": 16,
-              "right": 360,
-              "top": 213,
-              "width": 344
-            },
-            "safe_area": {
-              "bottom": 232,
-              "height": 224,
-              "left": 8,
-              "right": 376,
-              "top": 8,
-              "width": 368
-            },
-            "safe_area_inset_mm": 1.0
-          },
-          "path": "",
-          "recovery": "edit_element",
           "severity": "warning"
         },
         {
@@ -191,15 +163,15 @@
           "element_id": "<opaque-6>",
           "kind": "text",
           "notes": {
-            "box_pixels": [344, 35],
+            "box_pixels": [344, 34],
             "maximum_lines": 1,
             "minimum_font_size_px": 18,
             "overflow": "shrink_ellipsis",
             "requested_font_size_px": 26
           },
           "pixel_frame": {
-            "bottom": 209,
-            "height": 35,
+            "bottom": 208,
+            "height": 34,
             "left": 16,
             "right": 360,
             "top": 174,
@@ -212,18 +184,18 @@
           "element_id": "<opaque-7>",
           "kind": "text",
           "notes": {
-            "box_pixels": [344, 22],
+            "box_pixels": [344, 24],
             "maximum_lines": 1,
-            "minimum_font_size_px": 16,
+            "minimum_font_size_px": 18,
             "overflow": "shrink_ellipsis",
             "requested_font_size_px": 19
           },
           "pixel_frame": {
-            "bottom": 235,
-            "height": 22,
+            "bottom": 232,
+            "height": 24,
             "left": 16,
             "right": 360,
-            "top": 213,
+            "top": 208,
             "width": 344
           },
           "status": "placed"
@@ -350,8 +322,8 @@
         {
           "basis": "frame",
           "bounds": {
-            "bottom": 209,
-            "height": 35,
+            "bottom": 208,
+            "height": 34,
             "left": 16,
             "right": 360,
             "top": 174,
@@ -359,7 +331,7 @@
           },
           "element_id": "<opaque-6>",
           "kind": "text",
-          "mask_digest": "b0ff39f34ab9dde9",
+          "mask_digest": "52a1c8704e8b54b7",
           "measurements": {
             "font_file": "rbm.ttf",
             "measured": false,
@@ -370,16 +342,16 @@
         {
           "basis": "frame",
           "bounds": {
-            "bottom": 235,
-            "height": 22,
+            "bottom": 232,
+            "height": 24,
             "left": 16,
             "right": 360,
-            "top": 213,
+            "top": 208,
             "width": 344
           },
           "element_id": "<opaque-7>",
           "kind": "text",
-          "mask_digest": "4841b9bedc97b630",
+          "mask_digest": "ac5b3ed72f2cc48c",
           "measurements": {
             "font_file": "rbm.ttf",
             "measured": false,
@@ -408,13 +380,13 @@
         "limits": {
           "divider_minimum_thickness_mm": 0.25,
           "image_minimum_effective_dpi": 203.0,
-          "measured": false,
+          "measured": true,
           "qr_error_correction_levels": ["medium", "quartile", "high"],
           "qr_maximum_encoded_bytes": 256,
           "qr_minimum_dots_per_module": 2,
           "qr_minimum_quiet_zone_modules": 4,
           "text_comfort_threshold_mm": 2.2,
-          "text_readable_floor_mm": 1.6
+          "text_readable_floor_mm": 2.2
         },
         "orientation": "landscape",
         "printable_area": {
@@ -447,13 +419,13 @@
         "monochrome": true,
         "width": 384
       },
-      "raster_identity": "sha256:29a004874726cd365dfc9cdcd9d3ec90be1c3d644f495653d921576c7f745806",
-      "raster_input_digest": "sha256:6aa2bc303ec0175a1123315570c0e9c450e8f5a4918bd99865356bbf345ee582",
+      "raster_identity": "sha256:5925da9e8b3e5292a0fc972b17fb4ec26b753c5168b1c324d7ddb2fc5a3e1130",
+      "raster_input_digest": "sha256:e173ec6044e1cb927d60c504f22d33b4aaf78e75199602dcf8ca74df10910ef2",
       "render_context": {
         "adapter_version": "growspace.niimbot-adapter.v1",
         "as_of": "2026-09-21T00:00:00+00:00",
         "binding_catalogue_version": "growspace.label-bindings.v1",
-        "capability_generation": 3,
+        "capability_generation": 4,
         "compiler_version": "growspace.label-compiler.v1",
         "content_context": "strain",
         "content_identity": "sha256:4b28a6d9ff39c600dca71e99950b9e043b8dcdd31e2e20dc34a5a18752120382",
@@ -466,7 +438,7 @@
         },
         "label_size_catalogue_version": "growspace.label-sizes.v1",
         "label_size_id": "growspace.stock.50x30.v1",
-        "layout_digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32",
+        "layout_digest": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242",
         "local_calibration": null,
         "locale": "en",
         "operation": "test_print",

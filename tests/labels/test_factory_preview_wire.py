@@ -222,8 +222,8 @@ async def test_the_preview_carries_the_render_context_and_eligibility(
     render = payload["render"]
     assert render["render_context"]["operation"] == "preview"
     assert render["profile"]["id"] == next(iter(PROFILES))
-    assert render["profile"]["evidence"] == "provisional"
-    # A provisional profile previews and does not authorize production.
+    assert render["profile"]["evidence"] == "product_verified"
+    # A factory preview is of a fixture, and no printer here was measured.
     assert render["printable"] is False
     assert render["eligibility"]["single_print"]["allowed"] is False
 

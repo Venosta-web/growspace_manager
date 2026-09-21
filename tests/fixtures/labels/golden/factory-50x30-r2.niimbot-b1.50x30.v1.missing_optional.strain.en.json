@@ -1,17 +1,17 @@
 {
-  "case": "factory-50x30-r1.niimbot-b1.50x30.v1.missing_optional.plant.en",
+  "case": "factory-50x30-r2.niimbot-b1.50x30.v1.missing_optional.strain.en",
   "layout": {
-    "name": "factory-50x30-r1",
-    "digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32"
+    "name": "factory-50x30-r2",
+    "digest": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242"
   },
   "profile": "growspace.profile.niimbot-b1.50x30.v1",
-  "subject": "growspace.fixture.plant.sparse.v1",
+  "subject": "growspace.fixture.strain.sparse.v1",
   "family": "missing_optional",
-  "context": "plant",
+  "context": "strain",
   "locale": "en",
   "as_of": "2026-09-18T00:00:00+00:00",
   "density": "normal",
-  "content_identity": "sha256:589c769d434869db272102c2d4cc6442dcd72d5271b98360da2c085c484a9dee",
+  "content_identity": "sha256:d7ad7ec49becacb4e4aa40ae5e0c765b27e24464064ba7a65803f3f6a0bb2399",
   "raster_inputs": {
     "width": 384,
     "height": 240,
@@ -47,11 +47,11 @@
         "type": "text_fit",
         "value": "18 Sep 2026",
         "x": 16,
-        "y": 213,
+        "y": 208,
         "width": 344,
-        "height": 22,
+        "height": 24,
         "size": 19,
-        "min_size": 16,
+        "min_size": 18,
         "max_lines": 1,
         "line_spacing": 1,
         "align": "right",
@@ -62,7 +62,7 @@
       }
     ]
   },
-  "raster_input_digest": "sha256:0119ba6044cca2c1a3ec06c16d6eeaeb065149aa635fce1b64935cba454d4942",
+  "raster_input_digest": "sha256:adebb5716426e40efd642fddadaf035628477fa8a1096143a183a51d50f77f7f",
   "outcomes": [
     {
       "element_id": "01M2V1PQB882FPJSG6H1GTFKX2",
@@ -139,9 +139,9 @@
         "left": 16,
         "top": 174,
         "right": 360,
-        "bottom": 209,
+        "bottom": 208,
         "width": 344,
-        "height": 35
+        "height": 34
       },
       "notes": {}
     },
@@ -152,27 +152,24 @@
       "binding": "print.date",
       "pixel_frame": {
         "left": 16,
-        "top": 213,
+        "top": 208,
         "right": 360,
-        "bottom": 235,
+        "bottom": 232,
         "width": 344,
-        "height": 22
+        "height": 24
       },
       "notes": {
         "requested_font_size_px": 19,
-        "minimum_font_size_px": 16,
+        "minimum_font_size_px": 18,
         "maximum_lines": 1,
         "overflow": "shrink_ellipsis",
-        "box_pixels": [344, 22]
+        "box_pixels": [344, 24]
       }
     }
   ],
-  "diagnostics": [
-    ["content.missing_optional", "warning"],
-    ["content.source_unresolved", "warning"]
-  ],
+  "diagnostics": [["content.missing_optional", "warning"]],
   "evidence": {
-    "sha256": "d0d77c1171707c2d93548e132d48c6d242c57a014a8ad33e84347226c3ed8f26",
-    "rendered_from": "sha256:0119ba6044cca2c1a3ec06c16d6eeaeb065149aa635fce1b64935cba454d4942"
+    "sha256": "ccaf415ea402818ec5c81b5144a9b46740faeca39f8a87ed6ab89a0ea6c37b70",
+    "rendered_from": "sha256:adebb5716426e40efd642fddadaf035628477fa8a1096143a183a51d50f77f7f"
   }
 }

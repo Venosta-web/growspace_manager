@@ -1,0 +1,156 @@
+{
+  "device": {
+    "id": "983481d7157cb0cced53087b43e172c0",
+    "name": "Niimbot 6649B9",
+    "manufacturer": "Niimbot",
+    "model": "B1",
+    "sw_version": "5.22",
+    "hw_version": "5.1"
+  },
+  "contract": {
+    "family": "growspace.label-templates",
+    "major": 1,
+    "minor": 0,
+    "generation": 3
+  },
+  "versions": {
+    "layout": "growspace.label-layout.v1",
+    "template_store": "growspace.label-template-store.v1",
+    "portable_bundle": "growspace.label-template-bundle.v1",
+    "backup": "growspace.label-template-backup.v1",
+    "calibration_store": "growspace.label-calibration-store.v1",
+    "calibration_sheet": "growspace.label-calibration-sheet.v1",
+    "label_sizes": "growspace.label-sizes.v1",
+    "bindings": "growspace.label-bindings.v1",
+    "style_tokens": "growspace.label-style-tokens.v1",
+    "profiles": "growspace.label-profiles.v1",
+    "fixtures": "growspace.label-fixtures.v2",
+    "compiler": "growspace.label-compiler.v1",
+    "renderer": "growspace.label-renderer.v1",
+    "adapter": "growspace.niimbot-adapter.v1",
+    "diagnostics": "growspace.label-diagnostics.v1",
+    "safety_policy": "growspace.label-safety.v1",
+    "qr_model": "growspace.qr-model.v1",
+    "text_toolchain": "growspace.text-toolchain.v1"
+  },
+  "profile": {
+    "id": "growspace.profile.niimbot-b1.50x30.v1",
+    "evidence": "provisional"
+  },
+  "prints": [
+    {
+      "density": "low",
+      "copy": 1,
+      "printed_at": "2026-09-22T08:01:27.543Z",
+      "raster_identity": "sha256:d079fca528d934330f79392bc80043f5abc0e42d8fe59a3642b22d12b7a737a9",
+      "raster_input_digest": "sha256:78fa168909142619d3a14b91c86dfe62dada87dbbc44ca6f4f77a09ce7747c25"
+    },
+    {
+      "density": "low",
+      "copy": 2,
+      "printed_at": "2026-09-22T08:01:48.549Z",
+      "raster_identity": "sha256:8a81deda026ca0f32c30939baef7fea2a7b327fee201399c616d083386d01153",
+      "raster_input_digest": "sha256:78fa168909142619d3a14b91c86dfe62dada87dbbc44ca6f4f77a09ce7747c25"
+    },
+    {
+      "density": "low",
+      "copy": 3,
+      "printed_at": "2026-09-22T08:02:09.545Z",
+      "raster_identity": "sha256:a469146393cd373c6ce7fc797f790de628d0e94b65ea39cbdf7a73b1146d710a",
+      "raster_input_digest": "sha256:78fa168909142619d3a14b91c86dfe62dada87dbbc44ca6f4f77a09ce7747c25"
+    },
+    {
+      "density": "low",
+      "copy": 4,
+      "printed_at": "2026-09-22T08:02:30.553Z",
+      "raster_identity": "sha256:55dcc0ad58aa7de0eb5eaaac5efd72f8fd726d887efa66782638415596cf9cbc",
+      "raster_input_digest": "sha256:78fa168909142619d3a14b91c86dfe62dada87dbbc44ca6f4f77a09ce7747c25"
+    },
+    {
+      "density": "low",
+      "copy": 5,
+      "printed_at": "2026-09-22T08:02:52.553Z",
+      "raster_identity": "sha256:14251d438b82f43976d0bd68ff3aaee156a5745c53fe09af9a72cfc91a898f31",
+      "raster_input_digest": "sha256:78fa168909142619d3a14b91c86dfe62dada87dbbc44ca6f4f77a09ce7747c25"
+    },
+    {
+      "density": "normal",
+      "copy": 1,
+      "printed_at": "2026-09-22T08:03:14.548Z",
+      "raster_identity": "sha256:0322e5fc2ddc8d46780bcb3d36bbaecf02ae032f4de85a22726045dfcc2a97c6",
+      "raster_input_digest": "sha256:fe464be508f4eec01bf60b492d2bad9edf7ff13c1cbbf9abe8f897ca7f15c65a"
+    },
+    {
+      "density": "normal",
+      "copy": 2,
+      "printed_at": "2026-09-22T08:03:35.554Z",
+      "raster_identity": "sha256:51788e3ff025722d5836282098649bccf3c948d655ecc0abe3728dd5901f4719",
+      "raster_input_digest": "sha256:fe464be508f4eec01bf60b492d2bad9edf7ff13c1cbbf9abe8f897ca7f15c65a"
+    },
+    {
+      "density": "normal",
+      "copy": 3,
+      "printed_at": "2026-09-22T08:03:56.537Z",
+      "raster_identity": "sha256:6fa2040b100e9c564ac09d4dffd32fd586d93d382c670cb4a6757a00ee4a35e8",
+      "raster_input_digest": "sha256:fe464be508f4eec01bf60b492d2bad9edf7ff13c1cbbf9abe8f897ca7f15c65a"
+    },
+    {
+      "density": "normal",
+      "copy": 4,
+      "printed_at": "2026-09-22T08:04:17.547Z",
+      "raster_identity": "sha256:9119e4203e44871ab6c3ae6770899fa2b7fd3b927be53eb9afd83bf141ea4ae1",
+      "raster_input_digest": "sha256:fe464be508f4eec01bf60b492d2bad9edf7ff13c1cbbf9abe8f897ca7f15c65a"
+    },
+    {
+      "density": "normal",
+      "copy": 5,
+      "printed_at": "2026-09-22T08:04:38.559Z",
+      "raster_identity": "sha256:26009ed0c30ec40c2c5f8a3c880169c5e6252eb331353b0f9d25a2cce2ffcdca",
+      "raster_input_digest": "sha256:fe464be508f4eec01bf60b492d2bad9edf7ff13c1cbbf9abe8f897ca7f15c65a"
+    },
+    {
+      "density": "high",
+      "copy": 1,
+      "printed_at": "2026-09-22T08:04:59.545Z",
+      "raster_identity": "sha256:b03e614199a232df4f95e7bb8ee01a450d4358f2da3f5a9f5943c935757586bd",
+      "raster_input_digest": "sha256:d589af15da48fec1c6d12025ca2331c698f8e978ff8f5eb5c1ded43395e48088"
+    },
+    {
+      "density": "high",
+      "copy": 2,
+      "printed_at": "2026-09-22T08:05:20.550Z",
+      "raster_identity": "sha256:0c53670d89961f1fadb3a4950b7fb77b67e4cc97fa2a3a905a5147f5279f54e8",
+      "raster_input_digest": "sha256:d589af15da48fec1c6d12025ca2331c698f8e978ff8f5eb5c1ded43395e48088"
+    },
+    {
+      "density": "high",
+      "copy": 3,
+      "printed_at": "2026-09-22T08:05:41.555Z",
+      "raster_identity": "sha256:e8e267e29166431f3d9ac7ede777470a92ccf003c24a05104fbd94a1a699c707",
+      "raster_input_digest": "sha256:d589af15da48fec1c6d12025ca2331c698f8e978ff8f5eb5c1ded43395e48088"
+    },
+    {
+      "density": "high",
+      "copy": 4,
+      "printed_at": "2026-09-22T08:06:02.565Z",
+      "raster_identity": "sha256:70f6d124c0d17120bc0afd791881044f5d2c1b55a198919f4157ff62fe1a61fc",
+      "raster_input_digest": "sha256:d589af15da48fec1c6d12025ca2331c698f8e978ff8f5eb5c1ded43395e48088"
+    },
+    {
+      "density": "high",
+      "copy": 5,
+      "printed_at": "2026-09-22T08:06:23.567Z",
+      "raster_identity": "sha256:17dd47616bade6e517ec33221a3e4774883a40fb9a0b054b18eb15fe5192be85",
+      "raster_input_digest": "sha256:d589af15da48fec1c6d12025ca2331c698f8e978ff8f5eb5c1ded43395e48088"
+    }
+  ],
+  "operator": "Venosta-web",
+  "attestations": {
+    "edges": "Top edge printed ticks 2-4 of 0-4 (first 1.0 mm of the declared Printable Area not reached); right, bottom and left printed all five ticks. Identical on every copy. Accepted by the operator: the lost millimetre is outside the 1.0 mm Safe Area inset.",
+    "text": "Bold 2.2 and regular 2.2 readable at every density. Bold 1.6 readable; regular 1.6, the accented line at 1.6 and the wrapped long line at 1.6 unreadable at every density.",
+    "qr": "All three targets (43, 74 and 256 bytes, medium correction, 2 dots/module, 4-module quiet zone) scanned on a Google Pixel 9 at low, normal and high density.",
+    "logo": "A strain label with a breeder logo from a Named Template printed clean; the logo was readable with both the threshold and the dither monochrome tokens. No photograph retained.",
+    "batch": "A batch from the card printed correctly: no label skipped, doubled or misaligned. No photograph retained.",
+    "repeatability": "Five copies per density; tick counts identical on all fifteen; one raster input digest per density."
+  }
+}

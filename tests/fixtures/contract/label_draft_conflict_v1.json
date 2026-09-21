@@ -4,7 +4,7 @@
     "code": "label_template.draft_version_conflict",
     "current": {
       "family": "growspace.label-templates",
-      "generation": 3,
+      "generation": 4,
       "major": 1,
       "minor": 0
     },
@@ -114,7 +114,7 @@
               }
             },
             "frame": {
-              "height_mm": 4.4,
+              "height_mm": 4.2,
               "width_mm": 43.0,
               "x_mm": 2.0,
               "y_mm": 21.8
@@ -141,10 +141,10 @@
               }
             },
             "frame": {
-              "height_mm": 2.8,
+              "height_mm": 3.0,
               "width_mm": 43.0,
               "x_mm": 2.0,
-              "y_mm": 26.6
+              "y_mm": 26.0
             },
             "id": "<opaque-7>",
             "kind": "text",
@@ -155,7 +155,7 @@
               "horizontal_align": "right",
               "line_spacing": "growspace.spacing.compact.v1",
               "maximum_lines": 1,
-              "minimum_font_size_mm": 2.0,
+              "minimum_font_size_mm": 2.2,
               "overflow": "shrink_ellipsis",
               "vertical_align": "center"
             }
@@ -175,7 +175,7 @@
         "draft_id": null,
         "draft_version": null,
         "factory_id": "growspace.factory.50x30",
-        "factory_revision": 1,
+        "factory_revision": 2,
         "source": "factory",
         "source_revision": null,
         "source_template_id": null
@@ -285,7 +285,7 @@
                 }
               },
               "frame": {
-                "height_mm": 4.4,
+                "height_mm": 4.2,
                 "width_mm": 43.0,
                 "x_mm": 2.0,
                 "y_mm": 21.8
@@ -312,10 +312,10 @@
                 }
               },
               "frame": {
-                "height_mm": 2.8,
+                "height_mm": 3.0,
                 "width_mm": 43.0,
                 "x_mm": 2.0,
-                "y_mm": 26.6
+                "y_mm": 26.0
               },
               "id": "<opaque-7>",
               "kind": "text",
@@ -326,7 +326,7 @@
                 "horizontal_align": "right",
                 "line_spacing": "growspace.spacing.compact.v1",
                 "maximum_lines": 1,
-                "minimum_font_size_mm": 2.0,
+                "minimum_font_size_mm": 2.2,
                 "overflow": "shrink_ellipsis",
                 "vertical_align": "center"
               }
