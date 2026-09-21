@@ -15,6 +15,7 @@ sentence beside a disabled button.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 import json
 from pathlib import Path
@@ -127,6 +128,14 @@ async def _sheet(hass: HomeAssistant, *, user: Any = ADMIN_USER, **overrides: An
     payload = {"profile_id": PROFILE.id, "device_id": DEVICE, "density": "normal"}
     payload.update(overrides)
     return await label_printing.websocket_print_label_calibration_sheet(
+        hass, COORDINATOR, _message(user, **payload)
+    )
+
+
+async def _evidence(hass: HomeAssistant, *, user: Any = ADMIN_USER, **overrides: Any):
+    payload = {"profile_id": PROFILE.id, "device_id": DEVICE, "density": "normal"}
+    payload.update(overrides)
+    return await label_printing.websocket_print_label_evidence_sheet(
         hass, COORDINATOR, _message(user, **payload)
     )
 
@@ -255,11 +264,12 @@ def _unreadable(*_args: Any, **_kwargs: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def test_the_six_recovery_commands_are_registered_with_the_acting_user() -> None:
+def test_the_seven_recovery_commands_are_registered_with_the_acting_user() -> None:
     assert [command.type for command in label_printing.COMMANDS] == [
         label_printing.WS_TYPE_GET_LABEL_CALIBRATION_STATUS,
         label_printing.WS_TYPE_PRINT_LABEL_CALIBRATION_SHEET,
         label_printing.WS_TYPE_RECORD_LABEL_CALIBRATION,
+        label_printing.WS_TYPE_PRINT_LABEL_EVIDENCE_SHEET,
         label_printing.WS_TYPE_TEST_PRINT_LABEL_TEMPLATE_DRAFT,
         label_printing.WS_TYPE_PREVIEW_LABEL_RECORD,
         label_printing.WS_TYPE_PRINT_LABEL_RECORD,
@@ -272,7 +282,7 @@ def test_the_six_recovery_commands_are_registered_with_the_acting_user() -> None
 
 
 @pytest.mark.parametrize(
-    "call", [_status, _sheet, _record, _test_print, _record_preview, _print]
+    "call", [_status, _sheet, _evidence, _record, _test_print, _record_preview, _print]
 )
 async def test_every_command_refuses_a_stale_contract(
     hass: HomeAssistant, printer: list[dict[str, Any]], call: Any
@@ -284,7 +294,9 @@ async def test_every_command_refuses_a_stale_contract(
     assert printer == []
 
 
-@pytest.mark.parametrize("call", [_status, _sheet, _test_print, _record_preview])
+@pytest.mark.parametrize(
+    "call", [_status, _sheet, _evidence, _test_print, _record_preview]
+)
 async def test_a_command_without_a_printer_asks_for_one(
     hass: HomeAssistant, printer: list[dict[str, Any]], call: Any
 ) -> None:
@@ -295,7 +307,7 @@ async def test_a_command_without_a_printer_asks_for_one(
     assert printer == []
 
 
-@pytest.mark.parametrize("call", [_status, _sheet])
+@pytest.mark.parametrize("call", [_status, _sheet, _evidence])
 async def test_an_unknown_profile_routes_to_profile_selection(
     hass: HomeAssistant, call: Any
 ) -> None:
@@ -308,6 +320,73 @@ async def test_an_unknown_profile_routes_to_profile_selection(
 # ---------------------------------------------------------------------------
 # Calibration
 # ---------------------------------------------------------------------------
+
+
+async def test_the_evidence_label_prints_on_a_provisional_profile(
+    hass: HomeAssistant, printer: list[dict[str, Any]]
+) -> None:
+    """The profile it probes is provisional until it has printed, so it has to
+    print there -- as a test print, never as a production one."""
+    payload = await _evidence(hass, density="high")
+
+    assert payload["outcome"] == "ok"
+    assert payload["print"]["operation"] == "test_print"
+    assert payload["print"]["source"] == {
+        "kind": "evidence",
+        "reference": f"evidence:{PROFILE.id}",
+        "published": False,
+    }
+    committed = [call for call in printer if not call["preview"]]
+    assert len(committed) == 1
+    assert committed[0]["density"] == PROFILE.density_level("high")
+
+
+async def test_only_an_administrator_prints_the_evidence_label(
+    hass: HomeAssistant, printer: list[dict[str, Any]]
+) -> None:
+    payload = await _evidence(hass, user=VIEWER_USER)
+
+    assert payload["refusal"]["code"] == "label_template.not_authorized"
+    assert printer == []
+
+
+async def test_an_evidence_label_the_printer_did_not_take_is_not_reported_printed(
+    hass: HomeAssistant, printer: list[dict[str, Any]]
+) -> None:
+    _jam(hass, printer)
+
+    payload = await _evidence(hass)
+
+    assert payload["refusal"]["code"] == "label_template.print_failed"
+    assert payload["refusal"]["recovery"] == "retry_print"
+
+
+async def test_an_evidence_label_the_safety_pass_blocks_routes_to_the_layout(
+    hass: HomeAssistant, printer: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A probe the profile cannot realise blocks the print by name, rather
+    than putting a label with a hole in it on paper."""
+    unrotatable = replace(PROFILE, supported_element_rotations=(90,))
+    monkeypatch.setattr(profile_catalogue, "PROFILES", {PROFILE.id: unrotatable})
+
+    payload = await _evidence(hass)
+
+    assert payload["refusal"]["code"] == "label_template.print_refused"
+    assert payload["refusal"]["blocked_by"] == ["blocking_diagnostics"]
+    assert [call for call in printer if not call["preview"]] == []
+
+
+async def test_an_evidence_label_that_does_not_fit_the_profile_is_refused(
+    hass: HomeAssistant, printer: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cramped = replace(PROFILE, printable_width_mm=30.0)
+    monkeypatch.setattr(profile_catalogue, "PROFILES", {cramped.id: cramped})
+
+    payload = await _evidence(hass)
+
+    assert payload["refusal"]["code"] == "label_template.print_refused"
+    assert payload["refusal"]["recovery"] == "select_profile"
+    assert printer == []
 
 
 async def test_an_unmeasured_printer_is_absent_and_says_what_to_measure(

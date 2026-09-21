@@ -64,6 +64,7 @@ from .library import (
 )
 from .printing import (
     async_print_calibration_label,
+    async_print_evidence_label,
     async_print_record,
     async_test_print,
 )
@@ -128,6 +129,7 @@ _IMPLEMENTATIONS: Mapping[str, tuple[Callable[..., Any], ...]] = {
     ),
     CALIBRATION: (
         async_print_calibration_label,
+        async_print_evidence_label,
         LocalCalibrationLedger.async_record,
         LocalCalibrationLedger.async_status,
     ),

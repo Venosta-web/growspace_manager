@@ -38,6 +38,7 @@ from custom_components.growspace_manager.labels.calibration import (
     CalibrationSheetNotPrinted,
     LocalCalibrationLedger,
     PlacementMeasurement,
+    evidence_sheet,
 )
 from custom_components.growspace_manager.labels.canonical import (
     FACTORY_50X30,
@@ -53,6 +54,7 @@ from custom_components.growspace_manager.labels.printing import (
     LayoutSource,
     PrintRefused,
     async_print_calibration_label,
+    async_print_evidence_label,
     async_print_record,
     async_test_print,
 )
@@ -221,6 +223,37 @@ async def test_a_provisional_profile_prints_its_own_calibration_label(
     )
     assert printed.outcome.operation == str(Operation.TEST_PRINT)
     assert len(_committed(printer)) == 1
+
+
+async def test_a_provisional_profile_prints_its_evidence_label(
+    hass, printer, admin, monkeypatch
+) -> None:
+    """The label that turns its claims into evidence has to print before
+    there is any. Pillow's stand-in face has no accented glyphs, so the
+    accented probe is swapped for ASCII here; the printer's faces have them."""
+    monkeypatch.setattr(evidence_sheet, "ACCENTED_PROBE", "Aou en c")
+    outcome = await async_print_evidence_label(
+        hass,
+        profile=PROVISIONAL,
+        actor=admin,
+        device_id=DEVICE,
+        as_of=AS_OF,
+        fonts=FONTS,
+    )
+    assert outcome.operation == str(Operation.TEST_PRINT)
+    assert outcome.source.kind == "evidence"
+    assert not outcome.source.published
+    assert len(_committed(printer)) == 1
+
+
+async def test_only_an_administrator_prints_the_evidence_label(
+    hass, printer, viewer
+) -> None:
+    with pytest.raises(Unauthorized):
+        await async_print_evidence_label(
+            hass, profile=PROVISIONAL, actor=viewer, device_id=DEVICE, fonts=FONTS
+        )
+    assert printer == []
 
 
 async def test_a_provisional_profile_test_prints_an_administrator_s_own_draft(

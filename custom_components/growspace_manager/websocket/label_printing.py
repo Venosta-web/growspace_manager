@@ -46,6 +46,7 @@ from custom_components.growspace_manager.labels.approvals import (
 )
 from custom_components.growspace_manager.labels.calibration import (
     CalibrationSheetNotPrinted,
+    CalibrationSheetUnavailable,
     CalibrationStatus,
     IncompatibleCalibrationStore,
     LocalCalibrationLedger,
@@ -88,6 +89,7 @@ from custom_components.growspace_manager.labels.printing import (
     PrintFailed,
     PrintRefused,
     async_print_calibration_label,
+    async_print_evidence_label,
     async_print_record,
     async_test_print,
 )
@@ -120,6 +122,7 @@ from .drafts import (
 WS_TYPE_GET_LABEL_CALIBRATION_STATUS = f"{DOMAIN}/get_label_calibration_status"
 WS_TYPE_PRINT_LABEL_CALIBRATION_SHEET = f"{DOMAIN}/print_label_calibration_sheet"
 WS_TYPE_RECORD_LABEL_CALIBRATION = f"{DOMAIN}/record_label_calibration"
+WS_TYPE_PRINT_LABEL_EVIDENCE_SHEET = f"{DOMAIN}/print_label_evidence_sheet"
 WS_TYPE_TEST_PRINT_LABEL_TEMPLATE_DRAFT = f"{DOMAIN}/test_print_label_template_draft"
 WS_TYPE_PREVIEW_LABEL_RECORD = f"{DOMAIN}/preview_label_record"
 WS_TYPE_PRINT_LABEL_RECORD = f"{DOMAIN}/print_label_record"
@@ -179,6 +182,16 @@ SCHEMA_WS_GET_LABEL_CALIBRATION_STATUS = _base_schema(
 
 SCHEMA_WS_PRINT_LABEL_CALIBRATION_SHEET = _base_schema(
     WS_TYPE_PRINT_LABEL_CALIBRATION_SHEET
+).extend(
+    {
+        vol.Required("profile_id"): str,
+        vol.Required("device_id"): str,
+        vol.Optional("density", default="normal"): str,
+    }
+)
+
+SCHEMA_WS_PRINT_LABEL_EVIDENCE_SHEET = _base_schema(
+    WS_TYPE_PRINT_LABEL_EVIDENCE_SHEET
 ).extend(
     {
         vol.Required("profile_id"): str,
@@ -491,6 +504,45 @@ async def websocket_record_label_calibration(
     return _ok(record=record.summary(), calibration=status.as_dict())
 
 
+async def websocket_print_label_evidence_sheet(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Put the evidence label on paper for a Release Evidence Record.
+
+    Nothing is held and nothing can be recorded against it here: what it
+    proves is read off paper and a phone by a person, and lands in the
+    record a profile promotion is reviewed from.
+    """
+    if (refusal := _gate(msg)) is not None:
+        return refusal
+    profile = profile_by_id(msg["profile_id"])
+    if profile is None:
+        return _unknown_profile(msg["profile_id"], "any Label Size")
+    if not msg["device_id"].strip():
+        return _printer_required()
+
+    try:
+        outcome = await async_print_evidence_label(
+            hass,
+            profile=profile,
+            actor=_actor(msg),
+            device_id=msg["device_id"],
+            density=msg["density"],
+            time_zone=hass.config.time_zone or "UTC",
+        )
+    except Unauthorized as error:
+        return _not_authorized(error, administrator=True)
+    except CalibrationSheetUnavailable as error:
+        return _refused(CODE_PRINT_REFUSED, str(error), RECOVERY_SELECT_PROFILE)
+    except PrintRefused as error:
+        return _print_refused(error)
+    except PrintFailed as error:
+        return _print_failed(error)
+    return _ok(print=outcome.as_dict())
+
+
 # ---------------------------------------------------------------------------
 # Test printing a draft
 # ---------------------------------------------------------------------------
@@ -756,6 +808,11 @@ COMMANDS: list[WSCommand] = [
             WS_TYPE_RECORD_LABEL_CALIBRATION,
             websocket_record_label_calibration,
             SCHEMA_WS_RECORD_LABEL_CALIBRATION,
+        ),
+        (
+            WS_TYPE_PRINT_LABEL_EVIDENCE_SHEET,
+            websocket_print_label_evidence_sheet,
+            SCHEMA_WS_PRINT_LABEL_EVIDENCE_SHEET,
         ),
         (
             WS_TYPE_TEST_PRINT_LABEL_TEMPLATE_DRAFT,
