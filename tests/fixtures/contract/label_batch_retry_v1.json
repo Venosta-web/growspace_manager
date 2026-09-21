@@ -58,7 +58,7 @@
     ],
     "id": "<opaque-1>",
     "preflight_id": "<opaque-2>",
-    "preflight_identity": "sha256:e5e9318240b1586f47f081acd46bfe5462523df937c3abee03435d2f67535dfd",
+    "preflight_identity": "sha256:7dcac19358e1c7c4714f0bca43cb437458c5aecc49ee1c538fa6aaa0492b1baf",
     "refusal": null,
     "retry_of": "<opaque-3>",
     "selected": [

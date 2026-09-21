@@ -28,6 +28,7 @@ from custom_components.growspace_manager.labels.canonical import (
     StockOrientation,
     profiles_for_size,
 )
+from tests.labels.support import product_verified
 
 PROFILE = NIIMBOT_B1_50X30
 
@@ -112,11 +113,8 @@ def test_no_shipped_profile_claims_evidence_nobody_recorded() -> None:
 
 
 def test_promotion_is_a_state_change_rather_than_a_different_geometry() -> None:
-    verified = replace(
-        PROFILE,
-        evidence=ProfileEvidence.PRODUCT_VERIFIED,
-        evidence_recorded_at="2026-09-18",
-        limits=replace(PROFILE.limits, measured=True),
+    verified = product_verified(
+        replace(PROFILE, limits=replace(PROFILE.limits, measured=True))
     )
     assert verified.authorizes_production is True
     assert verified.printable_area == PROFILE.printable_area

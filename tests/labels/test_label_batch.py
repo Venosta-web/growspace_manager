@@ -25,7 +25,6 @@ from custom_components.growspace_manager.labels.canonical import (
     FACTORY_50X30,
     NIIMBOT_B1_50X30,
     Blocker,
-    ProfileEvidence,
     Severity,
 )
 from custom_components.growspace_manager.labels.printing import (
@@ -36,13 +35,14 @@ from custom_components.growspace_manager.labels.printing import (
 from custom_components.growspace_manager.models.plant import Plant, PlantGenetics
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from tests.labels.support import product_verified
 
 from .support import StubFonts
 
 AS_OF = datetime(2026, 9, 20, 9, 30, tzinfo=UTC)
 DEVICE = "printer-a"
 FONTS = StubFonts()
-VERIFIED = replace(NIIMBOT_B1_50X30, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+VERIFIED = product_verified(NIIMBOT_B1_50X30)
 MEASUREMENT = PlacementMeasurement(
     top_mm=0.5, right_mm=0.5, bottom_mm=0.0, left_mm=0.5, feed_mm=-0.4
 )

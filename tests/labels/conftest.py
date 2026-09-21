@@ -25,11 +25,16 @@ from __future__ import annotations
 import base64
 from collections.abc import Callable, Iterator
 from io import BytesIO
+import sys
 from typing import Any
 
 from PIL import Image
 import pytest
 
+from custom_components.growspace_manager.labels.canonical.diagnostics import (
+    DIAGNOSTIC_CATALOGUE,
+    Diagnostic,
+)
 from custom_components.growspace_manager.labels.library import (
     Actor,
     LabelTemplateLibrary,
@@ -45,6 +50,35 @@ from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
 ADMIN = "admin-user"
 OTHER_ADMIN = "other-admin-user"
 VIEWER = "authenticated-user"
+
+
+@pytest.fixture(autouse=True)
+def diagnostics_keep_the_catalogue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hold every diagnostic the product builds to its published catalogue.
+
+    The card localizes by code and interpolates named parameters, so a code
+    the catalogue does not declare, or a parameter, layer or severity it does
+    not promise, is a translation gap -- caught here, in whichever suite made
+    the product emit it. Diagnostics a test spells for itself are its own
+    business and pass through.
+    """
+    original = Diagnostic.__init__
+
+    def checked(self: Diagnostic, *args: Any, **kwargs: Any) -> None:
+        original(self, *args, **kwargs)
+        caller = sys._getframe(1).f_globals.get("__name__", "")
+        if not caller.startswith("custom_components."):
+            return
+        spec = DIAGNOSTIC_CATALOGUE.get(self.code)
+        assert spec is not None, f"{self.code} is not in DIAGNOSTIC_CATALOGUE"
+        assert self.layer is spec.layer, f"{self.code} emitted at {self.layer}"
+        assert self.severity in spec.severities, (
+            f"{self.code} emitted as {self.severity}"
+        )
+        undeclared = set(self.parameters) - set(spec.parameters)
+        assert not undeclared, f"{self.code} sends undeclared {sorted(undeclared)}"
+
+    monkeypatch.setattr(Diagnostic, "__init__", checked)
 
 
 @pytest.fixture

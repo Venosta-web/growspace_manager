@@ -39,7 +39,6 @@ from custom_components.growspace_manager.labels.calibration import (
 )
 from custom_components.growspace_manager.labels.canonical import (
     NIIMBOT_B1_50X30,
-    ProfileEvidence,
     factory_template_for_size,
     profiles as profile_catalogue,
 )
@@ -58,6 +57,7 @@ from custom_components.growspace_manager.websocket._common import WS_MSG_USER
 from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.util.dt as dt_util
+from tests.labels.support import product_verified
 
 from .conftest import ADMIN, VIEWER, _one_bit_png
 from .test_label_printing_wire import _fixture
@@ -65,7 +65,7 @@ from .test_label_printing_wire import _fixture
 PROFILE = NIIMBOT_B1_50X30
 SIZE = PROFILE.label_size_id
 FACTORY_ID = factory_template_for_size(SIZE).id
-VERIFIED = replace(PROFILE, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+VERIFIED = product_verified(PROFILE)
 DEVICE = "printer-a"
 ENTRY_ID = "entry-a"
 

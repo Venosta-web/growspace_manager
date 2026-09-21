@@ -19,6 +19,7 @@ on a layout the product would refuse to save.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any
 
 from PIL import ImageFont
@@ -33,8 +34,16 @@ from custom_components.growspace_manager.labels.canonical import (
 from custom_components.growspace_manager.labels.canonical.content import (
     LabelContentSnapshot,
 )
+from custom_components.growspace_manager.labels.canonical.evidence import (
+    EVIDENCE_PROCEDURE_VERSION,
+    DimensionResult,
+    EvidenceDimension,
+    ReleaseEvidenceRecord,
+    current_dependencies,
+)
 from custom_components.growspace_manager.labels.canonical.profiles import (
     CapabilityProfile,
+    ProfileEvidence,
 )
 from custom_components.growspace_manager.labels.canonical.safety import (
     SafetyReport,
@@ -234,3 +243,47 @@ def compile_and_judge(
 def codes(report: SafetyReport) -> list[str]:
     """The diagnostic codes one safety pass produced, in order."""
     return [item.code for item in report.diagnostics]
+
+
+def complete_evidence(profile: CapabilityProfile) -> ReleaseEvidenceRecord:
+    """A complete, current physical evidence record for one profile.
+
+    Every dimension run, passed, measured and retained, covering every
+    rotation and density the profile permits, against the dependencies that
+    ship -- the only record that certifies a product-verified claim.
+    """
+    return ReleaseEvidenceRecord(
+        reference="evidence/test-record",
+        profile_id=profile.id,
+        profile_definition=profile.definition_digest,
+        printer_model=profile.printer_class,
+        firmware="5.14",
+        driver="niimbot 0.0.0",
+        stock=profile.label_size_id,
+        procedure=EVIDENCE_PROCEDURE_VERSION,
+        operator="operator",
+        reviewed_by="reviewer",
+        recorded_on="2026-09-21",
+        dependencies=current_dependencies(),
+        results={
+            dimension: DimensionResult(
+                passed=True,
+                measurements={"within_tolerance": True},
+                artifacts=(f"evidence/test-record/{dimension}.png",),
+                covers=(
+                    tuple(str(r) for r in profile.supported_element_rotations)
+                    if dimension is EvidenceDimension.ROTATION
+                    else tuple(profile.density_levels)
+                    if dimension is EvidenceDimension.DENSITY
+                    else ()
+                ),
+            )
+            for dimension in EvidenceDimension
+        },
+    )
+
+
+def product_verified(profile: CapabilityProfile) -> CapabilityProfile:
+    """The same profile, claiming product-verified with the proof attached."""
+    claimed = replace(profile, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+    return replace(claimed, evidence_record=complete_evidence(claimed))

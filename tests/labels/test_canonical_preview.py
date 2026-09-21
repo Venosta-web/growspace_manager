@@ -34,14 +34,13 @@ from custom_components.growspace_manager.labels.canonical import (
     PRINT,
     TYPICAL_STRAIN,
     InkBasis,
-    ProfileEvidence,
     async_render,
     async_render_factory_preview,
 )
 from custom_components.growspace_manager.labels.canonical.preview import _decode_raster
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from tests.labels.support import STUB_FONT_DIGEST, StubFonts
+from tests.labels.support import STUB_FONT_DIGEST, StubFonts, product_verified
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "labels"
 GOLDEN = json.loads((FIXTURES / "canonical_factory_50x30.json").read_text())
@@ -233,7 +232,7 @@ async def test_a_provisional_profile_renders_but_cannot_authorize_paper() -> Non
 
 async def test_a_verified_profile_with_a_clean_render_is_printable() -> None:
     hass = _hass()
-    verified = replace(NIIMBOT_B1_50X30, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+    verified = product_verified(NIIMBOT_B1_50X30)
     result = await async_render(
         hass,
         layout=FACTORY_50X30.layout,
@@ -246,7 +245,7 @@ async def test_a_verified_profile_with_a_clean_render_is_printable() -> None:
 
 async def test_a_blocking_diagnostic_keeps_a_rendered_result_off_paper() -> None:
     hass = _hass()
-    verified = replace(NIIMBOT_B1_50X30, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+    verified = product_verified(NIIMBOT_B1_50X30)
     result = await async_render(
         hass,
         layout=FACTORY_50X30.layout,
@@ -260,7 +259,7 @@ async def test_a_blocking_diagnostic_keeps_a_rendered_result_off_paper() -> None
 
 async def test_warnings_leave_a_result_printable_and_visible() -> None:
     hass = _hass()
-    verified = replace(NIIMBOT_B1_50X30, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+    verified = product_verified(NIIMBOT_B1_50X30)
     result = await async_render(
         hass,
         layout=FACTORY_50X30.layout,
