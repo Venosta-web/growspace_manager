@@ -22,8 +22,13 @@ Evidence is part of the identity, and it is the identity that decides what a
 render may authorize. A **provisional** profile has enough known geometry to
 render and to produce a calibration label; its calibrated limits are declared
 rather than measured, and it cannot authorize a production print. Promotion to
-product-verified is a physical-evidence decision recorded elsewhere, and it
-advances the capability generation rather than editing this file in place.
+product-verified is a physical-evidence decision, and it advances the
+capability generation rather than editing this file in place.
+
+`evidence` is a profile's *claim*. The claim of product-verified is honoured
+only with a complete, current [[Release Evidence Record]] attached (see
+`evidence.py`); without one the profile is advertised, judged and refused as
+provisional, with the reasons in `evidence_invalidated_by`.
 """
 
 from __future__ import annotations
@@ -33,7 +38,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from .canonicalization import digest
 from .catalogue import LABEL_SIZES, LabelSize
+from .evidence import ReleaseEvidenceRecord, evidence_problems
 from .geometry import AreaMm
 
 #: Millimetres per inch, the one constant the whole compiler turns on.
@@ -165,6 +172,8 @@ class CapabilityProfile:
     evidence_reference: str | None = None
     #: Why an earlier evidence state was withdrawn, where one was.
     evidence_invalidated_by: tuple[str, ...] = field(default_factory=tuple)
+    #: The physical proof behind a product-verified claim.
+    evidence_record: ReleaseEvidenceRecord | None = None
 
     @property
     def label_size(self) -> LabelSize:
@@ -193,9 +202,41 @@ class CapabilityProfile:
         return self.printable_area.inset_by(self.safe_area_inset_mm)
 
     @property
+    def definition_digest(self) -> str:
+        """The identity of what was measured: everything but the evidence.
+
+        A Release Evidence Record names this, so moving an edge, a density
+        level or a limit after the prints were made invalidates them.
+        """
+        wire = self._definition()
+        return digest(wire)
+
+    @property
+    def evidence_problems(self) -> tuple[str, ...]:
+        """Why a product-verified claim is not honoured; empty when it is."""
+        if self.evidence is not ProfileEvidence.PRODUCT_VERIFIED:
+            return ()
+        return evidence_problems(
+            self.evidence_record,
+            profile_id=self.id,
+            profile_definition=self.definition_digest,
+            rotations=self.supported_element_rotations,
+            densities=self.density_levels,
+        )
+
+    @property
+    def effective_evidence(self) -> ProfileEvidence:
+        """The evidence state the product acts on and advertises."""
+        if self.evidence is ProfileEvidence.PRODUCT_VERIFIED and (
+            not self.evidence_problems
+        ):
+            return ProfileEvidence.PRODUCT_VERIFIED
+        return ProfileEvidence.PROVISIONAL
+
+    @property
     def authorizes_production(self) -> bool:
         """Whether a render against this profile may reach paper."""
-        return self.evidence is ProfileEvidence.PRODUCT_VERIFIED
+        return self.effective_evidence is ProfileEvidence.PRODUCT_VERIFIED
 
     def density_level(self, density: str) -> int | None:
         """Resolve a symbolic density to this printer's own scale."""
@@ -205,8 +246,8 @@ class CapabilityProfile:
         """Whether this profile realises one element rotation."""
         return degrees in self.supported_element_rotations
 
-    def as_dict(self) -> dict[str, Any]:
-        """Return the profile's wire form, regions and limits included."""
+    def _definition(self) -> dict[str, Any]:
+        """The wire form of everything a physical print measured."""
         return {
             "id": self.id,
             "printer_class": self.printer_class,
@@ -220,12 +261,32 @@ class CapabilityProfile:
             "safe_area": self.safe_area.as_dict(),
             "density_levels": dict(self.density_levels),
             "supported_element_rotations": list(self.supported_element_rotations),
-            "evidence": str(self.evidence),
-            "evidence_recorded_at": self.evidence_recorded_at,
-            "evidence_reference": self.evidence_reference,
-            "evidence_invalidated_by": list(self.evidence_invalidated_by),
-            "authorizes_production": self.authorizes_production,
             "limits": self.limits.as_dict(),
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the profile's wire form, regions and limits included.
+
+        The evidence advertised is the effective one. An unproven claim is
+        sent as provisional, with the claim's problems listed as the reasons
+        it was withdrawn, so no client can read authority the profile lacks.
+        """
+        certified = self.effective_evidence is ProfileEvidence.PRODUCT_VERIFIED
+        record = self.evidence_record if certified else None
+        return {
+            **self._definition(),
+            "evidence": str(self.effective_evidence),
+            "evidence_recorded_at": (
+                record.recorded_on if record else self.evidence_recorded_at
+            ),
+            "evidence_reference": (
+                record.reference if record else self.evidence_reference
+            ),
+            "evidence_invalidated_by": [
+                *self.evidence_invalidated_by,
+                *self.evidence_problems,
+            ],
+            "authorizes_production": self.authorizes_production,
         }
 
 

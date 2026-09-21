@@ -94,7 +94,7 @@ async def async_render(
         layout_digest=layout.digest,
         label_size_id=layout.label_size_id,
         profile_id=profile.id,
-        profile_evidence=str(profile.evidence),
+        profile_evidence=str(profile.effective_evidence),
         local_calibration=local_calibration,
         content_identity=content.identity,
         content_context=str(content.context),

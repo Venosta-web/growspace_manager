@@ -1,0 +1,474 @@
+{
+  "blockers": [
+    "blocking_diagnostics",
+    "content_not_actual",
+    "local_calibration_missing",
+    "local_calibration_stale",
+    "no_raster",
+    "preflight_not_current",
+    "profile_not_product_verified",
+    "result_not_current",
+    "revision_not_published",
+    "warning_acknowledgement_required"
+  ],
+  "diagnostics": {
+    "content.ambiguous_source": {
+      "layer": "document",
+      "parameters": ["variants"],
+      "severities": ["error"]
+    },
+    "content.asset_not_permitted": {
+      "layer": "document",
+      "parameters": ["kind"],
+      "severities": ["error"]
+    },
+    "content.binding_kind_mismatch": {
+      "layer": "document",
+      "parameters": ["binding", "kind", "kinds"],
+      "severities": ["error"]
+    },
+    "content.invalid_asset": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "content.invalid_literal": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "content.invalid_parameter": {
+      "layer": "document",
+      "parameters": ["allowed", "parameter", "value"],
+      "severities": ["error"]
+    },
+    "content.logo_unusable": {
+      "layer": "content",
+      "parameters": ["binding", "reason"],
+      "severities": ["warning"]
+    },
+    "content.missing_optional": {
+      "layer": "content",
+      "parameters": ["binding"],
+      "severities": ["warning"]
+    },
+    "content.missing_required": {
+      "layer": "content",
+      "parameters": ["binding", "subject"],
+      "severities": ["error"]
+    },
+    "content.not_an_object": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "content.parameters_not_an_object": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "content.qr_target_unavailable": {
+      "layer": "content",
+      "parameters": ["binding", "target"],
+      "severities": ["error"]
+    },
+    "content.source_unresolved": {
+      "layer": "content",
+      "parameters": ["binding", "strain"],
+      "severities": ["warning"]
+    },
+    "content.stage_date_in_future": {
+      "layer": "content",
+      "parameters": ["as_of", "stage", "started_on", "subject"],
+      "severities": ["error"]
+    },
+    "content.stage_date_missing": {
+      "layer": "content",
+      "parameters": ["binding", "stage"],
+      "severities": ["warning"]
+    },
+    "content.unknown_binding": {
+      "layer": "document",
+      "parameters": ["binding"],
+      "severities": ["error"]
+    },
+    "content.unknown_parameter": {
+      "layer": "document",
+      "parameters": ["binding", "parameter"],
+      "severities": ["error"]
+    },
+    "content.unsupported_context": {
+      "layer": "content",
+      "parameters": ["binding", "context"],
+      "severities": ["warning"]
+    },
+    "document.elements_not_an_array": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "document.missing_required_strain_name": {
+      "layer": "document",
+      "parameters": ["binding"],
+      "severities": ["error"]
+    },
+    "document.not_an_object": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "document.unknown_label_size": {
+      "layer": "document",
+      "parameters": ["label_size_id"],
+      "severities": ["error"]
+    },
+    "document.unknown_schema": {
+      "layer": "document",
+      "parameters": ["actual", "expected"],
+      "severities": ["error"]
+    },
+    "document.unsupported_version": {
+      "layer": "document",
+      "parameters": ["actual", "expected"],
+      "severities": ["error"]
+    },
+    "element.divider_has_content": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "element.duplicate_id": {
+      "layer": "document",
+      "parameters": ["id"],
+      "severities": ["error"]
+    },
+    "element.invalid_id": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "element.not_an_object": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "element.unknown_kind": {
+      "layer": "document",
+      "parameters": ["kind"],
+      "severities": ["error"]
+    },
+    "element.unsupported_rotation": {
+      "layer": "document",
+      "parameters": ["allowed", "rotation"],
+      "severities": ["error"]
+    },
+    "frame.negative_origin": {
+      "layer": "document",
+      "parameters": ["height_mm", "width_mm", "x_mm", "y_mm"],
+      "severities": ["error"]
+    },
+    "frame.non_positive_extent": {
+      "layer": "document",
+      "parameters": ["height_mm", "width_mm", "x_mm", "y_mm"],
+      "severities": ["error"]
+    },
+    "frame.not_an_object": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "frame.outside_stock": {
+      "layer": "document",
+      "parameters": [
+        "height_mm",
+        "stock_height_mm",
+        "stock_width_mm",
+        "width_mm",
+        "x_mm",
+        "y_mm"
+      ],
+      "severities": ["error"]
+    },
+    "geometry.finer_than_quantum": {
+      "layer": "document",
+      "parameters": ["quantum_mm", "value"],
+      "severities": ["error"]
+    },
+    "geometry.not_a_number": {
+      "layer": "document",
+      "parameters": ["value"],
+      "severities": ["error"]
+    },
+    "geometry.not_finite": {
+      "layer": "document",
+      "parameters": ["value"],
+      "severities": ["error"]
+    },
+    "profile.divider_below_reproducible_thickness": {
+      "layer": "profile_compilation",
+      "parameters": ["minimum_thickness_mm", "thickness_mm"],
+      "severities": ["warning"]
+    },
+    "profile.image_below_effective_resolution": {
+      "layer": "profile_compilation",
+      "parameters": ["effective_dpi", "minimum_effective_dpi"],
+      "severities": ["warning"]
+    },
+    "profile.ink_outside_printable_area": {
+      "layer": "profile_compilation",
+      "parameters": ["ink_bounds", "printable_area"],
+      "severities": ["error"]
+    },
+    "profile.ink_outside_safe_area": {
+      "layer": "profile_compilation",
+      "parameters": ["ink_bounds", "safe_area", "safe_area_inset_mm"],
+      "severities": ["warning"]
+    },
+    "profile.outside_printable_area": {
+      "layer": "profile_compilation",
+      "parameters": ["pixel_frame"],
+      "severities": ["error"]
+    },
+    "profile.qr_below_module_floor": {
+      "layer": "profile_compilation",
+      "parameters": ["dots_per_module", "minimum_dots_per_module"],
+      "severities": ["error"]
+    },
+    "profile.qr_error_correction_unsupported": {
+      "layer": "profile_compilation",
+      "parameters": ["error_correction", "supported"],
+      "severities": ["error"]
+    },
+    "profile.qr_quiet_zone_too_small": {
+      "layer": "profile_compilation",
+      "parameters": ["minimum_quiet_zone_modules", "quiet_zone_modules"],
+      "severities": ["error"]
+    },
+    "profile.qr_target_too_long": {
+      "layer": "profile_compilation",
+      "parameters": ["encoded_bytes", "maximum_encoded_bytes"],
+      "severities": ["error"]
+    },
+    "profile.raster_wider_than_printhead": {
+      "layer": "profile_compilation",
+      "parameters": ["printhead_pixels", "raster_width"],
+      "severities": ["error"]
+    },
+    "profile.rotation_unsupported": {
+      "layer": "profile_compilation",
+      "parameters": ["rotation", "supported"],
+      "severities": ["error"]
+    },
+    "profile.stock_mismatch": {
+      "layer": "profile_compilation",
+      "parameters": [
+        "layout_label_size_id",
+        "profile",
+        "profile_label_size_id"
+      ],
+      "severities": ["error"]
+    },
+    "profile.text_below_comfort_threshold": {
+      "layer": "profile_compilation",
+      "parameters": ["comfort_threshold_mm", "resolved_font_size_mm"],
+      "severities": ["warning"]
+    },
+    "profile.text_below_readable_floor": {
+      "layer": "profile_compilation",
+      "parameters": ["readable_floor_mm", "resolved_font_size_mm"],
+      "severities": ["error"]
+    },
+    "profile.unsupported_density": {
+      "layer": "profile_compilation",
+      "parameters": ["available", "density"],
+      "severities": ["error"]
+    },
+    "raster.image_leaves_no_ink": {
+      "layer": "raster",
+      "parameters": [],
+      "severities": ["warning"]
+    },
+    "raster.image_not_inspected": {
+      "layer": "raster",
+      "parameters": ["remote"],
+      "severities": ["warning"]
+    },
+    "raster.image_undecodable": {
+      "layer": "raster",
+      "parameters": ["remote"],
+      "severities": ["warning"]
+    },
+    "raster.ink_overlap": {
+      "layer": "raster",
+      "parameters": [
+        "first_element_id",
+        "region",
+        "required_content",
+        "second_element_id"
+      ],
+      "severities": ["warning"]
+    },
+    "raster.missing": {
+      "layer": "raster",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "raster.missing_glyph": {
+      "layer": "raster",
+      "parameters": ["characters", "font_file"],
+      "severities": ["error"]
+    },
+    "raster.qr_does_not_fit": {
+      "layer": "raster",
+      "parameters": ["box_px", "side_modules"],
+      "severities": ["error"]
+    },
+    "raster.qr_not_encodable": {
+      "layer": "raster",
+      "parameters": ["encoded_bytes"],
+      "severities": ["error"]
+    },
+    "raster.qr_quiet_zone_violated": {
+      "layer": "raster",
+      "parameters": ["qr_element_id", "region"],
+      "severities": ["error"]
+    },
+    "raster.render_failed": {
+      "layer": "raster",
+      "parameters": ["error"],
+      "severities": ["error"]
+    },
+    "raster.required_content_occluded": {
+      "layer": "raster",
+      "parameters": ["required_binding"],
+      "severities": ["error"]
+    },
+    "raster.text_does_not_fit": {
+      "layer": "raster",
+      "parameters": ["minimum_font_size_px", "overflow"],
+      "severities": ["error"]
+    },
+    "raster.text_truncated": {
+      "layer": "raster",
+      "parameters": ["lines", "overflow"],
+      "severities": ["warning"]
+    },
+    "raster.text_unmeasured": {
+      "layer": "raster",
+      "parameters": ["font_file"],
+      "severities": ["warning"]
+    },
+    "raster.unexpected_format": {
+      "layer": "raster",
+      "parameters": ["format"],
+      "severities": ["warning"]
+    },
+    "raster.unreadable": {
+      "layer": "raster",
+      "parameters": ["error"],
+      "severities": ["error"]
+    },
+    "schema.foreign_field": {
+      "layer": "document",
+      "parameters": ["field", "reason"],
+      "severities": ["error"]
+    },
+    "schema.missing_field": {
+      "layer": "document",
+      "parameters": ["field"],
+      "severities": ["error"]
+    },
+    "schema.unknown_field": {
+      "layer": "document",
+      "parameters": ["field"],
+      "severities": ["error"]
+    },
+    "style.invalid_value": {
+      "layer": "document",
+      "parameters": ["allowed", "value"],
+      "severities": ["error"]
+    },
+    "style.minimum_above_requested": {
+      "layer": "document",
+      "parameters": ["font_size_mm", "minimum_font_size_mm"],
+      "severities": ["error"]
+    },
+    "style.non_positive_font_size": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "style.not_an_object": {
+      "layer": "document",
+      "parameters": [],
+      "severities": ["error"]
+    },
+    "style.unknown_token": {
+      "layer": "document",
+      "parameters": ["token"],
+      "severities": ["error"]
+    }
+  },
+  "locales": ["en", "en-AU", "en-GB", "en-IE", "en-NZ", "en-US"],
+  "refusals": [
+    "label_template.BackupNotRestorable",
+    "label_template.BundleNotReadable",
+    "label_template.DraftIsOrphaned",
+    "label_template.DraftIsStale",
+    "label_template.DraftNotFound",
+    "label_template.DraftNotPublishable",
+    "label_template.DraftVersionConflict",
+    "label_template.DuplicateTemplateName",
+    "label_template.IdempotencyKeyReused",
+    "label_template.ImportCollision",
+    "label_template.IncompatibleBundle",
+    "label_template.IncompatibleTemplateStore",
+    "label_template.LabelSizeImmutable",
+    "label_template.LibraryVersionConflict",
+    "label_template.NoEffectiveDefault",
+    "label_template.NoFactoryTemplate",
+    "label_template.NoRecoveryPayload",
+    "label_template.RevisionNotFound",
+    "label_template.TemplateDeleted",
+    "label_template.TemplateNameRequired",
+    "label_template.TemplateNotFound",
+    "label_template.TemplateNotResolvable",
+    "label_template.TemplateProtected",
+    "label_template.TombstoneExpired",
+    "label_template.TombstoneNotFound",
+    "label_template.UnsupportedDependency",
+    "label_template.UnsupportedLabelSize",
+    "label_template.approval_expired",
+    "label_template.batch_running",
+    "label_template.calibration_sheet_not_printed",
+    "label_template.calibration_store_unreadable",
+    "label_template.contract_incompatible",
+    "label_template.draft_not_found",
+    "label_template.draft_not_publishable",
+    "label_template.draft_orphaned",
+    "label_template.draft_stale",
+    "label_template.draft_version_conflict",
+    "label_template.draft_version_mismatch",
+    "label_template.duplicate_name",
+    "label_template.invalid_operation",
+    "label_template.label_size_immutable",
+    "label_template.measurement_invalid",
+    "label_template.name_not_on_template_draft",
+    "label_template.name_required",
+    "label_template.no_capability_profile",
+    "label_template.not_authorized",
+    "label_template.nothing_to_retry",
+    "label_template.print_failed",
+    "label_template.print_refused",
+    "label_template.printer_required",
+    "label_template.template_not_found",
+    "label_template.template_not_resolvable",
+    "label_template.unknown_fixture",
+    "label_template.unknown_label_size",
+    "label_template.unknown_print_context",
+    "label_template.unknown_profile",
+    "label_template.unknown_subject",
+    "label_template.unsupported_locale",
+    "label_template.version_required"
+  ]
+}

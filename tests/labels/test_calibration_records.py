@@ -45,6 +45,7 @@ from custom_components.growspace_manager.labels.canonical import (
     ProfileEvidence,
     RenderContext,
 )
+from tests.labels.support import product_verified
 
 PROFILE = NIIMBOT_B1_50X30
 DEVICE = "printer-in-the-drying-room"
@@ -278,9 +279,7 @@ def test_promoting_a_profile_to_product_verified_does_not_stale_it() -> None:
     """Promotion is exactly the transition a calibration is taken in
     anticipation of. Staling every installation's measurement at the moment
     the product learns its printer works would mean nobody could be ready."""
-    verified = _dependencies(
-        replace(PROFILE, evidence=ProfileEvidence.PRODUCT_VERIFIED)
-    )
+    verified = _dependencies(product_verified(PROFILE))
     assert evaluate(_record(), required=verified, now=NOW).state == CURRENT
 
 

@@ -45,7 +45,6 @@ from custom_components.growspace_manager.labels.canonical import (
     TYPICAL_STRAIN,
     Blocker,
     Operation,
-    ProfileEvidence,
     async_render,
 )
 from custom_components.growspace_manager.labels.canonical.preview import PREVIEW
@@ -59,11 +58,12 @@ from custom_components.growspace_manager.labels.printing import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import Unauthorized
+from tests.labels.support import product_verified
 
 from .support import StubFonts, layout_of, text_element
 
 PROVISIONAL = NIIMBOT_B1_50X30
-VERIFIED = replace(NIIMBOT_B1_50X30, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+VERIFIED = product_verified(NIIMBOT_B1_50X30)
 DEVICE = "printer-a"
 AS_OF = datetime(2026, 9, 19, 9, 30, tzinfo=UTC)
 FONTS = StubFonts()

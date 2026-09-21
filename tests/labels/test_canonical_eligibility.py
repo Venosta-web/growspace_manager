@@ -18,8 +18,6 @@ bottom, and the property they guard is that it only ever adds reasons.
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 
 from custom_components.growspace_manager.labels.canonical import (
@@ -29,14 +27,14 @@ from custom_components.growspace_manager.labels.canonical import (
     Layer,
     Operation,
     PrintProvenance,
-    ProfileEvidence,
     Severity,
     decide_eligibility,
     decide_print_request,
 )
+from tests.labels.support import product_verified
 
 PROVISIONAL = NIIMBOT_B1_50X30
-VERIFIED = replace(NIIMBOT_B1_50X30, evidence=ProfileEvidence.PRODUCT_VERIFIED)
+VERIFIED = product_verified(NIIMBOT_B1_50X30)
 
 ERROR = Diagnostic(
     code="profile.text_below_readable_floor",

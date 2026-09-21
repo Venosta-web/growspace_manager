@@ -1,0 +1,244 @@
+{
+  "case": "factory-50x30-r1.niimbot-b1.50x30.v1.typical.plant.en-US",
+  "layout": {
+    "name": "factory-50x30-r1",
+    "digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32"
+  },
+  "profile": "growspace.profile.niimbot-b1.50x30.v1",
+  "subject": "growspace.fixture.plant.typical.v1",
+  "family": "typical",
+  "context": "plant",
+  "locale": "en-US",
+  "as_of": "2026-09-18T00:00:00+00:00",
+  "density": "normal",
+  "content_identity": "sha256:687c487c5032982145a5174c784bf7ea88c02191cbfa259f95871f5f7791ab03",
+  "raster_inputs": {
+    "width": 384,
+    "height": 240,
+    "rotate": 0,
+    "density": 3,
+    "payload": [
+      {
+        "type": "text_fit",
+        "value": "Blue Dream",
+        "x": 16,
+        "y": 16,
+        "width": 344,
+        "height": 67,
+        "size": 45,
+        "min_size": 24,
+        "max_lines": 2,
+        "line_spacing": 2,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "ppb.ttf"
+      },
+      {
+        "type": "rectangle",
+        "x_start": 16,
+        "x_end": 359,
+        "y_start": 88,
+        "y_end": 90,
+        "fill": "black"
+      },
+      {
+        "type": "text_fit",
+        "value": "Pheno 3",
+        "x": 16,
+        "y": 98,
+        "width": 344,
+        "height": 35,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "text_fit",
+        "value": "Breeder: Humboldt Seed Co.",
+        "x": 16,
+        "y": 136,
+        "width": 344,
+        "height": 35,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "text_fit",
+        "value": "Lineage: Blueberry x Haze",
+        "x": 16,
+        "y": 174,
+        "width": 344,
+        "height": 35,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "text_fit",
+        "value": "Sep 18, 2026",
+        "x": 16,
+        "y": 213,
+        "width": 344,
+        "height": 22,
+        "size": 19,
+        "min_size": 16,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "right",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      }
+    ]
+  },
+  "raster_input_digest": "sha256:a7582930c1d3e5616b5af48b34b95b619cc4ea63eb6df919d06e8093b91091b1",
+  "outcomes": [
+    {
+      "element_id": "01M2V1PQB882FPJSG6H1GTFKX2",
+      "kind": "text",
+      "status": "placed",
+      "binding": "strain.name",
+      "pixel_frame": {
+        "left": 16,
+        "top": 16,
+        "right": 360,
+        "bottom": 83,
+        "width": 344,
+        "height": 67
+      },
+      "notes": {
+        "requested_font_size_px": 45,
+        "minimum_font_size_px": 24,
+        "maximum_lines": 2,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 67]
+      }
+    },
+    {
+      "element_id": "01M2V1PQB82ZAZR3V5NKXZDS0Z",
+      "kind": "divider",
+      "status": "placed",
+      "binding": null,
+      "pixel_frame": {
+        "left": 16,
+        "top": 88,
+        "right": 360,
+        "bottom": 91,
+        "width": 344,
+        "height": 3
+      },
+      "notes": {}
+    },
+    {
+      "element_id": "01M2V1PQB83XP8GJZZAP08DDKM",
+      "kind": "text",
+      "status": "placed",
+      "binding": "strain.phenotype",
+      "pixel_frame": {
+        "left": 16,
+        "top": 98,
+        "right": 360,
+        "bottom": 133,
+        "width": 344,
+        "height": 35
+      },
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
+    },
+    {
+      "element_id": "01M2V1PQB8CH61GQ903X1XF808",
+      "kind": "text",
+      "status": "placed",
+      "binding": "strain.breeder",
+      "pixel_frame": {
+        "left": 16,
+        "top": 136,
+        "right": 360,
+        "bottom": 171,
+        "width": 344,
+        "height": 35
+      },
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
+    },
+    {
+      "element_id": "01M2V1PQB8QKBBEH26QWK9FHT8",
+      "kind": "text",
+      "status": "placed",
+      "binding": "strain.lineage",
+      "pixel_frame": {
+        "left": 16,
+        "top": 174,
+        "right": 360,
+        "bottom": 209,
+        "width": 344,
+        "height": 35
+      },
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
+    },
+    {
+      "element_id": "01M2V1PQB8NNQA4TA7RZEJZCCW",
+      "kind": "text",
+      "status": "placed",
+      "binding": "print.date",
+      "pixel_frame": {
+        "left": 16,
+        "top": 213,
+        "right": 360,
+        "bottom": 235,
+        "width": 344,
+        "height": 22
+      },
+      "notes": {
+        "requested_font_size_px": 19,
+        "minimum_font_size_px": 16,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 22]
+      }
+    }
+  ],
+  "diagnostics": [],
+  "evidence": {
+    "sha256": "382dda8a01016430c985cc82674aaaea796d8b1db0fdf0b7ea88632e05e08d00",
+    "rendered_from": "sha256:a7582930c1d3e5616b5af48b34b95b619cc4ea63eb6df919d06e8093b91091b1"
+  }
+}
