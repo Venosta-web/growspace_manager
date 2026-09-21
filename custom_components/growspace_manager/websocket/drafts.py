@@ -37,12 +37,20 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.labels.approvals import (
+    DRAFT_APPROVAL,
+    DraftApproval,
+    approval_holder,
+)
 from custom_components.growspace_manager.labels.canonical import (
+    PREVIEW,
     SUPPORTED_LOCALES,
     TYPICAL,
     PrintContext,
+    async_render,
     profiles_for_size,
     representative_subject,
+    select_profile,
 )
 from custom_components.growspace_manager.labels.capability import (
     IncompatibleLabelTemplateContract,
@@ -68,6 +76,7 @@ from custom_components.growspace_manager.labels.library import (
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import Unauthorized
+import homeassistant.util.dt as dt_util
 
 from ._common import WS_MSG_USER, WSCommand
 
@@ -109,6 +118,9 @@ CODE_NO_CAPABILITY_PROFILE = "label_template.no_capability_profile"
 CODE_UNKNOWN_FIXTURE = "label_template.unknown_fixture"
 CODE_UNSUPPORTED_LOCALE = "label_template.unsupported_locale"
 CODE_NAME_NOT_ON_DRAFT = "label_template.name_not_on_template_draft"
+CODE_UNKNOWN_PROFILE = "label_template.unknown_profile"
+
+RECOVERY_SELECT_PROFILE = "select_profile"
 
 
 def _base_schema(command: str) -> vol.Schema:
@@ -173,6 +185,10 @@ SCHEMA_WS_PREVIEW_LABEL_TEMPLATE_DRAFT = _base_schema(
         vol.Optional("fixture_family", default=TYPICAL): str,
         vol.Optional("density", default="normal"): str,
         vol.Optional("locale", default=SUPPORTED_LOCALES[0]): str,
+        # Both optional, so an editor that has chosen nothing still previews
+        # against the first profile that can render the stock.
+        vol.Optional("profile_id"): vol.Any(None, str),
+        vol.Optional("device_id"): vol.Any(None, str),
     }
 )
 
@@ -486,15 +502,22 @@ async def websocket_preview_label_template_draft(
             label_size_id=label_size_id,
         )
 
+    profile = select_profile(label_size_id, msg.get("profile_id"))
+    if profile is None:
+        # A profile of another stock, or one this version does not ship.
+        # Choosing again is the recovery; guessing a neighbour is not.
+        return _refused(
+            CODE_UNKNOWN_PROFILE,
+            f"{msg.get('profile_id')} is not a Capability Profile for {label_size_id}",
+            RECOVERY_SELECT_PROFILE,
+            label_size_id=label_size_id,
+        )
+
     library = await _library(hass, coordinator)
     expected = msg["expected_draft_version"]
     try:
-        result = await library.async_preview_draft(
-            _actor(msg),
-            **_slot(msg),
-            subject=subject,
-            density=msg["density"],
-            expected_version=expected,
+        draft, layout = await library.async_draft_layout(
+            _actor(msg), **_slot(msg), expected_version=expected
         )
     except Unauthorized as error:
         return _unauthorized(error)
@@ -523,11 +546,39 @@ async def websocket_preview_label_template_draft(
     except DraftNotFound as error:
         return _refused(CODE_DRAFT_NOT_FOUND, str(error), RECOVERY_REOPEN_DRAFT)
 
+    # The snapshot is taken here rather than inside the library so it can be
+    # held: its instant is part of the raster identity, and a test print of
+    # this preview has to draw exactly this instant again.
+    content = subject.snapshot(as_of=dt_util.utcnow())
+    result = await async_render(
+        hass,
+        layout=layout,
+        content=content,
+        profile=profile,
+        density=msg["density"],
+        device_id=msg.get("device_id"),
+        operation=PREVIEW,
+    )
+    approval_id = approval_holder(hass, coordinator.config_entry.entry_id).hold(
+        DRAFT_APPROVAL,
+        DraftApproval(
+            draft_id=draft.id,
+            template_id=draft.template_id,
+            label_size_id=draft.label_size_id,
+            draft_version=draft.version,
+            content=content,
+            profile=profile,
+            density=msg["density"],
+            raster_identity=result.raster_identity,
+        ),
+    )
+
     return _ok(
         draft_version=expected,
         label_size_id=label_size_id,
         fixture_family=msg["fixture_family"],
         subject=subject.id,
+        approval_id=approval_id,
         render=result.as_dict(),
     )
 

@@ -73,6 +73,15 @@ EDGES = ("top", "right", "bottom", "left")
 class MeasurementInvalid(ValueError):
     """One entered measurement is not a number this label could have shown."""
 
+    def __init__(self, message: str, *, field: str | None = None) -> None:
+        """Say what is wrong, and which entered value it is wrong about.
+
+        `field` is what lets a form put the refusal beside the box it came
+        from rather than above all five of them.
+        """
+        super().__init__(message)
+        self.field = field
+
 
 @dataclass(frozen=True, slots=True)
 class PlacementMeasurement:
@@ -193,12 +202,14 @@ def validate_measurement(
         if name != "feed_mm" and value < 0:
             raise MeasurementInvalid(
                 f"{name} is {value} mm; an edge offset is how much of the "
-                "Printable Area is lost, which cannot be negative."
+                "Printable Area is lost, which cannot be negative.",
+                field=name,
             )
         if abs(value) > extents[name]:
             raise MeasurementInvalid(
                 f"{name} is {value} mm, which is outside the "
-                f"{extents[name]} mm the Printable Area has on that axis."
+                f"{extents[name]} mm the Printable Area has on that axis.",
+                field=name,
             )
     return measurement
 
@@ -208,10 +219,13 @@ def _quantized(name: str, value: float) -> None:
     try:
         remainder = Decimal(str(value)).remainder_near(QUANTUM_MM)
     except InvalidOperation as err:  # pragma: no cover - non-finite input
-        raise MeasurementInvalid(f"{name} is not a millimetre value.") from err
+        raise MeasurementInvalid(
+            f"{name} is not a millimetre value.", field=name
+        ) from err
     if remainder != 0:
         raise MeasurementInvalid(
-            f"{name} is {value} mm, which is not a multiple of {QUANTUM_MM} mm."
+            f"{name} is {value} mm, which is not a multiple of {QUANTUM_MM} mm.",
+            field=name,
         )
 
 

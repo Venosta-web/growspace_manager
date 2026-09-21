@@ -161,7 +161,9 @@ from .profiles import (
     FeedAxis,
     ProfileEvidence,
     StockOrientation,
+    profile_by_id,
     profiles_for_size,
+    select_profile,
 )
 from .qr import QR_MODEL_VERSION, QrDataOverflow, QrSymbol, symbol_for
 from .result import (
@@ -320,10 +322,12 @@ __all__ = [
     "has_blocking",
     "missing_policy",
     "niimbot_font_library",
+    "profile_by_id",
     "profiles_for_size",
     "representative_subject",
     "resolve_locale",
     "resolve_subject",
+    "select_profile",
     "shipped_font_identity",
     "stage_display_name",
     "stage_started_at",

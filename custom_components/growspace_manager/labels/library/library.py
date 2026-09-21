@@ -2817,6 +2817,30 @@ class LabelTemplateLibrary:
         refused, the editor keeps a raster it knows is stale, which is the
         honest state and the one the user can see.
         """
+        _draft, layout = await self.async_draft_layout(
+            actor,
+            template_id=template_id,
+            label_size_id=label_size_id,
+            expected_version=expected_version,
+        )
+        return await self._async_render(
+            layout, subject=subject, profile=profile, density=density, fonts=fonts
+        )
+
+    async def async_draft_layout(
+        self,
+        actor: Actor,
+        *,
+        template_id: str | None = None,
+        label_size_id: str | None = None,
+        expected_version: int | None = None,
+    ) -> tuple[TemplateDraft, LabelLayout]:
+        """Return this administrator's draft at one version, compiled or refused.
+
+        The one read every route that puts a draft in front of somebody shares
+        -- a preview on screen and a test print on paper alike -- so the two
+        cannot disagree about which version they drew or whether it validated.
+        """
         owner = actor.administrator()
         state = await self.async_load()
         draft = self._locate_draft(
@@ -2829,9 +2853,7 @@ class LabelTemplateLibrary:
         check = check_document(draft.document)
         if check.layout is None or not check.publishable:
             raise DraftNotPublishable(check.diagnostics)
-        return await self._async_render(
-            check.layout, subject=subject, profile=profile, density=density, fonts=fonts
-        )
+        return draft, check.layout
 
     async def async_preview_template(
         self,
