@@ -28,9 +28,9 @@ Nothing here is ever rewritten. Re-calibrating appends; a superseded record
 stays, because "what was this printer measured at when that label printed?"
 has to keep having an answer.
 
-Nothing here is registered as a service or a websocket command yet. The
-Template Capability is advertised as one complete envelope once every required
-v1 operation exists.
+The WebSocket seam over it is `websocket/label_printing.py`: it prints the
+sheet, holds what printed, and records the numbers read off it against that
+held sheet rather than against anything a client sends back.
 """
 
 from __future__ import annotations

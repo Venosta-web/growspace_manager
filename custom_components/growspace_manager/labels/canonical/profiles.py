@@ -302,3 +302,25 @@ def profiles_for_size(label_size_id: str) -> tuple[CapabilityProfile, ...]:
         for profile in PROFILES.values()
         if profile.label_size_id == label_size_id
     )
+
+
+def profile_by_id(profile_id: str) -> CapabilityProfile | None:
+    """Return one shipped profile by identity, whatever stock it is for."""
+    return PROFILES.get(profile_id)
+
+
+def select_profile(
+    label_size_id: str, profile_id: str | None = None
+) -> CapabilityProfile | None:
+    """Return the profile one request selected for one stock, or nothing.
+
+    No selection means the first profile that can render the stock, which is
+    what every preview did before a client could choose. A selection naming a
+    profile of another stock is not a profile for this one, however valid it
+    is elsewhere: answering with it would compile the layout onto paper it was
+    not drawn for.
+    """
+    candidates = profiles_for_size(label_size_id)
+    if profile_id is None:
+        return candidates[0] if candidates else None
+    return next((profile for profile in candidates if profile.id == profile_id), None)

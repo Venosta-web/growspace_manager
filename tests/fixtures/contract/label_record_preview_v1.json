@@ -1,21 +1,85 @@
 {
-  "approval_id": "<opaque-1>",
+  "approval_id": "<opaque-7>",
+  "calibration": {
+    "age_days": 0,
+    "identity": "sha256:aebd66ef8d369605b8436dd376e88a07c0f2ea023c4a69d04b393c65c3d13f04",
+    "record": {
+      "dependencies": {
+        "adapter_version": "growspace.niimbot-adapter.v1",
+        "binding_catalogue_version": "growspace.label-bindings.v1",
+        "capability_generation": 3,
+        "compiler_version": "growspace.label-compiler.v1",
+        "density_levels": {
+          "high": 5,
+          "low": 2,
+          "normal": 3
+        },
+        "dpi": 203,
+        "feed_axis": "y",
+        "firmware": null,
+        "font_identity": {
+          "ppb.ttf": "unresolved",
+          "rbm.ttf": "unresolved"
+        },
+        "label_size_catalogue_version": "growspace.label-sizes.v1",
+        "limits_digest": "sha256:600320c87e6e2dbf5fa01f657d5e2d2ef51c0653ee1732d17697cf6b93e2e3b0",
+        "printable_height_mm": 30.0,
+        "printable_origin_x_mm": 0.0,
+        "printable_origin_y_mm": 0.0,
+        "printable_width_mm": 48.0,
+        "printhead_pixels": 384,
+        "qr_model_version": "growspace.qr-model.v1",
+        "renderer_version": "growspace.label-renderer.v1",
+        "safe_area_inset_mm": 1.0,
+        "safety_policy_version": "growspace.label-safety.v1",
+        "scope": {
+          "device_id": "printer-a",
+          "label_size_id": "growspace.stock.50x30.v1",
+          "orientation": "landscape",
+          "printer_class": "niimbot.b1"
+        },
+        "sheet_version": "growspace.label-calibration-sheet.v1",
+        "style_token_catalogue_version": "growspace.label-style-tokens.v1",
+        "text_toolchain_version": "growspace.text-toolchain.v1"
+      },
+      "id": "<opaque-8>",
+      "identity": "sha256:aebd66ef8d369605b8436dd376e88a07c0f2ea023c4a69d04b393c65c3d13f04",
+      "measurement": {
+        "bottom_mm": 0.0,
+        "feed_mm": -0.4,
+        "left_mm": 0.5,
+        "right_mm": 0.5,
+        "top_mm": 0.5
+      },
+      "notes": null,
+      "printed_density": "normal",
+      "recorded_at": "2026-09-21T00:00:00+00:00",
+      "recorded_by": "admin-user",
+      "sheet_raster_identity": "sha256:89aa3ee322d67ccbe157e5a77f8620bc4ecf839990a56e1202e2343a5c70416f"
+    },
+    "stale_reasons": [],
+    "state": "current",
+    "warnings": []
+  },
   "contract": {
     "family": "growspace.label-templates",
     "generation": 3,
     "major": 1,
     "minor": 0
   },
-  "draft_version": 2,
-  "fixture_family": "typical",
-  "label_size_id": "growspace.stock.50x30.v1",
+  "decision": {
+    "allowed": true,
+    "blocked_by": [],
+    "operation": "single_print"
+  },
   "outcome": "ok",
+  "recovery": "none",
   "render": {
-    "cache_identity": "sha256:5d99afb1133de21c3b0d983ae2c99f32706ffcca77d1faf58c94c80ed84f721a",
+    "cache_identity": "sha256:5a005f1a08a418c9ea56591d8e408cdced8d2852ca4c51474981980903e5ffd9",
     "diagnostics": [
       {
         "code": "raster.text_unmeasured",
-        "element_id": "<opaque-2>",
+        "element_id": "<opaque-1>",
         "layer": "raster",
         "message": "Font ppb.ttf is not installed beside this integration, so the text of element 01M2V1PQB882FPJSG6H1GTFKX2 could not be measured. Its frame stands in for its ink.",
         "parameters": {
@@ -27,7 +91,7 @@
       },
       {
         "code": "raster.text_unmeasured",
-        "element_id": "<opaque-4>",
+        "element_id": "<opaque-3>",
         "layer": "raster",
         "message": "Font rbm.ttf is not installed beside this integration, so the text of element 01M2V1PQB83XP8GJZZAP08DDKM could not be measured. Its frame stands in for its ink.",
         "parameters": {
@@ -39,7 +103,7 @@
       },
       {
         "code": "raster.text_unmeasured",
-        "element_id": "<opaque-5>",
+        "element_id": "<opaque-4>",
         "layer": "raster",
         "message": "Font rbm.ttf is not installed beside this integration, so the text of element 01M2V1PQB8CH61GQ903X1XF808 could not be measured. Its frame stands in for its ink.",
         "parameters": {
@@ -51,7 +115,7 @@
       },
       {
         "code": "raster.text_unmeasured",
-        "element_id": "<opaque-6>",
+        "element_id": "<opaque-5>",
         "layer": "raster",
         "message": "Font rbm.ttf is not installed beside this integration, so the text of element 01M2V1PQB8QKBBEH26QWK9FHT8 could not be measured. Its frame stands in for its ink.",
         "parameters": {
@@ -63,7 +127,7 @@
       },
       {
         "code": "profile.ink_outside_safe_area",
-        "element_id": "<opaque-7>",
+        "element_id": "<opaque-6>",
         "layer": "profile_compilation",
         "message": "Element 01M2V1PQB8NNQA4TA7RZEJZCCW inks outside the Safe Area. It prints, but close to an edge.",
         "parameters": {
@@ -91,7 +155,7 @@
       },
       {
         "code": "raster.text_unmeasured",
-        "element_id": "<opaque-7>",
+        "element_id": "<opaque-6>",
         "layer": "raster",
         "message": "Font rbm.ttf is not installed beside this integration, so the text of element 01M2V1PQB8NNQA4TA7RZEJZCCW could not be measured. Its frame stands in for its ink.",
         "parameters": {
@@ -105,7 +169,7 @@
     "elements": [
       {
         "binding": "strain.name",
-        "element_id": "<opaque-2>",
+        "element_id": "<opaque-1>",
         "kind": "text",
         "notes": {
           "box_pixels": [344, 67],
@@ -117,8 +181,8 @@
         "pixel_frame": {
           "bottom": 83,
           "height": 67,
-          "left": 20,
-          "right": 364,
+          "left": 16,
+          "right": 360,
           "top": 16,
           "width": 344
         },
@@ -126,7 +190,7 @@
       },
       {
         "binding": null,
-        "element_id": "<opaque-3>",
+        "element_id": "<opaque-2>",
         "kind": "divider",
         "notes": {},
         "pixel_frame": {
@@ -141,7 +205,7 @@
       },
       {
         "binding": "strain.phenotype",
-        "element_id": "<opaque-4>",
+        "element_id": "<opaque-3>",
         "kind": "text",
         "notes": {
           "box_pixels": [344, 35],
@@ -162,7 +226,7 @@
       },
       {
         "binding": "strain.breeder",
-        "element_id": "<opaque-5>",
+        "element_id": "<opaque-4>",
         "kind": "text",
         "notes": {
           "box_pixels": [344, 35],
@@ -183,7 +247,7 @@
       },
       {
         "binding": "strain.lineage",
-        "element_id": "<opaque-6>",
+        "element_id": "<opaque-5>",
         "kind": "text",
         "notes": {
           "box_pixels": [344, 35],
@@ -204,7 +268,7 @@
       },
       {
         "binding": "print.date",
-        "element_id": "<opaque-7>",
+        "element_id": "<opaque-6>",
         "kind": "text",
         "notes": {
           "box_pixels": [344, 22],
@@ -226,11 +290,8 @@
     ],
     "eligibility": {
       "batch_preflight": {
-        "allowed": false,
-        "blocked_by": [
-          "profile_not_product_verified",
-          "local_calibration_missing"
-        ],
+        "allowed": true,
+        "blocked_by": [],
         "operation": "batch_preflight"
       },
       "candidate_validation": {
@@ -254,11 +315,8 @@
         "operation": "publish"
       },
       "single_print": {
-        "allowed": false,
-        "blocked_by": [
-          "profile_not_product_verified",
-          "local_calibration_missing"
-        ],
+        "allowed": true,
+        "blocked_by": [],
         "operation": "single_print"
       },
       "test_print": {
@@ -273,14 +331,14 @@
         "bounds": {
           "bottom": 83,
           "height": 67,
-          "left": 20,
-          "right": 364,
+          "left": 16,
+          "right": 360,
           "top": 16,
           "width": 344
         },
-        "element_id": "<opaque-2>",
+        "element_id": "<opaque-1>",
         "kind": "text",
-        "mask_digest": "b8c46008bdd60a2e",
+        "mask_digest": "871b7be584ccf9c0",
         "measurements": {
           "font_file": "ppb.ttf",
           "measured": false,
@@ -298,7 +356,7 @@
           "top": 88,
           "width": 344
         },
-        "element_id": "<opaque-3>",
+        "element_id": "<opaque-2>",
         "kind": "divider",
         "mask_digest": "ce59ff12ef90fd8b",
         "measurements": {
@@ -318,7 +376,7 @@
           "top": 98,
           "width": 344
         },
-        "element_id": "<opaque-4>",
+        "element_id": "<opaque-3>",
         "kind": "text",
         "mask_digest": "319586474c39ebcf",
         "measurements": {
@@ -338,7 +396,7 @@
           "top": 136,
           "width": 344
         },
-        "element_id": "<opaque-5>",
+        "element_id": "<opaque-4>",
         "kind": "text",
         "mask_digest": "5b0d01e007d8abdd",
         "measurements": {
@@ -358,7 +416,7 @@
           "top": 174,
           "width": 344
         },
-        "element_id": "<opaque-6>",
+        "element_id": "<opaque-5>",
         "kind": "text",
         "mask_digest": "b0ff39f34ab9dde9",
         "measurements": {
@@ -378,7 +436,7 @@
           "top": 213,
           "width": 344
         },
-        "element_id": "<opaque-7>",
+        "element_id": "<opaque-6>",
         "kind": "text",
         "mask_digest": "4841b9bedc97b630",
         "measurements": {
@@ -390,16 +448,16 @@
       }
     ],
     "overlaps": [],
-    "printable": false,
+    "printable": true,
     "profile": {
-      "authorizes_production": false,
+      "authorizes_production": true,
       "density_levels": {
         "high": 5,
         "low": 2,
         "normal": 3
       },
       "dpi": 203,
-      "evidence": "provisional",
+      "evidence": "product_verified",
       "evidence_invalidated_by": [],
       "evidence_recorded_at": null,
       "evidence_reference": null,
@@ -448,17 +506,17 @@
       "monochrome": true,
       "width": 384
     },
-    "raster_identity": "sha256:e686c5c97b44289f880f227ce59ab210f38c6a5b6cb8aed9c79a22e5a5ca6d11",
-    "raster_input_digest": "sha256:38cd29107df1e40c1eecd06eadc092051f2a6ef8af31c328e5907a1c8af04056",
+    "raster_identity": "sha256:8162b32140777284fe1a3184d949e3e39dc7679c2438991f16e3cda00d3ea013",
+    "raster_input_digest": "sha256:1aa643420cab417f6e9148538f1c7a8ca056394c68818113a902d8e111dd14dd",
     "render_context": {
       "adapter_version": "growspace.niimbot-adapter.v1",
-      "as_of": "2026-09-18T00:00:00+00:00",
+      "as_of": "2026-09-21T00:00:00+00:00",
       "binding_catalogue_version": "growspace.label-bindings.v1",
       "capability_generation": 3,
       "compiler_version": "growspace.label-compiler.v1",
       "content_context": "strain",
-      "content_identity": "sha256:249700f3a8cbbdcbce28498e167e59d7c70a51e5149c42bbe326947a2f8249e7",
-      "content_source": "growspace.label-fixtures.v2",
+      "content_identity": "sha256:232b056e649b41558799361609f9f22a4661dd15aec743cf481708a13da8be69",
+      "content_source": "record",
       "density": "normal",
       "density_level": 3,
       "font_identity": {
@@ -467,11 +525,11 @@
       },
       "label_size_catalogue_version": "growspace.label-sizes.v1",
       "label_size_id": "growspace.stock.50x30.v1",
-      "layout_digest": "sha256:a268709a860bc7194c7073caef997a178dfdbb1b50db591e966537e065c8e5f8",
-      "local_calibration": null,
+      "layout_digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32",
+      "local_calibration": "sha256:aebd66ef8d369605b8436dd376e88a07c0f2ea023c4a69d04b393c65c3d13f04",
       "locale": "en",
       "operation": "preview",
-      "profile_evidence": "provisional",
+      "profile_evidence": "product_verified",
       "profile_id": "growspace.profile.niimbot-b1.50x30.v1",
       "qr_model_version": "growspace.qr-model.v1",
       "renderer_version": "growspace.label-renderer.v1",
@@ -482,5 +540,170 @@
     },
     "status": "current"
   },
-  "subject": "growspace.fixture.strain.typical.v1"
+  "subject": "Blue Dream",
+  "template": {
+    "document": {
+      "elements": [
+        {
+          "content": {
+            "binding": "strain.name",
+            "parameters": {}
+          },
+          "frame": {
+            "height_mm": 8.4,
+            "width_mm": 43.0,
+            "x_mm": 2.0,
+            "y_mm": 2.0
+          },
+          "id": "<opaque-1>",
+          "kind": "text",
+          "rotation": 0,
+          "style": {
+            "font": "growspace.sans.bold.v1",
+            "font_size_mm": 5.6,
+            "horizontal_align": "left",
+            "line_spacing": "growspace.spacing.compact.v1",
+            "maximum_lines": 2,
+            "minimum_font_size_mm": 3.0,
+            "overflow": "shrink_ellipsis",
+            "vertical_align": "center"
+          }
+        },
+        {
+          "frame": {
+            "height_mm": 0.4,
+            "width_mm": 43.0,
+            "x_mm": 2.0,
+            "y_mm": 11.0
+          },
+          "id": "<opaque-2>",
+          "kind": "divider",
+          "rotation": 0,
+          "style": {
+            "fill": "black"
+          }
+        },
+        {
+          "content": {
+            "binding": "strain.phenotype",
+            "parameters": {
+              "presentation": "value"
+            }
+          },
+          "frame": {
+            "height_mm": 4.4,
+            "width_mm": 43.0,
+            "x_mm": 2.0,
+            "y_mm": 12.2
+          },
+          "id": "<opaque-3>",
+          "kind": "text",
+          "rotation": 0,
+          "style": {
+            "font": "growspace.sans.regular.v1",
+            "font_size_mm": 3.2,
+            "horizontal_align": "left",
+            "line_spacing": "growspace.spacing.compact.v1",
+            "maximum_lines": 1,
+            "minimum_font_size_mm": 2.2,
+            "overflow": "shrink_ellipsis",
+            "vertical_align": "center"
+          }
+        },
+        {
+          "content": {
+            "binding": "strain.breeder",
+            "parameters": {
+              "presentation": "labeled"
+            }
+          },
+          "frame": {
+            "height_mm": 4.4,
+            "width_mm": 43.0,
+            "x_mm": 2.0,
+            "y_mm": 17.0
+          },
+          "id": "<opaque-4>",
+          "kind": "text",
+          "rotation": 0,
+          "style": {
+            "font": "growspace.sans.regular.v1",
+            "font_size_mm": 3.2,
+            "horizontal_align": "left",
+            "line_spacing": "growspace.spacing.compact.v1",
+            "maximum_lines": 1,
+            "minimum_font_size_mm": 2.2,
+            "overflow": "shrink_ellipsis",
+            "vertical_align": "center"
+          }
+        },
+        {
+          "content": {
+            "binding": "strain.lineage",
+            "parameters": {
+              "presentation": "labeled"
+            }
+          },
+          "frame": {
+            "height_mm": 4.4,
+            "width_mm": 43.0,
+            "x_mm": 2.0,
+            "y_mm": 21.8
+          },
+          "id": "<opaque-5>",
+          "kind": "text",
+          "rotation": 0,
+          "style": {
+            "font": "growspace.sans.regular.v1",
+            "font_size_mm": 3.2,
+            "horizontal_align": "left",
+            "line_spacing": "growspace.spacing.compact.v1",
+            "maximum_lines": 1,
+            "minimum_font_size_mm": 2.2,
+            "overflow": "shrink_ellipsis",
+            "vertical_align": "center"
+          }
+        },
+        {
+          "content": {
+            "binding": "print.date",
+            "parameters": {
+              "date_style": "medium"
+            }
+          },
+          "frame": {
+            "height_mm": 2.8,
+            "width_mm": 43.0,
+            "x_mm": 2.0,
+            "y_mm": 26.6
+          },
+          "id": "<opaque-6>",
+          "kind": "text",
+          "rotation": 0,
+          "style": {
+            "font": "growspace.sans.regular.v1",
+            "font_size_mm": 2.4,
+            "horizontal_align": "right",
+            "line_spacing": "growspace.spacing.compact.v1",
+            "maximum_lines": 1,
+            "minimum_font_size_mm": 2.0,
+            "overflow": "shrink_ellipsis",
+            "vertical_align": "center"
+          }
+        }
+      ],
+      "label_size_id": "growspace.stock.50x30.v1",
+      "schema": "growspace.label-layout",
+      "version": 1
+    },
+    "label_size_id": "growspace.stock.50x30.v1",
+    "layout_digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32",
+    "name": "Strain label",
+    "ref": {
+      "id": "growspace.factory.50x30",
+      "kind": "factory"
+    },
+    "revision": 1,
+    "via": "explicit"
+  }
 }
