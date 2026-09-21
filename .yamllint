@@ -1,9 +1,5 @@
 ---
-# First-party YAML is linted repository-wide. Agent skill manifests are managed
-# by the skill installer and must retain the format emitted by that tool.
-ignore: |
-  .agents/skills/*/agents/openai.yaml
-
+# First-party YAML is linted repository-wide.
 extends: default
 
 rules:
