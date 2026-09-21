@@ -574,6 +574,30 @@ async def test_a_valid_named_draft_publishes_as_a_named_template(
     assert after["library"]["drafts"] == []
 
 
+async def test_publish_cannot_consume_a_newer_autosave(
+    hass: HomeAssistant,
+) -> None:
+    opened = await _open(hass)
+    saved = await _autosave(
+        hass,
+        document=opened["draft"]["document"],
+        name="Bench label",
+        expected_version=opened["draft"]["version"],
+    )
+    latest = await _autosave(
+        hass,
+        document=_moved(saved["draft"]["document"], x_mm=1.5),
+        expected_version=saved["draft"]["version"],
+    )
+
+    payload = await _publish(hass, expected_draft_version=saved["draft"]["version"])
+
+    assert payload["refusal"]["code"] == "label_template.draft_version_conflict"
+    assert payload["refusal"]["expected_version"] == saved["draft"]["version"]
+    assert payload["refusal"]["found_version"] == latest["draft"]["version"]
+    assert payload["refusal"]["draft"]["version"] == latest["draft"]["version"]
+
+
 async def test_publishing_an_unnamed_draft_is_refused_and_keeps_it(
     hass: HomeAssistant,
 ) -> None:

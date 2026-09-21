@@ -476,3 +476,15 @@ class BackupNotRestorable(LabelTemplateError):
             f"This Label Template backup cannot be restored: {detail} "
             "The current library has not been changed."
         )
+
+
+class LibraryVersionConflict(LabelTemplateError):
+    """The library changed after the administrator reviewed an operation."""
+
+    def __init__(self, expected: int, found: int) -> None:
+        """Keep both generations for an explicit refresh and review."""
+        self.expected = expected
+        self.found = found
+        super().__init__(
+            f"Library generation {expected} is now {found}. Refresh and review the operation again; nothing was changed."
+        )

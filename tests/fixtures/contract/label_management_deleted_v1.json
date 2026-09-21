@@ -1,0 +1,337 @@
+{
+  "contract": {
+    "family": "growspace.label-templates",
+    "generation": 3,
+    "major": 1,
+    "minor": 0
+  },
+  "library": {
+    "defaults": {},
+    "drafts": [
+      {
+        "base_revision": 1,
+        "created_at": "2026-09-21T00:00:00+00:00",
+        "document": {
+          "elements": [
+            {
+              "content": {
+                "binding": "strain.name",
+                "parameters": {}
+              },
+              "frame": {
+                "height_mm": 8.4,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 2.0
+              },
+              "id": "<opaque-3>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.bold.v1",
+                "font_size_mm": 5.6,
+                "horizontal_align": "left",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 2,
+                "minimum_font_size_mm": 3.0,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            },
+            {
+              "frame": {
+                "height_mm": 0.4,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 11.0
+              },
+              "id": "<opaque-4>",
+              "kind": "divider",
+              "rotation": 0,
+              "style": {
+                "fill": "black"
+              }
+            },
+            {
+              "content": {
+                "binding": "strain.phenotype",
+                "parameters": {
+                  "presentation": "value"
+                }
+              },
+              "frame": {
+                "height_mm": 4.4,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 12.2
+              },
+              "id": "<opaque-5>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.regular.v1",
+                "font_size_mm": 3.2,
+                "horizontal_align": "left",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 1,
+                "minimum_font_size_mm": 2.2,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            },
+            {
+              "content": {
+                "binding": "strain.breeder",
+                "parameters": {
+                  "presentation": "labeled"
+                }
+              },
+              "frame": {
+                "height_mm": 4.4,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 17.0
+              },
+              "id": "<opaque-6>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.regular.v1",
+                "font_size_mm": 3.2,
+                "horizontal_align": "left",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 1,
+                "minimum_font_size_mm": 2.2,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            },
+            {
+              "content": {
+                "binding": "strain.lineage",
+                "parameters": {
+                  "presentation": "labeled"
+                }
+              },
+              "frame": {
+                "height_mm": 4.4,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 21.8
+              },
+              "id": "<opaque-7>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.regular.v1",
+                "font_size_mm": 3.2,
+                "horizontal_align": "left",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 1,
+                "minimum_font_size_mm": 2.2,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            },
+            {
+              "content": {
+                "binding": "print.date",
+                "parameters": {
+                  "date_style": "medium"
+                }
+              },
+              "frame": {
+                "height_mm": 2.8,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 26.6
+              },
+              "id": "<opaque-8>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.regular.v1",
+                "font_size_mm": 2.4,
+                "horizontal_align": "right",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 1,
+                "minimum_font_size_mm": 2.0,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            }
+          ],
+          "label_size_id": "growspace.stock.50x30.v1",
+          "schema": "growspace.label-layout",
+          "version": 1
+        },
+        "head_revision": null,
+        "id": "<opaque-1>",
+        "label_size_id": "growspace.stock.50x30.v1",
+        "layout_schema_version": 1,
+        "modified_at": "2026-09-21T00:00:00+00:00",
+        "name": null,
+        "orphaned": true,
+        "owner": "admin",
+        "provenance": {
+          "draft_id": null,
+          "draft_version": null,
+          "factory_id": null,
+          "factory_revision": null,
+          "source": "named",
+          "source_revision": 1,
+          "source_template_id": "<opaque-2>"
+        },
+        "recovery": null,
+        "stale": false,
+        "template_id": "<opaque-2>",
+        "version": 1
+      }
+    ],
+    "effective_defaults": {
+      "growspace.stock.40x30.v1": {
+        "label_size_id": "growspace.stock.40x30.v1",
+        "layout_digest": "sha256:a7ffe6da2ed17a063ce6b483639d46bd18d6bdbeb2506bb64a7d56f4c0b874a4",
+        "name": "Compact strain label",
+        "ref": {
+          "id": "growspace.factory.40x30",
+          "kind": "factory"
+        },
+        "revision": 1,
+        "via": "factory_fallback"
+      },
+      "growspace.stock.50x15.v1": {
+        "label_size_id": "growspace.stock.50x15.v1",
+        "layout_digest": "sha256:34a07d6815025d5d8fbc554a8fedff72a4654c6b6dcc5a280124e64569e71ba2",
+        "name": "Slim strain label",
+        "ref": {
+          "id": "growspace.factory.50x15",
+          "kind": "factory"
+        },
+        "revision": 1,
+        "via": "factory_fallback"
+      },
+      "growspace.stock.50x30.v1": {
+        "label_size_id": "growspace.stock.50x30.v1",
+        "layout_digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32",
+        "name": "Strain label",
+        "ref": {
+          "id": "growspace.factory.50x30",
+          "kind": "factory"
+        },
+        "revision": 1,
+        "via": "factory_fallback"
+      },
+      "growspace.stock.50x50.v1": {
+        "label_size_id": "growspace.stock.50x50.v1",
+        "layout_digest": "sha256:afc0d874b9061a03c69d12387f993e4219cd7fb037830d00fd506d4d64ddd7a8",
+        "name": "Square strain label",
+        "ref": {
+          "id": "growspace.factory.50x50",
+          "kind": "factory"
+        },
+        "revision": 1,
+        "via": "factory_fallback"
+      },
+      "growspace.stock.50x80.v1": {
+        "label_size_id": "growspace.stock.50x80.v1",
+        "layout_digest": "sha256:18cbd8e1ad1091c764f5e3abc6c4f737692939c7d371574ed7c1f7fe0c8ce631",
+        "name": "Tall strain label",
+        "ref": {
+          "id": "growspace.factory.50x80",
+          "kind": "factory"
+        },
+        "revision": 1,
+        "via": "factory_fallback"
+      }
+    },
+    "entry_id": "lifecycle",
+    "factory_templates": [
+      {
+        "id": "growspace.factory.50x30",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.50x30.v1",
+        "name": "Strain label",
+        "revision": 1,
+        "valid": true
+      },
+      {
+        "id": "growspace.factory.40x30",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.40x30.v1",
+        "name": "Compact strain label",
+        "revision": 1,
+        "valid": true
+      },
+      {
+        "id": "growspace.factory.50x50",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.50x50.v1",
+        "name": "Square strain label",
+        "revision": 1,
+        "valid": true
+      },
+      {
+        "id": "growspace.factory.50x80",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.50x80.v1",
+        "name": "Tall strain label",
+        "revision": 1,
+        "valid": true
+      },
+      {
+        "id": "growspace.factory.50x15",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.50x15.v1",
+        "name": "Slim strain label",
+        "revision": 1,
+        "valid": true
+      }
+    ],
+    "generation": 2,
+    "store": {
+      "readable": true,
+      "version": 1
+    },
+    "templates": [],
+    "tombstones": [
+      {
+        "deleted_at": "2026-09-21T00:00:00+00:00",
+        "deleted_by": "admin",
+        "expires_at": "2026-10-21T00:00:00+00:00",
+        "template": {
+          "created_at": "2026-09-21T00:00:00+00:00",
+          "created_by": "admin",
+          "head_revision": 1,
+          "id": "<opaque-2>",
+          "kind": "named",
+          "label_size_id": "growspace.stock.50x30.v1",
+          "name": "Original",
+          "revisions": [
+            {
+              "digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32",
+              "name": "Original",
+              "operation": "publish",
+              "parent_revision": null,
+              "provenance": {
+                "draft_id": "<opaque-9>",
+                "draft_version": 2,
+                "factory_id": "growspace.factory.50x30",
+                "factory_revision": 1,
+                "source": "factory",
+                "source_revision": null,
+                "source_template_id": null
+              },
+              "published_at": "2026-09-21T00:00:00+00:00",
+              "published_by": "admin",
+              "revision": 1
+            }
+          ]
+        },
+        "was_default": false
+      }
+    ]
+  },
+  "outcome": "ok",
+  "result": null
+}
