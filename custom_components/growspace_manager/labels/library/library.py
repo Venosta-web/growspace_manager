@@ -140,6 +140,7 @@ from .errors import (
     IncompatibleTemplateStore,
     LabelSizeImmutable,
     LabelTemplateError,
+    LibraryVersionConflict,
     NoEffectiveDefault,
     NoFactoryTemplate,
     NoRecoveryPayload,
@@ -1077,6 +1078,8 @@ class LabelTemplateLibrary:
         *,
         template_id: str | None = None,
         label_size_id: str | None = None,
+        expected_generation: int | None = None,
+        expected_draft_version: int | None = None,
         idempotency_key: str | None = None,
     ) -> DraftDiscarded:
         """Remove unpublished work explicitly, and return what was removed.
@@ -1111,6 +1114,21 @@ class LabelTemplateLibrary:
                     version=int(record.locator["version"]),
                     replayed=True,
                 )
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
+            if expected_draft_version is not None:
+                reviewed = self._locate_draft(
+                    state, owner, template_id=template_id, label_size_id=label_size_id
+                )
+                if reviewed.version != expected_draft_version:
+                    raise DraftVersionConflict(
+                        expected=expected_draft_version,
+                        found=reviewed.version,
+                        draft=reviewed,
+                    )
             draft = self._locate_draft(
                 state, owner, template_id=template_id, label_size_id=label_size_id
             )
@@ -1147,6 +1165,8 @@ class LabelTemplateLibrary:
         actor: Actor,
         template_id: str,
         *,
+        expected_generation: int | None = None,
+        expected_draft_version: int | None = None,
         idempotency_key: str | None = None,
     ) -> TemplateDraft:
         """Replace a draft with a fresh one at the template's current head.
@@ -1174,6 +1194,21 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return _replayed_draft(state, record)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
+            if expected_draft_version is not None:
+                reviewed = self._locate_draft(
+                    state, owner, template_id=template_id, label_size_id=None
+                )
+                if reviewed.version != expected_draft_version:
+                    raise DraftVersionConflict(
+                        expected=expected_draft_version,
+                        found=reviewed.version,
+                        draft=reviewed,
+                    )
             template = _require_template(state, template_id)
             previous = self._locate_draft(
                 state, owner, template_id=template_id, label_size_id=None
@@ -1280,6 +1315,7 @@ class LabelTemplateLibrary:
         template_id: str | None = None,
         label_size_id: str | None = None,
         draft_id: str | None = None,
+        expected_draft_version: int | None = None,
         idempotency_key: str | None = None,
     ) -> Publication:
         """Turn one draft into an immutable revision, and clear it, in one commit.
@@ -1319,6 +1355,16 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return _replayed_revision(state, record)
+            if expected_draft_version is not None:
+                reviewed = self._locate_draft(
+                    state, owner, template_id=template_id, label_size_id=label_size_id
+                )
+                if reviewed.version != expected_draft_version:
+                    raise DraftVersionConflict(
+                        expected=expected_draft_version,
+                        found=reviewed.version,
+                        draft=reviewed,
+                    )
             draft = self._find_draft(
                 state, owner, template_id=template_id, label_size_id=label_size_id
             )
@@ -1402,6 +1448,7 @@ class LabelTemplateLibrary:
         template_id: str,
         name: str,
         *,
+        expected_generation: int | None = None,
         idempotency_key: str | None = None,
     ) -> Publication:
         """Give one template a new name, keeping its identity and its layout.
@@ -1437,6 +1484,11 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return _replayed_revision(state, record)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
             template = _require_template(state, template_id)
             wanted = display_name(name)
             if not wanted:
@@ -1484,6 +1536,7 @@ class LabelTemplateLibrary:
         ref: TemplateRef,
         name: str,
         *,
+        expected_generation: int | None = None,
         idempotency_key: str | None = None,
     ) -> Publication:
         """Copy one template's saved head into a template of its own.
@@ -1511,6 +1564,11 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return _replayed_revision(state, record)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
             source = (
                 _resolve_factory(ref.id, None, via=EXPLICIT)
                 if ref.kind == FACTORY
@@ -1560,6 +1618,9 @@ class LabelTemplateLibrary:
         template_id: str | None = None,
         label_size_id: str | None = None,
         draft_id: str | None = None,
+        recovery_document: object | None = None,
+        expected_generation: int | None = None,
+        expected_draft_version: int | None = None,
         idempotency_key: str | None = None,
     ) -> Publication:
         """Publish the active draft under a fresh identity, and clear it.
@@ -1583,6 +1644,7 @@ class LabelTemplateLibrary:
             label_size_id=label_size_id,
             draft_id=draft_id,
             name=name,
+            recovery_document=recovery_document,
         )
         async with self._lock:
             state = await self.async_load()
@@ -1595,6 +1657,21 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return _replayed_revision(state, record)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
+            if expected_draft_version is not None:
+                reviewed = self._locate_draft(
+                    state, owner, template_id=template_id, label_size_id=label_size_id
+                )
+                if reviewed.version != expected_draft_version:
+                    raise DraftVersionConflict(
+                        expected=expected_draft_version,
+                        found=reviewed.version,
+                        draft=reviewed,
+                    )
             draft = self._find_draft(
                 state, owner, template_id=template_id, label_size_id=label_size_id
             )
@@ -1610,7 +1687,9 @@ class LabelTemplateLibrary:
             if draft_id is not None and draft_id != draft.id:
                 raise DraftNotFound(f"draft {draft_id!r}")
 
-            check = check_document(draft.document)
+            check = check_document(
+                draft.document if recovery_document is None else recovery_document
+            )
             if check.layout is None or not check.publishable:
                 raise DraftNotPublishable(check.diagnostics)
             template, revision = _new_template(
@@ -1634,7 +1713,7 @@ class LabelTemplateLibrary:
                 key=idempotency_key,
                 operation=SAVE_AS_TEMPLATE,
                 digest=digest,
-                consuming=draft,
+                consuming=draft if recovery_document is None else None,
             )
 
     async def async_replace_from_factory(
@@ -1643,6 +1722,8 @@ class LabelTemplateLibrary:
         template_id: str,
         *,
         factory_id: str | None = None,
+        expected_generation: int | None = None,
+        expected_draft_version: int | None = None,
         idempotency_key: str | None = None,
     ) -> TemplateDraft:
         """Start this template's draft again from a shipped layout.
@@ -1677,6 +1758,21 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return _replayed_draft(state, record)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
+            if expected_draft_version is not None:
+                reviewed = self._locate_draft(
+                    state, owner, template_id=template_id, label_size_id=None
+                )
+                if reviewed.version != expected_draft_version:
+                    raise DraftVersionConflict(
+                        expected=expected_draft_version,
+                        found=reviewed.version,
+                        draft=reviewed,
+                    )
             template = _require_template(state, template_id)
             source = _resolve_factory(
                 _designated_factory(template.label_size_id, factory_id),
@@ -1742,6 +1838,7 @@ class LabelTemplateLibrary:
         template_id: str,
         revision: int,
         *,
+        expected_generation: int | None = None,
         idempotency_key: str | None = None,
     ) -> Publication:
         """Bring one historical layout back, by appending it as the new head.
@@ -1775,6 +1872,11 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return _replayed_revision(state, record)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
             template = _require_template(state, template_id)
             source = template.revision(revision)
             if source is None:
@@ -1886,6 +1988,7 @@ class LabelTemplateLibrary:
         label_size_id: str,
         ref: TemplateRef,
         *,
+        expected_generation: int | None = None,
         idempotency_key: str | None = None,
     ) -> DefaultChanged:
         """Select one template as the override for one Label Size.
@@ -1912,6 +2015,11 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return self._replayed_default(state, label_size_id)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
             resolved = self._validate_override(state, label_size_id, ref)
             if state.defaults.get(label_size_id) == ref:
                 return DefaultChanged(
@@ -1951,7 +2059,12 @@ class LabelTemplateLibrary:
             )
 
     async def async_clear_default(
-        self, actor: Actor, label_size_id: str, *, idempotency_key: str | None = None
+        self,
+        actor: Actor,
+        label_size_id: str,
+        *,
+        expected_generation: int | None = None,
+        idempotency_key: str | None = None,
     ) -> DefaultChanged:
         """Remove one Label Size's override, exposing the factory fallback.
 
@@ -1975,6 +2088,11 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return self._replayed_default(state, label_size_id)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
             if label_size_id not in state.defaults:
                 return DefaultChanged(
                     label_size_id=label_size_id,
@@ -2023,6 +2141,7 @@ class LabelTemplateLibrary:
         actor: Actor,
         template_id: str,
         *,
+        expected_generation: int | None = None,
         idempotency_key: str | None = None,
     ) -> TemplateDeletion:
         """Set one Named Template aside for thirty days, whole.
@@ -2059,6 +2178,11 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return self._replayed_deletion(state, record)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
             template = _require_template(state, template_id)
             now = dt_util.utcnow()
             held = tuple(
@@ -2127,6 +2251,7 @@ class LabelTemplateLibrary:
         template_id: str,
         *,
         name: str | None = None,
+        expected_generation: int | None = None,
         idempotency_key: str | None = None,
     ) -> TemplateRestored:
         """Bring one deleted template back, with the identity it always had.
@@ -2168,6 +2293,11 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return self._replayed_restoration(state, record)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
             stone = state.tombstones.get(template_id)
             if stone is None:
                 raise TombstoneNotFound(template_id)
@@ -2337,6 +2467,100 @@ class LabelTemplateLibrary:
             self._announce(landed, previous=state.generation, operation=COLLECTED)
             return collected
 
+    async def async_inspect_template(
+        self, actor: Actor, template_id: str
+    ) -> dict[str, Any]:
+        """Read complete history, including quarantined and deleted documents."""
+        actor.administrator()
+        state = await self.async_load()
+        template = state.templates.get(template_id)
+        if template is None:
+            stone = state.tombstones.get(template_id)
+            if stone is None:
+                raise TemplateNotFound(template_id)
+            template = stone.template
+        return template.as_dict()
+
+    async def async_preflight_import(
+        self,
+        actor: Actor,
+        bundle: object,
+        *,
+        as_copy: Sequence[str] = (),
+        names: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Report all entry conflicts without writing any part of the bundle."""
+        owner = actor.administrator()
+        async with self._lock:
+            state = await self.async_load()
+            parsed = read_bundle(bundle)
+            issues: list[dict[str, Any]] = []
+            working = state
+            rows = []
+            for entry in parsed.entries:
+                rows.append(
+                    {
+                        "id": entry.id,
+                        "name": entry.name,
+                        "label_size_id": entry.label_size_id,
+                    }
+                )
+                # Independently check content, identity and name so resolving an
+                # identity collision does not reveal a previously hidden name conflict.
+                checks = (
+                    lambda entry=entry: _importable(entry),
+                    lambda working=working, entry=entry: _import_target(
+                        working, entry, as_copy=frozenset(as_copy)
+                    ),
+                    lambda working=working, entry=entry: _require_free_name(
+                        working,
+                        display_name((names or {}).get(entry.id, entry.name)),
+                        entry.label_size_id,
+                        excluding=entry.id if entry.id not in as_copy else None,
+                    ),
+                )
+                for check in checks:
+                    try:
+                        check()
+                    except LabelTemplateError as error:
+                        issues.append(
+                            {
+                                "template_id": entry.id,
+                                "code": type(error).__name__,
+                                "reason": str(error),
+                            }
+                        )
+                try:
+                    staged = _stage_import(
+                        working,
+                        replace(parsed, entries=(entry,)),
+                        as_copy=frozenset(as_copy),
+                        names=names or {},
+                        owner=owner,
+                        now=dt_util.utcnow().isoformat(),
+                    )
+                    working = replace(
+                        working,
+                        templates={
+                            **working.templates,
+                            **{item.id: item for item in staged.templates},
+                        },
+                    )
+                except LabelTemplateError as error:
+                    issue = {
+                        "template_id": entry.id,
+                        "code": type(error).__name__,
+                        "reason": str(error),
+                    }
+                    if issue not in issues:
+                        issues.append(issue)
+            return {
+                "generation": state.generation,
+                "entries": rows,
+                "issues": issues,
+                "ready": not issues,
+            }
+
     # -- moving a library --------------------------------------------------
 
     async def async_export_templates(
@@ -2377,6 +2601,7 @@ class LabelTemplateLibrary:
         *,
         as_copy: Sequence[str] = (),
         names: Mapping[str, str] | None = None,
+        expected_generation: int | None = None,
         idempotency_key: str | None = None,
     ) -> TemplatesImported:
         """Add somebody else's templates, all of them or none of them.
@@ -2421,6 +2646,11 @@ class LabelTemplateLibrary:
             )
             if record is not None:
                 return _replayed_import(state, record)
+            if (
+                expected_generation is not None
+                and state.generation != expected_generation
+            ):
+                raise LibraryVersionConflict(expected_generation, state.generation)
             staged = _stage_import(
                 state,
                 read_bundle(bundle),

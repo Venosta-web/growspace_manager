@@ -23,6 +23,7 @@ from . import (
     plant,
     strain,
     subareas,
+    template_management,
     timeline,
     vision,
 )
@@ -191,6 +192,7 @@ _MODULES = [
     plant,
     strain,
     lineage,
+    template_management,
     timeline,
     genetics,
     environment,

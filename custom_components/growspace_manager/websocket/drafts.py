@@ -182,6 +182,7 @@ SCHEMA_WS_PUBLISH_LABEL_TEMPLATE_DRAFT = _base_schema(
     {
         **_SLOT,
         vol.Optional("draft_id"): vol.Any(None, str),
+        vol.Optional("expected_draft_version"): int,
         vol.Optional("idempotency_key"): vol.Any(None, str),
     }
 )
@@ -558,10 +559,13 @@ async def websocket_publish_label_template_draft(
             _actor(msg),
             **_slot(msg),
             draft_id=msg.get("draft_id"),
+            expected_draft_version=msg.get("expected_draft_version"),
             idempotency_key=msg.get("idempotency_key"),
         )
     except Unauthorized as error:
         return _unauthorized(error)
+    except DraftVersionConflict as error:
+        return _conflict(error)
     except TemplateNameRequired as error:
         return _refused(CODE_NAME_REQUIRED, str(error), RECOVERY_RENAME)
     except DuplicateTemplateName as error:
