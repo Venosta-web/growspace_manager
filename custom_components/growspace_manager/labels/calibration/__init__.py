@@ -40,6 +40,13 @@ from .errors import (
     CalibrationSheetNotPrinted,
     IncompatibleCalibrationStore,
 )
+from .evidence_sheet import (
+    EVIDENCE_PREFIX,
+    EVIDENCE_SHEET_VERSION,
+    evidence_layout,
+    long_qr_target,
+    weakest_error_correction,
+)
 from .ledger import (
     LocalCalibrationLedger,
     async_get_calibration_ledger,
@@ -89,6 +96,8 @@ __all__ = [
     "CURRENT",
     "EDGES",
     "ELEMENT_PREFIX",
+    "EVIDENCE_PREFIX",
+    "EVIDENCE_SHEET_VERSION",
     "MINIMUM_PRINTABLE_HEIGHT_MM",
     "MINIMUM_PRINTABLE_WIDTH_MM",
     "RECHECK_AFTER",
@@ -118,7 +127,10 @@ __all__ = [
     "calibration_content",
     "calibration_layout",
     "evaluate",
+    "evidence_layout",
+    "long_qr_target",
     "required_dependencies",
     "storage_key",
     "validate_measurement",
+    "weakest_error_correction",
 ]

@@ -6,7 +6,10 @@ reaches paper assert three different things:
 
     calibration label   the standardized sheet, against a profile that may
                         still be provisional. It is how a provisional profile
-                        and an unmeasured printer stop being either.
+                        and an unmeasured printer stop being either. The
+                        evidence label rides the same route: it probes the
+                        profile's claimed limits for a person to photograph,
+                        and records nothing here.
     test print          an administrator's own draft or revision, against a
                         representative subject, to look at it on paper.
     production print    one real record, from a published revision, on a
@@ -53,6 +56,7 @@ from homeassistant.util import dt as dt_util
 
 from ..exceptions import GrowspaceError
 from .calibration.errors import CalibrationSheetNotPrinted
+from .calibration.evidence_sheet import evidence_layout
 from .calibration.ledger import (
     LocalCalibrationLedger,
     recorded_dependencies,
@@ -89,6 +93,8 @@ FACTORY = "factory"
 REVISION = "revision"
 #: The standardized calibration sheet, which is neither.
 CALIBRATION = "calibration"
+#: The evidence label, which probes a profile's claimed limits on paper.
+EVIDENCE = "evidence"
 
 
 class PrintRefused(GrowspaceError):
@@ -178,6 +184,16 @@ class LayoutSource:
             published=False,
             kind=CALIBRATION,
             reference=f"{CALIBRATION}:{profile_id}",
+        )
+
+    @classmethod
+    def from_evidence(cls, layout: LabelLayout, *, profile_id: str) -> LayoutSource:
+        """The evidence label, which is as unpublished as the calibration sheet."""
+        return cls(
+            layout=layout,
+            published=False,
+            kind=EVIDENCE,
+            reference=f"{EVIDENCE}:{profile_id}",
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -304,6 +320,49 @@ async def async_print_calibration_label(
             device_id=device_id,
             firmware=firmware,
         ),
+    )
+
+
+async def async_print_evidence_label(
+    hass: HomeAssistant,
+    *,
+    profile: CapabilityProfile,
+    actor: Actor,
+    device_id: str,
+    density: str = "normal",
+    as_of: datetime | None = None,
+    locale: str = "en",
+    time_zone: str = "UTC",
+    fonts: FontLibrary | None = None,
+) -> PrintOutcome:
+    """Put the evidence label on paper, to be photographed and measured.
+
+    It is how a profile's claims about readable text, scannable QR codes and
+    thin rules meet paper, so like the calibration sheet it has to print on a
+    profile that is still provisional -- and like it, it authorizes through
+    `test_print` and can never be a production print. Nothing is held: what it
+    proves is recorded by a person in a Release Evidence Record, not by this
+    installation's calibration ledger.
+    """
+    actor.administrator()
+    layout = evidence_layout(profile, density=density)
+    content = calibration_content(
+        profile,
+        as_of=as_of or dt_util.utcnow(),
+        locale=locale,
+        time_zone=time_zone,
+    )
+    return await _async_judge_then_print(
+        hass,
+        operation=Operation.TEST_PRINT,
+        source=LayoutSource.from_evidence(layout, profile_id=profile.id),
+        content=content,
+        profile=profile,
+        density=density,
+        device_id=device_id,
+        fonts=fonts or font_library_for(hass),
+        provenance=_UNASSERTED,
+        expected_raster_identity=None,
     )
 
 
