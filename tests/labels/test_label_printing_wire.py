@@ -56,12 +56,17 @@ from custom_components.growspace_manager.labels.library import (
     LabelTemplateLibrary,
     TemplateNotResolvable,
 )
+from custom_components.growspace_manager.labels.niimbot import (
+    NIIMBOT_DOMAIN,
+    NIIMBOT_PRINT_SERVICE,
+)
 from custom_components.growspace_manager.websocket import drafts, label_printing
 from custom_components.growspace_manager.websocket._common import WS_MSG_USER
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError
 import homeassistant.util.dt as dt_util
 
-from .conftest import ADMIN, VIEWER
+from .conftest import ADMIN, VIEWER, _one_bit_png
 
 PROFILE = NIIMBOT_B1_50X30
 SIZE = PROFILE.label_size_id
@@ -223,6 +228,23 @@ async def _calibrated(hass: HomeAssistant) -> dict[str, Any]:
 def verified(monkeypatch: pytest.MonkeyPatch) -> None:
     """Promote the shipped profile, as a recorded evidence matrix would."""
     monkeypatch.setattr(profile_catalogue, "PROFILES", {VERIFIED.id: VERIFIED})
+
+
+def _jam(hass: HomeAssistant, printer: list[dict[str, Any]]) -> None:
+    """Keep answering previews, and refuse every committed print."""
+
+    async def handle(call: Any) -> ServiceResponse:
+        printer.append(dict(call.data))
+        if not call.data["preview"]:
+            raise HomeAssistantError("The printer is out of labels")
+        return {"image": _one_bit_png()}
+
+    hass.services.async_register(
+        NIIMBOT_DOMAIN,
+        NIIMBOT_PRINT_SERVICE,
+        handle,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
 
 
 def _unreadable(*_args: Any, **_kwargs: Any) -> Any:
@@ -432,6 +454,37 @@ async def test_a_draft_preview_holds_what_it_drew_for_a_test_print(
     assert payload["print"]["raster_identity"] == preview["render"]["raster_identity"]
     assert payload["print"]["source"]["published"] is False
     assert [call["preview"] for call in printer] == [True, False]
+
+
+async def test_a_test_print_the_printer_did_not_take_is_not_reported_printed(
+    hass: HomeAssistant, printer: list[dict[str, Any]]
+) -> None:
+    opened, preview = await _approved_draft(hass)
+    _jam(hass, printer)
+
+    payload = await _test_print(
+        hass,
+        expected_draft_version=opened["draft"]["version"],
+        approval_id=preview["approval_id"],
+        expected_raster_identity=preview["render"]["raster_identity"],
+    )
+
+    assert payload["refusal"]["code"] == "label_template.print_failed"
+    assert payload["refusal"]["recovery"] == "retry_print"
+    assert payload["refusal"]["reason"] == (
+        "The renderer did not produce a raster: The printer is out of labels"
+    )
+
+
+async def test_a_calibration_sheet_the_printer_did_not_take_asks_for_another(
+    hass: HomeAssistant, printer: list[dict[str, Any]]
+) -> None:
+    _jam(hass, printer)
+
+    payload = await _sheet(hass)
+
+    assert payload["refusal"]["code"] == "label_template.calibration_sheet_not_printed"
+    assert payload["refusal"]["recovery"] == "retry_preview"
 
 
 async def test_a_draft_preview_against_a_profile_of_another_stock_is_refused(
@@ -657,6 +710,24 @@ async def test_a_verified_calibrated_printer_prints_exactly_what_was_approved(
     assert printed["print"]["operation"] == "single_print"
     assert printed["print"]["raster_identity"] == preview["render"]["raster_identity"]
     assert len(_committed(printer)) == 1
+
+
+async def test_a_record_print_the_printer_did_not_take_is_not_reported_printed(
+    hass: HomeAssistant, printer: list[dict[str, Any]], verified: None
+) -> None:
+    await _calibrated(hass)
+    preview = await _record_preview(hass, user=VIEWER_USER)
+    _jam(hass, printer)
+
+    printed = await _print(
+        hass,
+        user=VIEWER_USER,
+        approval_id=preview["approval_id"],
+        expected_raster_identity=preview["render"]["raster_identity"],
+    )
+
+    assert printed["refusal"]["code"] == "label_template.print_failed"
+    assert printed["refusal"]["recovery"] == "retry_print"
 
 
 async def test_a_named_revision_prints_under_its_own_reference(

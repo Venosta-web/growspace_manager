@@ -1,0 +1,73 @@
+{
+  "contract": {
+    "family": "growspace.label-templates",
+    "generation": 3,
+    "major": 1,
+    "minor": 0
+  },
+  "job": {
+    "attempts": [
+      {
+        "copy_index": 1,
+        "error": null,
+        "id": "sha256:7657356193811a6fc184253faf77ef64a8b9fb5c09ee74ab481c902e0502968f",
+        "position": 0,
+        "raster_identity": null,
+        "raster_input_digest": null,
+        "record_index": 0,
+        "snapshot_identity": "sha256:897cfa1003da3e065598057c38c53587fb7dcf31000e4606ff500b6481a8305a",
+        "status": "pending",
+        "subject": "A"
+      },
+      {
+        "copy_index": 1,
+        "error": null,
+        "id": "sha256:935b45572ac1c93376a4803665566620ddab28825b464fe93357e2606552387b",
+        "position": 1,
+        "raster_identity": null,
+        "raster_input_digest": null,
+        "record_index": 1,
+        "snapshot_identity": "sha256:4ab87751ba05c86e9bfc113b358eb2d92f8506e6593cd3bd385aaa79a5553a75",
+        "status": "pending",
+        "subject": "W"
+      },
+      {
+        "copy_index": 2,
+        "error": null,
+        "id": "sha256:c469b5e8c80db4b4d5f0f78d7844c897321cd5771fec07321ad1691f515ee10b",
+        "position": 2,
+        "raster_identity": null,
+        "raster_input_digest": null,
+        "record_index": 0,
+        "snapshot_identity": "sha256:897cfa1003da3e065598057c38c53587fb7dcf31000e4606ff500b6481a8305a",
+        "status": "pending",
+        "subject": "A"
+      },
+      {
+        "copy_index": 2,
+        "error": null,
+        "id": "sha256:622b3aa4f3e3aec3626cdaabb443d993cae8a493cb07725994fc61b36b24d8ae",
+        "position": 3,
+        "raster_identity": null,
+        "raster_input_digest": null,
+        "record_index": 1,
+        "snapshot_identity": "sha256:4ab87751ba05c86e9bfc113b358eb2d92f8506e6593cd3bd385aaa79a5553a75",
+        "status": "pending",
+        "subject": "W"
+      }
+    ],
+    "id": "<opaque-1>",
+    "preflight_id": "<opaque-2>",
+    "preflight_identity": "sha256:e5e9318240b1586f47f081acd46bfe5462523df937c3abee03435d2f67535dfd",
+    "refusal": null,
+    "retry_of": null,
+    "selected": [
+      "sha256:7657356193811a6fc184253faf77ef64a8b9fb5c09ee74ab481c902e0502968f",
+      "sha256:935b45572ac1c93376a4803665566620ddab28825b464fe93357e2606552387b",
+      "sha256:c469b5e8c80db4b4d5f0f78d7844c897321cd5771fec07321ad1691f515ee10b",
+      "sha256:622b3aa4f3e3aec3626cdaabb443d993cae8a493cb07725994fc61b36b24d8ae"
+    ],
+    "state": "running"
+  },
+  "outcome": "ok"
+}

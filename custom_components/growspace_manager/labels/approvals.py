@@ -51,10 +51,11 @@ APPROVAL_LIMIT = 32
 #: Where the holders live on `hass.data`, one per config entry.
 _HOLDERS = "label_print_approvals"
 
-#: The three things held, which are never interchangeable.
+#: The things held, which are never interchangeable.
 DRAFT_APPROVAL = "draft"
 RECORD_APPROVAL = "record"
 CALIBRATION_SHEET = "calibration_sheet"
+BATCH_PREFLIGHT = "batch_preflight"
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +144,11 @@ class ApprovalHolder:
         if held is None or held.kind != kind:
             return None
         return held.value
+
+    def values(self, kind: str, *, now: datetime | None = None) -> list[Any]:
+        """Return every value still held of one kind, oldest first."""
+        self._expire(now or dt_util.utcnow())
+        return [held.value for held in self._held.values() if held.kind == kind]
 
     def _expire(self, now: datetime) -> None:
         """Drop everything that has lapsed."""

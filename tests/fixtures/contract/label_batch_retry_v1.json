@@ -1,0 +1,70 @@
+{
+  "contract": {
+    "family": "growspace.label-templates",
+    "generation": 3,
+    "major": 1,
+    "minor": 0
+  },
+  "job": {
+    "attempts": [
+      {
+        "copy_index": 1,
+        "error": null,
+        "id": "sha256:7657356193811a6fc184253faf77ef64a8b9fb5c09ee74ab481c902e0502968f",
+        "position": 0,
+        "raster_identity": "sha256:66a9d6843f85c07ec6bb803112612dfb54b7f2cb2dc547d747d432454a980e43",
+        "raster_input_digest": "sha256:91a7687c4149d6be65219bd9624cd2fbdca308aa614922461e1baa34fcda94f9",
+        "record_index": 0,
+        "snapshot_identity": "sha256:897cfa1003da3e065598057c38c53587fb7dcf31000e4606ff500b6481a8305a",
+        "status": "printed",
+        "subject": "A"
+      },
+      {
+        "copy_index": 1,
+        "error": null,
+        "id": "sha256:935b45572ac1c93376a4803665566620ddab28825b464fe93357e2606552387b",
+        "position": 1,
+        "raster_identity": null,
+        "raster_input_digest": null,
+        "record_index": 1,
+        "snapshot_identity": "sha256:4ab87751ba05c86e9bfc113b358eb2d92f8506e6593cd3bd385aaa79a5553a75",
+        "status": "pending",
+        "subject": "W"
+      },
+      {
+        "copy_index": 2,
+        "error": null,
+        "id": "sha256:c469b5e8c80db4b4d5f0f78d7844c897321cd5771fec07321ad1691f515ee10b",
+        "position": 2,
+        "raster_identity": "sha256:66a9d6843f85c07ec6bb803112612dfb54b7f2cb2dc547d747d432454a980e43",
+        "raster_input_digest": "sha256:91a7687c4149d6be65219bd9624cd2fbdca308aa614922461e1baa34fcda94f9",
+        "record_index": 0,
+        "snapshot_identity": "sha256:897cfa1003da3e065598057c38c53587fb7dcf31000e4606ff500b6481a8305a",
+        "status": "printed",
+        "subject": "A"
+      },
+      {
+        "copy_index": 2,
+        "error": null,
+        "id": "sha256:622b3aa4f3e3aec3626cdaabb443d993cae8a493cb07725994fc61b36b24d8ae",
+        "position": 3,
+        "raster_identity": "sha256:e575b7fd9334b48642c8c027cdf47fb70bbffee0d6f86b3864253f2cddc5a56c",
+        "raster_input_digest": "sha256:ca877751f406ec82638653448a6332df1cd4efa74755bd2d6a53091c183fa0dc",
+        "record_index": 1,
+        "snapshot_identity": "sha256:4ab87751ba05c86e9bfc113b358eb2d92f8506e6593cd3bd385aaa79a5553a75",
+        "status": "printed",
+        "subject": "W"
+      }
+    ],
+    "id": "<opaque-1>",
+    "preflight_id": "<opaque-2>",
+    "preflight_identity": "sha256:e5e9318240b1586f47f081acd46bfe5462523df937c3abee03435d2f67535dfd",
+    "refusal": null,
+    "retry_of": "<opaque-3>",
+    "selected": [
+      "sha256:935b45572ac1c93376a4803665566620ddab28825b464fe93357e2606552387b"
+    ],
+    "state": "running"
+  },
+  "outcome": "ok"
+}
