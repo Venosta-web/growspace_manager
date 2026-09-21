@@ -11,7 +11,7 @@ a replacement label.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -268,6 +268,11 @@ class BatchRefused(PrintRefused):
     """A complete batch was refused before any physical output."""
 
 
+#: Told about each attempt as soon as it has an outcome, in plan order, so a
+#: batch that takes minutes can be watched rather than waited for.
+AttemptListener = Callable[[BatchAttemptResult], None]
+
+
 async def async_preflight_batch(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -375,6 +380,7 @@ async def async_print_batch(
     actor: Actor,
     acknowledgement: str | None = None,
     fonts: FontLibrary | None = None,
+    on_result: AttemptListener | None = None,
 ) -> BatchPrintResult:
     """Print every original attempt, preserving the preflight's exact order."""
     pending = tuple(
@@ -390,6 +396,7 @@ async def async_print_batch(
         actor=actor,
         acknowledgement=acknowledgement,
         fonts=fonts,
+        on_result=on_result,
     )
 
 
@@ -401,6 +408,7 @@ async def async_retry_failed_batch(
     actor: Actor,
     acknowledgement: str | None = None,
     fonts: FontLibrary | None = None,
+    on_result: AttemptListener | None = None,
 ) -> BatchPrintResult:
     """Retry only failed original attempts, retaining their relative order."""
     selected = frozenset(item.attempt.id for item in previous.failed)
@@ -413,6 +421,7 @@ async def async_retry_failed_batch(
         actor=actor,
         acknowledgement=acknowledgement,
         fonts=fonts,
+        on_result=on_result,
     )
 
 
@@ -456,10 +465,11 @@ async def _async_execute(
     actor: Actor,
     acknowledgement: str | None,
     fonts: FontLibrary | None,
+    on_result: AttemptListener | None,
 ) -> BatchPrintResult:
     """Execute one selected subset only after all whole-batch gates pass."""
     actor.authenticated()
-    _authorize(preflight, acknowledgement=acknowledgement)
+    authorize_batch(preflight, acknowledgement=acknowledgement)
     library = fonts or font_library_for(hass)
     calibration = await ledger.async_status(
         required=required_dependencies(
@@ -513,21 +523,20 @@ async def _async_execute(
                 calibration=calibration,
             )
         except (HomeAssistantError, PrintRefused) as err:
-            updated.append(
-                BatchAttemptResult(
-                    attempt=attempt,
-                    status=AttemptStatus.FAILED,
-                    error=str(err),
-                )
+            result = BatchAttemptResult(
+                attempt=attempt,
+                status=AttemptStatus.FAILED,
+                error=str(err),
             )
         else:
-            updated.append(
-                BatchAttemptResult(
-                    attempt=attempt,
-                    status=AttemptStatus.PRINTED,
-                    outcome=outcome,
-                )
+            result = BatchAttemptResult(
+                attempt=attempt,
+                status=AttemptStatus.PRINTED,
+                outcome=outcome,
             )
+        updated.append(result)
+        if on_result is not None:
+            on_result(result)
     return BatchPrintResult(
         preflight=preflight,
         attempts=tuple(updated),
@@ -535,8 +544,13 @@ async def _async_execute(
     )
 
 
-def _authorize(preflight: BatchPreflight, *, acknowledgement: str | None) -> None:
-    """Refuse a hard error or warning consent for any other identity."""
+def authorize_batch(preflight: BatchPreflight, *, acknowledgement: str | None) -> None:
+    """Refuse a hard error or warning consent for any other identity.
+
+    Public so a caller that runs the batch in the background can refuse
+    before it starts, where the refusal still has somebody to answer to.
+    Printing checks it again regardless.
+    """
     if not preflight.allowed:
         raise BatchRefused(str(Operation.BATCH_PREFLIGHT), preflight.blocked_by)
     if not preflight.acknowledgement_required:
@@ -555,6 +569,7 @@ def _authorize(preflight: BatchPreflight, *, acknowledgement: str | None) -> Non
 
 
 __all__ = [
+    "AttemptListener",
     "AttemptStatus",
     "BatchAttempt",
     "BatchAttemptResult",
@@ -566,4 +581,5 @@ __all__ = [
     "async_preflight_batch",
     "async_print_batch",
     "async_retry_failed_batch",
+    "authorize_batch",
 ]

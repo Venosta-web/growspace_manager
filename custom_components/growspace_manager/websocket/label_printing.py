@@ -85,6 +85,7 @@ from custom_components.growspace_manager.labels.library import (
 )
 from custom_components.growspace_manager.labels.printing import (
     LayoutSource,
+    PrintFailed,
     PrintRefused,
     async_print_calibration_label,
     async_print_record,
@@ -126,6 +127,7 @@ WS_TYPE_PRINT_LABEL_RECORD = f"{DOMAIN}/print_label_record"
 CODE_NOT_AUTHORIZED = "label_template.not_authorized"
 CODE_APPROVAL_EXPIRED = "label_template.approval_expired"
 CODE_PRINT_REFUSED = "label_template.print_refused"
+CODE_PRINT_FAILED = "label_template.print_failed"
 CODE_CALIBRATION_SHEET_NOT_PRINTED = "label_template.calibration_sheet_not_printed"
 CODE_CALIBRATION_STORE_UNREADABLE = "label_template.calibration_store_unreadable"
 CODE_MEASUREMENT_INVALID = "label_template.measurement_invalid"
@@ -143,13 +145,17 @@ RECOVERY_CHOOSE_PRINTER = "choose_printer"
 RECOVERY_CHOOSE_SUBJECT = "choose_subject"
 RECOVERY_CHOOSE_TEMPLATE = "choose_template"
 RECOVERY_PUBLISH = "publish"
+RECOVERY_RETRY_PRINT = "retry_print"
+RECOVERY_ACKNOWLEDGE_WARNINGS = "acknowledge_warnings"
+RECOVERY_PREFLIGHT_AGAIN = "preflight_again"
 
 #: Which correction clears each blocker, in the order they should be made.
 #: A missing raster first: the renderer or the printer did not answer, the
 #: diagnostics beside it are that failure rather than the layout's, and
 #: nothing else can be judged until a render comes back. Then the layout,
 #: because nothing downstream of an unprintable one is worth fixing yet; then
-#: the printer and its measurement; then a fresh look.
+#: the printer and its measurement; then a fresh look. A batch's own two come
+#: last: consent is worth giving only to a batch that could otherwise print.
 _BLOCKER_RECOVERY: tuple[tuple[str, str], ...] = (
     (str(Blocker.NO_RASTER), RECOVERY_RETRY_PREVIEW),
     (str(Blocker.BLOCKING_DIAGNOSTICS), RECOVERY_FIX_LAYOUT),
@@ -158,6 +164,8 @@ _BLOCKER_RECOVERY: tuple[tuple[str, str], ...] = (
     (str(Blocker.LOCAL_CALIBRATION_MISSING), RECOVERY_CALIBRATE),
     (str(Blocker.LOCAL_CALIBRATION_STALE), RECOVERY_CALIBRATE),
     (str(Blocker.RESULT_NOT_CURRENT), RECOVERY_REFRESH_PREVIEW),
+    (str(Blocker.PREFLIGHT_NOT_CURRENT), RECOVERY_PREFLIGHT_AGAIN),
+    (str(Blocker.WARNING_ACKNOWLEDGEMENT_REQUIRED), RECOVERY_ACKNOWLEDGE_WARNINGS),
 )
 
 SCHEMA_WS_GET_LABEL_CALIBRATION_STATUS = _base_schema(
@@ -255,6 +263,11 @@ def _print_refused(error: PrintRefused) -> dict[str, Any]:
         operation=error.operation,
         blocked_by=list(error.blockers),
     )
+
+
+def _print_failed(error: PrintFailed) -> dict[str, Any]:
+    """Every gate passed and the printer did not take the label."""
+    return _refused(CODE_PRINT_FAILED, str(error), RECOVERY_RETRY_PRINT)
 
 
 def _not_authorized(error: Unauthorized, *, administrator: bool) -> dict[str, Any]:
@@ -556,6 +569,8 @@ async def websocket_test_print_label_template_draft(
         )
     except PrintRefused as error:
         return _print_refused(error)
+    except PrintFailed as error:
+        return _print_failed(error)
     return _ok(print=outcome.as_dict())
 
 
@@ -702,6 +717,8 @@ async def websocket_print_label_record(
         return _not_authorized(error, administrator=False)
     except PrintRefused as error:
         return _print_refused(error)
+    except PrintFailed as error:
+        return _print_failed(error)
     except IncompatibleCalibrationStore as error:
         return _unreadable_store(error)
     return _ok(print=outcome.as_dict())

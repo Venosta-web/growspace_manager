@@ -48,6 +48,7 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
 from ..exceptions import GrowspaceError
@@ -61,6 +62,7 @@ from .calibration.records import CalibrationDependencies
 from .calibration.sheet import calibration_content, calibration_layout
 from .calibration.staleness import CalibrationStatus
 from .canonical.content import LabelContentSnapshot
+from .canonical.diagnostics import Layer, Severity
 from .canonical.document import LabelLayout
 from .canonical.eligibility import (
     Blocker,
@@ -107,6 +109,16 @@ class PrintRefused(GrowspaceError):
         super().__init__(
             f"{operation} was refused: {reasons}.{f' {detail}' if detail else ''}"
         )
+
+
+class PrintFailed(HomeAssistantError):
+    """Every gate passed, the label was sent, and the printer did not take it.
+
+    Not a refusal: nothing about the request was wrong, and the same request
+    may succeed a minute later. A batch records it as a failed attempt that
+    retry can send again; a single print says so rather than reporting a
+    label that never reached paper as printed.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,7 +292,7 @@ async def async_print_calibration_label(
             provenance=_UNASSERTED,
             expected_raster_identity=None,
         )
-    except PrintRefused as err:
+    except (PrintRefused, PrintFailed) as err:
         raise CalibrationSheetNotPrinted(str(err)) from err
 
     return CalibrationPrint(
@@ -465,6 +477,23 @@ async def _async_judge_then_print(
         calibration_stale_reasons=stale_reasons,
         fonts=fonts,
     )
+
+    if printed.raster is None:
+        # The adapter turns a transport failure into a raster diagnostic, which
+        # is right for a preview and wrong here: for a committed print "no
+        # raster came back" means the printer did not take the label.
+        reasons = "; ".join(
+            item.message
+            for item in printed.diagnostics
+            if item.layer is Layer.RASTER and item.severity is Severity.ERROR
+        )
+        _LOGGER.error(
+            "The %s of %s did not reach the printer: %s",
+            operation,
+            source.reference,
+            reasons,
+        )
+        raise PrintFailed(reasons or "The printer did not accept the label.")
 
     if printed.raster_input_digest != judged.raster_input_digest:  # pragma: no cover
         # Unreachable without a defect: the raster inputs are a pure function

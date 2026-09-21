@@ -15,6 +15,7 @@ from . import (
     environment,
     genetics,
     irrigation,
+    label_batch,
     label_printing,
     labels,
     lineage,
@@ -203,6 +204,7 @@ _MODULES = [
     labels,
     drafts,
     label_printing,
+    label_batch,
     notifications,
     ai_assistant,
 ]
