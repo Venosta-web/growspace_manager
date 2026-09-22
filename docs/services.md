@@ -69,6 +69,7 @@ All services provided by the Growspace Manager integration can be invoked from H
     - [growspace_manager.log_moisture_reading](#growspace_managerlog_moisture_reading)
 11. [Alerts & Utility](#alerts--utility)
     - [growspace_manager.test_notification](#growspace_managertest_notification)
+    - [growspace_manager.print_label_template](#growspace_managerprint_label_template)
     - [growspace_manager.print_label](#growspace_managerprint_label)
     - [growspace_manager.log_training_event](#growspace_managerlog_training_event)
 12. [Debugging & Maintenance Utilities](#debugging--maintenance-utilities)
@@ -816,6 +817,31 @@ Simulates a scheduled milestone notification event to verify correct push routin
 | `plant_id` | `string`  | Yes      | -       | Target plant ID.                                 |
 | `stage`    | `string`  | Yes      | -       | Stage: `veg` or `flower`.                        |
 | `days`     | `integer` | Yes      | -       | Simulated day index (matches specific triggers). |
+
+### `growspace_manager.print_label_template`
+
+Prints saved strain records or one or more live plants through a published
+Label Template. The service is production-only: it requires a product-verified
+Capability Profile and current calibration for the selected printer. It has no
+preview mode and accepts no caller-supplied label content or base URL. See the
+[Classic service migration guide](deprecations/print-label.md) for automation,
+script, and dashboard examples.
+
+| Parameter       | Type     | Required    | Default            | Description                                                               |
+| :-------------- | :------- | :---------- | :----------------- | :------------------------------------------------------------------------ |
+| `template`      | `object` | Conditional | -                  | Published `{kind, id, revision?}` reference. Use this or `label_size_id`. |
+| `label_size_id` | `string` | Conditional | -                  | Uses this Label Size's effective default when `template` is omitted.      |
+| `strain`        | `string` | Conditional | -                  | Saved strain to print. Use this or `plant_ids`.                           |
+| `phenotype`     | `string` | No          | -                  | Optional saved phenotype of `strain`.                                     |
+| `plant_ids`     | `list`   | Conditional | -                  | One or more live plant IDs, printed in order.                             |
+| `device_id`     | `string` | Yes         | -                  | Home Assistant device ID of the printer.                                  |
+| `profile_id`    | `string` | No          | compatible profile | Capability Profile override.                                              |
+| `density`       | `string` | No          | `normal`           | `low`, `normal`, or `high`.                                               |
+| `locale`        | `string` | No          | `en`               | Supported print locale.                                                   |
+
+The optional response has `outcome: ok` and the print result, or
+`outcome: refused` with a refusal code, `blocked_by` eligibility reasons where
+applicable, and one recovery action.
 
 ### `growspace_manager.print_label`
 
