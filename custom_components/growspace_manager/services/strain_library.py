@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING, Any
 from custom_components.growspace_manager.const import DOMAIN, GrowspaceService
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.labels import async_compatibility_print
+from custom_components.growspace_manager.labels.classic_deprecation import (
+    async_note_classic_call,
+)
 from custom_components.growspace_manager.schemas import (
     ADD_STRAIN_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
@@ -34,18 +37,6 @@ if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-#: The release that removes the Classic `print_label` request. Announced, so
-#: it is a promise to automation authors and must not move silently.
-PRINT_LABEL_REMOVAL_VERSION = "2.0.0"
-PRINT_LABEL_MIGRATION_URL = (
-    "https://github.com/Venosta-web/growspace_manager/blob/main/"
-    "docs/deprecations/print-label.md"
-)
-
-#: A module flag rather than `hass.data`: an integration reload re-registers
-#: the service without re-importing this module, so this is once per run.
-_print_label_deprecation_logged = False
 
 
 async def handle_get_strain_library(
@@ -430,18 +421,12 @@ async def handle_print_label(
     plan to a printer adapter. Every step lives in `labels/`; nothing about
     layout or `imagespec` belongs here.
 
-    Deprecated: warns once per Home Assistant run, because every print from a
-    released card arrives here and a warning per label would bury the log.
+    Deprecated: the first call in a Home Assistant run logs a warning and
+    raises a Repairs issue, because every print from a released card arrives
+    here and a warning per label would bury the log. The print itself goes
+    ahead regardless.
     """
-    global _print_label_deprecation_logged  # noqa: PLW0603
-    if not _print_label_deprecation_logged:
-        _print_label_deprecation_logged = True
-        _LOGGER.warning(
-            "The growspace_manager.print_label service is deprecated and will "
-            "be removed in Growspace Manager %s. See %s for what replaces it",
-            PRINT_LABEL_REMOVAL_VERSION,
-            PRINT_LABEL_MIGRATION_URL,
-        )
+    async_note_classic_call(hass)
     return await async_compatibility_print(
         hass, coordinator, strain_library, dict(call.data)
     )
