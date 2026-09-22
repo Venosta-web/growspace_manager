@@ -1767,6 +1767,72 @@ print_label:
       selector:
         text:
 
+print_label_template:
+  description: >-
+    Print saved strain or plant records through a published Label Template.
+    Production printing requires a product-verified printer profile and a
+    current calibration. This service does not accept content overrides or a
+    preview mode.
+  fields:
+    template:
+      description: >-
+        Published template reference with kind (factory or named), id, and an
+        optional revision. Omit this and provide label_size_id to use that
+        Label Size's effective default.
+      required: false
+      selector:
+        object:
+    label_size_id:
+      description: >-
+        Label Size whose effective default template should be used. Required
+        when template is omitted.
+      required: false
+      selector:
+        text:
+    strain:
+      description: Saved strain to print. Use this or plant_ids, not both.
+      required: false
+      selector:
+        text:
+    phenotype:
+      description: Optional saved phenotype of the selected strain.
+      required: false
+      selector:
+        text:
+    plant_ids:
+      description: One or more live plant IDs to print, in order.
+      required: false
+      selector:
+        object:
+    device_id:
+      description: Home Assistant device ID of the printer.
+      required: true
+      selector:
+        device:
+    profile_id:
+      description: >-
+        Capability Profile override. By default the compatible profile for the
+        template's Label Size is selected.
+      required: false
+      selector:
+        text:
+    density:
+      description: Semantic print density resolved by the Capability Profile.
+      required: false
+      default: normal
+      selector:
+        select:
+          options:
+            - low
+            - normal
+            - high
+    locale:
+      description: Locale used for label content.
+      required: false
+      default: en
+      selector:
+        text:
+
 log_training_event:
   description: Log a training event for a plant or growspace
   fields:

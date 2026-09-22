@@ -867,7 +867,21 @@ Simulates a scheduled milestone notification event to verify correct push routin
 | `stage` | `string` | Yes | - | Stage: `veg` or `flower`. |
 | `days` | `integer` | Yes | - | Simulated day index (matches specific triggers). |
 
+#### `growspace_manager.print_label_template`
+
+Prints a saved strain or one or more live plants through a published Label
+Template. Supply either a `template` reference or `label_size_id` for its
+effective default, plus `device_id`. A product-verified profile and current
+printer calibration are mandatory. The service has no preview mode and accepts
+no per-call content or base URL overrides. See the
+[migration guide](../../docs/deprecations/print-label.md) for automation,
+script, and dashboard examples.
+
 #### `growspace_manager.print_label`
+
+> Deprecated in 1.2.3 and removed in 2.0.0. Use
+> `growspace_manager.print_label_template` for automations, scripts, and
+> dashboard buttons.
 
 Dispatches label files directly to a paired Niimbot bluetooth printer.
 | Parameter | Type | Required | Default | Description |

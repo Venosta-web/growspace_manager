@@ -659,6 +659,7 @@ class GrowspaceService(StrEnum):
     ASK_GROW_ADVICE = "ask_grow_advice"
     ANALYZE_ALL_GROWSPACES = "analyze_all_growspaces"
     PRINT_LABEL = "print_label"
+    PRINT_LABEL_TEMPLATE = "print_label_template"
     CONFIGURE_ENVIRONMENT = "configure_environment"
     CONFIGURE_CIRCULATION_FAN = "configure_circulation_fan"
     CONFIGURE_EXHAUST_FAN = "configure_exhaust_fan"
