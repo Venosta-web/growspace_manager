@@ -31,6 +31,7 @@ from custom_components.growspace_manager.labels.canonical import (
     decide_eligibility,
     decide_print_request,
 )
+from custom_components.growspace_manager.labels.canonical.eligibility import overridable
 from tests.labels.support import product_verified, provisional
 
 PROVISIONAL = provisional(NIIMBOT_B1_50X30)
@@ -345,3 +346,46 @@ def test_provenance_serializes_for_the_wire() -> None:
         "actual_content",
         "result_current",
     }
+
+
+# ---------------------------------------------------------------------------
+# Printing anyway
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "decisions",
+    [
+        _decide(profile=PROVISIONAL, calibration=None),
+        _decide(calibration=None, stale=("firmware",)),
+    ],
+)
+def test_an_override_prints_past_an_unproven_printer(decisions) -> None:
+    decision = decide_print_request(
+        decisions, Operation.SINGLE_PRINT, provenance=COMPLETE, override=True
+    )
+    assert decision.allowed
+    assert decision.blocked_by == ()
+
+
+def test_an_override_waives_nothing_about_the_label_itself() -> None:
+    decision = decide_print_request(
+        _decide([ERROR], profile=PROVISIONAL, calibration=None),
+        Operation.BATCH_PREFLIGHT,
+        provenance=PrintProvenance(
+            published_revision=False, actual_content=True, result_current=True
+        ),
+        override=True,
+    )
+    assert decision.blocked_by == (
+        str(Blocker.BLOCKING_DIAGNOSTICS),
+        str(Blocker.REVISION_NOT_PUBLISHED),
+    )
+
+
+def test_only_a_refusal_about_the_printer_alone_is_overridable() -> None:
+    assert overridable((str(Blocker.LOCAL_CALIBRATION_STALE),))
+    assert not overridable(())
+    assert not overridable(
+        (str(Blocker.LOCAL_CALIBRATION_MISSING), str(Blocker.NO_RASTER))
+    )

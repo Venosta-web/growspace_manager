@@ -90,6 +90,29 @@ class Blocker(StrEnum):
     PREFLIGHT_NOT_CURRENT = "preflight_not_current"
 
 
+#: The refusals an operator may choose to print past.
+#:
+#: Each says how far this printer has been *proven*, not that the label is
+#: wrong: the raster exists, no diagnostic is an error, and it is a published
+#: revision of a real record's content. What is missing is the evidence that
+#: ink lands where the preview says -- which the operator can judge for
+#: themselves by looking at the label that comes out. Everything else stays
+#: a hard refusal, because no amount of consent makes a missing raster, a
+#: draft or a stale result the label that was reviewed.
+OVERRIDABLE_BLOCKERS = frozenset(
+    {
+        str(Blocker.PROFILE_NOT_PRODUCT_VERIFIED),
+        str(Blocker.LOCAL_CALIBRATION_MISSING),
+        str(Blocker.LOCAL_CALIBRATION_STALE),
+    }
+)
+
+
+def overridable(blocked_by: Sequence[str]) -> bool:
+    """Whether every one of these refusals may be printed past, and one exists."""
+    return bool(blocked_by) and all(item in OVERRIDABLE_BLOCKERS for item in blocked_by)
+
+
 @dataclass(frozen=True, slots=True)
 class OperationEligibility:
     """Whether one operation may proceed from this exact result."""
@@ -139,6 +162,7 @@ def decide_print_request(
     operation: Operation,
     *,
     provenance: PrintProvenance,
+    override: bool = False,
 ) -> OperationEligibility:
     """Decide one print request, from one result's answer plus its provenance.
 
@@ -151,6 +175,11 @@ def decide_print_request(
     operation a provisional profile and an unpublished draft can both reach:
     it puts an administrator's own work on paper to be looked at, and it never
     claims to be a label about a record.
+
+    `override` is an operator's consent to print past the
+    :data:`OVERRIDABLE_BLOCKERS` -- and only those. It removes them from the
+    result's refusals; any other reason still refuses, so an override can
+    never be what lets a draft or a missing raster reach paper.
     """
     decision = decisions.get(
         str(operation),
@@ -160,7 +189,11 @@ def decide_print_request(
         return decision
 
     blocked = (
-        *decision.blocked_by,
+        *(
+            blocker
+            for blocker in decision.blocked_by
+            if not (override and blocker in OVERRIDABLE_BLOCKERS)
+        ),
         *(
             str(blocker)
             for holds, blocker in (

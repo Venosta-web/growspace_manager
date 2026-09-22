@@ -12,6 +12,13 @@ stays on this side under an ID. A print presents that ID and, when the review
 had warnings, the preflight identity it consented to. Nothing a client sends
 can stand in for the reviewed batch.
 
+**An unproven printer may be printed on anyway.** When every refusal is about
+how far the printer has been proven -- an unverified profile, a missing or
+stale calibration -- the preflight says `override_available`, and a print
+that presents the preflight identity as `override` goes ahead. It is consent
+to that exact review, like a warning acknowledgement, and it waives nothing
+else.
+
 **Consent is refused before anything starts.** Hard errors and a missing or
 foreign acknowledgement are answered by `print_label_batch` itself, as a
 refusal with a recovery, rather than as a job that failed a moment later.
@@ -143,6 +150,7 @@ SCHEMA_WS_PRINT_LABEL_BATCH = _base_schema(WS_TYPE_PRINT_LABEL_BATCH).extend(
     {
         vol.Required("preflight_id"): str,
         vol.Optional("acknowledgement"): vol.Any(None, str),
+        vol.Optional("override"): vol.Any(None, str),
     }
 )
 
@@ -154,6 +162,7 @@ SCHEMA_WS_RETRY_LABEL_BATCH = _base_schema(WS_TYPE_RETRY_LABEL_BATCH).extend(
     {
         vol.Required("job_id"): str,
         vol.Optional("acknowledgement"): vol.Any(None, str),
+        vol.Optional("override"): vol.Any(None, str),
     }
 )
 
@@ -299,9 +308,10 @@ async def websocket_print_label_batch(
 
     actor = _actor(msg)
     acknowledgement = msg.get("acknowledgement")
+    override = msg.get("override")
     try:
         actor.authenticated()
-        authorize_batch(preflight, acknowledgement=acknowledgement)
+        authorize_batch(preflight, acknowledgement=acknowledgement, override=override)
     except Unauthorized as error:
         return _not_authorized(error, administrator=False)
     except BatchRefused as error:
@@ -320,6 +330,7 @@ async def websocket_print_label_batch(
             ledger=ledger,
             actor=actor,
             acknowledgement=acknowledgement,
+            override=override,
             on_result=listener,
         ),
     )
@@ -368,9 +379,12 @@ async def websocket_retry_label_batch(
 
     actor = _actor(msg)
     acknowledgement = msg.get("acknowledgement")
+    override = msg.get("override")
     try:
         actor.authenticated()
-        authorize_batch(previous.preflight, acknowledgement=acknowledgement)
+        authorize_batch(
+            previous.preflight, acknowledgement=acknowledgement, override=override
+        )
     except Unauthorized as error:
         return _not_authorized(error, administrator=False)
     except BatchRefused as error:
@@ -390,6 +404,7 @@ async def websocket_retry_label_batch(
             ledger=ledger,
             actor=actor,
             acknowledgement=acknowledgement,
+            override=override,
             on_result=listener,
         ),
     )

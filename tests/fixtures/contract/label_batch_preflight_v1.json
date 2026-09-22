@@ -221,6 +221,7 @@
       }
     ],
     "identity": "sha256:34ec9ebe708ab82bdf1cb645a7543d4b87c43f140ddf565e84fc98e747b2ea8a",
+    "override_available": false,
     "printer": {
       "calibration_identity": "sha256:4139ab0e3d4b86583b91803f5b242a22693d030fec1b38fb0c123666f7980c6a",
       "calibration_stale_reasons": [],

@@ -30,6 +30,7 @@ from .canonical.eligibility import (
     OperationEligibility,
     PrintProvenance,
     decide_print_request,
+    overridable,
 )
 from .canonical.fonts import FontLibrary
 from .canonical.preview import PREVIEW, async_render, font_library_for
@@ -138,6 +139,15 @@ class BatchPreflight:
         return all(record.decision.allowed for record in self.records)
 
     @property
+    def override_available(self) -> bool:
+        """Whether an operator may print past every refusal this batch has.
+
+        True only when the batch is refused and *every* reason is about how
+        far the printer has been proven, never about the labels themselves.
+        """
+        return overridable(self.blocked_by)
+
+    @property
     def warnings(self) -> tuple[BatchDiagnostic, ...]:
         """Every record warning, still carrying record and element identity."""
         return tuple(
@@ -204,6 +214,7 @@ class BatchPreflight:
             "allowed": self.allowed,
             "acknowledgement_required": self.acknowledgement_required,
             "blocked_by": list(self.blocked_by),
+            "override_available": self.override_available,
             "source": self.source.as_dict(),
             "profile": self.profile.as_dict(),
             "printer": {
@@ -379,6 +390,7 @@ async def async_print_batch(
     ledger: LocalCalibrationLedger,
     actor: Actor,
     acknowledgement: str | None = None,
+    override: str | None = None,
     fonts: FontLibrary | None = None,
     on_result: AttemptListener | None = None,
 ) -> BatchPrintResult:
@@ -395,6 +407,7 @@ async def async_print_batch(
         ledger=ledger,
         actor=actor,
         acknowledgement=acknowledgement,
+        override=override,
         fonts=fonts,
         on_result=on_result,
     )
@@ -407,6 +420,7 @@ async def async_retry_failed_batch(
     ledger: LocalCalibrationLedger,
     actor: Actor,
     acknowledgement: str | None = None,
+    override: str | None = None,
     fonts: FontLibrary | None = None,
     on_result: AttemptListener | None = None,
 ) -> BatchPrintResult:
@@ -420,6 +434,7 @@ async def async_retry_failed_batch(
         ledger=ledger,
         actor=actor,
         acknowledgement=acknowledgement,
+        override=override,
         fonts=fonts,
         on_result=on_result,
     )
@@ -464,12 +479,15 @@ async def _async_execute(
     ledger: LocalCalibrationLedger,
     actor: Actor,
     acknowledgement: str | None,
+    override: str | None,
     fonts: FontLibrary | None,
     on_result: AttemptListener | None,
 ) -> BatchPrintResult:
     """Execute one selected subset only after all whole-batch gates pass."""
     actor.authenticated()
-    authorize_batch(preflight, acknowledgement=acknowledgement)
+    overridden = authorize_batch(
+        preflight, acknowledgement=acknowledgement, override=override
+    )
     library = fonts or font_library_for(hass)
     calibration = await ledger.async_status(
         required=required_dependencies(
@@ -521,6 +539,7 @@ async def _async_execute(
                 ),
                 expected_raster_identity=record.render.raster_identity,
                 calibration=calibration,
+                override=overridden,
             )
         except (HomeAssistantError, PrintRefused) as err:
             result = BatchAttemptResult(
@@ -544,17 +563,36 @@ async def _async_execute(
     )
 
 
-def authorize_batch(preflight: BatchPreflight, *, acknowledgement: str | None) -> None:
-    """Refuse a hard error or warning consent for any other identity.
+def authorize_batch(
+    preflight: BatchPreflight,
+    *,
+    acknowledgement: str | None,
+    override: str | None = None,
+) -> bool:
+    """Refuse a hard error or consent for any other identity.
 
     Public so a caller that runs the batch in the background can refuse
     before it starts, where the refusal still has somebody to answer to.
     Printing checks it again regardless.
+
+    `override` is consent to print past an overridable refusal, and like a
+    warning acknowledgement it is the identity of the exact preflight it was
+    given for. Returns whether that consent is being relied on, so every
+    attempt is judged under the same waiver the batch was authorized with.
     """
+    overridden = False
     if not preflight.allowed:
-        raise BatchRefused(str(Operation.BATCH_PREFLIGHT), preflight.blocked_by)
+        if override is None or not preflight.override_available:
+            raise BatchRefused(str(Operation.BATCH_PREFLIGHT), preflight.blocked_by)
+        if override != preflight.identity:
+            raise BatchRefused(
+                str(Operation.BATCH_PREFLIGHT),
+                (str(Blocker.PREFLIGHT_NOT_CURRENT),),
+                "The consent to print anyway belongs to a different preflight.",
+            )
+        overridden = True
     if not preflight.acknowledgement_required:
-        return
+        return overridden
     if acknowledgement is None:
         raise BatchRefused(
             str(Operation.BATCH_PREFLIGHT),
@@ -566,6 +604,7 @@ def authorize_batch(preflight: BatchPreflight, *, acknowledgement: str | None) -
             (str(Blocker.PREFLIGHT_NOT_CURRENT),),
             "The warning acknowledgement belongs to a different preflight.",
         )
+    return overridden
 
 
 __all__ = [
