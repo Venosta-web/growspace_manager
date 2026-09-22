@@ -2,7 +2,7 @@
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 [![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold-gold.svg?style=for-the-badge)](https://developers.home-assistant.io/docs/integration-quality-scale/)
-[![Version](https://img.shields.io/badge/Version-1.2.1-blue.svg?style=for-the-badge)](https://github.com/Venosta-web/growspace_manager/releases)
+[![Version](https://img.shields.io/badge/Version-1.2.3-blue.svg?style=for-the-badge)](https://github.com/Venosta-web/growspace_manager/releases)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 
 **Growspace Manager** is a Home Assistant integration for indoor cultivators to track plants from seed to cure, automate climate and irrigation, and catch environmental problems before they damage your crop.
@@ -18,13 +18,14 @@ a VPD verdict and the crop-steering phase the integration computed from them._
 
 - 🌱 **Detailed Plant Tracking**: Register and track individual plants through their lifecycle stages: `seedling → clone → mother → veg → flower → dry → cure`.
 - 📐 **Visual Grid Layouts**: Arrange your plants in physical rows and columns inside logical growspaces.
-- 💧 **Smart Irrigation & Crop Steering**: Configure vegetative or generative steering profiles (VWC targets, drybacks, shot frequencies) using substrate sensors.
+- 💧 **Smart Irrigation & Crop Steering**: Configure vegetative or generative steering profiles (VWC targets, drybacks, shot frequencies) using substrate sensors, or save a proven setup as a reusable Irrigation Recipe and plan a whole run with Irrigation Programs.
 - ❄️ **Adaptive VPD Control**: Automate dehumidification and HVAC devices to dynamically steer Vapor Pressure Deficit targets based on plant stage and day/night light cycles.
 - 🧠 **Bayesian Environmental Analytics**: Probabilistically assess and report plant stress levels, mold risks, and schedule drift before physical symptoms appear.
 - 🧬 **Genetics & Breeding Log**: Catalog strain lineages, parental crosses, seed inventories, and evaluate/score phenotypes to preserve keeper mother plants.
 - 📦 **Post-Harvest Analytics**: Track daily weight decay curves and stem-moisture levels during drying to pinpoint optimal cure windows.
-- 🖨️ **Niimbot Label Printing**: Connect directly via Bluetooth to print QR-coded plant tags containing strains, breeder logos, and genetic lineage.
-- 💬 **Optional AI Grow Master**: Integrate standard Home Assistant Conversation Agents to inspect camera feeds (vision checkups) and chat with a context-aware Virtual Grow Master.
+- 🏷️ **Label Templates**: Design and publish your own Niimbot label layouts in a direct-manipulation editor, calibrate each printer, and print single labels or full batches with preflight, retry and recovery built in — proven on the Niimbot B1 50×30 profile.
+- 📷 **Growspace Vision**: AI camera evidence checkups with a durable, authenticated history store — comparison and continuity policies track a plant against its own baseline over time, not just a single frame.
+- 💬 **Optional AI Grow Master**: Integrate standard Home Assistant Conversation Agents to chat with a context-aware Virtual Grow Master.
 
 ---
 
