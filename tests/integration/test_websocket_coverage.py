@@ -60,7 +60,7 @@ async def test_websocket_get_event_log_recorder_error(
     ):
         result = await websocket_get_event_log(hass, MagicMock(), mock_msg)
 
-        # Sould return empty result, not error
+        # Should return empty result, not error
         assert result == {"gs1": []}
 
 

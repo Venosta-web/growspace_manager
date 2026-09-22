@@ -21,7 +21,6 @@ from custom_components.growspace_manager.models import (
     SubstrateProfile,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
 
 
 def _suggested_value(schema: vol.Schema, key: str):
@@ -152,16 +151,17 @@ async def test_volume_mode_round_trips_through_real_facade(
 async def test_volume_mode_rejected_without_prerequisites_in_flow(
     handler: IrrigationConfigHandler,
 ) -> None:
-    """Selecting Volume Mode with no profile/flow rate raises the shared error."""
+    """Selecting Volume Mode without prerequisites stays on the form."""
     coordinator = handler.config_entry.runtime_data
     gs = _add_growspace(coordinator)
 
-    with pytest.raises(ServiceValidationError, match="Volume Mode requires"):
-        await handler.async_step_irrigation_overview(
-            {"shot_sizing_mode": ShotSizingMode.VOLUME.value}
-        )
+    result = await handler.async_step_irrigation_overview(
+        {"shot_sizing_mode": ShotSizingMode.VOLUME.value}
+    )
 
-    # The rejected submission leaves the strategy untouched.
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "invalid_irrigation_change"}
+    assert "Volume Mode requires" in result["description_placeholders"]["error"]
     assert gs.irrigation_strategy.shot_sizing_mode == ShotSizingMode.SECONDS
 
 

@@ -32,6 +32,7 @@ from custom_components.growspace_manager.domain.moisture_band import (
     effective_moisture_band,
     is_percentage_unit,
 )
+from custom_components.growspace_manager.domain.steering_phase import resolve_day_hours
 from custom_components.growspace_manager.tank_water_tracker import (
     consumption_buckets_24h,
 )
@@ -159,6 +160,12 @@ class GrowspaceViewModelBuilder:
         # hand-copied block this replaces was missing pump_flow_rate_ml_per_sec
         # and phase_changed_at)
         irrigation_options = growspace.irrigation_config.to_dict()
+        # Crop-steering boundary math resolves the flower photoperiod first,
+        # regardless of the growspace's current stage. Serialize that resolved
+        # value so frontend phase layouts cannot drift by reimplementing the rule.
+        irrigation_options["resolved_day_hours"] = resolve_day_hours(
+            growspace.environment_config
+        )
 
         irrigation_strategy_dict = (
             growspace.irrigation_strategy.to_dict()

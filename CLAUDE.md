@@ -87,9 +87,6 @@ ruff format custom_components/growspace_manager/
 
 # Run mypy type checking
 mypy custom_components/growspace_manager/
-
-# Run pylint (if needed)
-pylint custom_components/growspace_manager/
 ```
 
 ### Coverage Workflow

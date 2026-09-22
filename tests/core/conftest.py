@@ -124,6 +124,8 @@ def mock_coordinator():
     # Initialize ServiceFacade AFTER all async mocks are set so the facade's
     # internal _coordinator reference sees the correct AsyncMock attributes.
     coordinator.services = ServiceFacade(coordinator)
+    coordinator.capture_continuity = MagicMock()
+    coordinator.capture_continuity.async_apply_camera_assignment = AsyncMock()
 
     return coordinator
 

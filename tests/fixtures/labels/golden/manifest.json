@@ -1,0 +1,120 @@
+{
+  "history": [
+    {
+      "identity": {
+        "compiler": "growspace.label-compiler.v1",
+        "renderer": "growspace.label-renderer.v1",
+        "adapter": "growspace.niimbot-adapter.v1",
+        "text_toolchain": "growspace.text-toolchain.v1",
+        "style_tokens": "growspace.label-style-tokens.v1",
+        "qr_model": "growspace.qr-model.v1",
+        "fixtures": "growspace.label-fixtures.v2",
+        "bindings": "growspace.label-bindings.v1",
+        "safety_policy": "growspace.label-safety.v1",
+        "profiles": "growspace.label-profiles.v1",
+        "label_sizes": "growspace.label-sizes.v1",
+        "profile_definitions": {
+          "growspace.profile.niimbot-b1.50x30.v1": "sha256:e375682c42fa1d7a31f8bac86c91106992074a127d63728186233c5525fa5cf8"
+        },
+        "layouts": {
+          "coverage-50x30-rot0": "sha256:9f9cc1dd0df3b692d380750f599c87cd6c27b3d3c706392a624a14c91892f998",
+          "factory-50x30-r1": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32"
+        }
+      },
+      "identity_changes": ["initial"],
+      "evidence": {
+        "renderer": "imagespec 0.4.0",
+        "fonts": {
+          "ppb.ttf": "7219547ee25334cbac0fe4b3acf0bf631e48ebb622c71af038edaaa652c60875",
+          "rbm.ttf": "9d0d55a303bfd13b79a87721f65185e93f235e2d77fe398b2dca67ac519915f5"
+        }
+      },
+      "goldens_digest": "sha256:8356d6b25ce64a1f0da1a9e382eefbae9c20e9f40e057cd024b8a59595825d49",
+      "changed_cases": [
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.long_content.batch_item.en",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.long_content.plant.en",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.long_content.strain.en",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.missing_optional.batch_item.en",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.missing_optional.plant.en",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.missing_optional.strain.en",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.typical.batch_item.en",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.typical.batch_item.en-US",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.typical.plant.en",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.typical.plant.en-US",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.typical.strain.en",
+        "coverage-50x30-rot0.niimbot-b1.50x30.v1.typical.strain.en-US",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.long_content.batch_item.en",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.long_content.plant.en",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.long_content.strain.en",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.missing_optional.batch_item.en",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.missing_optional.plant.en",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.missing_optional.strain.en",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.typical.batch_item.en",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.typical.batch_item.en-US",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.typical.plant.en",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.typical.plant.en-US",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.typical.strain.en",
+        "factory-50x30-r1.niimbot-b1.50x30.v1.typical.strain.en-US"
+      ],
+      "review": {
+        "reviewer": "Claude Opus 5 (agent), contact sheet inspected; maintainer review pending in the pull request",
+        "date": "2026-09-21",
+        "reason": "Initial golden raster matrix for hub issue #230: every Factory Template and element kind on the provisional Niimbot B1 50x30 profile, in every representative family, print context and date order."
+      }
+    },
+    {
+      "identity": {
+        "compiler": "growspace.label-compiler.v1",
+        "renderer": "growspace.label-renderer.v1",
+        "adapter": "growspace.niimbot-adapter.v1",
+        "text_toolchain": "growspace.text-toolchain.v1",
+        "style_tokens": "growspace.label-style-tokens.v1",
+        "qr_model": "growspace.qr-model.v1",
+        "fixtures": "growspace.label-fixtures.v2",
+        "bindings": "growspace.label-bindings.v1",
+        "safety_policy": "growspace.label-safety.v1",
+        "profiles": "growspace.label-profiles.v1",
+        "label_sizes": "growspace.label-sizes.v1",
+        "profile_definitions": {
+          "growspace.profile.niimbot-b1.50x30.v1": "sha256:44a5ee9dc97ab2c8fd442cf8eb8ea2048911b5c504f963e24681e908c2c0056e"
+        },
+        "layouts": {
+          "coverage-50x30-rot0": "sha256:9f9cc1dd0df3b692d380750f599c87cd6c27b3d3c706392a624a14c91892f998",
+          "factory-50x30-r2": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242"
+        }
+      },
+      "identity_changes": [
+        "layouts.factory-50x30-r1",
+        "layouts.factory-50x30-r2",
+        "profile_definitions.growspace.profile.niimbot-b1.50x30.v1"
+      ],
+      "evidence": {
+        "renderer": "imagespec 0.4.0",
+        "fonts": {
+          "ppb.ttf": "7219547ee25334cbac0fe4b3acf0bf631e48ebb622c71af038edaaa652c60875",
+          "rbm.ttf": "9d0d55a303bfd13b79a87721f65185e93f235e2d77fe398b2dca67ac519915f5"
+        }
+      },
+      "goldens_digest": "sha256:8ab7c6dca1095f47c0d26285f0b2b4a4c93a55967dc64f645b6fc0fe8f294bf7",
+      "changed_cases": [
+        "factory-50x30-r2.niimbot-b1.50x30.v1.long_content.batch_item.en",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.long_content.plant.en",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.long_content.strain.en",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.missing_optional.batch_item.en",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.missing_optional.plant.en",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.missing_optional.strain.en",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.typical.batch_item.en",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.typical.batch_item.en-US",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.typical.plant.en",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.typical.plant.en-US",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.typical.strain.en",
+        "factory-50x30-r2.niimbot-b1.50x30.v1.typical.strain.en-US"
+      ],
+      "review": {
+        "reviewer": "Venosta-web",
+        "date": "2026-09-22",
+        "reason": "hub #231: factory 50x30 revision 2 (taller date frame) and the B1 profile promoted with its measured 2.2 mm text floor"
+      }
+    }
+  ]
+}

@@ -351,6 +351,7 @@ class BayesianEnvironmentSensor(
         self._sensor_states: dict[str, Any] = {}
         self._reasons: ReasonList = []
         self._probability = 0.0
+        self._has_observations = False
         self._event_start_time: datetime | None = None
         self._event_max_prob: float = 0.0
 
@@ -518,6 +519,7 @@ class BayesianEnvironmentSensor(
         self.env_config = self.assembler.env_config
 
         all_observations, all_reasons = await self.strategy.async_evaluate(env_state)
+        self._has_observations = bool(all_observations)
 
         # Calculate final probability
         if not all_observations:
@@ -627,6 +629,8 @@ class BayesianEnvironmentSensor(
             lights_on=self._sensor_states.get("is_lights_on"),
             notification_title=title,
             notification_message=message,
+            evaluated_at=utcnow(),
+            has_observations=getattr(self, "_has_observations", False),
         )
 
 

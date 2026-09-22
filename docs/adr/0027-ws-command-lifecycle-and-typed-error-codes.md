@@ -68,3 +68,24 @@ is wrapped by `handle_ws_errors`, and coordinator resolution is one call
 ## Amendment: layout conflicts
 
 Revision-guarded Plant Layout commits add `conflict` to the shared WebSocket error vocabulary. A dedicated layout-conflict exception maps to `conflict`; malformed layouts remain `validation_failed`, missing plants or growspaces remain `entity_not_found`, unavailable coordinators remain `coordinator_not_ready`, authorization follows the existing plant-operation policy, and unexpected persistence failures remain `internal_error`.
+
+## Amendment: the acting user
+
+Label Template management needs to know **who is asking**, on every request.
+The library's `Actor` is built per call and its authority re-derived per call
+on purpose: an administrator who opens the editor and is demoted while it is
+open keeps their draft — the store holds it — and loses every further
+mutation. Drafts are private to their owner, so the acting user is also the
+only thing that can name one.
+
+That user exists nowhere but the connection, which this ADR removed from
+handlers on the finding that none of them needed it. The finding was true when
+it was made and is no longer.
+
+A `WSCommand` may therefore declare `actor=True`, and the lifecycle wrapper
+puts `connection.user` into the validated message under `WS_MSG_USER` before
+calling the handler. The handler signature does not change, no handler gains
+the ability to send, subscribe or close, and nothing else about the connection
+is reachable. The key carries a leading underscore because it is not part of
+any command's schema: a client cannot supply it, and one that tries has its
+value overwritten before the handler runs.

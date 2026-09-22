@@ -65,7 +65,6 @@ def mock_coordinator() -> MagicMock:
             CONF_ASSISTANT_ID: "test_agent",
         }
     }
-    coordinator.serializer.calculate_days_in_stage.return_value = 10
     coordinator.growspaces = data_repo.growspaces
 
     return coordinator

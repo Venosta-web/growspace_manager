@@ -54,6 +54,40 @@ def test_configure_environment_schema_supports_multi_entities() -> None:
     assert validated[CONF_EXHAUST_FAN_ENTITIES] == ["switch.exhaust1"]
 
 
+def test_configure_environment_schema_accepts_snapshot_interval() -> None:
+    """The service path can persist the camera snapshot cadence used by E2E setup."""
+    validated = CONFIGURE_ENVIRONMENT_SCHEMA(
+        {"growspace_id": "gs1", "snapshot_interval_hours": 6}
+    )
+
+    assert validated["snapshot_interval_hours"] == 6
+
+
+def test_configure_environment_schema_accepts_soil_moisture_band() -> None:
+    """The config dialog can persist both bounds of the moisture band."""
+    validated = CONFIGURE_ENVIRONMENT_SCHEMA(
+        {
+            "growspace_id": "gs1",
+            "soil_moisture_min": 32.5,
+            "soil_moisture_max": 54.0,
+        }
+    )
+
+    assert validated["soil_moisture_min"] == 32.5
+    assert validated["soil_moisture_max"] == 54.0
+
+
+@pytest.mark.parametrize("value", [0, 169])
+def test_configure_environment_schema_rejects_invalid_snapshot_interval(
+    value: int,
+) -> None:
+    """Snapshot cadence uses the same one-week bounds as the config flow."""
+    with pytest.raises(vol.Invalid):
+        CONFIGURE_ENVIRONMENT_SCHEMA(
+            {"growspace_id": "gs1", "snapshot_interval_hours": value}
+        )
+
+
 def test_configure_environment_schema_accepts_vpd_optimal_overrides() -> None:
     """Test that CONFIGURE_ENVIRONMENT_SCHEMA accepts vpd_optimal_overrides."""
     payload = {

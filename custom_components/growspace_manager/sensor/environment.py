@@ -8,6 +8,7 @@ from typing import Any, override
 from custom_components.growspace_manager.const import DEFAULT_DLI_TARGET_FLOWER, DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.domain.ec_state import (
+    active_curve_for,
     band_for_week,
     resolve_feed_stage_week,
 )
@@ -184,7 +185,9 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         Resolves the stage through the EC State seam (``resolve_feed_stage_week``),
         so the sensor agrees with the feed-target reconciliation and the card on
         which stage and week are current: the furthest-along live stage, never an
-        arbitrary first plant.
+        arbitrary first plant. Curve selection goes through the same seam's
+        ``active_curve_for`` (ADR-0046), so the sensor cannot show one growspace's
+        curve while the feed target resolves another's.
         """
         ec_ramp_curves = self.coordinator.services.config.ec_ramp_curves
         if not ec_ramp_curves:
@@ -194,20 +197,14 @@ class ECTargetSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
             self._growspace_id
         )
         stage, _ = resolve_feed_stage_week(plants)
-        if stage is None:
-            return None
-
-        return next(
-            (curve for curve in ec_ramp_curves.values() if curve.stage == stage),
-            None,
-        )
+        return active_curve_for(self._growspace_id, stage, ec_ramp_curves)
 
     def _get_current_week(self) -> int:
         """Get the current week in the feed stage via the canonical ``days_to_week``.
 
         Resolved through the same seam as ``_get_active_curve`` so the week here
-        matches ``Plant.get_week_in_stage`` and the growspace view model (which
-        the prior inline ``(days // 7) + 1`` did not at 7-day boundaries).
+        matches the lifecycle-backed growspace view model (the prior inline
+        ``(days // 7) + 1`` did not at 7-day boundaries).
         """
         plants = self.coordinator.services.growspaces.get_growspace_plants(
             self._growspace_id

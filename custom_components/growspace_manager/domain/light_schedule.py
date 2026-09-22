@@ -16,6 +16,21 @@ class _HasFlowerStart(Protocol):
     flower_start: str | None
 
 
+def flower_start_date(flower_start: str | None) -> date | None:
+    """Return the calendar day of a ``flower_start``, or ``None`` if unusable.
+
+    ``flower_start`` is a Lifecycle Timestamp — stored as a full ISO datetime
+    (ADR-0013) — but legacy date-only values are accepted too. The day is the
+    one the timestamp was written in, i.e. its own offset's local date.
+    """
+    if not flower_start:
+        return None
+    try:
+        return datetime.fromisoformat(flower_start).date()
+    except ValueError:
+        return None
+
+
 def resolve_photoperiod_hours(
     plants: Iterable[_HasFlowerStart],
     veg_hours: float,
@@ -29,13 +44,9 @@ def resolve_photoperiod_hours(
     ``flower_start`` counts as not-yet-flowering.
     """
     for plant in plants:
-        if not plant.flower_start:
-            continue
-        try:
-            if datetime.fromisoformat(plant.flower_start).date() <= today:
-                return flower_hours
-        except ValueError:
-            continue
+        started = flower_start_date(plant.flower_start)
+        if started is not None and started <= today:
+            return flower_hours
     return veg_hours
 
 

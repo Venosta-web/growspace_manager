@@ -2,13 +2,15 @@
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 [![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Gold-gold.svg?style=for-the-badge)](https://developers.home-assistant.io/docs/integration-quality-scale/)
-[![Version](https://img.shields.io/badge/Version-1.2.1-blue.svg?style=for-the-badge)](https://github.com/Venosta-web/growspace_manager/releases)
+[![Version](https://img.shields.io/badge/Version-1.2.3-blue.svg?style=for-the-badge)](https://github.com/Venosta-web/growspace_manager/releases)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 
 **Growspace Manager** is a Home Assistant integration for indoor cultivators to track plants from seed to cure, automate climate and irrigation, and catch environmental problems before they damage your crop.
 
-![Growspace Manager UI Card](images/growspace_manager_card_example.png)
-*Visual facility monitoring via the companion Lovelace card.*
+![Demo Tent: seventeen plants, live environment telemetry and the current crop-steering phase](assets/screenshots/overview.png)
+_A growspace as the integration keeps it: seventeen plants, each one a Home
+Assistant entity carrying its own stage and day count, above sensor histories,
+a VPD verdict and the crop-steering phase the integration computed from them._
 
 ---
 
@@ -16,13 +18,14 @@
 
 - 🌱 **Detailed Plant Tracking**: Register and track individual plants through their lifecycle stages: `seedling → clone → mother → veg → flower → dry → cure`.
 - 📐 **Visual Grid Layouts**: Arrange your plants in physical rows and columns inside logical growspaces.
-- 💧 **Smart Irrigation & Crop Steering**: Configure vegetative or generative steering profiles (VWC targets, drybacks, shot frequencies) using substrate sensors.
+- 💧 **Smart Irrigation & Crop Steering**: Configure vegetative or generative steering profiles (VWC targets, drybacks, shot frequencies) using substrate sensors, or save a proven setup as a reusable Irrigation Recipe and plan a whole run with Irrigation Programs.
 - ❄️ **Adaptive VPD Control**: Automate dehumidification and HVAC devices to dynamically steer Vapor Pressure Deficit targets based on plant stage and day/night light cycles.
 - 🧠 **Bayesian Environmental Analytics**: Probabilistically assess and report plant stress levels, mold risks, and schedule drift before physical symptoms appear.
 - 🧬 **Genetics & Breeding Log**: Catalog strain lineages, parental crosses, seed inventories, and evaluate/score phenotypes to preserve keeper mother plants.
 - 📦 **Post-Harvest Analytics**: Track daily weight decay curves and stem-moisture levels during drying to pinpoint optimal cure windows.
-- 🖨️ **Niimbot Label Printing**: Connect directly via Bluetooth to print QR-coded plant tags containing strains, breeder logos, and genetic lineage.
-- 💬 **Optional AI Grow Master**: Integrate standard Home Assistant Conversation Agents to inspect camera feeds (vision checkups) and chat with a context-aware Virtual Grow Master.
+- 🏷️ **Label Templates**: Design and publish your own Niimbot label layouts in a direct-manipulation editor, calibrate each printer, and print single labels or full batches with preflight, retry and recovery built in — proven on the Niimbot B1 50×30 profile.
+- 📷 **Growspace Vision**: AI camera evidence checkups with a durable, authenticated history store — comparison and continuity policies track a plant against its own baseline over time, not just a single frame.
+- 💬 **Optional AI Grow Master**: Integrate standard Home Assistant Conversation Agents to chat with a context-aware Virtual Grow Master.
 
 ---
 
@@ -30,24 +33,72 @@
 
 To interact with your growspaces visually using drag-and-drop grids, batch plant actions, and live graphs, install the companion card:
 
-* **Repository**: [Lovelace Growspace Manager Card](https://github.com/Venosta-web/lovelace-growspace-manager-card)
-* **Basic Configuration**:
+- **Repository**: [Lovelace Growspace Manager Card](https://github.com/Venosta-web/lovelace-growspace-manager-card)
+- **Basic Configuration**:
   ```yaml
-  type: 'custom:growspace-manager-card'
+  type: "custom:growspace-manager-card"
   default_growspace: flower_tent
   ```
+
+---
+
+## Screenshots
+
+### Crop steering
+
+The shot plan is derived, not typed. From the substrate's VWC targets and the
+day's photoperiod the integration lays out the P0–P3 phases and the shots inside
+them — twenty-nine here, across twelve hours of light — and keeps the substrate
+model projected forward from live VWC, pore EC and bulk EC as the day runs.
+
+![The computed crop-steering schedule and the projected substrate model](assets/screenshots/crop-steering.png)
+
+### Adaptive VPD control
+
+A growspace binds ordinary Home Assistant entities — here two `number` fans —
+and the integration drives them against a vapor-pressure-deficit target rather
+than a humidity setpoint. With stage-aware VPD on, that target moves as the
+plants move through their stages.
+
+![Climate entities bound to a growspace, regulated against a VPD target](assets/screenshots/climate-control.png)
+
+### Environmental analytics
+
+The Bayesian evaluator scores stress, mold risk and schedule drift from the
+bound sensors and writes its own verdicts into the growspace logbook. Every
+alert carries the probability it reached and the evidence that got it there:
+85% stress, from two VPD readings outside the band and two substrate readings
+above target.
+
+![Logbook alerts, each with its probability and the readings behind it](assets/screenshots/logbook.png)
+
+### Per-plant services
+
+Everything a plant does is a service the integration exposes and an event it
+records — watering and feeding, training and IPM, taking a clone, printing a
+QR-coded Niimbot label over Bluetooth, logging a pollination. Phenotype scores
+are stored on the plant itself, which is how a keeper is still identifiable
+after the cuttings taken from it have grown up.
+
+![The services available on a single plant, and its phenotype scoring](assets/screenshots/plant-actions.png)
 
 ---
 
 ## Installation Walkthrough
 
 ### Step 1: Install frontend card via HACS
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Venosta-web&repository=lovelace-growspace-manager-card&category=lovelace)
+
 1. Go to **HACS** > **Frontend** in Home Assistant.
 2. Click the three vertical dots in the top-right corner and select **Custom repositories**.
 3. Add URL `https://github.com/Venosta-web/lovelace-growspace-manager-card` with category **Lovelace**.
 4. Search for `Growspace Manager Card` and click **Download**.
 
 ### Step 2: Install integration via HACS
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Venosta-web&repository=growspace_manager&category=integration)
+
 1. Go to **HACS** > **Integrations** in Home Assistant.
 2. Click the three vertical dots in the top-right corner and select **Custom repositories**.
 3. Add URL `https://github.com/Venosta-web/growspace_manager` with category **Integration**.
@@ -69,6 +120,7 @@ To interact with your growspaces visually using drag-and-drop grids, batch plant
 ## Real-World Automation Examples
 
 ### 1. Toggle Automated Dehumidifier Steering
+
 Turn on/off the integration's built-in target-VPD dehumidifier steering based on whether the growspace has active plants.
 
 ```yaml
@@ -102,6 +154,7 @@ action:
 ```
 
 ### 2. High Mold Risk Emergency Mitigation
+
 Boosts air movement and ventilation when the Bayesian analysis flags high mold risk during dark cycles.
 
 ```yaml
@@ -126,6 +179,7 @@ action:
 ```
 
 ### 3. Harvest Cure-Ready Notification
+
 Sends an alert to your phone when a drying plant's moisture decay curve reaches the cure-ready threshold (≤ 12%).
 
 ```yaml
@@ -153,9 +207,9 @@ For a complete description of all services, parameters, and example payloads, se
 
 ## Troubleshooting & Diagnostics
 
-* **Bayesian environment sensors showing "Unavailable"**: Ensure you have successfully configured and bound valid Temperature, Humidity, and VPD sensors to the growspace environment. The Bayesian model also requires a brief warm-up period to pull initial sensor histories.
-* **Niimbot printer fails to print**: Verify Bluetooth signal strength and range. Consider utilizing a Bluetooth proxy if the Home Assistant server is located away from the grow room.
-* **Database errors after upgrades**: Run the `growspace_manager.debug_cleanup_legacy` service to purge orphaned data tables, and `growspace_manager.debug_reset_special_growspaces` to reconstruct overview zones.
+- **Bayesian environment sensors showing "Unavailable"**: Ensure you have successfully configured and bound valid Temperature, Humidity, and VPD sensors to the growspace environment. The Bayesian model also requires a brief warm-up period to pull initial sensor histories.
+- **Niimbot printer fails to print**: Verify Bluetooth signal strength and range. Consider utilizing a Bluetooth proxy if the Home Assistant server is located away from the grow room.
+- **Database errors after upgrades**: Run the `growspace_manager.debug_cleanup_legacy` service to purge orphaned data tables, and `growspace_manager.debug_reset_special_growspaces` to reconstruct overview zones.
 
 ---
 

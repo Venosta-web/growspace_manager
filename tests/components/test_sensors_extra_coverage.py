@@ -28,6 +28,11 @@ from custom_components.growspace_manager.sensor import (
     _check_calculated_vpd_sensor,
     _update_growspace_entities,
 )
+from custom_components.growspace_manager.vision_connection import (
+    VisionAvailability,
+    VisionConnectionSource,
+    VisionStatus,
+)
 from homeassistant.core import HomeAssistant
 
 
@@ -183,33 +188,30 @@ async def test_ec_target_sensor(mock_coordinator, setup_sensor_for_test):
 
 
 async def test_vision_checkup_sensor(mock_coordinator, setup_sensor_for_test):
-    """Test VisionCheckupSensor with and without history."""
+    """Test VisionCheckupSensor with and without durable V1 evidence."""
     sensor = VisionCheckupSensor(mock_coordinator, "test_id", "Test Grow")
     setup_sensor_for_test(sensor)
+    mock_coordinator.vision_connection.status = VisionStatus(
+        availability=VisionAvailability.READY,
+        connection_source=VisionConnectionSource.SUPERVISOR,
+    )
+    mock_coordinator.vision_scheduler.latest_checkup.return_value = None
 
-    # Mock growspace in coordinator
-    growspace = MagicMock()
-    growspace.vision_checkup_history = []
-    mock_coordinator.growspaces = {"test_id": growspace}
-
-    # 1. Test with empty history
     assert sensor.native_value is None
-    assert sensor.extra_state_attributes["total_checkups"] == 0
+    assert sensor.extra_state_attributes["cameras"] == {}
 
-    # 2. Test with populated history
-    mock_result = MagicMock()
-    mock_result.timestamp = "2024-03-20T10:00:00"
-    mock_result.severity = "healthy"
-    mock_result.analysis = "All good"
-    mock_result.issues_detected = []
-    mock_result.recommendations = []
+    mock_coordinator.vision_scheduler.latest_checkup.return_value = {
+        "checkup_id": "checkup-1",
+        "completed_at": "2026-09-01T10:00:00+00:00",
+        "trigger_source": "scheduled",
+        "status": "completed",
+        "captures": [],
+    }
 
-    growspace.vision_checkup_history = [mock_result]
-
-    assert sensor.native_value == "healthy"
+    assert sensor.native_value == "completed"
     attrs = sensor.extra_state_attributes
-    assert attrs["total_checkups"] == 1
-    assert attrs["last_analysis"] == "All good"
+    assert attrs["checkup_id"] == "checkup-1"
+    assert attrs["cameras"] == {}
 
 
 async def test_seed_inventory_sensor(mock_coordinator, setup_sensor_for_test):

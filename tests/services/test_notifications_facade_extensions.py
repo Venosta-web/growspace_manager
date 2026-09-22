@@ -61,6 +61,21 @@ def test_get_alerts_passes_alert_type_filter() -> None:
     coordinator.alert_monitor.get_alerts.assert_called_once_with(alert_type="mold")
 
 
+def test_latest_evaluation_delegates_to_notification_manager() -> None:
+    """Vision reads the manager's latest active or inactive evaluation."""
+    coordinator = _make_coordinator()
+    snapshot = object()
+    coordinator._notification_manager.latest_evaluation.return_value = snapshot
+    facade = NotificationsFacade(coordinator)
+
+    result = facade.latest_evaluation("tent1", "stress")
+
+    assert result is snapshot
+    coordinator._notification_manager.latest_evaluation.assert_called_once_with(
+        "tent1", "stress"
+    )
+
+
 # ---------------------------------------------------------------------------
 # resolve_alert
 # ---------------------------------------------------------------------------

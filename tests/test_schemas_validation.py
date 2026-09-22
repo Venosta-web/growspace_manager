@@ -7,6 +7,7 @@ from custom_components.growspace_manager.schemas import (
     ADD_STRAIN_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     SET_IRRIGATION_STRATEGY_SCHEMA,
+    SET_STEERING_PHASE_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
 )
 
@@ -16,12 +17,21 @@ def test_set_irrigation_settings_schema_valid() -> None:
     valid_data = {
         "growspace_id": "gs1",
         "irrigation_pump_entity": "switch.pump_1",
+        "pump_flow_rate_ml_per_sec": 12.5,
         "drain_pump_entity": "switch.pump_2",
         "irrigation_duration": 30,
         "drain_duration": 60,
     }
-    # Should not raise
-    SET_IRRIGATION_SETTINGS_SCHEMA(valid_data)
+    result = SET_IRRIGATION_SETTINGS_SCHEMA(valid_data)
+    assert result["pump_flow_rate_ml_per_sec"] == pytest.approx(12.5)
+
+
+def test_set_irrigation_settings_schema_rejects_negative_pump_flow_rate() -> None:
+    """Pump flow rate cannot be negative."""
+    with pytest.raises(vol.Invalid):
+        SET_IRRIGATION_SETTINGS_SCHEMA(
+            {"growspace_id": "gs1", "pump_flow_rate_ml_per_sec": -0.1}
+        )
 
 
 def test_set_irrigation_settings_schema_partial_valid() -> None:
@@ -227,3 +237,25 @@ def test_genetic_percentages_invalid(
     }
     with pytest.raises(vol.Invalid, match="exceeds 100%"):
         schema(data)
+
+
+def test_set_steering_phase_schema_accepts_a_canonical_phase() -> None:
+    """The manual override names one of the three canonical phases."""
+    assert SET_STEERING_PHASE_SCHEMA(
+        {"growspace_id": "gs1", "steering_phase": "p3"}
+    ) == {"growspace_id": "gs1", "steering_phase": "p3"}
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"growspace_id": "gs1", "steering_phase": "p0"},
+        {"growspace_id": "gs1", "steering_phase": "P2"},
+        {"growspace_id": "gs1"},
+        {"growspace_id": "gs1", "steering_phase": "p2", "irrigation_duration": 30},
+    ],
+)
+def test_set_steering_phase_schema_rejects_anything_else(data: dict) -> None:
+    """A non-canonical phase, a missing one, and a settings field are all refused."""
+    with pytest.raises(vol.Invalid):
+        SET_STEERING_PHASE_SCHEMA(data)

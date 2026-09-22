@@ -51,10 +51,9 @@ All changes are wire-additive; the card's zod schemas strip unknown fields.
 
 - Adding a field to a Plant/growspace sub-model propagates to the sensor
   attributes and the card payload with no serializer edit.
-- The two day-count semantics (`Plant.get_days_in_stage` vs
-  `domain.calculate_days_in_stage`, and the days-since-watering pair) still
-  disagree; both predate this ADR and are kept per projection on purpose.
-  Reconciling them is a semantic decision tracked separately — do not "fix"
-  one side to match the other inside a serialization change.
+- The day-count divergence noted by this ADR was resolved by the Plant Lifecycle
+  migration: both projections now report Lifetime Stage Days, and the
+  superseded model/domain counters were removed in #638. The
+  days-since-watering pair retains its projection-specific semantics.
 - Snapshot tests pin both projections; a field appearing in only one of them
   now fails `test_build_attributes_matches_wire_payload_on_shared_blocks`.

@@ -4,7 +4,7 @@ This file contains tests to ensure that the integration can be successfully set 
 and unloaded within Home Assistant.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import json
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +14,7 @@ import pytest
 
 from custom_components.growspace_manager import (
     _async_cancel_coordinators,
+    _async_setup_vision_evidence_store,
     _async_update_listener,
     async_reload_entry,
     async_setup,
@@ -32,9 +33,12 @@ from custom_components.growspace_manager.schemas import (
     ADD_TIMELINE_NOTE_SCHEMA,
     ANALYZE_ALL_GROWSPACES_SCHEMA,
     APPLY_IPM_SCHEMA,
+    APPLY_IRRIGATION_RECIPE_SCHEMA,
     APPLY_STEERING_MODE_SCHEMA,
     ASK_GROW_ADVICE_SCHEMA,
+    ASSIGN_IRRIGATION_PROGRAM_SCHEMA,
     BATCH_ACTION_SCHEMA,
+    CLEAR_IRRIGATION_SCHEMA,
     CLEAR_STRAIN_LIBRARY_SCHEMA,
     CONFIGURE_CIRCULATION_FAN_SCHEMA,
     CONFIGURE_DRAIN_MONITORING_SCHEMA,
@@ -58,11 +62,14 @@ from custom_components.growspace_manager.schemas import (
     MOVE_CLONE_SCHEMA,
     MOVE_PLANT_SCHEMA,
     PRINT_LABEL_SCHEMA,
+    PRINT_LABEL_TEMPLATE_SCHEMA,
     REMOVE_DRAIN_TIME_SCHEMA,
     REMOVE_EC_RAMP_CURVE_SCHEMA,
     REMOVE_ENVIRONMENT_SCHEMA,
     REMOVE_GROWSPACE_SCHEMA,
     REMOVE_IPM_PRESET_SCHEMA,
+    REMOVE_IRRIGATION_PROGRAM_SCHEMA,
+    REMOVE_IRRIGATION_RECIPE_SCHEMA,
     REMOVE_IRRIGATION_TIME_SCHEMA,
     REMOVE_NUTRIENT_PRESET_SCHEMA,
     REMOVE_PLANT_SCHEMA,
@@ -72,6 +79,8 @@ from custom_components.growspace_manager.schemas import (
     RUN_IRRIGATION_CYCLE_SCHEMA,
     SAVE_EC_RAMP_CURVE_SCHEMA,
     SAVE_IPM_PRESET_SCHEMA,
+    SAVE_IRRIGATION_PROGRAM_SCHEMA,
+    SAVE_IRRIGATION_RECIPE_SCHEMA,
     SAVE_NUTRIENT_PRESET_SCHEMA,
     SCORE_PHENOTYPE_SCHEMA,
     SCORE_PLANT_SCHEMA,
@@ -82,6 +91,7 @@ from custom_components.growspace_manager.schemas import (
     SET_IRRIGATION_SETTINGS_SCHEMA,
     SET_IRRIGATION_STRATEGY_SCHEMA,
     SET_PLANT_SEX_SCHEMA,
+    SET_STEERING_PHASE_SCHEMA,
     SET_VISUAL_TAG_SCHEMA,
     SOW_SEED_SCHEMA,
     STRAIN_RECOMMENDATION_SCHEMA,
@@ -91,6 +101,7 @@ from custom_components.growspace_manager.schemas import (
     UNLINK_SEED_BATCH_SCHEMA,
     UPDATE_GROWSPACE_SCHEMA,
     UPDATE_HARVEST_METRICS_SCHEMA,
+    UPDATE_IRRIGATION_RECIPE_SCHEMA,
     UPDATE_PLANT_SCHEMA,
     UPDATE_POLLINATION_SCHEMA,
     UPDATE_SEED_BATCH_SCHEMA,
@@ -237,6 +248,86 @@ async def test_async_setup_entry(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
+async def test_vision_evidence_store_lifecycle_and_retention_errors(
+    mock_hass, tmp_path, caplog
+) -> None:
+    """The global store uses private media, schedules retention and closes cleanly."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={"image_retention_days": 7})
+    mock_hass.data = {DOMAIN: {}}
+    mock_hass.config.media_dirs = {"local": str(tmp_path / "media")}
+    mock_hass.config.path = MagicMock(return_value=str(tmp_path / "vision.db"))
+    store = MagicMock()
+    store.async_setup = AsyncMock()
+    store.async_run_retention = AsyncMock(
+        side_effect=RuntimeError("retention unavailable")
+    )
+    store.async_close = AsyncMock()
+    unsubscribe = MagicMock()
+
+    with (
+        patch(
+            "custom_components.growspace_manager.VisionEvidenceStore",
+            return_value=store,
+        ) as store_cls,
+        patch(
+            "custom_components.growspace_manager.async_track_time_interval",
+            return_value=unsubscribe,
+        ) as track_interval,
+    ):
+        await _async_setup_vision_evidence_store(mock_hass, entry)
+
+    store_cls.assert_called_once_with(
+        tmp_path / "vision.db",
+        tmp_path / "media" / "growspace_vision",
+        image_retention_days=7,
+    )
+    assert mock_hass.data[DOMAIN]["vision_evidence_store"] is store
+    retention_callback = track_interval.call_args.args[1]
+    await retention_callback(datetime.now())
+    assert "Vision image retention failed" in caplog.text
+
+    stop_callback = mock_hass.bus.async_listen_once.call_args.args[1]
+    await stop_callback(MagicMock())
+    store.async_close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_vision_evidence_store_setup_degrades_without_private_media(
+    mock_hass, caplog
+) -> None:
+    """A missing media root leaves the cultivation integration available."""
+    mock_hass.data = {DOMAIN: {}}
+    mock_hass.config.media_dirs = {}
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+
+    await _async_setup_vision_evidence_store(mock_hass, entry)
+
+    assert "vision_evidence_store" not in mock_hass.data[DOMAIN]
+    assert "No media directory" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_vision_evidence_store_setup_degrades_on_database_failure(
+    mock_hass, tmp_path, caplog
+) -> None:
+    """A damaged evidence database never prevents the integration from loading."""
+    mock_hass.data = {DOMAIN: {}}
+    mock_hass.config.media_dirs = {"local": str(tmp_path / "media")}
+    mock_hass.config.path = MagicMock(return_value=str(tmp_path / "vision.db"))
+    entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
+    store = MagicMock()
+    store.async_setup = AsyncMock(side_effect=RuntimeError("damaged database"))
+
+    with patch(
+        "custom_components.growspace_manager.VisionEvidenceStore", return_value=store
+    ):
+        await _async_setup_vision_evidence_store(mock_hass, entry)
+
+    assert "vision_evidence_store" not in mock_hass.data[DOMAIN]
+    assert "Failed to open the Vision Evidence Store" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_register_services(mock_hass, mock_strain_library_for_services) -> None:
     """Test that register_services correctly registers all services."""
     mock_hass.services.async_register = MagicMock()
@@ -278,7 +369,9 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "configure_exhaust_fan": CONFIGURE_EXHAUST_FAN_SCHEMA,
         "set_irrigation_settings": SET_IRRIGATION_SETTINGS_SCHEMA,
         "set_irrigation_strategy": SET_IRRIGATION_STRATEGY_SCHEMA,
+        "clear_irrigation": CLEAR_IRRIGATION_SCHEMA,
         "apply_steering_mode": APPLY_STEERING_MODE_SCHEMA,
+        "set_steering_phase": SET_STEERING_PHASE_SCHEMA,
         "add_irrigation_time": ADD_IRRIGATION_TIME_SCHEMA,
         "remove_irrigation_time": REMOVE_IRRIGATION_TIME_SCHEMA,
         "add_drain_time": ADD_DRAIN_TIME_SCHEMA,
@@ -292,6 +385,13 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "water_growspace": WATER_GROWSPACE_SCHEMA,
         "save_nutrient_preset": SAVE_NUTRIENT_PRESET_SCHEMA,
         "remove_nutrient_preset": REMOVE_NUTRIENT_PRESET_SCHEMA,
+        "save_irrigation_recipe": SAVE_IRRIGATION_RECIPE_SCHEMA,
+        "update_irrigation_recipe": UPDATE_IRRIGATION_RECIPE_SCHEMA,
+        "remove_irrigation_recipe": REMOVE_IRRIGATION_RECIPE_SCHEMA,
+        "apply_irrigation_recipe": APPLY_IRRIGATION_RECIPE_SCHEMA,
+        "save_irrigation_program": SAVE_IRRIGATION_PROGRAM_SCHEMA,
+        "remove_irrigation_program": REMOVE_IRRIGATION_PROGRAM_SCHEMA,
+        "assign_irrigation_program": ASSIGN_IRRIGATION_PROGRAM_SCHEMA,
         "log_training_event": LOG_TRAINING_EVENT_SCHEMA,
         "save_ipm_preset": SAVE_IPM_PRESET_SCHEMA,
         "remove_ipm_preset": REMOVE_IPM_PRESET_SCHEMA,
@@ -299,6 +399,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "batch_action": BATCH_ACTION_SCHEMA,
         "add_timeline_note": ADD_TIMELINE_NOTE_SCHEMA,
         "print_label": PRINT_LABEL_SCHEMA,
+        "print_label_template": PRINT_LABEL_TEMPLATE_SCHEMA,
         "score_plant": SCORE_PLANT_SCHEMA,
         "update_harvest_metrics": UPDATE_HARVEST_METRICS_SCHEMA,
         "log_drain_reading": LOG_DRAIN_READING_SCHEMA,
@@ -916,7 +1017,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 68
+        assert mock_reg.call_count == 99
 
 
 @pytest.mark.asyncio

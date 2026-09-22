@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "request_id": "91beb326-7955-4fc5-adb0-e8bb668b5a50",
+  "status": "rejected",
+  "quality": {
+    "signals": {
+      "mean_luminance": 3.4,
+      "clipped_pixel_fraction": 0,
+      "mean_absolute_gradient": 0.8
+    },
+    "reasons": ["too_dark"]
+  },
+  "regions": [],
+  "trend": "rising"
+}

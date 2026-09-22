@@ -1,0 +1,204 @@
+{
+  "case": "coverage-50x30-rot0.niimbot-b1.50x30.v1.missing_optional.batch_item.en",
+  "layout": {
+    "name": "coverage-50x30-rot0",
+    "digest": "sha256:9f9cc1dd0df3b692d380750f599c87cd6c27b3d3c706392a624a14c91892f998"
+  },
+  "profile": "growspace.profile.niimbot-b1.50x30.v1",
+  "subject": "growspace.fixture.batch_item.sparse.v1",
+  "family": "missing_optional",
+  "context": "batch_item",
+  "locale": "en",
+  "as_of": "2026-09-18T00:00:00+00:00",
+  "density": "normal",
+  "content_identity": "sha256:6368fc1d262dd3f5701ad5c7b8f086d1660c86d00af7a155ac3312a9b7f3496c",
+  "raster_inputs": {
+    "width": 384,
+    "height": 240,
+    "rotate": 0,
+    "density": 3,
+    "payload": [
+      {
+        "type": "text_fit",
+        "value": "Northern Lights",
+        "x": 16,
+        "y": 16,
+        "width": 240,
+        "height": 67,
+        "size": 45,
+        "min_size": 24,
+        "max_lines": 2,
+        "line_spacing": 2,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "ppb.ttf"
+      },
+      {
+        "type": "rectangle",
+        "x_start": 16,
+        "x_end": 255,
+        "y_start": 88,
+        "y_end": 90,
+        "fill": "black"
+      },
+      {
+        "type": "text_fit",
+        "value": "18/09/2026",
+        "x": 16,
+        "y": 174,
+        "width": 240,
+        "height": 35,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "qrcode",
+        "data": "http://homeassistant.local:8123/growspace/plant/87b70561-96dd-4bcb-9153-6fc266b1d2dc",
+        "x": 272,
+        "y": 96,
+        "boxsize": 1,
+        "width": 96,
+        "height": 96,
+        "border": 4,
+        "eclevel": "m"
+      }
+    ]
+  },
+  "raster_input_digest": "sha256:a009829dc100c7ad8b5307e3e1ae18804c8a1765feb84458dc3df76dbf83270b",
+  "outcomes": [
+    {
+      "element_id": "golden.coverage.strain-name",
+      "kind": "text",
+      "status": "placed",
+      "binding": "strain.name",
+      "pixel_frame": {
+        "left": 16,
+        "top": 16,
+        "right": 256,
+        "bottom": 83,
+        "width": 240,
+        "height": 67
+      },
+      "notes": {
+        "requested_font_size_px": 45,
+        "minimum_font_size_px": 24,
+        "maximum_lines": 2,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [240, 67]
+      }
+    },
+    {
+      "element_id": "golden.coverage.breeder-logo",
+      "kind": "logo",
+      "status": "omitted_missing_content",
+      "binding": "strain.breeder.logo",
+      "pixel_frame": {
+        "left": 272,
+        "top": 16,
+        "right": 368,
+        "bottom": 80,
+        "width": 96,
+        "height": 64
+      },
+      "notes": {}
+    },
+    {
+      "element_id": "golden.coverage.rule",
+      "kind": "divider",
+      "status": "placed",
+      "binding": null,
+      "pixel_frame": {
+        "left": 16,
+        "top": 88,
+        "right": 256,
+        "bottom": 91,
+        "width": 240,
+        "height": 3
+      },
+      "notes": {}
+    },
+    {
+      "element_id": "golden.coverage.stage-age",
+      "kind": "text",
+      "status": "omitted_missing_content",
+      "binding": "plant.stage_and_age",
+      "pixel_frame": {
+        "left": 16,
+        "top": 98,
+        "right": 256,
+        "bottom": 133,
+        "width": 240,
+        "height": 35
+      },
+      "notes": {}
+    },
+    {
+      "element_id": "golden.coverage.stage-started",
+      "kind": "text",
+      "status": "omitted_missing_content",
+      "binding": "plant.stage_started_on",
+      "pixel_frame": {
+        "left": 16,
+        "top": 136,
+        "right": 256,
+        "bottom": 171,
+        "width": 240,
+        "height": 35
+      },
+      "notes": {}
+    },
+    {
+      "element_id": "golden.coverage.print-date",
+      "kind": "text",
+      "status": "placed",
+      "binding": "print.date",
+      "pixel_frame": {
+        "left": 16,
+        "top": 174,
+        "right": 256,
+        "bottom": 209,
+        "width": 240,
+        "height": 35
+      },
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [240, 35]
+      }
+    },
+    {
+      "element_id": "golden.coverage.plant-link",
+      "kind": "qr",
+      "status": "placed",
+      "binding": "plant.link",
+      "pixel_frame": {
+        "left": 272,
+        "top": 96,
+        "right": 368,
+        "bottom": 192,
+        "width": 96,
+        "height": 96
+      },
+      "notes": {}
+    }
+  ],
+  "diagnostics": [
+    ["content.source_unresolved", "warning"],
+    ["content.stage_date_missing", "warning"]
+  ],
+  "evidence": {
+    "sha256": "e6be4abcaf61a212ffb0544dac05d2167306418d1d7deafb2a0cc7be51289550",
+    "rendered_from": "sha256:a009829dc100c7ad8b5307e3e1ae18804c8a1765feb84458dc3df76dbf83270b"
+  }
+}

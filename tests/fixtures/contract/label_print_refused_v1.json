@@ -1,0 +1,16 @@
+{
+  "outcome": "refused",
+  "refusal": {
+    "blocked_by": ["result_not_current"],
+    "code": "label_template.print_refused",
+    "current": {
+      "family": "growspace.label-templates",
+      "generation": 4,
+      "major": 1,
+      "minor": 0
+    },
+    "operation": "single_print",
+    "reason": "single_print was refused: result_not_current. Something this label depends on has changed since it was approved. Preview it again before printing.",
+    "recovery": "refresh_preview"
+  }
+}

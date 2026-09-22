@@ -131,7 +131,7 @@ async def test_schedule_matches_when_device_already_holds_it(
         {"time.port_off": "20:00:00"},  # off-time drifted (e.g. missed flip)
         {"number.port_power": "8.0"},  # power drifted
         {"select.port_mode": None},  # entity unavailable
-        {"number.port_power": "unknown"},  # unparseable power
+        {"number.port_power": "unknown"},  # unparsable power
     ],
 )
 async def test_schedule_mismatch_requires_push(

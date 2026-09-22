@@ -87,6 +87,14 @@ class IrrigationStrategy(BaseModel):
     auto_light_tracking: bool = False
     detected_lights_on_time: str | None = None
 
+    # ── Skip P2 (workspace#131) ─────────────────────────────────────────────
+    # A phase-transition rule, not a timing value: when True the [[Steering
+    # Phase Machine]] sends a completed P1 straight to P3 and P2 never runs.
+    # Deliberately stored beside the P2 fields it bypasses rather than clearing
+    # them — the P2 pair keeps whatever the grower configured, so turning this
+    # back off restores the ordinary P1 → P2 → P3 day with nothing to re-enter.
+    skip_p2_after_p1: bool = False
+
     # Shot Sizing Mode (ADR-0011). SECONDS is the default first-class behavior;
     # VOLUME expresses shot sizes as a percent of substrate volume and is only
     # active when a substrate profile and pump flow rate are both configured.
@@ -129,6 +137,27 @@ class IrrigationStrategy(BaseModel):
     # reads this; selecting a mode stamps preset values into the explicit
     # fields above. Existing stored configs deserialize with None unchanged.
     declared_steering_mode: SteeringMode | None = None
+
+    # ── Recipe Stamp (ADR-0045) ─────────────────────────────────────────────
+    # Which grower-authored [[Irrigation Recipe]] was last stamped into the
+    # fields above, and when. Both None means "never applied" — a real third
+    # state, exactly as ``declared_steering_mode`` is undeclared until its
+    # first stamp. The coordinator never reads either: applying writes the
+    # recipe's values into the explicit fields and these only record what did
+    # it. No drift hash sits beside them, because recipes are held by
+    # reference and "has the grower tweaked since?" is a live comparison
+    # (``domain/irrigation_recipe.recipe_has_drifted``).
+    applied_recipe_id: str | None = None
+    recipe_applied_at: str | None = None
+
+    # ── Irrigation Program binding (ADR-0045) ───────────────────────────────
+    # Which grower-authored [[Irrigation Program]] this growspace follows.
+    # The binding is **explicit** on purpose: ``ECRampCurve`` binds implicitly
+    # by first stage match in dictionary order, so which curve drives a
+    # growspace is an accident of insertion — a footgun this deliberately does
+    # not repeat. None means unbound. The control loop never reads it either:
+    # a program is a plan, and nothing applies from it without a stamp.
+    irrigation_program_id: str | None = None
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -304,7 +333,10 @@ class IrrigationConfig(BaseModel):
     drain_duration: int | None = None
     irrigation_times: list[IrrigationScheduleItem] = field(default_factory=list)
     drain_times: list[IrrigationScheduleItem] = field(default_factory=list)
-    veg_day_hours: int = 12
+    # Legacy irrigation copy of the vegetative photoperiod. Boundary math uses
+    # EnvironmentConfig via resolve_day_hours(), but keeping this default aligned
+    # avoids two backend models assigning different meanings to an omitted value.
+    veg_day_hours: int = 18
     pump_flow_rate_ml_per_sec: float = 0.0
     soil_trigger_percent: float | None = None
     daily_volume_cap_liters: float | None = None
@@ -315,6 +347,13 @@ class IrrigationConfig(BaseModel):
     ec_target_ranges: list[ECTargetRange] = field(default_factory=list)
     auto_advance_p1_to_p2: bool = False
     auto_advance_p2_to_p3: bool = False
+    # Whether reaching a new week of the bound [[Irrigation Program]] stamps
+    # that slot's recipe unattended. Opt-in and defaulting off, exactly as the
+    # two phase flags above are, because it is the same kind of consent: the
+    # grower saying in advance that something other than their own gesture may
+    # move water. With it off the growspace reports that a new week's recipe is
+    # available and waits (ADR-0045).
+    program_auto_advance: bool = False
     halt_on_runoff_ec_threshold: float | None = None
     active_steering_phase: str = "p2"
     phase_changed_at: str | None = None
@@ -389,9 +428,16 @@ class ECRampPoint(BaseModel):
 
 @dataclass(slots=True)
 class ECRampCurve(BaseModel):
-    """EC target curve for a growth stage."""
+    """EC target curve for one growth stage of one growspace (ADR-0046).
+
+    ``growspace_id`` is the explicit owner: a curve drives only its own
+    growspace's [[Active Feed EC Target]], and at most one curve exists per
+    ``(growspace_id, stage)``. An empty ``growspace_id`` marks a curve stored by
+    the version that discarded the binding — it is inert and raises a repair.
+    """
 
     id: str = ""
+    growspace_id: str = ""
     name: str = ""
     stage: str = ""
     points: list[ECRampPoint] = field(default_factory=list)

@@ -51,7 +51,7 @@ from custom_components.growspace_manager.services.plant_utils import (
 )
 from custom_components.growspace_manager.strain_library import StrainLibrary
 from custom_components.growspace_manager.utils import parse_date_field
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
@@ -548,7 +548,7 @@ class PlantFacade:
         hass: HomeAssistant,
         strain_library: StrainLibrary,
         call: ServiceCall,
-    ) -> None:
+    ) -> dict[str, str]:
         """Unpack an add_plant ServiceCall and delegate to add_plant."""
         _LOGGER.debug("Service call: add_plant with data: %s", call.data)
 
@@ -612,6 +612,8 @@ class PlantFacade:
         ) as err:
             _LOGGER.exception("Failed to add plant")
             raise ServiceValidationError(f"Failed to add plant: {err}") from err
+
+        return {"plant_id": plant_id}
 
     async def add_plants_from_call(
         self,
@@ -854,8 +856,10 @@ async def _handle_add_plant(
     coordinator: GrowspaceCoordinator,
     strain_library: StrainLibrary,
     call: ServiceCall,
-) -> None:
-    await coordinator.services.plants.add_plant_from_call(hass, strain_library, call)
+) -> dict[str, str]:
+    return await coordinator.services.plants.add_plant_from_call(
+        hass, strain_library, call
+    )
 
 
 async def _handle_add_plants(
@@ -910,6 +914,7 @@ SERVICES: list[ServiceDefinition] = [
         _handle_add_plant,
         ADD_PLANT_SCHEMA,
         needs_strain_lib=True,
+        supports_response=SupportsResponse.OPTIONAL,
     ),
     ServiceDefinition(
         GrowspaceService.ADD_PLANTS,

@@ -9,6 +9,7 @@ from custom_components.growspace_manager.actuator_driver import (
     FanDriver,
     GenericOnOffDriver,
     LightDriver,
+    NumberDriver,
     SwitchDriver,
     resolve_actuator_driver,
     resolve_actuator_drivers,
@@ -127,6 +128,8 @@ async def test_switch_driver_default_threshold_is_zero(mock_hass: MagicMock) -> 
     ("entity_id", "expected_type"),
     [
         ("fan.exhaust", FanDriver),
+        ("input_number.exhaust_speed", NumberDriver),
+        ("number.exhaust_speed", NumberDriver),
         ("switch.exhaust", SwitchDriver),
         ("input_boolean.damper", SwitchDriver),
     ],
@@ -162,6 +165,40 @@ async def test_safe_service_call_swallows_device_errors(
     mock_hass.services.async_call.side_effect = error
     await FanDriver(mock_hass, "fan.exhaust").set_speed(50)
     mock_hass.services.async_call.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("entity_id", "pct", "value"),
+    [
+        ("input_number.exhaust_speed", 0, 0),
+        ("input_number.exhaust_speed", 64, 6),
+        ("number.circulation_speed", 100, 10),
+    ],
+)
+async def test_number_driver_scales_percentage_to_speed_index(
+    mock_hass: MagicMock, entity_id: str, pct: int, value: int
+) -> None:
+    """Writable numeric fan entities receive the card's 0-10 speed index."""
+    await NumberDriver(mock_hass, entity_id).set_speed(pct)
+    domain = entity_id.split(".", 1)[0]
+    mock_hass.services.async_call.assert_awaited_once_with(
+        domain,
+        "set_value",
+        {ATTR_ENTITY_ID: entity_id, "value": value},
+        blocking=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("0", False), ("5", True), (STATE_UNKNOWN, False), ("not-a-number", False)],
+)
+async def test_number_driver_is_on_reads_positive_speed(
+    mock_hass: MagicMock, value: str, expected: bool
+) -> None:
+    """Numeric fan state is on only when it is available and above zero."""
+    mock_hass.states.get.return_value = _state(value)
+    assert NumberDriver(mock_hass, "input_number.fan_speed").is_on() is expected
 
 
 # ---------------------------------------------------------------------------
@@ -291,10 +328,20 @@ async def test_resolve_actuator_drivers_merges_and_skips_unsupported(
     """The aggregator yields a driver per plain entity and AC Infinity bundle."""
     drivers = resolve_actuator_drivers(
         mock_hass,
-        ["fan.exhaust", "switch.damper", "climate.unsupported"],
+        [
+            "fan.exhaust",
+            "input_number.exhaust_speed",
+            "switch.damper",
+            "climate.unsupported",
+        ],
         [ACInfinityDevice(mode_entity="select.m", speed_entity="number.s")],
     )
-    assert [type(d) for d in drivers] == [FanDriver, SwitchDriver, ACInfinityDriver]
+    assert [type(d) for d in drivers] == [
+        FanDriver,
+        NumberDriver,
+        SwitchDriver,
+        ACInfinityDriver,
+    ]
 
 
 async def test_resolve_actuator_drivers_empty(mock_hass: MagicMock) -> None:

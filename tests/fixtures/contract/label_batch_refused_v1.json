@@ -1,0 +1,16 @@
+{
+  "outcome": "refused",
+  "refusal": {
+    "blocked_by": ["warning_acknowledgement_required"],
+    "code": "label_template.print_refused",
+    "current": {
+      "family": "growspace.label-templates",
+      "generation": 4,
+      "major": 1,
+      "minor": 0
+    },
+    "operation": "batch_preflight",
+    "reason": "batch_preflight was refused: warning_acknowledgement_required.",
+    "recovery": "acknowledge_warnings"
+  }
+}

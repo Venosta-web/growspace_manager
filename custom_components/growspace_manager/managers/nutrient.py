@@ -8,6 +8,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 import uuid
 
+from custom_components.growspace_manager.domain.current_stage import (
+    resolve_stage_and_age,
+)
 from custom_components.growspace_manager.models import (
     ECRampCurve,
     ECRampPoint,
@@ -202,14 +205,38 @@ class NutrientManager:
 
     async def async_save_ec_ramp_curve(
         self,
+        growspace_id: str,
         name: str,
         stage: str,
         points: list[dict[str, Any]],
         curve_id: str | None = None,
     ) -> ECRampCurve:
-        """Create or update an EC ramp curve."""
+        """Create or update one growspace's EC ramp curve for a stage.
+
+        A curve is owned by exactly one growspace and there is at most one per
+        ``(growspace_id, stage)`` (ADR-0046), so a second curve for a stage the
+        growspace already covers is **refused** rather than stored as one of two
+        curves whose precedence would be an accident of insertion order.
+        """
+        clash = next(
+            (
+                c
+                for c in self.ec_ramp_curves.values()
+                if c.growspace_id == growspace_id
+                and c.stage == stage
+                and c.id != curve_id
+            ),
+            None,
+        )
+        if clash is not None:
+            raise ValueError(
+                f"EC ramp curve '{clash.name}' already covers stage '{stage}' for "
+                f"this growspace; edit it instead of adding a second curve"
+            )
+
         if curve_id and curve_id in self.ec_ramp_curves:
             curve = self.ec_ramp_curves[curve_id]
+            curve.growspace_id = growspace_id
             curve.name = name
             curve.stage = stage
             curve.points = [
@@ -220,6 +247,7 @@ class NutrientManager:
             cid = curve_id or str(uuid.uuid4())
             curve = ECRampCurve(
                 id=cid,
+                growspace_id=growspace_id,
                 name=name,
                 stage=stage,
                 points=[
@@ -232,8 +260,9 @@ class NutrientManager:
 
         await self.save_callback()
         _LOGGER.info(
-            "Saved EC ramp curve '%s' for stage %s with %d points",
+            "Saved EC ramp curve '%s' for growspace %s stage %s with %d points",
             name,
+            growspace_id,
             stage,
             len(points),
         )
@@ -257,19 +286,23 @@ class NutrientManager:
             raise ValueError(f"Plant {plant_id} not found")
 
         applicable: list[NutrientPreset] = []
+        # The Plant Lifecycle module owns Current Stage; matching on the legacy
+        # `plant.stage` shadow fed presets a stale stage after a Reveg (#634).
+        current_stage, stage_age = resolve_stage_and_age(plant)
+        current_stage = current_stage.lower()
 
         for preset in self.nutrient_presets.values():
             # If preset has no stage filter, it applies to all stages
             if preset.stage is not None:
                 # Check if plant's current stage matches preset stage
-                if str(plant.stage).lower() != str(preset.stage).lower():
+                if current_stage != str(preset.stage).lower():
                     continue
 
-            # If preset has min_days_in_stage, check if plant meets it
+            # If preset has min_days_in_stage, check if plant meets it.
+            # Current Stage Age, not Lifetime Stage Days: a revegged plant must
+            # not look eligible on day one of its second veg stint (#635).
             if preset.min_days_in_stage is not None:
-                current_stage = str(plant.stage).lower()
-                days_in_stage = plant.get_days_in_stage(current_stage)
-                if days_in_stage < preset.min_days_in_stage:
+                if stage_age < preset.min_days_in_stage:
                     continue
 
             applicable.append(preset)

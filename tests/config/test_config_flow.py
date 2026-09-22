@@ -2388,6 +2388,44 @@ async def test_options_flow_configure_irrigation_submit(
     )
 
 
+@pytest.mark.asyncio
+async def test_options_flow_presents_irrigation_change_validation_failure(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """The options adapter keeps an invalid candidate on the form."""
+    from custom_components.growspace_manager.services.irrigation_change import (
+        IrrigationChangeError,
+    )
+
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+    mock_coordinator.growspaces = {
+        "gs1": Mock(
+            name="Growspace 1",
+            irrigation_config=IrrigationConfig(),
+            irrigation_strategy=IrrigationStrategy(),
+        )
+    }
+    mock_coordinator.services.growspaces.update_irrigation_config = AsyncMock(
+        side_effect=IrrigationChangeError("Pore EC target band invalid")
+    )
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow.selected_growspace_id = "gs1"
+
+    result = await flow.async_step_irrigation_overview(
+        user_input={"pore_ec_target_min": 5.0, "pore_ec_target_max": 4.0}
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "irrigation_overview"
+    assert result["errors"] == {"base": "invalid_irrigation_change"}
+    assert result["description_placeholders"]["error"] == (
+        "Pore EC target band invalid"
+    )
+
+
 # ============================================================================
 # Test OptionsFlowHandler - Manage Strain Library
 # ============================================================================
@@ -3217,6 +3255,32 @@ async def test_options_flow_export_strain_library_back(
     result = await flow.async_step_export_strain_library(user_input={})
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "manage_strain_library"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_configure_vision_delegates_to_the_ai_handler(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    """The Vision connection step is reachable from the menu and by name.
+
+    The options flow owns neither the form nor the probe; both entry points
+    delegate to the one handler, so the connection cannot be configured through
+    a second path that skips the probe.
+    """
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+    flow.ai_handler.async_step_configure_vision = AsyncMock(  # type: ignore[method-assign]
+        return_value={"type": FlowResultType.FORM}
+    )
+
+    await flow.async_step_init(user_input={"action": "configure_vision"})
+    await flow.async_step_configure_vision(user_input={"connection_mode": "automatic"})
+
+    assert flow.ai_handler.async_step_configure_vision.await_count == 2
 
 
 @pytest.mark.asyncio

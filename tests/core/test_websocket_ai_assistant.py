@@ -768,7 +768,7 @@ async def test_save_ai_settings_persists_full_dict(
         "notification_personality": "Scientific",
         "ai_auto_alerts": False,
         "max_response_length": 300,
-        "vision_checkup_enabled": True,
+        "vision_explainer_sees_image": False,
         "ai_task_entity_id": "ai_task.my_task",
         "briefing_interval_minutes": 60,
         "briefing_trigger_entities": ["sensor.vpd"],

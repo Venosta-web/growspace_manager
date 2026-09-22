@@ -2,6 +2,7 @@
 # Entity IDs match the sim_e2e_[stage]_irrigation_pump / sim_e2e_[stage]_drain_pump
 # convention used by e2e-setup.ts when calling growspace_manager.set_irrigation_settings.
 
+---
 input_boolean:
   sim_e2e_mother_irrigation_pump:
     name: "E2E Mother Irrigation Pump"

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
+from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.utils import calculate_days_since, format_date
 
 if TYPE_CHECKING:
@@ -79,3 +81,22 @@ def get_formatted_dates(plant: Plant) -> dict[str, str | None]:
         "last_trained": format_date(plant.last_trained),
         "last_ipm": format_date(plant.last_ipm),
     }
+
+
+# Plant stages whose plants no longer sit on the irrigation line; excluded from
+# the live plant count that backs per-plant Volume Mode dosing (see ADR-0011).
+NON_LIVE_STAGES: frozenset[str] = frozenset(
+    {PlantStage.DRY.value, PlantStage.CURE.value}
+)
+
+
+def count_live_plants(plants: Iterable[Plant]) -> int:
+    """Return how many of ``plants`` still draw irrigation.
+
+    The per-plant dosing basis for Volume Mode: a percent-of-substrate shot is
+    dosed per pot, so the tent's total volume — and the pump seconds that
+    deliver it — scale with this count (ADR-0011). Shared by the live shot
+    composer and by [[Irrigation Recipe]] capture, which divides the very same
+    count back out to recover a per-pot percent.
+    """
+    return sum(1 for p in plants if str(getattr(p, "stage", "")) not in NON_LIVE_STAGES)

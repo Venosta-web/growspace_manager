@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import timedelta
 import logging
+import math
 import time
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,7 @@ from .domain.day_night import DayNightTracker
 from .domain.fan_control import (
     FAN_VPD_STAGE_DEFAULTS,
     compute_fan_speed,
+    compute_inverted_fan_speed,
     compute_wind_offset,
     evaluate_temp_override,
     resolve_stage_vpd_target,
@@ -43,7 +45,7 @@ __all__ = [
 
 
 class CirculationFanCoordinator:
-    """Controls circulation fans via linear speed regulation on humidity or temperature."""
+    """Control circulation fans from humidity, temperature, or VPD demand."""
 
     def __init__(
         self,
@@ -123,6 +125,9 @@ class CirculationFanCoordinator:
         if sensor_value is None:
             return
 
+        low_vpd_max_demand = False
+        temp_override_active = False
+
         if cfg.regulation_mode == FanRegulationMode.HUMIDITY:
             speed = compute_fan_speed(
                 sensor_value,
@@ -148,7 +153,10 @@ class CirculationFanCoordinator:
                 effective_vpd_target = self._get_stage_vpd_target(cfg, is_day)
             else:
                 effective_vpd_target = cfg.vpd_target
-            speed = compute_fan_speed(
+            low_vpd_max_demand = sensor_value <= (
+                effective_vpd_target - cfg.vpd_tolerance
+            )
+            speed = compute_inverted_fan_speed(
                 sensor_value,
                 effective_vpd_target,
                 cfg.vpd_tolerance,
@@ -171,16 +179,19 @@ class CirculationFanCoordinator:
                             cfg.max_speed,
                         )
                     )
+                    temp_override_active = self._temp_override_active
         else:
             # Defends against a stale/invalid regulation_mode in stored config
             # (mypy sees this as unreachable since the enum above is exhaustive).
             return  # type: ignore[unreachable]
 
-        if cfg.wind_enabled:
+        if cfg.wind_enabled and not temp_override_active:
             elapsed = time.monotonic() - self._start_time
             wind_offset = compute_wind_offset(
                 cfg.wind_amplitude_pct, elapsed, cfg.wind_period_seconds
             )
+            if low_vpd_max_demand:
+                wind_offset = max(0.0, wind_offset)
             speed = max(cfg.min_speed, min(cfg.max_speed, round(speed + wind_offset)))
 
         drivers = resolve_actuator_drivers(
@@ -222,13 +233,24 @@ class CirculationFanCoordinator:
         if not sensors:
             return None
 
-        state = self.hass.states.get(sensors[0])
-        if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+        readings: list[float] = []
+        selected_sensors = sensors if mode == FanRegulationMode.VPD else sensors[:1]
+        for sensor in selected_sensors:
+            state = self.hass.states.get(sensor)
+            if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                continue
+            try:
+                reading = float(state.state)
+            except ValueError:
+                continue
+            if math.isfinite(reading):
+                readings.append(reading)
+
+        if not readings:
             return None
-        try:
-            return float(state.state)
-        except ValueError:
-            return None
+        if mode == FanRegulationMode.VPD:
+            return min(readings)
+        return readings[0]
 
     async def async_restart(self) -> None:
         """Restart the polling tick after a config change."""

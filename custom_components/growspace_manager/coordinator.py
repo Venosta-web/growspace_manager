@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
+from .capture_continuity_monitor import CaptureContinuityMonitor
 from .const import COORDINATOR_UPDATE_INTERVAL_MINUTES, DOMAIN, VERSION
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
@@ -25,8 +26,11 @@ from .event_bus_pkg import GrowspaceEventBus
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .integration_types import DateInput
+from .irrigation_program_progression import IrrigationProgramProgression
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
+from .managers.irrigation_program import IrrigationProgramLibrary
+from .managers.irrigation_recipe import IrrigationRecipeLibrary
 from .managers.nutrient import NutrientManager
 from .managers.plant import PlantManager
 from .managers.subsystem import SubsystemManager
@@ -47,6 +51,7 @@ from .strain_library import StrainLibrary
 from .tank_monitor import TankLevelMonitor
 from .view_model_builder import ViewModelBuilder
 from .vision_checkup_scheduler import VisionCheckupScheduler
+from .vision_connection import VisionConnection
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -183,6 +188,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         *,
         view_model_builder: ViewModelBuilder,
         nutrient_manager: NutrientManager,
+        recipe_library: IrrigationRecipeLibrary,
+        program_library: IrrigationProgramLibrary,
         genetics_manager: GeneticsManager,
         storage_manager: StorageManager,
         growspace_manager: GrowspaceManager,
@@ -194,18 +201,23 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         environment_reporter: EnvironmentReporter,
         notification_manager: NotificationManager,
         notification_settings: NotificationSettingsManager,
+        program_progression: IrrigationProgramProgression,
         subsystem_manager: SubsystemManager,
         services: ServiceFacade,
+        vision_connection: VisionConnection,
         vision_scheduler: VisionCheckupScheduler,
         briefing_scheduler: BriefingScheduler,
         photoperiod_checker: PhotoperiodFlipChecker,
         alert_monitor: AlertMonitor,
+        capture_continuity: CaptureContinuityMonitor,
         conversation_store: ConversationStore,
         tank_monitor: TankLevelMonitor,
     ) -> None:
         """Wire coordinator-self-dependent services. Called by CoordinatorBuilder after __init__."""
         self.view_model_builder = view_model_builder
         self._nutrient_manager = nutrient_manager
+        self._recipe_library = recipe_library
+        self._program_library = program_library
         self._genetics_manager = genetics_manager
         self.storage_manager = storage_manager
         self._growspace_manager = growspace_manager
@@ -217,12 +229,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.environment_reporter = environment_reporter
         self._notification_manager = notification_manager
         self.notification_settings = notification_settings
+        self.program_progression = program_progression
         self._subsystem_manager = subsystem_manager
         self.services = services
+        self.vision_connection = vision_connection
         self.vision_scheduler = vision_scheduler
         self.briefing_scheduler = briefing_scheduler
         self.photoperiod_checker = photoperiod_checker
         self.alert_monitor = alert_monitor
+        self.capture_continuity = capture_continuity
         self.conversation_store = conversation_store
         self.tank_monitor = tank_monitor
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
@@ -313,9 +328,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         This method is called automatically based on the update_interval (15 minutes).
         It performs the following operations:
         1. Invalidates all caches to ensure fresh calculations
-        2. Rebuilds the data property for all entities
-        3. Checks for timed notifications that need to be sent
-        4. Updates air exchange recommendations based on current conditions
+        2. Carries bound Irrigation Programs into the week they have reached
+        3. Rebuilds the data property for all entities
+        4. Checks for timed notifications that need to be sent
+        5. Updates air exchange recommendations based on current conditions
 
         Returns:
             The updated data dictionary containing all growspace and plant data.
@@ -324,10 +340,20 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # We must invalidate ALL caches to ensure calculations are fresh.
         self.cache.invalidate(None)
 
+        # Before the payload is built, not after: a growspace that has crossed
+        # into a new week of its [[Irrigation Program]] should be reported as
+        # already carrying that week's recipe, not as owing a stamp the tick
+        # has in fact just written. With auto-advance off this writes nothing
+        # and only decides what the payload will say ([[Program Hold]]).
+        await self.program_progression.async_evaluate_all()
+
         self.data = self.view_model_builder.build_data_property()
         await self._notification_manager.async_check_timed_notifications()
         await self._notification_manager.async_check_pending_alerts()
         await self.environment_analyzer.async_update_air_exchange_recommendations()
+        # Keeps the Vision status cache warm so `get_vision_status` never has to
+        # probe. It is a no-op while the cache is fresh (ADR 0043).
+        await self.vision_connection.async_refresh_if_stale()
 
         return self.data
 
@@ -486,6 +512,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._notification_manager.shutdown()
         self.tank_monitor.async_stop()
         self.vision_scheduler.async_stop()
+        await self.vision_connection.async_shutdown()
         self.briefing_scheduler.async_stop()
         self.photoperiod_checker.async_stop()
         await self.storage_manager.async_force_save()
@@ -515,12 +542,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._growspace_manager.ensure_default_growspaces()
         await self.async_commit()
 
+        # Probe Growspace Vision once at setup so the status the card reads is
+        # populated before the first coordinator tick.
+        await self.vision_connection.async_refresh()
+        await self.vision_scheduler.async_load_latest_checkups(list(self.growspaces))
+
         # Schedule vision checkups for all loaded growspaces
         self.vision_scheduler.schedule_all_growspaces()
         self.briefing_scheduler.start()
         self.photoperiod_checker.schedule_all_growspaces()
         await self.tank_monitor.async_start()
         await self.alert_monitor.async_start()
+        await self.capture_continuity.async_start()
         await self.conversation_store.async_load()
 
         # Initialize environment reporter after data load

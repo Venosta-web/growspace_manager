@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "service_name": "growspace_manager_vision",
+  "service_version": "1.0.0",
+  "supported_schema_versions": [1],
+  "capabilities": {
+    "single_image_analysis": true,
+    "batch_analysis": false,
+    "embeddings": true,
+    "service_scoring": false,
+    "regions": false
+  },
+  "limits": {
+    "max_image_bytes": 10485760,
+    "max_decoded_pixels": 24000000,
+    "max_concurrency": 1,
+    "max_queue_depth": 0,
+    "inference_timeout_seconds": 10
+  }
+}

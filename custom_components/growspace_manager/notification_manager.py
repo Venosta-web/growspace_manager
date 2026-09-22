@@ -32,7 +32,7 @@ from .const import (
     GrowspaceSensorType,
     NotificationTier,
 )
-from .domain import calculate_days_in_stage
+from .domain.cultivation_band import current_stage_age_in
 from .exceptions import GrowspaceError
 from .notification_rewriter import AINotificationRewriter
 from .notifications.evaluation_snapshot import EvaluationSnapshot
@@ -79,6 +79,7 @@ class NotificationManager:
         # Latest evaluation snapshot per (growspace_id, sensor_type), used to
         # build batched notifications without holding live entity references.
         self._latest_snapshots: dict[tuple[str, str], EvaluationSnapshot] = {}
+        self._latest_evaluations: dict[tuple[str, str], EvaluationSnapshot] = {}
         self._batch_timers: dict[str, CALLBACK_TYPE] = {}
         self._pending_alerts: dict[str, PendingAlert] = {}
         self._cooldowns: dict[str, dict[str, datetime]] = {}
@@ -168,6 +169,7 @@ class NotificationManager:
         growspace_id = snapshot.growspace_id
         sensor_type = snapshot.sensor_type
         snap_key = (growspace_id, sensor_type)
+        self._latest_evaluations[snap_key] = snapshot
 
         self._handle_light_flip(growspace_id, snapshot.lights_on)
 
@@ -248,6 +250,12 @@ class NotificationManager:
         ):
             alert.notification_timer()
             alert.notification_timer = None
+
+    def latest_evaluation(
+        self, growspace_id: str, sensor_type: str
+    ) -> EvaluationSnapshot | None:
+        """Return the latest immutable Bayesian evaluation, active or inactive."""
+        return self._latest_evaluations.get((growspace_id, sensor_type))
 
     @callback
     def _schedule_recovery(self, growspace_id: str, alert: PendingAlert) -> None:
@@ -627,9 +635,13 @@ class NotificationManager:
         message: str,
     ) -> None:
         """Check and trigger notification for a specific plant."""
-        days_in_stage = calculate_days_in_stage(plant, trigger_type)
+        # A day-of-stage trigger is a question about the stage the plant is in
+        # right now. Reading it off the legacy `*_start` dates counted a veg
+        # stint the plant had already left, so after a Reveg "veg day 14" fired
+        # on the day of the Reveg itself (#635).
+        stage_age = current_stage_age_in(plant, trigger_type)
 
-        if days_in_stage >= day_to_trigger:
+        if stage_age is not None and stage_age >= day_to_trigger:
             notification_key = f"timed_{notification_id}"
             # This bucket is keyed by notification_key -> bool for timed notifications,
             # unlike the stage -> day -> bool shape used elsewhere for this field.

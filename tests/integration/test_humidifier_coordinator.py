@@ -10,7 +10,7 @@ from custom_components.growspace_manager.domain.stage import PlantStage
 from custom_components.growspace_manager.humidifier_coordinator import (
     HumidifierCoordinator,
 )
-from custom_components.growspace_manager.models import ACInfinityDevice, Plant
+from custom_components.growspace_manager.models import ACInfinityDevice
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -21,6 +21,8 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+
+from .common import plant_on_stage_day
 
 
 @pytest.fixture
@@ -384,23 +386,18 @@ def test_init_missing_growspace(
 
 
 async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> None:
-    """Test correct growth stage detection."""
-    plant = MagicMock(spec=Plant)
-    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
-        plant
-    ]
+    """Test correct growth stage detection from Current Stage Age."""
 
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {PlantStage.FLOWER: 60}.get(stage, 0),
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.FLOWER_LATE
+    def _stage_on(stage: str, day: int) -> PlantStage:
+        mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+            plant_on_stage_day(stage, day)
+        ]
+        return coordinator._get_growth_stage()
 
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {PlantStage.VEG: 10}.get(stage, 0),
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.VEG
+    assert _stage_on("flower", 60) == PlantStage.FLOWER_LATE
+    assert _stage_on("flower", 42) == PlantStage.FLOWER_LATE
+    assert _stage_on("flower", 21) == PlantStage.FLOWER_MID
+    assert _stage_on("veg", 10) == PlantStage.VEG
 
 
 async def test_generic_domain_control(
@@ -494,6 +491,35 @@ async def test_ac_infinity_humidifier_turn_on(
     )
     mock_hass.services.async_call.reset_mock()
     await coord._control_devices(True)
+    mock_hass.services.async_call.assert_any_await(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.hum_mode", "option": "On"},
+        blocking=False,
+    )
+    mock_hass.services.async_call.assert_any_await(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: "number.hum_speed", "value": 8},
+        blocking=False,
+    )
+
+
+async def test_ac_infinity_only_humidifier_reacts_to_vpd(
+    mock_hass, mock_main_coordinator, mock_track_state_change_event
+) -> None:
+    """An AC-only bundle must pass the event-handler actuator guard."""
+    coord = _ac_infinity_humidifier(
+        mock_hass, mock_main_coordinator, mock_track_state_change_event
+    )
+    coord._get_current_vpd = MagicMock(return_value=2.0)
+    coord._get_growth_stage = MagicMock(return_value=PlantStage.VEG)
+    coord._day_night.determine = MagicMock(return_value=True)
+    coord._is_device_on = MagicMock(return_value=False)
+    coord._is_locked_by_timer = MagicMock(return_value=False)
+
+    await coord.async_check_and_control()
+
     mock_hass.services.async_call.assert_any_await(
         "select",
         "select_option",

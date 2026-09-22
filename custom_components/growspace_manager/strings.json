@@ -159,15 +159,24 @@
       },
       "configure_ai": {
         "title": "Configure AI Settings",
-        "description": "Set up the AI assistant for grow advice, notifications, and vision checkups.",
+        "description": "Set up the AI assistant for grow advice, notifications, and optional Vision evidence explanations.",
         "data": {
           "ai_enabled": "Enable AI features",
           "assistant_id": "AI assistant entity",
           "notification_personality": "Notification personality",
           "ai_auto_alerts": "Enable automatic AI alerts",
           "max_response_length": "Maximum response length (characters)",
-          "vision_checkup_enabled": "Enable AI vision checkups",
-          "ai_task_entity_id": "AI task entity (for vision analysis)"
+          "vision_explainer_sees_image": "Allow the optional Vision explainer to inspect snapshots",
+          "ai_task_entity_id": "AI task entity (optional Vision explainer)"
+        }
+      },
+      "configure_vision": {
+        "title": "Configure Growspace Vision",
+        "description": "Growspace Vision is the local image-analysis service. Leave this on automatic to use the Growspace Vision App installed through the Supervisor; choose manual to point Home Assistant at an endpoint you run yourself. A manual endpoint always needs its own access token.",
+        "data": {
+          "vision_connection_mode": "Connection",
+          "vision_endpoint_url": "Endpoint URL",
+          "vision_access_token": "Access token"
         }
       },
       "select_growspace_for_env": {
@@ -211,6 +220,7 @@
           "p2_shot_duration_seconds": "P2 Shot Duration (seconds)",
           "p2_shot_interval_minutes": "P2 Shot Interval (minutes)",
           "p2_stop_before_lights_off_minutes": "Stop P2 Before Lights Off (minutes)",
+          "skip_p2_after_p1": "Skip P2 After P1",
           "auto_advance_p2_to_p3": "Auto-Advance P2 to P3",
           "ec_modulation_enabled": "Enable EC Modulation",
           "pore_ec_target_min": "Minimum Pore EC Target",
@@ -219,6 +229,7 @@
         },
         "data_description": {
           "shot_sizing_mode": "Duration Mode uses fixed shot durations; Volume Mode derives them from the pump flow rate and substrate volume.",
+          "skip_p2_after_p1": "When enabled, irrigation transitions directly from P1 to P3 once P1 is complete. The P2 settings above are kept, not cleared.",
           "growspace_id_read_only": "The growspace these settings apply to. Read-only."
         }
       },
@@ -479,13 +490,19 @@
       "setup_error": "The integration is not set up yet. Try again once it has finished loading.",
       "file_not_found": "No file was found at that path. Check the path and try again.",
       "invalid_zip": "That file is not a valid strain library archive.",
+      "invalid_irrigation_change": "The irrigation settings are invalid: {error}",
       "import_failed": "The strain library could not be imported. Check the logs for details.",
       "add_failed": "The item could not be added because of an unexpected error. Check the logs for details.",
       "update_failed": "The item could not be updated because of an unexpected error. Check the logs for details.",
       "remove_failed": "The item could not be removed because of an unexpected error. Check the logs for details.",
       "select_growspace": "Select a growspace to continue",
       "fan_speed_invalid": "The minimum fan speed must be lower than the maximum fan speed",
-      "invalid_tuple_format": "The advanced Bayesian values must be entered as number pairs, for example (0.1, 0.9)"
+      "invalid_tuple_format": "The advanced Bayesian values must be entered as number pairs, for example (0.1, 0.9)",
+      "vision_not_configured": "No Growspace Vision endpoint is available. Install and start the Growspace Vision App, or enter a manual endpoint URL and access token.",
+      "vision_invalid_auth": "Growspace Vision rejected that access token.",
+      "vision_cannot_connect": "Growspace Vision could not be reached at that endpoint.",
+      "vision_incompatible": "That Growspace Vision service supports no analysis schema version this version of Growspace Manager understands. Update one of them.",
+      "vision_model_unavailable": "Growspace Vision is running but has no usable model loaded. Check the App log."
     },
     "abort": {
       "setup_error": "The integration is not set up yet. Try again once it has finished loading.",
@@ -609,7 +626,7 @@
     },
     "trigger_vision_checkup": {
       "name": "Trigger vision checkup",
-      "description": "Capture camera snapshot(s) and run AI vision analysis to detect plant health issues like drooping, pests, or nutrient deficiencies.",
+      "description": "Capture each configured camera and assemble local visual comparison, environmental, and fusion evidence. An AI task can optionally explain the result but is not required.",
       "fields": {
         "growspace_id": {
           "name": "Growspace ID",
@@ -626,6 +643,18 @@
     "exhaust_fan_migration": {
       "title": "Exhaust fans need to be re-enabled for {growspace}",
       "description": "Exhaust fans are now controlled by the dedicated exhaust fan controller instead of the dehumidifier. Because of this change, the exhaust fans in {growspace} are no longer being cycled automatically. Open the Exhaust panel for {growspace} and enable the exhaust fan controller to restore automatic control. This was not migrated automatically because the old on/off humidity thresholds do not map onto the new speed-based settings."
+    },
+    "ec_ramp_curve_unmigrated": {
+      "title": "EC ramp curve \"{curve}\" needs to be saved again",
+      "description": "The EC ramp curve \"{curve}\" was stored by a version that discarded both the growth stage you chose and the growspace the curve belongs to, so it has never driven a feed EC target — feed EC fell back to the per-stage EC target range instead. Open the growspace's Irrigation panel, go to the EC Ramp tab, set the curve's name and growth stage, and save it. This was not repaired automatically because the growth stage was never written to storage and cannot be recovered. Your ramp points are intact."
+    },
+    "label_template_store_incompatible": {
+      "title": "Label Templates were saved by a newer Growspace Manager",
+      "description": "The Label Template library for this Growspace Manager entry was written at store version {found}, and this version of the integration reads version {supported}. Nothing has been changed: your templates, revision history, drafts and defaults are exactly as the newer version left them, and they are not being read at all — a partial read is how saved work quietly gets lost. Until then, Label Template management and template-based label printing are unavailable for this entry; every other Growspace Manager feature keeps working. Reinstall the newer Growspace Manager to use them again, or restore a Label Template backup taken with this version. The integration deliberately offers no automatic downgrade or reset."
+    },
+    "print_label_deprecated": {
+      "title": "The Classic label print service is removed in Growspace Manager {removal_version}",
+      "description": "Something on this Home Assistant printed a label through `growspace_manager.print_label`, the Classic label service. It still prints exactly as before on every 1.x release, but it is removed in Growspace Manager {removal_version}, and anything that still calls it will stop printing then.\n\nWhat to change depends on what printed:\n\n- **The Growspace Manager card's print button**: upgrade the card. Card releases up to v1.3.x print through the Classic service; newer releases print through Label Templates and need no further change. Upgrade the card before upgrading the integration to {removal_version}.\n- **An automation, script or dashboard button**: switch the action to `growspace_manager.print_label_template`, which prints a strain or plants through a published Label Template.\n\nThe [migration guide]({migration_url}) has before-and-after examples for each. This notice goes away by itself after a Home Assistant run in which nothing printed through the Classic service."
     }
   },
   "entity": {

@@ -51,14 +51,7 @@ jobs:
       # 2. Creates the ZIP file
       - name: ZIP Release
         if: steps.check_release.outputs.exists != 'true'
-        run: |
-          cd custom_components/growspace_manager
-          zip -r ../../growspace_manager.zip . \
-            -x ".github/*" \
-            -x ".coverage" \
-            -x ".gitignore" \
-            -x "pytest.ini" \
-            -x "module.json"
+        run: python3 .github/scripts/build_release_archive.py
 
       # 3. Creates the GitHub Release and attaches the new zip file
       - name: Create Release

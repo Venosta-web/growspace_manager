@@ -1,0 +1,79 @@
+{
+  "valid": [
+    {
+      "file": "valid/analyze-metadata.json",
+      "schema": "AnalyzeMetadata"
+    },
+    {
+      "file": "valid/analyze-response-analyzed.json",
+      "schema": "AnalyzeResponse"
+    },
+    {
+      "file": "valid/analyze-response-rejected.json",
+      "schema": "AnalyzeResponse"
+    },
+    {
+      "file": "valid/health-ready.json",
+      "schema": "HealthResponse"
+    },
+    {
+      "file": "valid/info.json",
+      "schema": "InfoResponse"
+    },
+    {
+      "file": "valid/models.json",
+      "schema": "ModelsResponse"
+    },
+    {
+      "file": "valid/error-model-not-loaded.json",
+      "schema": "ErrorResponse"
+    }
+  ],
+  "invalid": [
+    {
+      "file": "invalid/request-vpd.json",
+      "schema": "AnalyzeMetadata",
+      "reason": "environmental field vpd is forbidden"
+    },
+    {
+      "file": "invalid/request-temperature.json",
+      "schema": "AnalyzeMetadata",
+      "reason": "environmental field temperature is forbidden"
+    },
+    {
+      "file": "invalid/response-symptoms.json",
+      "schema": "AnalyzeResponse",
+      "reason": "symptoms output is forbidden"
+    },
+    {
+      "file": "invalid/response-chlorosis.json",
+      "schema": "AnalyzeResponse",
+      "reason": "chlorosis output is forbidden"
+    },
+    {
+      "file": "invalid/response-drooping.json",
+      "schema": "AnalyzeResponse",
+      "reason": "drooping output is forbidden"
+    },
+    {
+      "file": "invalid/response-anomaly-score.json",
+      "schema": "AnalyzeResponse",
+      "reason": "HA-owned anomaly_score is forbidden"
+    },
+    {
+      "file": "invalid/response-change-score.json",
+      "schema": "AnalyzeResponse",
+      "reason": "HA-owned change_score is forbidden"
+    },
+    {
+      "file": "invalid/response-trend.json",
+      "schema": "AnalyzeResponse",
+      "reason": "HA-owned trend is forbidden"
+    },
+    {
+      "file": "invalid/rejected-with-embedding.json",
+      "schema": "AnalyzeResponse",
+      "reason": "quality-rejected frames cannot carry embeddings"
+    }
+  ]
+}

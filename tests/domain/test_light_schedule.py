@@ -47,9 +47,13 @@ def test_window_wrapping_past_midnight() -> None:
         ([], 18),  # no plants -> veg
         ([_plant(None), _plant(None)], 18),  # all vegetative -> veg
         ([_plant(None), _plant("2026-07-01")], 12),  # one entered flower -> flower
-        ([_plant("2026-07-01T00:00:00+02:00")], 12),  # persisted lifecycle timestamp
         ([_plant("2026-07-03")], 12),  # entered flower today -> flower
         ([_plant("2026-07-10")], 18),  # flower start in the future -> still veg
+        # Lifecycle Timestamps are stored as full datetimes (ADR-0013)
+        ([_plant("2026-06-21T00:00:00+02:00")], 12),
+        ([_plant("2026-07-03T19:45:00+00:00")], 12),  # later today
+        ([_plant("2026-07-10T00:00:00+02:00")], 18),
+        ([_plant("not-a-date")], 18),  # malformed -> not flowering
     ],
 )
 def test_photoperiod_hours_follow_entered_flower(

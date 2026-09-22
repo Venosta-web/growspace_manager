@@ -1,0 +1,460 @@
+{
+  "contract": {
+    "family": "growspace.label-templates",
+    "generation": 4,
+    "major": 1,
+    "minor": 0
+  },
+  "library": {
+    "defaults": {},
+    "drafts": [
+      {
+        "base_revision": null,
+        "created_at": "2026-09-18T00:00:00+00:00",
+        "document": {
+          "elements": [
+            {
+              "content": {
+                "binding": "strain.name",
+                "parameters": {}
+              },
+              "frame": {
+                "height_mm": 8.4,
+                "width_mm": 43.0,
+                "x_mm": 2.5,
+                "y_mm": 2.0
+              },
+              "id": "<opaque-2>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.bold.v1",
+                "font_size_mm": 5.6,
+                "horizontal_align": "left",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 2,
+                "minimum_font_size_mm": 3.0,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            },
+            {
+              "frame": {
+                "height_mm": 0.4,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 11.0
+              },
+              "id": "<opaque-3>",
+              "kind": "divider",
+              "rotation": 0,
+              "style": {
+                "fill": "black"
+              }
+            },
+            {
+              "content": {
+                "binding": "strain.phenotype",
+                "parameters": {
+                  "presentation": "value"
+                }
+              },
+              "frame": {
+                "height_mm": 4.4,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 12.2
+              },
+              "id": "<opaque-4>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.regular.v1",
+                "font_size_mm": 3.2,
+                "horizontal_align": "left",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 1,
+                "minimum_font_size_mm": 2.2,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            },
+            {
+              "content": {
+                "binding": "strain.breeder",
+                "parameters": {
+                  "presentation": "labeled"
+                }
+              },
+              "frame": {
+                "height_mm": 4.4,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 17.0
+              },
+              "id": "<opaque-5>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.regular.v1",
+                "font_size_mm": 3.2,
+                "horizontal_align": "left",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 1,
+                "minimum_font_size_mm": 2.2,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            },
+            {
+              "content": {
+                "binding": "strain.lineage",
+                "parameters": {
+                  "presentation": "labeled"
+                }
+              },
+              "frame": {
+                "height_mm": 4.2,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 21.8
+              },
+              "id": "<opaque-6>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.regular.v1",
+                "font_size_mm": 3.2,
+                "horizontal_align": "left",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 1,
+                "minimum_font_size_mm": 2.2,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            },
+            {
+              "content": {
+                "binding": "print.date",
+                "parameters": {
+                  "date_style": "medium"
+                }
+              },
+              "frame": {
+                "height_mm": 3.0,
+                "width_mm": 43.0,
+                "x_mm": 2.0,
+                "y_mm": 26.0
+              },
+              "id": "<opaque-7>",
+              "kind": "text",
+              "rotation": 0,
+              "style": {
+                "font": "growspace.sans.regular.v1",
+                "font_size_mm": 2.4,
+                "horizontal_align": "right",
+                "line_spacing": "growspace.spacing.compact.v1",
+                "maximum_lines": 1,
+                "minimum_font_size_mm": 2.2,
+                "overflow": "shrink_ellipsis",
+                "vertical_align": "center"
+              }
+            }
+          ],
+          "label_size_id": "growspace.stock.50x30.v1",
+          "schema": "growspace.label-layout",
+          "version": 1
+        },
+        "head_revision": null,
+        "id": "<opaque-1>",
+        "label_size_id": "growspace.stock.50x30.v1",
+        "layout_schema_version": 1,
+        "modified_at": "2026-09-18T00:00:00+00:00",
+        "name": "Bench label",
+        "orphaned": false,
+        "owner": "admin-user",
+        "provenance": {
+          "draft_id": null,
+          "draft_version": null,
+          "factory_id": "growspace.factory.50x30",
+          "factory_revision": 2,
+          "source": "factory",
+          "source_revision": null,
+          "source_template_id": null
+        },
+        "recovery": {
+          "at": "2026-09-18T00:00:00+00:00",
+          "document": {
+            "elements": [
+              {
+                "content": {
+                  "binding": "strain.name",
+                  "parameters": {}
+                },
+                "frame": {
+                  "height_mm": 8.4,
+                  "width_mm": 43.0,
+                  "x_mm": 6.0,
+                  "y_mm": 2.0
+                },
+                "id": "<opaque-2>",
+                "kind": "text",
+                "rotation": 0,
+                "style": {
+                  "font": "growspace.sans.bold.v1",
+                  "font_size_mm": 5.6,
+                  "horizontal_align": "left",
+                  "line_spacing": "growspace.spacing.compact.v1",
+                  "maximum_lines": 2,
+                  "minimum_font_size_mm": 3.0,
+                  "overflow": "shrink_ellipsis",
+                  "vertical_align": "center"
+                }
+              },
+              {
+                "frame": {
+                  "height_mm": 0.4,
+                  "width_mm": 43.0,
+                  "x_mm": 2.0,
+                  "y_mm": 11.0
+                },
+                "id": "<opaque-3>",
+                "kind": "divider",
+                "rotation": 0,
+                "style": {
+                  "fill": "black"
+                }
+              },
+              {
+                "content": {
+                  "binding": "strain.phenotype",
+                  "parameters": {
+                    "presentation": "value"
+                  }
+                },
+                "frame": {
+                  "height_mm": 4.4,
+                  "width_mm": 43.0,
+                  "x_mm": 2.0,
+                  "y_mm": 12.2
+                },
+                "id": "<opaque-4>",
+                "kind": "text",
+                "rotation": 0,
+                "style": {
+                  "font": "growspace.sans.regular.v1",
+                  "font_size_mm": 3.2,
+                  "horizontal_align": "left",
+                  "line_spacing": "growspace.spacing.compact.v1",
+                  "maximum_lines": 1,
+                  "minimum_font_size_mm": 2.2,
+                  "overflow": "shrink_ellipsis",
+                  "vertical_align": "center"
+                }
+              },
+              {
+                "content": {
+                  "binding": "strain.breeder",
+                  "parameters": {
+                    "presentation": "labeled"
+                  }
+                },
+                "frame": {
+                  "height_mm": 4.4,
+                  "width_mm": 43.0,
+                  "x_mm": 2.0,
+                  "y_mm": 17.0
+                },
+                "id": "<opaque-5>",
+                "kind": "text",
+                "rotation": 0,
+                "style": {
+                  "font": "growspace.sans.regular.v1",
+                  "font_size_mm": 3.2,
+                  "horizontal_align": "left",
+                  "line_spacing": "growspace.spacing.compact.v1",
+                  "maximum_lines": 1,
+                  "minimum_font_size_mm": 2.2,
+                  "overflow": "shrink_ellipsis",
+                  "vertical_align": "center"
+                }
+              },
+              {
+                "content": {
+                  "binding": "strain.lineage",
+                  "parameters": {
+                    "presentation": "labeled"
+                  }
+                },
+                "frame": {
+                  "height_mm": 4.2,
+                  "width_mm": 43.0,
+                  "x_mm": 2.0,
+                  "y_mm": 21.8
+                },
+                "id": "<opaque-6>",
+                "kind": "text",
+                "rotation": 0,
+                "style": {
+                  "font": "growspace.sans.regular.v1",
+                  "font_size_mm": 3.2,
+                  "horizontal_align": "left",
+                  "line_spacing": "growspace.spacing.compact.v1",
+                  "maximum_lines": 1,
+                  "minimum_font_size_mm": 2.2,
+                  "overflow": "shrink_ellipsis",
+                  "vertical_align": "center"
+                }
+              },
+              {
+                "content": {
+                  "binding": "print.date",
+                  "parameters": {
+                    "date_style": "medium"
+                  }
+                },
+                "frame": {
+                  "height_mm": 3.0,
+                  "width_mm": 43.0,
+                  "x_mm": 2.0,
+                  "y_mm": 26.0
+                },
+                "id": "<opaque-7>",
+                "kind": "text",
+                "rotation": 0,
+                "style": {
+                  "font": "growspace.sans.regular.v1",
+                  "font_size_mm": 2.4,
+                  "horizontal_align": "right",
+                  "line_spacing": "growspace.spacing.compact.v1",
+                  "maximum_lines": 1,
+                  "minimum_font_size_mm": 2.2,
+                  "overflow": "shrink_ellipsis",
+                  "vertical_align": "center"
+                }
+              }
+            ],
+            "label_size_id": "growspace.stock.50x30.v1",
+            "schema": "growspace.label-layout",
+            "version": 1
+          },
+          "draft_version": 2,
+          "expected_version": 1,
+          "name": null,
+          "reason": "rejected_save"
+        },
+        "stale": false,
+        "template_id": null,
+        "version": 2
+      }
+    ],
+    "effective_defaults": {
+      "growspace.stock.40x30.v1": {
+        "label_size_id": "growspace.stock.40x30.v1",
+        "layout_digest": "sha256:a7ffe6da2ed17a063ce6b483639d46bd18d6bdbeb2506bb64a7d56f4c0b874a4",
+        "name": "Compact strain label",
+        "ref": {
+          "id": "growspace.factory.40x30",
+          "kind": "factory"
+        },
+        "revision": 1,
+        "via": "factory_fallback"
+      },
+      "growspace.stock.50x15.v1": {
+        "label_size_id": "growspace.stock.50x15.v1",
+        "layout_digest": "sha256:34a07d6815025d5d8fbc554a8fedff72a4654c6b6dcc5a280124e64569e71ba2",
+        "name": "Slim strain label",
+        "ref": {
+          "id": "growspace.factory.50x15",
+          "kind": "factory"
+        },
+        "revision": 1,
+        "via": "factory_fallback"
+      },
+      "growspace.stock.50x30.v1": {
+        "label_size_id": "growspace.stock.50x30.v1",
+        "layout_digest": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242",
+        "name": "Strain label",
+        "ref": {
+          "id": "growspace.factory.50x30",
+          "kind": "factory"
+        },
+        "revision": 2,
+        "via": "factory_fallback"
+      },
+      "growspace.stock.50x50.v1": {
+        "label_size_id": "growspace.stock.50x50.v1",
+        "layout_digest": "sha256:afc0d874b9061a03c69d12387f993e4219cd7fb037830d00fd506d4d64ddd7a8",
+        "name": "Square strain label",
+        "ref": {
+          "id": "growspace.factory.50x50",
+          "kind": "factory"
+        },
+        "revision": 1,
+        "via": "factory_fallback"
+      },
+      "growspace.stock.50x80.v1": {
+        "label_size_id": "growspace.stock.50x80.v1",
+        "layout_digest": "sha256:18cbd8e1ad1091c764f5e3abc6c4f737692939c7d371574ed7c1f7fe0c8ce631",
+        "name": "Tall strain label",
+        "ref": {
+          "id": "growspace.factory.50x80",
+          "kind": "factory"
+        },
+        "revision": 1,
+        "via": "factory_fallback"
+      }
+    },
+    "entry_id": "entry-a",
+    "factory_templates": [
+      {
+        "id": "growspace.factory.50x30",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.50x30.v1",
+        "name": "Strain label",
+        "revision": 2,
+        "valid": true
+      },
+      {
+        "id": "growspace.factory.40x30",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.40x30.v1",
+        "name": "Compact strain label",
+        "revision": 1,
+        "valid": true
+      },
+      {
+        "id": "growspace.factory.50x50",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.50x50.v1",
+        "name": "Square strain label",
+        "revision": 1,
+        "valid": true
+      },
+      {
+        "id": "growspace.factory.50x80",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.50x80.v1",
+        "name": "Tall strain label",
+        "revision": 1,
+        "valid": true
+      },
+      {
+        "id": "growspace.factory.50x15",
+        "kind": "factory",
+        "label_size_id": "growspace.stock.50x15.v1",
+        "name": "Slim strain label",
+        "revision": 1,
+        "valid": true
+      }
+    ],
+    "generation": 0,
+    "store": {
+      "readable": true,
+      "version": 1
+    },
+    "templates": [],
+    "tombstones": []
+  },
+  "outcome": "ok"
+}

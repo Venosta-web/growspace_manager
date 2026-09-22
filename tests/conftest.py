@@ -78,8 +78,33 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--regenerate-contract-fixture",
         action="store_true",
-        help="Regenerate tests/fixtures/contract/growspace_payload.json",
+        help="Regenerate the contract fixture owned by the selected contract test",
     )
+
+
+@pytest.fixture(autouse=True)
+def classic_deprecation_needs_a_real_hass():
+    """Skip the Classic `print_label` Repairs issue for a mocked `hass`.
+
+    Many Classic-path suites drive the handler with a `MagicMock(spec=
+    HomeAssistant)`, which has no issue registry. The notice stays real for
+    every test with a real `hass`; `tests/labels/test_classic_deprecation.py`
+    covers it there.
+    """
+    from unittest.mock import Mock
+
+    from custom_components.growspace_manager.labels import classic_deprecation
+    from custom_components.growspace_manager.services import strain_library
+
+    original = classic_deprecation.async_note_classic_call
+
+    def note(hass: Any) -> None:
+        # Not `isinstance(hass, HomeAssistant)`: a spec'd mock passes that.
+        if not isinstance(hass, Mock):
+            original(hass)
+
+    with patch.object(strain_library, "async_note_classic_call", note):
+        yield
 
 
 @pytest.fixture(autouse=True)

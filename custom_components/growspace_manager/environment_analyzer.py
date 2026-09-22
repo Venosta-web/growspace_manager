@@ -210,6 +210,24 @@ class EnvironmentAnalyzer:
 
         return sum(values) / len(values)
 
+    def _get_target_vpd(self, growspace_id: str) -> float | None:
+        """Return the midpoint of the growspace's active biological VPD band."""
+        metrics = (
+            self.coordinator.data.get("serialized_growspaces", {})
+            .get(growspace_id, {})
+            .get("metrics", {})
+        )
+        target_min = metrics.get("vpd_target_min")
+        target_max = metrics.get("vpd_target_max")
+        if (
+            not isinstance(target_min, (int, float))
+            or isinstance(target_min, bool)
+            or not isinstance(target_max, (int, float))
+            or isinstance(target_max, bool)
+        ):
+            return None
+        return (float(target_min) + float(target_max)) / 2
+
     def _get_outside_conditions(
         self, global_settings: dict[str, Any]
     ) -> tuple[float | None, float | None, float | None]:
@@ -367,11 +385,7 @@ class EnvironmentAnalyzer:
                 [env_config.vpd_sensor] if env_config.vpd_sensor else []
             )
             current_vpd = self._get_aggregated_sensor_value(vpd_sensors)
-            target_vpd = (
-                self.coordinator.data.get("bayesian_sensors_reason", {})
-                .get(growspace_id, {})
-                .get("target_vpd")
-            )
+            target_vpd = self._get_target_vpd(growspace_id)
 
             recommendations[growspace_id] = self._calculate_recommendation(
                 growspace_id,

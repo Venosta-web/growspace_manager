@@ -1,0 +1,18 @@
+{
+  "ready": {
+    "availability": "ready",
+    "connection_source": "supervisor",
+    "model": {
+      "dimension": 384,
+      "id": "dinov2-small",
+      "version": "1.0.0"
+    },
+    "service_version": "1.4.0",
+    "vision_schema_version": 1
+  },
+  "unavailable": {
+    "availability": "unavailable",
+    "connection_source": "supervisor",
+    "reason": "not_running"
+  }
+}

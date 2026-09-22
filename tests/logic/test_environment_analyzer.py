@@ -43,6 +43,7 @@ def mock_growspace():
     gs.environment_config.vpd_sensors = []
     gs.environment_config.temperature_sensors = []
     gs.environment_config.humidity_sensors = []
+    gs.environment_config.minimum_source_air_temperature = 18.0
     return gs
 
 
@@ -68,6 +69,26 @@ def test_classify_stages_display_stage_via_domain() -> None:
     )
     assert classify_stages(StageDays(clone=5)).display_stage == BayesianStage.CLONE
     assert classify_stages(StageDays()).display_stage == BayesianStage.EMPTY
+
+
+@pytest.mark.parametrize(
+    ("days", "expected_stage"),
+    [
+        (StageDays(flower=20), BayesianStage.FLOWER_EARLY),
+        (StageDays(flower=41), BayesianStage.FLOWER_MID),
+        (StageDays(veg=2), BayesianStage.VEG),
+    ],
+)
+def test_biological_metrics_reports_the_current_stage_selector(
+    analyzer: EnvironmentAnalyzer,
+    mock_growspace,
+    days: StageDays,
+    expected_stage: BayesianStage,
+) -> None:
+    """granular_stage preserves bands but flips a true transition at midpoint."""
+    metrics = analyzer.calculate_biological_metrics(mock_growspace, days)
+
+    assert metrics["granular_stage"] is expected_stage
 
 
 def test_determine_is_day(
@@ -269,8 +290,12 @@ async def test_async_update_air_exchange_full_flow(
             "weather_entity": "weather.home",
             "lung_room_temp_sensor": "sensor.lung_temp",
             "lung_room_humidity_sensor": "sensor.lung_hum",
-        },
-        "bayesian_sensors_reason": {"gs1": {"target_vpd": 1.0}},
+        }
+    }
+    mock_coordinator.data = {
+        "serialized_growspaces": {
+            "gs1": {"metrics": {"vpd_target_min": 0.9, "vpd_target_max": 1.1}}
+        }
     }
 
     # Mock sensors

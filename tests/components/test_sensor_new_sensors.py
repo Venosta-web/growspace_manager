@@ -237,8 +237,6 @@ def test_plant_entity_phi_days_remaining() -> None:
     plant.col = 1
     plant.phi_clearance_date = "2026-01-20"  # 8 days from frozen "2026-01-12"
     plant.last_watered = None
-    plant.get_days_in_stage = Mock(return_value=0)
-    plant.get_week_in_stage = Mock(return_value=1)
     plant.get_days_since_watering = Mock(return_value=None)
     plant.phenotype_score = PhenotypeScore()
     plant.harvest_metrics = Mock(to_dict=Mock(return_value={}), wet_weight=None)
@@ -749,6 +747,7 @@ def _make_ec_sensor():
 def _flower_curve() -> ECRampCurve:
     return ECRampCurve(
         id="c1",
+        growspace_id="gs1",
         name="Bloom",
         stage="flower",
         points=[
@@ -799,7 +798,12 @@ def test_ec_sensor_get_active_curve_no_match() -> None:
     """_get_active_curve returns None when no curve matches the feed stage."""
     sensor, coordinator = _make_ec_sensor()
     veg_curve = ECRampCurve(
-        id="c1", name="Veg", stage="veg", points=[], created_at="2026-01-01"
+        id="c1",
+        growspace_id="gs1",
+        name="Veg",
+        stage="veg",
+        points=[],
+        created_at="2026-01-01",
     )
     coordinator.services.config.ec_ramp_curves = {"c1": veg_curve}
     coordinator.growspaces = {"gs1": Mock()}
@@ -844,6 +848,7 @@ def test_ec_sensor_native_value_fallback_last_point() -> None:
     sensor, coordinator = _make_ec_sensor()
     curve = ECRampCurve(
         id="c1",
+        growspace_id="gs1",
         name="Ramp",
         stage="flower",
         points=[ECRampPoint(week=1, ec_min=1.2, ec_max=1.6)],
@@ -890,6 +895,7 @@ def test_ec_sensor_extra_state_attributes_fallback_last_point() -> None:
     sensor, coordinator = _make_ec_sensor()
     curve = ECRampCurve(
         id="c1",
+        growspace_id="gs1",
         name="Ramp",
         stage="flower",
         points=[ECRampPoint(week=1, ec_min=1.2, ec_max=1.6)],
@@ -1010,6 +1016,7 @@ def test_ec_sensor_native_value_before_first_point() -> None:
     sensor, coordinator = _make_ec_sensor()
     curve = ECRampCurve(
         id="c1",
+        growspace_id="gs1",
         name="Ramp",
         stage="flower",
         points=[ECRampPoint(week=5, ec_min=1.6, ec_max=2.0)],

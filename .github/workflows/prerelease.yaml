@@ -1,3 +1,4 @@
+---
 name: Pre-release
 
 "on":
@@ -21,12 +22,20 @@ jobs:
       - name: Update version
         id: version_step
         run: |
-          STABLE_VERSION="$(jq -r .version custom_components/growspace_manager/manifest.json)"
-          VERSION="$(python3 .github/scripts/prerelease_version.py "$STABLE_VERSION" "$GITHUB_RUN_NUMBER")"
+          STABLE_VERSION="$(
+            jq -r .version \
+              custom_components/growspace_manager/manifest.json
+          )"
+          VERSION="$(
+            python3 .github/scripts/prerelease_version.py \
+              "$STABLE_VERSION" \
+              "$GITHUB_RUN_NUMBER"
+          )"
           echo "New version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           manifest="custom_components/growspace_manager/manifest.json"
-          if ! jq --arg v "$VERSION" '.version = $v' "$manifest" > "$manifest.tmp"; then
+          if ! jq --arg v "$VERSION" '.version = $v' "$manifest" \
+            > "$manifest.tmp"; then
             echo "jq command failed"
             exit 1
           fi
@@ -34,14 +43,7 @@ jobs:
 
       # 2. Creates the ZIP file
       - name: ZIP Release
-        run: |
-          cd custom_components/growspace_manager
-          zip -r ../../growspace_manager.zip . \
-            -x ".github/*" \
-            -x ".coverage" \
-            -x ".gitignore" \
-            -x "pytest.ini" \
-            -x "module.json"
+        run: python3 .github/scripts/build_release_archive.py
 
       # 3. Creates the GitHub Pre-release and attaches the new zip file
       - name: Create Pre-release
@@ -60,9 +62,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: v${{ steps.version_step.outputs.version }}
         run: |
-          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" --jq .object.sha)"
+          tag_sha="$(
+            gh api \
+              "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME" \
+              --jq .object.sha
+          )"
           if [ "$tag_sha" != "$GITHUB_SHA" ]; then
-            echo "Release tag $TAG_NAME points to $tag_sha instead of $GITHUB_SHA" >&2
+            echo \
+              "Tag $TAG_NAME points to $tag_sha; expected $GITHUB_SHA" \
+              >&2
             exit 1
           fi
 
@@ -70,8 +78,10 @@ jobs:
       - name: Delete Older Pre-releases
         uses: dev-drprasad/delete-older-releases@v0.3.4
         with:
-          keep_latest: 5 # Number of most recent pre-releases to keep
+          # Number of most recent pre-releases to keep.
+          keep_latest: 5
           delete_prerelease_only: true
-          delete_tags: true # Also delete the tags associated with the releases
+          # Also delete the tags associated with the releases.
+          delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

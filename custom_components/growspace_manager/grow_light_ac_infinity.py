@@ -76,7 +76,7 @@ def ac_infinity_schedule_matches(
 ) -> bool:
     """Return whether the port already holds the desired schedule.
 
-    Lets the caller skip an unnecessary re-push. A missing or unparseable
+    Lets the caller skip an unnecessary re-push. A missing or unparsable
     reading counts as a mismatch (push and converge) — ``ac_infinity`` is
     cloud-polled, so a just-written value that has not read back yet may cause a
     harmless extra push rather than a silently stale schedule.

@@ -53,7 +53,7 @@ async def test_handle_print_label_fix_verification(
 
     # Mock get_url to ensure it's called and doesn't crash
     with patch(
-        "custom_components.growspace_manager.services.strain_library.get_url",
+        "custom_components.growspace_manager.labels.classic.get_url",
         return_value="http://homeassistant.local",
     ):
         # We need to mock datetime.now() to avoid issues with return values in tests if needed,

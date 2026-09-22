@@ -27,10 +27,8 @@ from custom_components.growspace_manager.models import (
     GrowspaceEvent,
     GrowspaceType,
     IrrigationConfig,
-    Plant,
     Subarea,
 )
-from custom_components.growspace_manager.utils import calculate_plant_stage
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util.dt import now
@@ -110,7 +108,7 @@ async def test_transition_plant_stage(coordinator: GrowspaceCoordinator) -> None
     gs = await coordinator._growspace_manager.add_growspace("Stage GS")
     plant = await coordinator._plant_manager.add_plant(gs.id, "Strain B")
 
-    transition_date = "2025-11-03"  # ISO string
+    transition_date = date.today().isoformat()
 
     # Only test the stages you want to transition through
     for stage in PLANT_STAGES:
@@ -327,34 +325,6 @@ async def test_get_sorted_growspace_options(coordinator: GrowspaceCoordinator) -
     # Check the names match
     sorted_names = [item[1] for item in sorted_options]
     assert sorted_names == [gs.name for gs in expected_order]
-
-
-@pytest.mark.asyncio
-async def test_get_plant_stage(coordinator: GrowspaceCoordinator) -> None:
-    """Test that `_get_plant_stage` correctly determines the stage from dates.
-
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-
-    # Helper to create a plant with only one stage set
-    def make_plant_with_stage(stage_attr: str) -> Plant:
-        kwargs: dict[str, Any] = {f"{stage_attr}_start": date(2025, 1, 1).isoformat()}
-        return create_plant(
-            plant_id=f"{stage_attr}_id", strain="Test", growspace_id="gs1", **kwargs
-        )
-
-    stages = ["cure", "dry", "flower", "veg", "clone", "mother", "seedling"]
-
-    for stage in stages:
-        if stage == "seedling":
-            plant = create_plant(
-                plant_id="seedling_id", strain="Test", growspace_id="gs1"
-            )
-        else:
-            plant = make_plant_with_stage(stage)
-        result = calculate_plant_stage(plant)
-        assert result == stage, f"Expected stage {stage}, got {result}"
 
 
 @pytest.mark.asyncio
@@ -652,6 +622,7 @@ async def test_async_load(coordinator: GrowspaceCoordinator) -> None:
     assert coordinator._strain_library is not None
     coordinator._strain_library.import_strains = AsyncMock()  # type: ignore[method-assign]  # type: ignore[method-assign]
     coordinator.storage_manager.async_save = AsyncMock()  # type: ignore[method-assign]
+    coordinator.vision_scheduler.async_load_latest_checkups = AsyncMock()  # type: ignore[method-assign]
 
     # Patch the ensure methods to avoid side effects (creating default growspaces)
     with (
@@ -667,6 +638,9 @@ async def test_async_load(coordinator: GrowspaceCoordinator) -> None:
         await coordinator.async_load()
         mock_ensure_defaults.assert_awaited_once()
         mock_ensure_calc.assert_called_once()
+        coordinator.vision_scheduler.async_load_latest_checkups.assert_awaited_once_with(
+            ["gs1"]
+        )
 
     # Assertions
     assert "p1" in coordinator.plants
@@ -1061,7 +1035,9 @@ async def test_async_start_flowering(coordinator: GrowspaceCoordinator) -> None:
         coordinator: The mock GrowspaceCoordinator.
     """
     gs = await coordinator._growspace_manager.add_growspace("Flower GS")
-    plant = await coordinator._plant_manager.add_plant(gs.id, "Strain A")
+    plant = await coordinator._plant_manager.add_plant(
+        gs.id, "Strain A", stage=PlantStage.VEG, veg_start=date.today()
+    )
     await coordinator._plant_manager.start_flowering(plant.plant_id)
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
@@ -1078,7 +1054,9 @@ async def test_async_start_drying(coordinator: GrowspaceCoordinator) -> None:
         coordinator: The mock GrowspaceCoordinator.
     """
     gs = await coordinator._growspace_manager.add_growspace("Dry GS")
-    plant = await coordinator._plant_manager.add_plant(gs.id, "Strain A")
+    plant = await coordinator._plant_manager.add_plant(
+        gs.id, "Strain A", stage=PlantStage.FLOWER, flower_start=date.today()
+    )
     await coordinator._plant_manager.start_drying(plant.plant_id)
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
@@ -1095,7 +1073,9 @@ async def test_async_start_curing(coordinator: GrowspaceCoordinator) -> None:
         coordinator: The mock GrowspaceCoordinator.
     """
     gs = await coordinator._growspace_manager.add_growspace("Cure GS")
-    plant = await coordinator._plant_manager.add_plant(gs.id, "Strain A")
+    plant = await coordinator._plant_manager.add_plant(
+        gs.id, "Strain A", stage=PlantStage.DRY, dry_start=date.today()
+    )
     await coordinator._plant_manager.start_curing(plant.plant_id)
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
@@ -1114,7 +1094,9 @@ async def test_async_harvest(coordinator: GrowspaceCoordinator) -> None:
         coordinator: The mock GrowspaceCoordinator.
     """
     gs = await coordinator._growspace_manager.add_growspace("Harvest GS")
-    plant = await coordinator._plant_manager.add_plant(gs.id, "Strain A")
+    plant = await coordinator._plant_manager.add_plant(
+        gs.id, "Strain A", stage=PlantStage.FLOWER, flower_start=date.today()
+    )
     await coordinator.services.plants.harvest(plant.plant_id)
     updated_plant = coordinator.plants.get(plant.plant_id)
     assert updated_plant is not None
@@ -1331,7 +1313,11 @@ async def test_async_update_air_exchange_recommendations(hass: HomeAssistant) ->
     vpd_sensor_entity_id = "sensor.stress_gs_vpd"
 
     gs.environment_config = EnvironmentConfig(vpd_sensor=vpd_sensor_entity_id)
-    coordinator.data = {"bayesian_sensors_reason": {gs.id: {"target_vpd": 1.2}}}
+    coordinator.data = {
+        "serialized_growspaces": {
+            gs.id: {"metrics": {"vpd_target_min": 1.0, "vpd_target_max": 1.4}}
+        }
+    }
 
     # Mock the entity registry to return the correct entity ID
     entity_registry = er.async_get(hass)
@@ -1401,22 +1387,6 @@ async def test_get_growspace_plants(coordinator: GrowspaceCoordinator) -> None:
     assert plant3 in gs2_plants
 
 
-def test_calculate_days_in_stage(coordinator: GrowspaceCoordinator) -> None:
-    """Test calculating the number of days a plant has been in a stage.
-
-    Args:
-        coordinator: The mock GrowspaceCoordinator.
-    """
-    plant = create_plant(
-        plant_id="p1",
-        strain="Test",
-        growspace_id="gs1",
-        veg_start=(now().date() - timedelta(days=10)).isoformat(),
-    )
-    days = plant.get_days_in_stage(PlantStage.VEG)
-    assert days == 10
-
-
 @pytest.fixture
 def coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
     """Provide a fresh `GrowspaceCoordinator` instance for each test."""
@@ -1473,41 +1443,6 @@ async def test_init_with_plant_object(hass: HomeAssistant) -> None:
 
     assert "p1" in coordinator.plants
     assert coordinator.plants["p1"] == plant_obj
-
-
-@pytest.mark.asyncio
-async def test_get_plant_stage_special_growspaces(hass: HomeAssistant) -> None:
-    """Test _get_plant_stage for special growspaces."""
-
-    plant_mother = create_plant(plant_id="p1", strain="Test", growspace_id="mother")
-    assert calculate_plant_stage(plant_mother) == "mother"
-
-    plant_clone = create_plant(plant_id="p2", strain="Test", growspace_id="clone")
-    assert calculate_plant_stage(plant_clone) == "clone"
-
-    plant_cure = create_plant(plant_id="p3", strain="Test", growspace_id="cure")
-    assert calculate_plant_stage(plant_cure) == "cure"
-
-
-@pytest.mark.asyncio
-async def test_get_plant_stage_seedling(hass: HomeAssistant) -> None:
-    """Test _get_plant_stage for the seedling stage."""
-
-    plant = create_plant(
-        plant_id="p1",
-        strain="Test",
-        growspace_id="gs1",
-        seedling_start=date.today().isoformat(),
-    )
-    assert calculate_plant_stage(plant) == "seedling"
-
-
-@pytest.mark.asyncio
-async def test_get_plant_stage_fallback(hass: HomeAssistant) -> None:
-    """Test _get_plant_stage fallback to the explicitly set stage."""
-
-    plant = create_plant(plant_id="p1", strain="Test", growspace_id="gs1", stage="veg")
-    assert calculate_plant_stage(plant) == "veg"
 
 
 @pytest.mark.asyncio
@@ -1770,9 +1705,17 @@ async def test_harvest_auto_flow_mother_to_clone(hass: HomeAssistant) -> None:
     plant = MagicMock()
     plant.stage = "mother"
 
-    with patch.object(
-        coordinator._plant_manager, "move_to_clone_growspace", new_callable=AsyncMock
-    ) as mock_move:
+    with (
+        patch(
+            "custom_components.growspace_manager.managers.plant.resolve_current_stage",
+            return_value="mother",
+        ),
+        patch.object(
+            coordinator._plant_manager,
+            "move_to_clone_growspace",
+            new_callable=AsyncMock,
+        ) as mock_move,
+    ):
         mock_move.return_value = True
         await coordinator._plant_manager._harvest_auto_flow(
             "p1", plant, None, "2025-01-01"
@@ -1790,7 +1733,7 @@ async def test_harvest_auto_flow_fallback_to_dry(hass: HomeAssistant) -> None:
 
     with (
         patch(
-            "custom_components.growspace_manager.utils.calculate_plant_stage",
+            "custom_components.growspace_manager.managers.plant.resolve_current_stage",
             return_value="some_other_stage",
         ),
         patch.object(
@@ -1823,10 +1766,13 @@ async def test_harvest_to_explicit_target_no_position(
         phenotype="pheno1",
         row=1,
         col=1,
-        stage="veg",
+        stage="dry",
+        dry_start="2025-01-01",
+        stage_history=[{"stage": "dry", "start": "2025-01-01", "end": None}],
         created_at="2025-01-01",
         updated_at="2025-01-01",
     )
+    coordinator._data_repository.add_growspace(MagicMock(id="gs1"))
     setattr(
         coordinator.validator,
         "find_first_available_position",
@@ -1857,34 +1803,29 @@ async def test_harvest_to_explicit_target_cure(hass: HomeAssistant) -> None:
         phenotype="pheno1",
         row=1,
         col=1,
-        stage="veg",
+        stage="dry",
+        dry_start="2025-01-01",
+        stage_history=[{"stage": "dry", "start": "2025-01-01", "end": None}],
         created_at="2025-01-01",
         updated_at="2025-01-01",
     )
+    coordinator._data_repository.add_growspace(Growspace(id="gs1", name="Source"))
     setattr(
         coordinator.validator,
         "find_first_available_position",
         MagicMock(return_value=(1, 1)),
     )
-    coordinator._data_repository.add_growspace(MagicMock(id="cure"))
+    coordinator._data_repository.add_growspace(Growspace(id="cure", name="Cure"))
 
     coordinator._data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
-    with patch.object(
-        coordinator._plant_manager, "update_plant", new_callable=AsyncMock
-    ) as mock_update:
-        await coordinator._plant_manager._harvest_to_explicit_target(
-            "p1", plant, "cure", "cure", "2025-01-01"
-        )
+    await coordinator._plant_manager._harvest_to_explicit_target(
+        "p1", plant, "cure", "cure", "2025-01-01"
+    )
 
-        mock_update.assert_called_with(
-            "p1",
-            growspace_id="cure",
-            row=1,
-            col=1,
-            stage="cure",
-            cure_start="2025-01-01",
-        )
+    assert plant.stage == PlantStage.CURE
+    assert plant.growspace_id == "cure"
+    assert [item["stage"] for item in plant.stage_history] == ["dry", "cure"]
 
 
 @pytest.mark.asyncio
@@ -1900,6 +1841,8 @@ async def test_harvest_to_explicit_target_clone(hass: HomeAssistant) -> None:
         row=1,
         col=1,
         stage="veg",
+        veg_start="2025-01-01",
+        stage_history=[{"stage": "veg", "start": "2025-01-01", "end": None}],
         created_at="2025-01-01",
         updated_at="2025-01-01",
     )
@@ -1912,21 +1855,13 @@ async def test_harvest_to_explicit_target_clone(hass: HomeAssistant) -> None:
 
     coordinator._data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
-    with patch.object(
-        coordinator._plant_manager, "update_plant", new_callable=AsyncMock
-    ) as mock_update:
+    with pytest.raises(ValidationChangeError, match="not allowed"):
         await coordinator._plant_manager._harvest_to_explicit_target(
             "p1", plant, "clone", "clone", "2025-01-01"
         )
 
-        mock_update.assert_called_with(
-            "p1",
-            growspace_id="clone",
-            row=1,
-            col=1,
-            stage="clone",
-            clone_start="2025-01-01",
-        )
+    assert plant.stage == PlantStage.VEG
+    assert plant.growspace_id == "gs1"
 
 
 @pytest.mark.asyncio
@@ -1942,33 +1877,28 @@ async def test_harvest_to_explicit_target_mother(hass: HomeAssistant) -> None:
         row=1,
         col=1,
         stage="veg",
+        veg_start="2025-01-01",
+        stage_history=[{"stage": "veg", "start": "2025-01-01", "end": None}],
         created_at="2025-01-01",
         updated_at="2025-01-01",
     )
+    coordinator._data_repository.add_growspace(Growspace(id="gs1", name="Source"))
     setattr(
         coordinator.validator,
         "find_first_available_position",
         MagicMock(return_value=(1, 1)),
     )
-    coordinator._data_repository.add_growspace(MagicMock(id="mother"))
+    coordinator._data_repository.add_growspace(Growspace(id="mother", name="Mother"))
 
     coordinator._data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
-    with patch.object(
-        coordinator._plant_manager, "update_plant", new_callable=AsyncMock
-    ) as mock_update:
-        await coordinator._plant_manager._harvest_to_explicit_target(
-            "p1", plant, "mother", "mother", "2025-01-01"
-        )
+    await coordinator._plant_manager._harvest_to_explicit_target(
+        "p1", plant, "mother", "mother", "2025-01-01"
+    )
 
-        mock_update.assert_called_with(
-            "p1",
-            growspace_id="mother",
-            row=1,
-            col=1,
-            stage=PlantStage.MOTHER,
-            mother_start="2025-01-01",
-        )
+    assert plant.stage == PlantStage.MOTHER
+    assert plant.growspace_id == "mother"
+    assert [item["stage"] for item in plant.stage_history] == ["veg", "mother"]
 
 
 @pytest.mark.asyncio
@@ -1985,7 +1915,9 @@ async def test_move_to_clone_growspace_no_position(
         phenotype="pheno1",
         row=1,
         col=1,
-        stage="veg",
+        stage="clone",
+        clone_start="2025-01-01",
+        stage_history=[{"stage": "clone", "start": "2025-01-01", "end": None}],
         created_at="2025-01-01",
         updated_at="2025-01-01",
     )
@@ -1998,14 +1930,10 @@ async def test_move_to_clone_growspace_no_position(
     coordinator._data_repository.add_growspace(MagicMock(id="clone"))
     coordinator._data_repository.add_plant(plant)  # Ensure plant exists in coordinator
 
-    with patch.object(
-        coordinator._plant_manager, "update_plant", new_callable=AsyncMock
-    ):
+    with pytest.raises(ValidationChangeError, match="clone is full"):
         await coordinator._plant_manager.move_to_clone_growspace(
             "p1", plant, "2025-01-01"
         )
-
-    assert "Failed to find position in clone growspace" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -2036,7 +1964,11 @@ async def test_async_update_air_exchange_recommendations_no_vpd(
     coordinator = create_test_coordinator(hass, data={})
     gs = await coordinator._growspace_manager.add_growspace("Test GS")
     gs.environment_config = EnvironmentConfig(vpd_sensor="sensor.vpd")
-    coordinator.data = {"bayesian_sensors_reason": {gs.id: {"target_vpd": None}}}
+    coordinator.data = {
+        "serialized_growspaces": {
+            gs.id: {"metrics": {"vpd_target_min": None, "vpd_target_max": None}}
+        }
+    }
 
     with patch(
         "homeassistant.helpers.entity_registry.EntityRegistry.async_get_entity_id",
@@ -2131,21 +2063,16 @@ async def test_async_update_irrigation_config(
     gs_id = gs.id
     gs.irrigation_config.irrigation_pump_entity = "switch.pump1"
 
-    # 1. Update with read-only fields (should be ignored) and valid fields
-    user_input = {
-        "irrigation_pump_entity": "switch.pump2",
-        "current_irrigation_times": "ignored",
-        "growspace_id_read_only": "ignored",
-    }
-
-    await coordinator.services.growspaces.update_irrigation_config(gs_id, user_input)
+    await coordinator.services.growspaces.update_irrigation_config(
+        gs_id, {"irrigation_pump_entity": "switch.pump2"}
+    )
 
     assert (
         coordinator.growspaces[gs_id].irrigation_config.irrigation_pump_entity
         == "switch.pump2"
     )
 
-    # 2. Calling with non-existent GS raises GrowspaceNotFoundError
+    # Calling with non-existent GS raises GrowspaceNotFoundError.
     with pytest.raises(GrowspaceNotFoundError):
         await coordinator.services.growspaces.update_irrigation_config("missing", {})
 
@@ -2198,8 +2125,17 @@ async def test_async_promote_clone_error_checks(
     # 3. Promote to non-existent target growspace
     plant.stage = PlantStage.CLONE
     plant.type = "clone"
+    plant.veg_start = None
+    plant.clone_start = date.today().isoformat()
+    plant.stage_history = [
+        {
+            "stage": "clone",
+            "start": date.today().isoformat(),
+            "end": None,
+        }
+    ]
     with pytest.raises(
-        GrowspaceNotFoundError, match="Target growspace missing_gs does not exist"
+        GrowspaceNotFoundError, match="Target growspace missing_gs not found"
     ):
         await coordinator.services.plants.promote_clone(
             plant.plant_id, target_growspace_id="missing_gs"

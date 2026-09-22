@@ -5,7 +5,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
-from custom_components.growspace_manager.const import GrowspaceService
+from custom_components.growspace_manager.const import DOMAIN, GrowspaceService
+from custom_components.growspace_manager.presentation.vision import (
+    async_serialize_vision_checkup,
+)
 from custom_components.growspace_manager.schemas import (
     SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
 )
@@ -27,30 +30,50 @@ async def handle_trigger_vision_checkup(
 ) -> dict[str, Any]:
     """Handle the trigger_vision_checkup service call.
 
-    Captures camera snapshot(s) and runs AI vision analysis for a growspace.
+    Captures camera snapshots and assembles local visual and environmental evidence.
     """
     growspace_id = call.data["growspace_id"]
 
     if growspace_id not in coordinator.growspaces:
         raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
 
-    result = await coordinator.vision_scheduler.run_vision_analysis(
+    outcome = await coordinator.vision_scheduler.run_vision_analysis(
         growspace_id, "manual"
     )
-
-    if result is None:
-        raise ServiceValidationError(
-            f"Vision checkup could not be performed for '{growspace_id}'."
-        )
-
+    reports = [capture.report for capture in outcome.captures if capture.report]
+    recommendations = [
+        recommendation
+        for report in reports
+        for recommendation in report.recommendations
+    ]
+    analysis = "\n\n".join(
+        part
+        for report in reports
+        for part in (report.observation, report.environmental_risk, report.hypothesis)
+        if part
+    )
+    if outcome.checkup.status is None:  # pragma: no cover - finished by the pipeline
+        raise RuntimeError("Vision Checkup returned before reaching a terminal status")
+    store = hass.data.get(DOMAIN, {}).get("vision_evidence_store")
+    if store is None:  # pragma: no cover - the pipeline rejects this before capture
+        raise RuntimeError("Vision Evidence Store disappeared during the checkup")
+    media_dirs = hass.config.media_dirs
+    media_source = "local" if "local" in media_dirs else next(iter(media_dirs))
+    checkup = await async_serialize_vision_checkup(
+        store, outcome.checkup, media_source=media_source
+    )
     return {
-        "growspace_id": result.growspace_id,
-        "check_type": result.check_type,
-        "analysis": result.analysis,
-        "issues_detected": result.issues_detected,
-        "severity": result.severity,
-        "recommendations": result.recommendations,
-        "timestamp": result.timestamp,
+        "growspace_id": outcome.checkup.growspace_id,
+        "check_type": "manual",
+        "analysis": analysis,
+        "issues_detected": [],
+        "severity": "none",
+        "recommendations": recommendations,
+        "timestamp": outcome.checkup.completed_at,
+        "snapshot_paths": [capture.media_content_id for capture in outcome.captures],
+        "checkup_id": outcome.checkup.checkup_id,
+        "status": outcome.checkup.status.value,
+        "checkup": checkup,
     }
 
 

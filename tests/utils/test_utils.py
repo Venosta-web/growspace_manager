@@ -24,7 +24,6 @@ from custom_components.growspace_manager.utils import (
     VPDCalculator,
     any_light_sensor_on,
     calculate_days_since,
-    calculate_plant_stage,
     days_to_week,
     find_first_free_position,
     format_date,
@@ -188,53 +187,6 @@ def test_days_to_week(days, expected) -> None:
 
 
 # ----------------------------
-# calculate_plant_stage tests
-# ----------------------------
-def test_calculate_plant_stage() -> None:
-    """Test the `calculate_plant_stage` function."""
-    # 1. Special growspaces
-    p = create_plant(plant_id="p1", growspace_id="mother", strain="A")
-    assert calculate_plant_stage(p) == "mother"
-
-    p = create_plant(plant_id="p1", growspace_id="clone", strain="A")
-    assert calculate_plant_stage(p) == "clone"
-
-    # 2. Date-based (mocking now is hard here without freezegun, so we use past dates)
-    # Assuming today is after 2000-01-01
-    p = create_plant(
-        plant_id="p1", growspace_id="g1", strain="A", flower_start="2000-01-01"
-    )
-    assert calculate_plant_stage(p) == "flower"
-
-    p = create_plant(
-        plant_id="p1", growspace_id="g1", strain="A", veg_start="2000-01-01"
-    )
-    assert calculate_plant_stage(p) == "veg"
-
-    # Priority check: flower > veg
-    p = create_plant(
-        plant_id="p1",
-        growspace_id="g1",
-        strain="A",
-        veg_start="2000-01-01",
-        flower_start="2000-02-01",
-    )
-    assert calculate_plant_stage(p) == "flower"
-
-    # 3. Explicit stage
-    p = create_plant(plant_id="p1", growspace_id="g1", strain="A", stage="dry")
-    assert calculate_plant_stage(p) == "dry"
-
-    # Default
-    p = create_plant(plant_id="p1", growspace_id="g1", strain="A")
-    assert calculate_plant_stage(p) == "seedling"
-
-    # No growspace_id (covers line 227)
-    p = create_plant(plant_id="p1", growspace_id=None, strain="A")
-    assert calculate_plant_stage(p) == "seedling"
-
-
-# ----------------------------
 # VPDCalculator tests
 # ----------------------------
 def test_calculate_vpd() -> None:
@@ -378,7 +330,7 @@ def test_classify_stages() -> None:
 
 
 def test_classify_stages_display_stage() -> None:
-    """Test display_stage collapses sub-stages and applies factor threshold."""
+    """Test display_stage preserves bands and flips only lifecycle transitions."""
     # Sub-stage collapsing
     assert (
         classify_stages(StageDays(seedling=8)).display_stage == BayesianStage.SEEDLING
@@ -395,15 +347,30 @@ def test_classify_stages_display_stage() -> None:
         r.display_stage == BayesianStage.SEEDLING
     )  # 0.5 >= 0.5 → stage_b, collapsed to SEEDLING
 
-    # Factor >= 0.5 → stage_b
+    # A band interpolation never moves the reported identity early.
     r = classify_stages(
         StageDays(flower=20)
     )  # factor=0.67, stage_a=FLOWER_EARLY, stage_b=FLOWER_MID
-    assert r.display_stage == BayesianStage.FLOWER_MID
-
-    # Factor < 0.5 → stage_a
-    r = classify_stages(StageDays(flower=10))  # factor=0.0 → stage_a=FLOWER_EARLY
+    assert r.is_transition_blend is False
     assert r.display_stage == BayesianStage.FLOWER_EARLY
+    assert (
+        classify_stages(StageDays(flower=41)).display_stage == BayesianStage.FLOWER_MID
+    )
+
+    # A lifecycle transition still flips at the midpoint.
+    r = classify_stages(StageDays(veg=2))
+    assert r.is_transition_blend is True
+    assert r.display_stage == BayesianStage.VEG
+
+    # Seedling and clone acclimation sub-stages always collapse to their parent.
+    for day in range(10):
+        assert (
+            classify_stages(StageDays(seedling=day)).display_stage
+            == BayesianStage.SEEDLING
+        )
+        assert (
+            classify_stages(StageDays(clone=day)).display_stage == BayesianStage.CLONE
+        )
 
     # Empty → EMPTY
     assert classify_stages(StageDays()).display_stage == BayesianStage.EMPTY

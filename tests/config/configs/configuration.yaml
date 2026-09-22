@@ -2,6 +2,7 @@
 # This configuration is used by the homeassistant-test Docker instance
 
 # Basic configuration
+---
 homeassistant:
   name: Test Instance
   latitude: 41.8781

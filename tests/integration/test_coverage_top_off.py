@@ -31,6 +31,7 @@ from custom_components.growspace_manager.dehumidifier_coordinator import (
 from custom_components.growspace_manager.domain.environment_state_assembler import (
     AssembledEnvironment,
 )
+from custom_components.growspace_manager.exceptions import ValidationChangeError
 from custom_components.growspace_manager.managers.plant import PlantManager
 from custom_components.growspace_manager.models import (
     BaseModel,
@@ -74,25 +75,17 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
         plant_cure
     ]
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, s: 1 if s == PlantStage.CURE else 0,
-    ):
-        coordinator = DehumidifierCoordinator(
-            hass, mock_config_entry, "gs1", mock_coordinator
-        )
-        assert coordinator._get_growth_stage() == PlantStage.CURE
+    coordinator = DehumidifierCoordinator(
+        hass, mock_config_entry, "gs1", mock_coordinator
+    )
+    assert coordinator._get_growth_stage() == PlantStage.CURE
 
     # Test DRY stage
     plant_dry = create_plant(
         plant_id="p1", growspace_id="gs1", strain="S1", dry_start="2024-01-01"
     )
     mock_coordinator.services.growspaces.get_growspace_plants.return_value = [plant_dry]
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, s: 1 if s == PlantStage.DRY else 0,
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.DRY
+    assert coordinator._get_growth_stage() == PlantStage.DRY
 
     # Test SEEDLING stage
     plant_seedling = create_plant(
@@ -101,11 +94,7 @@ async def test_dehumidifier_stages_coverage(hass: HomeAssistant) -> None:
     mock_coordinator.services.growspaces.get_growspace_plants.return_value = [
         plant_seedling
     ]
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, s: 1 if s == PlantStage.SEEDLING else 0,
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.SEEDLING
+    assert coordinator._get_growth_stage() == PlantStage.SEEDLING
 
 
 # --- Models Nesting Coverage ---
@@ -272,14 +261,10 @@ async def test_lifecycle_history_closing_coverage(hass: HomeAssistant) -> None:
         strain_library=strain_library,
         plant_view_builder=MagicMock(),
     )
-    with patch.object(manager, "update_plant", new_callable=AsyncMock) as mock_update:
-        await manager.transition_plant_stage("p1", "flower")
-        mock_update.assert_called_once()
-        # Verify the history in the call
-        updates = mock_update.call_args.kwargs
-        history = updates["stage_history"]
-        assert len(history) == 2
-        assert history[0]["end"] is not None
+    await manager.transition_plant_stage("p1", "flower")
+    assert plant.stage == PlantStage.FLOWER
+    assert len(plant.stage_history) == 2
+    assert plant.stage_history[0]["end"] is not None
 
 
 # --- Service Plant Coverage ---
@@ -841,6 +826,7 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
         stage_history=[{"stage": "veg", "start": "2024-01-01", "end": None}],
     )
     repository.plants = {"p1": plant}
+    repository.get_plant.return_value = plant
 
     manager = PlantManager(
         ctx=ServiceContext(
@@ -858,19 +844,8 @@ async def test_lifecycle_history_stages_coverage(hass: HomeAssistant) -> None:
         plant_view_builder=MagicMock(),
     )
 
-    manager.async_update_plant = AsyncMock()
-    manager.move_to_dry_growspace = AsyncMock()
-    manager.move_to_cure_growspace = AsyncMock()
-    manager.move_to_clone_growspace = AsyncMock()
+    await manager.transition_plant_stage("p1", PlantStage.FLOWER)
+    assert [item["stage"] for item in plant.stage_history] == ["veg", "flower"]
 
-    # Hit DRY transition
-    await manager.transition_plant_stage("p1", PlantStage.DRY)
-    manager.move_to_dry_growspace.assert_awaited_once()
-
-    # Hit CURE transition
-    await manager.transition_plant_stage("p1", PlantStage.CURE)
-    manager.move_to_cure_growspace.assert_awaited_once()
-
-    # Hit CLONE transition
-    await manager.transition_plant_stage("p1", PlantStage.CLONE)
-    manager.move_to_clone_growspace.assert_awaited_once()
+    with pytest.raises(ValidationChangeError, match="not allowed"):
+        await manager.transition_plant_stage("p1", PlantStage.CLONE)

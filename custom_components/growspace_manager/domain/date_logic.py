@@ -101,32 +101,6 @@ def format_date(date_value: DateInput) -> str | None:
     return as_local(dt).strftime("%Y-%m-%d")
 
 
-def calculate_days_in_stage(plant: Plant, stage: str) -> int:
-    """Calculate how many days a plant has been in a specific growth stage."""
-    from .stage import PlantStage, get_stage_definition  # noqa: PLC0415
-
-    stage_def = get_stage_definition(stage)
-    start_field = stage_def.start_field if stage_def else f"{stage}_start"
-    start_date = getattr(plant, start_field, None)
-
-    # Simplified lookup for common stages
-    stage_map = {
-        PlantStage.SEEDLING: "veg_start",
-        "seedling": "veg_start",
-        PlantStage.CLONE: "veg_start",
-        "clone": "veg_start",
-        PlantStage.VEG: "flower_start",
-        "veg": "flower_start",
-        PlantStage.FLOWER: "dry_start",
-        "flower": "dry_start",
-        PlantStage.DRY: "cure_start",
-        "dry": "cure_start",
-    }
-
-    end_date = getattr(plant, stage_map.get(stage, "none"), None)
-    return calculate_days_since(start_date, end_date)
-
-
 def get_days_since_watering(plant: Plant) -> int:
     """Calculate days since plant was last watered."""
     return calculate_days_since(getattr(plant, "last_watered", None))

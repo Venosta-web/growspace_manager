@@ -1,0 +1,73 @@
+{
+  "bounds": {
+    "feed_axis": "y",
+    "printable_height_mm": 30.0,
+    "printable_width_mm": 48.0,
+    "quantum_mm": 0.01
+  },
+  "calibration": {
+    "age_days": null,
+    "identity": null,
+    "record": null,
+    "stale_reasons": [],
+    "state": "absent",
+    "warnings": []
+  },
+  "contract": {
+    "family": "growspace.label-templates",
+    "generation": 4,
+    "major": 1,
+    "minor": 0
+  },
+  "device_id": "printer-a",
+  "outcome": "ok",
+  "profile": {
+    "authorizes_production": true,
+    "density_levels": {
+      "high": 5,
+      "low": 2,
+      "normal": 3
+    },
+    "dpi": 203,
+    "evidence": "product_verified",
+    "evidence_invalidated_by": [],
+    "evidence_recorded_at": "2026-09-21",
+    "evidence_reference": "evidence/test-record",
+    "feed_axis": "y",
+    "id": "growspace.profile.niimbot-b1.50x30.v1",
+    "label_size_id": "growspace.stock.50x30.v1",
+    "limits": {
+      "divider_minimum_thickness_mm": 0.25,
+      "image_minimum_effective_dpi": 203.0,
+      "measured": true,
+      "qr_error_correction_levels": ["medium", "quartile", "high"],
+      "qr_maximum_encoded_bytes": 256,
+      "qr_minimum_dots_per_module": 2,
+      "qr_minimum_quiet_zone_modules": 4,
+      "text_comfort_threshold_mm": 2.2,
+      "text_readable_floor_mm": 2.2
+    },
+    "orientation": "landscape",
+    "printable_area": {
+      "height_mm": 30.0,
+      "width_mm": 48.0,
+      "x_mm": 0.0,
+      "y_mm": 0.0
+    },
+    "printer_class": "niimbot.b1",
+    "printhead_pixels": 384,
+    "safe_area": {
+      "height_mm": 28.0,
+      "width_mm": 46.0,
+      "x_mm": 1.0,
+      "y_mm": 1.0
+    },
+    "stock_area": {
+      "height_mm": 30.0,
+      "width_mm": 50.0,
+      "x_mm": 0.0,
+      "y_mm": 0.0
+    },
+    "supported_element_rotations": [0]
+  }
+}

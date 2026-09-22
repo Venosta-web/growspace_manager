@@ -51,13 +51,11 @@ hassil==3.11.0
 home-assistant-intents==2026.7.30
 syrupy>=5.0.0
 
-# Local dev tooling — NOT what the gate runs. CI pins its own copies: ruff and mypy
-# in lint.yaml, and the hook versions in .pre-commit-config.yaml. ruff is pinned to
-# lint.yaml's version so a local `ruff check` agrees with the gate; lint.yaml is the
-# source of truth, so bump it there first.
+# Local dev tooling — CI installs separate copies using matching pins in
+# lint.yaml. Keep versions synchronized so local checks agree with the gate.
+# Move the corresponding pre-commit rev with any Ruff or yamllint version bump.
 ruff==0.15.12
 mypy==1.20.2
-pre-commit
-pylint
-yamllint
+pre-commit==4.6.2
+yamllint==1.37.1
 codespell

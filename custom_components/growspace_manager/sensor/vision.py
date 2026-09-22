@@ -6,13 +6,14 @@ from typing import Any, override
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.vision_connection import VisionAvailability
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 
 class VisionCheckupSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
-    """Sensor showing the latest AI vision checkup result for a growspace."""
+    """Sensor showing the latest Vision Checkup's operational outcome."""
 
     _attr_has_entity_name = True
     _attr_translation_key = "vision_checkup"
@@ -37,46 +38,57 @@ class VisionCheckupSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity)
         )
 
     @property
-    def _growspace(self) -> Any:
-        """Return the growspace from coordinator."""
-        return self.coordinator.growspaces.get(self._growspace_id)
-
-    @property
     def _latest_result(self) -> Any:
-        """Return the latest vision checkup result or None."""
-        gs = self._growspace
-        if gs and gs.vision_checkup_history:
-            return gs.vision_checkup_history[0]
-        return None
+        """Return the latest durable V1 projection, never legacy cloud history."""
+        return self.coordinator.vision_scheduler.latest_checkup(self._growspace_id)
 
     @property
     @override
     def native_value(self) -> str | None:
-        """Return the severity of the latest checkup."""
+        """Return operational status, or current service unavailability."""
         result = self._latest_result
-        return result.severity if result else None
+        if result is not None:
+            status = result.get("status")
+            return status if isinstance(status, str) else None
+        if (
+            self.coordinator.vision_connection.status.availability
+            is not VisionAvailability.READY
+        ):
+            return "unavailable"
+        return None
 
     @property
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return detailed attributes from the latest checkup."""
+        """Return explicit per-camera fusion summaries."""
         result = self._latest_result
         if not result:
-            return {
-                "last_check_type": None,
-                "last_analysis": None,
-                "issues_detected": [],
-                "recommendations": [],
+            attributes: dict[str, Any] = {
+                "checkup_id": None,
                 "last_checkup_time": None,
-                "total_checkups": 0,
+                "trigger_source": None,
+                "cameras": {},
             }
+            status = self.coordinator.vision_connection.status
+            if status.availability is not VisionAvailability.READY:
+                attributes["reason"] = (
+                    status.reason.value if status.reason is not None else None
+                )
+            return attributes
 
-        gs = self._growspace
+        cameras = {}
+        for capture in result["captures"]:
+            fusion = capture["fusion"]
+            cameras[capture["camera_id"]] = {
+                "analysis_state": capture["analysis_state"],
+                "fusion_state": fusion.get("state"),
+                "fusion_confidence": fusion.get("confidence"),
+                "fusion_coverage": fusion.get("coverage"),
+                "unavailable_reasons": fusion["unavailable_reasons"],
+            }
         return {
-            "last_check_type": result.check_type,
-            "last_analysis": result.analysis,
-            "issues_detected": result.issues_detected,
-            "recommendations": result.recommendations,
-            "last_checkup_time": result.timestamp,
-            "total_checkups": len(gs.vision_checkup_history) if gs else 0,
+            "checkup_id": result["checkup_id"],
+            "last_checkup_time": result["completed_at"],
+            "trigger_source": result["trigger_source"],
+            "cameras": cameras,
         }

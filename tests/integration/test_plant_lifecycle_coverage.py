@@ -1,7 +1,7 @@
 """Additional tests for plant_lifecycle_manager coverage."""
 
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -150,22 +150,24 @@ async def test_record_analytics_exception_handling(
         plant_id="test_plant",
         growspace_id="test_growspace",
         strain="Test Strain",
+        stage="dry",
         veg_start="2024-01-01",
-        flower_start="2024-02-01",
+        flower_start="2024-01-31",
+        dry_start="2024-03-31",
+        stage_history=[
+            {"stage": "veg", "start": "2024-01-01", "end": "2024-01-31"},
+            {"stage": "flower", "start": "2024-01-31", "end": "2024-03-31"},
+            {"stage": "dry", "start": "2024-03-31", "end": None},
+        ],
     )
 
-    # Patch calculate_days_in_stage to return positive days
-    with patch(
-        "custom_components.growspace_manager.managers.plant.calculate_days_in_stage",
-        side_effect=[30, 60],
-    ):
-        # Mock strain_library.record_harvest to raise exception
-        strain_library_mock.record_harvest = AsyncMock(
-            side_effect=Exception("Database error")
-        )
+    # Mock strain_library.record_harvest to raise exception
+    strain_library_mock.record_harvest = AsyncMock(
+        side_effect=Exception("Database error")
+    )
 
-        # Should not raise, exception is caught and logged
-        await manager._record_analytics(plant)
+    # Should not raise, exception is caught and logged
+    await manager._record_analytics(plant)
 
     # Verify record_harvest was called with scores (all None since plant has no scores set)
     strain_library_mock.record_harvest.assert_awaited_once_with(
@@ -188,10 +190,10 @@ async def test_record_analytics_exception_handling(
 
 
 @pytest.mark.asyncio
-async def test_transition_plant_stage_to_clone(
+async def test_transition_plant_stage_to_mother(
     manager, repository_mock, validator_mock, gs_service_mock
 ) -> None:
-    """Test transition_plant_stage to CLONE stage."""
+    """Test a graph-valid transition into a special growspace."""
     # Create a plant
     plant_id = "test_plant"
     plant = create_plant(
@@ -199,6 +201,9 @@ async def test_transition_plant_stage_to_clone(
         growspace_id="test_growspace",
         strain="Test Strain",
     )
+    plant.stage = PlantStage.VEG
+    plant.veg_start = "2024-01-01"
+    plant.stage_history = [{"stage": "veg", "start": "2024-01-01", "end": None}]
     repository_mock.get_plant.return_value = plant
     growspaces = {
         "test_growspace": Growspace(id="test_growspace", name="Test"),
@@ -209,10 +214,9 @@ async def test_transition_plant_stage_to_clone(
     )
     repository_mock.get_growspace.side_effect = growspaces.get
 
-    # Transition to CLONE stage
-    await manager.transition_plant_stage(plant_id, PlantStage.CLONE, date(2024, 1, 15))
+    await manager.transition_plant_stage(plant_id, PlantStage.MOTHER, date(2024, 1, 15))
 
-    # Verify move_to_clone_growspace was called via service
+    # The target special growspace is resolved inside the atomic commit.
     gs_service_mock.ensure_special_growspace.assert_called()
 
 

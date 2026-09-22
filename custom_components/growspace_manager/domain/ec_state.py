@@ -27,9 +27,10 @@ so a grower opting out of EC Modulation can never mask the safety cut-off
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from custom_components.growspace_manager.const import (
@@ -38,13 +39,10 @@ from custom_components.growspace_manager.const import (
     EC_MODULATION_MIN_FACTOR,
 )
 from custom_components.growspace_manager.models import DrainReading, IrrigationStrategy
-from custom_components.growspace_manager.utils import (
-    calculate_plant_stage,
-    days_to_week,
-)
+from custom_components.growspace_manager.utils import days_to_week
 from homeassistant.util import dt as dt_util
 
-from .stage_calculator import calculate_days_in_stage
+from .current_stage import resolve_stage_and_age
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.models import (
@@ -59,13 +57,19 @@ if TYPE_CHECKING:
 # and ``cure`` are excluded — those plants are no longer irrigated, so they never
 # drive the feed target (CONTEXT.md "Active Feed EC Target"). Ordered by
 # progression so the **furthest-along** live stage wins when stages are mixed.
-_LIVE_STAGE_ORDER: dict[str, int] = {
-    "seedling": 10,
-    "clone": 20,
-    "mother": 30,
-    "veg": 40,
-    "flower": 50,
-}
+#
+# Public because it is also the set of stages ``resolve_feed_stage_week`` can
+# ever answer with, which is what an [[Irrigation Program]] slot must be keyed
+# by: a slot naming any other stage could never resolve.
+LIVE_STAGE_ORDER: Mapping[str, int] = MappingProxyType(
+    {
+        "seedling": 10,
+        "clone": 20,
+        "mother": 30,
+        "veg": 40,
+        "flower": 50,
+    }
+)
 
 
 class ECRecommendation(StrEnum):
@@ -163,15 +167,18 @@ def resolve_feed_stage_week(plants: list[Plant]) -> tuple[str | None, int]:
     A growspace has no single canonical stage, so feed-target resolution picks
     the most advanced stage with live (irrigated) plants — never under-feeding
     the most EC-demanding cohort (CONTEXT.md "Active Feed EC Target"). ``week`` is
-    ``days_to_week`` of the max days any plant has spent in that stage, reusing
-    the view model's per-stage day-count convention. Returns ``(None, 0)`` when
-    no live plants are present (empty, or all in dry/cure).
+    ``days_to_week`` of the greatest Current Stage Age among Plants in that
+    selected stage. Returns ``(None, 0)`` when no live plants are present
+    (empty, or all in dry/cure).
     """
+    observed_on = dt_util.now().date()
+    stage_ages = [
+        resolve_stage_and_age(plant, observed_on=observed_on) for plant in plants
+    ]
     best_order = -1
     best_stage: str | None = None
-    for plant in plants:
-        stage = calculate_plant_stage(plant)
-        order = _LIVE_STAGE_ORDER.get(stage)
+    for stage, _age in stage_ages:
+        order = LIVE_STAGE_ORDER.get(stage)
         if order is not None and order > best_order:
             best_order = order
             best_stage = stage
@@ -179,10 +186,7 @@ def resolve_feed_stage_week(plants: list[Plant]) -> tuple[str | None, int]:
     if best_stage is None:
         return None, 0
 
-    max_days = max(
-        (calculate_days_in_stage(plant, best_stage) for plant in plants),
-        default=0,
-    )
+    max_days = max(age for stage, age in stage_ages if stage == best_stage)
     return best_stage, days_to_week(max_days)
 
 
@@ -202,7 +206,34 @@ def band_for_week(points: list[ECRampPoint], week: int) -> tuple[float, float] |
     return None
 
 
+def active_curve_for(
+    growspace_id: str,
+    stage: str | None,
+    ec_ramp_curves: dict[str, ECRampCurve],
+) -> ECRampCurve | None:
+    """Return the growspace's own ``ECRampCurve`` for ``stage``, or None.
+
+    The single owner of curve selection (ADR-0046), shared by the feed-target
+    seam and the ``ECTargetSensor``. A curve belongs to exactly one growspace and
+    there is at most one per ``(growspace_id, stage)``, so this is a lookup, not a
+    choice: another growspace's curve never matches, and neither does a curve
+    with an empty ``growspace_id`` — one stored before the binding existed, which
+    raises a repair instead of silently driving an arbitrary growspace.
+    """
+    if stage is None or not growspace_id:
+        return None
+    return next(
+        (
+            c
+            for c in ec_ramp_curves.values()
+            if c.growspace_id == growspace_id and c.stage == stage
+        ),
+        None,
+    )
+
+
 def resolve_active_feed_ec(
+    growspace_id: str,
     stage: str | None,
     week: int,
     ec_ramp_curves: dict[str, ECRampCurve],
@@ -210,14 +241,15 @@ def resolve_active_feed_ec(
 ) -> tuple[tuple[float, float] | None, str]:
     """Resolve the [[Active Feed EC Target]] as ``(band, source)``.
 
-    The weekly ``ECRampCurve`` for the stage wins; failing that, the per-stage
-    ``ECTargetRange`` (which has no week dimension). ``(None, "none")`` when the
-    stage is unknown or neither is configured — a graceful Sensor-Gated absence.
+    The growspace's own weekly ``ECRampCurve`` for the stage wins; failing that,
+    the per-stage ``ECTargetRange`` (which has no week dimension).
+    ``(None, "none")`` when the stage is unknown or neither is configured — a
+    graceful Sensor-Gated absence.
     """
     if stage is None:
         return None, "none"
 
-    curve = next((c for c in ec_ramp_curves.values() if c.stage == stage), None)
+    curve = active_curve_for(growspace_id, stage, ec_ramp_curves)
     if curve is not None and curve.points:
         band = band_for_week(curve.points, week)
         if band is not None:

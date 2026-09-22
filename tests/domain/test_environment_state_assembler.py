@@ -93,6 +93,24 @@ def test_aggregated_value_averages_valid_readings() -> None:
     assert result.observations["temperature"] == pytest.approx(25.0)
 
 
+def test_singular_shadow_of_a_plural_list_is_counted_once() -> None:
+    """The shadow repeats the head of its list; averaging both would skew it.
+
+    This is the shape the Environment Patch actually writes: configuring
+    ``temperature_sensors`` re-derives ``temperature_sensor`` from its head.
+    """
+    config = EnvironmentConfig(
+        temperature_sensor="sensor.t1",
+        temperature_sensors=["sensor.t1", "sensor.t2"],
+    )
+    states = {"sensor.t1": FakeState("20"), "sensor.t2": FakeState("30")}
+
+    result = build_assembler(config, states).assemble()
+
+    assert result.state.temp == pytest.approx(25.0)
+    assert result.observations["temperature"] == pytest.approx(25.0)
+
+
 def test_unavailable_and_unknown_readings_are_skipped() -> None:
     """Unavailable/unknown/non-numeric sensors do not count toward the average."""
     config = EnvironmentConfig(
@@ -325,6 +343,38 @@ def test_stage_days_max_across_plants() -> None:
     result = build_assembler(config, plants=plants).assemble()
     assert result.state.veg_days == 25
     # Stages without any plant start fall back to the -1 sentinel.
+    assert result.state.flower_days == -1
+
+
+def test_stage_days_only_count_the_current_lifecycle_interval() -> None:
+    """Closed-stage dates do not keep accumulating after a Reveg."""
+    today = dt_util.now().date()
+    reveg = today - timedelta(days=5)
+    flower = reveg - timedelta(days=20)
+    first_veg = flower - timedelta(days=30)
+    plant = Plant(
+        plant_id="reveg",
+        growspace_id="gs1",
+        veg_start=reveg.isoformat(),
+        flower_start=flower.isoformat(),
+        stage_history=[
+            {
+                "stage": "veg",
+                "start": first_veg.isoformat(),
+                "end": flower.isoformat(),
+            },
+            {
+                "stage": "flower",
+                "start": flower.isoformat(),
+                "end": reveg.isoformat(),
+            },
+            {"stage": "veg", "start": reveg.isoformat(), "end": None},
+        ],
+    )
+
+    result = build_assembler(EnvironmentConfig(), plants=[plant]).assemble()
+
+    assert result.state.veg_days == 5
     assert result.state.flower_days == -1
 
 

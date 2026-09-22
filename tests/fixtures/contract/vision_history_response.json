@@ -1,0 +1,211 @@
+{
+  "capture_total": 4,
+  "history": [
+    {
+      "captures": [
+        {
+          "analysis_state": "analyzed",
+          "camera_id": "camera.contract_4",
+          "capture_id": "01991f1d-6c04-7000-8000-000000000001",
+          "captured_at": "2026-09-03T06:00:01+00:00",
+          "environment": {
+            "evaluated_at": "2026-09-03T05:55:00+00:00",
+            "mold_reasons": [],
+            "stress_reasons": [],
+            "verdict": "within_evaluated_range"
+          },
+          "fusion": {
+            "confidence": "confirmed",
+            "coverage": "complete",
+            "state": "no_detected_change",
+            "unavailable_reasons": []
+          },
+          "image": {
+            "available": true,
+            "media_content_id": "media-source://media_source/local/growspace_vision/contract-growspace/camera.contract_4/01991f1d-6c04-7000-8000-000000000001.processed.jpg"
+          },
+          "provenance": {
+            "model_id": "dinov2-small",
+            "model_version": "1.0.0",
+            "scoring_policy_version": 1,
+            "service_version": "1.4.0",
+            "vision_schema_version": 1
+          },
+          "quality": {
+            "accepted": true,
+            "metrics": {
+              "clipped_pixel_fraction": 0.08,
+              "mean_absolute_gradient": 14.25,
+              "mean_luminance": 112.5
+            },
+            "reasons": []
+          },
+          "report": {
+            "environmental_risk": "Measurements are within their evaluated range.",
+            "hypothesis": "",
+            "observation": "The canopy is even across the frame.",
+            "recommendations": ["Continue monitoring."]
+          },
+          "trend": [
+            {
+              "anomaly_score": 0.1,
+              "evaluated_at": "2026-09-02T06:00:02+00:00",
+              "fusion_state": "no_detected_change",
+              "verdict": "normal"
+            }
+          ],
+          "visual": {
+            "anomaly_score": 0.2,
+            "baseline_state": "ready",
+            "comparison_confidence": 0.8,
+            "outcome": "scored",
+            "raw_distance": 0.04,
+            "samples_collected": 30,
+            "samples_required": 30,
+            "unavailable_reasons": [],
+            "verdict": "normal"
+          }
+        }
+      ],
+      "checkup_id": "01991f1d-5c03-7000-8000-000000000001",
+      "completed_at": "2026-09-03T06:00:04+00:00",
+      "growspace_id": "contract-growspace",
+      "light_window": "early",
+      "result_schema": "evidence_v1",
+      "started_at": "2026-09-03T06:00:00+00:00",
+      "status": "completed",
+      "trigger_source": "scheduled"
+    },
+    {
+      "captures": [
+        {
+          "analysis_state": "rejected",
+          "camera_id": "camera.contract_3",
+          "capture_id": "01991f1d-6c03-7000-8000-000000000001",
+          "captured_at": "2026-09-02T06:00:01+00:00",
+          "environment": {
+            "evaluated_at": "2026-09-02T05:55:00+00:00",
+            "mold_reasons": [],
+            "stress_reasons": ["high_vpd"],
+            "verdict": "risk"
+          },
+          "fusion": {
+            "confidence": "monitor",
+            "coverage": "partial",
+            "state": "environmental_risk",
+            "unavailable_reasons": []
+          },
+          "image": {
+            "available": false
+          },
+          "provenance": {
+            "service_version": "1.4.0",
+            "vision_schema_version": 1
+          },
+          "quality": {
+            "accepted": false,
+            "metrics": {
+              "clipped_pixel_fraction": 0.0,
+              "mean_absolute_gradient": 1.0,
+              "mean_luminance": 2.0
+            },
+            "reasons": ["too_dark"]
+          },
+          "trend": [],
+          "visual": {
+            "outcome": "unavailable",
+            "unavailable_reasons": ["frame_rejected"]
+          }
+        },
+        {
+          "analysis_state": "failed",
+          "camera_id": "camera.contract_2",
+          "capture_id": "01991f1d-6c02-7000-8000-000000000001",
+          "captured_at": "2026-09-02T06:00:01+00:00",
+          "environment": {
+            "mold_reasons": [],
+            "stress_reasons": [],
+            "verdict": "unavailable"
+          },
+          "fusion": {
+            "unavailable_reasons": [
+              "vision_unavailable",
+              "stress_evidence_stale"
+            ]
+          },
+          "image": {
+            "available": false
+          },
+          "provenance": {},
+          "quality": {
+            "accepted": false,
+            "reasons": []
+          },
+          "trend": [],
+          "visual": {
+            "outcome": "unavailable",
+            "unavailable_reasons": ["vision_unavailable"]
+          }
+        }
+      ],
+      "checkup_id": "01991f1d-5c02-7000-8000-000000000001",
+      "completed_at": "2026-09-02T06:00:04+00:00",
+      "growspace_id": "contract-growspace",
+      "light_window": "early",
+      "result_schema": "evidence_v1",
+      "started_at": "2026-09-02T06:00:00+00:00",
+      "status": "partial",
+      "trigger_source": "scheduled"
+    },
+    {
+      "captures": [
+        {
+          "analysis_state": "failed",
+          "camera_id": "camera.contract_1",
+          "capture_id": "01991f1d-6c01-7000-8000-000000000001",
+          "captured_at": "2026-09-01T06:00:01+00:00",
+          "environment": {
+            "mold_reasons": [],
+            "stress_reasons": [],
+            "verdict": "unavailable"
+          },
+          "fusion": {
+            "unavailable_reasons": ["vision_unavailable"]
+          },
+          "image": {
+            "available": false
+          },
+          "provenance": {},
+          "quality": {
+            "accepted": false,
+            "reasons": []
+          },
+          "trend": [],
+          "visual": {
+            "outcome": "unavailable",
+            "unavailable_reasons": ["vision_unavailable"]
+          }
+        }
+      ],
+      "checkup_id": "01991f1d-5c01-7000-8000-000000000001",
+      "completed_at": "2026-09-01T06:00:04+00:00",
+      "growspace_id": "contract-growspace",
+      "light_window": "early",
+      "result_schema": "evidence_v1",
+      "started_at": "2026-09-01T06:00:00+00:00",
+      "status": "failed",
+      "trigger_source": "scheduled"
+    },
+    {
+      "analysis": "Historical cloud description.",
+      "check_type": "early",
+      "issues_detected": ["yellowing"],
+      "recommendations": ["Historical recommendation."],
+      "result_schema": "legacy_cloud_v1",
+      "severity": "high",
+      "snapshot_paths": ["/local/contract-legacy.jpg"],
+      "timestamp": "2026-08-31T06:00:00+00:00"
+    }
+  ],
+  "total": 4
+}

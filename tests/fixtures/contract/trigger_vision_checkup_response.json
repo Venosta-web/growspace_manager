@@ -1,0 +1,89 @@
+{
+  "analysis": "The canopy is even across the frame.\n\nMeasurements are within their evaluated range.",
+  "check_type": "manual",
+  "checkup": {
+    "captures": [
+      {
+        "analysis_state": "analyzed",
+        "camera_id": "camera.contract_4",
+        "capture_id": "01991f1d-6c04-7000-8000-000000000001",
+        "captured_at": "2026-09-03T06:00:01+00:00",
+        "environment": {
+          "evaluated_at": "2026-09-03T05:55:00+00:00",
+          "mold_reasons": [],
+          "stress_reasons": [],
+          "verdict": "within_evaluated_range"
+        },
+        "fusion": {
+          "confidence": "confirmed",
+          "coverage": "complete",
+          "state": "no_detected_change",
+          "unavailable_reasons": []
+        },
+        "image": {
+          "available": true,
+          "media_content_id": "media-source://media_source/local/growspace_vision/contract-growspace/camera.contract_4/01991f1d-6c04-7000-8000-000000000001.processed.jpg"
+        },
+        "provenance": {
+          "model_id": "dinov2-small",
+          "model_version": "1.0.0",
+          "scoring_policy_version": 1,
+          "service_version": "1.4.0",
+          "vision_schema_version": 1
+        },
+        "quality": {
+          "accepted": true,
+          "metrics": {
+            "clipped_pixel_fraction": 0.08,
+            "mean_absolute_gradient": 14.25,
+            "mean_luminance": 112.5
+          },
+          "reasons": []
+        },
+        "report": {
+          "environmental_risk": "Measurements are within their evaluated range.",
+          "hypothesis": "",
+          "observation": "The canopy is even across the frame.",
+          "recommendations": ["Continue monitoring."]
+        },
+        "trend": [
+          {
+            "anomaly_score": 0.1,
+            "evaluated_at": "2026-09-02T06:00:02+00:00",
+            "fusion_state": "no_detected_change",
+            "verdict": "normal"
+          }
+        ],
+        "visual": {
+          "anomaly_score": 0.2,
+          "baseline_state": "ready",
+          "comparison_confidence": 0.8,
+          "outcome": "scored",
+          "raw_distance": 0.04,
+          "samples_collected": 30,
+          "samples_required": 30,
+          "unavailable_reasons": [],
+          "verdict": "normal"
+        }
+      }
+    ],
+    "checkup_id": "01991f1d-5c03-7000-8000-000000000001",
+    "completed_at": "2026-09-03T06:00:04+00:00",
+    "growspace_id": "contract-growspace",
+    "light_window": "manual",
+    "result_schema": "evidence_v1",
+    "started_at": "2026-09-03T06:00:00+00:00",
+    "status": "completed",
+    "trigger_source": "manual"
+  },
+  "checkup_id": "01991f1d-5c03-7000-8000-000000000001",
+  "growspace_id": "contract-growspace",
+  "issues_detected": [],
+  "recommendations": ["Continue monitoring."],
+  "severity": "none",
+  "snapshot_paths": [
+    "media-source://media_source/local/growspace_vision/contract-growspace/camera.contract_4/01991f1d-6c04-7000-8000-000000000001.processed.jpg"
+  ],
+  "status": "completed",
+  "timestamp": "2026-09-03T06:00:04+00:00"
+}

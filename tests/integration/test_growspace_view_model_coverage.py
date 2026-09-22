@@ -37,7 +37,10 @@ def builder(hass: HomeAssistant) -> GrowspaceViewModelBuilder:
 def test_growspace_view_model_build_basic(hass: HomeAssistant, builder):
     """Test basic build functionality."""
     env_config = EnvironmentConfig(
-        temperature_sensor="sensor.temp", humidity_sensor="sensor.hum"
+        temperature_sensor="sensor.temp",
+        humidity_sensor="sensor.hum",
+        veg_day_hours=19,
+        flower_day_hours=11,
     )
     growspace = Growspace(
         id="gs1",
@@ -76,6 +79,7 @@ def test_growspace_view_model_build_basic(hass: HomeAssistant, builder):
     assert result["metrics"]["metrics"] is True
     assert result["grid"]["grid"]["position_1_1"]["rich"] is True
     assert result["grid"]["grid"]["position_1_2"] is None
+    assert result["irrigation"]["irrigation_config"]["resolved_day_hours"] == 11
 
 
 @pytest.mark.parametrize(

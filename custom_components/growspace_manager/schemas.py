@@ -49,8 +49,14 @@ from .const import (
     ATTR_PLANT_IDS,
     ATTR_POINTS,
     ATTR_PRESET_ID,
+    ATTR_PROGRAM_ID,
+    ATTR_PROGRAM_SLOTS,
     ATTR_QUANTITY,
     ATTR_RECEIVER_PLANT_ID,
+    ATTR_RECIPE_CROP_STEERING,
+    ATTR_RECIPE_ID,
+    ATTR_RECIPE_KIND,
+    ATTR_RECIPE_SCHEDULE,
     ATTR_RESIN,
     ATTR_ROW,
     ATTR_SEED_BATCH_ID,
@@ -105,6 +111,7 @@ from .const import (
     CONF_PORE_EC_SENSORS,
     CONF_POWER_SENSORS,
     CONF_RUNOFF_EC_SENSORS,
+    CONF_SNAPSHOT_INTERVAL,
     CONF_SOIL_MOISTURE_SENSOR,
     CONF_STRESS_THRESHOLD,
     CONF_SUBSTRATE_TEMP_SENSORS,
@@ -113,6 +120,7 @@ from .const import (
     DATE_FIELDS,
     PLANT_STAGES,
     FanRegulationMode,
+    IrrigationRecipeKind,
     ShotSizingMode,
     SteeringMode,
     SubstrateMediaType,
@@ -468,6 +476,45 @@ PRINT_LABEL_SCHEMA = vol.Schema(
     }
 )
 
+
+def _validate_print_label_template(data: dict[str, Any]) -> dict[str, Any]:
+    """Require one template choice and one record-backed subject shape."""
+    if ("template" in data) == ("label_size_id" in data):
+        raise vol.Invalid("provide exactly one of template or label_size_id")
+    if ("strain" in data) == ("plant_ids" in data):
+        raise vol.Invalid("provide exactly one of strain or plant_ids")
+    if "phenotype" in data and "strain" not in data:
+        raise vol.Invalid("phenotype may only be used with strain")
+    return data
+
+
+PRINT_LABEL_TEMPLATE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional("template"): vol.Schema(
+                {
+                    vol.Required("kind"): vol.In(["factory", "named"]),
+                    vol.Required("id"): str,
+                    vol.Optional("revision"): vol.Any(
+                        None, vol.All(int, vol.Range(min=1))
+                    ),
+                }
+            ),
+            vol.Optional("label_size_id"): str,
+            vol.Optional(ATTR_STRAIN): str,
+            vol.Optional(ATTR_PHENOTYPE): str,
+            vol.Optional(ATTR_PLANT_IDS): vol.All([str], vol.Length(min=1, max=100)),
+            vol.Required("device_id"): str,
+            vol.Optional("profile_id"): vol.Any(None, str),
+            vol.Optional("density", default="normal"): vol.In(
+                ["low", "normal", "high"]
+            ),
+            vol.Optional("locale", default="en"): str,
+        }
+    ),
+    _validate_print_label_template,
+)
+
 # Debug Schemas
 DEBUG_CLEANUP_LEGACY_SCHEMA = vol.Schema(
     {
@@ -556,6 +603,9 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_SUBSTRATE_TEMP_SENSORS): cv.ensure_list,
         vol.Optional(CONF_LUNG_ROOM_TEMP_SENSORS): cv.ensure_list,
         vol.Optional(CONF_CAMERA_ENTITIES): cv.ensure_list,
+        vol.Optional(CONF_SNAPSHOT_INTERVAL): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=168)
+        ),
         # Advanced / irrigation monitoring sensors
         vol.Optional(CONF_PH_SENSORS): cv.ensure_list,
         vol.Optional(CONF_FEED_EC_SENSORS): cv.ensure_list,
@@ -567,6 +617,16 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_POWER_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ENERGY_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ELECTRICITY_COST): vol.Coerce(float),
+        # Acceptable Moisture Band. Both edges are nullable so the pair can be
+        # cleared back to the inherited default; the atomic pair and the
+        # 0 ≤ min < max ≤ 100 relation are enforced by the Environment Patch
+        # builder, which sees both values at once.
+        vol.Optional("soil_moisture_min"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
+        ),
+        vol.Optional("soil_moisture_max"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
+        ),
         vol.Optional("circulation_fan_config"): dict,
         vol.Optional("vpd_optimal_overrides"): dict,
         # AC Infinity actuator bundles, parallel to the plain *_entities lists.
@@ -656,6 +716,9 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
         vol.Optional("shot_interval_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
         ),
+        # Skip P2 (workspace#131): a phase-transition rule, not a timing value —
+        # the P2 fields above keep their values while it bypasses them.
+        vol.Optional("skip_p2_after_p1"): bool,
         vol.Optional("auto_light_tracking"): bool,
         # Shot Sizing Mode + Substrate Profile (Volume Mode, ADR-0011).
         vol.Optional("shot_sizing_mode"): vol.In(
@@ -696,16 +759,6 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
             None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
         ),
         vol.Optional("ec_modulation_enabled"): bool,
-        # Acceptable Moisture Band. Both edges are nullable so the pair can be
-        # cleared back to the inherited default; the atomic pair and the
-        # 0 ≤ min < max ≤ 100 relation are enforced by the Environment Patch
-        # builder, which sees both values at once.
-        vol.Optional("soil_moisture_min"): vol.Any(
-            None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
-        ),
-        vol.Optional("soil_moisture_max"): vol.Any(
-            None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
-        ),
     }
 )
 
@@ -715,6 +768,16 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
         {
             vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
             vol.Optional("irrigation_pump_entity"): str,
+            vol.Optional("pump_flow_rate_ml_per_sec"): vol.All(
+                vol.Coerce(float), vol.Range(min=0.0)
+            ),
+            # [[Dripper Throughput]]: the grower-facing spelling of the one
+            # value above. Submitting the pair stores the derived ml/s; no
+            # second field is persisted.
+            vol.Optional("dripper_liters_per_hour"): vol.All(
+                vol.Coerce(float), vol.Range(min=0.0)
+            ),
+            vol.Optional("emitter_count"): vol.All(vol.Coerce(int), vol.Range(min=0)),
             vol.Optional("drain_pump_entity"): str,
             vol.Optional("irrigation_duration"): vol.All(
                 vol.Coerce(int), vol.Range(min=1)
@@ -734,13 +797,24 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("log_to_logbook"): bool,
             vol.Optional("auto_advance_p1_to_p2"): bool,
             vol.Optional("auto_advance_p2_to_p3"): bool,
+            vol.Optional("program_auto_advance"): bool,
             vol.Optional("halt_on_runoff_ec_threshold"): vol.Any(
                 None, vol.All(vol.Coerce(float), vol.Range(min=0.0))
             ),
-            vol.Optional("active_steering_phase"): vol.In(["p1", "p2", "p3"]),
         }
     ),
     _validate_pump_entities,
+)
+
+
+# The manual phase override (ADR-0012). Its own action rather than a settings
+# field: the phase is decided by the Steering Phase Machine every tick, so a
+# grower-facing write of it is a distinct gesture, not part of saving a form.
+SET_STEERING_PHASE_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
+        vol.Required("steering_phase"): vol.In(["p1", "p2", "p3"]),
+    }
 )
 
 
@@ -925,6 +999,154 @@ REMOVE_NUTRIENT_PRESET_SCHEMA = vol.Schema(
     }
 )
 
+# --- Irrigation Recipe Schemas ---
+
+SAVE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_NAME): str,
+        vol.Required(ATTR_RECIPE_KIND): vol.In([k.value for k in IrrigationRecipeKind]),
+        # Present to overwrite an existing recipe in place; absent mints a new one.
+        vol.Optional(ATTR_RECIPE_ID): str,
+    }
+)
+
+# An edit is sparse: every value is optional and an unnamed field keeps what
+# the recipe stores. The key sets below must stay equal to the editable fields
+# `domain/irrigation_recipe.py` derives from the halves themselves — a contract
+# test asserts exactly that, because a field missing here would be silently
+# uneditable rather than loudly wrong.
+_RECIPE_SCHEDULE_ITEM_SCHEMA = vol.Schema(
+    {
+        vol.Optional("time"): str,
+        vol.Optional("duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("start_time"): str,
+        vol.Optional("duration_seconds"): vol.Any(None, vol.Coerce(float)),
+    }
+)
+
+CROP_STEERING_RECIPE_VALUES_SCHEMA = vol.Schema(
+    {
+        vol.Optional("lights_on_time"): str,
+        vol.Optional("p0_duration_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Optional("p2_stop_before_lights_off_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=0)
+        ),
+        vol.Optional("target_vwc_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional("maintenance_dryback_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        # Percents of substrate volume, never pump seconds
+        # ([[Substrate-Relative Shot Storage]]).
+        vol.Optional("p1_shot_volume_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional("p1_shot_interval_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=1)
+        ),
+        vol.Optional("p2_shot_volume_percent"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0, max=100.0)
+        ),
+        vol.Optional("p2_shot_interval_minutes"): vol.All(
+            vol.Coerce(int), vol.Range(min=1)
+        ),
+        vol.Optional("auto_light_tracking"): bool,
+        vol.Optional("dynamic_shot_enabled"): bool,
+        vol.Optional("dynamic_aggressiveness"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("dynamic_recovery"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("dynamic_shot_size_floor"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("dynamic_interval_ceiling"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.0)
+        ),
+        vol.Optional("pore_ec_target_min"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("pore_ec_target_max"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("ec_modulation_enabled"): bool,
+    }
+)
+
+SCHEDULE_RECIPE_VALUES_SCHEMA = vol.Schema(
+    {
+        vol.Optional("irrigation_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
+        vol.Optional("drain_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
+        vol.Optional("irrigation_duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("drain_duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("daily_volume_cap_liters"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("max_cycles_per_day"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("skip_during_dark"): bool,
+    }
+)
+
+UPDATE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_RECIPE_ID): str,
+        # Rename, correct the values, or both. The half must be the one this
+        # recipe's kind holds; neither kind nor provenance is writable here.
+        vol.Optional(ATTR_NAME): str,
+        vol.Optional(ATTR_RECIPE_CROP_STEERING): CROP_STEERING_RECIPE_VALUES_SCHEMA,
+        vol.Optional(ATTR_RECIPE_SCHEDULE): SCHEDULE_RECIPE_VALUES_SCHEMA,
+    }
+)
+
+REMOVE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_RECIPE_ID): str,
+    }
+)
+
+APPLY_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        vol.Required(ATTR_RECIPE_ID): str,
+    }
+)
+
+# --- Irrigation Program Schemas ---
+
+# One (stage, week) slot. The stage set and the 1-indexed weeks are enforced by
+# `domain/irrigation_program.py`, which owns what a reachable slot is; this
+# schema only fixes the wire shape.
+PROGRAM_SLOT_SCHEMA = vol.Schema(
+    {
+        vol.Required("stage"): str,
+        vol.Required("week"): vol.Coerce(int),
+        vol.Required("recipe_id"): str,
+    }
+)
+
+SAVE_IRRIGATION_PROGRAM_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_NAME): str,
+        # The whole plan: saving replaces the slot list rather than merging
+        # into it, so an empty list is a program a grower has emptied.
+        vol.Required(ATTR_PROGRAM_SLOTS): [PROGRAM_SLOT_SCHEMA],
+        # Present to overwrite an existing program in place; absent mints a new one.
+        vol.Optional(ATTR_PROGRAM_ID): str,
+    }
+)
+
+REMOVE_IRRIGATION_PROGRAM_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_PROGRAM_ID): str,
+    }
+)
+
+ASSIGN_IRRIGATION_PROGRAM_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
+        # Omitted or null unbinds. Binding applies nothing, so neither spelling
+        # can change what a pump does.
+        vol.Optional(ATTR_PROGRAM_ID): vol.Any(None, str),
+    }
+)
+
 # --- IPM Preset Schemas ---
 
 IPM_ITEM_SCHEMA = vol.Schema(
@@ -1044,6 +1266,7 @@ EC_RAMP_POINT_SCHEMA = vol.Schema(
 
 SAVE_EC_RAMP_CURVE_SCHEMA = vol.Schema(
     {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
         vol.Required(ATTR_NAME): str,
         vol.Required(ATTR_STAGE): str,
         vol.Required(ATTR_POINTS): vol.All([EC_RAMP_POINT_SCHEMA], vol.Length(min=1)),
@@ -1065,6 +1288,14 @@ SET_EC_TARGET_RANGE_SCHEMA = vol.Schema(
         vol.Required(ATTR_STAGE): vol.In(PLANT_STAGES),
         vol.Required(ATTR_FEED_EC_MIN): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Required(ATTR_FEED_EC_MAX): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
+    }
+)
+
+# A clear names the growspace and nothing else: it restores the model's own
+# defaults rather than writing values, so there is no field to carry.
+CLEAR_IRRIGATION_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): vol.All(str, valid_growspace_id),
     }
 )
 

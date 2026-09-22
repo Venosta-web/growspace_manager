@@ -6,12 +6,12 @@
 
 The integration already drives in-tent air movement through the
 **CirculationFanController** ([[Circulation Fan Controller]]), which picks
-*exactly one* regulation mode (`humidity`, `temperature`, or `vpd`) and layers a
+_exactly one_ regulation mode (`humidity`, `temperature`, or `vpd`) and layers a
 dynamic wind oscillation on top. That single-mode model fits a fan whose job is
 to keep air stirring inside the canopy.
 
 Exhaust is a different job. An exhaust fan (or damper) evacuates hot, humid air
-*out* of the tent, and the grower wants it to respond to **whichever stress is
+_out_ of the tent, and the grower wants it to respond to **whichever stress is
 worst right now** — not to a single pre-chosen variable:
 
 - the tent is **too hot** → pull more air,
@@ -19,15 +19,16 @@ worst right now** — not to a single pre-chosen variable:
 - the **VPD is too low** (air is saturated relative to the leaf) → pull more air.
 
 A mode selector would force the grower to guess which of these dominates, and the
-answer changes across the day and the grow stage. So exhaust needs a *combined*
-signal, and the VPD term has to be **inverted** relative to circulation: for
-circulation VPD mode, a high VPD reading raises fan speed; for exhaust, a **low**
-VPD (humid) is the condition that demands evacuation.
+answer changes across the day and the grow stage. So exhaust needs a _combined_
+signal, and the VPD term has to be **inverted** relative to temperature and
+humidity demand: a **low** VPD (humid) is the condition that demands evacuation.
+Circulation VPD mode now follows the same low-VPD/high-demand direction for
+protective canopy airflow; see ADR-0048.
 
 The three terms reuse the same linear band math the circulation controller
 already uses. Before this work that math (`compute_fan_speed`,
 `evaluate_temp_override`, the stage-aware VPD target resolution, and
-`FAN_VPD_STAGE_DEFAULTS`) lived *inside* `circulation_fan_coordinator.py`, so an
+`FAN_VPD_STAGE_DEFAULTS`) lived _inside_ `circulation_fan_coordinator.py`, so an
 exhaust controller could only get at it by importing from a sibling coordinator
 or by duplicating it.
 
@@ -55,7 +56,7 @@ or by duplicating it.
    final = clamp(max(temp_demand, humidity_demand, vpd_demand), min_speed, max_speed)
    ```
 
-   `compute_inverted_fan_speed` is the only *new* term: it delegates to
+   `compute_inverted_fan_speed` is the only _new_ term: it delegates to
    `compute_fan_speed` with the speed bounds swapped, so a VPD at/below
    `target − tolerance` yields `max_speed` and a VPD at/above `target + tolerance`
    yields `min_speed`. A sensor that is missing or unavailable drops its term from

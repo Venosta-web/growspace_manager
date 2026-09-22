@@ -19,7 +19,7 @@ The test instance runs alongside your main development instance with:
 Run the setup script to automatically configure the test instance:
 
 ```bash
-./tests/setup-test-instance.sh
+./tests/utils/setup-test-instance.sh
 ```
 
 This script will:
@@ -34,7 +34,7 @@ This script will:
 The test instance has the Lovelace resource pre-configured. For the dev instance:
 
 ```bash
-./tests/add-lovelace-resource.sh homeassistant homeassistant-dev
+./tests/utils/add-lovelace-resource.sh homeassistant homeassistant-dev
 ```
 
 Or add manually via **Settings → Dashboards → Resources**:
@@ -42,7 +42,7 @@ Or add manually via **Settings → Dashboards → Resources**:
 - URL: `/local/growspace-manager-card.js`
 - Type: JavaScript Module
 
-See [`LOVELACE_RESOURCE.md`](LOVELACE_RESOURCE.md) for detailed instructions.
+See [`LOVELACE_RESOURCE.md`](../../frontend/LOVELACE_RESOURCE.md) for detailed instructions.
 
 ### Manual Setup
 

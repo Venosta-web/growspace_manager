@@ -77,6 +77,11 @@ _SHADOW_ALIASES: dict[str, str] = {
 }
 _ALL_ALIASES: dict[str, str] = {**_WIRE_ALIASES, **_SHADOW_ALIASES}
 
+# Compatibility spellings accepted by the runtime action schema but omitted
+# from curated Home Assistant metadata, where only the canonical Environment
+# Change interface should be presented.
+ENVIRONMENT_SERVICE_ALIASES: frozenset[str] = frozenset(_ALL_ALIASES)
+
 _ITEM_TYPES: dict[str, type[BaseModel]] = {
     "irrigation_tanks": IrrigationTank,
     "sensor_groups": SensorGroup,

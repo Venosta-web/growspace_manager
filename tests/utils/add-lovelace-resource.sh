@@ -4,10 +4,17 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+FIXTURE="$PROJECT_DIR/tests/fixtures/lovelace/growspace-manager-card.js"
+
 INSTANCE_NAME="${1:-homeassistant}"
 CONTAINER_NAME="${2:-homeassistant-dev}"
 
 echo "🔧 Adding Lovelace card resource to ${INSTANCE_NAME}..."
+
+echo "🔎 Validating and preparing isolated Lovelace fixtures..."
+python3 "$SCRIPT_DIR/prepare_lovelace_fixtures.py"
 
 # Check if container is running
 if ! docker ps | grep -q "${CONTAINER_NAME}"; then
@@ -20,17 +27,8 @@ echo "📁 Creating www directory..."
 docker exec "${CONTAINER_NAME}" mkdir -p /config/www
 
 echo "📦 Copying Lovelace card..."
-if [ -f "../lovelace-growspace-manager-card/dist/growspace-manager-card.js" ]; then
-    docker cp ../lovelace-growspace-manager-card/dist/growspace-manager-card.js "${CONTAINER_NAME}":/config/www/
-    echo "✅ Lovelace card copied from dist/"
-elif [ -f "../lovelace-growspace-manager-card/growspace-manager-card.js" ]; then
-    docker cp ../lovelace-growspace-manager-card/growspace-manager-card.js "${CONTAINER_NAME}":/config/www/
-    echo "✅ Lovelace card copied from root"
-else
-    echo "⚠️  Lovelace card not found. Build it first with:"
-    echo "   cd ../lovelace-growspace-manager-card && npm run build"
-    exit 1
-fi
+docker cp "$FIXTURE" "${CONTAINER_NAME}":/config/www/growspace-manager-card.js
+echo "✅ Authoritative Lovelace fixture copied"
 
 echo ""
 echo "✅ Lovelace card deployed to ${CONTAINER_NAME}!"

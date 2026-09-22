@@ -15,6 +15,7 @@ from custom_components.growspace_manager.domain.ec_state import (
     ECState,
     ECStateResolver,
     RunoffInputs,
+    active_curve_for,
     record_drain_reading,
     resolve_active_feed_ec,
     resolve_feed_stage_week,
@@ -145,10 +146,11 @@ def test_feed_stage_week_no_live_plants_returns_none() -> None:
     assert resolve_feed_stage_week([_plant("cure1", cure_start=2)]) == (None, 0)
 
 
-def _curve(stage: str) -> ECRampCurve:
+def _curve(stage: str, growspace_id: str = "gs_1") -> ECRampCurve:
     """Two-point ramp curve for a stage: week 1 = 2.0–2.5, week 2 = 2.5–3.0."""
     return ECRampCurve(
         id=f"c_{stage}",
+        growspace_id=growspace_id,
         stage=stage,
         points=[
             ECRampPoint(week=1, ec_min=2.0, ec_max=2.5),
@@ -161,7 +163,7 @@ def test_active_feed_ec_ramp_curve_wins_over_range() -> None:
     """A matching ramp curve is preferred over a per-stage range."""
     ranges = [ECTargetRange(stage="flower", feed_ec_min=1.0, feed_ec_max=1.5)]
     band, source = resolve_active_feed_ec(
-        "flower", 2, {"c_flower": _curve("flower")}, ranges
+        "gs_1", "flower", 2, {"c_flower": _curve("flower")}, ranges
     )
     assert band == (2.5, 3.0)
     assert source == "ramp_curve"
@@ -170,7 +172,7 @@ def test_active_feed_ec_ramp_curve_wins_over_range() -> None:
 def test_active_feed_ec_week_beyond_last_point_holds_last() -> None:
     """Past the last defined ramp week, the final point holds."""
     band, source = resolve_active_feed_ec(
-        "flower", 9, {"c_flower": _curve("flower")}, []
+        "gs_1", "flower", 9, {"c_flower": _curve("flower")}, []
     )
     assert band == (2.5, 3.0)
     assert source == "ramp_curve"
@@ -179,9 +181,42 @@ def test_active_feed_ec_week_beyond_last_point_holds_last() -> None:
 def test_active_feed_ec_falls_back_to_stage_range() -> None:
     """No ramp curve for the stage → the per-stage range supplies the target."""
     ranges = [ECTargetRange(stage="veg", feed_ec_min=1.2, feed_ec_max=1.8)]
-    band, source = resolve_active_feed_ec("veg", 1, {}, ranges)
+    band, source = resolve_active_feed_ec("gs_1", "veg", 1, {}, ranges)
     assert band == (1.2, 1.8)
     assert source == "stage_range"
+
+
+def test_active_feed_ec_ignores_another_growspaces_curve() -> None:
+    """A curve belongs to one growspace (ADR-0046); it never drives another's feed.
+
+    Before the binding existed this resolved by first stage match in dictionary
+    order, so whichever curve happened to be inserted first drove every growspace.
+    """
+    ranges = [ECTargetRange(stage="flower", feed_ec_min=1.0, feed_ec_max=1.5)]
+    curves = {"c_flower": _curve("flower", growspace_id="gs_other")}
+
+    band, source = resolve_active_feed_ec("gs_1", "flower", 2, curves, ranges)
+    assert band == (1.0, 1.5)
+    assert source == "stage_range"
+
+
+def test_active_feed_ec_ignores_an_unmigrated_curve() -> None:
+    """A curve stored without an owner is inert and raises a repair instead."""
+    curves = {"c_flower": _curve("flower", growspace_id="")}
+    assert resolve_active_feed_ec("gs_1", "flower", 2, curves, []) == (None, "none")
+
+
+def test_active_curve_for_picks_the_growspaces_own_curve() -> None:
+    """Selection is a lookup on (growspace_id, stage), not a first match."""
+    mine = _curve("flower", growspace_id="gs_1")
+    theirs = ECRampCurve(id="c_theirs", growspace_id="gs_2", stage="flower")
+    curves = {"c_theirs": theirs, "c_flower": mine}
+
+    assert active_curve_for("gs_1", "flower", curves) is mine
+    assert active_curve_for("gs_2", "flower", curves) is theirs
+    assert active_curve_for("gs_1", "veg", curves) is None
+    assert active_curve_for("gs_1", None, curves) is None
+    assert active_curve_for("", "flower", curves) is None
 
 
 @pytest.mark.parametrize(
@@ -197,7 +232,7 @@ def test_active_feed_ec_unresolved_is_none(
     ranges: list[ECTargetRange],
 ) -> None:
     """An unknown stage or no configured target → graceful (None, 'none')."""
-    assert resolve_active_feed_ec(stage, 1, curves, ranges) == (None, "none")
+    assert resolve_active_feed_ec("gs_1", stage, 1, curves, ranges) == (None, "none")
 
 
 def test_resolver_carries_feed_target_even_when_modulation_unavailable() -> None:

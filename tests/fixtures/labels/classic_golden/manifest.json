@@ -1,0 +1,664 @@
+{
+  "identity": {
+    "compatibility_layout_version": "growspace.classic-layout.v1",
+    "compiler_version": "growspace.label-compiler.v1",
+    "renderer": "imagespec",
+    "renderer_version": "0.4.0"
+  },
+  "cases": {
+    "50x30.phenotype+breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:d5c2b2418570cab8db0cf1c3514c4dc6c13362e2d83efcad28ee2a17db226e23",
+      "png_sha256": "sha256:12a35fdc367cebcfaed9b671feebc5490295ab6c77f2b69ed647f43468a65600"
+    },
+    "50x30.phenotype+breeder+lineage+logo": {
+      "raster_inputs": "sha256:50c56e78d46493bf4d187a591719bc75cc86de0cf1edf5cdf9e17ab1f3e97c11",
+      "png_sha256": "sha256:89d3bc0ed80dbc0446568b918652b5c3f005066f0a25c43615cc7e0d1fa96591"
+    },
+    "50x30.phenotype+breeder+lineage+qr": {
+      "raster_inputs": "sha256:6652d024582bf62a9345112456727d963ec1a8cfabde2d23b7fb7b73f59ced02",
+      "png_sha256": "sha256:df23d4ff17156e41c195bda52e4531861583436458c75f31915406ad6967309c"
+    },
+    "50x30.phenotype+breeder+lineage": {
+      "raster_inputs": "sha256:bc40fe937ff0af1fe7572167973bb0499566cf0a193a40a12227d63c83cfd2ca",
+      "png_sha256": "sha256:d716c8f6c0010731a3505d4a6caaf2a83bbb3f62a43a74bce7f151ac11020e70"
+    },
+    "50x30.phenotype+breeder+logo+qr": {
+      "raster_inputs": "sha256:e7da9bf940a9e133715f28075f333f2223538591ef40fd504246543763403643",
+      "png_sha256": "sha256:784059d74d39dbe590872d5afc1b728f779fc22082c44ee21ba57832f48f2d81"
+    },
+    "50x30.phenotype+breeder+logo": {
+      "raster_inputs": "sha256:450dbd4b3a8d3d730334d4c49fe859ba118ab3f791cf20af1587b5574bdeedd7",
+      "png_sha256": "sha256:9780ba116c1adff1c00b57667248a3d776ad02f7ead2e1e12d203b32eba2b3ca"
+    },
+    "50x30.phenotype+breeder+qr": {
+      "raster_inputs": "sha256:f1a1c22c5538ba0f11aeb6d1508ad13e016b3638c2df09f89636f0c778a8b875",
+      "png_sha256": "sha256:079d0680e886b5f43d338cc2b14ca546491e0ecc5f262bd8863ca40fb37592c8"
+    },
+    "50x30.phenotype+breeder": {
+      "raster_inputs": "sha256:b6ca8831fb376fc79d06f8b672d3e3390fb89ba272447ffcaa269605b3b8929b",
+      "png_sha256": "sha256:b99affbbe6b30f30a8e825360d086c30b85931c3c5bd8130f3242ecc4bd5dad5"
+    },
+    "50x30.phenotype+lineage+logo+qr": {
+      "raster_inputs": "sha256:9fcf9184644160c2dc19dca5742202548848b7fa34fc48528165f0389a8fc1d5",
+      "png_sha256": "sha256:e6ded447506f1814f525d684fb3cc45a34f25f1bae4b2ff9dd9f115b9b5a69d8"
+    },
+    "50x30.phenotype+lineage+logo": {
+      "raster_inputs": "sha256:689cc594166e54b9b2c162a7518ee50e0a5eb9d149c203bf3c59bc4e7aae7273",
+      "png_sha256": "sha256:a36cb4584da02e46239e5e829b22ed76b7ee84f5406e376521c9e7674c2e6742"
+    },
+    "50x30.phenotype+lineage+qr": {
+      "raster_inputs": "sha256:bfc3b4299fb8e8e8cdf707e3e808b06e66f05d66bd1894bd669ca113df657555",
+      "png_sha256": "sha256:038942cafb3ac8fc5ab287130f800bda5aad3e83df54526518bf1f19efaec59d"
+    },
+    "50x30.phenotype+lineage": {
+      "raster_inputs": "sha256:7d24aaca545e1ca23a2d8bc72700847d0bf50750ad0ba52a33c24d910412454e",
+      "png_sha256": "sha256:4b567f2258c612d597218b718432211e9a1656a3b3ab092bd7d81e85fea4b905"
+    },
+    "50x30.phenotype+logo+qr": {
+      "raster_inputs": "sha256:89e23b2267a658c50d01c89c6895b689a2a0f429ca6bc5164205887a98d81c69",
+      "png_sha256": "sha256:0aaf6ddef020986cbf89bfb2248ccf7de8dec01bec9c90cec06be414150d0dfc"
+    },
+    "50x30.phenotype+logo": {
+      "raster_inputs": "sha256:50dce9beb514078e9a2ab85fd3c86bc88db0dbb1ec0163187777142b116a521d",
+      "png_sha256": "sha256:df00f5ada306e9dc4560820336caec8e95f6fd2fd7e02081a4c7e59a121c4b5f"
+    },
+    "50x30.phenotype+qr": {
+      "raster_inputs": "sha256:4174edf34cb11fd8a50da8f45c631fec7dad8977aa36c1f9a1333ef36df0dfdb",
+      "png_sha256": "sha256:953fb4e412382714b14d7b7c7d0bf9573c9ac6778db452d203b07a911e5b5606"
+    },
+    "50x30.phenotype": {
+      "raster_inputs": "sha256:479be9f3a15cad1fd11154201d53e851ab1e7807ad0dced1b23c7ac912dae300",
+      "png_sha256": "sha256:5271d1a93a36d34dfd7f45f61d2a4e87237810199279b43053cd5e6ad109ea34"
+    },
+    "50x30.breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:63df941bc9641d2146326606b73ff853b984c16a3acc75645d6e0d59bdf600ec",
+      "png_sha256": "sha256:601c10e31ddeddde55eb5490548157d53010f5e45029a8bdd167335418787541"
+    },
+    "50x30.breeder+lineage+logo": {
+      "raster_inputs": "sha256:dfe9a3ce496a023d481f2195c1e698dbd304c47e52e376f20cb118d2634d580f",
+      "png_sha256": "sha256:7637f15827727e1d609419385fff3958509989406d34934f1fd91e8c8745dc4b"
+    },
+    "50x30.breeder+lineage+qr": {
+      "raster_inputs": "sha256:d9af7034c59194cb84ab1847dc6f71b8951f116c6146c4d9173b810fb8860656",
+      "png_sha256": "sha256:fe2c1520edb0c918390d976682c3c287c9d8aa4b341cc9e06c4cf1fa30e9c112"
+    },
+    "50x30.breeder+lineage": {
+      "raster_inputs": "sha256:792e126bed26f76d8f918a3fe41659726cad4faf2faa328d5b4d85beb9b6d7fe",
+      "png_sha256": "sha256:e0dd3fc1355a835e8c8e67c7f77d3116fba6a65c38b219951bf5ab863c7f976d"
+    },
+    "50x30.breeder+logo+qr": {
+      "raster_inputs": "sha256:01e7a192b704ed32a143c7c3d56103fad403bd768fb02baa46d6e32b0c1b3700",
+      "png_sha256": "sha256:ac75b3161d37b9728799f47b6e75eda8fb5d93ff925c5b3616ad4ca8da0525d8"
+    },
+    "50x30.breeder+logo": {
+      "raster_inputs": "sha256:740c1c5ec4c70227e0be1f979c7797cf1c802dd668edb543fc173433a2909814",
+      "png_sha256": "sha256:ceb1d119534949c7359ca8e1a12fdcdb53f8b78420f07fcee78cf329e38a17ca"
+    },
+    "50x30.breeder+qr": {
+      "raster_inputs": "sha256:fdb706ba9bdc3456de56c51babdf87734e7b490f55bc2942f5b6262c8e19a5c0",
+      "png_sha256": "sha256:0cb8ec6da0102fe8f0acb93e945f3af0ea4e6f07187041d48855b5f8af586016"
+    },
+    "50x30.breeder": {
+      "raster_inputs": "sha256:f05aad35b7169b4ae9acba2ca7ec781fada0ae18bd30075faf7c5b7f84ee0372",
+      "png_sha256": "sha256:2036ed1da909f03a6af26809fc283dc527348fddc61546925142e3aa1b7d11aa"
+    },
+    "50x30.lineage+logo+qr": {
+      "raster_inputs": "sha256:ecd8bd832c4998b577595a720e76f12405036a8d3344bbdbcea54d2578d0d2c9",
+      "png_sha256": "sha256:c23a94b0d5d710635c478f7d084a8b8d9820f07414a13a45368605e302095707"
+    },
+    "50x30.lineage+logo": {
+      "raster_inputs": "sha256:7e6afc203ca5ce178ce03f9db3bf5cef02a7d6f9b12710a6bd960f0270cea872",
+      "png_sha256": "sha256:2356d1a7d09d8d180090e4e8a01393d798814697cc0405e8d88b98b62a52a83a"
+    },
+    "50x30.lineage+qr": {
+      "raster_inputs": "sha256:f1b8d52879a229eb2e29b31454e5da6bcc4df3c1438237f9fd012584a8fb7cf8",
+      "png_sha256": "sha256:6f5ccf45f2a3d957434f212e8ca435eb2e50ba85cd8a9eb4e193dc37b8a07eb1"
+    },
+    "50x30.lineage": {
+      "raster_inputs": "sha256:eaf48cfc0fd87ab7855f685d3dc3d990e89a1b3a284c69e9cbf8dcacd9a264ff",
+      "png_sha256": "sha256:6707da6cc234e790d62b9b3682e5fe5b52c2bb741235cd239c27964c81b4b56e"
+    },
+    "50x30.logo+qr": {
+      "raster_inputs": "sha256:5132b7e1eb7c66fe8db344849877c6472c9efd7b89ef33d3566d1e96dc8495d3",
+      "png_sha256": "sha256:4f142819277d26dcdb37bbbe744c0a5fe4887eee88f3c701a939649da6e07f11"
+    },
+    "50x30.logo": {
+      "raster_inputs": "sha256:ad5404ecb7e9944ccb28ca6cbf6d959997024e0dc2d15e0c45f0aa60d06db28a",
+      "png_sha256": "sha256:a0fe17f3cd94b465632c4e7f6ccc7362406663b5046c2fb00580480fde5838aa"
+    },
+    "50x30.qr": {
+      "raster_inputs": "sha256:049d49a0aeaec0759fe6d0358a2f8cfdf41df7c4de8a158fda44c682058ef9df",
+      "png_sha256": "sha256:1db796da7e5faad9cc3c210bbe7491397103810557ffb7d81ab12021287b6645"
+    },
+    "50x30.none": {
+      "raster_inputs": "sha256:072fd8acec5e2149d6ff13454bb6f271b175d0268e3054bbf09521c71eefa27e",
+      "png_sha256": "sha256:1ededb5efca5dc7c9f532674c0919c7c06d593a2fcfd95bcf5b93b4595e1dd0c"
+    },
+    "40x30.phenotype+breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:2cfe0422277c865b3dca6f284bdfa7902b207999337b39e3f30749aecc3e0d47",
+      "png_sha256": "sha256:144437208761f0a2d2ce795237a67faf10764265e7b0f72ac5a42e83244d0fba"
+    },
+    "40x30.phenotype+breeder+lineage+logo": {
+      "raster_inputs": "sha256:a01b013fcf254fcbeeb78e7158ef3c09ef1f66048aea6d57cb2413dd549e143c",
+      "png_sha256": "sha256:d77d60ad0dfe9960a6b4a45fd35f0334d7716ff8f78a60b1b29272a23bf28336"
+    },
+    "40x30.phenotype+breeder+lineage+qr": {
+      "raster_inputs": "sha256:ea53bb03ac6040dc82c604515f0f6ff6eed27785115f5657ae6c28aa6a60fca7",
+      "png_sha256": "sha256:c5256863b5a1bb608b547b311e31ed6e0c9faaad7176658fa2ec20817e74542a"
+    },
+    "40x30.phenotype+breeder+lineage": {
+      "raster_inputs": "sha256:f31a65d281baf503313bc6579fec96f5ae282fad780bc21de08a0a53f105b9c7",
+      "png_sha256": "sha256:5e4bf36ddf9edb47b1d20ced796d47dc38d48f9d99da14fd7b00a0810d424f6e"
+    },
+    "40x30.phenotype+breeder+logo+qr": {
+      "raster_inputs": "sha256:2e37ca2453178d9fb73feeb1aecbe19bd65c73f519533788d1453bdec9a44292",
+      "png_sha256": "sha256:87d430e279e957116b20cb5a1d33d6567e221033592535ef24c668cc6b71fc96"
+    },
+    "40x30.phenotype+breeder+logo": {
+      "raster_inputs": "sha256:d48f8a6dd8fe791ae0ca6b7faf697fc63a5d0ad6d2f5a1432d8e020278fa0c36",
+      "png_sha256": "sha256:9b03cdea3ab571d003f4218d11e99d961a062d975a511f3fa5d39b5706d8d44b"
+    },
+    "40x30.phenotype+breeder+qr": {
+      "raster_inputs": "sha256:958aa2535c04958f9e03476d7d17be0615bdd11f9cbf4dd9ffd9df11642ac58e",
+      "png_sha256": "sha256:1d7aa26430a48972c1535cd2d5f29115e67572608819886ae7689936dd572764"
+    },
+    "40x30.phenotype+breeder": {
+      "raster_inputs": "sha256:01e748bc82e15f083faf23e000a66214976a109f69ffc733aae241974cac5840",
+      "png_sha256": "sha256:9a51c09000236516c2f24380d6a5442f25d52b5e666539ee54e460cb37caf53f"
+    },
+    "40x30.phenotype+lineage+logo+qr": {
+      "raster_inputs": "sha256:5d785601fe913011dea3da5294c5c0a63569d1da748d70f7f647aa5c1cfb4edb",
+      "png_sha256": "sha256:fd34f7708b84d5624821555852993d728b095b9c1ef1a7cac3816d80d4b69009"
+    },
+    "40x30.phenotype+lineage+logo": {
+      "raster_inputs": "sha256:f8238bd8a3f5dbc33ee0c68e61651809e4d53a1bbb3373cfb1db039c1e051a48",
+      "png_sha256": "sha256:ed161fbac6604287cd27c5a6d002dcaf2512aa8f05520abc76b917f1ea11198c"
+    },
+    "40x30.phenotype+lineage+qr": {
+      "raster_inputs": "sha256:009f9648548660bb28c5ba7c35c78b81804610e06b26a578599c1fa3ad0e48f3",
+      "png_sha256": "sha256:95f859bb197f5a551e4c630d05a93111184d80a577a101a8af652533460bc995"
+    },
+    "40x30.phenotype+lineage": {
+      "raster_inputs": "sha256:ca5d72a1347bd368f4b78bdf50379df3803d13c0117aa0aef47106ef1e068c14",
+      "png_sha256": "sha256:112404bf4f72a2d6d77c0c7add001013501d17ee6fc37994648d0f695df8a285"
+    },
+    "40x30.phenotype+logo+qr": {
+      "raster_inputs": "sha256:4ebcdae8da66ad4121bb10da2731f3b5edc0c57721af4feaf23fb413f36ea665",
+      "png_sha256": "sha256:f68d1db6d3e917fe806ad03789ead96d9929b96fa008b9a8b981254746747bcb"
+    },
+    "40x30.phenotype+logo": {
+      "raster_inputs": "sha256:c5f8ccd538b546ae9636af27d3c93da7860c7be3c88d13615012c330671b05e6",
+      "png_sha256": "sha256:d715e91c7ada584b51559a73ef8853797196a674b186c1319c1c1acd8910c20c"
+    },
+    "40x30.phenotype+qr": {
+      "raster_inputs": "sha256:791acda9c702e77da205e3f8e6e110911d0379ab8f6ad038f21e8213b1086efa",
+      "png_sha256": "sha256:a70b1c2f5eedb4ab29da0b9ebb7613b6da58ee3649fab78a32af2f50a3ca6a95"
+    },
+    "40x30.phenotype": {
+      "raster_inputs": "sha256:1b01768b60320fd825b28f67e2eb85d2029d541836ee2c98fb3fcb947ecc6ab7",
+      "png_sha256": "sha256:a8eea15eefc9adc5060cb36fc69f2e18f571fbb4177e851af82921e88414d689"
+    },
+    "40x30.breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:b6d1a93a3f68c9e9f6f5235c2684cc4952462391609975045f13e1d12d59d0a0",
+      "png_sha256": "sha256:33e950fa18b180e5bd9d1b5777b1750fbbb17c5956b27598be0546899167fc37"
+    },
+    "40x30.breeder+lineage+logo": {
+      "raster_inputs": "sha256:41432a758db6a98c8427a56503ca7bcaff26a5f326c094e489e3000446d3965c",
+      "png_sha256": "sha256:62fa153ed06627a897077c71ce5933a40faed0933b93d7ae20e60caf4c87a015"
+    },
+    "40x30.breeder+lineage+qr": {
+      "raster_inputs": "sha256:1a566dcc0df8d23d45b21292455ae0548b966e57bfd15adfbc7a335b980c2912",
+      "png_sha256": "sha256:6123083a12ff08298cd36fd80f207c7bd3a5e1ab934b84c4f83a4588a25abbf1"
+    },
+    "40x30.breeder+lineage": {
+      "raster_inputs": "sha256:6dc77f361e4a4fde5ee33cb1b36dcb104ce1f1b8b96e29d13248df063f3c9cc0",
+      "png_sha256": "sha256:2047eb49530a446110b0919178548975a1a21aca121ca0b5a4bc1f51ab34fbaf"
+    },
+    "40x30.breeder+logo+qr": {
+      "raster_inputs": "sha256:551c340a9f250d84a6d6e18273d85b205b9aa6405de5f628aa9da63964501095",
+      "png_sha256": "sha256:d7141aa949c1e3db1108f0b257cc25ac13a32c0d6c36ff4d83b0557fb2e01732"
+    },
+    "40x30.breeder+logo": {
+      "raster_inputs": "sha256:24dfda4e470b7c714a70dbffed9e43de6eb6aaec8d4592e19f8955ab5eab1567",
+      "png_sha256": "sha256:08498c3fd81f758244689666187f237cd79b6359f6c6e7ad12305bb8c443a3c0"
+    },
+    "40x30.breeder+qr": {
+      "raster_inputs": "sha256:edf37cb68a3c25bfdae9d7cfe3650388ba5cd2c016e0151ea3c5d7910d0af693",
+      "png_sha256": "sha256:720e6a6f336c5dfacbf7e153f485bb617d05b569d7ded8110148959f2fc5167c"
+    },
+    "40x30.breeder": {
+      "raster_inputs": "sha256:c9fcd369190dbb07e1e0561b8d44c15393f911f4a987f4e013296ab1cb452e98",
+      "png_sha256": "sha256:114e45327c675ff9f86469e772052bda04016d34fa3af43dbaf04671eb946e2f"
+    },
+    "40x30.lineage+logo+qr": {
+      "raster_inputs": "sha256:0ea9fea64ab5a88b5643ad386223033ac4669cc4515f4f0b6be879096b5c1925",
+      "png_sha256": "sha256:225f8566a4c0ecdc407135bcd0e488e237b68d22dd8a61284cef8edf0221d8ef"
+    },
+    "40x30.lineage+logo": {
+      "raster_inputs": "sha256:c3885c2311d82f049da4727d6b90990d4e75b4d6e5b37821f15bd506d6360e2d",
+      "png_sha256": "sha256:ec6058962f5e3f7dcb9e8a4703169d4d4c9436b646509100eeee9e93df24ca29"
+    },
+    "40x30.lineage+qr": {
+      "raster_inputs": "sha256:e2087c4780de3b2fcaebc72ebdd2db657d9f37cce22e2022b0d3b76945db766c",
+      "png_sha256": "sha256:d0db4bd00a074ecdc1eae26ceaee4c8d98e792d9d53dd387a2d38654fa4ec94e"
+    },
+    "40x30.lineage": {
+      "raster_inputs": "sha256:e1b98cd1537b6c1f79e530afdb7adff82f7d805d52d7cf6714a43c178ee55a2a",
+      "png_sha256": "sha256:66692655f71d2185ed9bc381bb50a88c01592c9184c5ceb704fc488686323888"
+    },
+    "40x30.logo+qr": {
+      "raster_inputs": "sha256:a4fadbeb07a866c26ac19b0e8d2da5b8d94a38e5b07b17d467b73a91430b4467",
+      "png_sha256": "sha256:4f222c0fd0d3770472e571fd76a185e6f520abfed9cca132ffaf438b09355757"
+    },
+    "40x30.logo": {
+      "raster_inputs": "sha256:e584a4f7d8c3f649f12d967771cfcb6466d7492a14ab6bb4044f4608124c95f3",
+      "png_sha256": "sha256:d53ebd224131378160dbaccde91c8b81fe2f5918759baf969d0b8ec55b34af9d"
+    },
+    "40x30.qr": {
+      "raster_inputs": "sha256:fd042f3f0f397c8d9476cb9e9cb43ba2ae1f39e0baa34b774d10a1ae9b20dc13",
+      "png_sha256": "sha256:6e8ba7997e6ce4f5b75d2caca4eabab93a14058ab9595fe5ab1d207c2eb32b18"
+    },
+    "40x30.none": {
+      "raster_inputs": "sha256:1aba397b62ad6a0266a88c9d2ec5c5b5fa960988210eb5f9107a54525965a537",
+      "png_sha256": "sha256:494fe4de0b9f1c3c5a5318d52598b71c462daba1759d1590bba07ece1c436d41"
+    },
+    "50x50.phenotype+breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:8a5e4278663ba9928928e7cdabf8d757467b02891dbf53eb0c542108d24652a7",
+      "png_sha256": "sha256:201cce50c7c950526882e3011474b438cc875927aa0468743b978099e0d96c38"
+    },
+    "50x50.phenotype+breeder+lineage+logo": {
+      "raster_inputs": "sha256:1634024bfa1c7fe2dc7651af15258319c250b1e0d5082bf46ce2ea8c30ada645",
+      "png_sha256": "sha256:302ba78e925002db210ee0ffb4f74697ca1893cb0af363c0a5c411310df4c79c"
+    },
+    "50x50.phenotype+breeder+lineage+qr": {
+      "raster_inputs": "sha256:91e062abf1492ff9cec75b90f9646674e5ca3c01d49ea2e074e79f88a3d24c20",
+      "png_sha256": "sha256:07b7f94957476714cc8c257ac88a0080d126df470d5171dfb280218bd778b15a"
+    },
+    "50x50.phenotype+breeder+lineage": {
+      "raster_inputs": "sha256:60c7de20ff0d8300df29035c4123f7bcff426c2e9ec49b594fb21d6636e26825",
+      "png_sha256": "sha256:d51b4d847f520d52acd003ce036d1e62ab8c96f4565eb3b41221d0c789307b1d"
+    },
+    "50x50.phenotype+breeder+logo+qr": {
+      "raster_inputs": "sha256:9b9b26ca6ee8d40b969e684a23bdc96d26e4ec7d306d731fe254a49865b2fc38",
+      "png_sha256": "sha256:ccb956b11be2aa8ecde368fa0b7be5fcf87ecb934899e4ebed6bd9785dee65a1"
+    },
+    "50x50.phenotype+breeder+logo": {
+      "raster_inputs": "sha256:afefb915d0f2fede2d6bee2a2371cd5334fa85bc118bf486103ecd5aae2745d5",
+      "png_sha256": "sha256:f6530e1b0010688752bf03e3fd0821413f652d9c3191d453a0f6f464ebeece8b"
+    },
+    "50x50.phenotype+breeder+qr": {
+      "raster_inputs": "sha256:f748687a0c48780143b2497c8b0bb0e3313d6123b27ea45b373aec2374fcab0e",
+      "png_sha256": "sha256:ff7ceecc2aacd123fea23991ef277ff81f3a5c44f6c208f202b5103d96fdd03f"
+    },
+    "50x50.phenotype+breeder": {
+      "raster_inputs": "sha256:c561af11f1079aa2d29e7b36e06bed033776e143a9953823fda7285454b56a41",
+      "png_sha256": "sha256:d338b93aa8aa6077bf58a65cac0092fc9b274c3ca7b28fbd786db2ced8b0d6a6"
+    },
+    "50x50.phenotype+lineage+logo+qr": {
+      "raster_inputs": "sha256:606022d24c63b945b62fdcfff9eb4f117e9b94ebe7d8a9f1c55f6357c8cf7e9e",
+      "png_sha256": "sha256:01672f2297a0671e7bf565d539c6708feaac844783a8ab6f03491bd1a57fd4a5"
+    },
+    "50x50.phenotype+lineage+logo": {
+      "raster_inputs": "sha256:1995a59845b7f95b726efde6c622e48f20c13da45d6d7b18fa9130be70e84a78",
+      "png_sha256": "sha256:c00f2ebc64ff2606ddcd67f010f4e105d657334949a223aead9dd87e8278dc48"
+    },
+    "50x50.phenotype+lineage+qr": {
+      "raster_inputs": "sha256:55467de64e04017ca0e2071ff659ef36a3a23b79d95db7b06bd7a7bf34b85f31",
+      "png_sha256": "sha256:705936a410749788b9457b65f6dc3d4a5c3559aa2194201bb8ac8ce7b5189148"
+    },
+    "50x50.phenotype+lineage": {
+      "raster_inputs": "sha256:9ce196acc9009ece37c211e1a0c2be227ba21b485fb13284255aeeaecebc5978",
+      "png_sha256": "sha256:5ae24df41c2adc427eeb603b53b8a14a274946d3ba060ab3a2177fad3f990568"
+    },
+    "50x50.phenotype+logo+qr": {
+      "raster_inputs": "sha256:d7ab262b8b01365cda49cb7a5db3764f743160889f8443fe83c151e1eac06ea6",
+      "png_sha256": "sha256:8148f34ede90f5cfcdbf0c662e2c42325c9f651ea742b834207b0c12e52a5da9"
+    },
+    "50x50.phenotype+logo": {
+      "raster_inputs": "sha256:d04258d14c1c16e8abb0d64d07d080fc9d5574b3c169e1bdc8a97008beaea7ca",
+      "png_sha256": "sha256:b84b8b07ca121a60c6c1a3df91f8fc6f8f74ab3b46085eb569d04f665e2cfdcd"
+    },
+    "50x50.phenotype+qr": {
+      "raster_inputs": "sha256:e20a3fbc2ff4422d928b81877aa7c493495ae0406fb86372af5b359067f317ac",
+      "png_sha256": "sha256:59c3a25576c47f67802fcb8f256986b7a4f4f66f98e29b34f159413412651bc0"
+    },
+    "50x50.phenotype": {
+      "raster_inputs": "sha256:afc017d8a68a961fc6627b44637340934f8a020e4d30336ae0c401618dc0be42",
+      "png_sha256": "sha256:cf5594da07a952ea6b1c5e4f1e3748ceac4d016ab38485731e4022ea93c4effa"
+    },
+    "50x50.breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:6a584ee17e00c933130eb20ce812f61c8695d709896e8225c1ee3facce68a3d3",
+      "png_sha256": "sha256:bfcd6b47325f04fb8887b96abe9ba921aa24704fa2d567adca43da10afa36ca1"
+    },
+    "50x50.breeder+lineage+logo": {
+      "raster_inputs": "sha256:9f8265a2550b7a3461aa980939698cf8a1259aef098664a8a6b2089096ce8611",
+      "png_sha256": "sha256:4b2fb3e219a46a052ae2a9e22f2c899ebfa0ca53158695f33d40b650e1a36cb2"
+    },
+    "50x50.breeder+lineage+qr": {
+      "raster_inputs": "sha256:6b90d41b0b8a9f70afe16759df06804d33528da451961072bf7f25cbc7d6cfe5",
+      "png_sha256": "sha256:04aa68a5c722011c8159fbe9791903555921c345796c489342df749cd2dd1f85"
+    },
+    "50x50.breeder+lineage": {
+      "raster_inputs": "sha256:1c5d56dbb94970b13213111a10f8debefa1909bf43fa2eedb9fd9f60b47405e6",
+      "png_sha256": "sha256:fba5bc654e134986b71333ae7e1644b44e372c5b874921976b2f8898e0b1bfea"
+    },
+    "50x50.breeder+logo+qr": {
+      "raster_inputs": "sha256:0a8f6cee6b59cad57a7a5f5b82e644103cb9d02bd67ba61e75542c5aec2eb329",
+      "png_sha256": "sha256:c193a42d7584c91f7d59c98fd669fb41f012b4bb42d0dcba6ccac3d194d3257f"
+    },
+    "50x50.breeder+logo": {
+      "raster_inputs": "sha256:6deecf656c587410b5eeb1674c3c59234b8aa2d77605316f18351b71bd94e88e",
+      "png_sha256": "sha256:2c3e19a0e0c5ef9b90bd1fc73fef114094f29b4fd682bf2ce71b8b3ecfd4191a"
+    },
+    "50x50.breeder+qr": {
+      "raster_inputs": "sha256:c61710173e1fd68953664d293afd3a50853efda97433b7c7cb1f199400c56ebf",
+      "png_sha256": "sha256:68c1f721367ddb1132d1c3137d6f837f8072a4060527a7a74210b3e1079439b9"
+    },
+    "50x50.breeder": {
+      "raster_inputs": "sha256:5d9357e132487c09b395f792437dc78f3f3ed45cde83a78c8bc8445574cd3e0c",
+      "png_sha256": "sha256:0117fd82c9074897138930b4b024c24f33c2e9feb45efd589312f13d237ecfe2"
+    },
+    "50x50.lineage+logo+qr": {
+      "raster_inputs": "sha256:9253ae1c53e46d2ebcb4a48eda5e05d93ce1c933c62f44bca55f40d7339ce188",
+      "png_sha256": "sha256:50769d1793f1f8527b5654ff3a72188eeaf73c3a8f58d39fc85a7bef404149b8"
+    },
+    "50x50.lineage+logo": {
+      "raster_inputs": "sha256:a8677f06f68e9b8b212ae6b1b10687897466812896396d55814e430f2f64566b",
+      "png_sha256": "sha256:b7d81a18e47ce681f036b8be6f6bbf403819204544f2ddd9c1ef3628dbec5d5d"
+    },
+    "50x50.lineage+qr": {
+      "raster_inputs": "sha256:58839923832d1e969411da8a0c5cb16b3507441e53c44fb49f50ba815632f4b5",
+      "png_sha256": "sha256:2e42fe78529bce86385f796769549d50523ac0c507153928c5a4de6c554919f2"
+    },
+    "50x50.lineage": {
+      "raster_inputs": "sha256:946cc0ede3e80dc43d7688b2e9be624dbb012ede888a5d6cd75f2cb089028742",
+      "png_sha256": "sha256:566fca95054e0b99d5ba0b93cd63f61b2fb15ad0401601060856d1a92e82647b"
+    },
+    "50x50.logo+qr": {
+      "raster_inputs": "sha256:62e7718e151e2151f1cdeff34734c8bf3aa356f93efcc21d3703c58db4b39898",
+      "png_sha256": "sha256:d5f1dd5dfb047a8d2bc8993b2855d057068b3b6ea7af2ff6069aeed88580d080"
+    },
+    "50x50.logo": {
+      "raster_inputs": "sha256:0aed400fea99ecdcbc4563f6058933803cd7d2a1e677f5e59200e7574c1e5c8b",
+      "png_sha256": "sha256:62584eebe1d8735fdcbdf667b5040870391f2498a8826d666e1f210065169187"
+    },
+    "50x50.qr": {
+      "raster_inputs": "sha256:f3f86320be9fddec8b47a5e6dae84157e42ed13b4f8648c0efbd35f99d3c9991",
+      "png_sha256": "sha256:86dded1f30553371690df2f71972d0d5c30930b20b302af8496e4e771156b0f8"
+    },
+    "50x50.none": {
+      "raster_inputs": "sha256:4c3c7ac98516f3e33877e8fa849df3d6cf1871588ca22bbe8388756a9705cf26",
+      "png_sha256": "sha256:9d1f519941750d92838c8d76cf92d18fa911fe1f7a9ecb365e63f7c9eda3989c"
+    },
+    "50x80.phenotype+breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:67fea2d2127927586ebb108a36d7232f3e8d3fc6bb447da643a0e643424da60e",
+      "png_sha256": "sha256:2b367045d126cc379c2a35fb547f23f12139e9bfb98995af494fafff07f780df"
+    },
+    "50x80.phenotype+breeder+lineage+logo": {
+      "raster_inputs": "sha256:ecc6340fcabfb246c2622edada65ee67418713fb33451c40ba2c2e3d1ffb5bff",
+      "png_sha256": "sha256:d5cae975501beff0fb99c2c9cf701ac73a26e8c53869a05c761a2279567826a7"
+    },
+    "50x80.phenotype+breeder+lineage+qr": {
+      "raster_inputs": "sha256:c243fad1cc88489b220b9f9876281c84d6de12b80b611ebd2acf695241900547",
+      "png_sha256": "sha256:5d0ae198d02f0ede49f00ee3a1e94fd198d25a6bdd130da20434cf2e54806e30"
+    },
+    "50x80.phenotype+breeder+lineage": {
+      "raster_inputs": "sha256:de23c1a601dc8e09c9bcafcd54c8488e9c046da3bfd95ecf2751608d12a866cc",
+      "png_sha256": "sha256:e4d4886023d3896ec6b2fcfe5e476008bed6e4af7d04c3e90f5b0b505a25dd4a"
+    },
+    "50x80.phenotype+breeder+logo+qr": {
+      "raster_inputs": "sha256:d3edbe0eb287ab7bdbf1fa8336484d4b53c4a0cbc913014510678c6b449e3fc3",
+      "png_sha256": "sha256:432fd1244c6ef4a56207cf088076fdab83e6b1173c62b1934b6c169f6e359e98"
+    },
+    "50x80.phenotype+breeder+logo": {
+      "raster_inputs": "sha256:e2da977f16c6947268e563af56eedf0a65cb6cb380b317473473f3ac003eb9c4",
+      "png_sha256": "sha256:b95506ea13c43777ab8657c1c14ae812a29734e9e95f44488bad693802d359a7"
+    },
+    "50x80.phenotype+breeder+qr": {
+      "raster_inputs": "sha256:93adcb4577189098501307039c121bf4aaeb1d06ef338efb4e26bd7e380b2267",
+      "png_sha256": "sha256:38e865305f45c1d6fd0eeacf80fb97d1ac94bb9fbecf1b7073b35de2838f93f6"
+    },
+    "50x80.phenotype+breeder": {
+      "raster_inputs": "sha256:cb2d66783efa05ce58b3b3b77183ca26d4931042a619ddfb7c080d94e6191c7e",
+      "png_sha256": "sha256:3aac319965376cf4c6b4e07823218bb464c843f8d4f087c1f7e65f07adce2708"
+    },
+    "50x80.phenotype+lineage+logo+qr": {
+      "raster_inputs": "sha256:5bcba94295dd132f08a240b54c4a8701ef09d713c62c8a195251a1cf414916c1",
+      "png_sha256": "sha256:a37a7f604a0e5d1a656f63bdbe14cd6a954b23177d5246fe233ebcdc3628c8a4"
+    },
+    "50x80.phenotype+lineage+logo": {
+      "raster_inputs": "sha256:e338ccba581d5f02cedaed963c8c02dbfceed9d86229fd222e21fc84e38c40d9",
+      "png_sha256": "sha256:b2771808081583d1fe454ba41fd398fa11cd749343b6b35c4a07347ade4b7c8e"
+    },
+    "50x80.phenotype+lineage+qr": {
+      "raster_inputs": "sha256:21a38c23c2c66f9bd633c4b164af6fa8a050b5067ee6c81ac1e9f268e6f9cebc",
+      "png_sha256": "sha256:81cc752a416afa0b4a667434279db00867c87591b53e22235599f3da926603ec"
+    },
+    "50x80.phenotype+lineage": {
+      "raster_inputs": "sha256:da82fe0d1e113d9af240d95a9e16397800be9747916f5f25afdb982e2b3ae2d2",
+      "png_sha256": "sha256:0c4c942bb7c3a22b79fdb55a75f43e2b14c03ce65b1b0abe19e5420112be6dc8"
+    },
+    "50x80.phenotype+logo+qr": {
+      "raster_inputs": "sha256:fa15895ddb42b1f38c00c7ab5a71cd9957a77bae41d158ea3c20239d8a642aa2",
+      "png_sha256": "sha256:bfd84cb7b7343cfbb231eb2199b062625f9fdc2c1cf4dcef30ed41c2fec1630f"
+    },
+    "50x80.phenotype+logo": {
+      "raster_inputs": "sha256:4bd7292f500d4cbf7b92b1b164f2b4ce1c8cd890e371e0941d465014265edf49",
+      "png_sha256": "sha256:f0dd34be6188853692604577ca2ba8d4c07614953c2358945eb52e9cd0b20ebc"
+    },
+    "50x80.phenotype+qr": {
+      "raster_inputs": "sha256:22e7b0eb6d6eba9fddc3ed9d4174a2940de8f0a12905de23be28914824e09959",
+      "png_sha256": "sha256:531e304f416929ebdee161a0dc83c8a4f9cce0ce3878396c6f11db00bd79d476"
+    },
+    "50x80.phenotype": {
+      "raster_inputs": "sha256:74915af35375ddcca54c9f55be0641f9dbc2758a47e5bb584b82dd353749ed1d",
+      "png_sha256": "sha256:91143cbf9fa8112199558cf4cbc7626ad14794cdccf45b3ab9720f8ffc941191"
+    },
+    "50x80.breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:e2a623dffa674f6f626e7031672354a81dc2b184218797a9c0d80cdd570b8217",
+      "png_sha256": "sha256:a9896d219da10d2cd34e238737d1a46278c12605d076e2377550c5edb88e7231"
+    },
+    "50x80.breeder+lineage+logo": {
+      "raster_inputs": "sha256:509d8b80fac0b0db6a27f267357d8227104dec23494f433589a0f5325b2042ef",
+      "png_sha256": "sha256:1983d8d63d2b6b32e996008f8e77f208bcf9cfec05a1f1638ea692d03da33f60"
+    },
+    "50x80.breeder+lineage+qr": {
+      "raster_inputs": "sha256:924368cc9a2bc7293b3ddf9cb912f2f9c535043b711e186df659b71fd7b5d75b",
+      "png_sha256": "sha256:3e97556ed27da6b69e37748499760a19c9ea1c35ef8849f897d8fdc67b3a2c2e"
+    },
+    "50x80.breeder+lineage": {
+      "raster_inputs": "sha256:5601b666ceb9f043cd856c0d6e3b1861c36439e1601da4110dbb470334124be6",
+      "png_sha256": "sha256:44036e32775ce763020fe458f601d79787d8de88470b7b7993aff4a2f8c5ffd7"
+    },
+    "50x80.breeder+logo+qr": {
+      "raster_inputs": "sha256:99951eb9dc40c8f7ec4df9027cee56edff3b6cb0eb746865a8196e8eee1caf24",
+      "png_sha256": "sha256:f5e7156c697968f902e30f65185dfd55032d10217b2bbf44fa3b36a7ea86ffd1"
+    },
+    "50x80.breeder+logo": {
+      "raster_inputs": "sha256:b242da25a7bb8453dce63e04c509c6b4fba7a1cda49a05638124affa6535bb40",
+      "png_sha256": "sha256:62469ea4d60542b1819844577930d4aca1a05f9618fc5f10be5ab8dfa218ab33"
+    },
+    "50x80.breeder+qr": {
+      "raster_inputs": "sha256:60a201f7f3cc1682a65f0038db6874c00f76752eda45a713a89adea05b6612fd",
+      "png_sha256": "sha256:2a4daf09b1c80385d69bd2d3bf7743dbd4f17f465e00a7b5061364b4eac0301a"
+    },
+    "50x80.breeder": {
+      "raster_inputs": "sha256:c988db9cc0c9e0386c3a31e69d4d7bdf13d21ecc45cb44af33dfca1f575c471d",
+      "png_sha256": "sha256:d5ad34c05b22166199a56cdd874098b2b05772746b3fd46ebb706516f7b58bf9"
+    },
+    "50x80.lineage+logo+qr": {
+      "raster_inputs": "sha256:168dd761b0fd785938ecbf4463797fbcdbc00a3eee4b6b0f3cedf127971ef1b5",
+      "png_sha256": "sha256:821ea6d5c4544db1336df8cf84741f16ba385b38616fe88551d3c29c496a9f36"
+    },
+    "50x80.lineage+logo": {
+      "raster_inputs": "sha256:29aa979f5d8b830e53e67fd56c34d47d430235a070a8166a9bf4392f3f782f6c",
+      "png_sha256": "sha256:48bedb2b1f35c10b814c37c934456f70dddda71528cc11a1ef855ad3032e2e9e"
+    },
+    "50x80.lineage+qr": {
+      "raster_inputs": "sha256:0f3a5b0468df94395669c39c0557be1c27932ca205fc39beb252337f4c9921f0",
+      "png_sha256": "sha256:afa3819d9448e09e3486330e7548154a0cc930a2b38351d23c04f9e9960af280"
+    },
+    "50x80.lineage": {
+      "raster_inputs": "sha256:f1d37788faf14a67cad577dd482392c18cca6d01611990649b6f2776b8aec227",
+      "png_sha256": "sha256:f1c00b1241f8ad36e32aa669fa27958752f7b3f184ebd91a20ca5361a9fb30a0"
+    },
+    "50x80.logo+qr": {
+      "raster_inputs": "sha256:e7a5236bca54d8142b500517ca3e9af5ae342b89c52f6e246fbfd69ec6adb6a4",
+      "png_sha256": "sha256:9c3dbdd36d5e936ba3c8e67f84620e3a06832940d771c144c6080155fd7f0568"
+    },
+    "50x80.logo": {
+      "raster_inputs": "sha256:001256bb8626be96a7a330d40141e8539190b3d3df9fe61978c3a9e87667fbcb",
+      "png_sha256": "sha256:bc0075a82efacd64b357f874e6c12d21ddcecc22d674799038cfdd586a6fb045"
+    },
+    "50x80.qr": {
+      "raster_inputs": "sha256:11119dda2fb314234e18f256734a5135c65adfbf812b69c65f73087c161a9091",
+      "png_sha256": "sha256:3bc3571a2e80ebd0ddc300044da7c0f6a5f72f8ede96e53da34953ca4557e21e"
+    },
+    "50x80.none": {
+      "raster_inputs": "sha256:b886b715966df5106995143d7a821f1caad44b382fe281d79993b2bd2f480311",
+      "png_sha256": "sha256:faf0d72a0bcd215b65488c17c4f2fa2744bc5d21aa212d899081c11c41a80622"
+    },
+    "50x15.phenotype+breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:c3a917d0ea4637c6367020a69a33317b4b5dbc1744713de12d83db11ba98587b",
+      "png_sha256": "sha256:8f94051f3e2a7fbbc88a1c41f97f87585931f23b57ad15c1737e3d0df65288b5"
+    },
+    "50x15.phenotype+breeder+lineage+logo": {
+      "raster_inputs": "sha256:3f05f71d61655b19d97df8f59708cb36c70778d64003177d24bd1fc9302c2cf1",
+      "png_sha256": "sha256:6d7d81ae7e809d9ae4cdb32c9c11b69ecba17449042af73c7d3d78f2985191d8"
+    },
+    "50x15.phenotype+breeder+lineage+qr": {
+      "raster_inputs": "sha256:bf222afbf65a18a2a466c4c2c5741360e3cc6de44756db5d67e95580c2533dd1",
+      "png_sha256": "sha256:034c711e5eba30d3340a04e5adee5217dcd539cd5b825789a7ef8fd2f1c813d7"
+    },
+    "50x15.phenotype+breeder+lineage": {
+      "raster_inputs": "sha256:1d9fba7857ac0aabb499e234d9b5fc519f5bfcc53dd6e77f3af4f462c39285f8",
+      "png_sha256": "sha256:31150b019ca08b31acfcf87ba13d81e08eee8823d9293607d7a894602338689a"
+    },
+    "50x15.phenotype+breeder+logo+qr": {
+      "raster_inputs": "sha256:958f2d1eb9221b57dfc313e6fefb1ab35f35383c062115b46a8fb1d7f8c60bca",
+      "png_sha256": "sha256:22320b8b0a9b27169a3e20d1561fbfe817fdc0c54e9d50ac920d6a94be613aff"
+    },
+    "50x15.phenotype+breeder+logo": {
+      "raster_inputs": "sha256:64d1eb20484a54da3746794f9c29a66d41917f47a7ebe5d567152738124bc77e",
+      "png_sha256": "sha256:5345212965d2f9117b2a616bba391a8e5eaa7f7d259e3a80cfa6f00c5874f3d6"
+    },
+    "50x15.phenotype+breeder+qr": {
+      "raster_inputs": "sha256:955605c5b7aadfb78d6f244927b475b5b0b718d7fde149392ea79b77f117a26b",
+      "png_sha256": "sha256:9215e8ca503c755dc838a92778229efc9f68dfffe4986e0fbc1cf9d6c9dc4f92"
+    },
+    "50x15.phenotype+breeder": {
+      "raster_inputs": "sha256:ffffcc23b09c6c6d6f5178980fa6905593a2d8587ac42abaa4bccef007cf08d8",
+      "png_sha256": "sha256:7a147e65afe966c2f53a54a5921950a1e17e2615b8f016e182305ff68a596977"
+    },
+    "50x15.phenotype+lineage+logo+qr": {
+      "raster_inputs": "sha256:e1785a6e043c61ac4ecaef9633258daa448ce2a9ac36c2e8c90fe731a4dc67eb",
+      "png_sha256": "sha256:940f2f876c27991b360f5563bd5227355218e6d8f34d1d23a0a2787522e8ec3c"
+    },
+    "50x15.phenotype+lineage+logo": {
+      "raster_inputs": "sha256:4a46949394caf7b63df4e4df3c7bfbd0b5930d9c4c7a8aa618ec219b3ee9db49",
+      "png_sha256": "sha256:d3baddea1bd7118a55e09da22bd093c8b181c8fa13eabb4cf0ed7693c1eab702"
+    },
+    "50x15.phenotype+lineage+qr": {
+      "raster_inputs": "sha256:47c811f5caa63293bd4089d55065587390fd2998d1c400712cf720145f089d5c",
+      "png_sha256": "sha256:66a647c2ea56a0dc427ce499844aafc7c628b84700af52a1a9a3f945005d1084"
+    },
+    "50x15.phenotype+lineage": {
+      "raster_inputs": "sha256:526e0eda1fdf7858e20dd07c2f0b445d87d2082d4e70d62ee53b3bce557cc06d",
+      "png_sha256": "sha256:36e973fc6e7f446098b74a616778f7a5ec2df31ba6afc3c5dea664d04d8dd819"
+    },
+    "50x15.phenotype+logo+qr": {
+      "raster_inputs": "sha256:673f26ac51e42027406e0faafe88096e2c1509721820a7ba7f7037f79fe8c24a",
+      "png_sha256": "sha256:df2fbf48d791ea934bb0f394a8704ad3dc1b0d0bbaf651ddfc5e94ff9bc1f742"
+    },
+    "50x15.phenotype+logo": {
+      "raster_inputs": "sha256:ff0bf48c1c0acd304f588f0c83c5549f4609836f4872b7fac94a0cfba3a9a81c",
+      "png_sha256": "sha256:844e2969f5f7926da73c1053d405c2ac559dc807bf32d02ca00cae1b4a32632b"
+    },
+    "50x15.phenotype+qr": {
+      "raster_inputs": "sha256:c7da225308984c55d5ce60f606c44ebc5d5be65fad3142052b6bd452ee74d445",
+      "png_sha256": "sha256:e2a3c790f292c5b2a3356a14b7e60331c34bcb52d877c559de9ad335fa97e0d9"
+    },
+    "50x15.phenotype": {
+      "raster_inputs": "sha256:c0b1fc28ced7fa6ce52d85aedcb28010e09d02a2bde7e6836ce6d8b11afd2fba",
+      "png_sha256": "sha256:20342de32c59ebe0ec6a73a96d51a46d2eb26721ce19fdc55b1ff555307dc394"
+    },
+    "50x15.breeder+lineage+logo+qr": {
+      "raster_inputs": "sha256:3eea35d408afbdeb03204ee205e62ad81792cb9deb08be64cf75fe9df21dab0e",
+      "png_sha256": "sha256:31a47846d1b80e17803ef0235c17f64bc8dce5f330d9a16c686d630aa8e86008"
+    },
+    "50x15.breeder+lineage+logo": {
+      "raster_inputs": "sha256:50c2754b9d9d209bd419c625f62354619ba7be685071172c4a4d771c17507782",
+      "png_sha256": "sha256:3236b499a5ae45137bbca45285cc4816de7f45822c03a0454c8c2170dfa28914"
+    },
+    "50x15.breeder+lineage+qr": {
+      "raster_inputs": "sha256:a34f01235052499d1889fefd4dc1ed5d8c74cdc76ae13b5feb02a0fbd088b2f0",
+      "png_sha256": "sha256:1afa6df609cfe84646103e7e28e69c05d0caf1e44dbd70319ad42cdfa0101c61"
+    },
+    "50x15.breeder+lineage": {
+      "raster_inputs": "sha256:5ef99c9b475b3dbb58ba26ac863777b5581eb943a530d3649dee45930b661f1a",
+      "png_sha256": "sha256:1a28b8b060c9eeac29a0e07e4066f58c1fb2d7380c1f60929da8dde55a22d63e"
+    },
+    "50x15.breeder+logo+qr": {
+      "raster_inputs": "sha256:fd3df4cac7ebb9e62ed380951dcc103a5ccc6ec6f94ad1b4e44922e5ea232d3b",
+      "png_sha256": "sha256:e268ed480831b2367a90af67ec54116effdb86bbb76956d91616bee64264ba2c"
+    },
+    "50x15.breeder+logo": {
+      "raster_inputs": "sha256:d64af6a85aa8791dcd16d0fb63e7afa1eedf307355b50a4268e12359d225981f",
+      "png_sha256": "sha256:bef63e578897f98eaf1bb5bfc31bf9187c1b865c88d20743d0dfc985f5bab569"
+    },
+    "50x15.breeder+qr": {
+      "raster_inputs": "sha256:f804e0e802d8ac3a7b63edd6d10c07d4c9e3c929a058381c37ef77fe42239ede",
+      "png_sha256": "sha256:7b8a94cc82f17daa8f5fbd702e16f58effdd2f6c7de46a83038d287a8e791c17"
+    },
+    "50x15.breeder": {
+      "raster_inputs": "sha256:ae350eaf54ae2bbe9c0a31376faec3217236def41b0b08e88e95d8f89e108e70",
+      "png_sha256": "sha256:317535d164b229db5165cae7fe9a41d371999db7b4e01b21d8bde507398b9349"
+    },
+    "50x15.lineage+logo+qr": {
+      "raster_inputs": "sha256:5c7f3afd3c3da57cae5044c00fe809804f301766d1860b61bbe43bf43669b897",
+      "png_sha256": "sha256:573b4397cd8dbe00f43243e451c940726c1601e31ac73537dd855ac7d1b4d0b2"
+    },
+    "50x15.lineage+logo": {
+      "raster_inputs": "sha256:000d54be7c862d84475e8fdbc8127036f37c41571f0b62f9303973b93de0925a",
+      "png_sha256": "sha256:28542d3d54aa05cf49b2f3e1ce54b69948d6729c2a5600e67375f045744f7663"
+    },
+    "50x15.lineage+qr": {
+      "raster_inputs": "sha256:ee953742100c8a9b11de9e878d15615d737fb772e0b0234859a83978df845f65",
+      "png_sha256": "sha256:5b02fccf8c078b2291656a34603bf5e6a8e51a0768158b3c6d41f8922e1677ec"
+    },
+    "50x15.lineage": {
+      "raster_inputs": "sha256:919874a7124a6375a62547bac52295c6be632bb5ee026c690201af3e64033825",
+      "png_sha256": "sha256:d103be5ed8b0aa497f82db1b3350199b7c675de291112e9752d194e46f412e83"
+    },
+    "50x15.logo+qr": {
+      "raster_inputs": "sha256:d745eb970a82bd01fcfb71c782667daa89682608d48bbc8d6f7795d1780bdc8f",
+      "png_sha256": "sha256:d7a76f84cdb35f5e90fd9b50b17e5b8a530eff8ba978bd8abf2bff6d60327c6c"
+    },
+    "50x15.logo": {
+      "raster_inputs": "sha256:0890a6ab0e3cce4d9f977ea2bd4f055c180227e74a7c8fc8e00e9f1be97e748c",
+      "png_sha256": "sha256:ea14bf03489489282914afb79f91fc439a0d0111a6341ee2aa76fd82421a64ef"
+    },
+    "50x15.qr": {
+      "raster_inputs": "sha256:ef054dad9f63b2eca15685f1de47f1e8ce16d7173d03bff5bf38a0a11411c0f5",
+      "png_sha256": "sha256:2b1b55446393de3074baca72bf67f646f23b8baaad467dc6c9ccb5ccacbc8781"
+    },
+    "50x15.none": {
+      "raster_inputs": "sha256:a215e82d529a0588db20f9d0eb0edc6f20f516a17f29e05c2e900a473b37c3f9",
+      "png_sha256": "sha256:e3b4e4f1e75ae9d0a96006e840b562af1a455d3e1ed2ea0a7b159a58a5d520d7"
+    }
+  },
+  "history": [
+    {
+      "recorded_at": "2026-09-22T10:56:43+00:00",
+      "reviewer": "Claude (for Venosta-web)",
+      "reason": "hub #240: Classic requests compile through the canonical compiler; first recording of every legacy size x visible-field layout",
+      "identity": {
+        "compatibility_layout_version": "growspace.classic-layout.v1",
+        "compiler_version": "growspace.label-compiler.v1",
+        "renderer": "imagespec",
+        "renderer_version": "0.4.0"
+      },
+      "changed": []
+    }
+  ]
+}

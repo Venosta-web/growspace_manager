@@ -45,6 +45,9 @@ htmlcov/
 nosetests.xml
 coverage.xml
 coverage*.txt
+backend_coverage*.txt
+COVERAGE*.txt
+COVERAGE_REPORT.md
 *.cover
 .pytest_cache/
 .hypothesis/
@@ -132,6 +135,17 @@ uv.lock
 # pytest cache
 tests/core/snapshots/
 tests/integration/snapshots/*
+tests/*/configs/www/growspace-manager-card.js
 custom_components/growspace_manager/ruff_check_full.txt
+custom_components/growspace_manager/ruff*.txt
+custom_components/growspace_manager/search_results*.html
 
 scratch/
+
+# Third-party agent skills (e.g. `npx skills add mattpocock/skills`) are
+# installed per machine — the mattpocock-skills Claude Code plugin or a
+# user-scope `npx skills add -g` — never committed. A skill specific to this
+# repository may be committed by un-ignoring its directory with a `!` rule.
+.agents/skills/
+.claude/skills/
+skills-lock.json

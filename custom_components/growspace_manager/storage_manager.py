@@ -29,6 +29,8 @@ from .models import (
     EnvironmentConfig,
     Growspace,
     IPMPreset,
+    IrrigationProgram,
+    IrrigationRecipe,
     NutrientInventory,
     NutrientPreset,
     Plant,
@@ -40,6 +42,8 @@ if TYPE_CHECKING:
     from .data_access.growspace_repository import GrowspaceRepository
     from .data_access.notification_state import NotificationState
     from .managers.genetics import GeneticsManager
+    from .managers.irrigation_program import IrrigationProgramLibrary
+    from .managers.irrigation_recipe import IrrigationRecipeLibrary
     from .managers.nutrient import NutrientManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -86,6 +90,8 @@ class StorageManager:
         nutrient_manager: NutrientManager,
         genetics_manager: GeneticsManager | None = None,
         notification_state: NotificationState | None = None,
+        recipe_library: IrrigationRecipeLibrary | None = None,
+        program_library: IrrigationProgramLibrary | None = None,
     ) -> None:
         """Initialize the StorageManager."""
         self.hass = hass
@@ -93,6 +99,8 @@ class StorageManager:
         self.nutrient_manager = nutrient_manager
         self.genetics_manager = genetics_manager
         self.notification_state = notification_state
+        self.recipe_library = recipe_library
+        self.program_library = program_library
 
         # Segmented stores
         self.config_store: Store[dict[str, Any]] = Store(
@@ -179,6 +187,10 @@ class StorageManager:
         }
         # Merge nutrient data (presets and inventory)
         config.update(nutrient_data)
+        if self.recipe_library is not None:
+            config.update(self.recipe_library.get_serialization_data())
+        if self.program_library is not None:
+            config.update(self.program_library.get_serialization_data())
         # Merge genetics data (seed batches and pollination events)
         config.update(genetics_data)
         return config
@@ -243,6 +255,13 @@ class StorageManager:
         self.nutrient_manager.load_data(
             nutrient_presets, ipm_presets, inventory, ec_ramp_curves
         )
+
+        # The global Irrigation Recipe library rides the same config document
+        # as the nutrient presets it mirrors (ADR-0045).
+        if self.recipe_library is not None:
+            self.recipe_library.load_data(self._load_irrigation_recipes(data))
+        if self.program_library is not None:
+            self.program_library.load_data(self._load_irrigation_programs(data))
 
         # Load genetics data into manager
         seed_batches = {
@@ -426,6 +445,32 @@ class StorageManager:
             }
         except Exception:
             _LOGGER.exception("Error loading nutrient presets")
+            return {}
+
+    def _load_irrigation_recipes(
+        self, data: dict[str, Any]
+    ) -> dict[str, IrrigationRecipe]:
+        """Load the global Irrigation Recipe library from storage data."""
+        try:
+            return {
+                rid: IrrigationRecipe.from_dict(r)
+                for rid, r in data.get("irrigation_recipes", {}).items()
+            }
+        except Exception:
+            _LOGGER.exception("Error loading irrigation recipes")
+            return {}
+
+    def _load_irrigation_programs(
+        self, data: dict[str, Any]
+    ) -> dict[str, IrrigationProgram]:
+        """Load the global Irrigation Program library from storage data."""
+        try:
+            return {
+                pid: IrrigationProgram.from_dict(p)
+                for pid, p in data.get("irrigation_programs", {}).items()
+            }
+        except Exception:
+            _LOGGER.exception("Error loading irrigation programs")
             return {}
 
     def _load_ipm_presets(self, data: dict[str, Any]) -> dict[str, IPMPreset]:

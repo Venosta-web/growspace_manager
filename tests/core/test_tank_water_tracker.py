@@ -225,7 +225,7 @@ def test_get_total_liters_since_excludes_refill_events() -> None:
 
 
 def test_get_total_liters_since_invalid_date_sums_all() -> None:
-    """An unparseable date string falls back to summing all events."""
+    """An unparsable date string falls back to summing all events."""
     t = _tracker()
     t.record_level(60.0, "2026-03-20T12:00:00+00:00")
     t.record_level(55.0, "2026-03-20T14:00:00+00:00")  # 10 L

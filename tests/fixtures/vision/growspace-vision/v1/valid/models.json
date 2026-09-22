@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "model_id": "dinov2-vit-s-14-int8-onnx",
+      "model_version": "1.0.0",
+      "embedding_dimension": 384,
+      "state": "loaded"
+    }
+  ]
+}

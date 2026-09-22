@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -11,6 +11,7 @@ from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import now as ha_now
 
 from .const import NotificationTier
+from .domain.light_schedule import flower_start_date
 
 if TYPE_CHECKING:
     from homeassistant.core import CALLBACK_TYPE, HomeAssistant
@@ -121,11 +122,11 @@ class PhotoperiodFlipChecker:
         for plant in plants:
             if not plant.flower_start:
                 continue
-            try:
-                if date.fromisoformat(plant.flower_start) == today:
-                    flipped = True
-                    break
-            except ValueError:
+            started = flower_start_date(plant.flower_start)
+            if started == today:
+                flipped = True
+                break
+            if started is None:
                 _LOGGER.warning(
                     "Malformed flower_start %r for plant in growspace %s",
                     plant.flower_start,

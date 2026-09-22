@@ -1,6 +1,7 @@
 """Snapshot tests for Growspace Manager WebSocket API."""
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from freezegun import freeze_time
@@ -9,6 +10,18 @@ from syrupy.assertion import SnapshotAssertion
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
+from custom_components.growspace_manager.models.vision_evidence import (
+    CaptureTrigger,
+    CheckupStatus,
+    LightWindow,
+    VisionCheckup,
+)
+from custom_components.growspace_manager.vision_connection import (
+    VisionAvailability,
+    VisionConnectionSource,
+    VisionModelSummary,
+    VisionStatus,
+)
 from custom_components.growspace_manager.websocket import (
     websocket_add_growspace_note,
     websocket_add_timeline_note,
@@ -22,6 +35,8 @@ from custom_components.growspace_manager.websocket import (
     websocket_get_nutrient_presets,
     websocket_get_strain_library,
     websocket_get_vision_history,
+    websocket_get_vision_history_v2,
+    websocket_get_vision_status,
     websocket_update_breeder,
 )
 from homeassistant.core import HomeAssistant
@@ -431,6 +446,110 @@ async def test_websocket_get_vision_history_empty(
         result = await websocket_get_vision_history(hass, coordinator, msg)
 
         assert result == {"history": [], "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_vision_status_returns_cached_negotiated_model(
+    hass: HomeAssistant,
+) -> None:
+    """The public status command projects the cache without refreshing it."""
+    coordinator = MagicMock()
+    coordinator.vision_connection.status = VisionStatus(
+        availability=VisionAvailability.READY,
+        connection_source=VisionConnectionSource.SUPERVISOR,
+        service_version="1.4.0",
+        vision_schema_version=1,
+        model=VisionModelSummary(id="dinov2-small", version="1.0.0", dimension=384),
+    )
+
+    result = await websocket_get_vision_status(
+        hass,
+        coordinator,
+        {"id": 16, "type": f"{DOMAIN}/get_vision_status"},
+    )
+
+    assert result == {
+        "availability": "ready",
+        "connection_source": "supervisor",
+        "service_version": "1.4.0",
+        "vision_schema_version": 1,
+        "model": {"id": "dinov2-small", "version": "1.0.0", "dimension": 384},
+    }
+    coordinator.vision_connection.async_refresh.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_websocket_get_vision_history_v2_merges_frozen_legacy_tail(
+    hass: HomeAssistant,
+) -> None:
+    """V1 checkups and attributed cloud rows share only the public timeline."""
+    checkup = VisionCheckup(
+        checkup_id="01991f1d-5c00-7000-8000-000000000001",
+        growspace_id="tent1",
+        growspace_name="Flower Tent",
+        trigger_source=CaptureTrigger.SCHEDULED,
+        light_window=LightWindow.EARLY,
+        started_at="2026-09-01T06:00:00+00:00",
+        completed_at="2026-09-01T06:00:04+00:00",
+        status=CheckupStatus.COMPLETED,
+    )
+    legacy = SimpleNamespace(
+        timestamp="2026-08-31T06:00:00+00:00",
+        check_type="early",
+        snapshot_paths=["/local/legacy.jpg"],
+        analysis="Historical cloud description.",
+        issues_detected=["yellowing"],
+        severity="high",
+        recommendations=["Historical recommendation."],
+    )
+    growspace = MagicMock(vision_checkup_history=[legacy])
+    coordinator = MagicMock(growspaces={"tent1": growspace})
+    store = AsyncMock()
+    store.async_get_checkups.return_value = [checkup]
+    store.async_count_checkups.return_value = 1
+    store.async_count_captures.return_value = 0
+    store.async_get_checkup_captures.return_value = []
+    hass.data.setdefault(DOMAIN, {})["vision_evidence_store"] = store
+
+    result = await websocket_get_vision_history_v2(
+        hass,
+        coordinator,
+        {
+            "id": 17,
+            "type": f"{DOMAIN}/get_vision_history_v2",
+            "growspace_id": "tent1",
+            "limit": 10,
+        },
+    )
+
+    assert result == {
+        "history": [
+            {
+                "result_schema": "evidence_v1",
+                "checkup_id": checkup.checkup_id,
+                "growspace_id": "tent1",
+                "trigger_source": "scheduled",
+                "light_window": "early",
+                "started_at": "2026-09-01T06:00:00+00:00",
+                "completed_at": "2026-09-01T06:00:04+00:00",
+                "status": "completed",
+                "captures": [],
+            },
+            {
+                "result_schema": "legacy_cloud_v1",
+                "timestamp": "2026-08-31T06:00:00+00:00",
+                "check_type": "early",
+                "snapshot_paths": ["/local/legacy.jpg"],
+                "analysis": "Historical cloud description.",
+                "issues_detected": ["yellowing"],
+                "severity": "high",
+                "recommendations": ["Historical recommendation."],
+            },
+        ],
+        "total": 2,
+        "capture_total": 0,
+    }
+    assert growspace.vision_checkup_history == [legacy]
 
 
 @pytest.mark.asyncio

@@ -80,7 +80,6 @@ def mock_coordinator() -> MagicMock:
         coordinator.plants.values()
     )
     coordinator.serializer = MagicMock()
-    coordinator.serializer.calculate_days_in_stage.return_value = 10
 
     coordinator.services.notifications.should_send_notification.return_value = True
     coordinator.services.notifications.mark_notification_sent = AsyncMock()

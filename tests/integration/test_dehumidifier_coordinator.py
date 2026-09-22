@@ -10,7 +10,7 @@ from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
-from custom_components.growspace_manager.models import ACInfinityDevice, Plant
+from custom_components.growspace_manager.models import ACInfinityDevice
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -21,6 +21,8 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+
+from .common import plant_on_stage_day
 
 
 @pytest.fixture
@@ -226,53 +228,48 @@ async def test_check_and_control_night_mode(coordinator, mock_hass) -> None:
 
 
 async def test_growth_stage_detection(coordinator, mock_main_coordinator) -> None:
-    """Test correct growth stage detection based on plant days."""
-    plant1 = MagicMock(spec=Plant)
-    plant2 = MagicMock(spec=Plant)
-    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
-        plant1,
-        plant2,
-    ]
+    """Test correct growth stage detection based on Current Stage Age."""
 
-    # Case 1: Veg
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {
-            PlantStage.VEG: 10,
-            PlantStage.FLOWER: 0,
-        }.get(stage, 0),
-    ):
-        assert coordinator._get_growth_stage().value == "veg"
+    def _stage_for(*plants) -> str:
+        mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = (
+            list(plants)
+        )
+        return coordinator._get_growth_stage().value
 
-    # Case 2: Early Flower
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {
-            PlantStage.VEG: 30,
-            PlantStage.FLOWER: 10,
-        }.get(stage, 0),
-    ):
-        assert coordinator._get_growth_stage().value == "flower_early"
+    assert _stage_for(plant_on_stage_day("veg", 10)) == "veg"
+    assert _stage_for(plant_on_stage_day("flower", 10)) == "flower_early"
+    assert _stage_for(plant_on_stage_day("flower", 30)) == "flower_mid"
+    assert _stage_for(plant_on_stage_day("flower", 60)) == "flower_late"
 
-    # Case 3: Mid Flower
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {
-            PlantStage.VEG: 30,
-            PlantStage.FLOWER: 30,
-        }.get(stage, 0),
-    ):
-        assert coordinator._get_growth_stage().value == "flower_mid"
+    # The furthest-along plant in the growspace still sets the stage.
+    assert (
+        _stage_for(
+            plant_on_stage_day("veg", 30, plant_id="p1"),
+            plant_on_stage_day("flower", 60, plant_id="p2"),
+        )
+        == "flower_late"
+    )
 
-    # Case 4: Late Flower
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: {
-            PlantStage.VEG: 30,
-            PlantStage.FLOWER: 60,
-        }.get(stage, 0),
-    ):
-        assert coordinator._get_growth_stage().value == "flower_late"
+
+async def test_growth_stage_detection_on_the_band_boundaries(
+    coordinator, mock_main_coordinator
+) -> None:
+    """Day 21 is Mid Flower and day 42 is Late Flower, as the lifecycle says (#635).
+
+    The old strict ``> 21`` / ``> 42`` comparisons left this coordinator a band
+    behind the Bayesian evaluation on exactly these two days.
+    """
+
+    def _stage_on(flower_day: int) -> str:
+        mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+            plant_on_stage_day("flower", flower_day)
+        ]
+        return coordinator._get_growth_stage().value
+
+    assert _stage_on(20) == "flower_early"
+    assert _stage_on(21) == "flower_mid"
+    assert _stage_on(41) == "flower_mid"
+    assert _stage_on(42) == "flower_late"
 
 
 async def test_user_threshold_override(coordinator, mock_hass, mock_growspace) -> None:
@@ -571,39 +568,18 @@ async def test_generic_domain_control(
 async def test_growth_stage_detection_cure_dry_seedling(
     coordinator, mock_main_coordinator
 ) -> None:
-    """Test detection of cure, dry, and seedling stages."""
-    plant = MagicMock(spec=Plant)
-    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
-        plant
-    ]
+    """Test detection of cure, dry, seedling, and mother stages."""
 
-    # Test Cure
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == PlantStage.CURE else 0,
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.CURE
+    def _stage_on(stage: str) -> PlantStage:
+        mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+            plant_on_stage_day(stage, 1)
+        ]
+        return coordinator._get_growth_stage()
 
-    # Test Dry
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == PlantStage.DRY else 0,
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.DRY
-
-    # Test Seedling
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == PlantStage.SEEDLING else 0,
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.SEEDLING
-
-    # Test Mother
-    with patch(
-        "custom_components.growspace_manager.domain.stage_calculator.calculate_days_in_stage",
-        side_effect=lambda p, stage: 1 if stage == PlantStage.MOTHER else 0,
-    ):
-        assert coordinator._get_growth_stage() == PlantStage.MOTHER
+    assert _stage_on("cure") == PlantStage.CURE
+    assert _stage_on("dry") == PlantStage.DRY
+    assert _stage_on("seedling") == PlantStage.SEEDLING
+    assert _stage_on("mother") == PlantStage.MOTHER
 
 
 async def test_control_domain_fallback(

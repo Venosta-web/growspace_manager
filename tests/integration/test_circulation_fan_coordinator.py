@@ -475,10 +475,10 @@ async def test_vpd_mode_at_midpoint_interpolates_speed(
     )
 
 
-async def test_vpd_mode_below_band_sets_min_speed(
+async def test_vpd_mode_below_band_sets_max_speed(
     mock_hass: MagicMock,
 ) -> None:
-    """VPD below (target - tolerance) → min_speed."""
+    """VPD below (target - tolerance) → max_speed."""
     env = _make_env_config(
         mode=FanRegulationMode.VPD,
         vpd_target=1.0,
@@ -495,15 +495,15 @@ async def test_vpd_mode_below_band_sets_min_speed(
     mock_hass.services.async_call.assert_awaited_once_with(
         "fan",
         "set_percentage",
-        {ATTR_ENTITY_ID: "fan.circ", "percentage": 10},
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
         blocking=False,
     )
 
 
-async def test_vpd_mode_above_band_sets_max_speed(
+async def test_vpd_mode_above_band_sets_min_speed(
     mock_hass: MagicMock,
 ) -> None:
-    """VPD above (target + tolerance) → max_speed."""
+    """VPD above (target + tolerance) → min_speed."""
     env = _make_env_config(
         mode=FanRegulationMode.VPD,
         vpd_target=1.0,
@@ -520,7 +520,7 @@ async def test_vpd_mode_above_band_sets_max_speed(
     mock_hass.services.async_call.assert_awaited_once_with(
         "fan",
         "set_percentage",
-        {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 10},
         blocking=False,
     )
 
@@ -530,6 +530,70 @@ async def test_vpd_mode_no_vpd_sensors_skips_fan_call(
 ) -> None:
     """No vpd_sensors configured → no fan.set_percentage call."""
     env = _make_env_config(mode=FanRegulationMode.VPD, vpd_sensors=[])
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+async def test_vpd_mode_uses_lowest_valid_sensor_reading(
+    mock_hass: MagicMock,
+) -> None:
+    """The most humid measured canopy zone drives circulation demand."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_sensors=[
+            "sensor.vpd_high",
+            "sensor.vpd_unavailable",
+            "sensor.vpd_non_finite",
+            "sensor.vpd_low",
+        ],
+        vpd_target=1.4,
+        vpd_tolerance=0.2,
+        min_speed=10,
+        max_speed=90,
+    )
+
+    def _get_state(entity_id: str) -> MagicMock:
+        if entity_id == "sensor.vpd_high":
+            return MagicMock(state="1.8")
+        if entity_id == "sensor.vpd_unavailable":
+            return MagicMock(state=STATE_UNAVAILABLE)
+        if entity_id == "sensor.vpd_non_finite":
+            return MagicMock(state="nan")
+        return MagicMock(state="1.0")
+
+    mock_hass.states.get.side_effect = _get_state
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
+        blocking=False,
+    )
+
+
+async def test_vpd_mode_no_valid_readings_retains_last_command(
+    mock_hass: MagicMock,
+) -> None:
+    """No valid VPD observation produces no new actuator command."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_sensors=["sensor.vpd_unknown", "sensor.vpd_invalid"],
+    )
+
+    def _get_state(entity_id: str) -> MagicMock:
+        if entity_id == "sensor.vpd_unknown":
+            return MagicMock(state=STATE_UNKNOWN)
+        return MagicMock(state="not-a-number")
+
+    mock_hass.states.get.side_effect = _get_state
     main_coord = _make_coordinator("gs1", env)
     coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
 
@@ -653,7 +717,7 @@ async def test_vpd_mode_override_active_ignores_vpd_sensor(
     def _get_state(entity_id: str) -> MagicMock:
         if "temperature" in entity_id:
             return MagicMock(state="32.0")
-        return MagicMock(state="0.5")  # VPD would give min_speed without override
+        return MagicMock(state="0.5")  # VPD would also demand max_speed
 
     mock_hass.states.get.side_effect = _get_state
     main_coord = _make_coordinator("gs1", env)
@@ -875,12 +939,10 @@ async def test_wind_disabled_produces_stable_speed(
     )
 
 
-async def test_wind_applies_on_top_of_temp_override_speed(
+async def test_wind_is_suspended_during_high_temp_override(
     mock_hass: MagicMock,
 ) -> None:
-    """Wind offset applies to the temp override speed, not the VPD regulation speed."""
-    # VPD override active (high temp) → speed = max_speed = 90
-    # Wind at quarter period with amplitude=5 → 90 + 5 = 95 → clamped to 90
+    """A high-temperature safety maximum cannot be reduced by dynamic wind."""
     env = _make_env_config(
         mode=FanRegulationMode.VPD,
         vpd_target=1.0,
@@ -896,9 +958,7 @@ async def test_wind_applies_on_top_of_temp_override_speed(
     def _get_state(entity_id: str) -> MagicMock:
         if "temperature" in entity_id:
             return MagicMock(state="32.0")  # above threshold → override to max_speed=90
-        return MagicMock(
-            state="0.5"
-        )  # VPD below band → would be min_speed without override
+        return MagicMock(state="1.5")  # high VPD would otherwise demand min speed
 
     mock_hass.states.get.side_effect = _get_state
     main_coord = _make_coordinator("gs1", env)
@@ -908,10 +968,82 @@ async def test_wind_applies_on_top_of_temp_override_speed(
     with patch(
         "custom_components.growspace_manager.circulation_fan_coordinator.time"
     ) as mock_time:
-        mock_time.monotonic.return_value = 15.0  # quarter period → wind_offset = +5
+        mock_time.monotonic.return_value = 45.0  # negative wind offset if not suspended
         await coord._async_regulate()
 
-    # Override speed (90) + wind (+5) = 95, clamped to 90
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
+        blocking=False,
+    )
+
+
+async def test_wind_is_suspended_during_low_temp_override(
+    mock_hass: MagicMock,
+) -> None:
+    """A low-temperature safety minimum cannot be raised by dynamic wind."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=1.0,
+        vpd_tolerance=0.2,
+        min_speed=10,
+        max_speed=90,
+        critical_temp_low=15.0,
+        wind_enabled=True,
+        wind_period_seconds=60,
+        wind_amplitude_pct=5,
+    )
+
+    def _get_state(entity_id: str) -> MagicMock:
+        if "temperature" in entity_id:
+            return MagicMock(state="12.0")
+        return MagicMock(state="0.5")
+
+    mock_hass.states.get.side_effect = _get_state
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+    coord._start_time = 0.0
+
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.time"
+    ) as mock_time:
+        mock_time.monotonic.return_value = 15.0  # positive offset if not suspended
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "fan",
+        "set_percentage",
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 10},
+        blocking=False,
+    )
+
+
+async def test_negative_wind_cannot_reduce_low_vpd_maximum(
+    mock_hass: MagicMock,
+) -> None:
+    """Urgent low-VPD demand remains at the configured maximum."""
+    env = _make_env_config(
+        mode=FanRegulationMode.VPD,
+        vpd_target=1.4,
+        vpd_tolerance=0.2,
+        min_speed=10,
+        max_speed=90,
+        wind_enabled=True,
+        wind_period_seconds=60,
+        wind_amplitude_pct=20,
+    )
+    mock_hass.states.get.return_value = MagicMock(state="1.0")
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+    coord._start_time = 0.0
+
+    with patch(
+        "custom_components.growspace_manager.circulation_fan_coordinator.time"
+    ) as mock_time:
+        mock_time.monotonic.return_value = 45.0
+        await coord._async_regulate()
+
     mock_hass.services.async_call.assert_awaited_once_with(
         "fan",
         "set_percentage",
@@ -1149,7 +1281,7 @@ def test_get_stage_vpd_target_returns_correct_value(
 async def test_stage_vpd_enabled_regulate_uses_stage_target(
     mock_hass: MagicMock,
 ) -> None:
-    """_async_regulate with stage_vpd_enabled=True passes the stage target to compute_fan_speed."""
+    """Stage-aware VPD regulation uses the resolved stage target."""
     env = _make_env_config(
         mode=FanRegulationMode.VPD,
         vpd_target=99.9,  # must NOT be used
@@ -1164,7 +1296,7 @@ async def test_stage_vpd_enabled_regulate_uses_stage_target(
     def _get_state(entity_id: str) -> MagicMock:
         if "light" in entity_id:
             return MagicMock(state="1.0")  # day
-        # VPD well above stage target → max_speed
+        # VPD well above stage target → min_speed
         return MagicMock(state=str(flower_mid_day + 1.0))
 
     mock_hass.states.get.side_effect = _get_state
@@ -1179,7 +1311,7 @@ async def test_stage_vpd_enabled_regulate_uses_stage_target(
     mock_hass.services.async_call.assert_awaited_once_with(
         "fan",
         "set_percentage",
-        {ATTR_ENTITY_ID: "fan.circ", "percentage": 100},
+        {ATTR_ENTITY_ID: "fan.circ", "percentage": 0},
         blocking=False,
     )
 

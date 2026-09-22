@@ -1,93 +1,108 @@
-"""Tests for the VisionCheckupSensor."""
+"""Tests for the operational VisionCheckupSensor contract."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from custom_components.growspace_manager.models import VisionCheckupResult
 from custom_components.growspace_manager.sensor import VisionCheckupSensor
+from custom_components.growspace_manager.vision_connection import (
+    VisionAvailability,
+    VisionConnectionSource,
+    VisionStatus,
+    VisionUnavailableReason,
+)
 
 
-def _make_coordinator(growspace_id="tent1", history=None, has_cameras=True):
-    """Create a mock coordinator for sensor tests."""
+def _coordinator(latest=None, *, status: VisionStatus | None = None):
     coordinator = MagicMock()
-
-    gs = MagicMock()
-    gs.id = growspace_id
-    gs.name = "Test Tent"
-    gs.vision_checkup_history = history or []
-    gs.environment_config.camera_entities = ["camera.cam1"] if has_cameras else []
-
-    coordinator.growspaces = {growspace_id: gs}
-    coordinator.data = {}
+    coordinator.vision_scheduler.latest_checkup.return_value = latest
+    coordinator.vision_connection.status = status or VisionStatus(
+        availability=VisionAvailability.READY,
+        connection_source=VisionConnectionSource.SUPERVISOR,
+    )
     return coordinator
 
 
-def test_vision_sensor_no_history_returns_none():
-    """Test sensor returns None state when no checkups performed."""
-    coordinator = _make_coordinator()
-    sensor = VisionCheckupSensor(coordinator, "tent1", "Test Tent")
+def test_vision_sensor_has_no_state_before_a_ready_service_runs_a_checkup():
+    """Ready with no durable result is not itself a completed checkup."""
+    sensor = VisionCheckupSensor(_coordinator(), "tent1", "Test Tent")
 
     assert sensor.native_value is None
+    assert sensor.extra_state_attributes == {
+        "checkup_id": None,
+        "last_checkup_time": None,
+        "trigger_source": None,
+        "cameras": {},
+    }
 
 
-def test_vision_sensor_returns_latest_severity():
-    """Test sensor returns severity of latest checkup."""
-    result = VisionCheckupResult(
-        timestamp="2026-03-21T12:00:00",
-        growspace_id="tent1",
-        check_type="mid",
-        analysis="Minor drooping detected.",
-        issues_detected=["leaf_drooping"],
-        severity="low",
-        recommendations=["Check watering."],
+def test_vision_sensor_projects_latest_operational_state_per_camera():
+    """The retained entity reports operation and never aggregates severity."""
+    latest = {
+        "result_schema": "evidence_v1",
+        "checkup_id": "checkup-1",
+        "completed_at": "2026-09-01T12:00:00+00:00",
+        "trigger_source": "scheduled",
+        "status": "partial",
+        "captures": [
+            {
+                "camera_id": "camera.canopy",
+                "analysis_state": "analyzed",
+                "fusion": {
+                    "state": "visual_anomaly",
+                    "confidence": "monitor",
+                    "coverage": "complete",
+                    "unavailable_reasons": [],
+                },
+            },
+            {
+                "camera_id": "camera.side",
+                "analysis_state": "failed",
+                "fusion": {"unavailable_reasons": ["vision_unavailable"]},
+            },
+        ],
+    }
+    sensor = VisionCheckupSensor(_coordinator(latest), "tent1", "Test Tent")
+
+    assert sensor.native_value == "partial"
+    assert sensor.extra_state_attributes == {
+        "checkup_id": "checkup-1",
+        "last_checkup_time": "2026-09-01T12:00:00+00:00",
+        "trigger_source": "scheduled",
+        "cameras": {
+            "camera.canopy": {
+                "analysis_state": "analyzed",
+                "fusion_state": "visual_anomaly",
+                "fusion_confidence": "monitor",
+                "fusion_coverage": "complete",
+                "unavailable_reasons": [],
+            },
+            "camera.side": {
+                "analysis_state": "failed",
+                "fusion_state": None,
+                "fusion_confidence": None,
+                "fusion_coverage": None,
+                "unavailable_reasons": ["vision_unavailable"],
+            },
+        },
+    }
+
+
+def test_vision_sensor_surfaces_service_unavailability_without_legacy_history():
+    """No stale cloud severity remains when the required local service is down."""
+    status = VisionStatus(
+        availability=VisionAvailability.UNAVAILABLE,
+        connection_source=VisionConnectionSource.SUPERVISOR,
+        reason=VisionUnavailableReason.NOT_RUNNING,
     )
-    coordinator = _make_coordinator(history=[result])
-    sensor = VisionCheckupSensor(coordinator, "tent1", "Test Tent")
+    sensor = VisionCheckupSensor(_coordinator(status=status), "tent1", "Test Tent")
 
-    assert sensor.native_value == "low"
-
-
-def test_vision_sensor_extra_attributes_no_history():
-    """Test sensor attributes when no history."""
-    coordinator = _make_coordinator()
-    sensor = VisionCheckupSensor(coordinator, "tent1", "Test Tent")
-
-    attrs = sensor.extra_state_attributes
-    assert attrs["last_check_type"] is None
-    assert attrs["last_analysis"] is None
-    assert attrs["issues_detected"] == []
-    assert attrs["recommendations"] == []
-    assert attrs["last_checkup_time"] is None
-    assert attrs["total_checkups"] == 0
+    assert sensor.native_value == "unavailable"
+    assert sensor.extra_state_attributes["reason"] == "not_running"
 
 
-def test_vision_sensor_extra_attributes_with_history():
-    """Test sensor attributes reflect latest result."""
-    result = VisionCheckupResult(
-        timestamp="2026-03-21T12:00:00",
-        growspace_id="tent1",
-        check_type="mid",
-        analysis="Nutrient burn on leaf tips.",
-        issues_detected=["nutrient_burn"],
-        severity="medium",
-        recommendations=["Reduce EC by 0.3."],
-    )
-    coordinator = _make_coordinator(history=[result])
-    sensor = VisionCheckupSensor(coordinator, "tent1", "Test Tent")
-
-    attrs = sensor.extra_state_attributes
-    assert attrs["last_check_type"] == "mid"
-    assert attrs["last_analysis"] == "Nutrient burn on leaf tips."
-    assert attrs["issues_detected"] == ["nutrient_burn"]
-    assert attrs["recommendations"] == ["Reduce EC by 0.3."]
-    assert attrs["last_checkup_time"] == "2026-03-21T12:00:00"
-    assert attrs["total_checkups"] == 1
-
-
-def test_vision_sensor_unique_id():
-    """Test sensor has correct unique ID."""
-    coordinator = _make_coordinator()
-    sensor = VisionCheckupSensor(coordinator, "tent1", "Test Tent")
+def test_vision_sensor_keeps_its_existing_unique_id():
+    """Automations retain the same entity identity through the cutover."""
+    sensor = VisionCheckupSensor(_coordinator(), "tent1", "Test Tent")
 
     assert sensor.unique_id == "tent1_vision_checkup"

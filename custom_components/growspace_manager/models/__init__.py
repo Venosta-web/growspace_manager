@@ -48,6 +48,13 @@ from .irrigation import (
     TankWaterEvent,
     TankWaterHistory,
 )
+from .irrigation_program import IrrigationProgram, ProgramSlot
+from .irrigation_recipe import (
+    CropSteeringRecipe,
+    IrrigationRecipe,
+    RecipeProvenance,
+    ScheduleRecipe,
+)
 from .nutrient import NutrientInventory, NutrientPreset, NutrientStock
 from .plant import (
     DryingData,
@@ -69,16 +76,53 @@ from .types import (
     StageHistoryItem,
     TimelineEventMetadata,
 )
+from .vision_evidence import (
+    AdmissionPhase,
+    AnalysisState,
+    BaselineBucket,
+    BaselineMember,
+    BaselineState,
+    CaptureFileVariant,
+    CaptureTrigger,
+    ComparisonOutcome,
+    ComparisonVerdict,
+    EmbeddingSource,
+    FileDeletionReason,
+    FramingEpoch,
+    FramingEpochReason,
+    GrowRunRef,
+    GrowRunRefSource,
+    LabelKind,
+    LightState,
+    LightWindow,
+    ObservationSource,
+    VisionCapture,
+    VisionCaptureFile,
+    VisionEmbedding,
+    VisionExplainerReport,
+    VisionLabel,
+    VisualComparisonResult,
+)
 
 # Explicit __all__ list for documentation and IDE support
 __all__ = [
     "ENVIRONMENT_FIELD_OWNERSHIP",
     "ACInfinityDevice",
     "ACInfinityGrowLight",
+    "AdmissionPhase",
+    "AnalysisState",
     # base
     "BaseModel",
     "BasePreset",
+    "BaselineBucket",
+    "BaselineMember",
+    "BaselineState",
+    "CaptureFileVariant",
+    "CaptureTrigger",
     "CirculationFanConfig",
+    "ComparisonOutcome",
+    "ComparisonVerdict",
+    "CropSteeringRecipe",
     "CropSteeringState",
     "DLIState",
     "DehumidifierRange",
@@ -88,13 +132,19 @@ __all__ = [
     "ECRampCurve",
     "ECRampPoint",
     "ECTargetRange",
+    "EmbeddingSource",
     "EnergyTracking",
     "EnvironmentConfig",
     "EnvironmentState",
     "ExhaustFanConfig",
     "FieldClass",
     "FieldOwnership",
+    "FileDeletionReason",
+    "FramingEpoch",
+    "FramingEpochReason",
     "GrowLightConfig",
+    "GrowRunRef",
+    "GrowRunRefSource",
     "Growspace",
     # contract
     "GrowspaceCoordinatorData",
@@ -108,11 +158,16 @@ __all__ = [
     # ipm
     "IPMType",
     "IrrigationConfig",
+    # irrigation
+    "IrrigationProgram",
+    "IrrigationRecipe",
     # types
     "IrrigationScheduleItem",
-    # irrigation
     "IrrigationStrategy",
     "IrrigationTank",
+    "LabelKind",
+    "LightState",
+    "LightWindow",
     "MoistureEntry",
     "NutrientEntry",
     "NutrientInventory",
@@ -121,6 +176,7 @@ __all__ = [
     "NutrientPresetDict",
     "NutrientPresetItem",
     "NutrientStock",
+    "ObservationSource",
     "PhenotypeScore",
     "Plant",
     # plant
@@ -128,6 +184,9 @@ __all__ = [
     "PlantStage",
     "PlantTimelineEvent",
     "PollinationEvent",
+    "ProgramSlot",
+    "RecipeProvenance",
+    "ScheduleRecipe",
     # genetics
     "SeedBatch",
     "SensorGroup",
@@ -139,8 +198,14 @@ __all__ = [
     "TankWaterEvent",
     "TankWaterHistory",
     "TimelineEventMetadata",
+    "VisionCapture",
+    "VisionCaptureFile",
     "VisionCheckupConfig",
     "VisionCheckupResult",
+    "VisionEmbedding",
+    "VisionExplainerReport",
+    "VisionLabel",
+    "VisualComparisonResult",
     "WaterUsageData",
     "WeightEntry",
     "_sanitize_numeric_fields",

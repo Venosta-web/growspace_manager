@@ -13,5 +13,6 @@ Re-exporting everything here allows all existing ``from tests.common import
 from pytest_homeassistant_custom_component.common import (  # noqa: F401
     MockConfigEntry,
     async_capture_events,
+    async_mock_service,
     mock_component,
 )
