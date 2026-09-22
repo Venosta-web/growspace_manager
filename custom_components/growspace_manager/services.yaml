@@ -1714,7 +1714,10 @@ update_growspace:
         text:
 
 print_label:
-  description: Print a label for a plant or strain using Niimbot printer
+  description: >-
+    Deprecated, removed in 2.0.0: print a Classic label for a plant or strain
+    on a Niimbot printer. See docs/deprecations/print-label.md in the
+    Growspace Manager repository for what replaces it.
   fields:
     plant_id:
       description: ID of the plant (optional if strain info provided)
@@ -1761,6 +1764,72 @@ print_label:
       description: >-
         Base URL for QR code (defaults to Home Assistant external URL)
       required: false
+      selector:
+        text:
+
+print_label_template:
+  description: >-
+    Print saved strain or plant records through a published Label Template.
+    Production printing requires a product-verified printer profile and a
+    current calibration. This service does not accept content overrides or a
+    preview mode.
+  fields:
+    template:
+      description: >-
+        Published template reference with kind (factory or named), id, and an
+        optional revision. Omit this and provide label_size_id to use that
+        Label Size's effective default.
+      required: false
+      selector:
+        object:
+    label_size_id:
+      description: >-
+        Label Size whose effective default template should be used. Required
+        when template is omitted.
+      required: false
+      selector:
+        text:
+    strain:
+      description: Saved strain to print. Use this or plant_ids, not both.
+      required: false
+      selector:
+        text:
+    phenotype:
+      description: Optional saved phenotype of the selected strain.
+      required: false
+      selector:
+        text:
+    plant_ids:
+      description: One or more live plant IDs to print, in order.
+      required: false
+      selector:
+        object:
+    device_id:
+      description: Home Assistant device ID of the printer.
+      required: true
+      selector:
+        device:
+    profile_id:
+      description: >-
+        Capability Profile override. By default the compatible profile for the
+        template's Label Size is selected.
+      required: false
+      selector:
+        text:
+    density:
+      description: Semantic print density resolved by the Capability Profile.
+      required: false
+      default: normal
+      selector:
+        select:
+          options:
+            - low
+            - normal
+            - high
+    locale:
+      description: Locale used for label content.
+      required: false
+      default: en
       selector:
         text:
 

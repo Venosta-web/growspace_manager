@@ -476,6 +476,45 @@ PRINT_LABEL_SCHEMA = vol.Schema(
     }
 )
 
+
+def _validate_print_label_template(data: dict[str, Any]) -> dict[str, Any]:
+    """Require one template choice and one record-backed subject shape."""
+    if ("template" in data) == ("label_size_id" in data):
+        raise vol.Invalid("provide exactly one of template or label_size_id")
+    if ("strain" in data) == ("plant_ids" in data):
+        raise vol.Invalid("provide exactly one of strain or plant_ids")
+    if "phenotype" in data and "strain" not in data:
+        raise vol.Invalid("phenotype may only be used with strain")
+    return data
+
+
+PRINT_LABEL_TEMPLATE_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Optional("template"): vol.Schema(
+                {
+                    vol.Required("kind"): vol.In(["factory", "named"]),
+                    vol.Required("id"): str,
+                    vol.Optional("revision"): vol.Any(
+                        None, vol.All(int, vol.Range(min=1))
+                    ),
+                }
+            ),
+            vol.Optional("label_size_id"): str,
+            vol.Optional(ATTR_STRAIN): str,
+            vol.Optional(ATTR_PHENOTYPE): str,
+            vol.Optional(ATTR_PLANT_IDS): vol.All([str], vol.Length(min=1, max=100)),
+            vol.Required("device_id"): str,
+            vol.Optional("profile_id"): vol.Any(None, str),
+            vol.Optional("density", default="normal"): vol.In(
+                ["low", "normal", "high"]
+            ),
+            vol.Optional("locale", default="en"): str,
+        }
+    ),
+    _validate_print_label_template,
+)
+
 # Debug Schemas
 DEBUG_CLEANUP_LEGACY_SCHEMA = vol.Schema(
     {
