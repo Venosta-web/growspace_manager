@@ -6,18 +6,19 @@
 
 Nothing changes yet. Through every 1.x release the service keeps working and
 keeps printing the same label, byte for byte: since 1.2.3 it is answered by a
-Compatibility Adapter that resolves the request once and renders it through
-the same renderer Label Templates use. Home Assistant logs one warning per run
-the first time the service is called, naming this page.
+Compatibility Adapter, the one module that still understands the Classic
+request shape. Home Assistant logs one warning per run the first time the
+service is called, naming this page.
 
 ## Timeline
 
-| Release                                 | What happens                                                                                                                                                                            |
-| :-------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1.2.3**                               | Deprecation announced. The Compatibility Adapter ships enabled in a stable release for the first time.                                                                                  |
-| next stable after 1.2.3                 | The adapter's second stable release. After it, the duplicate fixed-coordinate paint code behind the adapter may be retired. That is internal: the service and its output do not change. |
-| at least one further stable 1.x release | The last release that carries the service, still deprecated.                                                                                                                            |
-| **2.0.0**                               | The service is removed.                                                                                                                                                                 |
+| Release                                 | What happens                                                                                                                                       |
+| :-------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.2.3**                               | Deprecation announced. The Compatibility Adapter isolates every Classic request, still painted by the Classic fixed-coordinate design.             |
+| a later 1.x release                     | The adapter paints Classic labels through the same compiler Label Templates use, reproducing today's output.                                       |
+| the two stable releases that follow     | That adapter ships enabled twice. Only then may the fixed-coordinate paint code be retired — internally: the service and its output do not change. |
+| at least one further stable 1.x release | The last release that carries the service, still deprecated.                                                                                       |
+| **2.0.0**                               | The service is removed.                                                                                                                            |
 
 2.0.0 removes it **only if** every caller below has a supported replacement
 and no critical or high-severity migration defect is open. If that is not true
