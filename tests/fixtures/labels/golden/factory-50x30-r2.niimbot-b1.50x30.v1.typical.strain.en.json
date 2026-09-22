@@ -1,17 +1,17 @@
 {
-  "case": "factory-50x30-r1.niimbot-b1.50x30.v1.typical.plant.en",
+  "case": "factory-50x30-r2.niimbot-b1.50x30.v1.typical.strain.en",
   "layout": {
-    "name": "factory-50x30-r1",
-    "digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32"
+    "name": "factory-50x30-r2",
+    "digest": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242"
   },
   "profile": "growspace.profile.niimbot-b1.50x30.v1",
-  "subject": "growspace.fixture.plant.typical.v1",
+  "subject": "growspace.fixture.strain.typical.v1",
   "family": "typical",
-  "context": "plant",
+  "context": "strain",
   "locale": "en",
   "as_of": "2026-09-18T00:00:00+00:00",
   "density": "normal",
-  "content_identity": "sha256:3c18d6c5d68e2d59fa7ecf25f2a75dbab82937d4cae1602bafe8edaf65106912",
+  "content_identity": "sha256:249700f3a8cbbdcbce28498e167e59d7c70a51e5149c42bbe326947a2f8249e7",
   "raster_inputs": {
     "width": 384,
     "height": 240,
@@ -83,7 +83,7 @@
         "x": 16,
         "y": 174,
         "width": 344,
-        "height": 35,
+        "height": 34,
         "size": 26,
         "min_size": 18,
         "max_lines": 1,
@@ -98,11 +98,11 @@
         "type": "text_fit",
         "value": "18 Sep 2026",
         "x": 16,
-        "y": 213,
+        "y": 208,
         "width": 344,
-        "height": 22,
+        "height": 24,
         "size": 19,
-        "min_size": 16,
+        "min_size": 18,
         "max_lines": 1,
         "line_spacing": 1,
         "align": "right",
@@ -113,7 +113,7 @@
       }
     ]
   },
-  "raster_input_digest": "sha256:6f715f1d2ec435ee477e8883b69c7c6d10c5dec2b7ae3c837d7f958f1139c085",
+  "raster_input_digest": "sha256:02184cdc1146d7ced35696516e6bc69870c674349263ad020fd57d11a6301d5f",
   "outcomes": [
     {
       "element_id": "01M2V1PQB882FPJSG6H1GTFKX2",
@@ -202,16 +202,16 @@
         "left": 16,
         "top": 174,
         "right": 360,
-        "bottom": 209,
+        "bottom": 208,
         "width": 344,
-        "height": 35
+        "height": 34
       },
       "notes": {
         "requested_font_size_px": 26,
         "minimum_font_size_px": 18,
         "maximum_lines": 1,
         "overflow": "shrink_ellipsis",
-        "box_pixels": [344, 35]
+        "box_pixels": [344, 34]
       }
     },
     {
@@ -221,24 +221,24 @@
       "binding": "print.date",
       "pixel_frame": {
         "left": 16,
-        "top": 213,
+        "top": 208,
         "right": 360,
-        "bottom": 235,
+        "bottom": 232,
         "width": 344,
-        "height": 22
+        "height": 24
       },
       "notes": {
         "requested_font_size_px": 19,
-        "minimum_font_size_px": 16,
+        "minimum_font_size_px": 18,
         "maximum_lines": 1,
         "overflow": "shrink_ellipsis",
-        "box_pixels": [344, 22]
+        "box_pixels": [344, 24]
       }
     }
   ],
   "diagnostics": [],
   "evidence": {
-    "sha256": "27ff61b9c7546f72aa7770417a0f5b201a9011d112af478d08376b0c43b223f6",
-    "rendered_from": "sha256:6f715f1d2ec435ee477e8883b69c7c6d10c5dec2b7ae3c837d7f958f1139c085"
+    "sha256": "12073785af101f6f05014bc0d089559e2e1846fb0247db63f93b8be0b840e137",
+    "rendered_from": "sha256:02184cdc1146d7ced35696516e6bc69870c674349263ad020fd57d11a6301d5f"
   }
 }

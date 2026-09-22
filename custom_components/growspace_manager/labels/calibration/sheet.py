@@ -315,6 +315,10 @@ def _identity_block(
     gaps = CLEARANCE_MM * len(lines)
     top = region.y_mm + max((region.height_mm - stacked - gaps) / 2, 0.0)
 
+    # Never below what the profile calls readable: an identity nobody can
+    # read attributes nothing, and a line shrunk under the floor is an error
+    # that would stop the one print an unproven printer has to make.
+    floor = profile.limits.text_readable_floor_mm
     for line in lines:
         yield _text(
             line.suffix,
@@ -326,8 +330,8 @@ def _identity_block(
             ),
             LiteralSource(line.value),
             font=line.font,
-            size_mm=line.size_mm,
-            minimum_mm=line.minimum_mm,
+            size_mm=max(line.size_mm, floor),
+            minimum_mm=max(line.minimum_mm, floor),
             maximum_lines=line.maximum_lines,
         )
         top += line.height_mm + CLEARANCE_MM
@@ -342,8 +346,8 @@ def _identity_block(
         ),
         BindingSource("print.date", {"date_style": "iso"}),
         font=_BODY_FONT,
-        size_mm=2.2,
-        minimum_mm=1.8,
+        size_mm=max(2.2, floor),
+        minimum_mm=max(1.8, floor),
         maximum_lines=1,
     )
 

@@ -31,9 +31,9 @@ from custom_components.growspace_manager.labels.canonical import (
     decide_eligibility,
     decide_print_request,
 )
-from tests.labels.support import product_verified
+from tests.labels.support import product_verified, provisional
 
-PROVISIONAL = NIIMBOT_B1_50X30
+PROVISIONAL = provisional(NIIMBOT_B1_50X30)
 VERIFIED = product_verified(NIIMBOT_B1_50X30)
 
 ERROR = Diagnostic(

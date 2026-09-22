@@ -204,7 +204,7 @@
                 }
               },
               "frame": {
-                "height_mm": 4.4,
+                "height_mm": 4.2,
                 "width_mm": 43.0,
                 "x_mm": 2.0,
                 "y_mm": 21.8
@@ -231,10 +231,10 @@
                 }
               },
               "frame": {
-                "height_mm": 2.8,
+                "height_mm": 3.0,
                 "width_mm": 43.0,
                 "x_mm": 2.0,
-                "y_mm": 26.6
+                "y_mm": 26.0
               },
               "id": "01M2V1PQB8NNQA4TA7RZEJZCCW",
               "kind": "text",
@@ -245,7 +245,7 @@
                 "horizontal_align": "right",
                 "line_spacing": "growspace.spacing.compact.v1",
                 "maximum_lines": 1,
-                "minimum_font_size_mm": 2.0,
+                "minimum_font_size_mm": 2.2,
                 "overflow": "shrink_ellipsis",
                 "vertical_align": "center"
               }
@@ -255,9 +255,9 @@
           "schema": "growspace.label-layout",
           "version": 1
         },
-        "layout_digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32",
+        "layout_digest": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242",
         "name": "Strain label",
-        "revision": 1
+        "revision": 2
       },
       {
         "id": "growspace.factory.40x30",
@@ -889,30 +889,30 @@
     ],
     "profiles": [
       {
-        "authorizes_production": false,
+        "authorizes_production": true,
         "density_levels": {
           "high": 5,
           "low": 2,
           "normal": 3
         },
         "dpi": 203,
-        "evidence": "provisional",
+        "evidence": "product_verified",
         "evidence_invalidated_by": [],
-        "evidence_recorded_at": null,
-        "evidence_reference": null,
+        "evidence_recorded_at": "2026-09-22",
+        "evidence_reference": "docs/evidence/labels/niimbot-b1.50x30.v1/2026-09-22",
         "feed_axis": "y",
         "id": "growspace.profile.niimbot-b1.50x30.v1",
         "label_size_id": "growspace.stock.50x30.v1",
         "limits": {
           "divider_minimum_thickness_mm": 0.25,
           "image_minimum_effective_dpi": 203.0,
-          "measured": false,
+          "measured": true,
           "qr_error_correction_levels": ["medium", "quartile", "high"],
           "qr_maximum_encoded_bytes": 256,
           "qr_minimum_dots_per_module": 2,
           "qr_minimum_quiet_zone_modules": 4,
           "text_comfort_threshold_mm": 2.2,
-          "text_readable_floor_mm": 1.6
+          "text_readable_floor_mm": 2.2
         },
         "orientation": "landscape",
         "printable_area": {
@@ -994,7 +994,7 @@
   },
   "contract": {
     "family": "growspace.label-templates",
-    "generation": 3,
+    "generation": 4,
     "major": 1,
     "minor": 0
   },

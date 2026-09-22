@@ -15,7 +15,7 @@
   },
   "contract": {
     "family": "growspace.label-templates",
-    "generation": 3,
+    "generation": 4,
     "major": 1,
     "minor": 0
   },
@@ -39,13 +39,13 @@
     "limits": {
       "divider_minimum_thickness_mm": 0.25,
       "image_minimum_effective_dpi": 203.0,
-      "measured": false,
+      "measured": true,
       "qr_error_correction_levels": ["medium", "quartile", "high"],
       "qr_maximum_encoded_bytes": 256,
       "qr_minimum_dots_per_module": 2,
       "qr_minimum_quiet_zone_modules": 4,
       "text_comfort_threshold_mm": 2.2,
-      "text_readable_floor_mm": 1.6
+      "text_readable_floor_mm": 2.2
     },
     "orientation": "landscape",
     "printable_area": {

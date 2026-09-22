@@ -60,11 +60,11 @@ from custom_components.growspace_manager.labels.printing import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import Unauthorized
-from tests.labels.support import product_verified
+from tests.labels.support import product_verified, provisional
 
 from .support import StubFonts, layout_of, text_element
 
-PROVISIONAL = NIIMBOT_B1_50X30
+PROVISIONAL = provisional(NIIMBOT_B1_50X30)
 VERIFIED = product_verified(NIIMBOT_B1_50X30)
 DEVICE = "printer-a"
 AS_OF = datetime(2026, 9, 19, 9, 30, tzinfo=UTC)

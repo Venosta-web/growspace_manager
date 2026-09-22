@@ -1,17 +1,17 @@
 {
-  "case": "factory-50x30-r1.niimbot-b1.50x30.v1.missing_optional.strain.en",
+  "case": "factory-50x30-r2.niimbot-b1.50x30.v1.typical.plant.en",
   "layout": {
-    "name": "factory-50x30-r1",
-    "digest": "sha256:88f535541da66d620b561b4157905ce599d9e6eedf24dc41b4c326971d06de32"
+    "name": "factory-50x30-r2",
+    "digest": "sha256:607c9e1e939884a9ac91178138b42eb694dba24b44a0590ef37a3db943cb3242"
   },
   "profile": "growspace.profile.niimbot-b1.50x30.v1",
-  "subject": "growspace.fixture.strain.sparse.v1",
-  "family": "missing_optional",
-  "context": "strain",
+  "subject": "growspace.fixture.plant.typical.v1",
+  "family": "typical",
+  "context": "plant",
   "locale": "en",
   "as_of": "2026-09-18T00:00:00+00:00",
   "density": "normal",
-  "content_identity": "sha256:d7ad7ec49becacb4e4aa40ae5e0c765b27e24464064ba7a65803f3f6a0bb2399",
+  "content_identity": "sha256:3c18d6c5d68e2d59fa7ecf25f2a75dbab82937d4cae1602bafe8edaf65106912",
   "raster_inputs": {
     "width": 384,
     "height": 240,
@@ -20,7 +20,7 @@
     "payload": [
       {
         "type": "text_fit",
-        "value": "Northern Lights",
+        "value": "Blue Dream",
         "x": 16,
         "y": 16,
         "width": 344,
@@ -45,13 +45,64 @@
       },
       {
         "type": "text_fit",
+        "value": "Pheno 3",
+        "x": 16,
+        "y": 98,
+        "width": 344,
+        "height": 35,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "text_fit",
+        "value": "Breeder: Humboldt Seed Co.",
+        "x": 16,
+        "y": 136,
+        "width": 344,
+        "height": 35,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "text_fit",
+        "value": "Lineage: Blueberry x Haze",
+        "x": 16,
+        "y": 174,
+        "width": 344,
+        "height": 34,
+        "size": 26,
+        "min_size": 18,
+        "max_lines": 1,
+        "line_spacing": 1,
+        "align": "left",
+        "valign": "middle",
+        "fit": "shrink_ellipsis",
+        "ellipsis": "…",
+        "font": "rbm.ttf"
+      },
+      {
+        "type": "text_fit",
         "value": "18 Sep 2026",
         "x": 16,
-        "y": 213,
+        "y": 208,
         "width": 344,
-        "height": 22,
+        "height": 24,
         "size": 19,
-        "min_size": 16,
+        "min_size": 18,
         "max_lines": 1,
         "line_spacing": 1,
         "align": "right",
@@ -62,7 +113,7 @@
       }
     ]
   },
-  "raster_input_digest": "sha256:0119ba6044cca2c1a3ec06c16d6eeaeb065149aa635fce1b64935cba454d4942",
+  "raster_input_digest": "sha256:02184cdc1146d7ced35696516e6bc69870c674349263ad020fd57d11a6301d5f",
   "outcomes": [
     {
       "element_id": "01M2V1PQB882FPJSG6H1GTFKX2",
@@ -103,7 +154,7 @@
     {
       "element_id": "01M2V1PQB83XP8GJZZAP08DDKM",
       "kind": "text",
-      "status": "omitted_missing_content",
+      "status": "placed",
       "binding": "strain.phenotype",
       "pixel_frame": {
         "left": 16,
@@ -113,12 +164,18 @@
         "width": 344,
         "height": 35
       },
-      "notes": {}
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
     },
     {
       "element_id": "01M2V1PQB8CH61GQ903X1XF808",
       "kind": "text",
-      "status": "omitted_missing_content",
+      "status": "placed",
       "binding": "strain.breeder",
       "pixel_frame": {
         "left": 16,
@@ -128,22 +185,34 @@
         "width": 344,
         "height": 35
       },
-      "notes": {}
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 35]
+      }
     },
     {
       "element_id": "01M2V1PQB8QKBBEH26QWK9FHT8",
       "kind": "text",
-      "status": "omitted_missing_content",
+      "status": "placed",
       "binding": "strain.lineage",
       "pixel_frame": {
         "left": 16,
         "top": 174,
         "right": 360,
-        "bottom": 209,
+        "bottom": 208,
         "width": 344,
-        "height": 35
+        "height": 34
       },
-      "notes": {}
+      "notes": {
+        "requested_font_size_px": 26,
+        "minimum_font_size_px": 18,
+        "maximum_lines": 1,
+        "overflow": "shrink_ellipsis",
+        "box_pixels": [344, 34]
+      }
     },
     {
       "element_id": "01M2V1PQB8NNQA4TA7RZEJZCCW",
@@ -152,24 +221,24 @@
       "binding": "print.date",
       "pixel_frame": {
         "left": 16,
-        "top": 213,
+        "top": 208,
         "right": 360,
-        "bottom": 235,
+        "bottom": 232,
         "width": 344,
-        "height": 22
+        "height": 24
       },
       "notes": {
         "requested_font_size_px": 19,
-        "minimum_font_size_px": 16,
+        "minimum_font_size_px": 18,
         "maximum_lines": 1,
         "overflow": "shrink_ellipsis",
-        "box_pixels": [344, 22]
+        "box_pixels": [344, 24]
       }
     }
   ],
-  "diagnostics": [["content.missing_optional", "warning"]],
+  "diagnostics": [],
   "evidence": {
-    "sha256": "d0d77c1171707c2d93548e132d48c6d242c57a014a8ad33e84347226c3ed8f26",
-    "rendered_from": "sha256:0119ba6044cca2c1a3ec06c16d6eeaeb065149aa635fce1b64935cba454d4942"
+    "sha256": "12073785af101f6f05014bc0d089559e2e1846fb0247db63f93b8be0b840e137",
+    "rendered_from": "sha256:02184cdc1146d7ced35696516e6bc69870c674349263ad020fd57d11a6301d5f"
   }
 }

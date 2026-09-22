@@ -132,7 +132,7 @@ _FACTORY_50X30_DOCUMENT: dict[str, Any] = {
             LINEAGE_ELEMENT,
             "strain.lineage",
             {"presentation": "labeled"},
-            {"x_mm": 2.0, "y_mm": 21.8, "width_mm": 43.0, "height_mm": 4.4},
+            {"x_mm": 2.0, "y_mm": 21.8, "width_mm": 43.0, "height_mm": 4.2},
             font=_BODY_FONT,
             size_mm=3.2,
             minimum_mm=2.2,
@@ -141,10 +141,10 @@ _FACTORY_50X30_DOCUMENT: dict[str, Any] = {
             PRINT_DATE_ELEMENT,
             "print.date",
             {"date_style": "medium"},
-            {"x_mm": 2.0, "y_mm": 26.6, "width_mm": 43.0, "height_mm": 2.8},
+            {"x_mm": 2.0, "y_mm": 26.0, "width_mm": 43.0, "height_mm": 3.0},
             font=_BODY_FONT,
             size_mm=2.4,
-            minimum_mm=2.0,
+            minimum_mm=2.2,
             align="right",
         ),
     ],
@@ -320,7 +320,10 @@ class FactoryTemplate:
 
 FACTORY_50X30 = FactoryTemplate(
     id="growspace.factory.50x30",
-    revision=1,
+    # Revision 2: the date's frame was shorter than one line of its own face,
+    # so it printed at 2.13 mm -- under the 2.2 mm the B1 evidence showed to
+    # be readable. It is 0.2 mm taller now, and lineage 0.2 mm shorter.
+    revision=2,
     name="Strain label",
     label_size_id="growspace.stock.50x30.v1",
     document=_FACTORY_50X30_DOCUMENT,

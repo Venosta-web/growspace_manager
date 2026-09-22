@@ -7,7 +7,7 @@
   },
   "contract": {
     "family": "growspace.label-templates",
-    "generation": 3,
+    "generation": 4,
     "major": 1,
     "minor": 0
   },
@@ -19,10 +19,10 @@
       "operation": "test_print"
     },
     "operation": "test_print",
-    "raster_identity": "sha256:89aa3ee322d67ccbe157e5a77f8620bc4ecf839990a56e1202e2343a5c70416f",
-    "raster_input_digest": "sha256:4d7744fc1d39adb00349a6567ac03da945ac216d2849b7f08b5d9fbafa62a14f",
+    "raster_identity": "sha256:5db08a8b1486bc740ceb37ff62319e9f065602e8588f91a4583935982a9cab44",
+    "raster_input_digest": "sha256:fc811646d9711b4d48c2bb902732ac419525837a61f3b4520744a4e02ed48276",
     "result": {
-      "cache_identity": "sha256:8aa3be6f50d6cd6b8b993bf8d573da68cbd091069d6b8ee2f9c4766de55f8af9",
+      "cache_identity": "sha256:71e7972578f600f1ff1411ae34ab932d580b01affa8301edd54603173d7b0e55",
       "diagnostics": [
         {
           "code": "profile.ink_outside_safe_area",
@@ -773,7 +773,7 @@
           "notes": {
             "box_pixels": [306, 49],
             "maximum_lines": 2,
-            "minimum_font_size_px": 14,
+            "minimum_font_size_px": 18,
             "overflow": "shrink_ellipsis",
             "requested_font_size_px": 19
           },
@@ -794,7 +794,7 @@
           "notes": {
             "box_pixels": [306, 27],
             "maximum_lines": 1,
-            "minimum_font_size_px": 14,
+            "minimum_font_size_px": 18,
             "overflow": "shrink_ellipsis",
             "requested_font_size_px": 19
           },
@@ -815,7 +815,7 @@
           "notes": {
             "box_pixels": [306, 27],
             "maximum_lines": 1,
-            "minimum_font_size_px": 14,
+            "minimum_font_size_px": 18,
             "overflow": "shrink_ellipsis",
             "requested_font_size_px": 19
           },
@@ -836,7 +836,7 @@
           "notes": {
             "box_pixels": [306, 24],
             "maximum_lines": 1,
-            "minimum_font_size_px": 14,
+            "minimum_font_size_px": 18,
             "overflow": "shrink_ellipsis",
             "requested_font_size_px": 18
           },
@@ -1590,13 +1590,13 @@
         "limits": {
           "divider_minimum_thickness_mm": 0.25,
           "image_minimum_effective_dpi": 203.0,
-          "measured": false,
+          "measured": true,
           "qr_error_correction_levels": ["medium", "quartile", "high"],
           "qr_maximum_encoded_bytes": 256,
           "qr_minimum_dots_per_module": 2,
           "qr_minimum_quiet_zone_modules": 4,
           "text_comfort_threshold_mm": 2.2,
-          "text_readable_floor_mm": 1.6
+          "text_readable_floor_mm": 2.2
         },
         "orientation": "landscape",
         "printable_area": {
@@ -1629,13 +1629,13 @@
         "monochrome": true,
         "width": 384
       },
-      "raster_identity": "sha256:89aa3ee322d67ccbe157e5a77f8620bc4ecf839990a56e1202e2343a5c70416f",
-      "raster_input_digest": "sha256:4d7744fc1d39adb00349a6567ac03da945ac216d2849b7f08b5d9fbafa62a14f",
+      "raster_identity": "sha256:5db08a8b1486bc740ceb37ff62319e9f065602e8588f91a4583935982a9cab44",
+      "raster_input_digest": "sha256:fc811646d9711b4d48c2bb902732ac419525837a61f3b4520744a4e02ed48276",
       "render_context": {
         "adapter_version": "growspace.niimbot-adapter.v1",
         "as_of": "2026-09-21T00:00:00+00:00",
         "binding_catalogue_version": "growspace.label-bindings.v1",
-        "capability_generation": 3,
+        "capability_generation": 4,
         "compiler_version": "growspace.label-compiler.v1",
         "content_context": "strain",
         "content_identity": "sha256:b6c3f83b8e8e20b098d5a1ad4caaa64249c941658c307145bc23721bcdadc99e",
@@ -1648,7 +1648,7 @@
         },
         "label_size_catalogue_version": "growspace.label-sizes.v1",
         "label_size_id": "growspace.stock.50x30.v1",
-        "layout_digest": "sha256:cf4df9ac5b559ca6a0d361ff663c15e9d60f72d67a8cfeb542df8dbeb4a978b6",
+        "layout_digest": "sha256:e5822a00e4c9eacf27e068f4943f0c45a0f98953e29ff4be4dfdb4969d4a603f",
         "local_calibration": null,
         "locale": "en",
         "operation": "test_print",
@@ -1670,5 +1670,5 @@
     }
   },
   "sheet_id": "<opaque-1>",
-  "sheet_raster_identity": "sha256:89aa3ee322d67ccbe157e5a77f8620bc4ecf839990a56e1202e2343a5c70416f"
+  "sheet_raster_identity": "sha256:5db08a8b1486bc740ceb37ff62319e9f065602e8588f91a4583935982a9cab44"
 }

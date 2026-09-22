@@ -1,7 +1,7 @@
 {
   "contract": {
     "family": "growspace.label-templates",
-    "generation": 3,
+    "generation": 4,
     "major": 1,
     "minor": 0
   },
@@ -9,7 +9,7 @@
   "outcome": "ok",
   "replayed": false,
   "revision": {
-    "digest": "sha256:a268709a860bc7194c7073caef997a178dfdbb1b50db591e966537e065c8e5f8",
+    "digest": "sha256:b72616b33be3d8497e6bbf2b0a0859917b45493801e57f319ddc4bbb6db82bf3",
     "name": "Bench label",
     "operation": "publish",
     "parent_revision": null,
@@ -17,7 +17,7 @@
       "draft_id": "<opaque-2>",
       "draft_version": 2,
       "factory_id": "growspace.factory.50x30",
-      "factory_revision": 1,
+      "factory_revision": 2,
       "source": "factory",
       "source_revision": null,
       "source_template_id": null
@@ -36,7 +36,7 @@
     "name": "Bench label",
     "revisions": [
       {
-        "digest": "sha256:a268709a860bc7194c7073caef997a178dfdbb1b50db591e966537e065c8e5f8",
+        "digest": "sha256:b72616b33be3d8497e6bbf2b0a0859917b45493801e57f319ddc4bbb6db82bf3",
         "name": "Bench label",
         "operation": "publish",
         "parent_revision": null,
@@ -44,7 +44,7 @@
           "draft_id": "<opaque-2>",
           "draft_version": 2,
           "factory_id": "growspace.factory.50x30",
-          "factory_revision": 1,
+          "factory_revision": 2,
           "source": "factory",
           "source_revision": null,
           "source_template_id": null

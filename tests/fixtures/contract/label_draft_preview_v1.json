@@ -2,7 +2,7 @@
   "approval_id": "<opaque-1>",
   "contract": {
     "family": "growspace.label-templates",
-    "generation": 3,
+    "generation": 4,
     "major": 1,
     "minor": 0
   },
@@ -11,7 +11,7 @@
   "label_size_id": "growspace.stock.50x30.v1",
   "outcome": "ok",
   "render": {
-    "cache_identity": "sha256:5d99afb1133de21c3b0d983ae2c99f32706ffcca77d1faf58c94c80ed84f721a",
+    "cache_identity": "sha256:40f32d5f047d25add12c905cf69725636cce8ba5884a49ba363a5dafbb628c65",
     "diagnostics": [
       {
         "code": "raster.text_unmeasured",
@@ -59,34 +59,6 @@
         },
         "path": "",
         "recovery": "retry",
-        "severity": "warning"
-      },
-      {
-        "code": "profile.ink_outside_safe_area",
-        "element_id": "<opaque-7>",
-        "layer": "profile_compilation",
-        "message": "Element 01M2V1PQB8NNQA4TA7RZEJZCCW inks outside the Safe Area. It prints, but close to an edge.",
-        "parameters": {
-          "ink_bounds": {
-            "bottom": 235,
-            "height": 22,
-            "left": 16,
-            "right": 360,
-            "top": 213,
-            "width": 344
-          },
-          "safe_area": {
-            "bottom": 232,
-            "height": 224,
-            "left": 8,
-            "right": 376,
-            "top": 8,
-            "width": 368
-          },
-          "safe_area_inset_mm": 1.0
-        },
-        "path": "",
-        "recovery": "edit_element",
         "severity": "warning"
       },
       {
@@ -186,15 +158,15 @@
         "element_id": "<opaque-6>",
         "kind": "text",
         "notes": {
-          "box_pixels": [344, 35],
+          "box_pixels": [344, 34],
           "maximum_lines": 1,
           "minimum_font_size_px": 18,
           "overflow": "shrink_ellipsis",
           "requested_font_size_px": 26
         },
         "pixel_frame": {
-          "bottom": 209,
-          "height": 35,
+          "bottom": 208,
+          "height": 34,
           "left": 16,
           "right": 360,
           "top": 174,
@@ -207,18 +179,18 @@
         "element_id": "<opaque-7>",
         "kind": "text",
         "notes": {
-          "box_pixels": [344, 22],
+          "box_pixels": [344, 24],
           "maximum_lines": 1,
-          "minimum_font_size_px": 16,
+          "minimum_font_size_px": 18,
           "overflow": "shrink_ellipsis",
           "requested_font_size_px": 19
         },
         "pixel_frame": {
-          "bottom": 235,
-          "height": 22,
+          "bottom": 232,
+          "height": 24,
           "left": 16,
           "right": 360,
-          "top": 213,
+          "top": 208,
           "width": 344
         },
         "status": "placed"
@@ -227,10 +199,7 @@
     "eligibility": {
       "batch_preflight": {
         "allowed": false,
-        "blocked_by": [
-          "profile_not_product_verified",
-          "local_calibration_missing"
-        ],
+        "blocked_by": ["local_calibration_missing"],
         "operation": "batch_preflight"
       },
       "candidate_validation": {
@@ -255,10 +224,7 @@
       },
       "single_print": {
         "allowed": false,
-        "blocked_by": [
-          "profile_not_product_verified",
-          "local_calibration_missing"
-        ],
+        "blocked_by": ["local_calibration_missing"],
         "operation": "single_print"
       },
       "test_print": {
@@ -351,8 +317,8 @@
       {
         "basis": "frame",
         "bounds": {
-          "bottom": 209,
-          "height": 35,
+          "bottom": 208,
+          "height": 34,
           "left": 16,
           "right": 360,
           "top": 174,
@@ -360,7 +326,7 @@
         },
         "element_id": "<opaque-6>",
         "kind": "text",
-        "mask_digest": "b0ff39f34ab9dde9",
+        "mask_digest": "52a1c8704e8b54b7",
         "measurements": {
           "font_file": "rbm.ttf",
           "measured": false,
@@ -371,16 +337,16 @@
       {
         "basis": "frame",
         "bounds": {
-          "bottom": 235,
-          "height": 22,
+          "bottom": 232,
+          "height": 24,
           "left": 16,
           "right": 360,
-          "top": 213,
+          "top": 208,
           "width": 344
         },
         "element_id": "<opaque-7>",
         "kind": "text",
-        "mask_digest": "4841b9bedc97b630",
+        "mask_digest": "ac5b3ed72f2cc48c",
         "measurements": {
           "font_file": "rbm.ttf",
           "measured": false,
@@ -392,30 +358,30 @@
     "overlaps": [],
     "printable": false,
     "profile": {
-      "authorizes_production": false,
+      "authorizes_production": true,
       "density_levels": {
         "high": 5,
         "low": 2,
         "normal": 3
       },
       "dpi": 203,
-      "evidence": "provisional",
+      "evidence": "product_verified",
       "evidence_invalidated_by": [],
-      "evidence_recorded_at": null,
-      "evidence_reference": null,
+      "evidence_recorded_at": "2026-09-22",
+      "evidence_reference": "docs/evidence/labels/niimbot-b1.50x30.v1/2026-09-22",
       "feed_axis": "y",
       "id": "growspace.profile.niimbot-b1.50x30.v1",
       "label_size_id": "growspace.stock.50x30.v1",
       "limits": {
         "divider_minimum_thickness_mm": 0.25,
         "image_minimum_effective_dpi": 203.0,
-        "measured": false,
+        "measured": true,
         "qr_error_correction_levels": ["medium", "quartile", "high"],
         "qr_maximum_encoded_bytes": 256,
         "qr_minimum_dots_per_module": 2,
         "qr_minimum_quiet_zone_modules": 4,
         "text_comfort_threshold_mm": 2.2,
-        "text_readable_floor_mm": 1.6
+        "text_readable_floor_mm": 2.2
       },
       "orientation": "landscape",
       "printable_area": {
@@ -448,13 +414,13 @@
       "monochrome": true,
       "width": 384
     },
-    "raster_identity": "sha256:e686c5c97b44289f880f227ce59ab210f38c6a5b6cb8aed9c79a22e5a5ca6d11",
-    "raster_input_digest": "sha256:38cd29107df1e40c1eecd06eadc092051f2a6ef8af31c328e5907a1c8af04056",
+    "raster_identity": "sha256:ba296cc4a3a42bc066c95042a6fc1aa4b3ff216761f545773c10cad17a2701fc",
+    "raster_input_digest": "sha256:6c46d6cbbe3761219bbdb171e40fc4f1bee2cd42e6b230617e96a75464cdefbe",
     "render_context": {
       "adapter_version": "growspace.niimbot-adapter.v1",
       "as_of": "2026-09-18T00:00:00+00:00",
       "binding_catalogue_version": "growspace.label-bindings.v1",
-      "capability_generation": 3,
+      "capability_generation": 4,
       "compiler_version": "growspace.label-compiler.v1",
       "content_context": "strain",
       "content_identity": "sha256:249700f3a8cbbdcbce28498e167e59d7c70a51e5149c42bbe326947a2f8249e7",
@@ -467,11 +433,11 @@
       },
       "label_size_catalogue_version": "growspace.label-sizes.v1",
       "label_size_id": "growspace.stock.50x30.v1",
-      "layout_digest": "sha256:a268709a860bc7194c7073caef997a178dfdbb1b50db591e966537e065c8e5f8",
+      "layout_digest": "sha256:b72616b33be3d8497e6bbf2b0a0859917b45493801e57f319ddc4bbb6db82bf3",
       "local_calibration": null,
       "locale": "en",
       "operation": "preview",
-      "profile_evidence": "provisional",
+      "profile_evidence": "product_verified",
       "profile_id": "growspace.profile.niimbot-b1.50x30.v1",
       "qr_model_version": "growspace.qr-model.v1",
       "renderer_version": "growspace.label-renderer.v1",

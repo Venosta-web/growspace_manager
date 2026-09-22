@@ -263,6 +263,7 @@ def eligibility_for(
     profile: CapabilityProfile,
     local_calibration: str | None = None,
     calibration_stale_reasons: Sequence[str] = (),
+    printer_covered: bool = True,
 ) -> Mapping[str, OperationEligibility]:
     """Decide every operation this result could be asked to authorize."""
     return decide_eligibility(
@@ -271,6 +272,7 @@ def eligibility_for(
         profile=profile,
         local_calibration=local_calibration,
         calibration_stale_reasons=calibration_stale_reasons,
+        printer_covered=printer_covered,
     )
 
 

@@ -1,7 +1,7 @@
 {
   "contract": {
     "family": "growspace.label-templates",
-    "generation": 3,
+    "generation": 4,
     "major": 1,
     "minor": 0
   },
@@ -58,7 +58,7 @@
     ],
     "id": "<opaque-1>",
     "preflight_id": "<opaque-2>",
-    "preflight_identity": "sha256:7dcac19358e1c7c4714f0bca43cb437458c5aecc49ee1c538fa6aaa0492b1baf",
+    "preflight_identity": "sha256:34ec9ebe708ab82bdf1cb645a7543d4b87c43f140ddf565e84fc98e747b2ea8a",
     "refusal": null,
     "retry_of": null,
     "selected": [

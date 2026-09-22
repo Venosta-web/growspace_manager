@@ -35,6 +35,7 @@ from PIL import Image, UnidentifiedImageError
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 
 from ..niimbot import async_print_inputs, async_raster_inputs
 from .canonicalization import digest
@@ -133,9 +134,31 @@ async def async_render(
             profile=profile,
             local_calibration=local_calibration,
             calibration_stale_reasons=calibration_stale_reasons,
+            printer_covered=_printer_covered(hass, profile, device_id),
         ),
         raster_input_digest=input_digest,
     )
+
+
+def _printer_covered(
+    hass: HomeAssistant, profile: CapabilityProfile, device_id: str | None
+) -> bool:
+    """Whether the printer a render names is a model the evidence covers.
+
+    No printer named is not a refusal here: a preview drawn before anyone
+    chose a printer authorizes nothing, and every route that puts a record on
+    paper requires one. A printer named but not in the device registry has
+    no model anyone can check, so it is not covered.
+    """
+    if device_id is None:
+        return True
+    return profile.covers_device_model(device_model(hass, device_id))
+
+
+def device_model(hass: HomeAssistant, device_id: str) -> str | None:
+    """The model the printer integration registered one device under."""
+    device = dr.async_get(hass).async_get(device_id)
+    return device.model if device else None
 
 
 def font_library_for(hass: HomeAssistant) -> FontLibrary:

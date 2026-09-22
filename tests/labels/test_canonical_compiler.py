@@ -36,7 +36,7 @@ from custom_components.growspace_manager.labels.model import (
     Logo,
     QrCode,
 )
-from tests.labels.support import product_verified
+from tests.labels.support import product_verified, provisional
 
 AS_OF = datetime(2026, 9, 18, 12, 0, tzinfo=UTC)
 SNAPSHOT = TYPICAL_STRAIN.snapshot(as_of=AS_OF)
@@ -576,7 +576,7 @@ def test_a_profile_names_the_stock_it_prints() -> None:
 
 
 def test_a_provisional_profile_does_not_authorize_production() -> None:
-    assert NIIMBOT_B1_50X30.authorizes_production is False
+    assert provisional(NIIMBOT_B1_50X30).authorizes_production is False
     verified = product_verified(NIIMBOT_B1_50X30)
     assert verified.authorizes_production is True
 
