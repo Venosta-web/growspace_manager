@@ -776,6 +776,115 @@ async def test_a_retry_is_held_to_the_same_consent(
 
 
 # ---------------------------------------------------------------------------
+# Printing anyway
+# ---------------------------------------------------------------------------
+
+
+async def test_an_unproven_printer_prints_anyway_with_consent_to_this_review(
+    hass: HomeAssistant,
+    printer: list[dict[str, Any]],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Never measured: the refusal is about the printer, not the label.
+    preflight = await _preflight(hass)
+    review = preflight["preflight"]
+    assert review["allowed"] is False
+    assert review["blocked_by"] == ["local_calibration_missing"]
+    assert review["override_available"] is True
+
+    foreign = await _print(
+        hass, preflight_id=preflight["preflight_id"], override="sha256:other"
+    )
+    assert foreign["refusal"]["blocked_by"] == ["preflight_not_current"]
+    assert foreign["refusal"]["recovery"] == "preflight_again"
+    assert _committed(printer) == []
+
+    started = await _print(
+        hass,
+        preflight_id=preflight["preflight_id"],
+        override=review["identity"],
+        acknowledgement=review["identity"],
+    )
+    finished = await _finished(hass, started["job"]["id"])
+
+    assert [attempt["status"] for attempt in finished["attempts"]] == ["printed"] * 4
+    assert len(_committed(printer)) == 4
+    assert "at the operator's request" in caplog.text
+
+
+async def test_printing_anyway_still_needs_warnings_acknowledged(
+    hass: HomeAssistant, printer: list[dict[str, Any]], failing: _Failures
+) -> None:
+    preflight = await _preflight(hass, plant_ids=["W"], copies=1)
+    identity = preflight["preflight"]["identity"]
+    assert preflight["preflight"]["acknowledgement_required"] is True
+
+    missing = await _print(
+        hass, preflight_id=preflight["preflight_id"], override=identity
+    )
+    assert missing["refusal"]["blocked_by"] == ["warning_acknowledgement_required"]
+
+    failing.arm(1)
+    started = await _print(
+        hass,
+        preflight_id=preflight["preflight_id"],
+        override=identity,
+        acknowledgement=identity,
+    )
+    first = await _finished(hass, started["job"]["id"])
+    assert first["attempts"][0]["status"] == "failed"
+
+    # A retry is the same review, so it needs the same consent again.
+    refused = await _retry(hass, job_id=first["id"], acknowledgement=identity)
+    assert refused["refusal"]["blocked_by"] == ["local_calibration_missing"]
+    retried = await _retry(
+        hass, job_id=first["id"], acknowledgement=identity, override=identity
+    )
+    assert (await _finished(hass, retried["job"]["id"]))["attempts"][0][
+        "status"
+    ] == "printed"
+
+
+async def test_only_an_unproven_printer_may_be_printed_past(
+    hass: HomeAssistant, printer: list[dict[str, Any]]
+) -> None:
+    preflight = await _preflight(hass, plant_ids=["A"], copies=1)
+    holder = approval_holder(hass, ENTRY_ID)
+    held = holder.get(preflight["preflight_id"], BATCH_PREFLIGHT)
+    # A label with no picture is wrong, not unproven: no consent prints it.
+    record = held.records[0]
+    broken = replace(
+        held,
+        records=(
+            replace(
+                record,
+                decision=replace(
+                    record.decision,
+                    blocked_by=("no_raster", *record.decision.blocked_by),
+                ),
+            ),
+        ),
+    )
+    assert broken.override_available is False
+    broken_id = holder.hold(BATCH_PREFLIGHT, broken)
+
+    payload = await _print(hass, preflight_id=broken_id, override=broken.identity)
+
+    assert payload["refusal"]["blocked_by"][0] == "no_raster"
+    assert _committed(printer) == []
+
+
+async def test_a_proven_calibrated_printer_needs_no_override(
+    hass: HomeAssistant, printer: list[dict[str, Any]], verified: None
+) -> None:
+    await _calibrated(hass, printer)
+    preflight = await _preflight(hass, plant_ids=["A"], copies=1)
+
+    assert preflight["preflight"]["allowed"] is True
+    assert preflight["preflight"]["override_available"] is False
+
+
+# ---------------------------------------------------------------------------
 # Holding
 # ---------------------------------------------------------------------------
 

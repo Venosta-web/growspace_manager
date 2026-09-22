@@ -489,8 +489,14 @@ async def _async_judge_then_print(
     provenance: PrintProvenance,
     expected_raster_identity: str | None,
     calibration: CalibrationStatus | None = None,
+    override: bool = False,
 ) -> PrintOutcome:
-    """Render, judge, and only then commit -- in that order, always."""
+    """Render, judge, and only then commit -- in that order, always.
+
+    `override` is an operator's already-authorized consent to print past the
+    overridable refusals; the judgement still runs, and anything else it
+    finds still refuses.
+    """
     identity = calibration.identity if calibration else None
     stale_reasons = calibration.stale_reasons if calibration else ()
 
@@ -519,10 +525,17 @@ async def _async_judge_then_print(
         )
 
     decision = decide_print_request(
-        judged.eligibility, operation, provenance=provenance
+        judged.eligibility, operation, provenance=provenance, override=override
     )
     if not decision.allowed:
         raise PrintRefused(str(operation), decision.blocked_by, _explain(calibration))
+    if override and (waived := judged.eligibility[str(operation)].blocked_by):
+        _LOGGER.warning(
+            "Printing %s for %s past %s, at the operator's request",
+            source.reference,
+            content.subject,
+            ", ".join(waived),
+        )
 
     printed = await async_render(
         hass,
