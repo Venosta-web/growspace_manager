@@ -35,12 +35,20 @@ from ..model import (
     LabelRenderPlan,
     Logo,
     QrCode,
+    TextBlock,
+    TextLine,
 )
 from .catalogue import (
     FONT_TOKENS,
     LINE_SPACING_TOKENS,
     MONOCHROME_TOKENS,
     MissingPolicy,
+)
+from .compatibility import (
+    ClassicLineStyle,
+    ClassicLogoStyle,
+    ClassicStyle,
+    ClassicTextStyle,
 )
 from .content import ContentAbsence, LabelContentSnapshot, missing_policy
 from .diagnostics import Diagnostic, Layer, Recovery, Severity
@@ -337,8 +345,10 @@ class _Compiler:
             placed: LabelElement = self._text(style, frame, value)
         elif isinstance(style, QrStyle):
             placed = self._qr(style, frame, value)
-        else:
+        elif isinstance(style, LogoStyle):
             placed = self._logo(style, frame, value)
+        else:
+            placed = self._classic(style, frame, value)
         return placed, ElementOutcome(
             element_id=element.id,
             kind=str(element.kind),
@@ -559,8 +569,48 @@ class _Compiler:
             fill=style.fill,
         )
 
+    def _classic(
+        self, style: ClassicStyle, frame: PixelFrame, value: str
+    ) -> LabelElement:
+        """Place one element of a Classic compatibility layout.
+
+        The Classic primitives: unwrapped text shrunk to fit, one unfitted
+        line, a stretched logo and a module-sized QR code. Only the
+        Compatibility Adapter's transient layouts carry these styles; the
+        document schema cannot express them, so a Template never reaches
+        this branch.
+        """
+        if isinstance(style, ClassicTextStyle):
+            return TextBlock(
+                value=value.upper() if style.uppercase else value,
+                x=frame.left,
+                y=frame.top,
+                x_end=to_pixels(style.x_end_mm, self._profile.dpi) - self._origin_x,
+                width=frame.width,
+                height=frame.height,
+                size=to_pixels(style.font_size_mm, self._profile.dpi),
+                font=FONT_TOKENS[style.font].file,
+            )
+        if isinstance(style, ClassicLineStyle):
+            return TextLine(
+                value=value,
+                x=frame.left,
+                y=frame.top,
+                size=to_pixels(style.font_size_mm, self._profile.dpi),
+                font=FONT_TOKENS[style.font].file,
+            )
+        if isinstance(style, ClassicLogoStyle):
+            return Logo(
+                url=value,
+                x=frame.left,
+                y=frame.top,
+                xsize=frame.width,
+                ysize=frame.height,
+            )
+        return QrCode(data=value, x=frame.left, y=frame.top, boxsize=style.boxsize)
+
     def _notes(
-        self, style: TextStyle | LogoStyle | QrStyle, frame: PixelFrame
+        self, style: TextStyle | LogoStyle | QrStyle | ClassicStyle, frame: PixelFrame
     ) -> Mapping[str, Any]:
         """Return what the compiler knows about one placed element."""
         if not isinstance(style, TextStyle):

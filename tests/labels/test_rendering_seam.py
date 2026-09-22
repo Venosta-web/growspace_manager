@@ -1,8 +1,10 @@
-"""Tests for the canonical label rendering seam (hub issue #213).
+"""Tests for the label rendering seam (hub issues #213 and #240).
 
 The golden suite in `tests/services/test_print_label_golden.py` proves the
-Classic output is unchanged. These tests prove the *shape* that makes it safe
-to change later: one renderer, pure and printer-blind, reached by every caller.
+Classic output is unchanged. The first half of this module pins the retired
+fixed-coordinate renderer, which the compatibility goldens are still proven
+against; the second proves the Compatibility Adapter resolves a Classic
+request once and reaches paper only through the canonical compiler.
 """
 
 from __future__ import annotations
@@ -13,10 +15,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.growspace_manager.labels.classic import (
-    _canonical_size,
-    resolve_classic_request,
-)
+from custom_components.growspace_manager.labels.canonical import compatibility
+from custom_components.growspace_manager.labels.canonical.compiler import compile_layout
+from custom_components.growspace_manager.labels.classic import resolve_classic_request
 from custom_components.growspace_manager.labels.model import (
     Canvas,
     LabelContent,
@@ -174,7 +175,9 @@ async def test_a_classic_request_writes_nothing() -> None:
     assert {call[0] for call in strain_library.mock_calls} == {"load", "get_all"}
     # A strain request never even reaches the coordinator.
     assert coordinator.mock_calls == []
-    assert request.layout_id == "growspace.classic-layout.v1"
+    assert request.layout_id == (
+        "growspace.classic-layout.v1/50x30/phenotype+breeder+lineage+logo+qr"
+    )
     assert request.label_size_id == "growspace.stock.50x30.v1"
 
 
@@ -202,13 +205,10 @@ async def test_an_unknown_classic_size_keeps_the_documented_default_identity() -
     assert request.label_size_id == "growspace.stock.50x30.v1"
 
 
-def test_a_broken_catalogue_cannot_invent_a_classic_default() -> None:
-    with patch(
-        "custom_components.growspace_manager.labels.classic.LABEL_SIZES",
-        {},
-    ):
-        with pytest.raises(RuntimeError, match="default Label Size is absent"):
-            _canonical_size(None)
+def test_a_broken_catalogue_cannot_invent_a_classic_stock() -> None:
+    with patch.object(compatibility, "LABEL_SIZES", {}):
+        with pytest.raises(KeyError, match="No canonical Label Size spells '50x30'"):
+            compatibility.label_size_id("50x30")
 
 
 @pytest.mark.asyncio
@@ -234,7 +234,7 @@ async def test_a_strain_label_carries_no_qr_however_it_is_flagged() -> None:
     request = await resolve_classic_request(
         hass, coordinator, strain_library, {"strain": "Gelato", "fields": {"qr": True}}
     )
-    assert request.content.qr_data is None
+    assert compatibility.QR not in request.content.values
 
 
 @pytest.mark.asyncio
@@ -245,7 +245,9 @@ async def test_caller_overrides_win_over_library_meta() -> None:
     request = await resolve_classic_request(
         hass, coordinator, strain_library, {"strain": "Gelato", "breeder": "Mine"}
     )
-    assert request.content.info_lines == ("Mine", "SS x TK")
+    assert request.content.resolve(
+        compatibility.DETAILS, {"lines": "phenotype,breeder,lineage"}
+    ) == ("Mine\nSS x TK")
 
 
 @pytest.mark.asyncio
@@ -258,7 +260,12 @@ async def test_placeholder_values_never_reach_the_label_as_text() -> None:
         strain_library,
         {"strain": "Gelato", "breeder": "-", "lineage": "–"},
     )
-    assert request.content.info_lines == ()
+    assert (
+        request.content.resolve(
+            compatibility.DETAILS, {"lines": "phenotype,breeder,lineage"}
+        )
+        == ""
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -267,8 +274,8 @@ async def test_placeholder_values_never_reach_the_label_as_text() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_service_handler_composes_only_through_the_renderer() -> None:
-    """Strain, plant and every batch item share one `print_label`, one `render`."""
+async def test_the_service_handler_composes_only_through_the_compiler() -> None:
+    """Strain, plant and every batch item share one `print_label`, one compiler."""
     hass = MagicMock(spec=HomeAssistant)
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock(return_value={"status": "ok"})
@@ -289,14 +296,20 @@ async def test_the_service_handler_composes_only_through_the_renderer() -> None:
             return_value="http://ha.test",
         ),
         patch(
-            "custom_components.growspace_manager.labels.classic.render",
-            wraps=render,
+            "custom_components.growspace_manager.labels.classic.compile_layout",
+            wraps=compile_layout,
         ) as spy,
+        patch(
+            "custom_components.growspace_manager.labels.renderer.render",
+            side_effect=AssertionError("the fixed renderer was reached"),
+        ),
     ):
         await handle_print_label(hass, coordinator, strain_library, call)
 
     spy.assert_called_once()
-    content = spy.call_args.args[0]
-    assert isinstance(content, LabelContent)
-    assert content.title == "Northern Lights"
-    assert spy.call_args.kwargs == {"label_size": "50x50", "density": "high"}
+    layout, content, profile = spy.call_args.args
+    assert layout.label_size_id == "growspace.stock.50x50.v1"
+    assert content.values[compatibility.TITLE] == "Northern Lights"
+    assert content.source == "classic"
+    assert profile.id == "growspace.profile.classic.50x50.v1"
+    assert spy.call_args.kwargs == {"density": "high"}

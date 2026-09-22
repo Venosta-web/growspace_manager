@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from io import BytesIO
 import logging
 from typing import Any
@@ -74,6 +74,120 @@ _LOGO_DECODE_ERRORS = (
     ServiceValidationError,
     GrowspaceError,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class PrinterLimits:
+    """What one Niimbot model's own driver will accept.
+
+    These are the transport's limits, not a [[Capability Profile]]: nobody
+    measured what they put on paper, so they can refuse a request that is
+    certain to fail or to print garbage and can never authorize one.
+    """
+
+    #: The longest row, in pixels, the printhead has dots for.
+    printhead_pixels: int
+    #: The inclusive device density range the driver validates against.
+    density_min: int
+    density_max: int
+
+    def accepts_density(self, level: int) -> bool:
+        """Whether the driver would accept this device density value."""
+        return self.density_min <= level <= self.density_max
+
+
+#: Each model the `niimbot` integration can register, by the name it registers
+#: it under in Home Assistant's device registry, with its printhead and density
+#: range. Printhead pixels are the driver's `printheadPixels` and densities its
+#: `SetDensity` ranges, both as of hass-niimbot `f2bed90` (`niimprint/model.py`
+#: and `docs/devices.md`). A model absent here is one this table knows nothing
+#: about, which is not the same as one it knows is safe.
+PRINTER_LIMITS: Mapping[str, PrinterLimits] = {
+    model: PrinterLimits(printhead, low, high)
+    for model, (printhead, low, high) in {
+        "A1_PRO": (178, 1, 5),
+        "A20": (400, 1, 5),
+        "A203": (400, 1, 5),
+        "A63": (851, 1, 15),
+        "A8": (600, 1, 5),
+        "A8_P": (616, 1, 5),
+        "B1": (384, 1, 5),
+        "B11": (384, 6, 15),
+        "B16": (96, 1, 3),
+        "B18": (120, 1, 3),
+        "B18S": (120, 1, 3),
+        "B1_PRO": (567, 1, 5),
+        "B1_SE": (384, 1, 5),
+        "B2": (384, 1, 5),
+        "B203": (400, 1, 5),
+        "B21": (384, 1, 5),
+        "B21S": (384, 1, 5),
+        "B21S_C2B": (384, 1, 5),
+        "B21_C2B": (384, 1, 5),
+        "B21_L2B": (384, 1, 5),
+        "B21_PRO": (591, 1, 5),
+        "B2_PRO": (567, 1, 5),
+        "B3": (600, 1, 5),
+        "B31": (600, 1, 5),
+        "B32": (851, 1, 15),
+        "B32R": (851, 1, 15),
+        "B3S": (576, 1, 5),
+        "B3S_P": (576, 1, 5),
+        "B4": (832, 1, 5),
+        "B4_PRO": (1248, 1, 5),
+        "B50": (400, 6, 15),
+        "B50W": (384, 6, 15),
+        "BETTY": (192, 1, 3),
+        "C1": (178, 1, 5),
+        "D101": (192, 1, 3),
+        "D11": (96, 1, 3),
+        "D110": (96, 1, 3),
+        "D110_M": (120, 1, 5),
+        "D11S": (96, 1, 3),
+        "D11_H": (178, 1, 5),
+        "D11_PRO": (142, 1, 5),
+        "EP1C": (178, 1, 5),
+        "EP2M_H": (591, 1, 5),
+        "EP3M": (851, 1, 5),
+        "ET10": (1600, 3, 3),
+        "FUST": (96, 1, 5),
+        "H1": (96, 1, 3),
+        "H1S": (96, 1, 3),
+        "HI_D110": (120, 1, 3),
+        "HI_NB_D11": (120, 1, 3),
+        "JCB3S": (576, 1, 5),
+        "JC_M90": (384, 6, 15),
+        "K2": (480, 1, 5),
+        "K3": (656, 1, 5),
+        "K3_ITD": (656, 1, 5),
+        "K3_W": (656, 1, 5),
+        "K4": (656, 1, 15),
+        "M2_H": (591, 1, 5),
+        "M3": (851, 1, 5),
+        "MP3K": (656, 1, 5),
+        "MP3K_W": (656, 1, 5),
+        "N1": (120, 1, 3),
+        "P1": (697, 1, 5),
+        "P18": (662, 1, 5),
+        "P1S": (697, 1, 5),
+        "S1": (384, 6, 15),
+        "S3": (384, 6, 15),
+        "S6": (576, 1, 5),
+        "S6_P": (600, 1, 5),
+        "T2S": (832, 1, 20),
+        "T6": (384, 6, 15),
+        "T7": (384, 6, 15),
+        "T8": (567, 6, 15),
+        "T8S": (851, 1, 15),
+        "TP2M_H": (591, 1, 5),
+        "Z401": (851, 1, 15),
+    }.items()
+}
+
+
+def printer_limits(model: str | None) -> PrinterLimits | None:
+    """The driver limits of one registered model, where this table has them."""
+    return PRINTER_LIMITS.get(model) if model else None
 
 
 async def async_raster_inputs(

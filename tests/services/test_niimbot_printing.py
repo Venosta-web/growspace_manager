@@ -112,9 +112,15 @@ async def test_handle_print_label(mock_hass, mock_coordinator, strain_library) -
     call = MagicMock()
     call.data = {"plant_id": plant_id, "device_id": "printer_1", "preview": True}
 
-    with patch(
-        "custom_components.growspace_manager.labels.classic.get_url",
-        return_value="http://homeassistant.local",
+    with (
+        patch(
+            "custom_components.growspace_manager.labels.classic.get_url",
+            return_value="http://homeassistant.local",
+        ),
+        patch(
+            "custom_components.growspace_manager.labels.canonical.preview.device_model",
+            return_value=None,
+        ),
     ):
         await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
 
@@ -226,9 +232,15 @@ async def test_handle_print_label_with_base64_downscaling(
     call = MagicMock()
     call.data = {"plant_id": plant_id}
 
-    with patch(
-        "custom_components.growspace_manager.labels.classic.get_url",
-        return_value="http://homeassistant.local",
+    with (
+        patch(
+            "custom_components.growspace_manager.labels.classic.get_url",
+            return_value="http://homeassistant.local",
+        ),
+        patch(
+            "custom_components.growspace_manager.labels.canonical.preview.device_model",
+            return_value=None,
+        ),
     ):
         await handle_print_label(mock_hass, mock_coordinator, strain_library, call)
 
