@@ -190,6 +190,23 @@ async def test_number_driver_scales_percentage_to_speed_index(
 
 
 @pytest.mark.parametrize(
+    ("method", "value"),
+    [("turn_on", 10), ("turn_off", 0)],
+)
+async def test_number_driver_turn_on_off_sets_speed_extreme(
+    mock_hass: MagicMock, method: str, value: int
+) -> None:
+    """turn_on/turn_off drive the numeric speed to its 0-10 extreme."""
+    await getattr(NumberDriver(mock_hass, "input_number.exhaust_speed"), method)()
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "input_number",
+        "set_value",
+        {ATTR_ENTITY_ID: "input_number.exhaust_speed", "value": value},
+        blocking=False,
+    )
+
+
+@pytest.mark.parametrize(
     ("value", "expected"),
     [("0", False), ("5", True), (STATE_UNKNOWN, False), ("not-a-number", False)],
 )
