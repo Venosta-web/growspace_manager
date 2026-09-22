@@ -182,6 +182,12 @@ async def _capture(spec: dict[str, Any]) -> dict[str, Any]:
             "custom_components.growspace_manager.labels.classic.get_url",
             return_value=INTERNAL_URL,
         ),
+        # No printer is registered here, so a named one has no known model and
+        # is sent exactly as it always was.
+        patch(
+            "custom_components.growspace_manager.labels.canonical.preview.device_model",
+            return_value=None,
+        ),
         freeze_time(FROZEN_NOW),
     ):
         await handle_print_label(hass, coordinator, library, call)

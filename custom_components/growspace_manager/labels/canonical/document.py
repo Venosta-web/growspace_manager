@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .canonicalization import digest
 from .catalogue import (
@@ -37,6 +37,9 @@ from .catalogue import (
     LabelSize,
 )
 from .diagnostics import Diagnostic, Layer, Severity
+
+if TYPE_CHECKING:
+    from .compatibility import ClassicStyle
 
 SCHEMA = "growspace.label-layout"
 VERSION = 1
@@ -242,7 +245,10 @@ class LayoutElement:
     kind: ElementKind
     frame: Frame
     rotation: int
-    style: TextStyle | LogoStyle | QrStyle | DividerStyle
+    #: A Classic style appears only in the Compatibility Adapter's transient
+    #: layouts. The schema has no spelling for one, so no validated document
+    #: -- and therefore no Template -- can carry it.
+    style: TextStyle | LogoStyle | QrStyle | DividerStyle | ClassicStyle
     content: ContentSource | None = None
 
     def as_dict(self) -> dict[str, Any]:

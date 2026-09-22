@@ -2,33 +2,34 @@
 
 One seam, three layers, and a rule about the order they sit in:
 
-    Classic request  ->  classic.resolve_classic_request  ->  LabelContent
-    LabelContent     ->  renderer.render                  ->  LabelRenderPlan
-    LabelRenderPlan  ->  niimbot.async_print              ->  paper or preview
+    content snapshot + layout + profile  ->  canonical.compile_layout  ->  plan
+    LabelRenderPlan                      ->  niimbot adapter           ->  paper
 
-Every label the integration produces goes through `render`, whatever asked for
-it — the strain library, a plant, each item of a batch, a preview or a print.
-Nothing upstream of `render` knows what a printer is, and nothing downstream of
-it decides what a label says or where anything sits.
+Every label the integration produces is compiled by `canonical.compile_layout`,
+whatever asked for it -- a Label Template, a calibration sheet, or a Classic
+request from a released card. Nothing upstream of the compiler knows what a
+printer is, and nothing downstream of it decides what a label says or where
+anything sits. The Niimbot `imagespec` payload is what realises a plan, and
+replacing it is a change behind this seam rather than to it. See the hub
+specification at `docs/design/label-layout-and-rendering-seam.md`.
 
-That ordering is the whole contract. The Niimbot `imagespec` payload is what
-realises a plan, and replacing it is a change behind this seam rather than to
-it. See the hub specification at
-`docs/design/label-layout-and-rendering-seam.md`.
+There are two ways into that compiler, and they differ only in where the
+layout came from:
 
-There are two compositions above that adapter, and they differ only in where
-the geometry came from:
-
-- `renderer.render` is the **Classic Path**: one fixed 400x240 design stretched
-  onto the requested stock, which is what every released card prints today.
+- `classic` is the **Compatibility Adapter**: it turns a pre-template
+  `print_label` request into a transient compatibility layout, content
+  snapshot and profile (`canonical.compatibility`), and prints exactly what
+  released cards have always printed.
 - `canonical` is the **Label Template Path**: a validated millimetre document
-  compiled against a [[Capability Profile]], which is what an editor will save
-  and what a preview can honestly claim to be the printed bitmap.
+  compiled against a [[Capability Profile]], which is what an editor saves and
+  what a preview can honestly claim to be the printed bitmap.
 
-Both end in the same adapter and the same `LabelRenderPlan`, so the Classic
-Path can be retired without anything downstream of it noticing.
+`renderer` is the retired fixed-coordinate Classic design. No entry point
+reaches it any more; it stays in the tree only as the reference the
+compatibility goldens are proven byte-identical against, until the adapter has
+shipped enabled in two stable releases and it may be deleted (hub #232).
 
-Two packages sit beside the renderer rather than inside it, because neither is
+Two packages sit beside the compiler rather than inside it, because neither is
 about turning millimetres into dots:
 
 - `library` owns *which* layout -- templates, drafts, revisions and defaults.
@@ -71,7 +72,14 @@ from .model import (
     TextBlock,
     TextLine,
 )
-from .niimbot import async_print, async_print_inputs, async_raster_inputs
+from .niimbot import (
+    PRINTER_LIMITS,
+    PrinterLimits,
+    async_print,
+    async_print_inputs,
+    async_raster_inputs,
+    printer_limits,
+)
 from .printing import (
     CalibrationPrint,
     LayoutSource,
@@ -81,18 +89,9 @@ from .printing import (
     async_print_record,
     async_test_print,
 )
-from .renderer import (
-    DEFAULT_LABEL_SIZE,
-    LABEL_SIZE_CANVASES,
-    REFERENCE_CANVAS,
-    canvas_for,
-    render,
-)
 
 __all__ = [
-    "DEFAULT_LABEL_SIZE",
-    "LABEL_SIZE_CANVASES",
-    "REFERENCE_CANVAS",
+    "PRINTER_LIMITS",
     "AttemptStatus",
     "BatchAttempt",
     "BatchAttemptResult",
@@ -113,6 +112,7 @@ __all__ = [
     "Logo",
     "PrintOutcome",
     "PrintRefused",
+    "PrinterLimits",
     "QrCode",
     "TextBlock",
     "TextLine",
@@ -128,7 +128,6 @@ __all__ = [
     "async_test_print",
     "calibration",
     "canonical",
-    "canvas_for",
-    "render",
+    "printer_limits",
     "resolve_classic_request",
 ]
