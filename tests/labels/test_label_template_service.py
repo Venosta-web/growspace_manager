@@ -176,7 +176,7 @@ def test_schema_accepts_no_legacy_content_or_preview_fields() -> None:
     [
         {"template": {"kind": FACTORY, "id": FACTORY_ID}},
         {"plant_ids": ["A"]},
-        {"phenotype": "#1", "strain": None},
+        {"plant_ids": ["A"], "phenotype": "#1", "strain": None},
     ],
 )
 def test_schema_requires_one_template_choice_and_one_subject(
