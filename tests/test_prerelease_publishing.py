@@ -59,7 +59,7 @@ def test_stable_publishing_contract() -> None:
     """A main push must publish and verify the next stable patch release."""
     version_module = runpy.run_path(VERSION_SCRIPT)
     assert version_module["next_stable_version"]("1.2.1") == "1.2.2"
-    assert json.loads(MANIFEST_PATH.read_text())["version"] == "1.2.2"
+    assert json.loads(MANIFEST_PATH.read_text())["version"] == "1.2.3"
 
     workflow = yaml.safe_load(STABLE_WORKFLOW_PATH.read_text())
     assert workflow["on"] == {
