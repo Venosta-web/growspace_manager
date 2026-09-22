@@ -11,8 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `growspace_manager.print_label` service (the Classic label request,
   including `preview: true`) is deprecated and will be removed in **2.0.0**.
-  It keeps working, with byte-identical output, through every 1.x release,
-  and logs one warning per run when called. The timeline, the removal
+  It keeps working, with byte-identical output, through every 1.x release.
+  The first call in a Home Assistant run logs a warning and raises a Repairs
+  issue naming 2.0.0 and the migration guide; the issue clears by itself after
+  a run in which nothing called the service. The timeline, the removal
   conditions and the migration path for cards, dashboards, automations,
   scripts and WebSocket clients are in
   [docs/deprecations/print-label.md](docs/deprecations/print-label.md).

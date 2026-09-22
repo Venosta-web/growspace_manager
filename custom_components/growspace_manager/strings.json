@@ -651,6 +651,10 @@
     "label_template_store_incompatible": {
       "title": "Label Templates were saved by a newer Growspace Manager",
       "description": "The Label Template library for this Growspace Manager entry was written at store version {found}, and this version of the integration reads version {supported}. Nothing has been changed: your templates, revision history, drafts and defaults are exactly as the newer version left them, and they are not being read at all — a partial read is how saved work quietly gets lost. Until then, Label Template management and template-based label printing are unavailable for this entry; every other Growspace Manager feature keeps working. Reinstall the newer Growspace Manager to use them again, or restore a Label Template backup taken with this version. The integration deliberately offers no automatic downgrade or reset."
+    },
+    "print_label_deprecated": {
+      "title": "The Classic label print service is removed in Growspace Manager {removal_version}",
+      "description": "Something on this Home Assistant printed a label through `growspace_manager.print_label`, the Classic label service. It still prints exactly as before on every 1.x release, but it is removed in Growspace Manager {removal_version}, and anything that still calls it will stop printing then.\n\nWhat to change depends on what printed:\n\n- **The Growspace Manager card's print button**: upgrade the card. Card releases up to v1.3.x print through the Classic service; newer releases print through Label Templates and need no further change. Upgrade the card before upgrading the integration to {removal_version}.\n- **An automation, script or dashboard button**: switch the action to `growspace_manager.print_label_template`, which prints a strain or plants through a published Label Template.\n\nThe [migration guide]({migration_url}) has before-and-after examples for each. This notice goes away by itself after a Home Assistant run in which nothing printed through the Classic service."
     }
   },
   "entity": {

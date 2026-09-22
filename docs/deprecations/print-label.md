@@ -11,6 +11,20 @@ scripts, and dashboard buttons should call
 published Label Template and the same production-safety decision as the
 Growspace Manager card.
 
+## How you are told
+
+The first `print_label` call in a Home Assistant run logs a warning and raises
+a Repairs issue under **Settings → System → Repairs**. It names 2.0.0, links
+this page, and says what to change: upgrade the card, or switch the
+automation, script or dashboard button to `print_label_template`. Later calls
+in the same run add nothing, and the print always goes ahead.
+
+The issue is tied to the run, not stored as a standing fault. It disappears by
+itself after the first Home Assistant run in which nothing called the Classic
+service, so it is gone once every caller has moved. Home Assistant's own
+**Ignore** hides it as it does any issue, until Home Assistant itself is
+updated.
+
 ## Timeline
 
 | Release                                 | What happens                                                                                                                                       |
