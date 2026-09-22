@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.services.strain_library import (
+    PRINT_LABEL_REMOVAL_VERSION,
     handle_add_strain,
     handle_clear_strain_library,
     handle_export_strain_library,
@@ -624,3 +625,34 @@ async def test_handle_print_label_default_phenotype(
     values = [item.get("value") for item in payload]
     assert "STRAIN A" in values
     assert "" in values  # multiline info block is empty when all values are "-"
+
+
+async def test_handle_print_label_warns_deprecation_once_per_run(
+    mock_hass, mock_coordinator, mock_strain_library, caplog, monkeypatch
+) -> None:
+    """The Classic request names its removal release once, not once per label."""
+    monkeypatch.setattr(
+        "custom_components.growspace_manager.services.strain_library."
+        "_print_label_deprecation_logged",
+        False,
+    )
+    call = ServiceCall(
+        mock_hass, DOMAIN, "print_label", {"strain": "Strain A"}, context=MagicMock()
+    )
+
+    with patch(
+        "custom_components.growspace_manager.services.strain_library."
+        "async_compatibility_print",
+        new=AsyncMock(return_value=None),
+    ) as compatibility_print:
+        await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
+        await handle_print_label(mock_hass, mock_coordinator, mock_strain_library, call)
+
+    assert compatibility_print.await_count == 2
+    warnings = [
+        record for record in caplog.records if "is deprecated" in record.getMessage()
+    ]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert PRINT_LABEL_REMOVAL_VERSION in message
+    assert "docs/deprecations/print-label.md" in message

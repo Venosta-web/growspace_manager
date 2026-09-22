@@ -819,6 +819,11 @@ Simulates a scheduled milestone notification event to verify correct push routin
 
 ### `growspace_manager.print_label`
 
+> **Deprecated in 1.2.3, removed in 2.0.0.** It keeps working, unchanged,
+> through every 1.x release. See
+> [the migration guide](deprecations/print-label.md) for the timeline and what
+> replaces it for cards, dashboards, automations, scripts and WebSocket clients.
+
 Dispatches label files directly to a paired Niimbot bluetooth printer.
 
 | Parameter      | Type      | Required | Default | Description                                      |

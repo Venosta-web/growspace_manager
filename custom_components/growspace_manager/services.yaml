@@ -1714,7 +1714,10 @@ update_growspace:
         text:
 
 print_label:
-  description: Print a label for a plant or strain using Niimbot printer
+  description: >-
+    Deprecated, removed in 2.0.0: print a Classic label for a plant or strain
+    on a Niimbot printer. See docs/deprecations/print-label.md in the
+    Growspace Manager repository for what replaces it.
   fields:
     plant_id:
       description: ID of the plant (optional if strain info provided)
