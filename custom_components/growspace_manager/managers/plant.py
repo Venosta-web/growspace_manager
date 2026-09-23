@@ -34,6 +34,9 @@ from custom_components.growspace_manager.domain.plant_lifecycle import (
     PlantLifecycle,
     Rejected,
 )
+from custom_components.growspace_manager.domain.plant_lifecycle_adapter import (
+    plant_lifecycle_from_plant,
+)
 from custom_components.growspace_manager.domain.stage import STAGE_REGISTRY
 from custom_components.growspace_manager.events import (
     EVENT_PLANT_ADDED,
@@ -176,40 +179,9 @@ class PlantManager(BaseService):
         if current_stage is LifecycleStage.UNKNOWN:
             current_stage = LifecycleStage.SEEDLING
 
-        legacy_dates = {
-            field: value if isinstance(value, (date, str)) else None
-            for field in DATE_FIELDS
-            if (value := getattr(plant, field, None)) is not None
-        }
-        stored_history = getattr(plant, "stage_history", None)
-        raw_history: list[object] | None = (
-            [dict(item) for item in stored_history]
-            if isinstance(stored_history, list) and stored_history
-            else None
-        )
-
-        # Older in-memory Plant objects cannot distinguish an absent Stage History
-        # key from the dataclass's empty default. Seed those once from their explicit
-        # stage and creation timestamp; all newly created plants are seeded eagerly.
-        if raw_history is None and not any(legacy_dates.values()):
-            created_at = getattr(plant, "created_at", None)
-            started_on = (
-                created_at
-                if isinstance(created_at, (date, str))
-                else observed_on.isoformat()
-            )
-            raw_history = [
-                {
-                    "stage": current_stage.value,
-                    "start": started_on,
-                    "end": None,
-                }
-            ]
-
-        lifecycle = PlantLifecycle.from_data(
-            raw_history,
+        lifecycle = plant_lifecycle_from_plant(
+            plant,
             observed_on=observed_on,
-            legacy_dates=legacy_dates,
             current_stage=current_stage,
         )
         if lifecycle.warnings and not allow_repair:

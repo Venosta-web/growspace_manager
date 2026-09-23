@@ -19,6 +19,9 @@ from custom_components.growspace_manager.data_access.growspace_repository import
 from custom_components.growspace_manager.domain.current_stage import (
     resolve_current_stage,
 )
+from custom_components.growspace_manager.domain.lifetime_stage_days import (
+    resolve_lifetime_stage_days,
+)
 from custom_components.growspace_manager.exceptions import ValidationChangeError
 from custom_components.growspace_manager.models import Growspace, Plant, PlantGenetics
 
@@ -431,6 +434,69 @@ async def test_update_plant_repairs_history_whose_first_item_is_unreadable(
         {"stage": "mother", "start": plant.mother_start, "end": None}
     ]
     assert resolve_current_stage(plant) == "mother"
+
+
+@pytest.mark.parametrize(
+    "history_item",
+    ["unreadable", 42, None, ["mother"]],
+    ids=["string", "number", "null", "list"],
+)
+@pytest.mark.parametrize("action", ["date_edit", "stage_edit", "transition"])
+@pytest.mark.asyncio
+async def test_non_record_history_item_is_repaired_or_refused(
+    manager_factory,
+    repository: GrowspaceRepository,
+    history_item: object,
+    action: str,
+) -> None:
+    """Every lifecycle write lets the domain diagnose a non-record item."""
+    manager = manager_factory()
+    plant = Plant(
+        plant_id="non-record-history",
+        growspace_id="main",
+        genetics=PlantGenetics(strain_name="Test"),
+        stage=PlantStage.MOTHER,
+        mother_start="2025-11-24T00:00:00+01:00",
+        stage_history=[history_item],
+    )
+    repository.add_plant(plant)
+    assert resolve_current_stage(plant) == "unknown"
+    assert resolve_lifetime_stage_days(plant, observed_on=date(2026, 8, 20)).mother == 0
+
+    if action == "transition":
+        with pytest.raises(
+            ValidationChangeError, match="requires repair: malformed_item"
+        ):
+            await manager.transition_plant_stage(
+                plant.plant_id, PlantStage.VEG, date(2025, 12, 1)
+            )
+        assert plant.stage_history == [history_item]
+        assert plant.stage == PlantStage.MOTHER
+        return
+
+    if action == "date_edit":
+        await manager.update_plant(plant.plant_id, mother_start=date(2025, 11, 24))
+        expected_stage = "mother"
+        expected_start = plant.mother_start
+    else:
+        await manager.update_plant(
+            plant.plant_id, stage=PlantStage.VEG, veg_start=date(2025, 12, 1)
+        )
+        expected_stage = "veg"
+        expected_start = plant.veg_start
+
+    assert plant.stage_history == [
+        {"stage": expected_stage, "start": expected_start, "end": None}
+    ]
+    assert resolve_current_stage(plant) == expected_stage
+    repair_events = [
+        call.args[1]
+        for call in manager.hass.bus.async_fire.call_args_list
+        if call.args[0] == EVENT_GROWSPACE_LOG_ENTRY
+    ]
+    assert len(repair_events) == 1
+    assert repair_events[0]["sensor_type"] == "lifecycle_repair"
+    assert repair_events[0]["warning_codes"] == ["malformed_item"]
 
 
 @pytest.fixture
