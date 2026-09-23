@@ -69,6 +69,7 @@ from custom_components.growspace_manager.labels.canonical import (
     async_render,
     decide_print_request,
     font_library_for,
+    overridable,
     profile_by_id,
     select_profile,
 )
@@ -164,6 +165,7 @@ _BLOCKER_RECOVERY: tuple[tuple[str, str], ...] = (
     (str(Blocker.BLOCKING_DIAGNOSTICS), RECOVERY_FIX_LAYOUT),
     (str(Blocker.REVISION_NOT_PUBLISHED), RECOVERY_PUBLISH),
     (str(Blocker.PROFILE_NOT_PRODUCT_VERIFIED), RECOVERY_SELECT_PROFILE),
+    (str(Blocker.PRINTER_MODEL_NOT_COVERED), RECOVERY_SELECT_PROFILE),
     (str(Blocker.LOCAL_CALIBRATION_MISSING), RECOVERY_CALIBRATE),
     (str(Blocker.LOCAL_CALIBRATION_STALE), RECOVERY_CALIBRATE),
     (str(Blocker.RESULT_NOT_CURRENT), RECOVERY_REFRESH_PREVIEW),
@@ -249,6 +251,10 @@ SCHEMA_WS_PRINT_LABEL_RECORD = _base_schema(WS_TYPE_PRINT_LABEL_RECORD).extend(
     {
         vol.Required("approval_id"): str,
         vol.Required("expected_raster_identity"): str,
+        # Consent to print past the overridable refusals. A plain flag is
+        # enough: the approval it travels with already binds the exact raster
+        # the operator looked at.
+        vol.Optional("override", default=False): bool,
     }
 )
 
@@ -733,6 +739,7 @@ async def websocket_preview_label_record(
         approval_id=approval_id,
         calibration=calibration.as_dict(),
         decision=decision.as_dict(),
+        override_available=overridable(decision.blocked_by),
         recovery=recovery_for(decision.blocked_by),
         render=result.as_dict(),
     )
@@ -764,6 +771,7 @@ async def websocket_print_label_record(
             device_id=held.device_id,
             expected_raster_identity=msg["expected_raster_identity"],
             density=held.density,
+            override=msg.get("override", False),
         )
     except Unauthorized as error:
         return _not_authorized(error, administrator=False)

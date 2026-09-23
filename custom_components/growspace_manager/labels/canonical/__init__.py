@@ -103,6 +103,7 @@ from .eligibility import (
     PrintProvenance,
     decide_eligibility,
     decide_print_request,
+    overridable,
 )
 from .factory import (
     FACTORY_40X30,
@@ -322,6 +323,7 @@ __all__ = [
     "has_blocking",
     "missing_policy",
     "niimbot_font_library",
+    "overridable",
     "profile_by_id",
     "profiles_for_size",
     "representative_subject",

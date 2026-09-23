@@ -97,6 +97,7 @@ def _recovery_for(blockers: tuple[str, ...]) -> str:
         (str(Blocker.BLOCKING_DIAGNOSTICS), "fix_layout"),
         (str(Blocker.REVISION_NOT_PUBLISHED), "publish"),
         (str(Blocker.PROFILE_NOT_PRODUCT_VERIFIED), "select_profile"),
+        (str(Blocker.PRINTER_MODEL_NOT_COVERED), "select_profile"),
         (str(Blocker.LOCAL_CALIBRATION_MISSING), "calibrate"),
         (str(Blocker.LOCAL_CALIBRATION_STALE), "calibrate"),
         (str(Blocker.RESULT_NOT_CURRENT), "refresh_preview"),
