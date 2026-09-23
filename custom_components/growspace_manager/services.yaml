@@ -337,12 +337,6 @@ update_plant:
             - "flower"
             - "dry"
             - "cure"
-    notes:
-      description: Additional notes
-      required: false
-      selector:
-        text:
-          multiline: true
 
 remove_plant:
   description: Remove a plant

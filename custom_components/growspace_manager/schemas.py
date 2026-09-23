@@ -158,6 +158,22 @@ _PLANT_DAYS_FIELDS: dict[Any, Any] = {
     vol.Optional(f"{stage}_days"): vol.All(vol.Coerce(int)) for stage in PLANT_STAGES
 }
 
+# The Plant fields a grower edits through ``update_plant``, and nothing more.
+# Everything else on a Plant belongs to the domain: ``stage_history`` is the
+# Plant Lifecycle's, scores and harvest metrics have services of their own. The
+# manager copies every key a Plant has an attribute for straight onto it, so a
+# key that got past the boundary could be saved in a shape the next load
+# refuses, and that refusal drops the Plant (#804, #805).
+UPDATE_PLANT_EDITABLE_FIELDS: tuple[str, ...] = (
+    ATTR_GROWSPACE_ID,
+    ATTR_STRAIN,
+    ATTR_PHENOTYPE,
+    ATTR_ROW,
+    ATTR_COL,
+    ATTR_STAGE,
+    *DATE_FIELDS,
+)
+
 
 # Add Growspace
 ADD_GROWSPACE_SCHEMA = vol.Schema(
@@ -232,11 +248,10 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
         vol.Optional("position"): str,
         vol.Optional(ATTR_ROW): vol.All(int, vol.Range(min=1)),
         vol.Optional(ATTR_COL): vol.All(int, vol.Range(min=1)),
-        vol.Optional(ATTR_STAGE): str,  # Assuming stage can be updated
+        vol.Optional(ATTR_STAGE): str,
         **_PLANT_DATE_FIELDS,
         **_PLANT_DAYS_FIELDS,
-    },
-    extra=vol.ALLOW_EXTRA,
+    }
 )
 
 

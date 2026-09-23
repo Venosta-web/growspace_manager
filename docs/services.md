@@ -298,7 +298,10 @@ Edits attributes, stages, or coordinate locations of a plant.
 | `dry_start`      | `date`    | No       | -       | Drying stage start date (YYYY-MM-DD).                                               |
 | `cure_start`     | `date`    | No       | -       | Curing stage start date (YYYY-MM-DD).                                               |
 | `stage`          | `string`  | No       | -       | Directly set stage (`seedling`, `mother`, `clone`, `veg`, `flower`, `dry`, `cure`). |
-| `notes`          | `string`  | No       | -       | Update notes.                                                                       |
+
+Any other key is refused with a validation error naming it, and the plant is
+left untouched. A plant's stage history, scores and harvest metrics are written
+by the lifecycle and by their own services, never through `update_plant`.
 
 ### `growspace_manager.remove_plant`
 
