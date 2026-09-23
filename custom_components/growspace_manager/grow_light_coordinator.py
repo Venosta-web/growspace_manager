@@ -33,6 +33,7 @@ from .const import (
     ATTR_GROWSPACE_ID,
     CATEGORY_ALERT,
     EVENT_GROWSPACE_LOG_ENTRY,
+    LIGHT_LEAK_SENSOR_TYPE,
     NotificationTier,
 )
 from .domain.light_leak import (
@@ -69,7 +70,6 @@ _LEAK_CHECK_INTERVAL = timedelta(minutes=1)
 # How long switched-off grow lights get to read back off before the guard says
 # they did not. AC Infinity is cloud-polled, so one check interval is too tight.
 _LEAK_READBACK_GRACE = timedelta(minutes=2)
-_LEAK_SENSOR_TYPE = "light_leak"
 
 # Sent when the controller starts up and finds a grow light still lit during
 # what is now the dark period — e.g. the veg->flower flip shortened the day
@@ -450,7 +450,7 @@ class GrowLightCoordinator:
         data: dict[str, object] = {
             ATTR_GROWSPACE_ID: self.growspace_id,
             "category": CATEGORY_ALERT,
-            "sensor_type": _LEAK_SENSOR_TYPE,
+            "sensor_type": LIGHT_LEAK_SENSOR_TYPE,
             "reasons": [reason],
             "message": reason,
             "timestamp": dt_util.utcnow().isoformat(),
