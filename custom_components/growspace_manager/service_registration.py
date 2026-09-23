@@ -37,6 +37,7 @@ from .services import (
     plant_scoring,
     plant_spatial,
     report,
+    safety,
     strain_library,
     tank_config,
     vision_checkup,
@@ -113,3 +114,16 @@ async def register_services(
                 supports_response=supports_response,
             )
             _LOGGER.debug("Registered service: %s", service_name)
+
+    hass.services.async_register(
+        DOMAIN,
+        "emergency_stop",
+        partial(safety.handle_emergency_stop, hass),
+        schema=safety.SAFETY_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "reset_safety",
+        partial(safety.handle_reset_safety, hass),
+        schema=safety.SAFETY_SCHEMA,
+    )

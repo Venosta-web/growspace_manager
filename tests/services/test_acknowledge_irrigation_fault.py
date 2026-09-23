@@ -42,6 +42,7 @@ def context() -> tuple[HomeAssistant, MagicMock, MagicMock, IrrigationSafetyStor
         )
     }
     store.emergency_stops = {}
+    store.controls = {}
     store.ledger = deque(maxlen=500)
     store.unreadable = False
     store._unreadable_since = None

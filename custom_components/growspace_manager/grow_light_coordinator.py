@@ -170,6 +170,10 @@ class GrowLightCoordinator:
 
     async def _async_regulate(self) -> None:
         """Reconcile every configured grow light to its desired power."""
+        if not self.main_coordinator.irrigation_safety.automation_enabled(
+            self.growspace_id
+        ):
+            return
         env = self._env_config
         if env is None or not env.growlight_config.enabled:
             return
@@ -177,6 +181,10 @@ class GrowLightCoordinator:
         power = self._desired_power(env)
         drivers = resolve_actuator_drivers(self.hass, env.growlight_entities)
         for driver in drivers:
+            if not self.main_coordinator.irrigation_safety.automation_enabled(
+                self.growspace_id
+            ):
+                return
             await driver.set_speed(power)
 
     def _desired_power(self, env: EnvironmentConfig) -> int:
@@ -206,12 +214,20 @@ class GrowLightCoordinator:
         Idempotent: a device already holding the desired schedule is left alone,
         so the steady-state midnight pass is a cheap comparison, not a write.
         """
+        if not self.main_coordinator.irrigation_safety.automation_enabled(
+            self.growspace_id
+        ):
+            return
         gs = self._growspace
         assert gs is not None  # guarded by callers via _env_config
         cfg = env.growlight_config
         on_time = gs.irrigation_strategy.lights_on_time
         off_time = resolve_cycle_end_time(on_time, self._photoperiod_hours(env))
         for device in env.growlight_ac_infinity_devices:
+            if not self.main_coordinator.irrigation_safety.automation_enabled(
+                self.growspace_id
+            ):
+                return
             if not ac_infinity_schedule_matches(
                 self.hass,
                 device,
@@ -404,6 +420,10 @@ class GrowLightCoordinator:
 
     async def _switch_off_growlights(self, env: EnvironmentConfig) -> None:
         """Switch every managed grow light off and arm the read-back."""
+        if not self.main_coordinator.irrigation_safety.automation_enabled(
+            self.growspace_id
+        ):
+            return
         for driver in resolve_actuator_drivers(self.hass, env.growlight_entities):
             await driver.turn_off()
         for device in env.growlight_ac_infinity_devices:

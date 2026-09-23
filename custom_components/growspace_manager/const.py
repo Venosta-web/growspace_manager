@@ -16,6 +16,7 @@ STORAGE_KEY_AI_BRIEFING: Final = f"{DOMAIN}.ai_briefing"
 STORAGE_KEY_AI_CONVERSATIONS: Final = f"{DOMAIN}.ai_conversations"
 PLATFORMS: Final[list[str]] = [
     "binary_sensor",
+    "button",
     "calendar",
     "sensor",
     "switch",

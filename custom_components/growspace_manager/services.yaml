@@ -1,4 +1,28 @@
 ---
+emergency_stop:
+  name: Emergency stop
+  description: >-
+    Latch an emergency stop and command every managed output to its safe state.
+    Omit the growspace ID to stop all growspaces.
+  fields:
+    growspace_id:
+      name: Growspace ID
+      description: Growspace to stop; omit for all growspaces.
+      required: false
+      selector:
+        text:
+
+reset_safety:
+  name: Reset safety
+  description: Clear an emergency stop after every managed output is confirmed safe. Requires an administrator.
+  fields:
+    growspace_id:
+      name: Growspace ID
+      description: Growspace to reset; omit for all growspaces.
+      required: false
+      selector:
+        text:
+
 acknowledge_fault:
   name: Acknowledge irrigation fault
   description: Re-arm a growspace only after every affected irrigation output reads OFF. Requires an administrator.

@@ -638,6 +638,10 @@
     }
   },
   "issues": {
+    "irrigation_arm_review": {
+      "title": "Review migrated irrigation arm for {growspace}",
+      "description": "This growspace already had irrigation configured, so it was kept armed during the safety upgrade. Check the pump and schedule, then disarm it if automatic watering should pause."
+    },
     "irrigation_cap_review": {
       "title": "Review irrigation daily caps for {growspace}",
       "description": "This growspace was created before safe daily irrigation caps were enabled by default. Its existing settings were preserved. Set a maximum cycles per day and daily volume cap in Irrigation settings; enter the pump flow rate so the volume cap can be enforced."
@@ -753,6 +757,17 @@
     "switch": {
       "notifications": {
         "name": "Notifications"
+      },
+      "automation": {
+        "name": "Automation"
+      },
+      "irrigation_armed": {
+        "name": "Irrigation armed"
+      }
+    },
+    "button": {
+      "emergency_stop": {
+        "name": "Emergency stop"
       }
     }
   },
