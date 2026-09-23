@@ -925,9 +925,12 @@ def _validate_intervals(
         )
         trusted_count = len(intervals)
 
+    # No intervals means the caller rejected the first item and already holds
+    # that warning, so there is nothing here for the shadow stage to disagree with.
     expected = _stage_or_unknown(current_stage)
     if (
         not warnings
+        and intervals
         and expected is not LifecycleStage.UNKNOWN
         and intervals[-1].stage is not expected
     ):

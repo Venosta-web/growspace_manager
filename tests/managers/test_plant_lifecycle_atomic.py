@@ -16,6 +16,9 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.data_access.growspace_repository import (
     GrowspaceRepository,
 )
+from custom_components.growspace_manager.domain.current_stage import (
+    resolve_current_stage,
+)
 from custom_components.growspace_manager.exceptions import ValidationChangeError
 from custom_components.growspace_manager.models import Growspace, Plant, PlantGenetics
 
@@ -389,6 +392,45 @@ async def test_update_plant_ambiguous_correction_discards_later_intervals(
         if call.args[0] == EVENT_GROWSPACE_LOG_ENTRY
     )
     assert repair_event["discarded_interval_count"] == 3
+
+
+@pytest.mark.parametrize(
+    "first_item",
+    [
+        {"stage": "veg_early", "start": "2025-11-24T00:00:00+01:00", "end": None},
+        {"stage": "mother", "start": None, "end": None},
+    ],
+    ids=["unknown-stage", "invalid-start"],
+)
+@pytest.mark.asyncio
+async def test_update_plant_repairs_history_whose_first_item_is_unreadable(
+    manager_factory,
+    repository: GrowspaceRepository,
+    first_item: dict[str, str | None],
+) -> None:
+    """Editing a date repairs a Stage History that never parsed a single interval.
+
+    Such a plant reads as Unknown Stage, and the edit is the only way out of it.
+    """
+    manager = manager_factory()
+    plant = Plant(
+        plant_id="unreadable-history",
+        growspace_id="main",
+        genetics=PlantGenetics(strain_name="Test"),
+        stage=PlantStage.MOTHER,
+        mother_start="2025-11-24T00:00:00+01:00",
+        stage_history=[first_item],
+    )
+    repository.add_plant(plant)
+    assert resolve_current_stage(plant) == "unknown"
+
+    await manager.update_plant("unreadable-history", mother_start=date(2025, 11, 24))
+
+    assert plant.stage == PlantStage.MOTHER
+    assert plant.stage_history == [
+        {"stage": "mother", "start": plant.mother_start, "end": None}
+    ]
+    assert resolve_current_stage(plant) == "mother"
 
 
 @pytest.fixture
