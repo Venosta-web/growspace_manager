@@ -36,6 +36,7 @@ from custom_components.growspace_manager.models import (
     FieldOwnership,
     GrowLightConfig,
     IrrigationTank,
+    LightLeakConfig,
     TankWaterHistory,
     VisionCheckupConfig,
 )
@@ -60,6 +61,9 @@ def _lived_in_config() -> EnvironmentConfig:
         circulation_fan_config=CirculationFanConfig(enabled=True, min_speed=20),
         growlight_config=GrowLightConfig(enabled=True, power=75),
         growlight_entities=["light.panel"],
+        light_leak_config=LightLeakConfig(
+            illuminance_sensor="sensor.tent_lux", switch_off_lights=True
+        ),
         vpd_optimal_overrides={
             "veg": {
                 "day": {"low": 0.8, "high": 1.2},
@@ -112,6 +116,12 @@ def test_empty_patch_is_identity() -> None:
         ("snapshot_interval_hours", 6),
         ("growlight_config", GrowLightConfig(enabled=True, power=75)),
         ("growlight_entities", ["light.panel"]),
+        (
+            "light_leak_config",
+            LightLeakConfig(
+                illuminance_sensor="sensor.tent_lux", switch_off_lights=True
+            ),
+        ),
         (
             "vpd_optimal_overrides",
             {
@@ -406,6 +416,69 @@ def test_growlight_sub_config_parsed_from_dict() -> None:
     assert patch.values["growlight_config"] == GrowLightConfig(enabled=True, power=60)
 
 
+def test_growlight_config_save_keeps_light_leak_config() -> None:
+    """The card's Growlights tab replaces growlight_config whole; the guard's
+    settings live beside it, so that save cannot reset them (#794)."""
+    current = _lived_in_config()
+    patch = patch_from_service_call(
+        {
+            "growlight_config": {
+                "enabled": True,
+                "power": 90,
+                "sunrise_enabled": False,
+                "sunrise_minutes": 0,
+            }
+        }
+    )
+    verdict = apply_environment_patch(current, patch)
+    assert verdict.config.light_leak_config == current.light_leak_config
+
+
+def test_light_leak_config_parsed_from_dict() -> None:
+    """The guard's config parses with key filtering; a blank sensor clears it."""
+    patch = patch_from_service_call(
+        {
+            "light_leak_config": {
+                "illuminance_sensor": "",
+                "threshold_lux": 0.5,
+                "debounce_seconds": 0,
+                "switch_off_lights": True,
+                "all_stages": True,
+                "bogus": 1,
+            }
+        }
+    )
+    assert patch.values["light_leak_config"] == LightLeakConfig(
+        illuminance_sensor=None,
+        threshold_lux=0.5,
+        debounce_seconds=0,
+        switch_off_lights=True,
+        all_stages=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("payload", "match"),
+    [
+        ({"illuminance_sensor": "lux"}, "must be an entity ID"),
+        ({"illuminance_sensor": 5}, "must be an entity ID"),
+        ({"threshold_lux": -1}, "threshold_lux must be >= 0"),
+        ({"debounce_seconds": -5}, "debounce_seconds must be >= 0"),
+        ({"threshold_lux": "bright"}, "Invalid light_leak_config payload"),
+    ],
+)
+def test_light_leak_config_refusals(payload: dict[str, Any], match: str) -> None:
+    """Each malformed guard setting is refused with its own message."""
+    with pytest.raises(EnvironmentPatchError, match=match):
+        patch_from_service_call({"light_leak_config": payload})
+
+
+def test_light_leak_config_null_deserializes_to_defaults() -> None:
+    """A stored null light_leak_config loads as the defaults."""
+    config = EnvironmentConfig.from_dict({"light_leak_config": None})
+    assert config.light_leak_config == LightLeakConfig()
+
+
 # ---------------------------------------------------------------------------
 # Validation error modes
 # ---------------------------------------------------------------------------
@@ -507,6 +580,7 @@ def test_hand_built_patch_rejects_runtime_field(
         ({"exhaust_fan_entities": ["fan.exhaust"]}, {"exhaust_fan"}),
         ({"growlight_entities": ["light.new"]}, {"growlight"}),
         ({"veg_day_hours": 20}, {"growlight"}),
+        ({"light_leak_config": {"threshold_lux": 2.0}}, {"growlight"}),
         ({"camera_entities": ["camera.tent"]}, set()),
     ],
 )

@@ -203,6 +203,15 @@ def mock_track_point():
         yield mock
 
 
+def _tick_registrations(mock_track_interval: MagicMock) -> list:
+    """The 10-second regulation ticks registered, ignoring the leak check."""
+    return [
+        c
+        for c in mock_track_interval.call_args_list
+        if c.args[2] == timedelta(seconds=10)
+    ]
+
+
 async def test_setup_starts_tick_when_enabled(
     mock_hass: MagicMock, mock_track_interval: MagicMock
 ) -> None:
@@ -212,8 +221,7 @@ async def test_setup_starts_tick_when_enabled(
 
     await coord.async_setup()
 
-    mock_track_interval.assert_called_once()
-    assert mock_track_interval.call_args[0][2] == timedelta(seconds=10)
+    assert len(_tick_registrations(mock_track_interval)) == 1
 
 
 @pytest.mark.parametrize(
@@ -279,7 +287,7 @@ async def test_ac_infinity_only_starts_no_tick(
     with _patch_push():
         await coord.async_setup()
 
-    mock_track_interval.assert_not_called()
+    assert _tick_registrations(mock_track_interval) == []
 
 
 async def test_mixed_plain_and_ac_infinity_both_activate(
@@ -294,7 +302,7 @@ async def test_mixed_plain_and_ac_infinity_both_activate(
     with _patch_push() as mock_push:
         await coord.async_setup()
 
-    mock_track_interval.assert_called_once()
+    assert len(_tick_registrations(mock_track_interval)) == 1
     mock_push.assert_awaited_once()
 
 

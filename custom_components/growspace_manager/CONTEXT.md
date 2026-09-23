@@ -67,6 +67,16 @@ The rule the Grow Light Controller applies when a growspace's derived photoperio
 
 Therefore: on the flip the controller commits to the new 12h schedule immediately. If the freshly derived cycle end time is already in the past (e.g. flip at 19:00 when 12h-from-06:00 ended at 18:00), the controller **turns the light off now and warns the user** — the very first transition is safe because the plant has not yet been on a 12h dark cycle. The invariant it protects from then on is a _consistent, uninterrupted 12h dark period_ every day; the transition day is allowed to be irregular (hence the warning), but steady-state must be a clean 12/12. On the AC Infinity path this means re-pushing `schedule_mode_off_time` on flip may cut the current day short, which is accepted.
 
+## Light Leak Guard
+
+The continuous check for light during the dark period (#794), run by the Grow Light Controller's coordinator but configured on its own `EnvironmentConfig.light_leak_config` sub-config. It is kept separate from `GrowLightConfig` for two reasons. It also guards rooms whose lights GSM does not drive, where a lux sensor is the only evidence. And the card's Growlights tab replaces `growlight_config` whole with the four keys it knows, so the guard's settings would not survive that save.
+
+**What it watches.** The _watched dark period_ is the controller's own photoperiod: `lights_on_time` plus flower hours once any plant has _entered_ flower, else veg hours. So on the flip day the hours the shortened day gives up are dark here too. Only flowering growspaces are watched unless `all_stages` is set. The evidence is a managed grow light reporting on (only when the controller is enabled; an AC Infinity port reads from its Active Mode, or from its held schedule window) and an `illuminance_sensor` reading above `threshold_lux`. An unreadable sensor is no evidence.
+
+**Episodes.** Evidence that has held for `debounce_seconds` confirms an episode. The episode raises exactly one alert: a `LIGHT_LEAK`-tier notification, whose cooldown is its own so a Bayesian critical alert cannot mute it, plus an `alert`-category logbook entry with `sensor_type: light_leak`. The episode ends when the evidence clears, which includes the lit period starting, and that end is logged with its duration. Episode state outlives a coordinator restart, so a config edit mid-episode does not alert twice. It does not outlive a Home Assistant restart, which re-checks from scratch.
+
+**Opt-in switch-off.** With `switch_off_lights`, the alert switches every managed grow light off: plain lights via their driver, AC Infinity ports to Active Mode `Off`. It then reads them back. Lights still on after two minutes raise a second alert naming them. Ports the guard switched off get their schedule re-pushed at lights-on; plain lights need nothing, because the regulation tick drives them. The guard never switches lights it does not manage.
+
 ## Sunrise
 
 The gradual ramp-up of grow-light intensity at the start of the light cycle, mimicking dawn. A native AC Infinity onboard feature, exposed by `ac_infinity` as a device advanced setting: an enable switch (`onTimeSwitch`) plus a ramp-duration number (`onTime`, minutes). GSM only configures it; the device performs the ramp. Only available on the AC Infinity Grow Light Controller path.

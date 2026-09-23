@@ -122,6 +122,14 @@
       ]),
       'irrigation_tanks': list([
       ]),
+      'light_leak_config': dict({
+        'all_stages': False,
+        'debounce_seconds': 120,
+        'enabled': True,
+        'illuminance_sensor': None,
+        'switch_off_lights': False,
+        'threshold_lux': 1.0,
+      }),
       'light_sensors': list([
       ]),
       'lst_offset': -2.0,

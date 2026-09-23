@@ -39,6 +39,7 @@ from custom_components.growspace_manager.models import (
     FieldClass,
     GrowLightConfig,
     IrrigationTank,
+    LightLeakConfig,
     SensorGroup,
     VisionCheckupConfig,
 )
@@ -96,6 +97,7 @@ _SUB_CONFIG_TYPES: dict[str, type[BaseModel]] = {
     "circulation_fan_config": CirculationFanConfig,
     "exhaust_fan_config": ExhaustFanConfig,
     "growlight_config": GrowLightConfig,
+    "light_leak_config": LightLeakConfig,
 }
 
 # With PEP 649 lazy annotations, dataclass field types are strings — good
@@ -153,6 +155,8 @@ _CONTROLLER_RELEVANT_FIELDS: dict[str, frozenset[str]] = {
             "growlight_ac_infinity_devices",
             "veg_day_hours",
             "flower_day_hours",
+            # The Light Leak Guard runs inside the grow light controller.
+            "light_leak_config",
         }
     ),
 }
@@ -584,6 +588,8 @@ def _parse_sub_config(key: str, val: Any) -> Any:
         return _parse_circulation_fan_config(val)
     if key == "exhaust_fan_config":
         return _parse_exhaust_fan_config(val)
+    if key == "light_leak_config":
+        return _parse_light_leak_config(val)
     valid = {f.name for f in fields(sub_type)}
     filtered = {k: v for k, v in val.items() if k in valid}
     try:
@@ -654,6 +660,30 @@ def _parse_exhaust_fan_config(raw: Mapping[str, Any]) -> ExhaustFanConfig:
         raise EnvironmentPatchError(
             f"Invalid exhaust_fan_config payload: {err}"
         ) from err
+
+
+def _parse_light_leak_config(raw: Mapping[str, Any]) -> LightLeakConfig:
+    """Build a LightLeakConfig from a raw payload (whole replace)."""
+    valid = {f.name for f in fields(LightLeakConfig)}
+    filtered = {k: v for k, v in raw.items() if k in valid}
+    sensor = filtered.get("illuminance_sensor")
+    if sensor == "":
+        filtered["illuminance_sensor"] = None
+    elif sensor is not None and (not isinstance(sensor, str) or "." not in sensor):
+        raise EnvironmentPatchError(
+            "light_leak_config.illuminance_sensor must be an entity ID"
+        )
+    try:
+        config = LightLeakConfig.from_dict(filtered)
+    except (TypeError, ValueError, LookupError) as err:
+        raise EnvironmentPatchError(
+            f"Invalid light_leak_config payload: {err}"
+        ) from err
+    if config.threshold_lux < 0:
+        raise EnvironmentPatchError("light_leak_config.threshold_lux must be >= 0")
+    if config.debounce_seconds < 0:
+        raise EnvironmentPatchError("light_leak_config.debounce_seconds must be >= 0")
+    return config
 
 
 def _parse_item_list(key: str, val: Any) -> tuple[list[Any], list[PatchWarning]]:

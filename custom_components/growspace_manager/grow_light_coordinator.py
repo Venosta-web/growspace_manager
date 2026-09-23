@@ -6,6 +6,11 @@ not sensor-regulated and follows two paths by device kind: plain ``switch.*`` /
 level — ``power`` inside the photoperiod, off outside it — so control is
 level-based and self-heals across restarts), while AC Infinity lights are
 configured once into their onboard ``Schedule`` mode and then run autonomously.
+
+It also runs the Light Leak Guard (#794): at start-up and every minute it
+watches the computed dark period for a managed grow light that is on, or an
+illuminance sensor above its threshold, and raises one critical alert per
+episode — optionally switching the managed grow lights off until lights-on.
 """
 
 from __future__ import annotations
@@ -23,18 +28,33 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from .actuator_driver import resolve_actuator_drivers
-from .const import NotificationTier
+from .actuator_driver import resolve_actuator_driver, resolve_actuator_drivers
+from .const import (
+    ATTR_GROWSPACE_ID,
+    CATEGORY_ALERT,
+    EVENT_GROWSPACE_LOG_ENTRY,
+    NotificationTier,
+)
+from .domain.light_leak import (
+    EpisodeTransition,
+    LeakCause,
+    LightLeakEpisode,
+    in_watched_dark_period,
+    leak_causes,
+)
 from .domain.light_schedule import (
     desired_grow_light_power,
-    is_within_window,
+    is_dark_period,
     resolve_cycle_end_time,
     resolve_photoperiod_hours,
 )
 from .grow_light_ac_infinity import (
+    ac_infinity_light_lit,
     ac_infinity_schedule_matches,
     push_ac_infinity_schedule,
+    switch_off_ac_infinity_light,
 )
+from .utils import read_sensor_value
 
 if TYPE_CHECKING:
     from datetime import date, datetime
@@ -45,6 +65,11 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _TICK_INTERVAL = timedelta(seconds=10)
+_LEAK_CHECK_INTERVAL = timedelta(minutes=1)
+# How long switched-off grow lights get to read back off before the guard says
+# they did not. AC Infinity is cloud-polled, so one check interval is too tight.
+_LEAK_READBACK_GRACE = timedelta(minutes=2)
+_LEAK_SENSOR_TYPE = "light_leak"
 
 # Sent when the controller starts up and finds a grow light still lit during
 # what is now the dark period — e.g. the veg->flower flip shortened the day
@@ -75,7 +100,13 @@ class GrowLightCoordinator:
         self.main_coordinator = main_coordinator
         self._remove_tick: Callable[[], None] | None = None
         self._remove_reconcile: Callable[[], None] | None = None
+        self._remove_leak_check: Callable[[], None] | None = None
         self._last_dark_warn: date | None = None
+        # Light Leak Guard state. It lives on the instance rather than being
+        # reset by unload(), so a config edit mid-episode does not alert twice.
+        self._leak_episode = LightLeakEpisode()
+        self._leak_switched_off_at: datetime | None = None
+        self._leak_restore_schedules = False
 
     @property
     def _growspace(self) -> Growspace | None:
@@ -94,10 +125,19 @@ class GrowLightCoordinator:
             env and (env.growlight_entities or env.growlight_ac_infinity_devices)
         )
 
+    def _controller_active(self, env: EnvironmentConfig) -> bool:
+        """Whether GSM drives grow lights here, i.e. has lights it may switch."""
+        return env.growlight_config.enabled and self._has_growlight_actuators
+
     async def async_setup(self) -> None:
         """Activate the controller: tick plain lights, configure AC Infinity ones."""
         env = self._env_config
-        if env is None or not env.growlight_config.enabled:
+        if env is None:
+            return
+        # The guard also watches rooms whose lights GSM does not drive, so it
+        # starts before the controller's own gate.
+        await self._start_light_leak_guard(env)
+        if not env.growlight_config.enabled:
             return
         if not self._has_growlight_actuators:
             return
@@ -218,26 +258,206 @@ class GrowLightCoordinator:
         )
 
     def _growlight_lit_now(self, env: EnvironmentConfig, now: datetime) -> bool:
-        """Whether any configured grow light is currently on.
+        """Whether any configured grow light is currently on."""
+        return bool(self._lit_growlights(env, now))
 
-        Plain lights are read from their entity state; an autonomous AC Infinity
-        port is inferred from the on/off ``time`` entities it currently holds.
+    def _lit_growlights(self, env: EnvironmentConfig, now: datetime) -> list[str]:
+        """Return the configured grow lights that are currently on.
+
+        Plain lights are read from their entity state; an AC Infinity port from
+        its Active Mode, or — while it runs its onboard schedule — from the
+        on/off ``time`` window it currently holds. A port is named by its mode
+        ``select``, the entity the grower picked it by.
         """
-        drivers = resolve_actuator_drivers(self.hass, env.growlight_entities)
-        if any(driver.is_on() for driver in drivers):
-            return True
+        lit = [
+            entity_id
+            for entity_id in env.growlight_entities
+            if (driver := resolve_actuator_driver(self.hass, entity_id)) is not None
+            and driver.is_on()
+        ]
+        lit.extend(
+            device.mode_entity
+            for device in env.growlight_ac_infinity_devices
+            if ac_infinity_light_lit(self.hass, device, now)
+        )
+        return lit
+
+    # --- Light Leak Guard (#794) ------------------------------------------
+
+    def _leak_guard_active(self, env: EnvironmentConfig) -> bool:
+        """Whether the guard has any evidence to watch: lights or a lux sensor."""
+        cfg = env.light_leak_config
+        return cfg.enabled and (
+            bool(cfg.illuminance_sensor) or self._controller_active(env)
+        )
+
+    async def _start_light_leak_guard(self, env: EnvironmentConfig) -> None:
+        """Check once now, then every minute."""
+        if not self._leak_guard_active(env):
+            return
+        await self._async_check_light_leak()
+        self._remove_leak_check = async_track_time_interval(
+            self.hass, self._on_leak_check, _LEAK_CHECK_INTERVAL
+        )
+
+    @callback
+    def _on_leak_check(self, _now: object) -> None:
+        """Handle the guard's minute tick — schedule the async check."""
+        self.config_entry.async_create_background_task(
+            self.hass, self._async_check_light_leak(), "grow_light_leak_check"
+        )
+
+    async def _async_check_light_leak(self) -> None:
+        """Gather this minute's evidence and act on the episode it produces."""
+        env = self._env_config
+        gs = self._growspace
+        if env is None or gs is None:
+            return
+        cfg = env.light_leak_config
+        now = dt_util.now()
+        lights_on_time = gs.irrigation_strategy.lights_on_time
+
+        if self._leak_restore_schedules and not is_dark_period(
+            now, lights_on_time, self._photoperiod_hours(env)
+        ):
+            # Lights-on: hand the ports switched off by the guard back to their
+            # onboard schedule. Plain lights need nothing — the tick drives them.
+            self._leak_restore_schedules = False
+            await self._reconcile_ac_infinity_schedules(env)
+
+        plants = self.main_coordinator.services.growspaces.get_growspace_plants(
+            self.growspace_id
+        )
+        watching = in_watched_dark_period(
+            now,
+            plants,
+            lights_on_time=lights_on_time,
+            veg_hours=env.veg_day_hours,
+            flower_hours=env.flower_day_hours,
+            all_stages=cfg.all_stages,
+        )
+        lit = (
+            self._lit_growlights(env, now)
+            if watching and self._controller_active(env)
+            else []
+        )
+        illuminance = (
+            read_sensor_value(self.hass, cfg.illuminance_sensor) if watching else None
+        )
+        causes = leak_causes(
+            managed_light_on=bool(lit),
+            illuminance=illuminance,
+            threshold_lux=cfg.threshold_lux,
+        )
+
+        await self._read_back_switch_off(now, lit, watching=watching)
+
+        duration = self._leak_episode.duration(now)
+        transition = self._leak_episode.observe(
+            now, bool(causes), timedelta(seconds=cfg.debounce_seconds)
+        )
+        if transition is EpisodeTransition.CONFIRMED:
+            await self._alert_light_leak(env, causes, lit, illuminance)
+        elif transition is EpisodeTransition.CLEARED:
+            self._log_light_leak("Light leak ended", duration)
+
+    async def _alert_light_leak(
+        self,
+        env: EnvironmentConfig,
+        causes: frozenset[LeakCause],
+        lit: list[str],
+        illuminance: float | None,
+    ) -> None:
+        """Raise the episode's one alert, switching lights off if opted in."""
+        gs = self._growspace
+        assert gs is not None  # guarded by _async_check_light_leak
+        cfg = env.light_leak_config
+        on_time = gs.irrigation_strategy.lights_on_time
+        off_time = resolve_cycle_end_time(on_time, self._photoperiod_hours(env))
+
+        evidence: list[str] = []
+        if LeakCause.ILLUMINANCE in causes:
+            evidence.append(
+                f"{cfg.illuminance_sensor} reads {illuminance:g} lx "
+                f"(threshold {cfg.threshold_lux:g} lx)"
+            )
+        if LeakCause.MANAGED_LIGHT_ON in causes:
+            evidence.append(f"grow light still on: {', '.join(lit)}")
+        message = (
+            f"Light during the dark period ({off_time[:5]}–{on_time[:5]}): "
+            f"{'; '.join(evidence)}."
+        )
+        if cfg.switch_off_lights and self._controller_active(env):
+            await self._switch_off_growlights(env)
+            message += " Switching the managed grow lights off until lights-on."
+        else:
+            message += " Check the room for light leaks and the grow light timer."
+
+        _LOGGER.warning("Light leak in growspace %s: %s", self.growspace_id, message)
+        self._log_light_leak(message)
+        await self.main_coordinator.services.notifications.manager.async_send_notification(
+            self.growspace_id,
+            f"🚨 Light Leak: {gs.name}",
+            message,
+            tier=NotificationTier.LIGHT_LEAK,
+        )
+
+    async def _switch_off_growlights(self, env: EnvironmentConfig) -> None:
+        """Switch every managed grow light off and arm the read-back."""
+        for driver in resolve_actuator_drivers(self.hass, env.growlight_entities):
+            await driver.turn_off()
         for device in env.growlight_ac_infinity_devices:
-            on_state = self.hass.states.get(device.on_time_entity)
-            off_state = self.hass.states.get(device.off_time_entity)
-            if on_state is None or off_state is None:
-                continue
-            try:
-                if is_within_window(now, on_state.state, off_state.state):
-                    return True
-            except ValueError, TypeError:
-                # unavailable/unknown time entity — cannot determine, skip
-                continue
-        return False
+            await switch_off_ac_infinity_light(self.hass, device)
+        if env.growlight_ac_infinity_devices:
+            self._leak_restore_schedules = True
+        self._leak_switched_off_at = dt_util.now()
+
+    async def _read_back_switch_off(
+        self, now: datetime, lit: list[str], *, watching: bool
+    ) -> None:
+        """Confirm switched-off lights read back off, or say which did not."""
+        switched_at = self._leak_switched_off_at
+        if switched_at is None:
+            return
+        if not watching:
+            self._leak_switched_off_at = None
+            return
+        if not lit:
+            self._leak_switched_off_at = None
+            self._log_light_leak("Managed grow lights read back off")
+            return
+        if now - switched_at < _LEAK_READBACK_GRACE:
+            return
+
+        self._leak_switched_off_at = None
+        gs = self._growspace
+        name = gs.name if gs else self.growspace_id
+        message = (
+            "Grow lights did not switch off after a light leak: "
+            f"{', '.join(lit)}. Switch them off by hand."
+        )
+        _LOGGER.error("Light leak in growspace %s: %s", self.growspace_id, message)
+        self._log_light_leak(message)
+        await self.main_coordinator.services.notifications.manager.async_send_notification(
+            self.growspace_id,
+            f"🚨 Light Leak: {name}",
+            message,
+            tier=NotificationTier.LIGHT_LEAK,
+        )
+
+    def _log_light_leak(self, reason: str, duration: timedelta | None = None) -> None:
+        """Record a light-leak logbook entry for this growspace."""
+        data: dict[str, object] = {
+            ATTR_GROWSPACE_ID: self.growspace_id,
+            "category": CATEGORY_ALERT,
+            "sensor_type": _LEAK_SENSOR_TYPE,
+            "reasons": [reason],
+            "message": reason,
+            "timestamp": dt_util.utcnow().isoformat(),
+        }
+        if duration is not None:
+            data["duration_sec"] = int(duration.total_seconds())
+        self.hass.bus.async_fire(EVENT_GROWSPACE_LOG_ENTRY, data)
 
     def _schedule_next_reconcile(self) -> None:
         """Schedule the next local-midnight re-derivation (self-rescheduling)."""
@@ -277,8 +497,11 @@ class GrowLightCoordinator:
         await self.async_setup()
 
     def unload(self) -> None:
-        """Stop the live tick and the midnight reconcile timer."""
+        """Stop the live tick, the leak check and the midnight reconcile timer."""
         if self._remove_tick is not None:
             self._remove_tick()
             self._remove_tick = None
+        if self._remove_leak_check is not None:
+            self._remove_leak_check()
+            self._remove_leak_check = None
         self._cancel_reconcile_timer()
