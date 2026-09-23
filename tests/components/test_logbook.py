@@ -332,6 +332,32 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
             "Mold Risk Alert",
             "Mold Risk detected",
         ),
+        # The Light Leak Guard's entries carry their own sentence (#794)
+        (
+            "alert",
+            {
+                "sensor_type": "light_leak",
+                "reasons": ["Managed grow lights read back off"],
+            },
+            "Light Leak Alert",
+            "Managed grow lights read back off",
+        ),
+        (
+            "alert",
+            {
+                "sensor_type": "light_leak",
+                "reasons": ["Light leak ended"],
+                "duration_sec": 180,
+            },
+            "Light Leak Alert",
+            "Light leak ended after 3 minutes",
+        ),
+        (
+            "alert",
+            {"sensor_type": "light_leak", "duration_sec": 45},
+            "Light Leak Alert",
+            "Light leak after 45 seconds",
+        ),
         # Environment cases ("environment")
         (
             "environment",

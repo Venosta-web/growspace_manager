@@ -17,6 +17,7 @@ from .const import (
     CATEGORY_NOTE,
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
+    LIGHT_LEAK_SENSOR_TYPE,
 )
 
 if TYPE_CHECKING:
@@ -166,6 +167,11 @@ def _describe_alert_event(data: Mapping[str, Any]) -> dict[str, Any]:
     label = sensor_type.replace("_", " ").title()
     reasons = data.get("reasons", [])
     duration = data.get("duration_sec", 0)
+    if sensor_type == LIGHT_LEAK_SENSOR_TYPE:
+        return {
+            LOGBOOK_ENTRY_NAME: f"{label} Alert",
+            LOGBOOK_ENTRY_MESSAGE: _describe_light_leak(reasons, duration),
+        }
     message = f"{label} detected"
     if duration:
         minutes = duration // 60
@@ -177,6 +183,21 @@ def _describe_alert_event(data: Mapping[str, Any]) -> dict[str, Any]:
     if reasons:
         message += f" • {reasons[0]}"
     return {LOGBOOK_ENTRY_NAME: f"{label} Alert", LOGBOOK_ENTRY_MESSAGE: message}
+
+
+def _describe_light_leak(reasons: list[str], duration: int) -> str:
+    """Describe a Light Leak Guard entry: its own sentence, not "detected".
+
+    The guard logs the alert, the read-back and the episode's end under one
+    sensor type, so each entry already says what happened.
+    """
+    message = reasons[0] if reasons else "Light leak"
+    if duration:
+        minutes = duration // 60
+        message += (
+            f" after {minutes} minutes" if minutes else f" after {duration} seconds"
+        )
+    return message
 
 
 def _describe_irrigation_error_event(data: Mapping[str, Any]) -> dict[str, Any]:

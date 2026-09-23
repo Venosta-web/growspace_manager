@@ -466,6 +466,9 @@ class GrowspaceViewModelBuilder:
         # and so the grow-light chip can render (parallels the fan handling).
         attributes["growlight_entities"] = env_config.growlight_entities
         attributes["growlight_config"] = env_config.growlight_config.to_dict()
+        # Light Leak Guard settings (#794), surfaced so the card can read and
+        # round-trip them; a sibling of growlight_config, never nested in it.
+        attributes["light_leak_config"] = env_config.light_leak_config.to_dict()
 
         # Dehumidifier
         dehumidifier_entity = env_config.dehumidifier_entity
