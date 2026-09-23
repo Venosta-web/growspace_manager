@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any
+
+# The Startup Inhibit (#786). After any start or reload a growspace holds every
+# automatic cycle until a grace period has passed *and* each control sensor has
+# reported since the start, so the first decision is never taken on a reading
+# that predates the restart. Manual runs are not held: they are an explicit
+# human action and still pass every other gate.
+STARTUP_INHIBIT = "startup_inhibit"
+DEFAULT_STARTUP_GRACE_MINUTES = 5
 
 
 class ControllerState(StrEnum):
@@ -130,3 +139,32 @@ def controller_snapshot(
             ControllerState.INHIBITED, inhibits, since=inhibits[0].since
         )
     return ControllerSnapshot(ControllerState.READY)
+
+
+def startup_inhibit(
+    *,
+    started_at: datetime,
+    now: datetime,
+    grace: timedelta,
+    awaiting: tuple[str, ...],
+) -> SafetyReason | None:
+    """Return the Startup Inhibit while it holds, else None.
+
+    It holds until both conditions are met: ``grace`` has elapsed since
+    ``started_at``, and ``awaiting`` — the control sensors that have not yet
+    reported since the start — is empty. The detail names whichever of the two
+    is still outstanding, so the controller state says why it is waiting.
+    """
+    outstanding: list[str] = []
+    grace_ends = started_at + grace
+    if now < grace_ends:
+        outstanding.append(f"grace period until {grace_ends.isoformat()}")
+    if awaiting:
+        outstanding.append("waiting for a first report from " + ", ".join(awaiting))
+    if not outstanding:
+        return None
+    return SafetyReason(
+        STARTUP_INHIBIT,
+        "starting up: " + "; ".join(outstanding),
+        started_at.isoformat(),
+    )

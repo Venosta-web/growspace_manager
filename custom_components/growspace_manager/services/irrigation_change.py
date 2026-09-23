@@ -94,6 +94,7 @@ IRRIGATION_CONFIG_CHANGE_FIELDS: frozenset[str] = frozenset(
         "soil_trigger_percent",
         "daily_volume_cap_liters",
         "max_cycles_per_day",
+        "startup_grace_minutes",
         "skip_during_dark",
         "pause_on_low_tank",
         "log_to_logbook",

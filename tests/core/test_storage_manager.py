@@ -112,3 +112,17 @@ async def test_backup_logic_with_corrupt_data(
         # Cleanup
         for f in files:
             Path(f).unlink()
+
+
+async def test_schedule_save_debounces_every_store_without_awaiting(storage) -> None:
+    """The save runtime state takes on its way to surviving a restart (#786)."""
+    with (
+        patch.object(storage.config_store, "async_delay_save") as config,
+        patch.object(storage.plants_store, "async_delay_save") as plants,
+        patch.object(storage.genetics_store, "async_delay_save") as genetics,
+    ):
+        storage.async_schedule_save()
+
+    config.assert_called_once_with(storage._get_config_data, 10)
+    plants.assert_called_once_with(storage._get_plants_data, 10)
+    genetics.assert_called_once_with(storage._get_genetics_data, 10)

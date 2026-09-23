@@ -10,6 +10,9 @@ from typing import Any
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
+from custom_components.growspace_manager.domain.irrigation_safety import (
+    DEFAULT_STARTUP_GRACE_MINUTES,
+)
 from custom_components.growspace_manager.services.irrigation_change import (
     IrrigationChangeError,
 )
@@ -227,6 +230,20 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 selector.NumberSelectorConfig(
                     min=0,
                     step=1,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "startup_grace_minutes",
+                default=irrigation_options.get(
+                    "startup_grace_minutes", DEFAULT_STARTUP_GRACE_MINUTES
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=120,
+                    step=1,
+                    unit_of_measurement="min",
                     mode=selector.NumberSelectorMode.BOX,
                 )
             ),

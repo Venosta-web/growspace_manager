@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -120,6 +120,15 @@ class StorageManager:
 
     async def async_save(self) -> None:
         """Save the current state to persistent storage (debounced)."""
+        self.async_schedule_save()
+
+    @callback
+    def async_schedule_save(self) -> None:
+        """Schedule the debounced write without waiting for it.
+
+        Home Assistant flushes a pending delayed save on shutdown, so state
+        scheduled here survives a restart without an unload having to run.
+        """
         # debounce delay of 10 seconds as requested
         self.config_store.async_delay_save(self._get_config_data, 10)
         self.plants_store.async_delay_save(self._get_plants_data, 10)

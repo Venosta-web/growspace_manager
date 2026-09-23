@@ -199,6 +199,7 @@
           "current_drain_times": "Drain Times",
           "soil_trigger_percent": "Soil Moisture Trigger (%)",
           "max_cycles_per_day": "Maximum Cycles per Day",
+          "startup_grace_minutes": "Startup Grace Period (minutes)",
           "daily_volume_cap_liters": "Daily Volume Cap (L)",
           "pause_on_low_tank": "Pause When Tank Is Low",
           "skip_during_dark": "Skip During Dark Period",
@@ -230,6 +231,7 @@
         "data_description": {
           "shot_sizing_mode": "Duration Mode uses fixed shot durations; Volume Mode derives them from the pump flow rate and substrate volume.",
           "skip_p2_after_p1": "When enabled, irrigation transitions directly from P1 to P3 once P1 is complete. The P2 settings above are kept, not cleared.",
+          "startup_grace_minutes": "After Home Assistant starts or the integration reloads, automatic irrigation waits at least this long, and until the moisture and tank sensors have each reported. Manual runs are not held.",
           "growspace_id_read_only": "The growspace these settings apply to. Read-only."
         }
       },

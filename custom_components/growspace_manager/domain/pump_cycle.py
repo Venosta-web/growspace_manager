@@ -34,6 +34,7 @@ class SkipReason(Enum):
     DARK = "dark"
     FAULT = "fault"
     EMERGENCY_STOP = "emergency_stop"
+    STARTUP = "startup_inhibit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,12 +122,15 @@ def decide_cycle(
     cycle_volume_l: float,
     fault: bool = False,
     emergency_stop: bool = False,
+    startup_inhibit: str | None = None,
 ) -> CycleVerdict:
     """Decide whether a pump cycle may fire, in precedence order.
 
-    Low tank applies to all cycles (when ``pause_on_low_tank``); the cycle
-    limit, volume cap and dark-period checks apply to irrigation cycles only,
-    and a manual run bypasses the dark check.
+    ``startup_inhibit`` is the Startup Inhibit's detail while it holds; it
+    blocks every automatic cycle, irrigation and drain alike, and never a
+    manual one. Low tank applies to all cycles (when ``pause_on_low_tank``);
+    the cycle limit, volume cap and dark-period checks apply to irrigation
+    cycles only, and a manual run bypasses the dark check.
     """
     prefix = event_type.capitalize()
 
@@ -139,6 +143,10 @@ def decide_cycle(
     if fault:
         return CycleVerdict(
             False, SkipReason.FAULT, f"{prefix} skipped — hardware fault latched"
+        )
+    if startup_inhibit is not None and not is_manual:
+        return CycleVerdict(
+            False, SkipReason.STARTUP, f"{prefix} skipped — {startup_inhibit}"
         )
 
     if config.pause_on_low_tank:

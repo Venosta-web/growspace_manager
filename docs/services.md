@@ -499,6 +499,15 @@ of `{code, detail, since}` objects, `fault_id`, `requires_ack`, and `since`.
 Reason codes are stable machine identifiers; current hardware codes include
 `fault_on_unconfirmed:<entity>` and `fault_off_unconfirmed:<entity>`.
 
+After Home Assistant starts or the integration reloads, the controller reads
+`inhibited` with reason `startup_inhibit` until `startup_grace_minutes` (default 5) have passed **and** the soil moisture sensor (while crop steering is on) and
+every configured tank sensor have each reported since the start. Its `detail`
+names whichever of the two is still outstanding. No automatic cycle runs inside
+it, and a missed one is not replayed; a manual run is still allowed and still
+passes every other gate. Crop steering also resumes the day it was in: a
+restart after P1 completed resumes in P2, and the next shot's cooldown is
+measured from the last shot the pump confirmed before the restart.
+
 A fault blocks scheduled and manual cycles and survives a Home Assistant restart.
 The last 500 safety events are kept in the integration's safety store and included
 in diagnostics, independent of Recorder retention. A repair appears in Settings
@@ -520,13 +529,14 @@ start a cycle.
 
 Sets the basic plumbing hardware profiles and default cycle times for simple timer waterings.
 
-| Parameter                | Type      | Required | Default | Description                                    |
-| :----------------------- | :-------- | :------- | :------ | :--------------------------------------------- |
-| `growspace_id`           | `string`  | Yes      | -       | Target growspace zone ID.                      |
-| `irrigation_pump_entity` | `string`  | No       | -       | Feed pump switch entity ID.                    |
-| `drain_pump_entity`      | `string`  | No       | -       | Drainage pump switch entity ID.                |
-| `irrigation_duration`    | `integer` | No       | -       | Standard duration to run feed pump (seconds).  |
-| `drain_duration`         | `integer` | No       | -       | Standard duration to run drain pump (seconds). |
+| Parameter                | Type      | Required | Default | Description                                               |
+| :----------------------- | :-------- | :------- | :------ | :-------------------------------------------------------- |
+| `growspace_id`           | `string`  | Yes      | -       | Target growspace zone ID.                                 |
+| `irrigation_pump_entity` | `string`  | No       | -       | Feed pump switch entity ID.                               |
+| `drain_pump_entity`      | `string`  | No       | -       | Drainage pump switch entity ID.                           |
+| `irrigation_duration`    | `integer` | No       | -       | Standard duration to run feed pump (seconds).             |
+| `drain_duration`         | `integer` | No       | -       | Standard duration to run drain pump (seconds).            |
+| `startup_grace_minutes`  | `integer` | No       | `5`     | Minimum startup hold on automatic cycles (0–120 minutes). |
 
 ### `growspace_manager.set_irrigation_strategy`
 
