@@ -1,0 +1,157 @@
+---
+name: Bug report
+description: Something in the Growspace Manager integration does not work as it should.
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The details below are what it
+        takes to reproduce a problem on a live Home Assistant install, so please
+        fill in every field you can.
+
+        **Is it the dashboard card?** If the problem is only in how the card
+        looks or behaves in the browser, report it on the
+        [card repository](https://github.com/Venosta-web/lovelace-growspace-manager-card/issues/new/choose)
+        instead. When you are not sure, report it here.
+
+        **A question rather than a bug?** Ask in
+        [Discussions](https://github.com/Venosta-web/growspace_manager/discussions/categories/q-a).
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you report
+      options:
+        - label: >-
+            I searched the [existing issues](https://github.com/Venosta-web/growspace_manager/issues?q=is%3Aissue)
+            and this is not one of them.
+          required: true
+        - label: I am on the latest release of the integration, or I say below why I cannot update.
+          required: false
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      description: "**Settings → About**, for example `2026.9.2`."
+      placeholder: "2026.9.2"
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: Growspace Manager integration version
+      description: >-
+        **HACS → Growspace Manager**, or the version shown on
+        **Settings → Devices & services → Growspace Manager**.
+      placeholder: "1.2.3"
+    validations:
+      required: true
+
+  - type: input
+    id: card_version
+    attributes:
+      label: Growspace Manager card version
+      description: >-
+        **HACS → Growspace Manager Card**, or the `GrowSpace Manager Card vX.Y.Z`
+        line in the browser console. Leave blank if you do not use the card.
+      placeholder: "1.3.0"
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: How did you install the integration?
+      options:
+        - HACS
+        - Manual copy into custom_components
+        - Other (say below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation_type
+    attributes:
+      label: Home Assistant installation type
+      description: "**Settings → About** shows it. It matters for Bluetooth printers and the Vision App."
+      options:
+        - Home Assistant OS
+        - Home Assistant Container
+        - Home Assistant Supervised
+        - Home Assistant Core
+        - Not sure
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: Describe what you saw. Include the growspace, plant or device involved.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The shortest sequence of actions that makes it happen again.
+      placeholder: |
+        1. Open the growspace …
+        2. Call the service …
+        3. …
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Download the integration's diagnostics and drag the JSON file into this box:
+
+        1. Go to **Settings → Devices & services → Growspace Manager**.
+        2. Open the **⋮** menu and choose **Download diagnostics**.
+
+        **Check the file before you attach it.** Home Assistant removes your
+        coordinates and unique IDs, but the file still contains your growspace,
+        plant and strain names, entity IDs and recent sensor readings. Open it in
+        a text editor and replace anything you do not want to be public.
+
+        If the integration does not load at all, you cannot download diagnostics.
+        Paste the log below instead.
+      placeholder: Drag growspace_manager diagnostics JSON here.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: |
+        Debug logs show what the integration was doing when the problem happened:
+
+        1. On **Settings → Devices & services → Growspace Manager**, choose **Enable debug logging**.
+        2. Reproduce the problem.
+        3. Choose **Disable debug logging**. Home Assistant downloads the log.
+
+        Paste the lines around the problem inside a code block, or attach the whole file.
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console output (for card or dashboard problems)
+      description: |
+        If the problem shows on the dashboard, open the browser's developer tools
+        (**F12**, or **⌥⌘I** on a Mac), switch to **Console**, reload the page and
+        reproduce the problem. Copy the red errors and the
+        `GrowSpace Manager Card` version line.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Screenshots, your YAML, related automations, or what changed recently.

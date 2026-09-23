@@ -209,6 +209,13 @@ For a complete description of all services, parameters, and example payloads, se
 - **Bayesian environment sensors showing "Unavailable"**: Ensure you have successfully configured and bound valid Temperature, Humidity, and VPD sensors to the growspace environment. The Bayesian model also requires a brief warm-up period to pull initial sensor histories.
 - **Niimbot printer fails to print**: Verify Bluetooth signal strength and range. Consider utilizing a Bluetooth proxy if the Home Assistant server is located away from the grow room.
 - **Database errors after upgrades**: Run the `growspace_manager.debug_cleanup_legacy` service to purge orphaned data tables, and `growspace_manager.debug_reset_special_growspaces` to reconstruct overview zones.
+- **Something else is wrong**: [Open a bug report](https://github.com/Venosta-web/growspace_manager/issues/new/choose). The form explains how to download the integration's diagnostics and what to remove from them before posting. Questions go to [Discussions](https://github.com/Venosta-web/growspace_manager/discussions).
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Development happens in the [workspace hub](https://github.com/Venosta-web/growspace_manager_workspace), which runs this integration, the card and a real Home Assistant side by side.
 
 ---
 
