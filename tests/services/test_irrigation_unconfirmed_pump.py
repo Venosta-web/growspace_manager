@@ -54,6 +54,7 @@ def coordinator() -> IrrigationCoordinator:
     safety = IrrigationSafetyStore.__new__(IrrigationSafetyStore)
     safety.faults = {}
     safety.emergency_stops = {}
+    safety.controls = {GROWSPACE_ID: {"automation": True, "irrigation_armed": True}}
     safety.ledger = deque(maxlen=500)
     safety.unreadable = False
     safety._store = MagicMock()

@@ -165,6 +165,10 @@ class VpdOnOffController:
 
     async def async_check_and_control(self) -> None:
         """Evaluate VPD against stage thresholds and drive the device."""
+        if not self.main_coordinator.irrigation_safety.automation_enabled(
+            self.growspace_id
+        ):
+            return
         entities = self._get_all_controlled_entities()
         has_actuators = bool(entities or self._get_ac_infinity_devices())
         if not self.vpd_sensor or not has_actuators:
@@ -289,7 +293,13 @@ class VpdOnOffController:
 
     async def _control_devices(self, turn_on: bool) -> None:
         """Turn on or off every controlled actuator through its driver."""
+        main = getattr(self, "main_coordinator", None)
+        safety = getattr(main, "irrigation_safety", None)
+        if safety is not None and not safety.automation_enabled(self.growspace_id):
+            return
         for driver in self._resolve_drivers():
+            if safety is not None and not safety.automation_enabled(self.growspace_id):
+                return
             if turn_on:
                 await driver.turn_on()
             else:

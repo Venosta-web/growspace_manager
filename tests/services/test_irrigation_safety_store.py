@@ -173,6 +173,10 @@ async def test_corrupt_record_fails_closed(hass: HomeAssistant) -> None:
         {"faults": {}, "ledger": ["invalid"]},
         {"faults": {}, "emergency_stops": []},
         {"faults": {}, "emergency_stops": {"tent": {"fault_id": "x"}}},
+        {
+            "faults": {},
+            "controls": {"tent": {"automation": "on", "irrigation_armed": True}},
+        },
     ],
 )
 async def test_malformed_safety_documents_fail_closed(

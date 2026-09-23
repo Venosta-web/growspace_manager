@@ -103,6 +103,10 @@ class ExhaustFanCoordinator:
 
     async def _async_regulate(self) -> None:
         """Read sensors, compute combined demand, and dispatch to each device."""
+        if not self.main_coordinator.irrigation_safety.automation_enabled(
+            self.growspace_id
+        ):
+            return
         if self._env_config is None:
             return
 
@@ -142,6 +146,10 @@ class ExhaustFanCoordinator:
             switch_off_threshold=cfg.min_speed,
         )
         for driver in drivers:
+            if not self.main_coordinator.irrigation_safety.automation_enabled(
+                self.growspace_id
+            ):
+                return
             await driver.set_speed(speed)
 
     def _apply_critical_temp_override(

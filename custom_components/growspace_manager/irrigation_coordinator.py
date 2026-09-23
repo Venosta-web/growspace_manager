@@ -190,30 +190,48 @@ class BaseIrrigationCoordinator:
         )
         inhibits: tuple[SafetyReason, ...] = ()
         if not running and fault is None and automation_enabled:
-            startup = self.startup_inhibit_reason()
-            if startup is not None:
-                inhibits = (startup,)
-            verdict = decide_cycle(
-                event_type="irrigation",
-                is_manual=False,
-                config=config,
-                tank_readings=self._resolve_tank_readings(),
-                lights_dark=self._is_lights_dark(),
-                cycles_today=self._cycles_today,
-                volume_today=self._volume_dispensed_today,
-                cycle_volume_l=self._compute_cycle_volume_liters(
-                    config.irrigation_duration or 0
-                ),
+            operator_code = (
+                "automation_off"
+                if store and not store.automation_enabled(self._growspace_id)
+                else "irrigation_disarmed"
+                if store and not store.irrigation_armed(self._growspace_id)
+                else None
             )
-            if verdict.reason is not None:
-                code = {
-                    SkipReason.LOW_TANK: "tank_low",
-                    SkipReason.CYCLE_LIMIT: "cap_cycles",
-                    SkipReason.VOLUME_CAP: "cap_volume",
-                    SkipReason.DARK: "dark",
-                }[verdict.reason]
-                since = self._inhibit_since.setdefault(code, utcnow().isoformat())
-                inhibits = (*inhibits, SafetyReason(code, verdict.message, since))
+            if operator_code:
+                detail = (
+                    "Growspace automation is off"
+                    if operator_code == "automation_off"
+                    else "Automatic irrigation is disarmed"
+                )
+                since = self._inhibit_since.setdefault(
+                    operator_code, utcnow().isoformat()
+                )
+                inhibits = (SafetyReason(operator_code, detail, since),)
+            else:
+                startup = self.startup_inhibit_reason()
+                if startup is not None:
+                    inhibits = (startup,)
+                verdict = decide_cycle(
+                    event_type="irrigation",
+                    is_manual=False,
+                    config=config,
+                    tank_readings=self._resolve_tank_readings(),
+                    lights_dark=self._is_lights_dark(),
+                    cycles_today=self._cycles_today,
+                    volume_today=self._volume_dispensed_today,
+                    cycle_volume_l=self._compute_cycle_volume_liters(
+                        config.irrigation_duration or 0
+                    ),
+                )
+                if verdict.reason is not None:
+                    code = {
+                        SkipReason.LOW_TANK: "tank_low",
+                        SkipReason.CYCLE_LIMIT: "cap_cycles",
+                        SkipReason.VOLUME_CAP: "cap_volume",
+                        SkipReason.DARK: "dark",
+                    }[verdict.reason]
+                    since = self._inhibit_since.setdefault(code, utcnow().isoformat())
+                    inhibits = (*inhibits, SafetyReason(code, verdict.message, since))
         self._inhibit_since = {reason.code: reason.since for reason in inhibits}
         return controller_snapshot(
             configured=bool(self._configured_outputs()),
@@ -768,6 +786,15 @@ class BaseIrrigationCoordinator:
         event_data: Mapping[str, Any],
     ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
+        store = self._safety_store
+        if store and (
+            not store.automation_enabled(self._growspace_id)
+            or (
+                not event_data.get("manual", False)
+                and not store.irrigation_armed(self._growspace_id)
+            )
+        ):
+            return
         # Ask the Pump Cycle Gate whether this cycle may fire (ADR-0021). The
         # gate is a pure decision; this method owns the resulting effects.
         config = self.growspace.irrigation_config
@@ -860,6 +887,14 @@ class BaseIrrigationCoordinator:
                 )
 
             command_dt = utcnow()
+            if store and (
+                not store.automation_enabled(self._growspace_id)
+                or (
+                    not event_data.get("manual", False)
+                    and not store.irrigation_armed(self._growspace_id)
+                )
+            ):
+                return
             try:
                 await self.hass.services.async_call(
                     "switch", "turn_on", {"entity_id": pump_entity}, blocking=True

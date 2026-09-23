@@ -33,6 +33,7 @@ from .ec_ramp_migration import evaluate_ec_ramp_migration_issues
 from .exhaust_migration import evaluate_exhaust_migration_issues
 from .intent import async_setup_intents
 from .irrigation_cap_migration import evaluate_irrigation_cap_issues
+from .irrigation_safety_store import IrrigationSafetyStore
 from .services.seedfinder_scraper import SeedfinderScraper
 from .strain_library import StrainLibrary
 from .views import StrainLibraryImageView, StrainLibraryUploadView
@@ -124,6 +125,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         seedfinder_scraper=scraper_instance,
     )
     await coordinator.async_load()  # Load data into the coordinator
+    if isinstance(coordinator.irrigation_safety, IrrigationSafetyStore):
+        await coordinator.irrigation_safety.async_initialize_controls(
+            coordinator.growspaces
+        )
 
     entry.runtime_data = coordinator
 
@@ -199,6 +204,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Raise/clear the exhaust-fan sole-ownership migration repair (ADR-0019)
     evaluate_exhaust_migration_issues(hass, coordinator)
     evaluate_irrigation_cap_issues(hass, coordinator)
+    if isinstance(coordinator.irrigation_safety, IrrigationSafetyStore):
+        for growspace_id in coordinator.growspaces:
+            if not coordinator.irrigation_safety.irrigation_review_pending(
+                growspace_id
+            ):
+                continue
+            async_create_issue(
+                hass,
+                DOMAIN,
+                f"irrigation_arm_review_{growspace_id}",
+                is_fixable=False,
+                severity=IssueSeverity.WARNING,
+                translation_key="irrigation_arm_review",
+                translation_placeholders={
+                    "growspace": coordinator.growspaces[growspace_id].name
+                },
+            )
 
     # Raise/clear the unmigrated EC ramp curve repair (ADR-0046)
     evaluate_ec_ramp_migration_issues(hass, coordinator)

@@ -113,7 +113,11 @@ class CirculationFanCoordinator:
         )
 
     async def _async_regulate(self) -> None:
-        """Read sensor, compute speed, and call fan.set_percentage on each entity."""
+        """Read sensors and regulate only while this growspace permits commands."""
+        if not self.main_coordinator.irrigation_safety.automation_enabled(
+            self.growspace_id
+        ):
+            return
         if self._env_config is None:
             return
 
@@ -201,6 +205,10 @@ class CirculationFanCoordinator:
             switch_off_threshold=cfg.min_speed,
         )
         for driver in drivers:
+            if not self.main_coordinator.irrigation_safety.automation_enabled(
+                self.growspace_id
+            ):
+                return
             await driver.set_speed(speed)
 
     def _get_stage_vpd_target(self, cfg: CirculationFanConfig, is_day: bool) -> float:

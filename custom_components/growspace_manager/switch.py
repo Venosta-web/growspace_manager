@@ -12,12 +12,14 @@ import logging
 from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
+from homeassistant.helpers.restore_state import RestoreEntity
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.issue_registry import async_delete_issue
 
 from . import GrowspaceConfigEntry
 from .const import DOMAIN
@@ -40,6 +42,13 @@ NOTIFICATION_SWITCH = GrowspaceSwitchDescription(
 
 SWITCH_TYPES: tuple[GrowspaceSwitchDescription, ...] = (NOTIFICATION_SWITCH,)
 
+AUTOMATION_SWITCH = GrowspaceSwitchDescription(
+    key="automation", translation_key="automation"
+)
+IRRIGATION_ARM_SWITCH = GrowspaceSwitchDescription(
+    key="irrigation_armed", translation_key="irrigation_armed"
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -48,21 +57,30 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Growspace Manager switch platform from a config entry."""
     coordinator = entry.runtime_data
-    entities: list[GrowspaceNotificationSwitch] = []
+    known: set[str] = set()
 
-    # Create switches for each growspace
-    for growspace_id, growspace in coordinator.growspaces.items():
-        # Notifications switch
-        if growspace.notification_target:
-            entities.append(
-                GrowspaceNotificationSwitch(
-                    coordinator, growspace_id, growspace, NOTIFICATION_SWITCH
-                )
+    def add_new_growspaces() -> None:
+        entities: list[SwitchEntity] = []
+        for growspace_id, growspace in coordinator.growspaces.items():
+            if growspace_id in known:
+                continue
+            known.add(growspace_id)
+            entities.extend(
+                GrowspaceSafetySwitch(coordinator, growspace_id, growspace, description)
+                for description in (AUTOMATION_SWITCH, IRRIGATION_ARM_SWITCH)
             )
+            if growspace.notification_target:
+                entities.append(
+                    GrowspaceNotificationSwitch(
+                        coordinator, growspace_id, growspace, NOTIFICATION_SWITCH
+                    )
+                )
+        if entities:
+            async_add_entities(entities)
+            _LOGGER.debug("Added %d switches", len(entities))
 
-    if entities:
-        async_add_entities(entities)
-        _LOGGER.debug("Added %d switches", len(entities))
+    add_new_growspaces()
+    entry.async_on_unload(coordinator.async_add_listener(add_new_growspaces))
 
 
 class GrowspaceNotificationSwitch(SwitchEntity):  # HA base class
@@ -131,6 +149,70 @@ class GrowspaceNotificationSwitch(SwitchEntity):  # HA base class
     @override  # Entity.async_added_to_hass exists but not detected by mypy
     async def async_added_to_hass(self) -> None:
         """Register a listener when the entity is added to Home Assistant."""
+        self.async_on_remove(
+            self._coordinator.async_add_listener(self.async_write_ha_state)
+        )
+
+
+class GrowspaceSafetySwitch(SwitchEntity, RestoreEntity):
+    """Durable per-growspace operator control backed by the safety store."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: GrowspaceCoordinator,
+        growspace_id: str,
+        growspace: Growspace,
+        description: GrowspaceSwitchDescription,
+    ) -> None:
+        """Bind the control to the persisted state of one growspace."""
+        self.entity_description = description
+        self._coordinator = coordinator
+        self._growspace_id = growspace_id
+        self._key = description.key
+        self._attr_unique_id = f"{DOMAIN}_{growspace_id}_{description.key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, growspace_id)},
+            name=growspace.name,
+            model="Growspace",
+            manufacturer="Growspace Manager",
+        )
+
+    @property
+    @override
+    def is_on(self) -> bool:
+        controls = self._coordinator.irrigation_safety.controls.get(
+            self._growspace_id, {}
+        )
+        return controls.get(self._key, self._key == "automation")
+
+    async def _set(self, enabled: bool) -> None:
+        await self._coordinator.irrigation_safety.async_set_control(
+            self._growspace_id,
+            self._key,
+            enabled,
+            self._context.user_id if self._context else None,
+        )
+        if self._key == "irrigation_armed":
+            async_delete_issue(
+                self.hass, DOMAIN, f"irrigation_arm_review_{self._growspace_id}"
+            )
+        self._coordinator.async_update_listeners()
+        self.async_write_ha_state()
+
+    @override
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set(True)
+
+    @override
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set(False)
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Use the store for restoration so controls gate before HA entity setup."""
+        await super().async_added_to_hass()
         self.async_on_remove(
             self._coordinator.async_add_listener(self.async_write_ha_state)
         )

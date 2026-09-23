@@ -111,6 +111,7 @@ from custom_components.growspace_manager.schemas import (
     WATER_PLANT_SCHEMA,
 )
 from custom_components.growspace_manager.service_registration import register_services
+from custom_components.growspace_manager.services.safety import SAFETY_SCHEMA
 from custom_components.growspace_manager.views import StrainLibraryUploadView
 from custom_components.growspace_manager.websocket import (
     async_register_websocket_api,
@@ -379,6 +380,8 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "remove_drain_time": REMOVE_DRAIN_TIME_SCHEMA,
         "run_irrigation_cycle": RUN_IRRIGATION_CYCLE_SCHEMA,
         "acknowledge_fault": ACKNOWLEDGE_FAULT_SCHEMA,
+        "emergency_stop": SAFETY_SCHEMA,
+        "reset_safety": SAFETY_SCHEMA,
         "get_strain_library": None,
         "ask_grow_advice": ASK_GROW_ADVICE_SCHEMA,
         "analyze_all_growspaces": ANALYZE_ALL_GROWSPACES_SCHEMA,
