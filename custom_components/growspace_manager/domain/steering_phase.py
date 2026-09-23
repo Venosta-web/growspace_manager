@@ -52,8 +52,9 @@ PHASE_IDLE = "Idle (no plants)"
 # ``suppressed_by`` and surfaced in the shot-composition payload so a growspace
 # that isn't watering is explainable without enabling debug logging (ADR-0031).
 # Evaluated in this order, so the first that applies is the one reported: the
-# configured cooldown, then the [[Infiltration Gate]], then the missing pump,
-# then a zero-size Volume Mode shot.
+# Startup Inhibit, then the configured cooldown, then the [[Infiltration Gate]],
+# then the missing pump, then a zero-size Volume Mode shot.
+SUPPRESSED_BY_STARTUP = "startup"
 SUPPRESSED_BY_COOLDOWN = "cooldown"
 SUPPRESSED_BY_INFILTRATING = "infiltrating"
 SUPPRESSED_BY_NO_PUMP = "no_pump"
@@ -118,6 +119,9 @@ class SteeringTickInputs:
     composer *before* the tick; when the tick itself triggers the P1→P2 composer
     reset, the machine uses 1.0 (the post-reset value) for the cooldown check,
     matching the pre-extraction ordering where the reset ran before the check.
+
+    ``startup_inhibited`` is True while the controller's Startup Inhibit holds
+    (#786): the tick still tracks the phase, but no shot may fire.
     """
 
     now: datetime
@@ -132,6 +136,7 @@ class SteeringTickInputs:
     last_shot: datetime | None
     interval_factor: float
     infiltration: InfiltrationState
+    startup_inhibited: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +156,10 @@ class SteeringTickVerdict:
     tick the gate starts or stops holding, and None on every tick in between —
     the machine owns the latch, so a hold sustained across many ticks yields one
     entry, not one per tick (ADR-0031).
+
+    ``p1_completed_on`` is the local date on the one tick that completes P1 and
+    None on every other, so the shell can persist the fact a restart restores
+    through :meth:`SteeringPhaseMachine.restore` (#786).
     """
 
     phase: str
@@ -162,6 +171,7 @@ class SteeringTickVerdict:
     volume_change_note: str | None
     suppressed_by: str | None = None
     infiltration_note: str | None = None
+    p1_completed_on: date | None = None
 
 
 def resolve_day_hours(environment_config: Any) -> int:
@@ -315,6 +325,21 @@ class SteeringPhaseMachine:
         self._last_shot_volume_ml = None
         self._last_live_plant_count = None
 
+    def restore(self, p1_completed_on: date | None, today: date) -> None:
+        """Resume today's ramp-up state from the persisted P1 completion date.
+
+        Called once at setup, so a restart after P1 completed resumes in P2
+        rather than re-entering the P1 ramp against a substrate that is below
+        target by design (#786). A completion from any other day restores
+        nothing: that day's P1 has no bearing on today's. Marking the date guard
+        as already run for today is what stops the next lights-on tick from
+        clearing the restored flag; the midnight ``reset()`` still clears both.
+        """
+        if p1_completed_on != today:
+            return
+        self._target_reached_today = True
+        self._last_reset_date = today.isoformat()
+
     def mark_no_sensor(self) -> SteeringTickVerdict:
         """Transition to the disabled state when no VWC sensor is configured."""
         return self._finish(PHASE_DISABLED, gate_held=False)
@@ -380,6 +405,7 @@ class SteeringPhaseMachine:
             # We are in P1: Ramp Up
             if inputs.vwc >= target:
                 self._target_reached_today = True
+                completed_on = inputs.now.date()
                 if inputs.strategy.skip_p2_after_p1:
                     _LOGGER.info(
                         "Growspace %s reached target VWC %.1f%%. P2 is skipped; "
@@ -387,14 +413,16 @@ class SteeringPhaseMachine:
                         self._name,
                         target,
                     )
-                    return self._finish(PHASE_P3, gate_held=False)
+                    return self._finish(
+                        PHASE_P3, gate_held=False, p1_completed_on=completed_on
+                    )
                 _LOGGER.info(
                     "Growspace %s reached target VWC %.1f%%. Switching to P2",
                     self._name,
                     target,
                 )
                 # No watering this tick, just switch state
-                return self._finish(PHASE_P1)
+                return self._finish(PHASE_P1, p1_completed_on=completed_on)
             fire, note, suppressed = self._evaluate_shot(
                 inputs, "P1", reset_pending=False
             )
@@ -502,7 +530,7 @@ class SteeringPhaseMachine:
         """Decide whether a shot may fire this tick and its base duration.
 
         Returns ``(request, volume_change_note, suppressed_by)``; ``request`` is
-        None when the cooldown blocks, the [[Infiltration Gate]] holds, no pump
+        None when the Startup Inhibit holds, the cooldown blocks, the [[Infiltration Gate]] holds, no pump
         is configured, or Volume Mode suspends (zero live plants / zero volume —
         ADR-0011), and ``suppressed_by`` names which of those it was. The note
         and the reason stay separate: a volume change can be worth logging on a
@@ -517,6 +545,13 @@ class SteeringPhaseMachine:
         seconds_duration, interval_minutes = shot_params_for_phase(
             inputs.strategy, phase
         )
+
+        # First, because it is the one gate that knows nothing about the
+        # substrate: until the controller has seen every control sensor report
+        # since the start, no reading is trusted enough to act on. A missed shot
+        # is never replayed afterwards — the next tick simply decides afresh.
+        if inputs.startup_inhibited:
+            return None, None, SUPPRESSED_BY_STARTUP
 
         if inputs.last_shot is not None:
             effective_factor = 1.0 if reset_pending else inputs.interval_factor
@@ -618,6 +653,7 @@ class SteeringPhaseMachine:
         volume_change_note: str | None = None,
         suppressed_by: str | None = None,
         gate_held: bool | None = None,
+        p1_completed_on: date | None = None,
     ) -> SteeringTickVerdict:
         """Apply the phase transition and assemble the verdict.
 
@@ -657,6 +693,7 @@ class SteeringPhaseMachine:
             volume_change_note=volume_change_note,
             suppressed_by=suppressed_by,
             infiltration_note=infiltration_note,
+            p1_completed_on=p1_completed_on,
         )
 
 

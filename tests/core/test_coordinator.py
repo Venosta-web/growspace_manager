@@ -2880,3 +2880,17 @@ def test_coordinator_get_subareas_delegates(coordinator) -> None:
     result = coordinator.services.growspaces.get_subareas("gs1")
     assert result == expected
     coordinator._growspace_manager.get_subareas.assert_called_once_with("gs1")
+
+
+async def test_schedule_save_hands_off_to_storage_without_publishing(
+    coordinator: GrowspaceCoordinator,
+) -> None:
+    """Runtime steering facts are saved without rebuilding any projection (#786)."""
+    with (
+        patch.object(coordinator.storage_manager, "async_schedule_save") as save,
+        patch.object(coordinator, "async_set_updated_data") as publish,
+    ):
+        coordinator.async_schedule_save()
+
+    save.assert_called_once_with()
+    publish.assert_not_called()

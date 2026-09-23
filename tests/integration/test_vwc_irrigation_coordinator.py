@@ -347,18 +347,28 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
 
 async def test_setup_unload(vwc_coordinator, mock_hass) -> None:
     """Test async_setup and async_unload."""
-    with patch(
-        "custom_components.growspace_manager.vwc_irrigation_coordinator.async_track_time_interval"
-    ) as mock_track:
+    mock_hass.states.get.return_value = None
+    with (
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.async_track_time_interval"
+        ) as mock_track,
+        patch(
+            "custom_components.growspace_manager.irrigation_coordinator.async_track_time_interval"
+        ) as mock_startup_poll,
+    ):
         mock_remove = MagicMock()
         mock_track.return_value = mock_remove
+        mock_remove_poll = MagicMock()
+        mock_startup_poll.return_value = mock_remove_poll
 
         await vwc_coordinator.async_setup()
         mock_track.assert_called_once()
+        mock_startup_poll.assert_called_once()
         assert vwc_coordinator._remove_update_listener is not None
 
         await vwc_coordinator.async_unload()
         mock_remove.assert_called_once()
+        mock_remove_poll.assert_called_once()
         assert vwc_coordinator._remove_update_listener is None
 
 

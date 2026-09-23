@@ -212,3 +212,42 @@ def test_decide_dark_ignored_when_skip_disabled() -> None:
     """skip_during_dark False -> darkness does not block."""
     verdict = _decide(_config(skip_during_dark=False), lights_dark=True)
     assert verdict.fire is True
+
+
+# ── Startup Inhibit (#786) ───────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("event_type", ["irrigation", "drain"])
+def test_decide_startup_inhibit_blocks_every_automatic_cycle(event_type: str) -> None:
+    verdict = _decide(
+        _config(),
+        event_type=event_type,
+        startup_inhibit="starting up: grace period until 10:05",
+    )
+    assert verdict == CycleVerdict(
+        fire=False,
+        reason=SkipReason.STARTUP,
+        message=(
+            f"{event_type.capitalize()} skipped — starting up: grace period until 10:05"
+        ),
+    )
+
+
+def test_decide_startup_inhibit_lets_a_manual_run_through() -> None:
+    verdict = _decide(_config(), is_manual=True, startup_inhibit="starting up")
+    assert verdict.fire is True
+
+
+def test_decide_manual_run_during_startup_still_meets_every_other_gate() -> None:
+    verdict = _decide(
+        _config(max_cycles_per_day=1),
+        is_manual=True,
+        cycles_today=1,
+        startup_inhibit="starting up",
+    )
+    assert verdict.reason is SkipReason.CYCLE_LIMIT
+
+
+def test_decide_a_latched_fault_outranks_the_startup_inhibit() -> None:
+    verdict = _decide(_config(), fault=True, startup_inhibit="starting up")
+    assert verdict.reason is SkipReason.FAULT

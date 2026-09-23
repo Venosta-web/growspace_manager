@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any, override
 
@@ -97,10 +97,33 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             "Setting up VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
         self._register_daily_reset_listener()
+        self._restore_steering_state()
+        await self._async_begin_startup_inhibit()
         # Check every minute for phase updates and actions
         self._remove_update_listener = async_track_time_interval(
             self.hass, self._update_loop, timedelta(minutes=1)
         )
+
+    def _restore_steering_state(self) -> None:
+        """Resume the steering day from the growspace's persisted history (#786).
+
+        The last confirmed shot needs no restoring: ``_last_cycle_timestamp``
+        reads the persisted value directly, so the first tick's cooldown is
+        already measured from it. What the machine holds in memory is whether
+        P1 has completed today; without it a restart mid-P2 re-enters the P1
+        ramp and re-saturates a substrate that sits below target by design.
+        """
+        completed = self.growspace.substrate_history.p1_completed_on
+        try:
+            p1_completed_on = date.fromisoformat(completed) if completed else None
+        except ValueError:
+            _LOGGER.warning(
+                "Ignoring unreadable P1 completion date %r for growspace %s",
+                completed,
+                self._growspace_id,
+            )
+            p1_completed_on = None
+        self._machine.restore(p1_completed_on, now().date())
 
     @override
     async def async_unload(self) -> None:
@@ -211,6 +234,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             last_shot=self._last_shot_dt(),
             interval_factor=self._composer.interval_factor,
             infiltration=self._infiltration.state,
+            startup_inhibited=self.startup_inhibit_reason() is not None,
         )
 
     def _apply_verdict(
@@ -224,6 +248,12 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """
         config = self.growspace.irrigation_config
         self._last_suppressed_by = verdict.suppressed_by
+
+        if verdict.p1_completed_on is not None:
+            self.growspace.substrate_history.p1_completed_on = (
+                verdict.p1_completed_on.isoformat()
+            )
+            self._main_coordinator.async_schedule_save()
 
         if verdict.phase_changed:
             if verdict.canonical is not None:
@@ -319,6 +349,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         Reads `_last_cycle_timestamp` (set by `_run_pump_cycle` only after the
         switch is confirmed on) rather than stamping optimistically — a skipped
         cycle (e.g. dark-period guard) must not silently rate-limit future shots.
+        It is persisted, so after a restart this is still the last real shot.
         """
         if not self._last_cycle_timestamp:
             return None

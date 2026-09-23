@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from functools import partial
 import logging
 from typing import TYPE_CHECKING, Any, override
@@ -13,7 +13,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import (
+    async_track_time_change,
+    async_track_time_interval,
+)
 from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
@@ -27,8 +30,10 @@ from .const import (
 )
 from .domain.irrigation_safety import (
     ControllerSnapshot,
+    ControllerState,
     SafetyReason,
     controller_snapshot,
+    startup_inhibit,
 )
 from .domain.irrigation_schedule import (
     next_occurrence,
@@ -56,6 +61,12 @@ from .utils import any_light_sensor_on
 
 _LOGGER = logging.getLogger(__name__)
 
+# How often the Startup Inhibit is re-evaluated until it clears. Only the
+# clearing edge needs it — the gate itself is evaluated wherever a cycle is
+# decided — so the controller sensor leaves ``inhibited`` promptly instead of
+# waiting for the next coordinator refresh.
+STARTUP_INHIBIT_POLL = timedelta(seconds=30)
+
 
 class BaseIrrigationCoordinator:
     """Base class for irrigation coordinators."""
@@ -76,16 +87,34 @@ class BaseIrrigationCoordinator:
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
         self._settling_tasks: set[asyncio.Task[Any]] = set()
         self._active_events: dict[str, dict[str, Any]] = {}
-        self._last_cycle_timestamp: str | None = None
         # Daily safety-guard counters (reset by sub-coordinators at midnight)
         self._cycles_today: int = 0
         self._volume_dispensed_today: float = 0.0
         self._inhibit_since: dict[str, str] = {}
+        # The Startup Inhibit (#786): None until setup begins it, so a
+        # coordinator that was never set up is never held by it.
+        self._startup_began_at: datetime | None = None
+        self._startup_cleared = False
+        self._cancel_startup_poll: Callable[[], None] | None = None
 
     @property
     def last_cycle_timestamp(self) -> str | None:
         """Return the ISO timestamp of the most recently completed irrigation cycle start."""
         return self._last_cycle_timestamp
+
+    @property
+    def _last_cycle_timestamp(self) -> str | None:
+        """Return the persisted start of the last confirmed irrigation cycle.
+
+        Stored on the growspace's substrate history rather than on this object
+        so a restart restores the anchor every steering cooldown measures from
+        (#786); there is no second, in-memory copy to drift from it.
+        """
+        return self.growspace.substrate_history.last_confirmed_shot_at
+
+    @_last_cycle_timestamp.setter
+    def _last_cycle_timestamp(self, value: str | None) -> None:
+        self.growspace.substrate_history.last_confirmed_shot_at = value
 
     @property
     def active_events(self) -> dict[str, dict[str, Any]]:
@@ -157,6 +186,9 @@ class BaseIrrigationCoordinator:
         )
         inhibits: tuple[SafetyReason, ...] = ()
         if not running and fault is None and automation_enabled:
+            startup = self.startup_inhibit_reason()
+            if startup is not None:
+                inhibits = (startup,)
             verdict = decide_cycle(
                 event_type="irrigation",
                 is_manual=False,
@@ -177,7 +209,7 @@ class BaseIrrigationCoordinator:
                     SkipReason.DARK: "dark",
                 }[verdict.reason]
                 since = self._inhibit_since.setdefault(code, utcnow().isoformat())
-                inhibits = (SafetyReason(code, verdict.message, since),)
+                inhibits = (*inhibits, SafetyReason(code, verdict.message, since))
         self._inhibit_since = {reason.code: reason.since for reason in inhibits}
         return controller_snapshot(
             configured=bool(self._configured_outputs()),
@@ -231,6 +263,99 @@ class BaseIrrigationCoordinator:
                 category="irrigation",
             )
         self._main_coordinator.async_update_listeners()
+
+    def _control_sensors(self) -> tuple[str, ...]:
+        """Return the sensors automatic irrigation decides from.
+
+        The substrate moisture sensor while crop steering drives the pump, and
+        every configured irrigation tank. The Startup Inhibit waits for each of
+        them to report once before it lets an automatic cycle through.
+        """
+        growspace = self.growspace
+        sensors: list[str] = []
+        strategy = growspace.irrigation_strategy
+        moisture = growspace.environment_config.soil_moisture_sensor
+        if strategy and strategy.enabled and moisture:
+            sensors.append(moisture)
+        sensors.extend(
+            tank.sensor_entity
+            for tank in growspace.environment_config.irrigation_tanks
+            if tank.sensor_entity
+        )
+        return tuple(dict.fromkeys(sensors))
+
+    def _reported_since(self, entity_id: str, since: datetime) -> bool:
+        """Return True when the sensor has reported a usable value since ``since``.
+
+        ``last_reported`` moves on every report, including one that repeats the
+        previous value, so a steady sensor still counts once it speaks; a state
+        written before the start, or an unknown/unavailable one, does not.
+        """
+        state = self.hass.states.get(entity_id)
+        if state is None or self._get_sensor_value(entity_id) is None:
+            return False
+        return state.last_reported >= since
+
+    def startup_inhibit_reason(self) -> SafetyReason | None:
+        """Return the Startup Inhibit while it holds, else None.
+
+        Once it has cleared it stays cleared for the life of this coordinator:
+        a sensor that drops out later is a stale-sensor problem, not a startup
+        one.
+        """
+        if self._startup_began_at is None or self._startup_cleared:
+            return None
+        started_at = self._startup_began_at
+        return startup_inhibit(
+            started_at=started_at,
+            now=utcnow(),
+            grace=timedelta(
+                minutes=self.growspace.irrigation_config.startup_grace_minutes
+            ),
+            awaiting=tuple(
+                entity
+                for entity in self._control_sensors()
+                if not self._reported_since(entity, started_at)
+            ),
+        )
+
+    async def _async_begin_startup_inhibit(self) -> None:
+        """Hold automatic cycles from this start until the inhibit clears (#786)."""
+        self._startup_began_at = utcnow()
+        self._startup_cleared = False
+        self._cancel_startup_poll_listener()
+        self._cancel_startup_poll = async_track_time_interval(
+            self.hass, self._async_poll_startup_inhibit, STARTUP_INHIBIT_POLL
+        )
+        await self._async_record_controller_state()
+
+    async def _async_poll_startup_inhibit(self, *_: Any) -> None:
+        """Latch the Startup Inhibit clear on the first evaluation that passes."""
+        if self.startup_inhibit_reason() is not None:
+            return
+        self._startup_cleared = True
+        self._cancel_startup_poll_listener()
+        _LOGGER.info("Startup inhibit cleared for growspace %s", self._growspace_id)
+        await self._async_record_controller_state()
+
+    def _cancel_startup_poll_listener(self) -> None:
+        if self._cancel_startup_poll is not None:
+            self._cancel_startup_poll()
+            self._cancel_startup_poll = None
+
+    async def _async_record_controller_state(self) -> None:
+        """Write the current controller state to the Safety Ledger.
+
+        Skipped for an idle controller, which has nothing to hold, and for a
+        latched one, whose ledger entry is the latch itself.
+        """
+        state = self.controller_snapshot()
+        if state.requires_ack or state.state is ControllerState.IDLE:
+            self._main_coordinator.async_update_listeners()
+            return
+        await self._record_safety_transition(
+            state.state.value, state.reasons[0].code if state.reasons else None
+        )
 
     async def async_request_refresh(self) -> None:
         """Refresh listeners when configuration changes.
@@ -296,6 +421,9 @@ class BaseIrrigationCoordinator:
         self._listeners = []
 
         if cancel_tasks:
+            # Teardown, not a schedule reload: the poll belongs to this
+            # coordinator's start and must not outlive it.
+            self._cancel_startup_poll_listener()
             for task in list(self._running_tasks.values()):
                 if task and not task.done():
                     task.cancel()
@@ -609,6 +737,7 @@ class BaseIrrigationCoordinator:
         config = self.growspace.irrigation_config
         snapshot = self.controller_snapshot()
         latched = snapshot.requires_ack
+        startup = None if latched else self.startup_inhibit_reason()
         cycle_volume_l = self._compute_cycle_volume_liters(duration)
         verdict = decide_cycle(
             event_type=event_type,
@@ -621,6 +750,7 @@ class BaseIrrigationCoordinator:
             cycle_volume_l=cycle_volume_l,
             fault=snapshot.state.value == "fault",
             emergency_stop=snapshot.state.value == "emergency_stop",
+            startup_inhibit=startup.detail if startup else None,
         )
         if not verdict.fire:
             if verdict.reason not in (SkipReason.FAULT, SkipReason.EMERGENCY_STOP):
@@ -698,6 +828,9 @@ class BaseIrrigationCoordinator:
 
             if event_type == "irrigation":
                 self._last_cycle_timestamp = start_dt.isoformat()
+                # Written the moment the pump confirms, not at the end of the
+                # cycle, so a restart mid-shot still knows this shot happened.
+                self._main_coordinator.async_schedule_save()
 
             await self._async_send_cycle_notification(event_type, duration, event_data)
 
@@ -984,6 +1117,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
 
         # Load schedules without triggering updates
         await self.async_update_listeners()
+        await self._async_begin_startup_inhibit()
 
     async def async_update_listeners(self, *args: Any) -> None:
         """Remove old listeners and create new ones based on current config."""

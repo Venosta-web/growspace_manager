@@ -477,6 +477,17 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     f"irrigation_refresh_{gs_id}",
                 )
 
+    @callback
+    def async_schedule_save(self) -> None:
+        """Schedule a debounced write of runtime state, with no publish.
+
+        For runtime state that must survive a restart whether or not anything
+        commits after it — the steering facts a sub-coordinator restores at
+        setup (#786). ``async_commit`` would rebuild and republish every
+        projection on each pump confirmation just to get the write.
+        """
+        self.storage_manager.async_schedule_save()
+
     async def async_save(self) -> None:
         """Save current data to storage.
 

@@ -1479,6 +1479,17 @@ set_irrigation_settings:
         number:
           min: 0
           step: 1
+    startup_grace_minutes:
+      description: >-
+        Minimum time automatic irrigation is held after a start or reload;
+        it also waits for each control sensor to report.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 1
+          unit_of_measurement: "min"
     skip_during_dark:
       description: Skip automatic irrigation while the growspace is dark.
       required: false

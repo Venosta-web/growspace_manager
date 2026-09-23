@@ -12,7 +12,11 @@ from custom_components.growspace_manager.irrigation_coordinator import (
     BaseIrrigationCoordinator,
     IrrigationCoordinator,
 )
-from custom_components.growspace_manager.models import Growspace, IrrigationConfig
+from custom_components.growspace_manager.models import (
+    Growspace,
+    IrrigationConfig,
+    IrrigationTank,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
@@ -140,6 +144,7 @@ async def test_setup_and_schedule_events(
     assert (12, 0, 0) in scheduled_times
     # Midnight reset listener
     assert (0, 0, 0) in scheduled_times
+    coordinator.async_cancel_listeners()
 
 
 async def test_async_wait_for_switch_state_happy_path(
@@ -1144,6 +1149,11 @@ async def test_last_cycle_timestamp_set_after_run_pump_cycle(
         )
 
     assert coordinator.last_cycle_timestamp is not None
+    # The anchor is the persisted one, and it is saved as soon as the pump
+    # confirms, so a restart mid-cycle still knows the shot happened (#786).
+    history = mock_main_coordinator.growspaces[GROWSPACE_ID].substrate_history
+    assert history.last_confirmed_shot_at == coordinator.last_cycle_timestamp
+    mock_main_coordinator.async_schedule_save.assert_called()
 
 
 # --- next_scheduled_cycle Tests ---
@@ -1445,3 +1455,134 @@ async def test_low_tank_skip_also_applies_to_manual_run(
         if c.args[:2] == ("switch", "turn_on")
     ]
     assert turn_on_calls == [], "Pump was turned on despite low tank skip on manual run"
+
+
+# --- Startup Inhibit (#786) ---
+
+
+def _turn_on_calls(hass: MagicMock) -> list[object]:
+    return [
+        c
+        for c in hass.services.async_call.call_args_list
+        if c.args[:2] == ("switch", "turn_on")
+    ]
+
+
+@pytest.fixture
+def started_coordinator(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+):
+    """An IrrigationCoordinator whose Startup Inhibit has just begun."""
+    mock_hass.states.get.return_value = None
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    with (
+        patch(
+            "custom_components.growspace_manager.irrigation_coordinator.async_track_time_change"
+        ),
+        patch(
+            "custom_components.growspace_manager.irrigation_coordinator.async_track_time_interval"
+        ) as mock_poll,
+    ):
+        mock_poll.return_value = MagicMock()
+        yield coordinator, mock_poll
+
+
+async def test_startup_inhibit_holds_a_scheduled_cycle_and_says_why(
+    started_coordinator, mock_hass: MagicMock
+) -> None:
+    coordinator, _ = started_coordinator
+    await coordinator.async_setup()
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+
+    assert _turn_on_calls(mock_hass) == []
+    snapshot = coordinator.controller_snapshot()
+    assert snapshot.state.value == "inhibited"
+    assert [reason.code for reason in snapshot.reasons] == ["startup_inhibit"]
+    coordinator.async_cancel_listeners()
+
+
+async def test_startup_inhibit_lets_a_manual_run_through(
+    started_coordinator, mock_hass: MagicMock
+) -> None:
+    coordinator, _ = started_coordinator
+    await coordinator.async_setup()
+
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        await coordinator.async_manual_run(duration=30)
+        await coordinator._running_tasks["irrigation"]
+
+    assert len(_turn_on_calls(mock_hass)) == 1
+    coordinator.async_cancel_listeners()
+
+
+async def test_startup_inhibit_waits_for_every_tank_sensor(
+    started_coordinator, mock_main_coordinator: MagicMock
+) -> None:
+    coordinator, _ = started_coordinator
+    growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    growspace.environment_config.irrigation_tanks = [
+        IrrigationTank(sensor_entity="sensor.tank", name="Tank")
+    ]
+    growspace.irrigation_config.startup_grace_minutes = 0
+    await coordinator.async_setup()
+
+    reason = coordinator.startup_inhibit_reason()
+
+    assert reason is not None
+    assert reason.detail == "starting up: waiting for a first report from sensor.tank"
+    coordinator.async_cancel_listeners()
+
+
+async def test_startup_poll_keeps_holding_until_the_inhibit_clears(
+    started_coordinator,
+) -> None:
+    coordinator, mock_poll = started_coordinator
+    await coordinator.async_setup()
+    cancel_poll = mock_poll.return_value
+
+    await coordinator._async_poll_startup_inhibit()
+
+    assert coordinator.startup_inhibit_reason() is not None
+    cancel_poll.assert_not_called()
+    coordinator.async_cancel_listeners()
+    cancel_poll.assert_called_once()
+
+
+async def test_startup_inhibit_is_not_recorded_for_an_idle_controller(
+    started_coordinator, mock_main_coordinator: MagicMock
+) -> None:
+    coordinator, _ = started_coordinator
+    config = mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
+    config.irrigation_pump_entity = None
+    config.drain_pump_entity = None
+
+    with patch.object(
+        coordinator, "_record_safety_transition", new_callable=AsyncMock
+    ) as record:
+        await coordinator.async_setup()
+
+    record.assert_not_called()
+    assert coordinator.controller_snapshot().state.value == "idle"
+    coordinator.async_cancel_listeners()

@@ -449,6 +449,7 @@
       "resolved_day_hours": 11,
       "skip_during_dark": true,
       "soil_trigger_percent": 42.0,
+      "startup_grace_minutes": 5,
       "veg_day_hours": 18
     },
     "irrigation_strategy": {

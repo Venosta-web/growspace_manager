@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
 
 import pytest
 
 from custom_components.growspace_manager.domain.irrigation_safety import (
+    STARTUP_INHIBIT,
     ControllerState,
     FaultRecord,
     SafetyReason,
     controller_snapshot,
+    startup_inhibit,
 )
 
 REASON = SafetyReason("cap_volume", "daily volume cap", "2026-09-23T10:00:00Z")
@@ -108,3 +111,58 @@ def test_incomplete_fault_record_refused(record: object) -> None:
     """An incomplete stored latch cannot become a clear controller."""
     with pytest.raises((TypeError, ValueError)):
         FaultRecord.from_dict(record)
+
+
+STARTED = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
+GRACE = timedelta(minutes=5)
+
+
+def test_startup_inhibit_holds_through_the_grace_period() -> None:
+    reason = startup_inhibit(
+        started_at=STARTED, now=STARTED + timedelta(minutes=4), grace=GRACE, awaiting=()
+    )
+    assert reason == SafetyReason(
+        STARTUP_INHIBIT,
+        "starting up: grace period until 2026-09-23T10:05:00+00:00",
+        STARTED.isoformat(),
+    )
+
+
+def test_startup_inhibit_outlasts_the_grace_period_until_every_sensor_reports() -> None:
+    reason = startup_inhibit(
+        started_at=STARTED,
+        now=STARTED + timedelta(minutes=9),
+        grace=GRACE,
+        awaiting=("sensor.vwc", "sensor.tank"),
+    )
+    assert reason is not None
+    assert reason.detail == (
+        "starting up: waiting for a first report from sensor.vwc, sensor.tank"
+    )
+    assert reason.since == STARTED.isoformat()
+
+
+def test_startup_inhibit_names_both_conditions_while_both_are_outstanding() -> None:
+    reason = startup_inhibit(
+        started_at=STARTED, now=STARTED, grace=GRACE, awaiting=("sensor.vwc",)
+    )
+    assert reason is not None
+    assert reason.detail == (
+        "starting up: grace period until 2026-09-23T10:05:00+00:00; "
+        "waiting for a first report from sensor.vwc"
+    )
+
+
+@pytest.mark.parametrize(
+    ("elapsed", "grace"),
+    [(timedelta(minutes=5), GRACE), (timedelta(0), timedelta(0))],
+)
+def test_startup_inhibit_clears_once_both_conditions_are_met(
+    elapsed: timedelta, grace: timedelta
+) -> None:
+    assert (
+        startup_inhibit(
+            started_at=STARTED, now=STARTED + elapsed, grace=grace, awaiting=()
+        )
+        is None
+    )

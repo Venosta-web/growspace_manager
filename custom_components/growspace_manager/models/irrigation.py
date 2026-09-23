@@ -297,6 +297,16 @@ class SubstrateHistory(BaseModel):
     ec_latest_value: float | None = None
     ec_latest_ts: str | None = None
 
+    # ── Steering state a restart must not forget (#786) ─────────────────────
+    # When the pump last confirmed ON for an irrigation cycle — the anchor of
+    # every steering cooldown. The coordinator's ``last_cycle_timestamp`` reads
+    # and writes this field rather than a copy of it, so the value the cooldown
+    # uses and the value a restart restores are one and the same.
+    last_confirmed_shot_at: str | None = None
+    # The local ISO date P1 reached its target. A restart on that date resumes
+    # in P2 instead of re-entering the ramp; on any other date it means nothing.
+    p1_completed_on: str | None = None
+
 
 @dataclass(slots=True)
 class IrrigationTank(BaseModel):
@@ -355,6 +365,10 @@ class IrrigationConfig(BaseModel):
     # available and waits (ADR-0045).
     program_auto_advance: bool = False
     halt_on_runoff_ec_threshold: float | None = None
+    # How long every automatic cycle is held after a start or reload, at
+    # minimum; the Startup Inhibit also waits for each control sensor to
+    # report (#786).
+    startup_grace_minutes: int = 5
     active_steering_phase: str = "p2"
     phase_changed_at: str | None = None
 
