@@ -53,6 +53,7 @@ from custom_components.growspace_manager.exceptions import (
     GrowspaceNotFoundError,
     PlantNotFoundError,
 )
+from custom_components.growspace_manager.schemas import UPDATE_PLANT_EDITABLE_FIELDS
 from custom_components.growspace_manager.utils import parse_date_field
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
@@ -117,12 +118,25 @@ SCHEMA_WS_ADD_PLANTS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 )
 
 WS_TYPE_UPDATE_PLANT = f"{DOMAIN}/update_plant"
+# Only the fields a grower edits; any other key is refused by name before the
+# handler runs. ``None`` stays accepted everywhere: it clears a date and is
+# dropped for every other field, as the handler has always done.
+_OPT_POSITION = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1)))
+_UPDATE_PLANT_VALIDATORS: dict[str, Any] = {
+    ATTR_ROW: _OPT_POSITION,
+    ATTR_COL: _OPT_POSITION,
+    **dict.fromkeys(DATE_FIELDS, _OPT_DATE),
+}
+_UPDATE_PLANT_FIELDS: dict[Any, Any] = {
+    vol.Optional(field): _UPDATE_PLANT_VALIDATORS.get(field, vol.Any(str, None))
+    for field in UPDATE_PLANT_EDITABLE_FIELDS
+}
 SCHEMA_WS_UPDATE_PLANT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_UPDATE_PLANT,
         vol.Required(ATTR_PLANT_ID): str,
-    },
-    extra=vol.ALLOW_EXTRA,
+        **_UPDATE_PLANT_FIELDS,
+    }
 )
 
 WS_TYPE_REMOVE_PLANT = f"{DOMAIN}/remove_plant"
