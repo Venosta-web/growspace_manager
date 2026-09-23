@@ -182,6 +182,14 @@
         }
       }
     ],
+    "light_leak_config": {
+      "all_stages": false,
+      "debounce_seconds": 120,
+      "enabled": true,
+      "illuminance_sensor": null,
+      "switch_off_lights": false,
+      "threshold_lux": 1.0
+    },
     "light_sensor": "sensor.contract_light",
     "light_sensors": ["sensor.contract_light"],
     "lst_offset": -2.5,
