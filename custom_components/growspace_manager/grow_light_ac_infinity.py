@@ -21,13 +21,20 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
+from .domain.light_schedule import is_within_window
+
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from .models import ACInfinityGrowLight
 
 _LOGGER = logging.getLogger(__name__)
 
 # The AC Infinity Active Mode option that runs the onboard schedule autonomously.
 _SCHEDULE_MODE = "Schedule"
+# The Active Mode options that hold a port off or on whatever its schedule says.
+_OFF_MODE = "Off"
+_ON_MODE = "On"
 # The on_power number takes an integer intensity in this range, not a percentage.
 # This 1-10 scale mirrors the shipped ACInfinityDriver speed number (ADR-0022).
 #
@@ -203,3 +210,44 @@ async def _push_sunrise(
             "set_value",
             {ATTR_ENTITY_ID: device.sunrise_duration_entity, "value": sunrise_minutes},
         )
+
+
+def ac_infinity_light_lit(
+    hass: HomeAssistant, device: ACInfinityGrowLight, now: datetime
+) -> bool:
+    """Return whether the port is lighting the room at ``now``, as far as HA knows.
+
+    An ``Off`` or ``On`` Active Mode answers outright. Otherwise the port runs
+    its onboard schedule, so it is lit when ``now`` falls inside the on/off
+    ``time`` window it currently holds; an unreadable window counts as unlit.
+    """
+    mode_state = hass.states.get(device.mode_entity)
+    if mode_state is not None and mode_state.state == _OFF_MODE:
+        return False
+    if mode_state is not None and mode_state.state == _ON_MODE:
+        return True
+    on_state = hass.states.get(device.on_time_entity)
+    off_state = hass.states.get(device.off_time_entity)
+    if on_state is None or off_state is None:
+        return False
+    try:
+        return is_within_window(now, on_state.state, off_state.state)
+    except ValueError, TypeError:
+        # unavailable/unknown time entity — cannot determine
+        return False
+
+
+async def switch_off_ac_infinity_light(
+    hass: HomeAssistant, device: ACInfinityGrowLight
+) -> None:
+    """Take the port out of its schedule and hold it off (Light Leak Guard).
+
+    The port stays off until the schedule is pushed again: the next reconcile
+    sees an Active Mode other than ``Schedule`` and re-pushes it.
+    """
+    await _safe_call(
+        hass,
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: device.mode_entity, "option": _OFF_MODE},
+    )

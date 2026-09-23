@@ -444,6 +444,28 @@ Binds physical environmental monitors, light schedules, and active climate contr
 | `sensor_groups`        | `object`  | No       | -       | Configuration mapping for multidimensional heatmaps.         |
 | `sensor_coordinates`   | `object`  | No       | -       | Coordinates map for multi-sensor configurations.             |
 | `irrigation_tanks`     | `object`  | No       | -       | Irrigation nutrient tank volume & EC configurations.         |
+| `light_leak_config`    | `object`  | No       | -       | Light Leak Guard settings — see below.                       |
+
+#### Light Leak Guard (`light_leak_config`)
+
+During the computed dark period of a flowering growspace (lights-on time plus the
+veg/flower day hours — the same window the Grow Light Controller drives), the guard
+checks every minute and at start-up for light. It looks at a managed grow light that
+reports on (only when the Grow Light Controller is enabled), and at an optional
+illuminance sensor above a threshold. Evidence that lasts longer than the debounce
+raises **one** critical notification and a logbook entry per episode. The episode
+ends when the light goes away or the lit period begins.
+
+| Key                  | Type      | Default | Description                                                                                                                                                                                                  |
+| :------------------- | :-------- | :------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`            | `boolean` | `true`  | Whether the guard runs. It only runs when it has something to watch: an illuminance sensor, or grow lights the controller drives.                                                                            |
+| `illuminance_sensor` | `string`  | -       | A lux sensor in the room. On its own it is enough, so rooms on a hardware timer are covered too.                                                                                                             |
+| `threshold_lux`      | `float`   | `1.0`   | A reading **above** this is light.                                                                                                                                                                           |
+| `debounce_seconds`   | `int`     | `120`   | How long evidence must last before it alerts.                                                                                                                                                                |
+| `switch_off_lights`  | `boolean` | `false` | Opt-in. Switch the managed grow lights off for the rest of the dark period and read them back. Lights still on 2 minutes later raise a second alert. AC Infinity ports get their schedule back at lights-on. |
+| `all_stages`         | `boolean` | `false` | Also watch the veg dark period.                                                                                                                                                                              |
+
+The object is replaced whole: send every key you want to keep.
 
 ### `growspace_manager.remove_environment`
 

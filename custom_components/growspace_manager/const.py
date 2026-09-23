@@ -613,6 +613,10 @@ class NotificationTier(StrEnum):
     WARNING = "warning"
     INFO = "info"
     PHOTOPERIOD_FLIP = "photoperiod_flip"
+    # Critical severity with a cooldown of its own: the Light Leak Guard already
+    # alerts once per episode, and must never be muted because a Bayesian
+    # critical alert happened to go out in the last half hour.
+    LIGHT_LEAK = "light_leak"
 
 
 class GrowspaceSensorType(StrEnum):

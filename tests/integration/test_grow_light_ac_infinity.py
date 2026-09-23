@@ -1,11 +1,14 @@
 """Tests for the AC Infinity grow light configurator (ADR-0023/0024)."""
 
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from custom_components.growspace_manager.grow_light_ac_infinity import (
+    ac_infinity_light_lit,
     push_ac_infinity_schedule,
+    switch_off_ac_infinity_light,
 )
 from custom_components.growspace_manager.models import ACInfinityGrowLight
 from homeassistant.const import ATTR_ENTITY_ID
@@ -302,4 +305,62 @@ async def test_schedule_matches_when_sunrise_disabled_and_switch_off(
             sunrise_enabled=False,
         )
         is True
+    )
+
+
+@pytest.mark.parametrize(
+    ("states", "expected"),
+    [
+        # An Active Mode of Off or On answers outright, whatever the window.
+        ({"select.port_mode": "Off", "time.port_on": "06:00:00"}, False),
+        ({"select.port_mode": "On", "time.port_off": "06:00:00"}, True),
+        # Otherwise the port runs its schedule: lit inside the held window.
+        (
+            {
+                "select.port_mode": "Schedule",
+                "time.port_on": "06:00:00",
+                "time.port_off": "00:00:00",
+            },
+            True,
+        ),
+        (
+            {
+                "select.port_mode": "Schedule",
+                "time.port_on": "06:00:00",
+                "time.port_off": "18:00:00",
+            },
+            False,
+        ),
+        # No mode read yet: the window alone decides.
+        ({"time.port_on": "06:00:00", "time.port_off": "00:00:00"}, True),
+        # An unreadable window is no evidence of light.
+        ({"select.port_mode": "Schedule", "time.port_on": "06:00:00"}, False),
+        (
+            {
+                "select.port_mode": "Schedule",
+                "time.port_on": "unavailable",
+                "time.port_off": "00:00:00",
+            },
+            False,
+        ),
+    ],
+)
+def test_light_lit_reads_mode_then_window(
+    mock_hass: MagicMock, states: dict[str, str], expected: bool
+) -> None:
+    """A port is lit per its Active Mode, or per its schedule window at 20:00."""
+    _hass_with_states(mock_hass, states)
+    now = datetime(2026, 7, 3, 20, 0)
+    assert ac_infinity_light_lit(mock_hass, _device(), now) is expected
+
+
+async def test_switch_off_selects_off_mode(mock_hass: MagicMock) -> None:
+    """Switching a port off takes it out of Schedule mode into Off."""
+    await switch_off_ac_infinity_light(mock_hass, _device())
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "select",
+        "select_option",
+        {ATTR_ENTITY_ID: "select.port_mode", "option": "Off"},
+        blocking=False,
     )

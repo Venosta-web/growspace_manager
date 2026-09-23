@@ -54,6 +54,7 @@ __all__ = [
     "Growspace",
     "GrowspaceEvent",
     "GrowspaceType",
+    "LightLeakConfig",
     "SensorGroup",
     "Subarea",
     "VisionCheckupConfig",
@@ -213,6 +214,28 @@ class GrowLightConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class LightLeakConfig(BaseModel):
+    """Configuration for the Light Leak Guard (#794).
+
+    During the computed dark period of a flowering growspace the guard alerts
+    when a managed grow light reports on, or when ``illuminance_sensor`` reads
+    above ``threshold_lux``, for longer than ``debounce_seconds``. It is its own
+    sub-config rather than part of ``GrowLightConfig`` because it also guards
+    rooms whose lights run on a hardware timer, with only a lux sensor to go on.
+
+    ``switch_off_lights`` is opt-in: it switches the managed grow lights off for
+    the rest of the dark period. ``all_stages`` extends the watch beyond flower.
+    """
+
+    enabled: bool = True
+    illuminance_sensor: str | None = None
+    threshold_lux: float = 1.0
+    debounce_seconds: int = 120
+    switch_off_lights: bool = False
+    all_stages: bool = False
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -294,6 +317,7 @@ class EnvironmentConfig(BaseModel):
     )
     exhaust_fan_config: ExhaustFanConfig = field(default_factory=ExhaustFanConfig)
     growlight_config: GrowLightConfig = field(default_factory=GrowLightConfig)
+    light_leak_config: LightLeakConfig = field(default_factory=LightLeakConfig)
     vpd_optimal_overrides: dict[str, dict[str, dict[str, float]]] = field(
         default_factory=dict
     )
@@ -391,6 +415,9 @@ class EnvironmentConfig(BaseModel):
 
         if data.get("growlight_config") is None:
             data["growlight_config"] = {}
+
+        if data.get("light_leak_config") is None:
+            data["light_leak_config"] = {}
 
         # Migration: singular -> plural list
         migrations = {
@@ -564,6 +591,7 @@ ENVIRONMENT_FIELD_OWNERSHIP: dict[str, FieldOwnership] = {
     "circulation_fan_config": _SUB_CONFIG,
     "exhaust_fan_config": _SUB_CONFIG,
     "growlight_config": _SUB_CONFIG,
+    "light_leak_config": _SUB_CONFIG,
     "vpd_optimal_overrides": _GROWER,
 }
 
