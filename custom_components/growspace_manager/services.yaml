@@ -1483,7 +1483,7 @@ set_irrigation_settings:
           step: 0.1
           unit_of_measurement: "%"
     daily_volume_cap_liters:
-      description: Maximum irrigation volume allowed per day; omit to disable the cap.
+      description: Maximum estimated irrigation volume per day when a pump flow rate is configured.
       required: false
       selector:
         number:
@@ -1491,7 +1491,7 @@ set_irrigation_settings:
           step: 0.1
           unit_of_measurement: "L"
     max_cycles_per_day:
-      description: Maximum automatic irrigation cycles allowed per day; omit for no cap.
+      description: Maximum irrigation cycles allowed per day, including manual runs.
       required: false
       selector:
         number:
