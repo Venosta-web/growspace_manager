@@ -1,17 +1,6 @@
-"""Tests for a pump cycle whose switch never confirms 'on'.
+"""Hardware disagreements latch faults and stop future pump cycles."""
 
-``switch.turn_on`` is fired with ``blocking=True`` *before* the confirmation
-wait starts, so on a timeout the pump may already be running. Timing the shot
-from the end of that wait would run the pump for ``duration`` plus the whole
-confirmation timeout and still book ``duration`` of water. The coordinator
-therefore dates an unconfirmed cycle from the ``turn_on`` call, shortens the
-sleep by the wait, and bills whichever of planned/measured runtime is larger.
-
-The confirmed path is deliberately untouched: a device that reports the relay
-closing tells us when water actually started moving (the Matter smart-plug
-case the wait exists for).
-"""
-
+from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from freezegun import freeze_time
@@ -20,6 +9,9 @@ import pytest
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
+)
+from custom_components.growspace_manager.irrigation_safety_store import (
+    IrrigationSafetyStore,
 )
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
 from homeassistant.config_entries import ConfigEntry
@@ -57,6 +49,14 @@ def coordinator() -> IrrigationCoordinator:
         )
     }
     main.async_commit = AsyncMock()
+    safety = IrrigationSafetyStore.__new__(IrrigationSafetyStore)
+    safety.faults = {}
+    safety.emergency_stops = {}
+    safety.ledger = deque(maxlen=500)
+    safety.unreadable = False
+    safety._store = MagicMock()
+    safety._store.async_save = AsyncMock()
+    main.irrigation_safety = safety
     entry.runtime_data = main
 
     return IrrigationCoordinator(hass, entry, GROWSPACE_ID, main)
@@ -68,6 +68,8 @@ async def _run_cycle(
     duration: int,
     confirmed: bool,
     wait_seconds: float,
+    off_confirmed: bool = True,
+    off_raises: bool = False,
 ) -> tuple[list[float], float, AsyncMock]:
     """Run one irrigation cycle against a clock only this test advances.
 
@@ -87,7 +89,7 @@ async def _run_cycle(
             nonlocal elapsed
             clock.tick(wait_seconds)
             elapsed += wait_seconds
-            return confirmed
+            return confirmed if target_state == "on" else off_confirmed
 
         async def fake_sleep(seconds: float) -> None:
             nonlocal elapsed
@@ -98,6 +100,8 @@ async def _run_cycle(
         async def fake_service_call(domain: str, service: str, *args, **kwargs) -> None:
             if service in ("turn_on", "turn_off"):
                 pump_on_at.append(elapsed)
+            if service == "turn_off" and off_raises:
+                raise RuntimeError("switch unavailable")
 
         coordinator.hass.services.async_call = AsyncMock(side_effect=fake_service_call)
 
@@ -106,6 +110,7 @@ async def _run_cycle(
             patch.object(coordinator, "_async_wait_for_switch_state", new=fake_wait),
             patch.object(coordinator, "_async_record_pump_water", new=record_water),
             patch.object(coordinator, "_async_spawn_settling_report", MagicMock()),
+            patch("homeassistant.helpers.issue_registry.async_create_issue"),
         ):
             await coordinator._run_pump_cycle(
                 "irrigation", PUMP, duration, {"time": "10:00:00"}
@@ -136,43 +141,130 @@ async def test_confirmed_switch_sleeps_the_full_duration(
     assert coordinator._volume_dispensed_today == pytest.approx(_liters(30))
 
 
-async def test_unconfirmed_switch_shortens_the_sleep_by_the_wait(
+async def test_unconfirmed_switch_stops_without_sleeping(
     coordinator: IrrigationCoordinator,
 ) -> None:
-    """An unconfirmed pump runs for the shot, not the shot plus the timeout."""
+    """An unconfirmed ON commands OFF immediately and latches a fault."""
     slept, on_seconds, record_water = await _run_cycle(
         coordinator, duration=30, confirmed=False, wait_seconds=10.0
     )
 
-    assert slept == [pytest.approx(20.0)]
-    assert on_seconds == pytest.approx(30.0)
-    record_water.assert_awaited_once_with(pytest.approx(_liters(30)))
-    assert coordinator._volume_dispensed_today == pytest.approx(_liters(30))
+    assert slept == []
+    assert on_seconds == pytest.approx(10.0)
+    record_water.assert_not_awaited()
+    assert coordinator._volume_dispensed_today == 0
+    assert coordinator.controller_snapshot().requires_ack
 
 
-async def test_unconfirmed_wait_longer_than_the_shot_bills_the_overrun(
+async def test_unconfirmed_wait_longer_than_shot_still_latches(
     coordinator: IrrigationCoordinator,
 ) -> None:
-    """When the wait outlasts the shot the sleep clamps and the water is billed."""
+    """A long confirmation wait never turns into a planned delivery."""
     slept, on_seconds, record_water = await _run_cycle(
         coordinator, duration=5, confirmed=False, wait_seconds=10.0
     )
 
-    assert slept == [0.0]
+    assert slept == []
     assert on_seconds == pytest.approx(10.0)
-    # 10s of pump, not the planned 5s: the daily cap must see the real water.
-    record_water.assert_awaited_once_with(pytest.approx(_liters(10)))
-    assert coordinator._volume_dispensed_today == pytest.approx(_liters(10))
+    record_water.assert_not_awaited()
+    assert coordinator.controller_snapshot().fault_id is not None
 
 
 async def test_unconfirmed_switch_still_turns_the_pump_off(
     coordinator: IrrigationCoordinator,
 ) -> None:
-    """Non-confirmation is not a halt — the cycle completes normally."""
+    """Non-confirmation always sends OFF and leaves the controller held."""
     await _run_cycle(coordinator, duration=5, confirmed=False, wait_seconds=10.0)
 
     services = coordinator.hass.services.async_call
     called = [(c.args[0], c.args[1]) for c in services.await_args_list]
     assert ("switch", "turn_on") in called
     assert ("switch", "turn_off") in called
-    assert coordinator._cycles_today == 1
+    assert coordinator._cycles_today == 0
+    assert coordinator.controller_snapshot().requires_ack
+
+
+async def test_turn_off_command_failure_latches_fault(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """A failed OFF service call leaves a durable hold on the controller."""
+    await _run_cycle(
+        coordinator, duration=5, confirmed=True, wait_seconds=0, off_raises=True
+    )
+    assert coordinator.controller_snapshot().requires_ack
+    assert coordinator.controller_snapshot().reasons[0].code == (
+        f"fault_off_unconfirmed:{PUMP}"
+    )
+
+
+async def test_latched_fault_blocks_later_cycle(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """An ON mismatch blocks a later scheduled cycle before another command."""
+    await _run_cycle(coordinator, duration=5, confirmed=False, wait_seconds=1.0)
+    coordinator.hass.services.async_call.reset_mock()
+    await coordinator._run_pump_cycle("irrigation", PUMP, 5, {})
+    assert not any(
+        call.args[:2] == ("switch", "turn_on")
+        for call in coordinator.hass.services.async_call.await_args_list
+    )
+
+
+async def test_unconfirmed_off_latches_fault(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """A completed shot still faults when OFF never confirms."""
+    await _run_cycle(
+        coordinator, duration=5, confirmed=True, wait_seconds=1.0, off_confirmed=False
+    )
+    snapshot = coordinator.controller_snapshot()
+    assert snapshot.requires_ack
+    assert snapshot.reasons[0].code == f"fault_off_unconfirmed:{PUMP}"
+
+
+async def test_turn_on_command_failure_latches_fault(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """A rejected ON command is a hardware fault, even if OFF then succeeds."""
+
+    async def command(
+        _domain: str, action: str, *_args: object, **_kwargs: object
+    ) -> None:
+        if action == "turn_on":
+            raise ValueError("relay unavailable")
+
+    coordinator.hass.services.async_call = AsyncMock(side_effect=command)
+    with (
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new=AsyncMock(return_value=True),
+        ),
+        patch("homeassistant.helpers.issue_registry.async_create_issue"),
+    ):
+        await coordinator._run_pump_cycle("irrigation", PUMP, 5, {})
+    assert (
+        coordinator.controller_snapshot().reasons[0].code
+        == f"fault_on_command_failed:{PUMP}"
+    )
+
+
+def test_controller_snapshot_tracks_idle_ready_inhibited_and_running(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """Transient state and reason codes come from the same cycle gate."""
+    assert coordinator.controller_snapshot().state.value == "idle"
+    config = coordinator.growspace.irrigation_config
+    config.irrigation_times = [{"time": "10:00:00"}]
+    ready = coordinator.controller_snapshot()
+    assert ready.state.value == "ready"
+    assert ready.since is None
+    config.max_cycles_per_day = 0
+    inhibited = coordinator.controller_snapshot()
+    assert inhibited.state.value == "inhibited"
+    assert inhibited.reasons[0].code == "cap_cycles"
+    assert (
+        coordinator.controller_snapshot().reasons[0].since == inhibited.reasons[0].since
+    )
+    coordinator._active_events["irrigation"] = {"start": "now", "duration": 5}
+    assert coordinator.controller_snapshot().state.value == "running"

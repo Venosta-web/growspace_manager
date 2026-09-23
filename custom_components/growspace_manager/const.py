@@ -676,6 +676,7 @@ class GrowspaceService(StrEnum):
     ADD_DRAIN_TIME = "add_drain_time"
     REMOVE_DRAIN_TIME = "remove_drain_time"
     RUN_IRRIGATION_CYCLE = "run_irrigation_cycle"
+    ACKNOWLEDGE_FAULT = "acknowledge_fault"
     DEBUG_LIST_GROWSPACES = "debug_list_growspaces"
     DEBUG_RESET_SPECIAL_GROWSPACES = "debug_reset_special_growspaces"
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL = "debug_consolidate_duplicate_special"

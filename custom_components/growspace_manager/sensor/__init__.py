@@ -12,6 +12,7 @@ from ._setup import (
 from .crop_steering import CropSteeringSensor
 from .drying import DryingMoistureSensor, DryingWeightSensor
 from .environment import AirExchangeSensor, DLISensor, ECTargetSensor
+from .irrigation_controller import IrrigationControllerSensor
 from .overview import GrowspaceListSensor, GrowspaceOverviewSensor
 from .plant import PlantEntity
 from .strain import SeedInventorySensor, StrainLibrarySensor
@@ -41,6 +42,7 @@ __all__ = [
     "EnergyUsageSensor",
     "GrowspaceListSensor",
     "GrowspaceOverviewSensor",
+    "IrrigationControllerSensor",
     "PlantEntity",
     "SeedInventorySensor",
     "StrainLibrarySensor",

@@ -201,6 +201,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Raise/clear the unmigrated EC ramp curve repair (ADR-0046)
     evaluate_ec_ramp_migration_issues(hass, coordinator)
 
+    # Repairs are reconstructed from the write-through safety store at startup.
+    for growspace_id, growspace in coordinator.growspaces.items():
+        outputs = tuple(
+            entity
+            for entity in (
+                growspace.irrigation_config.irrigation_pump_entity,
+                growspace.irrigation_config.drain_pump_entity,
+            )
+            if entity
+        )
+        fault = coordinator.irrigation_safety.fault_for(growspace_id, outputs)
+        if fault is not None:
+            async_create_issue(
+                hass,
+                DOMAIN,
+                f"irrigation_fault_{growspace_id}",
+                is_fixable=False,
+                severity=IssueSeverity.ERROR,
+                translation_key="irrigation_fault",
+                translation_placeholders={
+                    "growspace": growspace.name,
+                    "detail": fault.reason.detail,
+                },
+            )
+
     entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
 
     return True

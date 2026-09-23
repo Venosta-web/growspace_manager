@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from custom_components.growspace_manager.schemas import (
+    ACKNOWLEDGE_FAULT_SCHEMA,
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
@@ -86,6 +87,7 @@ from . import (
 )
 
 __all__ = [
+    "ACKNOWLEDGE_FAULT_SCHEMA",
     "ADD_DRAIN_TIME_SCHEMA",
     "ADD_GROWSPACE_SCHEMA",
     "ADD_IRRIGATION_TIME_SCHEMA",

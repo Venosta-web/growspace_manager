@@ -27,6 +27,7 @@ from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .integration_types import DateInput
 from .irrigation_program_progression import IrrigationProgramProgression
+from .irrigation_safety_store import IrrigationSafetyStore
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
 from .managers.irrigation_program import IrrigationProgramLibrary
@@ -181,6 +182,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.import_export_manager = import_export_manager
         self.validator = validator
         self.options = options or {}
+        self.irrigation_safety = IrrigationSafetyStore(hass, entry.entry_id)
         self.created_entity_ids: list[tuple[str, str, str]] = []
 
     def _attach_services(
@@ -530,6 +532,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         This should be called once during integration setup.
         """
         await self.storage_manager.async_load(self.options)
+        await self.irrigation_safety.async_load()
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.

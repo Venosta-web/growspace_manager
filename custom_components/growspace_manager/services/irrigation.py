@@ -20,6 +20,7 @@ from custom_components.growspace_manager.const import (
     SteeringMode,
 )
 from custom_components.growspace_manager.schemas import (
+    ACKNOWLEDGE_FAULT_SCHEMA,
     ADD_DRAIN_TIME_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
     APPLY_STEERING_MODE_SCHEMA,
@@ -34,6 +35,7 @@ from custom_components.growspace_manager.schemas import (
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.issue_registry import async_delete_issue
 
 from ._definition import ServiceDefinition
 from .irrigation_change import IrrigationChangeError
@@ -282,6 +284,59 @@ async def handle_run_irrigation_cycle(
 
 
 @handle_service_errors
+async def handle_acknowledge_fault(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> None:
+    """Re-arm a latched controller only for an admin and confirmed OFF outputs."""
+    user_id = call.context.user_id
+    user = await hass.auth.async_get_user(user_id) if user_id else None
+    if user is None or not user.is_admin:
+        raise ServiceValidationError(
+            "Acknowledging an irrigation fault requires an admin user"
+        )
+
+    growspace_id = call.data[ATTR_GROWSPACE_ID]
+    irrigation = await _get_irrigation_coordinator(coordinator, growspace_id)
+    store = coordinator.irrigation_safety
+    fault = store.fault_for(growspace_id, irrigation._configured_outputs())
+    if fault is None:
+        raise ServiceValidationError(f"Growspace '{growspace_id}' has no latched fault")
+
+    outputs = set(fault.outputs)
+    if store.unreadable:
+        for growspace in coordinator.growspaces.values():
+            outputs.update(
+                entity
+                for entity in (
+                    growspace.irrigation_config.irrigation_pump_entity,
+                    growspace.irrigation_config.drain_pump_entity,
+                )
+                if entity
+            )
+    not_off = sorted(
+        entity
+        for entity in outputs
+        if (state := hass.states.get(entity)) is None or state.state != "off"
+    )
+    if not_off:
+        raise ServiceValidationError(
+            f"Cannot acknowledge irrigation fault; outputs not confirmed OFF: {', '.join(not_off)}"
+        )
+    was_unreadable = store.unreadable
+    await store.async_acknowledge(growspace_id, user.id)
+    repair_ids = set(coordinator.growspaces) if was_unreadable else set()
+    repair_ids.add(growspace_id)
+    for repair_id in repair_ids:
+        async_delete_issue(hass, "growspace_manager", f"irrigation_fault_{repair_id}")
+    irrigation._fire_logbook_event(
+        f"Irrigation fault acknowledged by HA user {user_id}", category="irrigation"
+    )
+    coordinator.async_update_listeners()
+
+
+@handle_service_errors
 async def handle_set_ec_target_range(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -309,6 +364,11 @@ async def handle_set_ec_target_range(
 
 
 SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.ACKNOWLEDGE_FAULT,
+        handle_acknowledge_fault,
+        ACKNOWLEDGE_FAULT_SCHEMA,
+    ),
     ServiceDefinition(
         GrowspaceService.RUN_IRRIGATION_CYCLE,
         handle_run_irrigation_cycle,

@@ -842,6 +842,10 @@ RUN_IRRIGATION_CYCLE_SCHEMA = vol.Schema(
     }
 )
 
+ACKNOWLEDGE_FAULT_SCHEMA = vol.Schema(
+    {vol.Required("growspace_id"): vol.All(str, valid_growspace_id)}
+)
+
 SET_DEHUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): vol.All(str, valid_growspace_id),

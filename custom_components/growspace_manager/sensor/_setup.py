@@ -29,6 +29,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .crop_steering import CropSteeringSensor
 from .drying import DryingMoistureSensor, DryingWeightSensor
 from .environment import AirExchangeSensor, DLISensor, ECTargetSensor
+from .irrigation_controller import IrrigationControllerSensor
 from .overview import GrowspaceListSensor, GrowspaceOverviewSensor
 from .plant import PlantEntity
 from .strain import SeedInventorySensor, StrainLibrarySensor
@@ -307,6 +308,10 @@ async def _create_initial_entities(
                 CropSteeringSensor(coordinator, growspace_id, growspace.name)
             )
 
+        initial_entities.append(
+            IrrigationControllerSensor(coordinator, growspace_id, growspace.name)
+        )
+
         if growspace.environment_config and growspace.environment_config.energy_sensors:
             initial_entities.append(
                 EnergyUsageSensor(coordinator, growspace_id, growspace.name)
@@ -368,7 +373,14 @@ async def _update_growspace_entities(
         if growspace_id not in growspace_entities:
             entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
             growspace_entities[growspace_id] = entity
-            async_add_entities([entity])
+            async_add_entities(
+                [
+                    entity,
+                    IrrigationControllerSensor(
+                        coordinator, growspace_id, growspace.name
+                    ),
+                ]
+            )
 
         await _async_create_derivative_sensors(hass, config_entry, growspace)
 
