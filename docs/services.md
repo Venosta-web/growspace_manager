@@ -463,6 +463,34 @@ Toggles active dynamic climate steering on/off.
 
 ## Smart Irrigation & Steering
 
+### Irrigation controller safety
+
+Each growspace with an irrigation or drain output exposes an enum sensor named
+`sensor.<growspace>_irrigation_controller`. It reports `idle` (no automation),
+`ready`, `running`, `inhibited` (a transient gate such as a low tank, daily cap,
+or dark period), `fault` (a latched hardware disagreement), or
+`emergency_stop` (a durable state for the operator stop control in #791). Its attributes are `reasons`, a list
+of `{code, detail, since}` objects, `fault_id`, `requires_ack`, and `since`.
+Reason codes are stable machine identifiers; current hardware codes include
+`fault_on_unconfirmed:<entity>` and `fault_off_unconfirmed:<entity>`.
+
+A fault blocks scheduled and manual cycles and survives a Home Assistant restart.
+The last 500 safety events are kept in the integration's safety store and included
+in diagnostics, independent of Recorder retention. A repair appears in Settings
+until an administrator acknowledges the fault.
+
+### `growspace_manager.acknowledge_fault`
+
+Re-arm a latched fault after every affected output has been verified OFF. The
+service refuses unknown, unavailable, or ON outputs and names each one; it also
+refuses callers who are not Home Assistant administrators. Successful calls
+record the administrator's HA user ID in the safety ledger. Re-arming does not
+start a cycle.
+
+| Parameter      | Type     | Required | Description                            |
+| :------------- | :------- | :------- | :------------------------------------- |
+| `growspace_id` | `string` | Yes      | Growspace whose fault is acknowledged. |
+
 ### `growspace_manager.set_irrigation_settings`
 
 Sets the basic plumbing hardware profiles and default cycle times for simple timer waterings.

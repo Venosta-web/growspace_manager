@@ -636,6 +636,10 @@
     }
   },
   "issues": {
+    "irrigation_fault": {
+      "title": "Irrigation fault in {growspace}",
+      "description": "{detail}. All automatic and manual cycles in this growspace are blocked. Confirm every affected output is OFF, then call growspace_manager.acknowledge_fault as an administrator to re-arm it."
+    },
     "pending_growspace_fail": {
       "title": "Failed to create pending growspace",
       "description": "The system failed to create the pending growspace {name}. Error: {error}. Please check the logs for more details."
@@ -673,6 +677,9 @@
       },
       "crop_steering": {
         "name": "Crop Steering Score"
+      },
+      "irrigation_controller": {
+        "name": "Irrigation Controller"
       },
       "energy_usage": {
         "name": "Energy Usage"

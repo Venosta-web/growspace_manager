@@ -25,6 +25,11 @@ from .const import (
     EVENT_GROWSPACE_LOG_ENTRY,
     SENSOR_SETTLING_DELAY_CAP_SECONDS,
 )
+from .domain.irrigation_safety import (
+    ControllerSnapshot,
+    SafetyReason,
+    controller_snapshot,
+)
 from .domain.irrigation_schedule import (
     next_occurrence,
     remove_items,
@@ -45,6 +50,7 @@ from .domain.water_aggregation import (
     record_daily_water,
 )
 from .exceptions import GrowspaceError
+from .irrigation_safety_store import IrrigationSafetyStore
 from .models import Growspace, GrowspaceEvent, IrrigationConfig
 from .utils import any_light_sensor_on
 
@@ -74,6 +80,7 @@ class BaseIrrigationCoordinator:
         # Daily safety-guard counters (reset by sub-coordinators at midnight)
         self._cycles_today: int = 0
         self._volume_dispensed_today: float = 0.0
+        self._inhibit_since: dict[str, str] = {}
 
     @property
     def last_cycle_timestamp(self) -> str | None:
@@ -113,6 +120,117 @@ class BaseIrrigationCoordinator:
     def growspace(self) -> Growspace:
         """Return the growspace object."""
         return self._main_coordinator.growspaces[self._growspace_id]
+
+    @property
+    def _safety_store(self) -> IrrigationSafetyStore | None:
+        """Return the safety store, absent only in legacy isolated test fixtures."""
+        store = getattr(self._main_coordinator, "irrigation_safety", None)
+        return store if isinstance(store, IrrigationSafetyStore) else None
+
+    def _configured_outputs(self) -> tuple[str, ...]:
+        """Return every output that must be confirmed OFF before re-arming."""
+        config = self.growspace.irrigation_config
+        return tuple(
+            entity
+            for entity in (config.irrigation_pump_entity, config.drain_pump_entity)
+            if entity
+        )
+
+    def controller_snapshot(self) -> ControllerSnapshot:
+        """Resolve the current growspace state for the sensor and cycle gate."""
+        config = self.growspace.irrigation_config
+        store = self._safety_store
+        fault = (
+            store.fault_for(self._growspace_id, self._configured_outputs())
+            if store
+            else None
+        )
+        emergency_stop = store.emergency_stop_for(self._growspace_id) if store else None
+        running = bool(self._active_events)
+        automation_enabled = bool(
+            config.irrigation_times
+            or config.drain_times
+            or (
+                self.growspace.irrigation_strategy
+                and self.growspace.irrigation_strategy.enabled
+            )
+        )
+        inhibits: tuple[SafetyReason, ...] = ()
+        if not running and fault is None and automation_enabled:
+            verdict = decide_cycle(
+                event_type="irrigation",
+                is_manual=False,
+                config=config,
+                tank_readings=self._resolve_tank_readings(),
+                lights_dark=self._is_lights_dark(),
+                cycles_today=self._cycles_today,
+                volume_today=self._volume_dispensed_today,
+                cycle_volume_l=self._compute_cycle_volume_liters(
+                    config.irrigation_duration or 0
+                ),
+            )
+            if verdict.reason is not None:
+                code = {
+                    SkipReason.LOW_TANK: "tank_low",
+                    SkipReason.CYCLE_LIMIT: "cap_cycles",
+                    SkipReason.VOLUME_CAP: "cap_volume",
+                    SkipReason.DARK: "dark",
+                }[verdict.reason]
+                since = self._inhibit_since.setdefault(code, utcnow().isoformat())
+                inhibits = (SafetyReason(code, verdict.message, since),)
+        self._inhibit_since = {reason.code: reason.since for reason in inhibits}
+        return controller_snapshot(
+            configured=bool(self._configured_outputs()),
+            automation_enabled=automation_enabled,
+            running=running,
+            inhibits=inhibits,
+            fault=fault,
+            emergency_stop=emergency_stop.reason if emergency_stop else None,
+        )
+
+    async def _latch_fault(self, code: str, detail: str, output: str) -> None:
+        """Persist a hardware disagreement and surface a Home Assistant repair."""
+        store = self._safety_store
+        if store is None:
+            _LOGGER.error("Irrigation safety store unavailable: %s", detail)
+            return
+        record = await store.async_latch(self._growspace_id, code, detail, (output,))
+        from homeassistant.helpers.issue_registry import (  # noqa: PLC0415
+            IssueSeverity,
+            async_create_issue,
+        )
+
+        async_create_issue(
+            self.hass,
+            "growspace_manager",
+            f"irrigation_fault_{self._growspace_id}",
+            is_fixable=False,
+            severity=IssueSeverity.ERROR,
+            translation_key="irrigation_fault",
+            translation_placeholders={
+                "growspace": self.growspace.name,
+                "detail": detail,
+            },
+        )
+        self._fire_logbook_event(
+            f"Irrigation fault {record.fault_id}: {detail}", CATEGORY_IRRIGATION_ERROR
+        )
+        self._main_coordinator.async_update_listeners()
+
+    async def _record_safety_transition(
+        self, state: str, reason_code: str | None = None
+    ) -> None:
+        """Persist and log each change to the controller's visible state."""
+        store = self._safety_store
+        if store is not None and await store.async_record_transition(
+            self._growspace_id, state, reason_code
+        ):
+            self._fire_logbook_event(
+                f"Irrigation controller {state}"
+                + (f" — {reason_code}" if reason_code else ""),
+                category="irrigation",
+            )
+        self._main_coordinator.async_update_listeners()
 
     async def async_request_refresh(self) -> None:
         """Refresh listeners when configuration changes.
@@ -489,26 +607,37 @@ class BaseIrrigationCoordinator:
         # Ask the Pump Cycle Gate whether this cycle may fire (ADR-0021). The
         # gate is a pure decision; this method owns the resulting effects.
         config = self.growspace.irrigation_config
+        snapshot = self.controller_snapshot()
+        latched = snapshot.requires_ack
         cycle_volume_l = self._compute_cycle_volume_liters(duration)
         verdict = decide_cycle(
             event_type=event_type,
             is_manual=bool(event_data.get("manual", False)),
             config=config,
-            tank_readings=self._resolve_tank_readings(),
-            lights_dark=self._is_lights_dark(),
+            tank_readings=[] if latched else self._resolve_tank_readings(),
+            lights_dark=False if latched else self._is_lights_dark(),
             cycles_today=self._cycles_today,
             volume_today=self._volume_dispensed_today,
             cycle_volume_l=cycle_volume_l,
+            fault=snapshot.state.value == "fault",
+            emergency_stop=snapshot.state.value == "emergency_stop",
         )
         if not verdict.fire:
+            if verdict.reason not in (SkipReason.FAULT, SkipReason.EMERGENCY_STOP):
+                await self._record_safety_transition(
+                    "inhibited", verdict.reason.value if verdict.reason else None
+                )
             await self._apply_skip_verdict(config, verdict)
             return
+
+        await self._record_safety_transition("running")
 
         # Track active event for frontend animation
         self._active_events[event_type] = {
             "start": utcnow().isoformat(),
             "duration": duration,
         }
+        self._main_coordinator.async_update_listeners()
 
         start_dt = None
         moisture_before = None
@@ -537,9 +666,17 @@ class BaseIrrigationCoordinator:
                 )
 
             command_dt = utcnow()
-            await self.hass.services.async_call(
-                "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
-            )
+            try:
+                await self.hass.services.async_call(
+                    "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
+                )
+            except Exception as err:
+                await self._latch_fault(
+                    f"fault_on_command_failed:{pump_entity}",
+                    f"{pump_entity} failed turn_on: {err}",
+                    pump_entity,
+                )
+                raise
 
             # Wait for switch to confirm ON state (critical for Matter smart plugs)
             confirmed = await self._async_wait_for_switch_state(pump_entity, "on")
@@ -550,23 +687,14 @@ class BaseIrrigationCoordinator:
                 start_dt = utcnow()
                 sleep_seconds: float = duration
             else:
-                # No confirmation ever arrived. The turn_on call already returned,
-                # so the pump may have been running since the command — assume it
-                # was and shorten the sleep by the wait, or the cycle delivers
-                # `duration` plus the whole confirmation timeout of extra water.
-                start_dt = command_dt
-                sleep_seconds = max(
-                    0.0, duration - (utcnow() - command_dt).total_seconds()
-                )
-                _LOGGER.warning(
-                    "%s never confirmed 'on' for %s; timing the cycle from the "
-                    "turn_on call and sleeping %.1fs instead of %ss so the pump "
-                    "does not overrun the shot",
+                # A missing ON readback cannot establish delivered water.
+                start_dt = None
+                await self._latch_fault(
+                    f"fault_on_unconfirmed:{pump_entity}",
+                    f"{pump_entity} did not confirm ON after turn_on at {command_dt.isoformat()}",
                     pump_entity,
-                    self._growspace_id,
-                    sleep_seconds,
-                    duration,
                 )
+                return
 
             if event_type == "irrigation":
                 self._last_cycle_timestamp = start_dt.isoformat()
@@ -609,9 +737,6 @@ class BaseIrrigationCoordinator:
             end_dt = utcnow()
 
             try:
-                # Clear active event
-                self._active_events.pop(event_type, None)
-
                 # Ensure start_dt is defined
                 if start_dt:
                     duration_sec = (end_dt - start_dt).total_seconds()
@@ -648,9 +773,33 @@ class BaseIrrigationCoordinator:
                 self._growspace_id,
                 pump_entity,
             )
-            await self.hass.services.async_call(
-                "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
-            )
+            try:
+                await self.hass.services.async_call(
+                    "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
+                )
+                off_confirmed = await self._async_wait_for_switch_state(
+                    pump_entity, "off"
+                )
+            except Exception:
+                _LOGGER.exception("Could not turn off %s", pump_entity)
+                off_confirmed = False
+            try:
+                if not off_confirmed:
+                    await self._latch_fault(
+                        f"fault_off_unconfirmed:{pump_entity}",
+                        f"{pump_entity} did not confirm OFF after turn_off",
+                        pump_entity,
+                    )
+            finally:
+                self._active_events.pop(event_type, None)
+                self._main_coordinator.async_update_listeners()
+            if off_confirmed:
+                state = self.controller_snapshot()
+                if not state.requires_ack:
+                    await self._record_safety_transition(
+                        state.state.value,
+                        state.reasons[0].code if state.reasons else None,
+                    )
             if event_type in self._running_tasks:
                 self._running_tasks.pop(event_type)
 
@@ -754,6 +903,11 @@ class BaseIrrigationCoordinator:
                 no duration can be determined.
         """
         options = self.growspace.irrigation_config
+        snapshot = self.controller_snapshot()
+        if snapshot.requires_ack:
+            raise ServiceValidationError(
+                f"Irrigation is {snapshot.state.value} for growspace '{self._growspace_id}'"
+            )
         pump_entity = options.irrigation_pump_entity
         if not pump_entity:
             raise ServiceValidationError(

@@ -65,5 +65,17 @@ async def async_get_config_entry_diagnostics(
             "irrigation": irrigation_states,
             "dehumidifier": dehumidifier_states,
         },
+        "irrigation_safety": {
+            "faults": {
+                growspace_id: record.as_dict()
+                for growspace_id, record in coordinator.irrigation_safety.faults.items()
+            },
+            "emergency_stops": {
+                growspace_id: record.as_dict()
+                for growspace_id, record in coordinator.irrigation_safety.emergency_stops.items()
+            },
+            "fault_record_unreadable": coordinator.irrigation_safety.unreadable,
+            "ledger": list(coordinator.irrigation_safety.ledger),
+        },
         "integration_version": VERSION,
     }

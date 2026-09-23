@@ -1,4 +1,15 @@
 ---
+acknowledge_fault:
+  name: Acknowledge irrigation fault
+  description: Re-arm a growspace only after every affected irrigation output reads OFF. Requires an administrator.
+  fields:
+    growspace_id:
+      name: Growspace ID
+      description: Growspace whose fault should be acknowledged.
+      required: true
+      selector:
+        text:
+
 export_strain_library:
   description: Export the strain library and images to a ZIP file
   # No fields required

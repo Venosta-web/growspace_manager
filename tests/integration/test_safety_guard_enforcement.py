@@ -67,6 +67,16 @@ def mock_hass(mock_main_coordinator: MagicMock) -> MagicMock:
     mock_state.state = "on"
     hass.states = MagicMock()
     hass.states.get.return_value = mock_state
+
+    async def command_switch(
+        _domain: str, service: str, *_args: object, **_kwargs: object
+    ) -> None:
+        if service == "turn_off":
+            mock_state.state = "off"
+        elif service == "turn_on":
+            mock_state.state = "on"
+
+    hass.services.async_call.side_effect = command_switch
     hass.bus = MagicMock()
     hass.bus.async_fire = MagicMock()
     return hass

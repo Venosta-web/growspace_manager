@@ -32,6 +32,8 @@ class SkipReason(Enum):
     CYCLE_LIMIT = "cycle_limit"
     VOLUME_CAP = "volume_cap"
     DARK = "dark"
+    FAULT = "fault"
+    EMERGENCY_STOP = "emergency_stop"
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +119,8 @@ def decide_cycle(
     cycles_today: int,
     volume_today: float,
     cycle_volume_l: float,
+    fault: bool = False,
+    emergency_stop: bool = False,
 ) -> CycleVerdict:
     """Decide whether a pump cycle may fire, in precedence order.
 
@@ -125,6 +129,17 @@ def decide_cycle(
     and a manual run bypasses the dark check.
     """
     prefix = event_type.capitalize()
+
+    if emergency_stop:
+        return CycleVerdict(
+            False,
+            SkipReason.EMERGENCY_STOP,
+            f"{prefix} skipped — emergency stop latched",
+        )
+    if fault:
+        return CycleVerdict(
+            False, SkipReason.FAULT, f"{prefix} skipped — hardware fault latched"
+        )
 
     if config.pause_on_low_tank:
         low = first_low_tank(tank_readings)

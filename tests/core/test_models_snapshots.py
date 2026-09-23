@@ -1,5 +1,6 @@
 """Snapshot tests for Growspace Manager models."""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from freezegun import freeze_time
@@ -74,6 +75,9 @@ async def test_diagnostics_snapshot(
         "growspaces": {"gs1": {"name": "Test Growspace", "unique_id": "sensitive"}},
         "plants": {},
     }
+    coordinator.irrigation_safety = SimpleNamespace(
+        faults={}, emergency_stops={}, unreadable=False, ledger=[]
+    )
     entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, entry)

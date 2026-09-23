@@ -22,6 +22,15 @@
       'entry_id': 'test_entry',
     }),
     'integration_version': '0.3.5',
+    'irrigation_safety': dict({
+      'emergency_stops': dict({
+      }),
+      'fault_record_unreadable': False,
+      'faults': dict({
+      }),
+      'ledger': list([
+      ]),
+    }),
     'subsystems': dict({
       'dehumidifier': dict({
       }),
