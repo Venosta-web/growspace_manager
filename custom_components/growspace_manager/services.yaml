@@ -1447,6 +1447,7 @@ set_irrigation_settings:
       selector:
         number:
           min: 1
+          max: 3600
           unit_of_measurement: "seconds"
     drain_duration:
       description: Default duration in seconds for a drain cycle.
@@ -1454,7 +1455,24 @@ set_irrigation_settings:
       selector:
         number:
           min: 1
+          max: 3600
           unit_of_measurement: "seconds"
+    max_cycle_seconds:
+      description: Maximum number of seconds any irrigation or drain pump cycle may run.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 3600
+          unit_of_measurement: "seconds"
+    min_interval_minutes:
+      description: Minimum time between scheduled irrigation cycles.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 1440
+          unit_of_measurement: "minutes"
     soil_trigger_percent:
       description: Soil-moisture percentage below which irrigation may trigger.
       required: false

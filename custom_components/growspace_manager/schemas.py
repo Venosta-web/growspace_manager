@@ -714,20 +714,20 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
             vol.Coerce(float), vol.Range(min=0.0, max=100.0)
         ),
         vol.Optional("p1_shot_duration_seconds"): vol.All(
-            vol.Coerce(int), vol.Range(min=0)
+            vol.Coerce(int), vol.Range(min=0, max=3600)
         ),
         vol.Optional("p1_shot_interval_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
         ),
         vol.Optional("p2_shot_duration_seconds"): vol.All(
-            vol.Coerce(int), vol.Range(min=0)
+            vol.Coerce(int), vol.Range(min=0, max=3600)
         ),
         vol.Optional("p2_shot_interval_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
         ),
         # Deprecated shared shot fields: still accepted, write both phases
         vol.Optional("shot_duration_seconds"): vol.All(
-            vol.Coerce(int), vol.Range(min=0)
+            vol.Coerce(int), vol.Range(min=0, max=3600)
         ),
         vol.Optional("shot_interval_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
@@ -796,9 +796,17 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("emitter_count"): vol.All(vol.Coerce(int), vol.Range(min=0)),
             vol.Optional("drain_pump_entity"): str,
             vol.Optional("irrigation_duration"): vol.All(
-                vol.Coerce(int), vol.Range(min=1)
+                vol.Coerce(int), vol.Range(min=1, max=3600)
             ),
-            vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("drain_duration"): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=3600)
+            ),
+            vol.Optional("max_cycle_seconds"): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=3600)
+            ),
+            vol.Optional("min_interval_minutes"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=1440)
+            ),
             vol.Optional("soil_trigger_percent"): vol.Any(
                 None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
             ),
@@ -840,7 +848,7 @@ SET_STEERING_PHASE_SCHEMA = vol.Schema(
 _ADD_SCHEDULE_TIME_BASE = {
     vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
     vol.Required("time"): str,  # Use string for HH:MM:SS format
-    vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1, max=3600)),
 }
 
 ADD_IRRIGATION_TIME_SCHEMA = vol.Schema(_ADD_SCHEDULE_TIME_BASE)
@@ -857,7 +865,7 @@ REMOVE_DRAIN_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
 RUN_IRRIGATION_CYCLE_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-        vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1, max=3600)),
     }
 )
 
@@ -1042,9 +1050,13 @@ SAVE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
 _RECIPE_SCHEDULE_ITEM_SCHEMA = vol.Schema(
     {
         vol.Optional("time"): str,
-        vol.Optional("duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("duration"): vol.Any(
+            None, vol.All(vol.Coerce(int), vol.Range(min=1, max=3600))
+        ),
         vol.Optional("start_time"): str,
-        vol.Optional("duration_seconds"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("duration_seconds"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=1, max=3600))
+        ),
     }
 )
 
@@ -1099,8 +1111,12 @@ SCHEDULE_RECIPE_VALUES_SCHEMA = vol.Schema(
     {
         vol.Optional("irrigation_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
         vol.Optional("drain_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
-        vol.Optional("irrigation_duration"): vol.Any(None, vol.Coerce(int)),
-        vol.Optional("drain_duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("irrigation_duration"): vol.Any(
+            None, vol.All(vol.Coerce(int), vol.Range(min=1, max=3600))
+        ),
+        vol.Optional("drain_duration"): vol.Any(
+            None, vol.All(vol.Coerce(int), vol.Range(min=1, max=3600))
+        ),
         vol.Optional("daily_volume_cap_liters"): vol.Any(None, vol.Coerce(float)),
         vol.Optional("max_cycles_per_day"): vol.Any(None, vol.Coerce(int)),
         vol.Optional("skip_during_dark"): bool,

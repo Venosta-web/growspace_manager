@@ -15,12 +15,27 @@ from custom_components.growspace_manager.domain.pump_cycle import (
     CycleVerdict,
     SkipReason,
     TankReading,
+    cycle_runtime_limit,
     cycle_volume_liters,
     decide_cycle,
     first_low_tank,
     safety_cap_blocks,
 )
 from custom_components.growspace_manager.models import IrrigationConfig
+
+
+@pytest.mark.parametrize(
+    ("stored_limit", "effective"),
+    [(600, 600), (7200, 3600), (0, 600)],
+)
+def test_runtime_limit_bounds_stored_configuration(
+    stored_limit: int, effective: int
+) -> None:
+    """A malformed stored limit cannot bypass the absolute runtime ceiling."""
+    assert (
+        cycle_runtime_limit(IrrigationConfig(max_cycle_seconds=stored_limit))
+        == effective
+    )
 
 
 def _config(**overrides: object) -> IrrigationConfig:

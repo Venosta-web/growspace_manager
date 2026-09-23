@@ -250,7 +250,7 @@
         'active_steering_phase': 'p2',
         'auto_advance_p1_to_p2': False,
         'auto_advance_p2_to_p3': False,
-        'daily_volume_cap_liters': None,
+        'daily_volume_cap_liters': 20.0,
         'drain_duration': None,
         'drain_pump_entity': 'switch.drain',
         'drain_times': list([
@@ -263,7 +263,9 @@
         'irrigation_times': list([
         ]),
         'log_to_logbook': True,
-        'max_cycles_per_day': None,
+        'max_cycle_seconds': 600,
+        'max_cycles_per_day': 24,
+        'min_interval_minutes': 5,
         'pause_on_low_tank': True,
         'phase_changed_at': None,
         'program_auto_advance': False,

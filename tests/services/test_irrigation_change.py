@@ -508,7 +508,7 @@ async def test_clear_resets_the_config_and_stops_the_strategy() -> None:
     assert config.drain_pump_entity is None
     assert config.irrigation_duration is None
     assert config.pump_flow_rate_ml_per_sec == 0.0
-    assert config.daily_volume_cap_liters is None
+    assert config.daily_volume_cap_liters == 20.0
     assert config.halt_on_runoff_ec_threshold is None
     assert config.active_steering_phase == "p2"
     # Times pointed at a pump that is no longer configured go with it.

@@ -32,6 +32,7 @@ from .domain.ec_state import (
 )
 from .domain.infiltration import InfiltrationMonitor
 from .domain.plant_metrics import count_live_plants
+from .domain.pump_cycle import cycle_runtime_limit
 from .domain.shot_composer import FeedbackTuning, ShotComposer
 from .domain.steering_phase import (
     ShotRequest,
@@ -303,8 +304,12 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             lambda: self._compute_ec_modulation(strategy, growspace),
             lambda secs: self._check_safety_guards(secs) is not None,
             now().isoformat(),
+            cycle_runtime_limit(growspace.irrigation_config),
         )
-        scaled_duration = composition.composed_seconds
+        scaled_duration = min(
+            composition.composed_seconds,
+            cycle_runtime_limit(growspace.irrigation_config),
+        )
 
         _LOGGER.info(
             "Firing %s shot for growspace %s. Duration: %ss "

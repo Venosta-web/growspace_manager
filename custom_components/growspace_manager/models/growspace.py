@@ -736,8 +736,17 @@ class Growspace(BaseModel):
             data["environment_config"] = {}
 
         # Migration: Fix legacy irrigation schedule format
-        if "irrigation_config" in data and isinstance(data["irrigation_config"], dict):
+        if data.get("irrigation_config") is None:
+            data["irrigation_config"] = {
+                "daily_volume_cap_liters": None,
+                "max_cycles_per_day": None,
+            }
+        if isinstance(data["irrigation_config"], dict):
             irr_config = data["irrigation_config"].copy()
+            # Old installations had no daily caps. Preserve that choice on load;
+            # the dataclass defaults above apply only to newly created spaces.
+            irr_config.setdefault("daily_volume_cap_liters", None)
+            irr_config.setdefault("max_cycles_per_day", None)
 
             # Sanitize veg_day_hours
             if "veg_day_hours" in irr_config:

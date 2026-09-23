@@ -638,6 +638,10 @@
     }
   },
   "issues": {
+    "irrigation_cap_review": {
+      "title": "Review irrigation daily caps for {growspace}",
+      "description": "This growspace was created before safe daily irrigation caps were enabled by default. Its existing settings were preserved. Set a maximum cycles per day and daily volume cap in Irrigation settings; enter the pump flow rate so the volume cap can be enforced."
+    },
     "irrigation_fault": {
       "title": "Irrigation fault in {growspace}",
       "description": "{detail}. All automatic and manual cycles in this growspace are blocked. Confirm every affected output is OFF, then call growspace_manager.acknowledge_fault as an administrator to re-arm it."
