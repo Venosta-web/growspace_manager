@@ -31,12 +31,15 @@ from custom_components.growspace_manager.models import (
     IrrigationConfig,
 )
 from custom_components.growspace_manager.services.safety import (
+    _safe_state,
+    _targets,
     async_emergency_stop_growspace,
     handle_emergency_stop,
     handle_reset_safety,
     managed_outputs,
 )
 from custom_components.growspace_manager.vpd_on_off_controller import VpdOnOffController
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
@@ -51,6 +54,7 @@ def _growspace() -> Growspace:
             dehumidifier_entities=["switch.dry"],
             growlight_entities=["light.grow"],
             exhaust_fan_entities=["fan.exhaust"],
+            circulation_fan_entities=["number.circulation"],
             exhaust_fan_ac_infinity_devices=[
                 ACInfinityDevice(
                     mode_entity="select.exhaust_mode",
@@ -131,6 +135,7 @@ async def test_emergency_stop_commands_all_outputs_and_reset_checks_readback(
         "switch.dry",
         "light.grow",
         "fan.exhaust",
+        "number.circulation",
         "select.exhaust_mode",
         "select.grow_mode",
     }
@@ -144,7 +149,12 @@ async def test_emergency_stop_commands_all_outputs_and_reset_checks_readback(
         _domain: str, _service: str, data: dict, **_kwargs: object
     ) -> None:
         hass.states.async_set(
-            data["entity_id"], "Off" if _service == "select_option" else "off"
+            data["entity_id"],
+            "Off"
+            if _service == "select_option"
+            else "0"
+            if _service == "set_value"
+            else "off",
         )
 
     service_hass.services.async_call = AsyncMock(side_effect=turn_off)
@@ -270,3 +280,66 @@ async def test_global_stop_attempts_every_growspace_after_a_failure() -> None:
             await handle_emergency_stop(hass, call)
     assert stop.await_count == 2
     stop.assert_any_await(hass, second, "second", "operator")
+
+
+def test_targets_include_only_loaded_entries_and_require_a_match() -> None:
+    hass = MagicMock()
+    loaded = MagicMock(state=ConfigEntryState.LOADED)
+    loaded.runtime_data.growspaces = {"tent": _growspace()}
+    unloaded = MagicMock(state=ConfigEntryState.NOT_LOADED)
+    unloaded.runtime_data.growspaces = {"other": _growspace()}
+    hass.config_entries.async_entries.return_value = [loaded, unloaded]
+    assert _targets(hass, None) == [(loaded.runtime_data, "tent")]
+    assert _targets(hass, "tent") == [(loaded.runtime_data, "tent")]
+    with pytest.raises(ServiceValidationError, match="No matching loaded growspace"):
+        _targets(hass, "other")
+
+
+def test_safe_state_requires_affirmative_readback(hass: HomeAssistant) -> None:
+    assert not _safe_state(hass, "switch.missing")
+    hass.states.async_set("number.speed", "unavailable")
+    assert not _safe_state(hass, "number.speed")
+    hass.states.async_set("number.speed", "0")
+    assert _safe_state(hass, "number.speed")
+
+
+async def test_unreadable_store_still_commands_outputs_safe() -> None:
+    coordinator = MagicMock()
+    coordinator.growspaces = {"tent": _growspace()}
+    coordinator.irrigation_safety.async_latch_emergency_stop = AsyncMock(
+        side_effect=RuntimeError("record unreadable")
+    )
+    hass = MagicMock()
+    hass.services.async_call = AsyncMock()
+    hass.states.get.return_value.state = "off"
+    with patch(
+        "custom_components.growspace_manager.services.safety.asyncio.sleep",
+        new=AsyncMock(),
+    ):
+        with pytest.raises(ServiceValidationError, match="record unreadable"):
+            await async_emergency_stop_growspace(hass, coordinator, "tent", "operator")
+    assert hass.services.async_call.await_count == len(managed_outputs(_growspace()))
+
+
+async def test_reset_requires_admin_and_skips_unlatched_growspace() -> None:
+    hass = MagicMock()
+    call = MagicMock()
+    call.context.user_id = "grower"
+    call.data = {"growspace_id": "tent"}
+    hass.auth.async_get_user = AsyncMock(
+        return_value=MagicMock(id="grower", is_admin=False)
+    )
+    with pytest.raises(ServiceValidationError, match="admin"):
+        await handle_reset_safety(hass, call)
+
+    coordinator = MagicMock()
+    coordinator.irrigation_safety.emergency_stop_for.return_value = None
+    hass.auth.async_get_user = AsyncMock(
+        return_value=MagicMock(id="admin", is_admin=True)
+    )
+    with patch(
+        "custom_components.growspace_manager.services.safety._targets",
+        return_value=[(coordinator, "tent")],
+    ):
+        await handle_reset_safety(hass, call)
+    coordinator.irrigation_safety.async_reset_emergency_stop.assert_not_called()

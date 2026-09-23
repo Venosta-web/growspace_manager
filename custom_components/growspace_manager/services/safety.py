@@ -90,9 +90,13 @@ async def async_emergency_stop_growspace(
 ) -> None:
     """Latch first, command safe states, then demand affirmative readback."""
     outputs = managed_outputs(coordinator.growspaces[growspace_id])
-    await coordinator.irrigation_safety.async_latch_emergency_stop(
-        growspace_id, "Operator emergency stop", outputs, user_id
-    )
+    latch_error: Exception | None = None
+    try:
+        await coordinator.irrigation_safety.async_latch_emergency_stop(
+            growspace_id, "Operator emergency stop", outputs, user_id
+        )
+    except Exception as err:  # noqa: BLE001 - still command every output safe
+        latch_error = err
     failures: list[str] = []
     for entity_id in outputs:
         data: dict[str, object]
@@ -126,10 +130,19 @@ async def async_emergency_stop_growspace(
         if not unsafe:
             break
         await asyncio.sleep(0.1)
-    if failures or unsafe:
+    if latch_error or failures or unsafe:
         raise ServiceValidationError(
-            "Emergency stop latched; outputs not confirmed safe: "
-            + ", ".join(sorted({*failures, *unsafe}))
+            "Emergency stop incomplete: "
+            + (
+                f"safety record could not be saved ({latch_error}); "
+                if latch_error
+                else ""
+            )
+            + (
+                "outputs not confirmed safe: " + ", ".join(sorted({*failures, *unsafe}))
+                if failures or unsafe
+                else ""
+            )
         )
     coordinator.async_update_listeners()
 
