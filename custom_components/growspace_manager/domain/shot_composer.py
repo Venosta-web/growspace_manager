@@ -175,6 +175,7 @@ class ShotComposer:
         get_ec_factor: Callable[[], tuple[float, bool]],
         check_cap: Callable[[int], bool],
         timestamp: str,
+        max_cycle_seconds: int | None = None,
     ) -> ShotComposition:
         """Compose ``base × VWC factor × EC factor`` into a ``ShotComposition``.
 
@@ -192,7 +193,9 @@ class ShotComposer:
 
         composed_factor = self.size_factor * ec_factor
         composed_seconds = max(1, int(round(base_seconds * composed_factor)))
-        capped = check_cap(composed_seconds)
+        effective_seconds = min(composed_seconds, max_cycle_seconds or composed_seconds)
+        blocked = check_cap(effective_seconds)
+        capped = blocked or effective_seconds < composed_seconds
 
         composition = ShotComposition(
             phase=phase,
@@ -201,7 +204,7 @@ class ShotComposer:
             ec_factor=round(ec_factor, 3),
             ec_modulation_available=ec_available,
             composed_seconds=composed_seconds,
-            effective_seconds=0 if capped else composed_seconds,
+            effective_seconds=0 if blocked else effective_seconds,
             capped=capped,
             timestamp=timestamp,
         )

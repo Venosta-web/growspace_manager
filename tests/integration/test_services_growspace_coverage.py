@@ -137,6 +137,8 @@ async def test_add_growspace_no_notification_target(
         await service.add_growspace("Test", notification_target="")
     gs = repository_mock.add_growspace.call_args[0][0]
     assert gs.notification_target is None
+    assert gs.irrigation_config.max_cycles_per_day == 24
+    assert gs.irrigation_config.daily_volume_cap_liters == 20.0
     assert gs.to_dict() == snapshot
 
 

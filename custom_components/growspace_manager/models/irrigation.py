@@ -349,8 +349,10 @@ class IrrigationConfig(BaseModel):
     veg_day_hours: int = 18
     pump_flow_rate_ml_per_sec: float = 0.0
     soil_trigger_percent: float | None = None
-    daily_volume_cap_liters: float | None = None
-    max_cycles_per_day: int | None = None
+    daily_volume_cap_liters: float | None = 20.0
+    max_cycles_per_day: int | None = 24
+    max_cycle_seconds: int = 600
+    min_interval_minutes: int = 5
     skip_during_dark: bool = False
     pause_on_low_tank: bool = True
     log_to_logbook: bool = True

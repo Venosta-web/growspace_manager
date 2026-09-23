@@ -441,7 +441,9 @@
         }
       ],
       "log_to_logbook": true,
+      "max_cycle_seconds": 600,
       "max_cycles_per_day": 12,
+      "min_interval_minutes": 5,
       "pause_on_low_tank": true,
       "phase_changed_at": "2026-08-11T06:00:00+00:00",
       "program_auto_advance": true,

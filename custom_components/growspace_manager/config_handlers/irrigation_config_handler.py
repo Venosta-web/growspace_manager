@@ -183,7 +183,7 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 default=irrigation_options.get("irrigation_duration", 30),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, mode=selector.NumberSelectorMode.BOX
+                    min=1, max=3600, mode=selector.NumberSelectorMode.BOX
                 )
             ),
             vol.Optional(
@@ -191,7 +191,23 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 default=irrigation_options.get("drain_duration", 30),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, mode=selector.NumberSelectorMode.BOX
+                    min=1, max=3600, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                "max_cycle_seconds",
+                default=irrigation_options.get("max_cycle_seconds", 600),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=3600, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                "min_interval_minutes",
+                default=irrigation_options.get("min_interval_minutes", 5),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=1440, mode=selector.NumberSelectorMode.BOX
                 )
             ),
             vol.Optional(

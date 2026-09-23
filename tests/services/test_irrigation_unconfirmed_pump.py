@@ -1,5 +1,6 @@
 """Hardware disagreements latch faults and stop future pump cycles."""
 
+import asyncio
 from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -28,6 +29,7 @@ START_TIME = "2026-01-12 12:00:00"
 def coordinator() -> IrrigationCoordinator:
     """Build a coordinator over a growspace with a known pump flow rate."""
     hass = MagicMock(spec=HomeAssistant)
+    type(hass).loop = property(lambda self: asyncio.get_running_loop())
     hass.services = AsyncMock()
     hass.bus = MagicMock()
     hass.states = MagicMock()
@@ -107,6 +109,10 @@ async def _run_cycle(
 
         with (
             patch("asyncio.sleep", new=fake_sleep),
+            patch(
+                "custom_components.growspace_manager.irrigation_coordinator.async_call_later",
+                return_value=lambda: None,
+            ),
             patch.object(coordinator, "_async_wait_for_switch_state", new=fake_wait),
             patch.object(coordinator, "_async_record_pump_water", new=record_water),
             patch.object(coordinator, "_async_spawn_settling_report", MagicMock()),

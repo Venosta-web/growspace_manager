@@ -23,6 +23,12 @@ if TYPE_CHECKING:
     from custom_components.growspace_manager.models import IrrigationConfig
 
 EVENT_TYPE_IRRIGATION = "irrigation"
+MAX_CYCLE_SECONDS = 3600
+
+
+def cycle_runtime_limit(config: IrrigationConfig) -> int:
+    """Keep even an old or malformed stored limit within the hard safety bound."""
+    return max(1, min(config.max_cycle_seconds or 600, MAX_CYCLE_SECONDS))
 
 
 class SkipReason(Enum):

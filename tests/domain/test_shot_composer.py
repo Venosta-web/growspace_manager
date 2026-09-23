@@ -218,3 +218,15 @@ def test_compose_floors_composed_seconds_at_one() -> None:
 
     # round(1 * 0.5) = 0 -> floored to 1.
     assert composition.composed_seconds == 1
+
+
+def test_compose_clamps_steering_shot_and_records_original_size() -> None:
+    """A composed shot keeps its requested size while reporting delivered size."""
+    composer = ShotComposer()
+    composition = composer.compose(
+        "P2", 500, lambda: (2.0, True), lambda secs: False, _TS, 600
+    )
+    assert composition.composed_seconds == 1000
+    assert composition.effective_seconds == 600
+    assert composition.capped is True
+    assert composer.last_composition is composition

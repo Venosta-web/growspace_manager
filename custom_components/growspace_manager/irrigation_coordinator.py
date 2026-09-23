@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, time, timedelta
 from functools import partial
 import logging
+import time as monotonic_time
 from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
@@ -14,6 +15,7 @@ from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import (
+    async_call_later,
     async_track_time_change,
     async_track_time_interval,
 )
@@ -45,6 +47,7 @@ from .domain.pump_cycle import (
     CycleVerdict,
     SkipReason,
     TankReading,
+    cycle_runtime_limit,
     cycle_volume_liters,
     decide_cycle,
     safety_cap_blocks,
@@ -66,6 +69,7 @@ _LOGGER = logging.getLogger(__name__)
 # decided — so the controller sensor leaves ``inhibited`` promptly instead of
 # waiting for the next coordinator refresh.
 STARTUP_INHIBIT_POLL = timedelta(seconds=30)
+PUMP_WATCHDOG_GRACE_SECONDS = 10
 
 
 class BaseIrrigationCoordinator:
@@ -724,6 +728,38 @@ class BaseIrrigationCoordinator:
         if verdict.reason is not SkipReason.DARK or config.log_to_logbook:
             self._fire_logbook_event(verdict.message, CATEGORY_IRRIGATION_ERROR)
 
+    async def _async_watchdog_off(
+        self, event_type: str, pump_entity: str, cycle_task: asyncio.Task[Any] | None
+    ) -> None:
+        """Make an independent, bounded OFF attempt when a cycle hangs."""
+        _LOGGER.error(
+            "Pump watchdog expired for %s (%s)", self._growspace_id, pump_entity
+        )
+        self._fire_logbook_event(
+            f"{event_type.capitalize()} watchdog_off — forcing {pump_entity} OFF",
+            CATEGORY_IRRIGATION_ERROR,
+        )
+        if cycle_task and not cycle_task.done():
+            cycle_task.cancel()
+        try:
+            await asyncio.wait_for(
+                self.hass.services.async_call(
+                    "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
+                ),
+                timeout=PUMP_WATCHDOG_GRACE_SECONDS,
+            )
+            confirmed = await self._async_wait_for_switch_state(pump_entity, "off")
+        except Exception:
+            _LOGGER.exception("Pump watchdog could not turn off %s", pump_entity)
+            confirmed = False
+        if not confirmed:
+            await self._latch_fault(
+                f"fault_watchdog_off_unconfirmed:{pump_entity}",
+                f"Watchdog could not confirm {pump_entity} OFF",
+                pump_entity,
+            )
+        await self._record_safety_transition("watchdog_off")
+
     async def _run_pump_cycle(
         self,
         event_type: str,
@@ -735,6 +771,16 @@ class BaseIrrigationCoordinator:
         # Ask the Pump Cycle Gate whether this cycle may fire (ADR-0021). The
         # gate is a pure decision; this method owns the resulting effects.
         config = self.growspace.irrigation_config
+        limit = cycle_runtime_limit(config)
+        if duration > limit:
+            _LOGGER.warning(
+                "Clamping %s cycle for %s from %ss to %ss",
+                event_type,
+                self._growspace_id,
+                duration,
+                limit,
+            )
+            duration = limit
         snapshot = self.controller_snapshot()
         latched = snapshot.requires_ack
         startup = None if latched else self.startup_inhibit_reason()
@@ -771,6 +817,24 @@ class BaseIrrigationCoordinator:
 
         start_dt = None
         moisture_before = None
+        off_confirmed = False
+        cycle_task = asyncio.current_task()
+        deadline = monotonic_time.monotonic() + duration + PUMP_WATCHDOG_GRACE_SECONDS
+
+        @callback
+        def watchdog_callback(_now: datetime) -> None:
+            # Scheduled by HA's event loop, independently of the cycle task.
+            if not off_confirmed:
+                self.hass.async_create_task(
+                    self._async_watchdog_off(event_type, pump_entity, cycle_task),
+                    name=f"pump_watchdog_{self._growspace_id}_{event_type}",
+                )
+
+        cancel_watchdog = async_call_later(
+            self.hass,
+            max(0.0, deadline - monotonic_time.monotonic()),
+            watchdog_callback,
+        )
 
         try:
             # Capture moisture before starting
@@ -924,6 +988,8 @@ class BaseIrrigationCoordinator:
                         pump_entity,
                     )
             finally:
+                if off_confirmed:
+                    cancel_watchdog()
                 self._active_events.pop(event_type, None)
                 self._main_coordinator.async_update_listeners()
             if off_confirmed:
@@ -1051,6 +1117,11 @@ class BaseIrrigationCoordinator:
         if not effective_duration or effective_duration <= 0:
             raise ServiceValidationError(
                 f"No valid irrigation duration provided or configured for growspace '{self._growspace_id}'"
+            )
+        limit = cycle_runtime_limit(options)
+        if effective_duration > limit:
+            raise ServiceValidationError(
+                f"Irrigation duration exceeds max_cycle_seconds ({limit}s)"
             )
 
         if (
@@ -1185,6 +1256,18 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         self, now: datetime, *, event_type: str, event_data: Mapping[str, Any]
     ) -> None:
         """Handle a scheduled event."""
+        if event_type == "irrigation" and self._last_cycle_timestamp:
+            last = datetime.fromisoformat(self._last_cycle_timestamp)
+            minimum = timedelta(
+                minutes=self.growspace.irrigation_config.min_interval_minutes
+            )
+            if now - last < minimum:
+                _LOGGER.info(
+                    "Skipping irrigation event for %s: minimum interval is %s minutes",
+                    self._growspace_id,
+                    self.growspace.irrigation_config.min_interval_minutes,
+                )
+                return
         if (
             event_type in self._running_tasks
             and self._running_tasks[event_type]

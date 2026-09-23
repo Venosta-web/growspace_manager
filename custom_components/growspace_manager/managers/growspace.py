@@ -33,6 +33,7 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     GrowspaceType,
+    IrrigationConfig,
     Subarea,
     WaterUsageData,
 )
@@ -137,8 +138,14 @@ class GrowspaceManager(BaseService):
                 growspace_kwargs["dimensions"] = dimensions
             if environment_config is not None:
                 growspace_kwargs["environment_config"] = environment_config
-            if irrigation_config is not None:
-                growspace_kwargs["irrigation_config"] = irrigation_config
+            # New spaces pass explicit cap defaults through from_dict; that
+            # reader preserves absent caps as None for legacy stored spaces.
+            defaults = IrrigationConfig()
+            growspace_kwargs["irrigation_config"] = {
+                "daily_volume_cap_liters": defaults.daily_volume_cap_liters,
+                "max_cycles_per_day": defaults.max_cycles_per_day,
+                **(irrigation_config or {}),
+            }
 
             growspace = Growspace.from_dict(growspace_kwargs)
             self.repository.add_growspace(growspace)

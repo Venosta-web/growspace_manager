@@ -45,6 +45,30 @@ def test_growspace_from_dict_basic() -> None:
     assert growspace.plants_per_row == 2
 
 
+def test_new_irrigation_caps_do_not_change_legacy_growspace_values() -> None:
+    """Only newly constructed growspaces receive the daily cap defaults."""
+    new = Growspace(id="new", name="New")
+    assert new.irrigation_config.max_cycles_per_day == 24
+    assert new.irrigation_config.daily_volume_cap_liters == 20.0
+
+    legacy = Growspace.from_dict({"id": "old", "name": "Old"})
+    assert legacy.irrigation_config.max_cycles_per_day is None
+    assert legacy.irrigation_config.daily_volume_cap_liters is None
+
+    explicit = Growspace.from_dict(
+        {
+            "id": "set",
+            "name": "Set",
+            "irrigation_config": {
+                "max_cycles_per_day": 6,
+                "daily_volume_cap_liters": 3.0,
+            },
+        }
+    )
+    assert explicit.irrigation_config.max_cycles_per_day == 6
+    assert explicit.irrigation_config.daily_volume_cap_liters == 3.0
+
+
 def test_growspace_from_dict_with_extra_fields() -> None:
     """Test Growspace from_dict with extra, unrecognized fields."""
     data = {"id": "gs1", "name": "Test Growspace", "extra_field": "value"}
