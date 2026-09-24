@@ -359,7 +359,12 @@ async def test_watchdog_latches_fault_when_off_command_fails(
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    mock_hass.services.async_call.side_effect = RuntimeError("switch unavailable")
+
+    async def refuse_off(_domain: str, service: str, *_args: Any, **_kw: Any) -> None:
+        if service == "turn_off":
+            raise RuntimeError("switch unavailable")
+
+    mock_hass.services.async_call.side_effect = refuse_off
     coordinator._latch_fault = AsyncMock()
     coordinator._record_safety_transition = AsyncMock()
 
@@ -370,6 +375,9 @@ async def test_watchdog_latches_fault_when_off_command_fails(
         "fault_watchdog_off_unconfirmed" in coordinator._latch_fault.call_args.args[0]
     )
     coordinator._record_safety_transition.assert_awaited_once_with("watchdog_off")
+    # The pump still reads ON, so OFF keeps being re-sent until it does not.
+    assert "switch.irrigation_pump" in coordinator._off_retries
+    coordinator.async_cancel_listeners()
 
 
 async def test_manual_duration_above_configured_cycle_limit_is_refused(

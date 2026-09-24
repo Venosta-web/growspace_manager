@@ -226,7 +226,42 @@ async def test_unreadable_record_cannot_be_rewritten_by_normal_events(
         await store.async_latch_emergency_stop("tent", "Operator stop", ())
     with pytest.raises(RuntimeError, match="unreadable"):
         await store.async_record_transition("tent", "running")
+    with pytest.raises(RuntimeError, match="unreadable"):
+        await store.async_record_not_delivered(
+            "tent",
+            "switch.pump",
+            "on_unconfirmed",
+            "no ON",
+            consecutive=1,
+            off_confirmed=True,
+        )
     assert not store.ledger
+
+
+async def test_not_delivered_cycle_survives_restart(hass: HomeAssistant) -> None:
+    """A failed-closed cycle is a durable ledger row, not a Recorder event."""
+    store = IrrigationSafetyStore(hass, "not-delivered")
+    await store.async_record_not_delivered(
+        "tent",
+        "switch.pump",
+        "on_command_failed",
+        "switch.pump refused turn_on: gone",
+        consecutive=2,
+        off_confirmed=False,
+    )
+    restarted = IrrigationSafetyStore(hass, "not-delivered")
+    await restarted.async_load()
+    (row,) = restarted.ledger
+    assert row == {
+        "at": row["at"],
+        "growspace_id": "tent",
+        "action": "cycle_not_delivered",
+        "output": "switch.pump",
+        "reason_code": "on_command_failed",
+        "detail": "switch.pump refused turn_on: gone",
+        "consecutive": 2,
+        "off_confirmed": False,
+    }
 
 
 async def test_transitions_are_deduplicated_and_bounded(hass: HomeAssistant) -> None:
@@ -262,7 +297,8 @@ async def test_failed_acknowledgement_write_keeps_latch(hass: HomeAssistant) -> 
 
 
 @pytest.mark.parametrize(
-    "operation", ["first_fault", "second_output", "emergency_stop", "transition"]
+    "operation",
+    ["first_fault", "second_output", "emergency_stop", "transition", "not_delivered"],
 )
 async def test_failed_safety_writes_fail_closed(
     hass: HomeAssistant, operation: str
@@ -284,6 +320,14 @@ async def test_failed_safety_writes_fail_closed(
             "tent", "Operator stop", ()
         ),
         "transition": lambda: store.async_record_transition("tent", "running"),
+        "not_delivered": lambda: store.async_record_not_delivered(
+            "tent",
+            "switch.feed",
+            "on_unconfirmed",
+            "no ON",
+            consecutive=1,
+            off_confirmed=True,
+        ),
     }[operation]
     with (
         patch.object(

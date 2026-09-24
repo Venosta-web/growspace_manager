@@ -99,6 +99,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         )
         self._register_daily_reset_listener()
         self._restore_steering_state()
+        self._resume_off_retries()
         await self._async_begin_startup_inhibit()
         # Check every minute for phase updates and actions
         self._remove_update_listener = async_track_time_interval(

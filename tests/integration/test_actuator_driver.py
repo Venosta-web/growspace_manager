@@ -1,6 +1,7 @@
 """Unit tests for the actuator-driver abstraction (ADR-0022)."""
 
-from unittest.mock import AsyncMock, MagicMock
+from collections.abc import Awaitable, Callable
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -11,6 +12,7 @@ from custom_components.growspace_manager.actuator_driver import (
     LightDriver,
     NumberDriver,
     SwitchDriver,
+    async_confirm_state,
     resolve_actuator_driver,
     resolve_actuator_drivers,
     resolve_on_off_drivers,
@@ -472,3 +474,66 @@ async def test_light_driver_set_speed_zero_turns_off(mock_hass: MagicMock) -> No
 def test_resolve_actuator_driver_returns_light_driver(mock_hass: MagicMock) -> None:
     """A light.* entity resolves to a LightDriver."""
     assert isinstance(resolve_actuator_driver(mock_hass, "light.bar"), LightDriver)
+
+
+def _scripted_states(
+    mock_hass: MagicMock, reports: list[str]
+) -> tuple[list[float], list[float], Callable[[float], Awaitable[None]]]:
+    """Answer successive reads with ``reports`` against a clock only sleeps move.
+
+    Returns the seconds each sleep asked for and the clock at every read.
+    """
+    clock = [0.0]
+    slept: list[float] = []
+    read_at: list[float] = []
+    remaining = iter(reports)
+    last = [reports[0]]
+
+    def read(_entity_id: str) -> MagicMock:
+        read_at.append(clock[0])
+        last[0] = next(remaining, last[0])
+        return _state(last[0])
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        clock[0] += seconds
+
+    mock_hass.states.get.side_effect = read
+    return slept, read_at, sleep
+
+
+async def test_confirm_state_first_reads_after_one_second(
+    mock_hass: MagicMock,
+) -> None:
+    """An optimistic state written as the command returns is never the answer."""
+    slept, read_at, sleep = _scripted_states(mock_hass, [STATE_OFF])
+    with patch("asyncio.sleep", new=sleep):
+        assert await async_confirm_state(mock_hass, "switch.pump", STATE_OFF)
+    assert read_at == [1.0]
+
+
+async def test_confirm_state_waits_out_a_late_report(mock_hass: MagicMock) -> None:
+    """A device that answers inside the window confirms at the first read after."""
+    slept, read_at, sleep = _scripted_states(mock_hass, [STATE_ON, STATE_ON, STATE_OFF])
+    with patch("asyncio.sleep", new=sleep):
+        assert await async_confirm_state(mock_hass, "switch.pump", STATE_OFF)
+    assert read_at == [1.0, 1.5, 2.0]
+
+
+async def test_confirm_state_gives_up_at_the_timeout(mock_hass: MagicMock) -> None:
+    """A device that never answers is read every 0.5 s and refused at 6 s."""
+    slept, read_at, sleep = _scripted_states(mock_hass, [STATE_ON])
+    with patch("asyncio.sleep", new=sleep):
+        assert not await async_confirm_state(mock_hass, "switch.pump", STATE_OFF)
+    assert read_at == [1.0 + 0.5 * n for n in range(11)]
+    assert sum(slept) == 6.0
+
+
+async def test_confirm_state_treats_a_missing_entity_as_unconfirmed(
+    mock_hass: MagicMock,
+) -> None:
+    """No state at all is not the state that was asked for."""
+    mock_hass.states.get.return_value = None
+    assert not await async_confirm_state(
+        mock_hass, "switch.pump", STATE_OFF, first_read=0, poll=0, timeout=0
+    )

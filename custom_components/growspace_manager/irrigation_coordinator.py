@@ -11,7 +11,7 @@ import time as monotonic_time
 from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.const import EVENT_STATE_CHANGED, STATE_OFF
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import (
@@ -23,6 +23,7 @@ from homeassistant.util.dt import utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
+from .actuator_driver import async_confirm_state
 from .const import (
     ATTR_GROWSPACE_ID,
     CATEGORY_ALERT,
@@ -31,10 +32,13 @@ from .const import (
     SENSOR_SETTLING_DELAY_CAP_SECONDS,
 )
 from .domain.irrigation_safety import (
+    ON_COMMAND_FAILED,
+    ON_UNCONFIRMED,
     ControllerSnapshot,
     ControllerState,
     SafetyReason,
     controller_snapshot,
+    open_failure_latches,
     startup_inhibit,
 )
 from .domain.irrigation_schedule import (
@@ -70,6 +74,15 @@ _LOGGER = logging.getLogger(__name__)
 # waiting for the next coordinator refresh.
 STARTUP_INHIBIT_POLL = timedelta(seconds=30)
 PUMP_WATCHDOG_GRACE_SECONDS = 10
+# How long a pump has to report ON after turn_on — the wait that exists for
+# high-latency devices such as Matter smart plugs.
+ON_CONFIRM_TIMEOUT_SECONDS = 10.0
+# While a pump that would not read OFF stays latched, OFF is re-sent this often
+# until it does (#785).
+OFF_RETRY_INTERVAL = timedelta(minutes=1)
+# Fault codes whose output was last seen not reading OFF. A restart resumes the
+# OFF retry for these, since the pump may still be running.
+_OFF_UNCONFIRMED_CODES = ("fault_off_unconfirmed:", "fault_watchdog_off_unconfirmed:")
 
 
 class BaseIrrigationCoordinator:
@@ -100,6 +113,11 @@ class BaseIrrigationCoordinator:
         self._startup_began_at: datetime | None = None
         self._startup_cleared = False
         self._cancel_startup_poll: Callable[[], None] | None = None
+        # Consecutive cycles per output that could not be opened (#785); a
+        # confirmed ON on that output resets it.
+        self._open_failures: dict[str, int] = {}
+        # Outputs being re-sent OFF every minute until they read OFF.
+        self._off_retries: dict[str, Callable[[], None]] = {}
 
     @property
     def last_cycle_timestamp(self) -> str | None:
@@ -446,6 +464,9 @@ class BaseIrrigationCoordinator:
             # Teardown, not a schedule reload: the poll belongs to this
             # coordinator's start and must not outlive it.
             self._cancel_startup_poll_listener()
+            for cancel_retry in self._off_retries.values():
+                cancel_retry()
+            self._off_retries.clear()
             for task in list(self._running_tasks.values()):
                 if task and not task.done():
                     task.cancel()
@@ -746,6 +767,127 @@ class BaseIrrigationCoordinator:
         if verdict.reason is not SkipReason.DARK or config.log_to_logbook:
             self._fire_logbook_event(verdict.message, CATEGORY_IRRIGATION_ERROR)
 
+    async def _async_send_off(self, pump_entity: str) -> None:
+        """Command OFF once, bounded, logging rather than raising a refusal.
+
+        A refused or hung command is not the verdict: whether the pump stopped
+        is decided by reading it back, which every caller does next.
+        """
+        try:
+            await asyncio.wait_for(
+                self.hass.services.async_call(
+                    "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
+                ),
+                timeout=PUMP_WATCHDOG_GRACE_SECONDS,
+            )
+        except Exception:
+            _LOGGER.exception("Could not turn off %s", pump_entity)
+
+    async def _async_command_off(self, pump_entity: str) -> bool:
+        """Command OFF and return whether the pump then reads back OFF."""
+        await self._async_send_off(pump_entity)
+        return await async_confirm_state(self.hass, pump_entity, STATE_OFF)
+
+    async def _async_off_unconfirmed(
+        self, pump_entity: str, code: str, detail: str
+    ) -> None:
+        """Hold everything when a pump would not read OFF, and keep stopping it.
+
+        The latch comes first, so no later cycle can start while the rest of
+        this runs. OFF is then re-sent once at once and every minute after that
+        until the pump reads OFF; the fault itself stays latched until an
+        administrator acknowledges it.
+        """
+        await self._latch_fault(code, detail, pump_entity)
+        await self._async_send_off(pump_entity)
+        await self.hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "title": f"Pump did not turn off — {self.growspace.name}",
+                "message": (
+                    f"{detail}. Growspace Manager has stopped every irrigation "
+                    f"cycle in '{self.growspace.name}' and will keep sending OFF "
+                    "every minute until it reads OFF. Check the pump and its "
+                    "relay now, then acknowledge the fault."
+                ),
+                "notification_id": (
+                    f"growspace_pump_off_unconfirmed_{self._growspace_id}_{pump_entity}"
+                ),
+            },
+            blocking=False,
+        )
+        self._async_start_off_retry(pump_entity)
+
+    @callback
+    def _async_start_off_retry(self, pump_entity: str) -> None:
+        """Re-send OFF every minute until the pump reads OFF."""
+        if pump_entity in self._off_retries:
+            return
+
+        async def retry(_now: datetime) -> None:
+            state = self.hass.states.get(pump_entity)
+            if state is not None and state.state == STATE_OFF:
+                self._off_retries.pop(pump_entity)()
+                self._fire_logbook_event(
+                    f"{pump_entity} reads OFF again — the fault stays latched "
+                    "until it is acknowledged",
+                    CATEGORY_IRRIGATION_ERROR,
+                )
+                return
+            _LOGGER.warning("Re-sending OFF to %s, which is not OFF", pump_entity)
+            await self._async_send_off(pump_entity)
+
+        self._off_retries[pump_entity] = async_track_time_interval(
+            self.hass, retry, OFF_RETRY_INTERVAL
+        )
+
+    @callback
+    def _resume_off_retries(self) -> None:
+        """After a restart, keep stopping a latched pump that may still run."""
+        store = self._safety_store
+        fault = store.faults.get(self._growspace_id) if store else None
+        if fault is None or not fault.reason.code.startswith(_OFF_UNCONFIRMED_CODES):
+            return
+        for output in fault.outputs:
+            state = self.hass.states.get(output)
+            if state is None or state.state != STATE_OFF:
+                self._async_start_off_retry(output)
+
+    async def _async_record_open_failure(
+        self, pump_entity: str, reason_code: str, detail: str, *, off_confirmed: bool
+    ) -> None:
+        """Book a cycle that never opened as not delivered, latching on a run."""
+        consecutive = self._open_failures.get(pump_entity, 0) + 1
+        self._open_failures[pump_entity] = consecutive
+        _LOGGER.warning(
+            "%s cycle not delivered (%s, %d in a row): %s",
+            self._growspace_id,
+            reason_code,
+            consecutive,
+            detail,
+        )
+        self._fire_logbook_event(
+            f"Cycle not delivered — {detail}", CATEGORY_IRRIGATION_ERROR
+        )
+        store = self._safety_store
+        if store is not None and not store.unreadable:
+            await store.async_record_not_delivered(
+                self._growspace_id,
+                pump_entity,
+                reason_code,
+                detail,
+                consecutive=consecutive,
+                off_confirmed=off_confirmed,
+            )
+        if open_failure_latches(consecutive):
+            await self._latch_fault(
+                f"fault_{reason_code}:{pump_entity}",
+                f"{consecutive} consecutive cycles on {pump_entity} were not "
+                f"delivered; the last: {detail}",
+                pump_entity,
+            )
+
     async def _async_watchdog_off(
         self, event_type: str, pump_entity: str, cycle_task: asyncio.Task[Any] | None
     ) -> None:
@@ -759,22 +901,11 @@ class BaseIrrigationCoordinator:
         )
         if cycle_task and not cycle_task.done():
             cycle_task.cancel()
-        try:
-            await asyncio.wait_for(
-                self.hass.services.async_call(
-                    "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
-                ),
-                timeout=PUMP_WATCHDOG_GRACE_SECONDS,
-            )
-            confirmed = await self._async_wait_for_switch_state(pump_entity, "off")
-        except Exception:
-            _LOGGER.exception("Pump watchdog could not turn off %s", pump_entity)
-            confirmed = False
-        if not confirmed:
-            await self._latch_fault(
+        if not await self._async_command_off(pump_entity):
+            await self._async_off_unconfirmed(
+                pump_entity,
                 f"fault_watchdog_off_unconfirmed:{pump_entity}",
                 f"Watchdog could not confirm {pump_entity} OFF",
-                pump_entity,
             )
         await self._record_safety_transition("watchdog_off")
 
@@ -845,13 +976,25 @@ class BaseIrrigationCoordinator:
         start_dt = None
         moisture_before = None
         off_confirmed = False
+        closing = False
+        # A cycle that could not be opened: (reason code, detail). Booked as
+        # not delivered once the pump has been read back OFF (#785).
+        open_failure: tuple[str, str] | None = None
         cycle_task = asyncio.current_task()
-        deadline = monotonic_time.monotonic() + duration + PUMP_WATCHDOG_GRACE_SECONDS
+        # The ON wait is part of a healthy cycle, so the deadline allows for it.
+        deadline = (
+            monotonic_time.monotonic()
+            + ON_CONFIRM_TIMEOUT_SECONDS
+            + duration
+            + PUMP_WATCHDOG_GRACE_SECONDS
+        )
 
         @callback
         def watchdog_callback(_now: datetime) -> None:
             # Scheduled by HA's event loop, independently of the cycle task.
-            if not off_confirmed:
+            # Once the cycle is closing it is bounded on its own — a bounded
+            # OFF, a bounded readback — and must not be cancelled mid-readback.
+            if not off_confirmed and not closing:
                 self.hass.async_create_task(
                     self._async_watchdog_off(event_type, pump_entity, cycle_task),
                     name=f"pump_watchdog_{self._growspace_id}_{event_type}",
@@ -899,31 +1042,33 @@ class BaseIrrigationCoordinator:
                 await self.hass.services.async_call(
                     "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
                 )
-            except Exception as err:
-                await self._latch_fault(
-                    f"fault_on_command_failed:{pump_entity}",
-                    f"{pump_entity} failed turn_on: {err}",
-                    pump_entity,
-                )
-                raise
-
-            # Wait for switch to confirm ON state (critical for Matter smart plugs)
-            confirmed = await self._async_wait_for_switch_state(pump_entity, "on")
-
-            if confirmed:
-                # Start timing AFTER switch confirms ON: the device reported the
-                # relay closing, so that is when water started moving.
-                start_dt = utcnow()
-                sleep_seconds: float = duration
-            else:
-                # A missing ON readback cannot establish delivered water.
-                start_dt = None
-                await self._latch_fault(
-                    f"fault_on_unconfirmed:{pump_entity}",
-                    f"{pump_entity} did not confirm ON after turn_on at {command_dt.isoformat()}",
-                    pump_entity,
+            except Exception as err:  # noqa: BLE001 — every refusal fails closed
+                # The command may still have reached the relay, so the pump is
+                # stopped and read back in ``finally`` like any other cycle.
+                open_failure = (
+                    ON_COMMAND_FAILED,
+                    f"{pump_entity} refused turn_on: {err}",
                 )
                 return
+
+            # Wait for switch to confirm ON state (critical for Matter smart plugs)
+            if not await self._async_wait_for_switch_state(
+                pump_entity, "on", timeout=ON_CONFIRM_TIMEOUT_SECONDS
+            ):
+                # The pump may be running, but a missing ON readback cannot
+                # establish delivered water: stop it and book nothing.
+                open_failure = (
+                    ON_UNCONFIRMED,
+                    f"{pump_entity} did not confirm ON within "
+                    f"{ON_CONFIRM_TIMEOUT_SECONDS:g}s of turn_on at "
+                    f"{command_dt.isoformat()}",
+                )
+                return
+
+            # Start timing AFTER switch confirms ON: the device reported the
+            # relay closing, so that is when water started moving.
+            start_dt = utcnow()
+            self._open_failures.pop(pump_entity, None)
 
             if event_type == "irrigation":
                 self._last_cycle_timestamp = start_dt.isoformat()
@@ -933,7 +1078,7 @@ class BaseIrrigationCoordinator:
 
             await self._async_send_cycle_notification(event_type, duration, event_data)
 
-            await asyncio.sleep(sleep_seconds)
+            await asyncio.sleep(duration)
 
         except asyncio.CancelledError:
             _LOGGER.info(
@@ -975,10 +1120,11 @@ class BaseIrrigationCoordinator:
 
                     # Update daily counters for completed irrigation cycles.
                     # The planned duration is normally the driver — asyncio.sleep
-                    # is what the pump runs for — but a pump that never confirmed
-                    # 'on' can outlast it when the confirmation wait alone exceeds
-                    # the shot. Book whichever is larger so the daily volume and
-                    # its cap never under-count water that physically flowed.
+                    # is what the pump runs for — but a late wake-up can run the
+                    # pump past it. Book whichever is larger so the daily volume
+                    # and its cap never under-count water that physically flowed.
+                    # A cycle that never confirmed ON has no start_dt and books
+                    # nothing here; it is recorded as not delivered instead.
                     if event_type == "irrigation":
                         billed_volume_l = max(
                             cycle_volume_l,
@@ -1005,26 +1151,21 @@ class BaseIrrigationCoordinator:
                 self._growspace_id,
                 pump_entity,
             )
-            try:
-                await self.hass.services.async_call(
-                    "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
-                )
-                off_confirmed = await self._async_wait_for_switch_state(
-                    pump_entity, "off"
-                )
-            except Exception:
-                _LOGGER.exception("Could not turn off %s", pump_entity)
-                off_confirmed = False
+            closing = True
+            off_confirmed = await self._async_command_off(pump_entity)
             try:
                 if not off_confirmed:
-                    await self._latch_fault(
-                        f"fault_off_unconfirmed:{pump_entity}",
-                        f"{pump_entity} did not confirm OFF after turn_off",
+                    await self._async_off_unconfirmed(
                         pump_entity,
+                        f"fault_off_unconfirmed:{pump_entity}",
+                        f"{pump_entity} did not read back OFF after turn_off",
+                    )
+                if open_failure is not None:
+                    await self._async_record_open_failure(
+                        pump_entity, *open_failure, off_confirmed=off_confirmed
                     )
             finally:
-                if off_confirmed:
-                    cancel_watchdog()
+                cancel_watchdog()
                 self._active_events.pop(event_type, None)
                 self._main_coordinator.async_update_listeners()
             if off_confirmed:
@@ -1223,6 +1364,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
 
         # Load schedules without triggering updates
         await self.async_update_listeners()
+        self._resume_off_retries()
         await self._async_begin_startup_inhibit()
 
     async def async_update_listeners(self, *args: Any) -> None:

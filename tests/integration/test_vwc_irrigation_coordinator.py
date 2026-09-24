@@ -31,6 +31,10 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 
+# This suite shares one `hass.states` mock across every sensor, so it
+# cannot model the pump's own state; its OFF readback is answered for them.
+pytestmark = pytest.mark.usefixtures("pump_reads_back_off")
+
 
 def _drive_watering(
     coord: VWCIrrigationCoordinator, strategy: IrrigationStrategy, phase: str

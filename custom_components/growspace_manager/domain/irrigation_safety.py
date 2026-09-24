@@ -15,6 +15,20 @@ from typing import Any
 STARTUP_INHIBIT = "startup_inhibit"
 DEFAULT_STARTUP_GRACE_MINUTES = 5
 
+# A pump cycle that could not be opened — ``turn_on`` raised, or ON was never
+# confirmed — is failed closed and booked as not delivered (#785). One such
+# cycle is a slow or flaky device; this many in a row on the same output, with
+# no confirmed cycle between them, is hardware that no longer answers, and
+# latches a Fault.
+OPEN_FAILURE_FAULT_THRESHOLD = 3
+ON_COMMAND_FAILED = "on_command_failed"
+ON_UNCONFIRMED = "on_unconfirmed"
+
+
+def open_failure_latches(consecutive: int) -> bool:
+    """Return whether this many consecutive open failures latch a Fault."""
+    return consecutive >= OPEN_FAILURE_FAULT_THRESHOLD
+
 
 class ControllerState(StrEnum):
     """The grower's view of one growspace's irrigation controller."""
