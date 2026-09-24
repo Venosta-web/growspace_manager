@@ -17,6 +17,9 @@ from custom_components.growspace_manager.exhaust_fan_coordinator import (
 from custom_components.growspace_manager.grow_light_coordinator import (
     GrowLightCoordinator,
 )
+from custom_components.growspace_manager.humidifier_coordinator import (
+    HumidifierCoordinator,
+)
 from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
 )
@@ -39,7 +42,6 @@ from custom_components.growspace_manager.services.safety import (
     handle_reset_safety,
     managed_outputs,
 )
-from custom_components.growspace_manager.vpd_on_off_controller import VpdOnOffController
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -93,6 +95,8 @@ async def test_legacy_irrigation_migrates_armed_once(hass: HomeAssistant) -> Non
     await restarted.async_set_control("tent", "irrigation_armed", False, "grower")
     assert not restarted.irrigation_review_pending("tent")
     assert restarted.ledger[-1]["user_id"] == "grower"
+    # A plain listener runs as an executor job, after this line unless awaited.
+    await hass.async_block_till_done()
     assert any("grower" in event["message"] for event in logbook)
     again = IrrigationSafetyStore(hass, "migration")
     await again.async_load()
@@ -271,7 +275,7 @@ async def test_automation_off_blocks_pump_service_calls(hass: HomeAssistant) -> 
         (ExhaustFanCoordinator, "_async_regulate"),
         (CirculationFanCoordinator, "_async_regulate"),
         (GrowLightCoordinator, "_async_regulate"),
-        (VpdOnOffController, "async_check_and_control"),
+        (HumidifierCoordinator, "async_check_and_control"),
     ],
 )
 async def test_automation_off_blocks_climate_and_light_commands(
@@ -279,9 +283,7 @@ async def test_automation_off_blocks_climate_and_light_commands(
 ) -> None:
     controller = controller_type.__new__(controller_type)
     controller.main_coordinator = MagicMock()
-    controller.main_coordinator.irrigation_safety.automation_enabled.return_value = (
-        False
-    )
+    controller.main_coordinator.irrigation_safety.commands_allowed.return_value = False
     controller.growspace_id = "tent"
     controller.hass = MagicMock()
     controller.hass.services.async_call = AsyncMock()

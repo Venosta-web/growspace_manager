@@ -62,9 +62,10 @@ def mock_hass(mock_main_coordinator: MagicMock) -> MagicMock:
     hass.async_create_task = asyncio.create_task
     type(hass).loop = property(lambda self: asyncio.get_running_loop())
     hass.data = {DOMAIN: {}}
-    # Report switch as already "on" so _async_wait_for_switch_state returns immediately
+    # The pump starts OFF and follows its commands, so the ON wait confirms at
+    # once. One already ON is a person's (#793) and would hold the cycle.
     mock_state = MagicMock()
-    mock_state.state = "on"
+    mock_state.state = "off"
     hass.states = MagicMock()
     hass.states.get.return_value = mock_state
 

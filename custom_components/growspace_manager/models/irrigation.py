@@ -390,6 +390,10 @@ class IrrigationConfig(BaseModel):
     # Whether a moisture reading of exactly 0 is implausible, for probes that
     # read 0 in air when pulled out of the substrate (#789).
     moisture_zero_is_implausible: bool = False
+    # What a managed pump reading ON outside any cycle of ours leads to (#793):
+    # "alert" treats it as a person's and holds automatic irrigation while it
+    # lasts; "enforce_off" switches it off and latches a Fault.
+    unexpected_on_policy: str = "alert"
     active_steering_phase: str = "p2"
     phase_changed_at: str | None = None
 

@@ -62,10 +62,11 @@ def mock_hass(mock_main_coordinator) -> MagicMock:
     hass.async_create_task = asyncio.create_task
     type(hass).loop = property(lambda self: asyncio.get_running_loop())
     hass.data = {DOMAIN: {}}
-    # Default switch state to "on" so _async_wait_for_switch_state returns
-    # immediately; tests that need a different state override states.get locally.
+    # The switch starts OFF and follows its commands, so the ON wait confirms at
+    # once; one already ON is a person's (#793). Tests that need a different
+    # state override states.get locally.
     mock_state = MagicMock()
-    mock_state.state = "on"
+    mock_state.state = "off"
     hass.states = MagicMock()
     hass.states.get.return_value = mock_state
 
@@ -365,6 +366,7 @@ async def test_watchdog_latches_fault_when_off_command_fails(
             raise RuntimeError("switch unavailable")
 
     mock_hass.services.async_call.side_effect = refuse_off
+    mock_hass.states.get.return_value.state = "on"
     coordinator._latch_fault = AsyncMock()
     coordinator._record_safety_transition = AsyncMock()
 

@@ -123,6 +123,9 @@ def coordinator() -> IrrigationCoordinator:
     }
     main.async_commit = AsyncMock()
     safety = IrrigationSafetyStore.__new__(IrrigationSafetyStore)
+    safety.overrides = {}
+    safety._override_timers = {}
+    safety._override_listeners = []
     safety.faults = {}
     safety.emergency_stops = {}
     safety.controls = {GROWSPACE_ID: {"automation": True, "irrigation_armed": True}}

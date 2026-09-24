@@ -206,6 +206,7 @@
           "sensor_stale_after_minutes": "Sensor Stale After (minutes)",
           "sensor_alert_delay_minutes": "Sensor Alert Delay (minutes)",
           "moisture_zero_is_implausible": "Treat a Moisture Reading of 0 as Implausible",
+          "unexpected_on_policy": "When a Pump Is Switched On Outside Growspace Manager",
           "skip_during_dark": "Skip During Dark Period",
           "log_to_logbook": "Log Waterings to the Logbook",
           "use_vwc_steering": "Enable VWC Crop Steering",
@@ -241,6 +242,7 @@
           "sensor_stale_after_minutes": "The longest the moisture and pore EC sensors may go without reporting before their reading is ignored as stale. A sensor that normally reports more often goes stale sooner, after three of its usual intervals. 0 turns the check off.",
           "sensor_alert_delay_minutes": "Automatic shots are withheld as soon as the moisture sensor is unavailable, stale or implausible. After this long, one alert is sent; it clears when the sensor reports again.",
           "moisture_zero_is_implausible": "Turn on if your moisture probe reads 0 when it is pulled out of the substrate, so that reading withholds shots instead of looking bone-dry.",
+          "unexpected_on_policy": "Alert treats it as a person watering by hand: you are notified and automatic irrigation waits until the pump reads off. Enforce off switches it off, reads it back and latches a fault that an administrator must acknowledge.",
           "growspace_id_read_only": "The growspace these settings apply to. Read-only."
         }
       },
@@ -522,6 +524,14 @@
       "plant_not_found": "The selected plant could not be found.",
       "notification_not_found": "The selected notification could not be found.",
       "no_growspaces": "No growspaces are configured yet. Add one first."
+    }
+  },
+  "selector": {
+    "unexpected_on_policy": {
+      "options": {
+        "alert": "Alert and hold automatic irrigation",
+        "enforce_off": "Switch it off and latch a fault"
+      }
     }
   },
   "services": {

@@ -50,36 +50,36 @@ places:
 
 Each counter is incremented in exactly one place.
 
-| Key                                     | Counts                                                                                                                                                                           |
-| :-------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `irrigation.requested`                  | Every pump cycle that reached the controller, whether or not it fired.                                                                                                           |
-| `irrigation.skipped.<reason>`           | A cycle refused before the pump was commanded. See [Skip reasons](#skip-reasons).                                                                                                |
-| `irrigation.fired`                      | The pump read back ON.                                                                                                                                                           |
-| `irrigation.completed_verified`         | The pump ran for its planned duration and then read back OFF.                                                                                                                    |
-| `irrigation.completed_unverified`       | The pump ran for its planned duration but did not read back OFF.                                                                                                                 |
-| `irrigation.aborted.<cause>`            | An admitted cycle that did not run to its end: `cancel`, `e_stop`, `override` (automation turned off, irrigation disarmed, or a manual run replacing it), `error` or `watchdog`. |
-| `irrigation.command_failure.on`         | `turn_on` raised.                                                                                                                                                                |
-| `irrigation.command_failure.off`        | `turn_off` raised or timed out during a stop attempt: a cycle closing, or the watchdog. The re-sends each minute after an OFF-unconfirmed fault are not counted.                 |
-| `irrigation.readback.on_unconfirmed`    | The pump did not read ON after `turn_on`.                                                                                                                                        |
-| `irrigation.readback.off_unconfirmed`   | A pump that would not read OFF latched a fault. A watchdog and the cycle it cancelled can both find the same pump still ON, and that counts once.                                |
-| `irrigation.readback.unexpected_on`     | A configured pump read ON when a start began, before any cycle ran.                                                                                                              |
-| `sensors.control_unavailable_minutes`   | Each sampled minute in which a control sensor was missing, `unknown`, `unavailable` or not a number.                                                                             |
-| `sensors.stale_events`                  | A control sensor becoming stale.                                                                                                                                                 |
-| `sensors.implausible_readings`          | A control sensor reading becoming implausible.                                                                                                                                   |
-| `controller.inhibit.<reason>`           | The irrigation controller entering `inhibited`, by reason code.                                                                                                                  |
-| `controller.fault_latched`              | A fault latched that was not already latched.                                                                                                                                    |
-| `controller.fault_acknowledged`         | An administrator acknowledged a fault.                                                                                                                                           |
-| `controller.emergency_stop`             | An emergency stop latched that was not already latched.                                                                                                                          |
-| `runtime.ha_start`                      | One Home Assistant start. A config entry reload does not count.                                                                                                                  |
-| `runtime.ha_start_inflight`             | A start that found a pump's in-flight marker, meaning the previous process stopped while that pump was running a cycle.                                                          |
-| `runtime.automated_seconds.<entity_id>` | Seconds an actuator ran in a cycle that was not manual.                                                                                                                          |
-| `runtime.estimated_water_l`             | The Pump-Cycle Water Estimate of each irrigation cycle, the same figure water usage books. It is an estimate from the configured flow rate, not metered water.                   |
-| `runtime.observed_minutes`              | Minutes sampled while the integration was running.                                                                                                                               |
-| `runtime.automation_eligible_minutes`   | Sampled minutes in which automatic irrigation was armed and no fault was latched. `runtime.automation_uptime_percent` is this as a percentage of `runtime.observed_minutes`.     |
-| `climate.command_failure.<role>`        | A humidifier, dehumidifier, exhaust or circulation command that raised or did not answer within 10 s.                                                                            |
-| `climate.fail_safe.<role>`              | A humidifier, dehumidifier or exhaust controller entering its safe state after losing every control sensor for the fail-safe timeout.                                            |
-| `climate.interlock`                     | The humidifier or dehumidifier switched off because the other's later demand took over.                                                                                          |
-| `climate.max_runtime_stop`              | A humidifier or dehumidifier switched off at its maximum continuous runtime.                                                                                                     |
+| Key                                     | Counts                                                                                                                                                                                                            |
+| :-------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `irrigation.requested`                  | Every pump cycle that reached the controller, whether or not it fired.                                                                                                                                            |
+| `irrigation.skipped.<reason>`           | A cycle refused before the pump was commanded. See [Skip reasons](#skip-reasons).                                                                                                                                 |
+| `irrigation.fired`                      | The pump read back ON.                                                                                                                                                                                            |
+| `irrigation.completed_verified`         | The pump ran for its planned duration and then read back OFF.                                                                                                                                                     |
+| `irrigation.completed_unverified`       | The pump ran for its planned duration but did not read back OFF.                                                                                                                                                  |
+| `irrigation.aborted.<cause>`            | An admitted cycle that did not run to its end: `cancel`, `e_stop`, `override` (automation turned off, irrigation disarmed, a Manual Override of irrigation, or a manual run replacing it), `error` or `watchdog`. |
+| `irrigation.command_failure.on`         | `turn_on` raised.                                                                                                                                                                                                 |
+| `irrigation.command_failure.off`        | `turn_off` raised or timed out during a stop attempt: a cycle closing, or the watchdog. The re-sends each minute after an OFF-unconfirmed fault are not counted.                                                  |
+| `irrigation.readback.on_unconfirmed`    | The pump did not read ON after `turn_on`.                                                                                                                                                                         |
+| `irrigation.readback.off_unconfirmed`   | A pump that would not read OFF latched a fault. A watchdog and the cycle it cancelled can both find the same pump still ON, and that counts once.                                                                 |
+| `irrigation.readback.unexpected_on`     | A configured pump read ON with no cycle of Growspace Manager's in flight, at a start or while running, and no Manual Override of irrigation set (#793).                                                           |
+| `sensors.control_unavailable_minutes`   | Each sampled minute in which a control sensor was missing, `unknown`, `unavailable` or not a number.                                                                                                              |
+| `sensors.stale_events`                  | A control sensor becoming stale.                                                                                                                                                                                  |
+| `sensors.implausible_readings`          | A control sensor reading becoming implausible.                                                                                                                                                                    |
+| `controller.inhibit.<reason>`           | The irrigation controller entering `inhibited`, by reason code.                                                                                                                                                   |
+| `controller.fault_latched`              | A fault latched that was not already latched.                                                                                                                                                                     |
+| `controller.fault_acknowledged`         | An administrator acknowledged a fault.                                                                                                                                                                            |
+| `controller.emergency_stop`             | An emergency stop latched that was not already latched.                                                                                                                                                           |
+| `runtime.ha_start`                      | One Home Assistant start. A config entry reload does not count.                                                                                                                                                   |
+| `runtime.ha_start_inflight`             | A start that found a pump's in-flight marker, meaning the previous process stopped while that pump was running a cycle.                                                                                           |
+| `runtime.automated_seconds.<entity_id>` | Seconds an actuator ran in a cycle that was not manual.                                                                                                                                                           |
+| `runtime.estimated_water_l`             | The Pump-Cycle Water Estimate of each irrigation cycle, the same figure water usage books. It is an estimate from the configured flow rate, not metered water.                                                    |
+| `runtime.observed_minutes`              | Minutes sampled while the integration was running.                                                                                                                                                                |
+| `runtime.automation_eligible_minutes`   | Sampled minutes in which automatic irrigation was armed and no fault was latched. `runtime.automation_uptime_percent` is this as a percentage of `runtime.observed_minutes`.                                      |
+| `climate.command_failure.<role>`        | A humidifier, dehumidifier, exhaust or circulation command that raised or did not answer within 10 s.                                                                                                             |
+| `climate.fail_safe.<role>`              | A humidifier, dehumidifier or exhaust controller entering its safe state after losing every control sensor for the fail-safe timeout.                                                                             |
+| `climate.interlock`                     | The humidifier or dehumidifier switched off because the other's later demand took over.                                                                                                                           |
+| `climate.max_runtime_stop`              | A humidifier or dehumidifier switched off at its maximum continuous runtime.                                                                                                                                      |
 
 ### Skip reasons
 
@@ -88,6 +88,12 @@ A cycle held by an operator control is skipped before the gate is asked:
 - `automation_off`
 - `irrigation_disarmed`
 - `emergency_stop`
+
+A cycle held because a person has the pumps is skipped the same way (#793), manual
+runs included:
+
+- `manual_override`
+- `override_detected`
 
 A cycle the Pump Cycle Gate refuses is skipped with the gate's reason:
 
@@ -172,4 +178,3 @@ minute, and the full history is in the export. The state is recorded.
 | Verified water                                                                        | Needs metered per-cycle delivery (#546, #549). `runtime.estimated_water_l` is an estimate and is never labelled verified.                                                                                             |
 | Whether a Grow Run was active at a start, and reliability as a Grow Run Activity Fact | Needs the Grow Run model (#669).                                                                                                                                                                                      |
 | Climate automated runtime, inhibits and faults                                        | Climate controllers count failed commands, safe states, interlocks and runtime stops (#792), but have no fault latch or readback. Without command provenance, automated runtime cannot be told from manual operation. |
-| A pump turning on unexpectedly while HA is running                                    | Detecting unexpected actuator state is #793. `irrigation.readback.unexpected_on` covers only a start.                                                                                                                 |

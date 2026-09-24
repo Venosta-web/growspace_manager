@@ -125,6 +125,7 @@ from .const import (
     SteeringMode,
     SubstrateMediaType,
 )
+from .domain.manual_override import UnexpectedOnPolicy
 from .validation import valid_date_or_none, valid_growspace_id
 
 
@@ -832,6 +833,9 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
                 vol.Coerce(int), vol.Range(min=0, max=1440)
             ),
             vol.Optional("moisture_zero_is_implausible"): bool,
+            vol.Optional("unexpected_on_policy"): vol.In(
+                [policy.value for policy in UnexpectedOnPolicy]
+            ),
             vol.Optional("skip_during_dark"): bool,
             vol.Optional("pause_on_low_tank"): bool,
             vol.Optional("log_to_logbook"): bool,

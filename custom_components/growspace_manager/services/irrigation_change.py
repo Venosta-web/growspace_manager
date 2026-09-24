@@ -101,6 +101,7 @@ IRRIGATION_CONFIG_CHANGE_FIELDS: frozenset[str] = frozenset(
         "sensor_stale_after_minutes",
         "sensor_alert_delay_minutes",
         "moisture_zero_is_implausible",
+        "unexpected_on_policy",
         "skip_during_dark",
         "pause_on_low_tank",
         "log_to_logbook",

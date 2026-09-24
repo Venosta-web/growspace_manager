@@ -16,6 +16,10 @@ from custom_components.growspace_manager.domain.irrigation_safety import (
     controller_snapshot,
     startup_inhibit,
 )
+from custom_components.growspace_manager.domain.manual_override import (
+    ManualOverride,
+    Subsystem,
+)
 
 REASON = SafetyReason("cap_volume", "daily volume cap", "2026-09-23T10:00:00Z")
 FAULT = FaultRecord("fault-1", REASON, ("switch.pump",))
@@ -60,6 +64,7 @@ def test_controller_state_precedence(
         "fault_id",
         "requires_ack",
         "since",
+        "overrides",
     }
 
 
@@ -73,6 +78,7 @@ def test_fault_wire_round_trip() -> None:
         "fault_id": "fault-1",
         "requires_ack": True,
         "since": REASON.since,
+        "overrides": [],
     }
 
 
@@ -93,8 +99,21 @@ def test_sensor_contract_fixture() -> None:
         ),
         ("switch.pump",),
     )
+    started = datetime(2026, 9, 23, 9, 30, tzinfo=UTC)
     snapshot = controller_snapshot(
-        configured=True, automation_enabled=True, running=False, fault=fault
+        configured=True,
+        automation_enabled=True,
+        running=False,
+        fault=fault,
+        manual_overrides=(
+            ManualOverride(
+                Subsystem.EXHAUST,
+                started,
+                started + timedelta(hours=1),
+                "user-1",
+                "Changing the carbon filter",
+            ),
+        ),
     )
     wire = {"state": snapshot.state.value, "attributes": snapshot.attributes()}
     fixture = (

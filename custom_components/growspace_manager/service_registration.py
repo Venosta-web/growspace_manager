@@ -127,3 +127,15 @@ async def register_services(
         partial(safety.handle_reset_safety, hass),
         schema=safety.SAFETY_SCHEMA,
     )
+    hass.services.async_register(
+        DOMAIN,
+        "set_override",
+        partial(safety.handle_set_override, hass),
+        schema=safety.SET_OVERRIDE_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "clear_override",
+        partial(safety.handle_clear_override, hass),
+        schema=safety.CLEAR_OVERRIDE_SCHEMA,
+    )
