@@ -29,7 +29,7 @@ voluptuous
 # Integration dependencies
 # manifest.json ships these as ranges (mashumaro>=3.10, beautifulsoup4>=4.12.0);
 # the pins here fix what CI tests against, they do not narrow what users get.
-fpdf2==2.8.7
+fpdf2==2.8.8
 mashumaro==3.22
 beautifulsoup4==4.15.0
 
