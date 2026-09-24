@@ -225,7 +225,7 @@ class VisionConnection:
             )
         except VisionTransportError:
             self._set_unavailable(VisionUnavailableReason.UNREACHABLE, endpoint.source)
-        except Exception:  # noqa: BLE001 - any other failure is still "unusable"
+        except Exception:  # noqa: BLE001, RUF100 - any other failure is still "unusable"
             _LOGGER.debug("Growspace Vision probe failed", exc_info=True)
             self._set_unavailable(VisionUnavailableReason.UNREACHABLE, endpoint.source)
         else:

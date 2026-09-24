@@ -438,11 +438,13 @@ ignore = [
   "D407",     # Section name underlining
   "D417",     # Missing argument descriptions in docstring - to allow documenting only non-obvious parameters
   "E501",     # line too long
+  "ISC004",   # implicit string concatenation keeps long collection entries readable
 
   "PLC1901", # {existing} can be simplified to {replacement} as an empty string is falsey; too many false positives
   "PLR0911", # Too many return statements ({returns} > {max_returns})
   "PLR0912", # Too many branches ({branches} > {max_branches})
   "PLR0913", # Too many arguments to function call ({c_args} > {max_args})
+  "PLR0917", # Too many positional arguments in a function definition
   "PLR0915", # Too many statements ({statements} > {max_statements})
   "PLR2004", # Magic value used in comparison, consider replacing {value} with a constant variable
   "PLW0108", # Unnecessary lambda wrapping a function call; can often be replaced by the function itself
