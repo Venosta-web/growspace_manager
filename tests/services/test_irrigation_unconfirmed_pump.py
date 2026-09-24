@@ -9,7 +9,7 @@ rather than a stub's.
 
 import asyncio
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -32,7 +32,15 @@ from custom_components.growspace_manager.irrigation_safety_store import (
     IrrigationSafetyStore,
 )
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
-from custom_components.growspace_manager.reliability_store import ReliabilityStore
+from custom_components.growspace_manager.reliability_store import (
+    AbortCause,
+    ReliabilityCounter,
+    ReliabilityStore,
+    aborted,
+    automated_seconds,
+    inhibited,
+    skipped,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -146,6 +154,8 @@ async def _run_cycles(
     cycles: int = 1,
     duration: int = 30,
     during_cycle: Callable[[], None] | None = None,
+    manual: bool = False,
+    then: Callable[[], Awaitable[None]] | None = None,
 ) -> CycleRun:
     """Run scheduled irrigation cycles against ``switch`` and a fake clock."""
     record_water = AsyncMock()
@@ -190,9 +200,9 @@ async def _run_cycles(
         )
         real_latch = coordinator._latch_fault
 
-        async def timed_latch(*args: Any) -> None:
+        async def timed_latch(*args: Any) -> bool:
             latched_at.append(switch.now)
-            await real_latch(*args)
+            return await real_latch(*args)
 
         with (
             patch("asyncio.sleep", new=fake_sleep),
@@ -215,8 +225,13 @@ async def _run_cycles(
         ):
             for _ in range(cycles):
                 await coordinator._run_pump_cycle(
-                    "irrigation", PUMP, duration, {"time": "10:00:00"}
+                    "irrigation",
+                    PUMP,
+                    duration,
+                    {"time": "10:00:00", "manual": manual},
                 )
+            if then is not None:
+                await then()
 
     return CycleRun(slept, record_water, retry_ticks, services, latched_at)
 
@@ -236,60 +251,176 @@ def _turn_ons(run: CycleRun) -> int:
     return run.services.count(("switch", "turn_on"))
 
 
+def _reliability_for(coordinator: IrrigationCoordinator) -> ReliabilityStore:
+    """Attach an in-memory reliability store to the scripted pump."""
+    reliability = ReliabilityStore.__new__(ReliabilityStore)
+    reliability._hass = coordinator.hass
+    reliability._entry_id = ENTRY_ID
+    reliability._data = {}
+    reliability.unreadable = False
+    reliability._store = MagicMock()
+    coordinator._main_coordinator.reliability = reliability
+    return reliability
+
+
+def _counters(reliability: ReliabilityStore) -> dict[str, Any]:
+    return reliability.snapshot(GROWSPACE_ID)["lifetime"]
+
+
 @pytest.mark.parametrize(
     ("switch", "expected"),
     [
         (
             FakeSwitch(),
             {
-                "irrigation.fired": 1,
-                "irrigation.completed_verified": 1,
-                "runtime.estimated_water_l": 3,
-                f"runtime.automated_seconds.{PUMP}": 30,
+                ReliabilityCounter.FIRED: 1,
+                ReliabilityCounter.COMPLETED_VERIFIED: 1,
+                ReliabilityCounter.ESTIMATED_WATER_L: _liters(30),
+                automated_seconds(PUMP): 30,
             },
         ),
         (
             FakeSwitch(on_error=HomeAssistantError("relay refused")),
-            {"irrigation.command_failure.on": 1},
+            {ReliabilityCounter.COMMAND_FAILURE_ON: 1},
         ),
-        (FakeSwitch(on_after=None), {"irrigation.readback.on_unconfirmed": 1}),
+        (FakeSwitch(on_after=None), {ReliabilityCounter.ON_UNCONFIRMED: 1}),
         (
             FakeSwitch(off_after=None),
             {
-                "irrigation.readback.off_unconfirmed": 1,
-                "irrigation.completed_unverified": 1,
+                ReliabilityCounter.OFF_UNCONFIRMED: 1,
+                ReliabilityCounter.COMPLETED_UNVERIFIED: 1,
+                ReliabilityCounter.FAULT_LATCHED: 1,
+            },
+        ),
+        (
+            FakeSwitch(off_error=HomeAssistantError("relay refused")),
+            {
+                ReliabilityCounter.COMMAND_FAILURE_OFF: 1,
+                ReliabilityCounter.OFF_UNCONFIRMED: 1,
             },
         ),
     ],
 )
 async def test_reliability_counts_pump_effect_paths(
-    coordinator: IrrigationCoordinator, switch: FakeSwitch, expected: dict[str, int]
+    coordinator: IrrigationCoordinator, switch: FakeSwitch, expected: dict[str, float]
 ) -> None:
     """Each observed command and readback outcome has one durable counter."""
-    reliability = ReliabilityStore.__new__(ReliabilityStore)
-    reliability._data = {}
-    reliability.unreadable = False
-    reliability._lock = asyncio.Lock()
-    reliability._store = MagicMock()
-    reliability._store.async_save = AsyncMock()
-    coordinator._main_coordinator.reliability = reliability
+    reliability = _reliability_for(coordinator)
     await _run_cycles(coordinator, switch)
-    counters = reliability.snapshot(GROWSPACE_ID)["lifetime"]
-    assert counters["irrigation.requested"] == 1
+    counters = _counters(reliability)
+    assert counters[ReliabilityCounter.REQUESTED] == 1
     for key, value in expected.items():
         assert counters[key] == value
 
 
-def _reliability_for(coordinator: IrrigationCoordinator) -> ReliabilityStore:
-    """Attach an in-memory write-through store to the scripted pump."""
-    reliability = ReliabilityStore.__new__(ReliabilityStore)
-    reliability._data = {}
-    reliability.unreadable = False
-    reliability._lock = asyncio.Lock()
-    reliability._store = MagicMock()
-    reliability._store.async_save = AsyncMock()
-    coordinator._main_coordinator.reliability = reliability
-    return reliability
+async def test_reliability_water_is_the_booked_pump_cycle_estimate(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """The evidence books the same Pump-Cycle Water Estimate as water usage."""
+    reliability = _reliability_for(coordinator)
+    run = await _run_cycles(coordinator, FakeSwitch())
+    (booked,) = run.record_water.await_args.args
+    assert _counters(reliability)[ReliabilityCounter.ESTIMATED_WATER_L] == booked
+
+
+async def test_reliability_manual_cycle_is_not_automated_runtime(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """A manual run fires and completes, but is not automated runtime."""
+    reliability = _reliability_for(coordinator)
+    await _run_cycles(coordinator, FakeSwitch(), manual=True)
+    counters = _counters(reliability)
+    assert counters[ReliabilityCounter.COMPLETED_VERIFIED] == 1
+    assert automated_seconds(PUMP) not in counters
+
+
+async def test_reliability_off_retries_are_not_command_failures(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """Only the stop attempt counts a refused OFF, not each minute's re-send."""
+    reliability = _reliability_for(coordinator)
+    run = await _run_cycles(
+        coordinator, FakeSwitch(off_error=HomeAssistantError("relay refused"))
+    )
+    retry, _interval = run.retry_ticks[0]
+    for _ in range(3):
+        await retry(None)
+    assert _counters(reliability)[ReliabilityCounter.COMMAND_FAILURE_OFF] == 1
+
+
+async def test_reliability_watchdog_and_cycle_count_one_off_mismatch(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """A watchdog reading the pump its cycle left ON adds no second mismatch."""
+    reliability = _reliability_for(coordinator)
+
+    async def watchdog() -> None:
+        await coordinator._async_watchdog_off("irrigation", PUMP, None)
+
+    await _run_cycles(coordinator, FakeSwitch(off_after=None), then=watchdog)
+    counters = _counters(reliability)
+    assert counters[ReliabilityCounter.OFF_UNCONFIRMED] == 1
+    assert counters[ReliabilityCounter.FAULT_LATCHED] == 1
+
+
+async def test_reliability_marks_the_pump_in_flight_only_while_it_runs(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """The marker is saved at once on ON and cleared once the cycle closes."""
+    reliability = _reliability_for(coordinator)
+    seen: list[tuple[str, ...]] = []
+
+    await _run_cycles(
+        coordinator,
+        FakeSwitch(),
+        during_cycle=lambda: seen.append(reliability.active_outputs(GROWSPACE_ID)),
+    )
+
+    assert seen == [(PUMP,)]
+    assert reliability.active_outputs(GROWSPACE_ID) == ()
+    delays = [
+        call.args[1] for call in reliability._store.async_delay_save.call_args_list
+    ]
+    assert 0 in delays
+
+
+@pytest.mark.parametrize(
+    ("hold", "expected"),
+    [
+        ("automation_off", "automation_off"),
+        ("disarmed", "irrigation_disarmed"),
+        ("emergency_stop", "emergency_stop"),
+        ("fault", "fault"),
+    ],
+)
+async def test_reliability_counts_skip_reason(
+    coordinator: IrrigationCoordinator, hold: str, expected: str
+) -> None:
+    """Operator holds and gate refusals are one skip counter, by reason."""
+    reliability = _reliability_for(coordinator)
+    safety = coordinator._safety_store
+    assert safety is not None
+    controls = safety.controls[GROWSPACE_ID]
+    if hold == "automation_off":
+        controls["automation"] = False
+    elif hold == "disarmed":
+        controls["irrigation_armed"] = False
+    elif hold == "emergency_stop":
+        controls["automation"] = False
+        safety.emergency_stops[GROWSPACE_ID] = MagicMock()
+    else:
+        safety.faults[GROWSPACE_ID] = FaultRecord(
+            "f1", SafetyReason("fault_x", "stuck", "2026-01-12T12:00:00+00:00"), (PUMP,)
+        )
+
+    run = await _run_cycles(coordinator, FakeSwitch())
+
+    assert _turn_ons(run) == 0
+    counters = _counters(reliability)
+    assert counters[skipped(expected)] == 1
+    assert [key for key in counters if key.startswith("irrigation.skipped.")] == [
+        skipped(expected)
+    ]
 
 
 async def test_reliability_counts_inhibit_transition_once(
@@ -301,12 +432,7 @@ async def test_reliability_counts_inhibit_transition_once(
     await coordinator._record_safety_transition("inhibited", "sensor_stale")
     await coordinator._record_safety_transition("inhibited", "sensor_stale")
 
-    assert (
-        reliability.snapshot(GROWSPACE_ID)["lifetime"][
-            "controller.inhibit.sensor_stale"
-        ]
-        == 1
-    )
+    assert _counters(reliability)[inhibited("sensor_stale")] == 1
 
 
 async def test_reliability_counts_override_before_pump_on(
@@ -325,36 +451,39 @@ async def test_reliability_counts_override_before_pump_on(
         run = await _run_cycles(coordinator, FakeSwitch())
 
     assert _turn_ons(run) == 0
-    assert (
-        reliability.snapshot(GROWSPACE_ID)["lifetime"]["irrigation.aborted.override"]
-        == 1
-    )
+    assert _counters(reliability)[aborted(AbortCause.OVERRIDE)] == 1
 
 
-@pytest.mark.parametrize("cause", ["override", "e_stop", "error"])
+@pytest.mark.parametrize("cause", list(AbortCause))
 async def test_reliability_counts_interrupted_cycle_cause(
-    coordinator: IrrigationCoordinator, cause: str
+    coordinator: IrrigationCoordinator, cause: AbortCause
 ) -> None:
     """A started cycle records its cancellation or error cause once."""
     reliability = _reliability_for(coordinator)
 
     def interrupt() -> None:
-        if cause == "override":
-            coordinator._override_cancelled_tasks.add(asyncio.current_task())
-        elif cause == "e_stop":
+        task = asyncio.current_task()
+        assert task is not None
+        if cause is AbortCause.OVERRIDE:
+            coordinator._override_cancelled_tasks.add(task)
+        elif cause is AbortCause.WATCHDOG:
+            coordinator._watchdog_cancelled_tasks.add(task)
+        elif cause is AbortCause.E_STOP:
             safety = coordinator._safety_store
             assert safety is not None
             safety.emergency_stops[GROWSPACE_ID] = MagicMock()
-        if cause == "error":
+        if cause is AbortCause.ERROR:
             raise ValueError("sensor failed")
         raise asyncio.CancelledError
 
     await _run_cycles(coordinator, FakeSwitch(), during_cycle=interrupt)
 
-    assert (
-        reliability.snapshot(GROWSPACE_ID)["lifetime"][f"irrigation.aborted.{cause}"]
-        == 1
-    )
+    counters = _counters(reliability)
+    assert counters[aborted(cause)] == 1
+    assert [key for key in counters if key.startswith("irrigation.aborted.")] == [
+        aborted(cause)
+    ]
+    assert ReliabilityCounter.COMPLETED_VERIFIED not in counters
 
 
 async def test_confirmed_cycle_is_delivered(

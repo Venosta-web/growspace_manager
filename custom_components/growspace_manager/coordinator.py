@@ -558,31 +558,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Ensure default special growspaces exist
         await self._growspace_manager.ensure_default_growspaces()
         await self.async_commit()
-        if not self.reliability.unreadable:
-            started = self.hass.data.setdefault(DOMAIN, {}).setdefault(
-                "_reliability_started", set()
-            )
-            for growspace_id in self.growspaces:
-                start_key = (self.config_entry.entry_id, growspace_id)
-                if start_key in started:
-                    continue
-                try:
-                    active_outputs = self.reliability.active_outputs(growspace_id)
-                    if active_outputs:
-                        await self.reliability.async_add(
-                            growspace_id, "runtime.ha_start_inflight"
-                        )
-                        for output in active_outputs:
-                            await self.reliability.async_set_active(
-                                growspace_id, output, False
-                            )
-                    await self.reliability.async_add(growspace_id, "runtime.ha_start")
-                except Exception:
-                    _LOGGER.exception(
-                        "Failed to record reliability startup for %s", growspace_id
-                    )
-                else:
-                    started.add(start_key)
+        self.reliability.record_start(self.growspaces)
 
         # Probe Growspace Vision once at setup so the status the card reads is
         # populated before the first coordinator tick.

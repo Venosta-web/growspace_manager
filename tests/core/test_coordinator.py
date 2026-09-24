@@ -1569,26 +1569,35 @@ async def test_async_load_continues_with_unreadable_reliability_evidence(
 
 
 @pytest.mark.asyncio
-async def test_async_load_continues_when_reliability_write_fails(
+async def test_async_load_does_not_wait_on_reliability_writes(
     hass: HomeAssistant,
 ) -> None:
-    """A full evidence disk does not stop growspace startup."""
+    """Startup counts in memory; a full evidence disk cannot hold it up."""
     coordinator = create_test_coordinator(hass, data={})
     coordinator.reliability._store.async_save = AsyncMock(side_effect=OSError("full"))
 
     await coordinator.async_load()
 
     assert coordinator.growspaces
-    assert coordinator.reliability._store.async_save.await_count > 0
+    coordinator.reliability._store.async_save.assert_not_awaited()
+    assert (
+        coordinator.reliability.snapshot("clone")["lifetime"]["runtime.ha_start"] == 1
+    )
 
 
 @pytest.mark.asyncio
 async def test_async_load_counts_inflight_output_once_per_ha_process(
-    hass: HomeAssistant,
+    hass: HomeAssistant, hass_storage: dict[str, Any]
 ) -> None:
     """A persisted ON marker becomes one restart observation, then clears."""
     coordinator = create_test_coordinator(hass, data={})
-    await coordinator.reliability.async_set_active("clone", "switch.pump", True)
+    key = f"growspace_manager.reliability_{coordinator.config_entry.entry_id}"
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": key,
+        "data": {"clone": {"active": {"switch.pump": "2026-09-24T12:00:00+00:00"}}},
+    }
 
     await coordinator.async_load()
     counters = coordinator.reliability.snapshot("clone")["lifetime"]

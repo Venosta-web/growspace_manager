@@ -58,6 +58,7 @@ All services provided by the Growspace Manager integration can be invoked from H
    - [growspace_manager.ask_grow_advice](#growspace_managerask_grow_advice)
    - [growspace_manager.strain_recommendation](#growspace_managerstrain_recommendation)
    - [growspace_manager.trigger_vision_checkup](#growspace_managertrigger_vision_checkup)
+   - [growspace_manager.export_reliability_evidence](#growspace_managerexport_reliability_evidence)
 9. [Genetics & Breeding Registry](#genetics--breeding-registry)
    - [growspace_manager.add_seed_batch](#growspace_manageradd_seed_batch)
    - [growspace_manager.update_seed_batch](#growspace_managerupdate_seed_batch)
@@ -795,6 +796,16 @@ Instructs your camera system to snap a photo and run deep visual diagnosis on th
 | Parameter      | Type     | Required | Default | Description               |
 | :------------- | :------- | :------- | :------ | :------------------------ |
 | `growspace_id` | `string` | Yes      | -       | Target growspace zone ID. |
+
+### `growspace_manager.export_reliability_evidence`
+
+Returns the growspace's [reliability evidence](reliability-evidence.md) as a
+versioned JSON document to the calling client (`return_response: true`). Nothing
+is sent anywhere else; the grower decides whether to share it.
+
+| Parameter      | Type     | Required | Default | Description                         |
+| :------------- | :------- | :------- | :------ | :---------------------------------- |
+| `growspace_id` | `string` | Yes      | -       | Growspace whose evidence to return. |
 
 ---
 

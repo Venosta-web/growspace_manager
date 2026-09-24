@@ -35,6 +35,28 @@
       ]),
     }),
     'reliability': dict({
+      'gs1': dict({
+        'as_of': '2024-01-01T12:00:00+00:00',
+        'days_since_last_fault': None,
+        'growspace_id': 'gs1',
+        'last_24h': dict({
+          'irrigation.requested': 1,
+          'runtime.automation_uptime_percent': 0.0,
+          'runtime.observed_minutes': 1,
+        }),
+        'last_30d': dict({
+          'irrigation.requested': 1,
+          'runtime.automation_uptime_percent': 0.0,
+          'runtime.observed_minutes': 1,
+        }),
+        'lifetime': dict({
+          'irrigation.requested': 1,
+          'runtime.automation_uptime_percent': 0.0,
+          'runtime.observed_minutes': 1,
+        }),
+        'schema_version': 1,
+        'unreadable': False,
+      }),
     }),
     'subsystems': dict({
       'circulation_fan': dict({

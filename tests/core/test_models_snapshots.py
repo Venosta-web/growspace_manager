@@ -19,6 +19,10 @@ from custom_components.growspace_manager.models import (
     GrowspaceType,
     Plant,
 )
+from custom_components.growspace_manager.reliability_store import (
+    ReliabilityCounter,
+    ReliabilityStore,
+)
 from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
@@ -152,6 +156,9 @@ async def test_diagnostics_snapshot(
     coordinator.irrigation_safety = SimpleNamespace(
         faults={}, emergency_stops={}, unreadable=False, ledger=[]
     )
+    coordinator.reliability = ReliabilityStore(hass, "diagnostics")
+    coordinator.reliability.record("gs1", ReliabilityCounter.REQUESTED)
+    coordinator.reliability.record("gs1", ReliabilityCounter.OBSERVED_MINUTES)
     entry.runtime_data = coordinator
 
     result = await async_get_config_entry_diagnostics(hass, entry)

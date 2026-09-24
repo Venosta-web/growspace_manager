@@ -44,6 +44,7 @@ class PlausibleRange:
 
 
 TANK_LEVEL_RANGE = PlausibleRange(0.0, 100.0)
+SUBSTRATE_MOISTURE_RANGE = PlausibleRange(0.0, 100.0)
 
 
 @dataclass(frozen=True, slots=True)

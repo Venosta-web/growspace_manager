@@ -203,10 +203,10 @@ async def test_emergency_stop_commands_all_outputs_and_reset_checks_readback(
     assert restarted.ledger[-1]["user_id"] == "admin"
 
 
-async def test_emergency_stop_continues_when_reliability_write_fails(
+async def test_emergency_stop_never_waits_on_reliability_evidence(
     hass: HomeAssistant,
 ) -> None:
-    """Evidence failure does not prevent latching an emergency stop."""
+    """The stop is counted in memory; no evidence write stands before the outputs."""
     coordinator = MagicMock()
     coordinator.growspaces = {"tent": Growspace(id="tent", name="Tent")}
     coordinator.irrigation_safety = IrrigationSafetyStore(hass, "stop-disk-full")
@@ -217,6 +217,29 @@ async def test_emergency_stop_continues_when_reliability_write_fails(
     await async_emergency_stop_growspace(hass, coordinator, "tent", "operator")
 
     assert coordinator.irrigation_safety.emergency_stop_for("tent") is not None
+    coordinator.reliability._store.async_save.assert_not_awaited()
+    lifetime = coordinator.reliability.snapshot("tent")["lifetime"]
+    assert lifetime["controller.emergency_stop"] == 1
+
+
+async def test_emergency_stop_that_could_not_latch_is_not_counted(
+    hass: HomeAssistant,
+) -> None:
+    """Only a latched emergency stop is evidence of one."""
+    coordinator = MagicMock()
+    coordinator.growspaces = {"tent": Growspace(id="tent", name="Tent")}
+    coordinator.irrigation_safety = IrrigationSafetyStore(hass, "stop-unlatched")
+    await coordinator.irrigation_safety.async_load()
+    coordinator.irrigation_safety.async_latch_emergency_stop = AsyncMock(
+        side_effect=OSError("full")
+    )
+    coordinator.reliability = ReliabilityStore(hass, "stop-unlatched")
+
+    with pytest.raises(ServiceValidationError, match="could not be saved"):
+        await async_emergency_stop_growspace(hass, coordinator, "tent", "operator")
+
+    lifetime = coordinator.reliability.snapshot("tent")["lifetime"]
+    assert "controller.emergency_stop" not in lifetime
 
 
 async def test_automation_off_blocks_pump_service_calls(hass: HomeAssistant) -> None:
