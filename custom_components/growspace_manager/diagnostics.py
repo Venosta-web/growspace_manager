@@ -142,6 +142,10 @@ async def async_get_config_entry_diagnostics(
             "fault_record_unreadable": coordinator.irrigation_safety.unreadable,
             "ledger": list(coordinator.irrigation_safety.ledger)[-100:],
         },
+        "reliability": {
+            growspace_id: coordinator.reliability.snapshot(growspace_id)
+            for growspace_id in coordinator.growspaces
+        },
         "integration_version": VERSION,
     }
     result["subsystems"] = _safe(result["subsystems"], unavailable=True)

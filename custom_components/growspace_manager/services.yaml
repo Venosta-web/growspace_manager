@@ -34,6 +34,17 @@ acknowledge_fault:
       selector:
         text:
 
+export_reliability_evidence:
+  name: Export reliability evidence
+  description: Return a versioned JSON reliability summary for one growspace. Nothing is sent externally.
+  fields:
+    growspace_id:
+      name: Growspace ID
+      description: Growspace whose evidence to export.
+      required: true
+      selector:
+        text:
+
 export_strain_library:
   description: Export the strain library and images to a ZIP file
   # No fields required

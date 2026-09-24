@@ -19,6 +19,7 @@ from custom_components.growspace_manager.const import (
     GrowspaceService,
     SteeringMode,
 )
+from custom_components.growspace_manager.reliability_store import ReliabilityCounter
 from custom_components.growspace_manager.schemas import (
     ACKNOWLEDGE_FAULT_SCHEMA,
     ADD_DRAIN_TIME_SCHEMA,
@@ -326,6 +327,7 @@ async def handle_acknowledge_fault(
         )
     was_unreadable = store.unreadable
     await store.async_acknowledge(growspace_id, user.id)
+    coordinator.reliability.record(growspace_id, ReliabilityCounter.FAULT_ACKNOWLEDGED)
     repair_ids = set(coordinator.growspaces) if was_unreadable else set()
     repair_ids.add(growspace_id)
     for repair_id in repair_ids:

@@ -40,6 +40,7 @@ from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
 from .photoperiod_flip_checker import PhotoperiodFlipChecker
 from .presentation import PlantViewModelBuilder
+from .reliability_store import ReliabilityStore
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
 from .services.facade import ServiceFacade
@@ -183,6 +184,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.validator = validator
         self.options = options or {}
         self.irrigation_safety = IrrigationSafetyStore(hass, entry.entry_id)
+        self.reliability = ReliabilityStore(hass, entry.entry_id)
         self.created_entity_ids: list[tuple[str, str, str]] = []
 
     def _attach_services(
@@ -544,6 +546,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         await self.storage_manager.async_load(self.options)
         await self.irrigation_safety.async_load()
+        await self.reliability.async_load()
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.
@@ -555,6 +558,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Ensure default special growspaces exist
         await self._growspace_manager.ensure_default_growspaces()
         await self.async_commit()
+        self.reliability.record_start(self.growspaces)
 
         # Probe Growspace Vision once at setup so the status the card reads is
         # populated before the first coordinator tick.

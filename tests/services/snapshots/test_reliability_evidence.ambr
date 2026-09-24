@@ -1,0 +1,55 @@
+# serializer version: 1
+# name: test_reliability_export_shape
+  typing.Any
+# ---
+# name: test_reliability_export_shape.1
+  dict({
+    'as_of': '2026-09-24T12:00:00+00:00',
+    'days_since_last_fault': 2,
+    'growspace_id': 'tent',
+    'last_24h': dict({
+      'irrigation.completed_verified': 1,
+      'irrigation.skipped.dark': 1,
+      'runtime.automation_eligible_minutes': 1,
+      'runtime.automation_uptime_percent': 50.0,
+      'runtime.observed_minutes': 2,
+    }),
+    'last_30d': dict({
+      'controller.fault_latched': 1,
+      'irrigation.completed_verified': 1,
+      'irrigation.requested': 1,
+      'irrigation.skipped.dark': 1,
+      'runtime.automation_eligible_minutes': 1,
+      'runtime.automation_uptime_percent': 50.0,
+      'runtime.observed_minutes': 2,
+    }),
+    'lifetime': dict({
+      'controller.fault_latched': 1,
+      'irrigation.completed_verified': 1,
+      'irrigation.requested': 1,
+      'irrigation.skipped.dark': 1,
+      'runtime.automation_eligible_minutes': 1,
+      'runtime.automation_uptime_percent': 50.0,
+      'runtime.observed_minutes': 2,
+    }),
+    'schema_version': 1,
+    'unreadable': False,
+  })
+# ---
+# name: test_reliability_sensor_shows_key_counters_unrecorded
+  typing.Any
+# ---
+# name: test_reliability_sensor_shows_key_counters_unrecorded.1
+  dict({
+    'automation_uptime_percent_30d': None,
+    'controller_emergency_stop': 0,
+    'controller_fault_latched': 0,
+    'days_since_last_fault': None,
+    'irrigation_completed_unverified': 0,
+    'irrigation_completed_verified': 1,
+    'irrigation_fired': 0,
+    'irrigation_requested': 1,
+    'runtime_ha_start': 0,
+    'runtime_ha_start_inflight': 0,
+  })
+# ---

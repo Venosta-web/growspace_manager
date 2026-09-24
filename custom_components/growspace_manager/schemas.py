@@ -382,6 +382,8 @@ EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
     }
 )
 
+EXPORT_RELIABILITY_EVIDENCE_SCHEMA = vol.Schema({vol.Required("growspace_id"): str})
+
 EXPORT_GROW_REPORT_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_PLANT_ID): str,

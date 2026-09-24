@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
 from ..const import DOMAIN
+from ..reliability_store import ReliabilityCounter
 
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
@@ -91,12 +92,20 @@ async def async_emergency_stop_growspace(
     """Latch first, command safe states, then demand affirmative readback."""
     outputs = managed_outputs(coordinator.growspaces[growspace_id])
     latch_error: Exception | None = None
+    already_stopped = (
+        coordinator.irrigation_safety.emergency_stop_for(growspace_id) is not None
+    )
     try:
         await coordinator.irrigation_safety.async_latch_emergency_stop(
             growspace_id, "Operator emergency stop", outputs, user_id
         )
     except Exception as err:  # noqa: BLE001 - still command every output safe
         latch_error = err
+    else:
+        if not already_stopped:
+            coordinator.reliability.record(
+                growspace_id, ReliabilityCounter.EMERGENCY_STOP
+            )
     failures: list[str] = []
     for entity_id in outputs:
         data: dict[str, object]

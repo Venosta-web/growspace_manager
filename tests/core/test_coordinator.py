@@ -1553,6 +1553,65 @@ async def test_async_load_ensures_notifications_enabled(hass: HomeAssistant) -> 
 
 
 @pytest.mark.asyncio
+async def test_async_load_continues_with_unreadable_reliability_evidence(
+    hass: HomeAssistant,
+) -> None:
+    """Corrupt optional evidence cannot prevent the integration from loading."""
+    coordinator = create_test_coordinator(hass, data={})
+    coordinator.reliability._store.async_load = AsyncMock(return_value=[])
+    coordinator.reliability._store.async_save = AsyncMock()
+
+    await coordinator.async_load()
+
+    assert coordinator.reliability.unreadable
+    assert coordinator.growspaces
+    coordinator.reliability._store.async_save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_async_load_does_not_wait_on_reliability_writes(
+    hass: HomeAssistant,
+) -> None:
+    """Startup counts in memory; a full evidence disk cannot hold it up."""
+    coordinator = create_test_coordinator(hass, data={})
+    coordinator.reliability._store.async_save = AsyncMock(side_effect=OSError("full"))
+
+    await coordinator.async_load()
+
+    assert coordinator.growspaces
+    coordinator.reliability._store.async_save.assert_not_awaited()
+    assert (
+        coordinator.reliability.snapshot("clone")["lifetime"]["runtime.ha_start"] == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_load_counts_inflight_output_once_per_ha_process(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """A persisted ON marker becomes one restart observation, then clears."""
+    coordinator = create_test_coordinator(hass, data={})
+    key = f"growspace_manager.reliability_{coordinator.config_entry.entry_id}"
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": key,
+        "data": {"clone": {"active": {"switch.pump": "2026-09-24T12:00:00+00:00"}}},
+    }
+
+    await coordinator.async_load()
+    counters = coordinator.reliability.snapshot("clone")["lifetime"]
+    assert counters["runtime.ha_start"] == 1
+    assert counters["runtime.ha_start_inflight"] == 1
+    assert coordinator.reliability.active_outputs("clone") == ()
+
+    await coordinator.async_load()
+    counters = coordinator.reliability.snapshot("clone")["lifetime"]
+    assert counters["runtime.ha_start"] == 1
+    assert counters["runtime.ha_start_inflight"] == 1
+
+
+@pytest.mark.asyncio
 async def test_ensure_special_growspace_updates_name(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:

@@ -694,6 +694,9 @@
       "irrigation_controller": {
         "name": "Irrigation Controller"
       },
+      "reliability": {
+        "name": "Reliability"
+      },
       "energy_usage": {
         "name": "Energy Usage"
       },

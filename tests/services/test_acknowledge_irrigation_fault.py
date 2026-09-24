@@ -14,6 +14,10 @@ from custom_components.growspace_manager.domain.irrigation_safety import (
 from custom_components.growspace_manager.irrigation_safety_store import (
     IrrigationSafetyStore,
 )
+from custom_components.growspace_manager.reliability_store import (
+    ReliabilityCounter,
+    ReliabilityStore,
+)
 from custom_components.growspace_manager.services.irrigation import (
     handle_acknowledge_fault,
 )
@@ -113,6 +117,8 @@ async def test_ack_off_clears_and_audits_user(
 ) -> None:
     """A checked admin acknowledgement is durable and clears the repair."""
     hass, coordinator, call, store = context
+    reliability = MagicMock(spec=ReliabilityStore)
+    coordinator.reliability = reliability
     with patch(
         "custom_components.growspace_manager.services.irrigation.async_delete_issue"
     ) as delete:
@@ -120,6 +126,9 @@ async def test_ack_off_clears_and_audits_user(
     assert store.fault_for("tent", ("switch.pump",)) is None
     assert store.ledger[-1]["user_id"] == "admin"
     store._store.async_save.assert_awaited_once()
+    reliability.record.assert_called_once_with(
+        "tent", ReliabilityCounter.FAULT_ACKNOWLEDGED
+    )
     delete.assert_called_once()
 
 

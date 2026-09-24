@@ -1574,7 +1574,7 @@ async def test_startup_poll_keeps_holding_until_the_inhibit_clears(
     assert coordinator.startup_inhibit_reason() is not None
     cancel_poll.assert_not_called()
     coordinator.async_cancel_listeners()
-    cancel_poll.assert_called_once()
+    assert cancel_poll.call_count == 2  # startup poll and reliability sensor probe
 
 
 async def test_startup_inhibit_is_not_recorded_for_an_idle_controller(

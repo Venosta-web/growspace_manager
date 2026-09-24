@@ -56,6 +56,13 @@ from .domain.pump_cycle import (
     decide_cycle,
     safety_cap_blocks,
 )
+from .domain.sensor_validity import (
+    SUBSTRATE_MOISTURE_RANGE,
+    TANK_LEVEL_RANGE,
+    Invalidity,
+    PlausibleRange,
+    validate_reading,
+)
 from .domain.unknown_tank_level import UnknownTankLevel
 from .domain.water_aggregation import (
     WATER_SOURCE_PUMP_ESTIMATE,
@@ -65,9 +72,19 @@ from .domain.water_aggregation import (
 from .exceptions import GrowspaceError
 from .irrigation_safety_store import IrrigationSafetyStore
 from .models import Growspace, GrowspaceEvent, IrrigationConfig
+from .reliability_store import (
+    AbortCause,
+    ReliabilityCounter,
+    ReliabilityStore,
+    aborted,
+    automated_seconds,
+    inhibited,
+    skipped,
+)
 from .tank_monitor import (
     TankLevelMonitor,
     TankWatchBook,
+    stale_after,
     unknown_tank_skip_notification_id,
 )
 from .utils import any_light_sensor_on
@@ -108,6 +125,8 @@ class BaseIrrigationCoordinator:
         self._main_coordinator = main_coordinator
         self._listeners: list[Callable[[], None]] = []
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._watchdog_cancelled_tasks: set[asyncio.Task[Any]] = set()
+        self._override_cancelled_tasks: set[asyncio.Task[Any]] = set()
         self._settling_tasks: set[asyncio.Task[Any]] = set()
         self._active_events: dict[str, dict[str, Any]] = {}
         # Daily safety-guard counters (reset by sub-coordinators at midnight)
@@ -119,6 +138,8 @@ class BaseIrrigationCoordinator:
         self._startup_began_at: datetime | None = None
         self._startup_cleared = False
         self._cancel_startup_poll: Callable[[], None] | None = None
+        self._cancel_sensor_probe: Callable[[], None] | None = None
+        self._sensor_probe_states: dict[str, Invalidity | None] = {}
         # Consecutive cycles per output that could not be opened (#785); a
         # confirmed ON on that output resets it.
         self._open_failures: dict[str, int] = {}
@@ -196,6 +217,16 @@ class BaseIrrigationCoordinator:
         if self._own_tank_watches is None:
             self._own_tank_watches = TankWatchBook(self.hass)
         return self._own_tank_watches
+
+    @property
+    def _reliability(self) -> ReliabilityStore:
+        """Return the entry's reliability evidence; recording never awaits."""
+        return self._main_coordinator.reliability
+
+    @callback
+    def _record(self, counter: str, amount: float = 1) -> None:
+        """Count one effect of this growspace in its reliability evidence."""
+        self._reliability.record(self._growspace_id, counter, amount)
 
     def _configured_outputs(self) -> tuple[str, ...]:
         """Return every output that must be confirmed OFF before re-arming."""
@@ -282,13 +313,19 @@ class BaseIrrigationCoordinator:
             emergency_stop=emergency_stop.reason if emergency_stop else None,
         )
 
-    async def _latch_fault(self, code: str, detail: str, output: str) -> None:
-        """Persist a hardware disagreement and surface a Home Assistant repair."""
+    async def _latch_fault(self, code: str, detail: str, output: str) -> bool:
+        """Persist a hardware disagreement and surface a Home Assistant repair.
+
+        Returns whether this call latched it, rather than finding it latched.
+        """
         store = self._safety_store
         if store is None:
             _LOGGER.error("Irrigation safety store unavailable: %s", detail)
-            return
+            return False
+        was_latched = store.fault_for(self._growspace_id, (output,)) is not None
         record = await store.async_latch(self._growspace_id, code, detail, (output,))
+        if not was_latched:
+            self._record(ReliabilityCounter.FAULT_LATCHED)
         from homeassistant.helpers.issue_registry import (  # noqa: PLC0415
             IssueSeverity,
             async_create_issue,
@@ -310,6 +347,7 @@ class BaseIrrigationCoordinator:
             f"Irrigation fault {record.fault_id}: {detail}", CATEGORY_IRRIGATION_ERROR
         )
         self._main_coordinator.async_update_listeners()
+        return not was_latched
 
     async def _record_safety_transition(
         self, state: str, reason_code: str | None = None
@@ -319,6 +357,8 @@ class BaseIrrigationCoordinator:
         if store is not None and await store.async_record_transition(
             self._growspace_id, state, reason_code
         ):
+            if state == "inhibited":
+                self._record(inhibited(reason_code))
             self._fire_logbook_event(
                 f"Irrigation controller {state}"
                 + (f" — {reason_code}" if reason_code else ""),
@@ -333,18 +373,29 @@ class BaseIrrigationCoordinator:
         every configured irrigation tank. The Startup Inhibit waits for each of
         them to report once before it lets an automatic cycle through.
         """
+        return tuple(self._control_sensor_validity())
+
+    def _control_sensor_validity(
+        self,
+    ) -> dict[str, tuple[timedelta | None, PlausibleRange]]:
+        """Return each control sensor with its staleness window and range.
+
+        A tank goes stale after its own ``stale_after_minutes`` (never, at 0).
+        The moisture sensor has no staleness window configured anywhere, so it
+        is never stale here, only unavailable or implausible.
+        """
         growspace = self.growspace
-        sensors: list[str] = []
+        sensors: dict[str, tuple[timedelta | None, PlausibleRange]] = {}
         strategy = growspace.irrigation_strategy
         moisture = growspace.environment_config.soil_moisture_sensor
         if strategy and strategy.enabled and moisture:
-            sensors.append(moisture)
-        sensors.extend(
-            tank.sensor_entity
-            for tank in growspace.environment_config.irrigation_tanks
-            if tank.sensor_entity
-        )
-        return tuple(dict.fromkeys(sensors))
+            sensors[moisture] = (None, SUBSTRATE_MOISTURE_RANGE)
+        for tank in growspace.environment_config.irrigation_tanks:
+            if tank.sensor_entity:
+                sensors.setdefault(
+                    tank.sensor_entity, (stale_after(tank), TANK_LEVEL_RANGE)
+                )
+        return sensors
 
     def _reported_since(self, entity_id: str, since: datetime) -> bool:
         """Return True when the sensor has reported a usable value since ``since``.
@@ -389,7 +440,53 @@ class BaseIrrigationCoordinator:
         self._cancel_startup_poll = async_track_time_interval(
             self.hass, self._async_poll_startup_inhibit, STARTUP_INHIBIT_POLL
         )
+        if self._cancel_sensor_probe is None:
+            self._cancel_sensor_probe = async_track_time_interval(
+                self.hass, self._async_probe_control_sensors, timedelta(minutes=1)
+            )
+        # A pump reading ON before any cycle of this start. Detecting it while
+        # running is #793's; until then this is the only place it is seen.
+        for output in self._configured_outputs():
+            state = self.hass.states.get(output)
+            if state is not None and state.state == "on":
+                self._record(ReliabilityCounter.UNEXPECTED_ON)
         await self._async_record_controller_state()
+
+    @callback
+    def _async_probe_control_sensors(self, *_: Any) -> None:
+        """Sample unavailable minutes and count stale/implausible edges once.
+
+        Validity is ``domain/sensor_validity.py``'s, with the same windows and
+        ranges the Unknown Tank Level uses, so a tank that reports only on
+        change (``stale_after_minutes: 0``) is never counted stale.
+        """
+        now = utcnow()
+        for entity_id, (max_age, plausible) in self._control_sensor_validity().items():
+            state = self.hass.states.get(entity_id)
+            invalidity = validate_reading(
+                state.state if state else None,
+                changed_at=state.last_changed if state else None,
+                reported_at=state.last_reported if state else None,
+                now=now,
+                max_age=max_age,
+                plausible=plausible,
+            ).invalidity
+            if invalidity is Invalidity.UNAVAILABLE:
+                self._record(ReliabilityCounter.SENSOR_UNAVAILABLE_MINUTES)
+            if invalidity != self._sensor_probe_states.get(entity_id):
+                if invalidity is Invalidity.STALE:
+                    self._record(ReliabilityCounter.SENSOR_STALE_EVENTS)
+                elif invalidity is Invalidity.IMPLAUSIBLE:
+                    self._record(ReliabilityCounter.SENSOR_IMPLAUSIBLE_READINGS)
+            self._sensor_probe_states[entity_id] = invalidity
+        self._record(ReliabilityCounter.OBSERVED_MINUTES)
+        safety = self._safety_store
+        if (
+            safety is not None
+            and safety.irrigation_armed(self._growspace_id)
+            and safety.fault_for(self._growspace_id, self._configured_outputs()) is None
+        ):
+            self._record(ReliabilityCounter.AUTOMATION_ELIGIBLE_MINUTES)
 
     async def _async_poll_startup_inhibit(self, *_: Any) -> None:
         """Latch the Startup Inhibit clear on the first evaluation that passes."""
@@ -483,6 +580,9 @@ class BaseIrrigationCoordinator:
         self._listeners = []
 
         if cancel_tasks:
+            if self._cancel_sensor_probe is not None:
+                self._cancel_sensor_probe()
+                self._cancel_sensor_probe = None
             # Teardown, not a schedule reload: the poll belongs to this
             # coordinator's start and must not outlive it.
             self._cancel_startup_poll_listener()
@@ -833,11 +933,12 @@ class BaseIrrigationCoordinator:
         if verdict.reason is not SkipReason.DARK or config.log_to_logbook:
             self._fire_logbook_event(verdict.message, CATEGORY_IRRIGATION_ERROR)
 
-    async def _async_send_off(self, pump_entity: str) -> None:
+    async def _async_send_off(self, pump_entity: str) -> bool:
         """Command OFF once, bounded, logging rather than raising a refusal.
 
         A refused or hung command is not the verdict: whether the pump stopped
-        is decided by reading it back, which every caller does next.
+        is decided by reading it back, which every caller does next. Returns
+        whether the command itself went through.
         """
         try:
             await asyncio.wait_for(
@@ -848,10 +949,18 @@ class BaseIrrigationCoordinator:
             )
         except Exception:
             _LOGGER.exception("Could not turn off %s", pump_entity)
+            return False
+        return True
 
     async def _async_command_off(self, pump_entity: str) -> bool:
-        """Command OFF and return whether the pump then reads back OFF."""
-        await self._async_send_off(pump_entity)
+        """Command OFF and return whether the pump then reads back OFF.
+
+        This is a stop attempt — a cycle closing, or the watchdog — so a
+        refused command counts here, and not on the re-sends that follow an
+        OFF-unconfirmed fault.
+        """
+        if not await self._async_send_off(pump_entity):
+            self._record(ReliabilityCounter.COMMAND_FAILURE_OFF)
         return await async_confirm_state(self.hass, pump_entity, STATE_OFF)
 
     async def _async_off_unconfirmed(
@@ -864,7 +973,10 @@ class BaseIrrigationCoordinator:
         until the pump reads OFF; the fault itself stays latched until an
         administrator acknowledges it.
         """
-        await self._latch_fault(code, detail, pump_entity)
+        # Counted on the latch, so a watchdog and the cycle it cancelled —
+        # both reading the same pump not OFF — are one mismatch.
+        if await self._latch_fault(code, detail, pump_entity):
+            self._record(ReliabilityCounter.OFF_UNCONFIRMED)
         await self._async_send_off(pump_entity)
         await self.hass.services.async_call(
             "persistent_notification",
@@ -966,6 +1078,7 @@ class BaseIrrigationCoordinator:
             CATEGORY_IRRIGATION_ERROR,
         )
         if cycle_task and not cycle_task.done():
+            self._watchdog_cancelled_tasks.add(cycle_task)
             cycle_task.cancel()
         if not await self._async_command_off(pump_entity):
             await self._async_off_unconfirmed(
@@ -975,7 +1088,26 @@ class BaseIrrigationCoordinator:
             )
         await self._record_safety_transition("watchdog_off")
 
-    async def _run_pump_cycle(
+    def _operator_hold(self, *, manual: bool) -> str | None:
+        """Return the operator control holding this cycle back, if any.
+
+        Growspace automation off holds every cycle, and a disarmed irrigation
+        every automatic one; an emergency stop turns automation off, and is
+        named as itself. Checked on admission and again just before ON.
+        """
+        store = self._safety_store
+        if store is None or (
+            store.automation_enabled(self._growspace_id)
+            and (manual or store.irrigation_armed(self._growspace_id))
+        ):
+            return None
+        if store.emergency_stop_for(self._growspace_id):
+            return SkipReason.EMERGENCY_STOP.value
+        if not store.automation_enabled(self._growspace_id):
+            return "automation_off"
+        return "irrigation_disarmed"
+
+    async def _run_pump_cycle(  # noqa: C901 - safety effect shell handles every exit
         self,
         event_type: str,
         pump_entity: str,
@@ -983,14 +1115,12 @@ class BaseIrrigationCoordinator:
         event_data: Mapping[str, Any],
     ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
+        self._record(ReliabilityCounter.REQUESTED)
         store = self._safety_store
-        if store and (
-            not store.automation_enabled(self._growspace_id)
-            or (
-                not event_data.get("manual", False)
-                and not store.irrigation_armed(self._growspace_id)
-            )
-        ):
+        manual = bool(event_data.get("manual", False))
+        hold = self._operator_hold(manual=manual)
+        if hold is not None:
+            self._record(skipped(hold))
             return
         # Ask the Pump Cycle Gate whether this cycle may fire (ADR-0021). The
         # gate is a pure decision; this method owns the resulting effects.
@@ -1012,7 +1142,7 @@ class BaseIrrigationCoordinator:
         tank_readings, unknown_tanks = ([], []) if latched else self._resolve_tanks()
         verdict = decide_cycle(
             event_type=event_type,
-            is_manual=bool(event_data.get("manual", False)),
+            is_manual=manual,
             config=config,
             tank_readings=tank_readings,
             unknown_tanks=unknown_tanks,
@@ -1025,6 +1155,7 @@ class BaseIrrigationCoordinator:
             startup_inhibit=startup.detail if startup else None,
         )
         if not verdict.fire:
+            self._record(skipped(verdict.reason.value if verdict.reason else "unknown"))
             if verdict.reason not in (SkipReason.FAULT, SkipReason.EMERGENCY_STOP):
                 await self._record_safety_transition(
                     "inhibited", verdict.reason.value if verdict.reason else None
@@ -1042,6 +1173,8 @@ class BaseIrrigationCoordinator:
         self._main_coordinator.async_update_listeners()
 
         start_dt = None
+        cycle_finished = False
+        abort_cause: AbortCause | None = None
         moisture_before = None
         off_confirmed = False
         closing = False
@@ -1098,19 +1231,15 @@ class BaseIrrigationCoordinator:
                 )
 
             command_dt = utcnow()
-            if store and (
-                not store.automation_enabled(self._growspace_id)
-                or (
-                    not event_data.get("manual", False)
-                    and not store.irrigation_armed(self._growspace_id)
-                )
-            ):
+            if self._operator_hold(manual=manual) is not None:
+                abort_cause = AbortCause.OVERRIDE
                 return
             try:
                 await self.hass.services.async_call(
                     "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
                 )
             except Exception as err:  # noqa: BLE001 — every refusal fails closed
+                self._record(ReliabilityCounter.COMMAND_FAILURE_ON)
                 # The command may still have reached the relay, so the pump is
                 # stopped and read back in ``finally`` like any other cycle.
                 open_failure = (
@@ -1123,6 +1252,7 @@ class BaseIrrigationCoordinator:
             if not await self._async_wait_for_switch_state(
                 pump_entity, "on", timeout=ON_CONFIRM_TIMEOUT_SECONDS
             ):
+                self._record(ReliabilityCounter.ON_UNCONFIRMED)
                 # The pump may be running, but a missing ON readback cannot
                 # establish delivered water: stop it and book nothing.
                 open_failure = (
@@ -1136,7 +1266,9 @@ class BaseIrrigationCoordinator:
             # Start timing AFTER switch confirms ON: the device reported the
             # relay closing, so that is when water started moving.
             start_dt = utcnow()
+            self._record(ReliabilityCounter.FIRED)
             self._open_failures.pop(pump_entity, None)
+            self._reliability.mark_active(self._growspace_id, pump_entity)
 
             if event_type == "irrigation":
                 self._last_cycle_timestamp = start_dt.isoformat()
@@ -1147,8 +1279,20 @@ class BaseIrrigationCoordinator:
             await self._async_send_cycle_notification(event_type, duration, event_data)
 
             await asyncio.sleep(duration)
+            cycle_finished = True
 
         except asyncio.CancelledError:
+            current_task = asyncio.current_task()
+            if current_task in self._watchdog_cancelled_tasks:
+                abort_cause = AbortCause.WATCHDOG
+                self._watchdog_cancelled_tasks.discard(current_task)
+            elif current_task in self._override_cancelled_tasks:
+                abort_cause = AbortCause.OVERRIDE
+                self._override_cancelled_tasks.discard(current_task)
+            elif store and store.emergency_stop_for(self._growspace_id):
+                abort_cause = AbortCause.E_STOP
+            else:
+                abort_cause = AbortCause.CANCEL
             _LOGGER.info(
                 "%s event for %s (entity: %s) was cancelled",
                 event_type.capitalize(),
@@ -1166,6 +1310,7 @@ class BaseIrrigationCoordinator:
             ServiceValidationError,
             GrowspaceError,
         ) as e:
+            abort_cause = AbortCause.ERROR
             _LOGGER.error(
                 "Error during %s cycle for %s (entity: %s): %s",
                 event_type,
@@ -1180,6 +1325,8 @@ class BaseIrrigationCoordinator:
         finally:
             # Record end time BEFORE turning off (to exclude turn-off latency)
             end_dt = utcnow()
+            if abort_cause is not None:
+                self._record(aborted(abort_cause))
 
             try:
                 # Ensure start_dt is defined
@@ -1200,6 +1347,9 @@ class BaseIrrigationCoordinator:
                         )
                         self._cycles_today += 1
                         self._volume_dispensed_today += billed_volume_l
+                        self._record(
+                            ReliabilityCounter.ESTIMATED_WATER_L, billed_volume_l
+                        )
                         await self._async_record_pump_water(billed_volume_l)
 
                     self._async_spawn_settling_report(
@@ -1221,6 +1371,18 @@ class BaseIrrigationCoordinator:
             )
             closing = True
             off_confirmed = await self._async_command_off(pump_entity)
+            if start_dt is not None:
+                if cycle_finished:
+                    self._record(
+                        ReliabilityCounter.COMPLETED_VERIFIED
+                        if off_confirmed
+                        else ReliabilityCounter.COMPLETED_UNVERIFIED
+                    )
+                if not manual:
+                    self._record(
+                        automated_seconds(pump_entity),
+                        max(0.0, (end_dt - start_dt).total_seconds()),
+                    )
             try:
                 if not off_confirmed:
                     await self._async_off_unconfirmed(
@@ -1234,6 +1396,7 @@ class BaseIrrigationCoordinator:
                     )
             finally:
                 cancel_watchdog()
+                self._reliability.clear_active(self._growspace_id, pump_entity)
                 self._active_events.pop(event_type, None)
                 self._main_coordinator.async_update_listeners()
             if off_confirmed:
@@ -1377,6 +1540,7 @@ class BaseIrrigationCoordinator:
                 "Cancelling running irrigation cycle for %s to start manual run",
                 self._growspace_id,
             )
+            self._override_cancelled_tasks.add(self._running_tasks["irrigation"])
             self._running_tasks["irrigation"].cancel()
 
         task = self._config_entry.async_create_background_task(
