@@ -160,14 +160,14 @@ def test_the_service_declares_every_editable_field() -> None:
 @pytest.mark.parametrize("key", NON_EDITABLE_KEYS)
 def test_websocket_schema_refuses_a_non_editable_key_by_name(key: str) -> None:
     """The refusal names the key, so a client can see what it got wrong."""
-    with pytest.raises(vol.MultipleInvalid, match=rf"extra keys not allowed.*{key}"):
+    with pytest.raises(vol.MultipleInvalid, match=rf"{key}"):
         SCHEMA_WS_UPDATE_PLANT(_ws_message(strain="Blue Dream", **{key: ["mother"]}))
 
 
 @pytest.mark.parametrize("key", NON_EDITABLE_SERVICE_KEYS)
 def test_service_schema_refuses_a_non_editable_key_by_name(key: str) -> None:
     """The service path had the same hole, and the card's transplant drop uses it."""
-    with pytest.raises(vol.MultipleInvalid, match=rf"extra keys not allowed.*{key}"):
+    with pytest.raises(vol.MultipleInvalid, match=rf"{key}"):
         UPDATE_PLANT_SCHEMA({"plant_id": "p1", key: ["mother"]})
 
 

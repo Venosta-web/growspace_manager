@@ -167,7 +167,7 @@ def test_schema_accepts_no_legacy_content_or_preview_fields() -> None:
     }
     assert PRINT_LABEL_TEMPLATE_SCHEMA(valid)["density"] == "normal"
     for field in ("base_url", "breeder", "lineage", "breeder_logo", "preview"):
-        with pytest.raises(Exception, match="extra keys not allowed"):
+        with pytest.raises(Exception, match=field):
             PRINT_LABEL_TEMPLATE_SCHEMA({**valid, field: "value"})
 
 

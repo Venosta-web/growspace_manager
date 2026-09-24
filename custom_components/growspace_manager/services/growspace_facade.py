@@ -133,8 +133,8 @@ class GrowspaceFacade:
         )
         if "name" in kwargs:
             device_registry = dr.async_get(self._coordinator.hass)
-            if device := device_registry.async_get_device(
-                identifiers={(DOMAIN, growspace_id)}
+            if device := device_registry.async_get_device_by_identifier(
+                (DOMAIN, growspace_id), self._coordinator.config_entry.entry_id
             ):
                 device_registry.async_update_device(device.id, name=kwargs["name"])
         _LOGGER.info("Updated growspace %s", growspace_id)
@@ -887,7 +887,7 @@ class GrowspaceFacade:
         device_registry = dr.async_get(hass)
         mobile_devices = [
             d.name
-            for d in device_registry.devices.values()
+            for d in device_registry.devices
             if any("mobile_app" in entry_id for entry_id in d.config_entries)
         ]
         notification_target = call.data.get(ATTR_NOTIFICATION_TARGET)

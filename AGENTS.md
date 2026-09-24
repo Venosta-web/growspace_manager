@@ -27,6 +27,26 @@ syrupy is newer than the one `pytest-homeassistant-custom-component` pins, so
 every test import dies at collection. Building or refreshing the venv is
 documented in `CLAUDE.md`.
 
+## Home Assistant test stack updates
+
+Dependabot reads `.github/dependabot.yml` from `main` and targets `prerelease`.
+Its `home-assistant-test-stack` group updates `homeassistant`,
+`pytest-homeassistant-custom-component`, `hassil` and `home-assistant-intents`
+in one PR. The plugin pins HA exactly and can lag a new HA release. Leave that
+grouped PR open until a plugin release pins the proposed HA version; do not
+force an incompatible pair or downgrade HA independently. The Tests workflow
+checks the plugin's metadata before the full dependency install and prints both
+pins when they disagree. Rerun Dependabot after the plugin catches up.
+
+Before merging a grouped update, verify that the proposed HA release's Python
+floor (`requires-python`) is supported by `tests.yaml`, that the integration's
+`manifest.json` HA minimum (if declared) remains appropriate, and that HA's
+new `package_constraints.txt` resolves with the four proposed pins. Run the
+full test suite and inspect all required checks, including `codecov/patch`.
+The remaining pytest stack is pinned by the plugin; HA's constraints govern
+other dependencies such as Pillow and pydantic. Do not bump those through an
+independent Dependabot PR.
+
 ## Base branches
 
 - Architecture/refactor work integrates on **`prerelease`**, not `dev`.

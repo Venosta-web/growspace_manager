@@ -218,4 +218,6 @@ async def test_reset_leaves_the_canonical_growspace_a_device(
     )
 
     device_registry = dr.async_get(hass)
-    assert device_registry.async_get_device(identifiers={(DOMAIN, CANONICAL_DRY)})
+    assert device_registry.async_get_device_by_identifier(
+        (DOMAIN, CANONICAL_DRY), init_integration.entry_id
+    )

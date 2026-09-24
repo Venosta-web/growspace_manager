@@ -203,8 +203,11 @@ class GrowspaceManager(BaseService):
             # it, even after the growspace has disappeared from domain storage.
             try:
                 dev_reg = dr.async_get(self.hass)
-                device = dev_reg.async_get_device(identifiers={(DOMAIN, growspace_id)})
-                if device:
+                devices = dev_reg.async_get_devices(
+                    identifiers={(DOMAIN, growspace_id)}
+                )
+                if devices:
+                    device = devices[0]
                     entity_reg = er.async_get(self.hass)
                     for entry in er.async_entries_for_device(
                         entity_reg, device.id, include_disabled_entities=True
