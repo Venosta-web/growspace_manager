@@ -31,15 +31,19 @@ def check_lint_tool_pins(requirements: str, pre_commit_config: str) -> list[str]
     repos = config.get("repos", []) if isinstance(config, dict) else []
     for hook_id, entry in HOOK_ENTRIES.items():
         matches = [
-            hook
+            (repo, hook)
             for repo in repos
-            if isinstance(repo, dict) and repo.get("repo") == "local"
+            if isinstance(repo, dict)
             for hook in repo.get("hooks", [])
             if isinstance(hook, dict) and hook.get("id") == hook_id
         ]
-        if len(matches) != 1 or matches[0].get("entry") != entry:
+        if (
+            len(matches) != 1
+            or matches[0][0].get("repo") != "local"
+            or matches[0][1].get("entry") != entry
+        ):
             errors.append(f"{hook_id}: expected one local hook with entry {entry!r}")
-        elif matches[0].get("language") != "system":
+        elif matches[0][1].get("language") != "system":
             errors.append(f"{hook_id}: local hook must use language: system")
     return errors
 

@@ -77,6 +77,16 @@ def test_non_system_hook_is_rejected() -> None:
     )
 
 
+def test_duplicate_remote_hook_is_rejected() -> None:
+    duplicate = (
+        HOOKS
+        + "  - repo: https://example.com/ruff\n    hooks:\n      - id: ruff-check\n"
+    )
+    assert "ruff-check: expected one local hook" in "\n".join(
+        checker.check_lint_tool_pins(REQUIREMENTS, duplicate)
+    )
+
+
 def test_cli_exits_successfully_for_checked_in_pins() -> None:
     with pytest.raises(SystemExit, match="^0$"):
         runpy.run_path(
