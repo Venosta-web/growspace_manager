@@ -1,6 +1,7 @@
 ---
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Checked against requirements.txt by lint.yaml's check_lint_tool_pins step.
     rev: v0.15.12
     hooks:
       - id: ruff-check
@@ -40,7 +41,7 @@ repos:
           - --branch=main
           - --branch=dev
   - repo: https://github.com/adrienverge/yamllint.git
-    # Keep this revision aligned with the yamllint pin in requirements.txt.
+    # Checked against requirements.txt by lint.yaml's check_lint_tool_pins step.
     rev: v1.37.1
     hooks:
       - id: yamllint
