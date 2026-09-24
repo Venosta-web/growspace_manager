@@ -66,7 +66,7 @@ async def _safe_service_call(
     try:
         async with asyncio.timeout(COMMAND_TIMEOUT_SECONDS):
             await hass.services.async_call(domain, service, data, blocking=True)
-    except Exception:  # noqa: BLE001 — any handler error is a failed command
+    except Exception:  # noqa: BLE001, RUF100 — any handler error is a failed command
         _LOGGER.warning(
             "Failed to call %s.%s on %s",
             domain,
