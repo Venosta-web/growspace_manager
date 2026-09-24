@@ -621,3 +621,143 @@ async def test_startup_warns_only_once_per_day(
         await coord.async_setup()
 
     _notify(main_coord).assert_awaited_once()
+
+
+def test_tick_schedules_regulation(mock_hass: MagicMock) -> None:
+    """The interval callback delegates regulation to the config entry."""
+    coord = GrowLightCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator(_make_env())
+    )
+
+    coord._on_tick(datetime(2026, 7, 3, 12))
+
+    create = coord.config_entry.async_create_background_task
+    create.assert_called_once()
+    assert create.call_args.args[2] == "grow_light_regulate"
+    create.call_args.args[1].close()
+
+
+async def test_regulation_stops_when_automation_is_disabled(
+    mock_hass: MagicMock,
+) -> None:
+    """A safety veto prevents the first light command."""
+    main = _make_coordinator(_make_env())
+    main.irrigation_safety.automation_enabled.return_value = False
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main)
+
+    await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_not_awaited()
+
+
+async def test_regulation_rechecks_safety_between_lights(
+    mock_hass: MagicMock,
+) -> None:
+    """A safety veto raised mid-pass leaves later lights untouched."""
+    env = _make_env(growlight_entities=["switch.first", "switch.second"])
+    main = _make_coordinator(env)
+    main.irrigation_safety.automation_enabled.side_effect = [True, True, False]
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main)
+
+    with _at(datetime(2026, 7, 3, 12)):
+        await coord._async_regulate()
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch", "turn_on", {ATTR_ENTITY_ID: "switch.first"}, blocking=False
+    )
+
+
+@pytest.mark.parametrize("safety_results", [[False], [True, False]])
+async def test_ac_reconcile_honors_safety_before_each_device(
+    mock_hass: MagicMock, safety_results: list[bool]
+) -> None:
+    """The onboard schedule is never pushed after automation is vetoed."""
+    env = _make_env(
+        growlight_entities=[], ac_infinity_devices=[_ac_device(), _ac_device()]
+    )
+    main = _make_coordinator(env)
+    main.irrigation_safety.automation_enabled.side_effect = safety_results
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main)
+
+    with _patch_push() as push:
+        await coord._reconcile_ac_infinity_schedules(env)
+
+    push.assert_not_awaited()
+
+
+async def test_midnight_reconcile_rearms_after_push_error(
+    mock_hass: MagicMock, mock_track_point: MagicMock, caplog
+) -> None:
+    """A failed device update is logged and tomorrow's timer is still armed."""
+    env = _make_env(growlight_entities=[], ac_infinity_devices=[_ac_device()])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    with patch.object(
+        coord,
+        "_reconcile_ac_infinity_schedules",
+        new=AsyncMock(side_effect=RuntimeError("offline")),
+    ):
+        await coord._on_midnight_reconcile(datetime(2026, 7, 4))
+
+    assert "Error reconciling grow light schedule" in caplog.text
+    mock_track_point.assert_called_once()
+
+
+async def test_leak_switch_off_respects_safety_veto(mock_hass: MagicMock) -> None:
+    """The guard leaves lights alone when automation is disabled."""
+    env = _make_env(growlight_entities=["switch.grow"])
+    main = _make_coordinator(env)
+    main.irrigation_safety.automation_enabled.return_value = False
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main)
+
+    await coord._switch_off_growlights(env)
+
+    mock_hass.services.async_call.assert_not_awaited()
+    assert coord._leak_switched_off_at is None
+
+
+async def test_leak_switch_off_plain_light_does_not_arm_ac_restore(
+    mock_hass: MagicMock,
+) -> None:
+    """A plain light switches off without an onboard schedule to restore."""
+    env = _make_env(growlight_entities=["switch.grow"])
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", _make_coordinator(env))
+
+    await coord._switch_off_growlights(env)
+
+    mock_hass.services.async_call.assert_awaited_once_with(
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=False
+    )
+    assert coord._leak_restore_schedules is False
+    assert coord._leak_switched_off_at is not None
+
+
+async def test_midnight_reconcile_rearms_when_growspace_was_removed(
+    mock_hass: MagicMock, mock_track_point: MagicMock
+) -> None:
+    """A stale midnight callback still schedules the next check safely."""
+    main = _make_coordinator(_make_env())
+    main.growspaces = {}
+    coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main)
+
+    await coord._on_midnight_reconcile(datetime(2026, 7, 4))
+
+    mock_track_point.assert_called_once()
+
+
+async def test_unload_cancels_plain_light_tick(
+    mock_hass: MagicMock, mock_track_interval: MagicMock
+) -> None:
+    """Unload removes the live regulation callback."""
+    mock_track_interval.side_effect = lambda *_args: MagicMock()
+    coord = GrowLightCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator(_make_env())
+    )
+
+    await coord.async_setup()
+    remove = coord._remove_tick
+    assert remove is not None
+    coord.unload()
+
+    remove.assert_called_once()
+    assert coord._remove_tick is None
