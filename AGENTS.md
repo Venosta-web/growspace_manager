@@ -35,10 +35,22 @@ The pip allowlist limits independent updates to the integration's CI pins and
 the `dev-tooling` group (ruff, mypy, pre-commit, yamllint, codespell). Keep its
 allowlist and the reasoned ignore entries in sync with `requirements.txt`.
 
-The Home Assistant test stack moves together in #822. The pytest stack is pinned
-by `pytest-homeassistant-custom-component`; HA's `package_constraints.txt`
-governs other dependencies such as Pillow and pydantic. Do not bump those through
-an independent Dependabot PR. On `prerelease`, local pre-commit lint hooks run
+The `home-assistant-test-stack` group updates `homeassistant`,
+`pytest-homeassistant-custom-component`, `hassil` and `home-assistant-intents`
+in one PR. The plugin pins HA exactly and can lag a new HA release. Leave that
+grouped PR open until a plugin release pins the proposed HA version; do not
+force an incompatible pair or downgrade HA independently. The Tests workflow
+checks the plugin's metadata before the full dependency install and prints both
+pins when they disagree. Rerun Dependabot after the plugin catches up.
+
+Before merging a grouped update, verify that the proposed HA release's Python
+floor (`requires-python`) is supported by `tests.yaml`, that the integration's
+`manifest.json` HA minimum (if declared) remains appropriate, and that HA's
+new `package_constraints.txt` resolves with the four proposed pins. Run the
+full test suite and inspect all required checks, including `codecov/patch`.
+The remaining pytest stack is pinned by the plugin; HA's constraints govern
+other dependencies such as Pillow and pydantic. Do not bump those through an
+independent Dependabot PR. On `prerelease`, local pre-commit lint hooks run
 the versions pinned in `requirements.txt`, so tooling pin updates do not need
 a separate hook revision edit.
 Check the required workflows and `codecov/patch` on the first Dependabot PR.

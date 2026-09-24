@@ -34,6 +34,10 @@ updates:
       - dependency-name: pre-commit
       - dependency-name: yamllint
       - dependency-name: codespell
+      - dependency-name: homeassistant
+      - dependency-name: pytest-homeassistant-custom-component
+      - dependency-name: hassil
+      - dependency-name: home-assistant-intents
     groups:
       dev-tooling:
         patterns:
@@ -42,14 +46,18 @@ updates:
           - pre-commit
           - yamllint
           - codespell
+      home-assistant-test-stack:
+        patterns:
+          - homeassistant
+          - pytest-homeassistant-custom-component
+          - hassil
+          - home-assistant-intents
     ignore:
-      # HA and its custom-component test harness must move together (#822).
-      - dependency-name: homeassistant
-      - dependency-name: pytest-homeassistant-custom-component
-      - dependency-name: hassil
-      - dependency-name: home-assistant-intents
       # The harness pins this pytest stack exactly; independent updates break it.
-      - dependency-name: pytest*
+      - dependency-name: pytest
+      - dependency-name: pytest-asyncio
+      - dependency-name: pytest-cov
+      - dependency-name: pytest-xdist
       - dependency-name: coverage
       - dependency-name: freezegun
       - dependency-name: requests-mock
