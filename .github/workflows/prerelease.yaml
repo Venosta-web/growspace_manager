@@ -47,7 +47,7 @@ jobs:
 
       # 3. Creates the GitHub Pre-release and attaches the new zip file
       - name: Create Pre-release
-        uses: softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@v3.0.3
         with:
           prerelease: true
           tag_name: v${{ steps.version_step.outputs.version }}
