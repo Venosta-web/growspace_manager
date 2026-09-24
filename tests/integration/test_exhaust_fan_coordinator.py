@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import FanRegulationMode
 from custom_components.growspace_manager.exhaust_fan_coordinator import (
     ExhaustFanCoordinator,
 )
@@ -305,6 +306,37 @@ async def test_no_sensor_readings_skips_dispatch(mock_hass: MagicMock) -> None:
     )
     await coord._async_regulate()
     mock_hass.services.async_call.assert_not_called()
+
+
+async def test_implausible_sensor_readings_skip_dispatch(mock_hass: MagicMock) -> None:
+    """Out-of-range readings are unavailable, never demand (#789)."""
+    env = _make_env_config()
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": "250",
+            "sensor.humidity": "150",
+            "sensor.vpd": "nan",
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    for mode in FanRegulationMode:
+        assert coord._read_sensor(mode) is None
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_not_called()
+
+
+async def test_a_fahrenheit_temperature_is_plausible(hass: HomeAssistant) -> None:
+    """The range follows the sensor's unit; the value is never converted."""
+    env = _make_env_config()
+    hass.states.async_set("sensor.temperature", "77", {"unit_of_measurement": "°F"})
+    coord = ExhaustFanCoordinator(
+        hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    assert coord._read_sensor(FanRegulationMode.TEMPERATURE) == 77.0
+    hass.states.async_set("sensor.temperature", "77", {"unit_of_measurement": "°C"})
+    assert coord._read_sensor(FanRegulationMode.TEMPERATURE) is None
 
 
 async def test_disabled_config_skips_dispatch(mock_hass: MagicMock) -> None:

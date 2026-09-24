@@ -540,6 +540,22 @@ when the tank reports again. A probe that keeps dropping out is announced at
 most once an hour. Set `pause_on_low_tank: false` to keep irrigating on an
 unknown tank; the notifications still go out.
 
+While crop steering is on, the soil moisture sensor is validated before every
+steering decision. It is **invalid** when it is unavailable, when it reads
+outside 0–100 % (or exactly 0, with `moisture_zero_is_implausible`), or NaN, or
+when it has stopped reporting: a sensor is stale after three of the intervals
+it has been seen to report at (never under 5 minutes), and at most after
+`sensor_stale_after_minutes` (default 30; `0` turns that check off). A sensor
+that repeats the same value still counts as reporting. An invalid reading is
+never read as 0: no automatic shot fires, and the controller reads `inhibited`
+with reason `sensor_unavailable`, `sensor_stale` or `sensor_implausible`. After
+`sensor_alert_delay_minutes` (default 15) one notification goes out, with a
+persistent notification, and a second when the sensor reads again; a sensor
+that keeps dropping out is announced at most once an hour. Manual runs are not
+held. Pore EC sensors are validated the same way (0–20 mS/cm, and a sensor in
+µS/cm is converted); an invalid one is left out of the pore EC average rather
+than holding irrigation.
+
 A fault blocks scheduled and manual cycles and survives a Home Assistant restart.
 The last 500 safety events are kept in the integration's safety store and included
 in diagnostics, independent of Recorder retention. A repair appears in Settings
@@ -561,15 +577,18 @@ start a cycle.
 
 Sets the basic plumbing hardware profiles and default cycle times for simple timer waterings.
 
-| Parameter                    | Type      | Required | Default | Description                                                                                                                 |
-| :--------------------------- | :-------- | :------- | :------ | :-------------------------------------------------------------------------------------------------------------------------- |
-| `growspace_id`               | `string`  | Yes      | -       | Target growspace zone ID.                                                                                                   |
-| `irrigation_pump_entity`     | `string`  | No       | -       | Feed pump switch entity ID.                                                                                                 |
-| `drain_pump_entity`          | `string`  | No       | -       | Drainage pump switch entity ID.                                                                                             |
-| `irrigation_duration`        | `integer` | No       | -       | Standard duration to run feed pump (seconds).                                                                               |
-| `drain_duration`             | `integer` | No       | -       | Standard duration to run drain pump (seconds).                                                                              |
-| `startup_grace_minutes`      | `integer` | No       | `5`     | Minimum startup hold on automatic cycles (0–120 minutes).                                                                   |
-| `tank_unknown_grace_minutes` | `integer` | No       | `10`    | How long a tank's level may be unknown before irrigation pauses on it and the offline notification is sent (0–120 minutes). |
+| Parameter                      | Type      | Required | Default | Description                                                                                                                 |
+| :----------------------------- | :-------- | :------- | :------ | :-------------------------------------------------------------------------------------------------------------------------- |
+| `growspace_id`                 | `string`  | Yes      | -       | Target growspace zone ID.                                                                                                   |
+| `irrigation_pump_entity`       | `string`  | No       | -       | Feed pump switch entity ID.                                                                                                 |
+| `drain_pump_entity`            | `string`  | No       | -       | Drainage pump switch entity ID.                                                                                             |
+| `irrigation_duration`          | `integer` | No       | -       | Standard duration to run feed pump (seconds).                                                                               |
+| `drain_duration`               | `integer` | No       | -       | Standard duration to run drain pump (seconds).                                                                              |
+| `startup_grace_minutes`        | `integer` | No       | `5`     | Minimum startup hold on automatic cycles (0–120 minutes).                                                                   |
+| `tank_unknown_grace_minutes`   | `integer` | No       | `10`    | How long a tank's level may be unknown before irrigation pauses on it and the offline notification is sent (0–120 minutes). |
+| `sensor_stale_after_minutes`   | `integer` | No       | `30`    | The longest the moisture and pore EC sensors may go without reporting before they are stale (0–1440 minutes; `0` is off).   |
+| `sensor_alert_delay_minutes`   | `integer` | No       | `15`    | How long the moisture sensor may be invalid before its notification is sent (0–1440 minutes).                               |
+| `moisture_zero_is_implausible` | `boolean` | No       | `false` | Treat a moisture reading of exactly 0 as implausible.                                                                       |
 
 ### `growspace_manager.set_irrigation_strategy`
 

@@ -19,7 +19,7 @@ from homeassistant.helpers.event import (
     async_track_time_change,
     async_track_time_interval,
 )
-from homeassistant.util.dt import utcnow
+from homeassistant.util.dt import as_local, utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -30,6 +30,7 @@ from .const import (
     CATEGORY_IRRIGATION_ERROR,
     EVENT_GROWSPACE_LOG_ENTRY,
     SENSOR_SETTLING_DELAY_CAP_SECONDS,
+    NotificationTier,
 )
 from .domain.irrigation_safety import (
     ON_COMMAND_FAILED,
@@ -57,10 +58,17 @@ from .domain.pump_cycle import (
     safety_cap_blocks,
 )
 from .domain.sensor_validity import (
-    SUBSTRATE_MOISTURE_RANGE,
     TANK_LEVEL_RANGE,
     Invalidity,
     PlausibleRange,
+    SensorAlert,
+    SensorReading,
+    SensorWatch,
+    inhibit_code,
+    inhibit_detail,
+    invalid_alert_message,
+    recovered_alert_message,
+    substrate_moisture_range,
     validate_reading,
 )
 from .domain.unknown_tank_level import UnknownTankLevel
@@ -140,6 +148,12 @@ class BaseIrrigationCoordinator:
         self._cancel_startup_poll: Callable[[], None] | None = None
         self._cancel_sensor_probe: Callable[[], None] | None = None
         self._sensor_probe_states: dict[str, Invalidity | None] = {}
+        # One watch per validated sensor (#789): its learned report cadence,
+        # and for the moisture sensor the invalid episode its alert follows.
+        self._sensor_watches: dict[str, SensorWatch] = {}
+        # The moisture sensor's validity as of the last sensor tick, so an edge
+        # is written to the Safety Ledger once rather than every minute.
+        self._moisture_invalidity: Invalidity | None = None
         # Consecutive cycles per output that could not be opened (#785); a
         # confirmed ON on that output resets it.
         self._open_failures: dict[str, int] = {}
@@ -279,6 +293,9 @@ class BaseIrrigationCoordinator:
                 startup = self.startup_inhibit_reason()
                 if startup is not None:
                     inhibits = (startup,)
+                sensor = self._control_sensor_inhibit()
+                if sensor is not None:
+                    inhibits = (*inhibits, sensor)
                 tank_readings, unknown_tanks = self._resolve_tanks()
                 verdict = decide_cycle(
                     event_type="irrigation",
@@ -366,6 +383,12 @@ class BaseIrrigationCoordinator:
             )
         self._main_coordinator.async_update_listeners()
 
+    def _moisture_sensor(self) -> str | None:
+        """Return the substrate moisture sensor while crop steering decides from it."""
+        strategy = self.growspace.irrigation_strategy
+        moisture = self.growspace.environment_config.soil_moisture_sensor
+        return moisture if strategy and strategy.enabled and moisture else None
+
     def _control_sensors(self) -> tuple[str, ...]:
         """Return the sensors automatic irrigation decides from.
 
@@ -373,29 +396,106 @@ class BaseIrrigationCoordinator:
         every configured irrigation tank. The Startup Inhibit waits for each of
         them to report once before it lets an automatic cycle through.
         """
-        return tuple(self._control_sensor_validity())
+        sensors = [moisture] if (moisture := self._moisture_sensor()) else []
+        for tank in self.growspace.environment_config.irrigation_tanks:
+            if tank.sensor_entity and tank.sensor_entity not in sensors:
+                sensors.append(tank.sensor_entity)
+        return tuple(sensors)
 
-    def _control_sensor_validity(
-        self,
-    ) -> dict[str, tuple[timedelta | None, PlausibleRange]]:
-        """Return each control sensor with its staleness window and range.
+    def _control_readings(self, now: datetime) -> dict[str, SensorReading]:
+        """Validate every control sensor, each against its own window.
 
-        A tank goes stale after its own ``stale_after_minutes`` (never, at 0).
-        The moisture sensor has no staleness window configured anywhere, so it
-        is never stale here, only unavailable or implausible.
+        The moisture sensor's window is its learned Observation Validity
+        Window; a tank's is its own ``stale_after_minutes`` (never, at 0), the
+        same one the Unknown Tank Level uses.
         """
-        growspace = self.growspace
-        sensors: dict[str, tuple[timedelta | None, PlausibleRange]] = {}
-        strategy = growspace.irrigation_strategy
-        moisture = growspace.environment_config.soil_moisture_sensor
-        if strategy and strategy.enabled and moisture:
-            sensors[moisture] = (None, SUBSTRATE_MOISTURE_RANGE)
-        for tank in growspace.environment_config.irrigation_tanks:
-            if tank.sensor_entity:
-                sensors.setdefault(
-                    tank.sensor_entity, (stale_after(tank), TANK_LEVEL_RANGE)
-                )
-        return sensors
+        readings: dict[str, SensorReading] = {}
+        if moisture := self._moisture_sensor():
+            readings[moisture] = self._read_moisture(moisture, now)
+        for tank in self.growspace.environment_config.irrigation_tanks:
+            if not tank.sensor_entity or tank.sensor_entity in readings:
+                continue
+            state = self.hass.states.get(tank.sensor_entity)
+            readings[tank.sensor_entity] = validate_reading(
+                state.state if state else None,
+                changed_at=state.last_changed if state else None,
+                reported_at=state.last_reported if state else None,
+                now=now,
+                max_age=stale_after(tank),
+                plausible=TANK_LEVEL_RANGE,
+            )
+        return readings
+
+    def _sensor_stale_cap(self) -> timedelta | None:
+        """Return the cap on a control sensor's validity window; None is off."""
+        minutes = self.growspace.irrigation_config.sensor_stale_after_minutes
+        return timedelta(minutes=minutes) if minutes > 0 else None
+
+    def _read_sensor(
+        self,
+        entity_id: str,
+        plausible: PlausibleRange,
+        *,
+        now: datetime | None = None,
+        unit_scale: Callable[[str | None], float] | None = None,
+    ) -> SensorReading:
+        """Validate one sensor through its watch (``domain/sensor_validity.py``).
+
+        ``unit_scale`` maps the state's unit of measurement to the factor that
+        brings its value into ``plausible``'s unit.
+        """
+        now = now or utcnow()
+        watch = self._sensor_watches.get(entity_id)
+        if watch is None:
+            watch = self._sensor_watches[entity_id] = SensorWatch(watching_since=now)
+        state = self.hass.states.get(entity_id)
+        scale = 1.0
+        if state is not None and unit_scale is not None:
+            scale = unit_scale(state.attributes.get("unit_of_measurement"))
+        return watch.read(
+            state.state if state else None,
+            changed_at=state.last_changed if state else None,
+            reported_at=state.last_reported if state else None,
+            now=now,
+            stale_cap=self._sensor_stale_cap(),
+            plausible=plausible,
+            scale=scale,
+        )
+
+    def _read_moisture(
+        self, entity_id: str, now: datetime | None = None
+    ) -> SensorReading:
+        """Validate the substrate moisture sensor."""
+        config = self.growspace.irrigation_config
+        return self._read_sensor(
+            entity_id,
+            substrate_moisture_range(
+                zero_is_implausible=config.moisture_zero_is_implausible
+            ),
+            now=now,
+        )
+
+    def _moisture_value(self) -> float | None:
+        """Return the moisture sensor's value, or None when it cannot be trusted."""
+        moisture = self.growspace.environment_config.soil_moisture_sensor
+        return self._read_moisture(moisture).value if moisture else None
+
+    def _control_sensor_inhibit(self) -> SafetyReason | None:
+        """Return why automatic shots are withheld on the moisture sensor, if they are.
+
+        Only the moisture sensor: a tank has its own grace and its own reason,
+        ``tank_unknown``, from the Pump Cycle Gate.
+        """
+        moisture = self._moisture_sensor()
+        if moisture is None:
+            return None
+        cause = self._read_moisture(moisture).invalidity
+        if cause is None:
+            return None
+        since = self._sensor_watches[moisture].invalid_since or utcnow()
+        return SafetyReason(
+            inhibit_code(cause), inhibit_detail(moisture, cause), since.isoformat()
+        )
 
     def _reported_since(self, entity_id: str, since: datetime) -> bool:
         """Return True when the sensor has reported a usable value since ``since``.
@@ -442,7 +542,7 @@ class BaseIrrigationCoordinator:
         )
         if self._cancel_sensor_probe is None:
             self._cancel_sensor_probe = async_track_time_interval(
-                self.hass, self._async_probe_control_sensors, timedelta(minutes=1)
+                self.hass, self._async_sensor_tick, timedelta(minutes=1)
             )
         # A pump reading ON before any cycle of this start. Detecting it while
         # running is #793's; until then this is the only place it is seen.
@@ -457,20 +557,12 @@ class BaseIrrigationCoordinator:
         """Sample unavailable minutes and count stale/implausible edges once.
 
         Validity is ``domain/sensor_validity.py``'s, with the same windows and
-        ranges the Unknown Tank Level uses, so a tank that reports only on
+        ranges the controller decides on, so a tank that reports only on
         change (``stale_after_minutes: 0``) is never counted stale.
         """
         now = utcnow()
-        for entity_id, (max_age, plausible) in self._control_sensor_validity().items():
-            state = self.hass.states.get(entity_id)
-            invalidity = validate_reading(
-                state.state if state else None,
-                changed_at=state.last_changed if state else None,
-                reported_at=state.last_reported if state else None,
-                now=now,
-                max_age=max_age,
-                plausible=plausible,
-            ).invalidity
+        for entity_id, reading in self._control_readings(now).items():
+            invalidity = reading.invalidity
             if invalidity is Invalidity.UNAVAILABLE:
                 self._record(ReliabilityCounter.SENSOR_UNAVAILABLE_MINUTES)
             if invalidity != self._sensor_probe_states.get(entity_id):
@@ -487,6 +579,102 @@ class BaseIrrigationCoordinator:
             and safety.fault_for(self._growspace_id, self._configured_outputs()) is None
         ):
             self._record(ReliabilityCounter.AUTOMATION_ELIGIBLE_MINUTES)
+
+    async def _async_sensor_tick(self, *_: Any) -> None:
+        """Probe the control sensors, then follow the moisture sensor's episode."""
+        self._async_probe_control_sensors()
+        await self._async_watch_moisture_sensor()
+
+    async def _async_watch_moisture_sensor(self) -> None:
+        """Write the moisture sensor's validity edges and send its alert (#789).
+
+        Shots are withheld from the first invalid minute — the steering loop
+        and the controller state read the same watch — but the alert waits out
+        ``sensor_alert_delay_minutes``, once per episode.
+        """
+        now = utcnow()
+        moisture = self._moisture_sensor()
+        for entity_id, watch in self._sensor_watches.items():
+            if watch.alerted and entity_id != moisture:
+                # No longer a control input, so no longer withholding anything.
+                watch.alerted = False
+                await self._async_dismiss_sensor_alert(entity_id)
+        if moisture is None:
+            self._moisture_invalidity = None
+            return
+        invalidity = self._read_moisture(moisture, now).invalidity
+        if invalidity != self._moisture_invalidity:
+            self._moisture_invalidity = invalidity
+            await self._async_record_controller_state()
+        watch = self._sensor_watches[moisture]
+        delay = timedelta(
+            minutes=self.growspace.irrigation_config.sensor_alert_delay_minutes
+        )
+        transition = watch.alert(now, delay)
+        if transition is SensorAlert.INVALID:
+            await self._async_alert_sensor_invalid(moisture, watch)
+        elif transition is SensorAlert.RECOVERED:
+            await self._async_alert_sensor_recovered(moisture, watch)
+
+    def _sensor_alert_notification_id(self, entity_id: str) -> str:
+        return f"growspace_sensor_invalid_{self._growspace_id}_{entity_id}"
+
+    async def _async_alert_sensor_invalid(
+        self, entity_id: str, watch: SensorWatch
+    ) -> None:
+        """Send one episode's invalid moisture sensor alert."""
+        growspace = self.growspace
+        since = watch.invalid_since or utcnow()
+        message = invalid_alert_message(
+            entity_id,
+            watch.cause or Invalidity.UNAVAILABLE,
+            growspace_name=growspace.name,
+            since_local=as_local(since).strftime("%H:%M"),
+        )
+        title = f"⚠️ Moisture Sensor Invalid: {growspace.name}"
+        _LOGGER.warning("Growspace %s: %s", self._growspace_id, message)
+        self._fire_logbook_event(message, CATEGORY_IRRIGATION_ERROR)
+        await self.hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "title": title,
+                "message": message,
+                "notification_id": self._sensor_alert_notification_id(entity_id),
+            },
+            blocking=False,
+        )
+        await self._async_notify(title, message)
+
+    async def _async_alert_sensor_recovered(
+        self, entity_id: str, watch: SensorWatch
+    ) -> None:
+        """Announce that an alerted moisture sensor reads again, and clear it."""
+        growspace = self.growspace
+        message = recovered_alert_message(
+            entity_id, growspace.name, watch.last_valid_value
+        )
+        _LOGGER.info("Growspace %s: %s", self._growspace_id, message)
+        self._fire_logbook_event(message, CATEGORY_ALERT)
+        await self._async_dismiss_sensor_alert(entity_id)
+        await self._async_notify(f"✅ Moisture Sensor Back: {growspace.name}", message)
+
+    async def _async_dismiss_sensor_alert(self, entity_id: str) -> None:
+        await self.hass.services.async_call(
+            "persistent_notification",
+            "dismiss",
+            {"notification_id": self._sensor_alert_notification_id(entity_id)},
+            blocking=False,
+        )
+
+    async def _async_notify(self, title: str, message: str) -> None:
+        """Push to the growspace's notification target on the sensor alert tier."""
+        await self._main_coordinator.services.notifications.manager.async_send_notification(
+            self._growspace_id,
+            title,
+            message,
+            tier=NotificationTier.SENSOR_INVALID,
+        )
 
     async def _async_poll_startup_inhibit(self, *_: Any) -> None:
         """Latch the Startup Inhibit clear on the first evaluation that passes."""
@@ -1209,10 +1397,7 @@ class BaseIrrigationCoordinator:
 
         try:
             # Capture moisture before starting
-            if self.growspace.environment_config.soil_moisture_sensor:
-                moisture_before = self._get_sensor_value(
-                    self.growspace.environment_config.soil_moisture_sensor
-                )
+            moisture_before = self._moisture_value()
 
             _LOGGER.info(
                 "Starting %s for %s (entity: %s), running for %s seconds",
@@ -1461,11 +1646,7 @@ class BaseIrrigationCoordinator:
         except asyncio.CancelledError:
             return
 
-        moisture_after = None
-        if self.growspace.environment_config.soil_moisture_sensor:
-            moisture_after = self._get_sensor_value(
-                self.growspace.environment_config.soil_moisture_sensor
-            )
+        moisture_after = self._moisture_value()
 
         reasons = [
             f"{event_type.capitalize()} cycle completed",

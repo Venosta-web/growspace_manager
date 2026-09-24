@@ -379,6 +379,17 @@ class IrrigationConfig(BaseModel):
     # Gate refuses on it and its Tank Offline Alert goes out; the last valid
     # reading stands in meanwhile (ADR-0050).
     tank_unknown_grace_minutes: int = 10
+    # The longest a control sensor (substrate moisture, pore EC) may go without
+    # reporting before its reading is stale: the cap on its Observation
+    # Validity Window, which is shorter for a sensor seen to report more often.
+    # 0 switches staleness off (#789).
+    sensor_stale_after_minutes: int = 30
+    # How long the moisture sensor may be invalid — shots are withheld from the
+    # first minute — before its one alert per episode goes out (#789).
+    sensor_alert_delay_minutes: int = 15
+    # Whether a moisture reading of exactly 0 is implausible, for probes that
+    # read 0 in air when pulled out of the substrate (#789).
+    moisture_zero_is_implausible: bool = False
     active_steering_phase: str = "p2"
     phase_changed_at: str | None = None
 

@@ -17,7 +17,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
@@ -30,7 +29,13 @@ from .domain.fan_control import (
     evaluate_temp_override,
     resolve_stage_vpd_target,
 )
-from .utils import VPDCalculator
+from .domain.sensor_validity import (
+    HUMIDITY_RANGE,
+    VPD_RANGE,
+    PlausibleRange,
+    temperature_range,
+)
+from .utils import VPDCalculator, read_plausible_value
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -230,30 +235,28 @@ class ExhaustFanCoordinator:
         """Read the first available sensor value for the given measurement."""
         if self._env_config is None:
             return None
+        plausible: PlausibleRange | Callable[[str | None], PlausibleRange]
         if mode == FanRegulationMode.HUMIDITY:
-            sensors = self._env_config.humidity_sensors
+            sensors, plausible = self._env_config.humidity_sensors, HUMIDITY_RANGE
         elif mode == FanRegulationMode.TEMPERATURE:
             sensors = self._env_config.temperature_sensors
+            plausible = temperature_range
         elif mode == FanRegulationMode.VPD:
-            sensors = self._env_config.vpd_sensors
+            sensors, plausible = self._env_config.vpd_sensors, VPD_RANGE
         else:
             # Defends against a stale/invalid regulation_mode in stored config
             # (mypy sees this as unreachable since the enum above is exhaustive).
             return None  # type: ignore[unreachable]
 
-        return self._read_entity_value(sensors[0]) if sensors else None
+        return self._read_entity_value(sensors[0], plausible) if sensors else None
 
-    def _read_entity_value(self, entity_id: str | None) -> float | None:
-        """Read a single entity's numeric state, or None when unavailable."""
-        if not entity_id:
-            return None
-        state = self.hass.states.get(entity_id)
-        if not state or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
-            return None
-        try:
-            return float(state.state)
-        except ValueError:
-            return None
+    def _read_entity_value(
+        self,
+        entity_id: str | None,
+        plausible: PlausibleRange | Callable[[str | None], PlausibleRange],
+    ) -> float | None:
+        """Read one entity's value, or None when it is unavailable or implausible."""
+        return read_plausible_value(self.hass, entity_id, plausible)
 
     def _read_lung_room_conditions(self) -> tuple[float | None, float | None]:
         """Read the source-air (lung-room) temperature and VPD for the gate.
@@ -265,10 +268,10 @@ class ExhaustFanCoordinator:
         """
         global_settings = self.main_coordinator.options.get("global_settings", {})
         lung_room_temp = self._read_entity_value(
-            global_settings.get("lung_room_temp_sensor")
+            global_settings.get("lung_room_temp_sensor"), temperature_range
         )
         lung_room_humidity = self._read_entity_value(
-            global_settings.get("lung_room_humidity_sensor")
+            global_settings.get("lung_room_humidity_sensor"), HUMIDITY_RANGE
         )
         lung_room_vpd = (
             VPDCalculator.calculate_vpd(lung_room_temp, lung_room_humidity)

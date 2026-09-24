@@ -33,6 +33,13 @@ ENTRY_ID = "test_entry_id"
 _REAL_ASYNCIO_SLEEP = asyncio.sleep
 
 
+def _moisture_state(value: str) -> MagicMock:
+    """Return a moisture state that reported just now, as validity requires."""
+    state = MagicMock(state=value)
+    state.last_changed = state.last_reported = utcnow()
+    return state
+
+
 async def _await_settling_report(add_event_mock: MagicMock) -> None:
     """Yield to the event loop until the deferred settling-report task fires.
 
@@ -794,11 +801,8 @@ async def test_run_pump_cycle_with_moisture_logging(
     mock_hass.states = MagicMock()
 
     # Mock sensor states (before=45.2, after=55.8)
-    mock_before_state = MagicMock()
-    mock_before_state.state = "45.2"
-
-    mock_after_state = MagicMock()
-    mock_after_state.state = "55.8"
+    mock_before_state = _moisture_state("45.2")
+    mock_after_state = _moisture_state("55.8")
 
     def get_state(entity_id):
         if entity_id == "sensor.moisture":
@@ -846,8 +850,7 @@ async def test_run_pump_cycle_moisture_after_only(
     # Mock sensor states (before=None/Error, after=55.8)
     mock_before_state = None  # Sensor not found initially or error
 
-    mock_after_state = MagicMock()
-    mock_after_state.state = "55.8"
+    mock_after_state = _moisture_state("55.8")
 
     mock_hass.states.get.side_effect = [mock_before_state, mock_after_state]
 
@@ -889,8 +892,8 @@ async def test_run_pump_cycle_defers_completion_report_until_sensor_settles(
         GROWSPACE_ID
     ].environment_config.soil_moisture_sensor = "sensor.moisture"
 
-    mock_before_state = MagicMock(state="40.0")
-    mock_after_state = MagicMock(state="60.0")
+    mock_before_state = _moisture_state("40.0")
+    mock_after_state = _moisture_state("60.0")
     mock_hass.states.get.side_effect = [mock_before_state, mock_after_state]
 
     real_sleep = asyncio.sleep

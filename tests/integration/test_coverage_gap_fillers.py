@@ -237,6 +237,15 @@ def test_dehumidifier_coordinator_vpd_parsing(hass: HomeAssistant) -> None:
     hass.states.async_set("sensor.vpd", "1.5")
     assert coordinator._get_current_vpd() == 1.5
 
+    # Test 4: The entity is gone
+    hass.states.async_remove("sensor.vpd")
+    assert coordinator._get_current_vpd() is None
+
+    # Test 5: Implausible — a Pa reading, a negative one, NaN (#789)
+    for implausible in ("1200", "-0.5", "nan"):
+        hass.states.async_set("sensor.vpd", implausible)
+        assert coordinator._get_current_vpd() is None
+
 
 def test_dehumidifier_coordinator_is_day_logic(hass: HomeAssistant) -> None:
     """Test DayNightTracker.determine() including ValueError fallback via STATE_ON."""

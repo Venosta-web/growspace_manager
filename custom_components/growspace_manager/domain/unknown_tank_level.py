@@ -19,14 +19,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
-from .sensor_validity import Invalidity, SensorReading
+from .sensor_validity import REALERT_AFTER, Invalidity, SensorReading
 
 DEFAULT_TANK_UNKNOWN_GRACE_MINUTES = 10
 DEFAULT_STALE_AFTER_MINUTES = 120
-
-# A new episode's alert waits this long after the previous alert, so a probe
-# that drops out every hour does not page every hour (ADR-0050).
-REALERT_AFTER = timedelta(minutes=60)
 
 
 @dataclass(frozen=True, slots=True)

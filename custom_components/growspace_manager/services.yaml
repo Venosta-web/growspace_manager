@@ -1567,6 +1567,37 @@ set_irrigation_settings:
           max: 120
           step: 1
           unit_of_measurement: "min"
+    sensor_stale_after_minutes:
+      description: >-
+        The longest the moisture and pore EC sensors may go without reporting
+        before their reading is ignored as stale. A sensor that normally
+        reports more often goes stale after three of its usual intervals. 0
+        turns the check off.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 1440
+          step: 1
+          unit_of_measurement: "min"
+    sensor_alert_delay_minutes:
+      description: >-
+        How long the moisture sensor may be unavailable, stale or implausible
+        before one alert is sent. Automatic shots are withheld from the start.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 1440
+          step: 1
+          unit_of_measurement: "min"
+    moisture_zero_is_implausible:
+      description: >-
+        Treat a moisture reading of exactly 0 as implausible, for probes that
+        read 0 when pulled out of the substrate.
+      required: false
+      selector:
+        boolean:
     log_to_logbook:
       description: Record irrigation activity in the Home Assistant logbook.
       required: false
