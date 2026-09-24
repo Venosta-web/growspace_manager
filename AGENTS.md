@@ -27,6 +27,23 @@ syrupy is newer than the one `pytest-homeassistant-custom-component` pins, so
 every test import dies at collection. Building or refreshing the venv is
 documented in `CLAUDE.md`.
 
+## Dependency updates
+
+Dependabot reads `.github/dependabot.yml` from the default branch (`main`) every
+Monday and opens GitHub Actions and pip version-update PRs against `prerelease`.
+The pip allowlist limits independent updates to the integration's CI pins and
+the `dev-tooling` group (ruff, mypy, pre-commit, yamllint, codespell). Keep its
+allowlist and the reasoned ignore entries in sync with `requirements.txt`.
+
+The Home Assistant test stack moves together in #822. The pytest stack is pinned
+by `pytest-homeassistant-custom-component`; HA's `package_constraints.txt`
+governs other dependencies such as Pillow and pydantic. Do not bump those through
+an independent Dependabot PR. On `prerelease`, local pre-commit lint hooks run
+the versions pinned in `requirements.txt`, so tooling pin updates do not need
+a separate hook revision edit.
+Check the required workflows and `codecov/patch` on the first Dependabot PR.
+Codecov uses OIDC in `tests.yaml`, so no Dependabot secret is needed for upload.
+
 ## Base branches
 
 - Architecture/refactor work integrates on **`prerelease`**, not `dev`.
