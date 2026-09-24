@@ -61,13 +61,19 @@ _LOGGER = logging.getLogger(__name__)
 TANK_WATCH_INTERVAL = timedelta(minutes=1)
 
 
-def stale_after(tank: IrrigationTank) -> timedelta:
-    """Return the tank's staleness window, tolerating a malformed stored value."""
+def stale_after(tank: IrrigationTank) -> timedelta | None:
+    """Return the tank's staleness window, or None when it never goes stale.
+
+    ``0`` switches staleness off, for a sensor that reports only when the level
+    changes; a malformed or negative stored value falls back to the default.
+    """
     try:
         minutes = int(tank.stale_after_minutes)
     except TypeError, ValueError:
         minutes = DEFAULT_STALE_AFTER_MINUTES
-    return timedelta(minutes=max(1, minutes))
+    if minutes == 0:
+        return None
+    return timedelta(minutes=minutes if minutes > 0 else DEFAULT_STALE_AFTER_MINUTES)
 
 
 def tank_unknown_grace(growspace: Growspace) -> timedelta:
@@ -244,11 +250,12 @@ class TankLevelMonitor:
         ).unknown
         if unknown is None:  # pragma: no cover - alert() fires only past grace
             return
+        window = stale_after(tank)
         message = offline_alert_message(
             unknown,
             growspace_name=growspace.name,
             since_local=dt_util.as_local(unknown.since).strftime("%H:%M"),
-            stale_after_minutes=int(stale_after(tank).total_seconds() // 60),
+            stale_after_minutes=int(window.total_seconds() // 60) if window else 0,
             irrigation_paused=growspace.irrigation_config.pause_on_low_tank,
         )
         title = f"⚠️ Tank Offline: {growspace.name}"

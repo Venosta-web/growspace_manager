@@ -85,7 +85,7 @@ def validate_reading(
     changed_at: datetime | None,
     reported_at: datetime | None,
     now: datetime,
-    max_age: timedelta,
+    max_age: timedelta | None,
     plausible: PlausibleRange,
 ) -> SensorReading:
     """Validate one raw state against availability, plausibility and age.
@@ -94,13 +94,14 @@ def validate_reading(
     implausible reading is invalid from ``changed_at``, when the state took that
     value — undated for an entity that does not exist, which the caller dates;
     a stale one from the moment its window ran out. Implausible outranks stale,
-    since it says more about what is wrong.
+    since it says more about what is wrong. ``max_age=None`` never goes stale,
+    for a sensor that reports only when its value changes.
     """
     value = parse_numeric_state(raw)
     if value is None:
         return SensorReading(None, Invalidity.UNAVAILABLE, changed_at)
     if not plausible.contains(value):
         return SensorReading(None, Invalidity.IMPLAUSIBLE, changed_at)
-    if reported_at is not None and now - reported_at > max_age:
+    if max_age is not None and reported_at is not None and now - reported_at > max_age:
         return SensorReading(None, Invalidity.STALE, reported_at + max_age)
     return SensorReading(value, None, None)

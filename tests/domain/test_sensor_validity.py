@@ -115,6 +115,18 @@ def test_a_missing_entity_is_unavailable_and_undated() -> None:
     assert reading == SensorReading(None, Invalidity.UNAVAILABLE, None)
 
 
+def test_no_window_never_goes_stale() -> None:
+    reading = validate_reading(
+        "55",
+        changed_at=CHANGED,
+        reported_at=NOW - timedelta(days=30),
+        now=NOW,
+        max_age=None,
+        plausible=TANK_LEVEL_RANGE,
+    )
+    assert reading == SensorReading(55.0, None, None)
+
+
 def test_plausible_range_is_inclusive() -> None:
     band = PlausibleRange(0.0, 20.0)
     assert band.contains(0.0)

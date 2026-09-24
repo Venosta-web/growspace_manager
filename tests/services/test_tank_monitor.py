@@ -426,10 +426,46 @@ async def test_the_gate_view_holds_the_last_valid_level_within_grace(
 
 
 @pytest.mark.parametrize(
-    ("stored", "minutes"), [(45, 45), ("30", 30), ("soon", 120), (None, 120), (0, 1)]
+    ("stored", "minutes"),
+    [(45, 45), ("30", 30), ("soon", 120), (None, 120), (-5, 120), (0, None)],
 )
 def test_stale_after_tolerates_a_malformed_stored_value(
-    tank: IrrigationTank, stored: object, minutes: int
+    tank: IrrigationTank, stored: object, minutes: int | None
 ) -> None:
     tank.stale_after_minutes = stored  # type: ignore[assignment]
-    assert stale_after(tank) == timedelta(minutes=minutes)
+    expected = None if minutes is None else timedelta(minutes=minutes)
+    assert stale_after(tank) == expected
+
+
+async def test_a_tank_with_staleness_off_never_goes_stale(
+    hass: HomeAssistant,
+    monitor: TankLevelMonitor,
+    tank: IrrigationTank,
+    notify: AsyncMock,
+    services: dict[str, list[ServiceCall]],
+) -> None:
+    """A change-only sensor on a steady level stays trusted with 0."""
+    tank.stale_after_minutes = 0
+    hass.states.async_set(TANK_ENTITY, "80")
+    reported = hass.states.get(TANK_ENTITY).last_reported
+
+    await monitor._async_watch_tick(reported + timedelta(days=2))
+
+    assert _pushes(notify) == []
+
+
+async def test_a_tank_with_staleness_off_still_alerts_when_unavailable(
+    hass: HomeAssistant,
+    monitor: TankLevelMonitor,
+    tank: IrrigationTank,
+    notify: AsyncMock,
+    services: dict[str, list[ServiceCall]],
+) -> None:
+    tank.stale_after_minutes = 0
+    hass.states.async_set(TANK_ENTITY, "unavailable")
+    dropped = hass.states.get(TANK_ENTITY).last_changed
+
+    await monitor._async_watch_tick(dropped + GRACE)
+
+    [push] = _pushes(notify)
+    assert "the sensor is unavailable" in push["message"]

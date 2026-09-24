@@ -321,7 +321,7 @@ class IrrigationTank(BaseModel):
     volume_liters: float | None = None
     # How long the sensor may go without reporting before its level is
     # stale — an Unknown Tank Level (ADR-0050). Long by default, because some
-    # tank sensors only report when the level changes.
+    # tank sensors only report when the level changes; 0 switches it off.
     stale_after_minutes: int = 120
     last_recorded_level: float | None = None
     peak_level: float | None = None
