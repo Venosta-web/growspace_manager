@@ -80,6 +80,86 @@ async def test_unreadable_evidence_is_not_overwritten(hass: HomeAssistant) -> No
     store._store.async_save.assert_not_awaited()
 
 
+@pytest.mark.parametrize(
+    "record",
+    [
+        [],
+        {1: {}},
+        {"tent": {"active": []}},
+        {"tent": {"last_fault_at": 123}},
+        {"tent": {"last_fault_at": "2026-09-24T12:00:00"}},
+        {"tent": {"lifetime": []}},
+        {"tent": {"minutes": {"bucket": []}}},
+    ],
+)
+async def test_invalid_reliability_documents_are_preserved(
+    hass: HomeAssistant, record: object
+) -> None:
+    """Reject invalid persisted structures without replacing their file."""
+    store = ReliabilityStore(hass, "invalid-document")
+    store._store.async_load = AsyncMock(return_value=record)
+    store._store.async_save = AsyncMock()
+
+    await store.async_load()
+
+    assert store.unreadable
+    store._store.async_save.assert_not_awaited()
+
+
+@pytest.mark.parametrize("present", [False, True])
+async def test_missing_and_undecodable_reliability_file(
+    hass: HomeAssistant, present: bool
+) -> None:
+    """Only a genuinely missing store initializes an empty record."""
+    store = ReliabilityStore(hass, "load-none")
+    store._store.async_load = AsyncMock(return_value=None)
+    with patch(
+        "custom_components.growspace_manager.reliability_store.exists",
+        return_value=present,
+    ):
+        await store.async_load()
+    assert store.unreadable is present
+
+
+async def test_failed_reliability_writes_restore_previous_record(
+    hass: HomeAssistant,
+) -> None:
+    """A failed counter or marker write does not change the exported snapshot."""
+    store = ReliabilityStore(hass, "rollback")
+    await store.async_add("tent", "irrigation.requested")
+    previous = store.snapshot("tent")["lifetime"]
+    store._store.async_save = AsyncMock(side_effect=OSError("full"))
+
+    with pytest.raises(OSError, match="full"):
+        await store.async_add("tent", "irrigation.requested")
+    with pytest.raises(OSError, match="full"):
+        await store.async_set_active("tent", "switch.pump", True)
+    with pytest.raises(OSError, match="full"):
+        await store.async_set_active("new", "switch.pump", True)
+
+    assert store.snapshot("tent")["lifetime"] == previous
+    assert store.active_outputs("tent") == ()
+    assert "new" not in store._data
+
+
+async def test_reliability_rejects_invalid_increments_and_bounds_actuators(
+    hass: HomeAssistant,
+) -> None:
+    """Unexpected values cannot enter storage and actuator keys stay bounded."""
+    store = ReliabilityStore(hass, "increments")
+    for counter, amount in (("", 1), ("irrigation.requested", float("nan"))):
+        with pytest.raises(ValueError, match="Invalid reliability increment"):
+            await store.async_add("tent", counter, amount)
+    for index in range(17):
+        await store.async_add("tent", f"runtime.automated_seconds.switch.pump_{index}")
+    counters = store.snapshot("tent")["lifetime"]
+    assert counters["runtime.automated_seconds.other"] == 1
+    assert (
+        len([key for key in counters if key.startswith("runtime.automated_seconds.")])
+        == 17
+    )
+
+
 async def test_reliability_export_and_sensor(hass: HomeAssistant) -> None:
     """The response service and entity expose the same versioned summary."""
     store = ReliabilityStore(hass, "export")
@@ -108,6 +188,9 @@ async def test_reliability_export_and_sensor(hass: HomeAssistant) -> None:
     assert (
         sensor.extra_state_attributes["last_24h"]["irrigation.completed_verified"] == 1
     )
+    store.unreadable = True
+    assert not sensor.available
+    assert sensor.native_value is None
 
     call.data = {"growspace_id": "missing"}
     with pytest.raises(ServiceValidationError, match="Unknown growspace"):
