@@ -1553,6 +1553,36 @@ async def test_async_load_ensures_notifications_enabled(hass: HomeAssistant) -> 
 
 
 @pytest.mark.asyncio
+async def test_async_load_continues_with_unreadable_reliability_evidence(
+    hass: HomeAssistant,
+) -> None:
+    """Corrupt optional evidence cannot prevent the integration from loading."""
+    coordinator = create_test_coordinator(hass, data={})
+    coordinator.reliability._store.async_load = AsyncMock(return_value=[])
+    coordinator.reliability._store.async_save = AsyncMock()
+
+    await coordinator.async_load()
+
+    assert coordinator.reliability.unreadable
+    assert coordinator.growspaces
+    coordinator.reliability._store.async_save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_async_load_continues_when_reliability_write_fails(
+    hass: HomeAssistant,
+) -> None:
+    """A full evidence disk does not stop growspace startup."""
+    coordinator = create_test_coordinator(hass, data={})
+    coordinator.reliability._store.async_save = AsyncMock(side_effect=OSError("full"))
+
+    await coordinator.async_load()
+
+    assert coordinator.growspaces
+    assert coordinator.reliability._store.async_save.await_count > 0
+
+
+@pytest.mark.asyncio
 async def test_ensure_special_growspace_updates_name(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
