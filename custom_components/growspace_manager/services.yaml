@@ -1538,10 +1538,24 @@ set_irrigation_settings:
       selector:
         boolean:
     pause_on_low_tank:
-      description: Pause automatic irrigation when a configured tank is low.
+      description: >-
+        Pause irrigation, manual runs included, when a configured tank is low
+        or its level has been unknown for longer than the tank grace period.
       required: false
       selector:
         boolean:
+    tank_unknown_grace_minutes:
+      description: >-
+        How long a tank's level may be unavailable, stale or implausible
+        before irrigation pauses on it and the tank offline alert is sent. The
+        last valid reading is used meanwhile.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 1
+          unit_of_measurement: "min"
     log_to_logbook:
       description: Record irrigation activity in the Home Assistant logbook.
       required: false

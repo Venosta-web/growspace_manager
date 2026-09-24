@@ -546,9 +546,7 @@ async def test_vwc_skips_watering_when_tank_is_low(
         if entity_id == "sensor.tank_level":
             return _state("20.0")  # Below 30% warning
         if entity_id == "sensor.moisture":
-            return MagicMock(
-                state="40.0"
-            )  # VWC below target → would normally trigger P1 shot
+            return _state("40.0")  # VWC below target → would normally trigger P1 shot
         return None
 
     mock_hass.states.get.side_effect = states_side_effect
@@ -564,6 +562,7 @@ async def test_vwc_skips_watering_when_tank_is_low(
     # Pump switch must not have fired — only a low-tank persistent_notification may appear
     all_calls = [str(c) for c in mock_hass.services.async_call.call_args_list]
     assert not any("switch" in c and "turn_on" in c for c in all_calls)
+    assert any("Low Tank" in c for c in all_calls)
 
 
 async def test_vwc_skips_watering_when_max_cycles_reached(
@@ -1445,6 +1444,8 @@ def _state(value: str, last_updated: datetime | None = None) -> MagicMock:
     state = MagicMock()
     state.state = value
     state.last_updated = last_updated
+    # A tank reading is validated for freshness (ADR-0050): reported just now.
+    state.last_changed = state.last_reported = dt_util.utcnow()
     return state
 
 

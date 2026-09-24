@@ -319,6 +319,10 @@ class IrrigationTank(BaseModel):
     enable_lights_bias: bool = False  # Segregate rates by lights on/off
     enable_vpd_weighting: bool = False  # Apply VPD-based multiplier
     volume_liters: float | None = None
+    # How long the sensor may go without reporting before its level is
+    # stale — an Unknown Tank Level (ADR-0050). Long by default, because some
+    # tank sensors only report when the level changes.
+    stale_after_minutes: int = 120
     last_recorded_level: float | None = None
     peak_level: float | None = None
     water_history: TankWaterHistory = field(default_factory=TankWaterHistory)
@@ -371,6 +375,10 @@ class IrrigationConfig(BaseModel):
     # minimum; the Startup Inhibit also waits for each control sensor to
     # report (#786).
     startup_grace_minutes: int = 5
+    # How long a tank may be at an Unknown Tank Level before the Pump Cycle
+    # Gate refuses on it and its Tank Offline Alert goes out; the last valid
+    # reading stands in meanwhile (ADR-0050).
+    tank_unknown_grace_minutes: int = 10
     active_steering_phase: str = "p2"
     phase_changed_at: str | None = None
 

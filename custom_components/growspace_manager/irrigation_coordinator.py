@@ -56,6 +56,7 @@ from .domain.pump_cycle import (
     decide_cycle,
     safety_cap_blocks,
 )
+from .domain.unknown_tank_level import UnknownTankLevel
 from .domain.water_aggregation import (
     WATER_SOURCE_PUMP_ESTIMATE,
     is_tank_derived_mode,
@@ -64,6 +65,11 @@ from .domain.water_aggregation import (
 from .exceptions import GrowspaceError
 from .irrigation_safety_store import IrrigationSafetyStore
 from .models import Growspace, GrowspaceEvent, IrrigationConfig
+from .tank_monitor import (
+    TankLevelMonitor,
+    TankWatchBook,
+    unknown_tank_skip_notification_id,
+)
 from .utils import any_light_sensor_on
 
 _LOGGER = logging.getLogger(__name__)
@@ -118,6 +124,9 @@ class BaseIrrigationCoordinator:
         self._open_failures: dict[str, int] = {}
         # Outputs being re-sent OFF every minute until they read OFF.
         self._off_retries: dict[str, Callable[[], None]] = {}
+        # Tank watches of our own, only when there is no TankLevelMonitor to
+        # share (legacy isolated fixtures).
+        self._own_tank_watches: TankWatchBook | None = None
 
     @property
     def last_cycle_timestamp(self) -> str | None:
@@ -178,6 +187,16 @@ class BaseIrrigationCoordinator:
         store = getattr(self._main_coordinator, "irrigation_safety", None)
         return store if isinstance(store, IrrigationSafetyStore) else None
 
+    @property
+    def _tank_watches(self) -> TankWatchBook:
+        """Return the Unknown Tank Level watches the Tank Offline Alert also reads."""
+        monitor = getattr(self._main_coordinator, "tank_monitor", None)
+        if isinstance(monitor, TankLevelMonitor):
+            return monitor.watches
+        if self._own_tank_watches is None:
+            self._own_tank_watches = TankWatchBook(self.hass)
+        return self._own_tank_watches
+
     def _configured_outputs(self) -> tuple[str, ...]:
         """Return every output that must be confirmed OFF before re-arming."""
         config = self.growspace.irrigation_config
@@ -229,11 +248,13 @@ class BaseIrrigationCoordinator:
                 startup = self.startup_inhibit_reason()
                 if startup is not None:
                     inhibits = (startup,)
+                tank_readings, unknown_tanks = self._resolve_tanks()
                 verdict = decide_cycle(
                     event_type="irrigation",
                     is_manual=False,
                     config=config,
-                    tank_readings=self._resolve_tank_readings(),
+                    tank_readings=tank_readings,
+                    unknown_tanks=unknown_tanks,
                     lights_dark=self._is_lights_dark(),
                     cycles_today=self._cycles_today,
                     volume_today=self._volume_dispensed_today,
@@ -244,6 +265,7 @@ class BaseIrrigationCoordinator:
                 if verdict.reason is not None:
                     code = {
                         SkipReason.LOW_TANK: "tank_low",
+                        SkipReason.TANK_UNKNOWN: "tank_unknown",
                         SkipReason.CYCLE_LIMIT: "cap_cycles",
                         SkipReason.VOLUME_CAP: "cap_volume",
                         SkipReason.DARK: "dark",
@@ -686,42 +708,66 @@ class BaseIrrigationCoordinator:
             return False
         return any_light_sensor_on(self.hass, light_sensors) is not True
 
-    def _resolve_tank_readings(self) -> list[TankReading]:
-        """Resolve configured irrigation tanks into readings for the Pump Cycle Gate.
+    def _resolve_tanks(self) -> tuple[list[TankReading], list[UnknownTankLevel]]:
+        """Resolve configured irrigation tanks for the Pump Cycle Gate.
 
-        Tanks whose sensor is unavailable are omitted (matching the previous
-        behaviour of skipping unreadable tanks rather than treating them as low).
+        Each tank is a reading — its current level, or within the grace period
+        its last valid one — or an Unknown Tank Level (ADR-0050). An unreadable
+        tank is never simply left out.
         """
+        growspace = self.growspace
+        tanks = growspace.environment_config.irrigation_tanks
+        if not tanks:
+            return [], []
+        now = utcnow()
         readings: list[TankReading] = []
-        for tank in self.growspace.environment_config.irrigation_tanks:
-            level = self._get_sensor_value(tank.sensor_entity)
-            if level is not None:
+        unknown: list[UnknownTankLevel] = []
+        for tank in tanks:
+            status = self._tank_watches.status(growspace, tank, now)
+            if status.unknown is not None:
+                unknown.append(status.unknown)
+            elif status.level is not None:
                 readings.append(
                     TankReading(
                         name=tank.name,
-                        level=level,
+                        level=status.level,
                         warning_level=tank.warning_level,
                     )
                 )
-        return readings
+        return readings, unknown
 
     async def _async_fire_low_tank_notification(
-        self, tank_name: str, level: float
+        self, tank_name: str, level: float | None
     ) -> None:
-        """Fire a persistent HA warning notification when irrigation is skipped due to low tank."""
+        """Fire a persistent HA warning when a cycle is skipped on a tank.
+
+        ``level`` is None for an Unknown Tank Level, which gets its own wording.
+        """
         growspace = self.growspace
         message = (
             f"Irrigation skipped in '{growspace.name}': "
             f"tank '{tank_name}' is low ({level:.1f}%). "
             "Refill the reservoir before the next cycle."
+            if level is not None
+            else f"Irrigation skipped in '{growspace.name}': "
+            f"the level of tank '{tank_name}' is unknown. "
+            "Check the tank sensor; irrigation resumes once it reports again."
         )
         await self.hass.services.async_call(
             "persistent_notification",
             "create",
             {
                 "message": message,
-                "title": f"Low Tank — {growspace.name}",
-                "notification_id": f"growspace_low_tank_{self._growspace_id}",
+                "title": (
+                    f"Low Tank — {growspace.name}"
+                    if level is not None
+                    else f"Tank Level Unknown — {growspace.name}"
+                ),
+                "notification_id": (
+                    f"growspace_low_tank_{self._growspace_id}"
+                    if level is not None
+                    else unknown_tank_skip_notification_id(self._growspace_id)
+                ),
             },
             blocking=False,
         )
@@ -763,6 +809,10 @@ class BaseIrrigationCoordinator:
         if verdict.reason is SkipReason.LOW_TANK and verdict.low_tank is not None:
             await self._async_fire_low_tank_notification(
                 verdict.low_tank.name, verdict.low_tank.level
+            )
+        if verdict.reason is SkipReason.TANK_UNKNOWN and verdict.unknown_tank:
+            await self._async_fire_low_tank_notification(
+                verdict.unknown_tank.name, None
             )
         if verdict.reason is not SkipReason.DARK or config.log_to_logbook:
             self._fire_logbook_event(verdict.message, CATEGORY_IRRIGATION_ERROR)
@@ -943,11 +993,13 @@ class BaseIrrigationCoordinator:
         latched = snapshot.requires_ack
         startup = None if latched else self.startup_inhibit_reason()
         cycle_volume_l = self._compute_cycle_volume_liters(duration)
+        tank_readings, unknown_tanks = ([], []) if latched else self._resolve_tanks()
         verdict = decide_cycle(
             event_type=event_type,
             is_manual=bool(event_data.get("manual", False)),
             config=config,
-            tank_readings=[] if latched else self._resolve_tank_readings(),
+            tank_readings=tank_readings,
+            unknown_tanks=unknown_tanks,
             lights_dark=False if latched else self._is_lights_dark(),
             cycles_today=self._cycles_today,
             volume_today=self._volume_dispensed_today,
