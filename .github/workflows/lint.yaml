@@ -35,8 +35,9 @@ jobs:
           python -m pip install --upgrade \
             "$(grep '^pre-commit==' requirements.txt)" \
             "$(grep '^ruff==' requirements.txt)" \
-            "$(grep '^yamllint==' requirements.txt)"
-      - name: Check pre-commit lint tool versions
+            "$(grep '^yamllint==' requirements.txt)" \
+            "$(grep '^codespell==' requirements.txt)"
+      - name: Check lint tool pins and hooks
         run: python .github/scripts/check_lint_tool_pins.py
       # Invoke the checked-in hook rather than duplicating its codespell options
       # here, so commits and CI enforce exactly the same spelling configuration.
