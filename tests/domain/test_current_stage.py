@@ -9,8 +9,13 @@ reconstructed by the lifecycle module from their legacy dates.
 from datetime import date
 from unittest.mock import MagicMock
 
+import pytest
+
 from custom_components.growspace_manager.domain.current_stage import (
     resolve_current_stage,
+)
+from custom_components.growspace_manager.domain.lifetime_stage_days import (
+    resolve_lifetime_stage_days,
 )
 from custom_components.growspace_manager.managers.nutrient import NutrientManager
 from custom_components.growspace_manager.models import NutrientPreset, Plant
@@ -97,6 +102,28 @@ def test_absent_history_is_reconstructed_by_the_lifecycle() -> None:
     )
 
     assert resolve_current_stage(plant, observed_on=OBSERVED_ON) == "flower"
+
+
+@pytest.mark.parametrize(
+    ("created_at", "expected_days"),
+    [("2025-08-10", 10), (None, 0)],
+)
+def test_empty_history_bootstraps_both_read_paths_from_explicit_stage(
+    created_at: str | None, expected_days: int
+) -> None:
+    """Both readers use the same explicit-stage fallback for old Plants."""
+    plant = Plant(
+        plant_id="legacy-stage",
+        growspace_id="main",
+        stage="veg",
+        created_at=created_at,
+        stage_history=[],
+    )
+
+    assert resolve_current_stage(plant, observed_on=OBSERVED_ON) == "veg"
+    assert (
+        resolve_lifetime_stage_days(plant, observed_on=OBSERVED_ON).veg == expected_days
+    )
 
 
 def test_sensor_state_and_attributes_agree_with_the_module() -> None:
