@@ -99,3 +99,37 @@ def test_find_first_available_position(validator, repo) -> None:
     )
 
     assert validator.find_first_available_position("g1") == (1, 2)
+
+
+@pytest.mark.parametrize(
+    "growspace_id",
+    [PlantStage.MOTHER, PlantStage.CLONE, PlantStage.DRY, PlantStage.CURE],
+)
+def test_special_growspaces_accept_positions_outside_grid(
+    validator, repo, growspace_id
+) -> None:
+    """Every special growspace bypasses the ordinary grid boundary check."""
+    repo.add_growspace(
+        Growspace(id=growspace_id, name=str(growspace_id), rows=1, plants_per_row=1)
+    )
+
+    validator.validate_position_bounds(growspace_id, -1, 99)
+
+
+def test_occupied_position_excludes_only_the_named_plant(validator, repo) -> None:
+    """Excluding a moving plant must not hide another plant in the target cell."""
+    repo.add_plant(create_plant(plant_id="moving", growspace_id="g1", row=2, col=2))
+    repo.add_plant(
+        create_plant(plant_id="occupant", growspace_id="g1", row=1, col=1, strain="B")
+    )
+
+    with pytest.raises(ValidationChangeError, match=r"Position \(1,1\).*B"):
+        validator.validate_position_not_occupied("g1", 1, 1, exclude_plant_id="moving")
+
+
+def test_find_first_available_position_when_grid_is_full(validator, repo) -> None:
+    """A full grid returns the utility's documented last-cell fallback."""
+    repo.add_growspace(Growspace(id="g1", name="G1", rows=1, plants_per_row=1))
+    repo.add_plant(create_plant(plant_id="p1", growspace_id="g1", row=1, col=1))
+
+    assert validator.find_first_available_position("g1") == (1, 1)
