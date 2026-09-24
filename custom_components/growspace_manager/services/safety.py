@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
@@ -12,6 +13,9 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
 from ..const import DOMAIN
+from ..reliability_store import ReliabilityStore
+
+_LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..coordinator import GrowspaceCoordinator
@@ -91,10 +95,19 @@ async def async_emergency_stop_growspace(
     """Latch first, command safe states, then demand affirmative readback."""
     outputs = managed_outputs(coordinator.growspaces[growspace_id])
     latch_error: Exception | None = None
+    already_stopped = (
+        coordinator.irrigation_safety.emergency_stop_for(growspace_id) is not None
+    )
     try:
         await coordinator.irrigation_safety.async_latch_emergency_stop(
             growspace_id, "Operator emergency stop", outputs, user_id
         )
+        reliability = getattr(coordinator, "reliability", None)
+        if isinstance(reliability, ReliabilityStore) and not already_stopped:
+            try:
+                await reliability.async_add(growspace_id, "controller.emergency_stop")
+            except Exception:
+                _LOGGER.exception("Could not record emergency stop reliability")
     except Exception as err:  # noqa: BLE001 - still command every output safe
         latch_error = err
     failures: list[str] = []

@@ -34,6 +34,8 @@
       'ledger': list([
       ]),
     }),
+    'reliability': dict({
+    }),
     'subsystems': dict({
       'circulation_fan': dict({
       }),

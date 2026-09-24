@@ -31,6 +31,7 @@ from custom_components.growspace_manager.irrigation_safety_store import (
     IrrigationSafetyStore,
 )
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
+from custom_components.growspace_manager.reliability_store import ReliabilityStore
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -229,6 +230,50 @@ def _not_delivered(coordinator: IrrigationCoordinator) -> list[dict[str, Any]]:
 
 def _turn_ons(run: CycleRun) -> int:
     return run.services.count(("switch", "turn_on"))
+
+
+@pytest.mark.parametrize(
+    ("switch", "expected"),
+    [
+        (
+            FakeSwitch(),
+            {
+                "irrigation.fired": 1,
+                "irrigation.completed_verified": 1,
+                "runtime.estimated_water_l": 3,
+                f"runtime.automated_seconds.{PUMP}": 30,
+            },
+        ),
+        (
+            FakeSwitch(on_error=HomeAssistantError("relay refused")),
+            {"irrigation.command_failure.on": 1},
+        ),
+        (FakeSwitch(on_after=None), {"irrigation.readback.on_unconfirmed": 1}),
+        (
+            FakeSwitch(off_after=None),
+            {
+                "irrigation.readback.off_unconfirmed": 1,
+                "irrigation.completed_unverified": 1,
+            },
+        ),
+    ],
+)
+async def test_reliability_counts_pump_effect_paths(
+    coordinator: IrrigationCoordinator, switch: FakeSwitch, expected: dict[str, int]
+) -> None:
+    """Each observed command and readback outcome has one durable counter."""
+    reliability = ReliabilityStore.__new__(ReliabilityStore)
+    reliability._data = {}
+    reliability.unreadable = False
+    reliability._lock = asyncio.Lock()
+    reliability._store = MagicMock()
+    reliability._store.async_save = AsyncMock()
+    coordinator._main_coordinator.reliability = reliability
+    await _run_cycles(coordinator, switch)
+    counters = reliability.snapshot(GROWSPACE_ID)["lifetime"]
+    assert counters["irrigation.requested"] == 1
+    for key, value in expected.items():
+        assert counters[key] == value
 
 
 async def test_confirmed_cycle_is_delivered(

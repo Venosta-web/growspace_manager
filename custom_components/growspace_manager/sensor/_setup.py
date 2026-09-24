@@ -32,6 +32,7 @@ from .environment import AirExchangeSensor, DLISensor, ECTargetSensor
 from .irrigation_controller import IrrigationControllerSensor
 from .overview import GrowspaceListSensor, GrowspaceOverviewSensor
 from .plant import PlantEntity
+from .reliability import GrowspaceReliabilitySensor
 from .strain import SeedInventorySensor, StrainLibrarySensor
 from .tank import (
     TankDepletionSensor,
@@ -311,6 +312,9 @@ async def _create_initial_entities(
         initial_entities.append(
             IrrigationControllerSensor(coordinator, growspace_id, growspace.name)
         )
+        initial_entities.append(
+            GrowspaceReliabilitySensor(coordinator, growspace_id, growspace.name)
+        )
 
         if growspace.environment_config and growspace.environment_config.energy_sensors:
             initial_entities.append(
@@ -377,6 +381,9 @@ async def _update_growspace_entities(
                 [
                     entity,
                     IrrigationControllerSensor(
+                        coordinator, growspace_id, growspace.name
+                    ),
+                    GrowspaceReliabilitySensor(
                         coordinator, growspace_id, growspace.name
                     ),
                 ]

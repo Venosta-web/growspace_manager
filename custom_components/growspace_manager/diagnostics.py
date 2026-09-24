@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import VERSION
 from .coordinator import GrowspaceCoordinator
+from .reliability_store import ReliabilityStore
 from .vwc_irrigation_coordinator import VWCIrrigationCoordinator
 
 TO_REDACT = {
@@ -142,6 +143,12 @@ async def async_get_config_entry_diagnostics(
             "fault_record_unreadable": coordinator.irrigation_safety.unreadable,
             "ledger": list(coordinator.irrigation_safety.ledger)[-100:],
         },
+        "reliability": {
+            growspace_id: coordinator.reliability.snapshot(growspace_id)
+            for growspace_id in coordinator.growspaces
+        }
+        if isinstance(getattr(coordinator, "reliability", None), ReliabilityStore)
+        else {},
         "integration_version": VERSION,
     }
     result["subsystems"] = _safe(result["subsystems"], unavailable=True)

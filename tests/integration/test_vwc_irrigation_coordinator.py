@@ -363,16 +363,18 @@ async def test_setup_unload(vwc_coordinator, mock_hass) -> None:
         mock_remove = MagicMock()
         mock_track.return_value = mock_remove
         mock_remove_poll = MagicMock()
-        mock_startup_poll.return_value = mock_remove_poll
+        mock_remove_probe = MagicMock()
+        mock_startup_poll.side_effect = [mock_remove_poll, mock_remove_probe]
 
         await vwc_coordinator.async_setup()
         mock_track.assert_called_once()
-        mock_startup_poll.assert_called_once()
+        assert mock_startup_poll.call_count == 2
         assert vwc_coordinator._remove_update_listener is not None
 
         await vwc_coordinator.async_unload()
         mock_remove.assert_called_once()
         mock_remove_poll.assert_called_once()
+        mock_remove_probe.assert_called_once()
         assert vwc_coordinator._remove_update_listener is None
 
 

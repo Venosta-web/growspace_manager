@@ -662,6 +662,7 @@ class GrowspaceService(StrEnum):
     IMPORT_STRAIN_LIBRARY = "import_strain_library"
     EXPORT_STRAIN_LIBRARY = "export_strain_library"
     EXPORT_GROW_REPORT = "export_grow_report"
+    EXPORT_RELIABILITY_EVIDENCE = "export_reliability_evidence"
     CLEAR_STRAIN_LIBRARY = "clear_strain_library"
     STRAIN_RECOMMENDATION = "strain_recommendation"
     ASK_GROW_ADVICE = "ask_grow_advice"
