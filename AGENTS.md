@@ -38,10 +38,9 @@ allowlist and the reasoned ignore entries in sync with `requirements.txt`.
 The Home Assistant test stack moves together in #822. The pytest stack is pinned
 by `pytest-homeassistant-custom-component`; HA's `package_constraints.txt`
 governs other dependencies such as Pillow and pydantic. Do not bump those through
-an independent Dependabot PR. A Ruff or yamllint pin update also needs its
-matching `.pre-commit-config.yaml` hook revision updated; the lint pin check
-reports a mismatch on the PR. `codespell` is currently unpinned in
-`requirements.txt`, so Dependabot cannot propose a pip version update for it.
+an independent Dependabot PR. On `prerelease`, local pre-commit lint hooks run
+the versions pinned in `requirements.txt`, so tooling pin updates do not need
+a separate hook revision edit.
 Check the required workflows and `codecov/patch` on the first Dependabot PR.
 Codecov uses OIDC in `tests.yaml`, so no Dependabot secret is needed for upload.
 
