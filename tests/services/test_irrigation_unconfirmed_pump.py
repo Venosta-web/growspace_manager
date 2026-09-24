@@ -9,6 +9,7 @@ rather than a stub's.
 
 import asyncio
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -144,6 +145,7 @@ async def _run_cycles(
     *,
     cycles: int = 1,
     duration: int = 30,
+    during_cycle: Callable[[], None] | None = None,
 ) -> CycleRun:
     """Run scheduled irrigation cycles against ``switch`` and a fake clock."""
     record_water = AsyncMock()
@@ -160,6 +162,8 @@ async def _run_cycles(
 
         async def fake_sleep(seconds: float) -> None:
             slept.append(seconds)
+            if during_cycle is not None and seconds == duration:
+                during_cycle()
             advance(seconds)
 
         async def fake_on_wait(
@@ -274,6 +278,83 @@ async def test_reliability_counts_pump_effect_paths(
     assert counters["irrigation.requested"] == 1
     for key, value in expected.items():
         assert counters[key] == value
+
+
+def _reliability_for(coordinator: IrrigationCoordinator) -> ReliabilityStore:
+    """Attach an in-memory write-through store to the scripted pump."""
+    reliability = ReliabilityStore.__new__(ReliabilityStore)
+    reliability._data = {}
+    reliability.unreadable = False
+    reliability._lock = asyncio.Lock()
+    reliability._store = MagicMock()
+    reliability._store.async_save = AsyncMock()
+    coordinator._main_coordinator.reliability = reliability
+    return reliability
+
+
+async def test_reliability_counts_inhibit_transition_once(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """Repeated reporting of one inhibited state is one reliability event."""
+    reliability = _reliability_for(coordinator)
+
+    await coordinator._record_safety_transition("inhibited", "sensor_stale")
+    await coordinator._record_safety_transition("inhibited", "sensor_stale")
+
+    assert (
+        reliability.snapshot(GROWSPACE_ID)["lifetime"][
+            "controller.inhibit.sensor_stale"
+        ]
+        == 1
+    )
+
+
+async def test_reliability_counts_override_before_pump_on(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """A safety toggle after admission prevents ON and counts an abort."""
+    reliability = _reliability_for(coordinator)
+    safety = coordinator._safety_store
+    assert safety is not None
+
+    async def disable_automation(state: str, _reason: str | None = None) -> None:
+        if state == "running":
+            safety.controls[GROWSPACE_ID]["automation"] = False
+
+    with patch.object(coordinator, "_record_safety_transition", new=disable_automation):
+        run = await _run_cycles(coordinator, FakeSwitch())
+
+    assert _turn_ons(run) == 0
+    assert (
+        reliability.snapshot(GROWSPACE_ID)["lifetime"]["irrigation.aborted.override"]
+        == 1
+    )
+
+
+@pytest.mark.parametrize("cause", ["override", "e_stop", "error"])
+async def test_reliability_counts_interrupted_cycle_cause(
+    coordinator: IrrigationCoordinator, cause: str
+) -> None:
+    """A started cycle records its cancellation or error cause once."""
+    reliability = _reliability_for(coordinator)
+
+    def interrupt() -> None:
+        if cause == "override":
+            coordinator._override_cancelled_tasks.add(asyncio.current_task())
+        elif cause == "e_stop":
+            safety = coordinator._safety_store
+            assert safety is not None
+            safety.emergency_stops[GROWSPACE_ID] = MagicMock()
+        if cause == "error":
+            raise ValueError("sensor failed")
+        raise asyncio.CancelledError
+
+    await _run_cycles(coordinator, FakeSwitch(), during_cycle=interrupt)
+
+    assert (
+        reliability.snapshot(GROWSPACE_ID)["lifetime"][f"irrigation.aborted.{cause}"]
+        == 1
+    )
 
 
 async def test_confirmed_cycle_is_delivered(

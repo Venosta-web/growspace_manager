@@ -10,9 +10,13 @@ import pytest
 from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
 )
+from custom_components.growspace_manager.irrigation_safety_store import (
+    IrrigationSafetyStore,
+)
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
+    IrrigationConfig,
     IrrigationStrategy,
 )
 from custom_components.growspace_manager.reliability_store import ReliabilityStore
@@ -239,3 +243,57 @@ async def test_control_sensor_probe_counts_unavailable_and_implausible_edges(
         await irrigation._async_probe_control_sensors()
     counters = runtime.reliability.snapshot("tent")["lifetime"]
     assert counters["sensors.stale_events"] == 1
+
+
+async def test_pump_reliability_failure_does_not_interrupt_control(
+    hass: HomeAssistant,
+) -> None:
+    """The pump's evidence adapter contains both failed write paths."""
+    runtime = MagicMock()
+    runtime.reliability = ReliabilityStore(hass, "pump-write-failure")
+    runtime.reliability._store.async_save = AsyncMock(side_effect=OSError("full"))
+    runtime.growspaces = {"tent": Growspace(id="tent", name="Tent")}
+    irrigation = IrrigationCoordinator(
+        hass, MagicMock(runtime_data=runtime), "tent", runtime
+    )
+
+    await irrigation._count_reliability("irrigation.requested")
+    await irrigation._set_reliability_active("switch.pump", True)
+
+    assert (
+        runtime.reliability.snapshot("tent")["lifetime"].get("irrigation.requested", 0)
+        == 0
+    )
+    assert runtime.reliability.active_outputs("tent") == ()
+
+
+async def test_armed_runtime_and_unexpected_on_are_observed(
+    hass: HomeAssistant,
+) -> None:
+    """Sample eligibility and record a pump already ON at startup."""
+    growspace = Growspace(
+        id="tent",
+        name="Tent",
+        irrigation_config=IrrigationConfig(irrigation_pump_entity="switch.pump"),
+    )
+    safety = IrrigationSafetyStore(hass, "armed-observation")
+    await safety.async_load()
+    await safety.async_initialize_controls({"tent": growspace})
+    await safety.async_set_control("tent", "irrigation_armed", True, "operator")
+    runtime = MagicMock()
+    runtime.irrigation_safety = safety
+    runtime.reliability = ReliabilityStore(hass, "armed-observation")
+    runtime.growspaces = {"tent": growspace}
+    irrigation = IrrigationCoordinator(
+        hass, MagicMock(runtime_data=runtime), "tent", runtime
+    )
+    hass.states.async_set("switch.pump", "on")
+
+    await irrigation._async_probe_control_sensors()
+    with patch.object(irrigation, "_async_record_controller_state", new=AsyncMock()):
+        await irrigation._async_begin_startup_inhibit()
+    irrigation.async_cancel_listeners()
+
+    counters = runtime.reliability.snapshot("tent")["lifetime"]
+    assert counters["runtime.automation_eligible_minutes"] == 1
+    assert counters["irrigation.readback.unexpected_on"] == 1

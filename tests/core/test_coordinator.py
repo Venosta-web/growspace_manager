@@ -1583,6 +1583,26 @@ async def test_async_load_continues_when_reliability_write_fails(
 
 
 @pytest.mark.asyncio
+async def test_async_load_counts_inflight_output_once_per_ha_process(
+    hass: HomeAssistant,
+) -> None:
+    """A persisted ON marker becomes one restart observation, then clears."""
+    coordinator = create_test_coordinator(hass, data={})
+    await coordinator.reliability.async_set_active("clone", "switch.pump", True)
+
+    await coordinator.async_load()
+    counters = coordinator.reliability.snapshot("clone")["lifetime"]
+    assert counters["runtime.ha_start"] == 1
+    assert counters["runtime.ha_start_inflight"] == 1
+    assert coordinator.reliability.active_outputs("clone") == ()
+
+    await coordinator.async_load()
+    counters = coordinator.reliability.snapshot("clone")["lifetime"]
+    assert counters["runtime.ha_start"] == 1
+    assert counters["runtime.ha_start_inflight"] == 1
+
+
+@pytest.mark.asyncio
 async def test_ensure_special_growspace_updates_name(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
