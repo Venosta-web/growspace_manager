@@ -43,6 +43,15 @@
     "circulation_fan_entities": ["fan.contract_circulation"],
     "circulation_fan_entity": "fan.contract_circulation",
     "circulation_fan_state": "on",
+    "climate_fail_safe_config": {
+      "dehumidifier_max_runtime_minutes": 0,
+      "dehumidifier_safe_state": "off",
+      "exhaust_fallback_speed": 50,
+      "humidifier_max_runtime_minutes": 0,
+      "humidifier_safe_state": "off",
+      "sensor_stale_after_minutes": 30,
+      "sensor_timeout_minutes": 10
+    },
     "co2_sensor": "sensor.contract_co2",
     "dehumidifier_ac_infinity_devices": [
       {
@@ -812,6 +821,15 @@
           "wind_period_seconds": 90
         },
         "circulation_fan_entities": ["fan.subarea_circulation"],
+        "climate_fail_safe_config": {
+          "dehumidifier_max_runtime_minutes": 0,
+          "dehumidifier_safe_state": "off",
+          "exhaust_fallback_speed": 50,
+          "humidifier_max_runtime_minutes": 0,
+          "humidifier_safe_state": "off",
+          "sensor_stale_after_minutes": 30,
+          "sensor_timeout_minutes": 10
+        },
         "co2_sensor": "sensor.subarea_co2",
         "control_dehumidifier": true,
         "control_humidifier": true,

@@ -1,5 +1,6 @@
 """Unit tests for the actuator-driver abstraction (ADR-0022)."""
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -53,7 +54,7 @@ async def test_fan_driver_set_speed_calls_set_percentage(mock_hass: MagicMock) -
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.exhaust", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -67,7 +68,7 @@ async def test_fan_driver_binary_calls(
     """FanDriver.turn_on/turn_off issue the matching fan service."""
     await getattr(FanDriver(mock_hass, "fan.exhaust"), method)()
     mock_hass.services.async_call.assert_awaited_once_with(
-        "fan", service, {ATTR_ENTITY_ID: "fan.exhaust"}, blocking=False
+        "fan", service, {ATTR_ENTITY_ID: "fan.exhaust"}, blocking=True
     )
 
 
@@ -103,7 +104,7 @@ async def test_switch_driver_set_speed_threshold(
     """SwitchDriver engages only when demand exceeds the off threshold."""
     await SwitchDriver(mock_hass, "switch.exhaust", off_threshold=10).set_speed(pct)
     mock_hass.services.async_call.assert_awaited_once_with(
-        "switch", service, {ATTR_ENTITY_ID: "switch.exhaust"}, blocking=False
+        "switch", service, {ATTR_ENTITY_ID: "switch.exhaust"}, blocking=True
     )
 
 
@@ -114,7 +115,7 @@ async def test_switch_driver_uses_entity_domain(mock_hass: MagicMock) -> None:
         "input_boolean",
         "turn_on",
         {ATTR_ENTITY_ID: "input_boolean.damper"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -122,7 +123,7 @@ async def test_switch_driver_default_threshold_is_zero(mock_hass: MagicMock) -> 
     """With the default threshold any positive demand turns the device on."""
     await SwitchDriver(mock_hass, "switch.damper").set_speed(1)
     mock_hass.services.async_call.assert_awaited_once_with(
-        "switch", "turn_on", {ATTR_ENTITY_ID: "switch.damper"}, blocking=False
+        "switch", "turn_on", {ATTR_ENTITY_ID: "switch.damper"}, blocking=True
     )
 
 
@@ -155,18 +156,65 @@ async def test_resolve_passes_switch_off_threshold(mock_hass: MagicMock) -> None
     )
     await driver.set_speed(20)
     mock_hass.services.async_call.assert_awaited_once_with(
-        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.exhaust"}, blocking=False
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.exhaust"}, blocking=True
     )
 
 
-@pytest.mark.parametrize("error", [HomeAssistantError("boom"), TimeoutError()])
-async def test_safe_service_call_swallows_device_errors(
-    mock_hass: MagicMock, error: Exception
+@pytest.mark.parametrize(
+    "error", [HomeAssistantError("boom"), TimeoutError(), ValueError("bad value")]
+)
+async def test_safe_service_call_reports_device_errors(
+    mock_hass: MagicMock, error: Exception, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """A failing device call is logged, not raised, so one device can't break the tick."""
+    """A failing device call is logged and reported, never raised (#792).
+
+    Not raised, so one device cannot break the tick; reported, so the
+    controller can count it instead of the failure vanishing.
+    """
     mock_hass.services.async_call.side_effect = error
-    await FanDriver(mock_hass, "fan.exhaust").set_speed(50)
+    assert await FanDriver(mock_hass, "fan.exhaust").set_speed(50) is False
     mock_hass.services.async_call.assert_awaited_once()
+    assert "Failed to call fan.set_percentage on fan.exhaust" in caplog.text
+
+
+async def test_safe_service_call_reports_success(mock_hass: MagicMock) -> None:
+    """A command the device accepted reports True, whatever the driver."""
+    assert await FanDriver(mock_hass, "fan.exhaust").set_speed(50) is True
+    assert await LightDriver(mock_hass, "light.panel").turn_on() is True
+
+
+async def test_a_command_that_hangs_times_out_as_a_failure(
+    mock_hass: MagicMock,
+) -> None:
+    """The blocking call is bounded, so a hung device cannot hold the tick.
+
+    The test loop's clock does not advance on its own, so the bound is zero
+    here: already due, it cancels the call on the loop's next turn.
+    """
+
+    async def _hang(*_args: object, **_kwargs: object) -> None:
+        await asyncio.Event().wait()
+
+    mock_hass.services.async_call.side_effect = _hang
+    with patch(
+        "custom_components.growspace_manager.actuator_driver.COMMAND_TIMEOUT_SECONDS",
+        0,
+    ):
+        assert await SwitchDriver(mock_hass, "switch.fan").turn_on() is False
+
+
+@pytest.mark.parametrize("method", ["turn_on", "set_speed"])
+async def test_ac_infinity_reports_either_half_failing(
+    mock_hass: MagicMock, method: str
+) -> None:
+    """A port whose mode was set but whose intensity was refused did not obey."""
+    mock_hass.services.async_call.side_effect = [None, HomeAssistantError("boom")]
+    driver = ACInfinityDriver(
+        mock_hass, mode_entity="select.port_mode", speed_entity="number.port_speed"
+    )
+    args = (60,) if method == "set_speed" else ()
+    assert await getattr(driver, method)(*args) is False
+    assert mock_hass.services.async_call.await_count == 2
 
 
 @pytest.mark.parametrize(
@@ -187,7 +235,7 @@ async def test_number_driver_scales_percentage_to_speed_index(
         domain,
         "set_value",
         {ATTR_ENTITY_ID: entity_id, "value": value},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -204,7 +252,7 @@ async def test_number_driver_turn_on_off_sets_speed_extreme(
         "input_number",
         "set_value",
         {ATTR_ENTITY_ID: "input_number.exhaust_speed", "value": value},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -244,13 +292,13 @@ async def test_ac_infinity_set_speed_drives_mode_and_intensity(
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.port_mode", "option": "On"},
-        blocking=False,
+        blocking=True,
     )
     mock_hass.services.async_call.assert_any_await(
         "number",
         "set_value",
         {ATTR_ENTITY_ID: "number.port_speed", "value": 6},
-        blocking=False,
+        blocking=True,
     )
     assert mock_hass.services.async_call.await_count == 2
 
@@ -268,7 +316,7 @@ async def test_ac_infinity_intensity_scaling(
         "number",
         "set_value",
         {ATTR_ENTITY_ID: "number.port_speed", "value": intensity},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -279,7 +327,7 @@ async def test_ac_infinity_set_speed_zero_turns_off(mock_hass: MagicMock) -> Non
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.port_mode", "option": "Off"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -290,13 +338,13 @@ async def test_ac_infinity_turn_on_uses_on_speed(mock_hass: MagicMock) -> None:
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.port_mode", "option": "On"},
-        blocking=False,
+        blocking=True,
     )
     mock_hass.services.async_call.assert_any_await(
         "number",
         "set_value",
         {ATTR_ENTITY_ID: "number.port_speed", "value": 7},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -307,7 +355,7 @@ async def test_ac_infinity_turn_off_sets_mode_off(mock_hass: MagicMock) -> None:
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.port_mode", "option": "Off"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -390,7 +438,7 @@ async def test_generic_on_off_driver_domain_routing(
     """Native domains drive themselves; everything else falls back to homeassistant."""
     await GenericOnOffDriver(mock_hass, entity_id).turn_on()
     mock_hass.services.async_call.assert_awaited_once_with(
-        domain, "turn_on", {ATTR_ENTITY_ID: entity_id}, blocking=False
+        domain, "turn_on", {ATTR_ENTITY_ID: entity_id}, blocking=True
     )
 
 
@@ -398,7 +446,7 @@ async def test_generic_on_off_driver_turn_off(mock_hass: MagicMock) -> None:
     """turn_off issues the off service on the resolved domain."""
     await GenericOnOffDriver(mock_hass, "climate.tent").turn_off()
     mock_hass.services.async_call.assert_awaited_once_with(
-        "homeassistant", "turn_off", {ATTR_ENTITY_ID: "climate.tent"}, blocking=False
+        "homeassistant", "turn_off", {ATTR_ENTITY_ID: "climate.tent"}, blocking=True
     )
 
 
@@ -445,7 +493,7 @@ async def test_generic_on_off_driver_set_speed(
     """GenericOnOffDriver.set_speed collapses demand to on (>0) or off."""
     await GenericOnOffDriver(mock_hass, "switch.x").set_speed(pct)
     mock_hass.services.async_call.assert_awaited_once_with(
-        "switch", service, {ATTR_ENTITY_ID: "switch.x"}, blocking=False
+        "switch", service, {ATTR_ENTITY_ID: "switch.x"}, blocking=True
     )
 
 
@@ -456,7 +504,7 @@ async def test_light_driver_set_speed_sets_brightness(mock_hass: MagicMock) -> N
         "light",
         "turn_on",
         {ATTR_ENTITY_ID: "light.bar", "brightness_pct": 60},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -467,7 +515,7 @@ async def test_light_driver_set_speed_zero_turns_off(mock_hass: MagicMock) -> No
         "light",
         "turn_off",
         {ATTR_ENTITY_ID: "light.bar"},
-        blocking=False,
+        blocking=True,
     )
 
 

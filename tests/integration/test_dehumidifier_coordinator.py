@@ -169,7 +169,7 @@ async def test_check_and_control_turn_on(coordinator, mock_hass) -> None:
         "switch",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "switch.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -189,7 +189,7 @@ async def test_check_and_control_turn_off(coordinator, mock_hass) -> None:
         "switch",
         SERVICE_TURN_OFF,
         {ATTR_ENTITY_ID: "switch.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -223,7 +223,7 @@ async def test_check_and_control_night_mode(coordinator, mock_hass) -> None:
         "switch",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "switch.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -293,7 +293,7 @@ async def test_user_threshold_override(coordinator, mock_hass, mock_growspace) -
         "switch",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "switch.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -400,7 +400,7 @@ async def test_timer_allows_action_after_min_duration(coordinator, mock_hass) ->
         "switch",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "switch.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -442,7 +442,7 @@ async def test_timer_guard_bypassed_on_first_action(coordinator, mock_hass) -> N
         "switch",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "switch.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -561,7 +561,7 @@ async def test_generic_domain_control(
         "input_boolean",
         "turn_on",
         {ATTR_ENTITY_ID: "input_boolean.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -601,7 +601,7 @@ async def test_control_domain_fallback(
         "homeassistant",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "light.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -846,13 +846,13 @@ async def test_ac_infinity_dehumidifier_turn_on(
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.dehum_mode", "option": "On"},
-        blocking=False,
+        blocking=True,
     )
     mock_hass.services.async_call.assert_any_await(
         "number",
         "set_value",
         {ATTR_ENTITY_ID: "number.dehum_speed", "value": 9},
-        blocking=False,
+        blocking=True,
     )
 
 

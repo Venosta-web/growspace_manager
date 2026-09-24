@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 
 from .actuator_driver import resolve_actuator_drivers
 from .const import FanRegulationMode
+from .domain.climate_fail_safe import ClimateRole
 from .domain.day_night import DayNightTracker
 from .domain.fan_control import (
     FAN_VPD_STAGE_DEFAULTS,
@@ -26,6 +27,7 @@ from .domain.fan_control import (
     evaluate_temp_override,
     resolve_stage_vpd_target,
 )
+from .reliability_store import climate_command_failure
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -212,7 +214,10 @@ class CirculationFanCoordinator:
                 self.growspace_id
             ):
                 return
-            await driver.set_speed(speed)
+            if not await driver.set_speed(speed):
+                self.main_coordinator.reliability.record(
+                    self.growspace_id, climate_command_failure(ClimateRole.CIRCULATION)
+                )
             self._last_command = speed
             self._last_command_at = dt_util.now().isoformat()
 

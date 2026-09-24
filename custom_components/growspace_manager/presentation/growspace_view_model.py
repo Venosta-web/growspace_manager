@@ -469,6 +469,10 @@ class GrowspaceViewModelBuilder:
         # Light Leak Guard settings (#794), surfaced so the card can read and
         # round-trip them; a sibling of growlight_config, never nested in it.
         attributes["light_leak_config"] = env_config.light_leak_config.to_dict()
+        # Climate Fail-Safe settings (#792), surfaced for the same round trip.
+        attributes["climate_fail_safe_config"] = (
+            env_config.climate_fail_safe_config.to_dict()
+        )
 
         # Dehumidifier
         dehumidifier_entity = env_config.dehumidifier_entity

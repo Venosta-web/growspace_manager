@@ -66,6 +66,8 @@ class ReliabilityCounter(StrEnum):
     OBSERVED_MINUTES = "runtime.observed_minutes"
     AUTOMATION_ELIGIBLE_MINUTES = "runtime.automation_eligible_minutes"
     ESTIMATED_WATER_L = "runtime.estimated_water_l"
+    CLIMATE_INTERLOCK = "climate.interlock"
+    CLIMATE_MAX_RUNTIME_STOP = "climate.max_runtime_stop"
 
 
 class AbortCause(StrEnum):
@@ -116,6 +118,16 @@ def inhibited(reason_code: str | None) -> str:
 def automated_seconds(entity_id: str) -> str:
     """Return the automated runtime counter of one actuator."""
     return _AUTOMATED_SECONDS + entity_id
+
+
+def climate_command_failure(role: str) -> str:
+    """Return the counter of a climate actuator command that failed, by role."""
+    return f"climate.command_failure.{role}"
+
+
+def climate_fail_safe(role: str) -> str:
+    """Return the counter of a climate controller entering its safe state."""
+    return f"climate.fail_safe.{role}"
 
 
 def _empty_row() -> dict[str, Any]:

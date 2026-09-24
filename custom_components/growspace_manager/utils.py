@@ -207,8 +207,9 @@ def read_plausible_value(
 
     Unavailable, non-numeric, NaN and out-of-range readings are all None — never
     0. ``plausible`` may be a function of the state's unit of measurement, for
-    a quantity whose range depends on it. Freshness is not judged here: the
-    climate controllers' fail-safe on a sensor that stops reporting is #792's.
+    a quantity whose range depends on it. Freshness is not judged here; the
+    climate controllers' control inputs are read through ``ClimateSafety``,
+    which judges it (#792).
     """
     if not sensor_id:
         return None

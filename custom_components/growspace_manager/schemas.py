@@ -657,6 +657,7 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional("growlight_config"): dict,
         vol.Optional("growlight_ac_infinity_devices"): [AC_INFINITY_GROWLIGHT_SCHEMA],
         vol.Optional("light_leak_config"): dict,
+        vol.Optional("climate_fail_safe_config"): dict,
         vol.Optional(CONF_LST_OFFSET): vol.All(
             vol.Coerce(float), vol.Range(min=-10.0, max=10.0)
         ),

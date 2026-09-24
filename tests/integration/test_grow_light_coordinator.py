@@ -102,7 +102,7 @@ async def test_light_on_at_power_inside_window(mock_hass: MagicMock) -> None:
         await coord._async_regulate()
 
     mock_hass.services.async_call.assert_awaited_once_with(
-        "switch", "turn_on", {ATTR_ENTITY_ID: "switch.grow"}, blocking=False
+        "switch", "turn_on", {ATTR_ENTITY_ID: "switch.grow"}, blocking=True
     )
 
 
@@ -116,7 +116,7 @@ async def test_light_off_outside_window(mock_hass: MagicMock) -> None:
         await coord._async_regulate()
 
     mock_hass.services.async_call.assert_awaited_once_with(
-        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=False
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=True
     )
 
 
@@ -133,7 +133,7 @@ async def test_dimmable_light_holds_power_inside_window(mock_hass: MagicMock) ->
         "light",
         "turn_on",
         {ATTR_ENTITY_ID: "light.bar", "brightness_pct": 70},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -154,7 +154,7 @@ async def test_flowering_growspace_uses_flower_photoperiod(
         await coord._async_regulate()
 
     mock_hass.services.async_call.assert_awaited_once_with(
-        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=False
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=True
     )
 
 
@@ -663,7 +663,7 @@ async def test_regulation_rechecks_safety_between_lights(
         await coord._async_regulate()
 
     mock_hass.services.async_call.assert_awaited_once_with(
-        "switch", "turn_on", {ATTR_ENTITY_ID: "switch.first"}, blocking=False
+        "switch", "turn_on", {ATTR_ENTITY_ID: "switch.first"}, blocking=True
     )
 
 
@@ -726,7 +726,7 @@ async def test_leak_switch_off_plain_light_does_not_arm_ac_restore(
     await coord._switch_off_growlights(env)
 
     mock_hass.services.async_call.assert_awaited_once_with(
-        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=False
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=True
     )
     assert coord._leak_restore_schedules is False
     assert coord._leak_switched_off_at is not None
