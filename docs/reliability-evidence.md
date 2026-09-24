@@ -76,6 +76,10 @@ Each counter is incremented in exactly one place.
 | `runtime.estimated_water_l`             | The Pump-Cycle Water Estimate of each irrigation cycle, the same figure water usage books. It is an estimate from the configured flow rate, not metered water.                   |
 | `runtime.observed_minutes`              | Minutes sampled while the integration was running.                                                                                                                               |
 | `runtime.automation_eligible_minutes`   | Sampled minutes in which automatic irrigation was armed and no fault was latched. `runtime.automation_uptime_percent` is this as a percentage of `runtime.observed_minutes`.     |
+| `climate.command_failure.<role>`        | A humidifier, dehumidifier, exhaust or circulation command that raised or did not answer within 10 s.                                                                            |
+| `climate.fail_safe.<role>`              | A humidifier, dehumidifier or exhaust controller entering its safe state after losing every control sensor for the fail-safe timeout.                                            |
+| `climate.interlock`                     | The humidifier or dehumidifier switched off because the other's later demand took over.                                                                                          |
+| `climate.max_runtime_stop`              | A humidifier or dehumidifier switched off at its maximum continuous runtime.                                                                                                     |
 
 ### Skip reasons
 
@@ -163,9 +167,9 @@ minute, and the full history is in the export. The state is recorded.
 
 ## Not counted yet
 
-| What                                                                                  | Why                                                                                                                                                                                                       |
-| :------------------------------------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Verified water                                                                        | Needs metered per-cycle delivery (#546, #549). `runtime.estimated_water_l` is an estimate and is never labelled verified.                                                                                 |
-| Whether a Grow Run was active at a start, and reliability as a Grow Run Activity Fact | Needs the Grow Run model (#669).                                                                                                                                                                          |
-| Climate actuators                                                                     | Climate controllers have no fault latch, inhibit or readback yet (#792). Until they do, there is no command provenance to tell automated runtime from manual operation, and no inhibit or fault to count. |
-| A pump turning on unexpectedly while HA is running                                    | Detecting unexpected actuator state is #793. `irrigation.readback.unexpected_on` covers only a start.                                                                                                     |
+| What                                                                                  | Why                                                                                                                                                                                                                   |
+| :------------------------------------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Verified water                                                                        | Needs metered per-cycle delivery (#546, #549). `runtime.estimated_water_l` is an estimate and is never labelled verified.                                                                                             |
+| Whether a Grow Run was active at a start, and reliability as a Grow Run Activity Fact | Needs the Grow Run model (#669).                                                                                                                                                                                      |
+| Climate automated runtime, inhibits and faults                                        | Climate controllers count failed commands, safe states, interlocks and runtime stops (#792), but have no fault latch or readback. Without command provenance, automated runtime cannot be told from manual operation. |
+| A pump turning on unexpectedly while HA is running                                    | Detecting unexpected actuator state is #793. `irrigation.readback.unexpected_on` covers only a start.                                                                                                                 |

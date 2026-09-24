@@ -386,7 +386,7 @@ async def test_opt_in_switches_managed_lights_off(mock_hass: MagicMock) -> None:
     await _check(coord, _NIGHT, 3)
 
     mock_hass.services.async_call.assert_any_await(
-        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=False
+        "switch", "turn_off", {ATTR_ENTITY_ID: "switch.grow"}, blocking=True
     )
     mock_hass.services.async_call.assert_any_await(
         "select",

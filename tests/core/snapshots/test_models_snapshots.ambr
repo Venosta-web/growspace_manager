@@ -172,6 +172,15 @@
     }),
     'circulation_fan_entities': list([
     ]),
+    'climate_fail_safe_config': dict({
+      'dehumidifier_max_runtime_minutes': 0,
+      'dehumidifier_safe_state': 'off',
+      'exhaust_fallback_speed': 50,
+      'humidifier_max_runtime_minutes': 0,
+      'humidifier_safe_state': 'off',
+      'sensor_stale_after_minutes': 30,
+      'sensor_timeout_minutes': 10,
+    }),
     'co2_sensor': None,
     'control_dehumidifier': True,
     'control_humidifier': False,
@@ -350,6 +359,15 @@
       }),
       'circulation_fan_entities': list([
       ]),
+      'climate_fail_safe_config': dict({
+        'dehumidifier_max_runtime_minutes': 0,
+        'dehumidifier_safe_state': 'off',
+        'exhaust_fallback_speed': 50,
+        'humidifier_max_runtime_minutes': 0,
+        'humidifier_safe_state': 'off',
+        'sensor_stale_after_minutes': 30,
+        'sensor_timeout_minutes': 10,
+      }),
       'co2_sensor': None,
       'control_dehumidifier': False,
       'control_humidifier': False,

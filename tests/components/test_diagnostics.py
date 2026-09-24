@@ -8,6 +8,7 @@ import pytest
 from custom_components.growspace_manager.circulation_fan_coordinator import (
     CirculationFanCoordinator,
 )
+from custom_components.growspace_manager.climate_safety import ClimateSafety
 from custom_components.growspace_manager.const import PlantStage
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
@@ -143,6 +144,7 @@ def test_dehumidifier_diagnostics_reports_current_thresholds() -> None:
     )
     coordinator._last_command = "on"
     coordinator._last_command_at = "2024-01-01T12:00:00"
+    coordinator._safety = ClimateSafety(MagicMock(), "gs1", MagicMock())
     assert coordinator.diagnostics_snapshot() == {
         "control_enabled": True,
         "entities": ["switch.dehumidifier"],
@@ -153,6 +155,7 @@ def test_dehumidifier_diagnostics_reports_current_thresholds() -> None:
         "thresholds": {"on": 0.6, "off": 0.7},
         "last_command": "on",
         "last_command_at": "2024-01-01T12:00:00",
+        "fail_safe": False,
     }
 
 
@@ -185,6 +188,7 @@ def test_fan_diagnostics_reports_targets_and_commands() -> None:
         controller.main_coordinator = main
         controller._last_command = 55
         controller._last_command_at = "2024-01-01T12:00:00"
+        controller._safety = ClimateSafety(MagicMock(), "gs1", main)
         result = controller.diagnostics_snapshot()
         assert result["entities"] == [entity]
         assert result["thresholds"] == {

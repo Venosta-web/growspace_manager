@@ -27,7 +27,6 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,13 +48,25 @@ _AC_INFINITY_SPEED_MIN = 1
 _AC_INFINITY_SPEED_MAX = 10
 
 
+# How long a command may take before it counts as failed (#792). Long enough
+# for a cloud-polled port, short enough that a 10 s control tick is not held.
+COMMAND_TIMEOUT_SECONDS = 10.0
+
+
 async def _safe_service_call(
     hass: HomeAssistant, domain: str, service: str, data: dict[str, object]
-) -> None:
-    """Call a Home Assistant service, logging device failures without raising."""
+) -> bool:
+    """Call a Home Assistant service and wait for it; return whether it succeeded.
+
+    The call blocks, bounded by ``COMMAND_TIMEOUT_SECONDS``, so a device that
+    refuses the command is seen here rather than lost in a background task
+    (#792). A failure is logged and reported, never raised: one broken actuator
+    must not stop a controller from commanding the others.
+    """
     try:
-        await hass.services.async_call(domain, service, data, blocking=False)
-    except HomeAssistantError, TimeoutError:
+        async with asyncio.timeout(COMMAND_TIMEOUT_SECONDS):
+            await hass.services.async_call(domain, service, data, blocking=True)
+    except Exception:  # noqa: BLE001 — any handler error is a failed command
         _LOGGER.warning(
             "Failed to call %s.%s on %s",
             domain,
@@ -63,6 +74,8 @@ async def _safe_service_call(
             data.get(ATTR_ENTITY_ID),
             exc_info=True,
         )
+        return False
+    return True
 
 
 async def async_confirm_state(
@@ -105,17 +118,18 @@ class ActuatorDriver(Protocol):
 
     ``set_speed`` takes a 0–100 percentage; ``turn_on`` / ``turn_off`` are the
     binary path used by on/off controllers; ``is_on`` reports the current state.
+    Each command returns whether every service call it made succeeded.
     """
 
-    async def set_speed(self, pct: int) -> None:
+    async def set_speed(self, pct: int) -> bool:
         """Drive the actuator to a 0–100 percentage demand."""
         ...
 
-    async def turn_on(self) -> None:
+    async def turn_on(self) -> bool:
         """Turn the actuator on."""
         ...
 
-    async def turn_off(self) -> None:
+    async def turn_off(self) -> bool:
         """Turn the actuator off."""
         ...
 
@@ -132,24 +146,24 @@ class FanDriver:
         self._hass = hass
         self._entity_id = entity_id
 
-    async def set_speed(self, pct: int) -> None:
+    async def set_speed(self, pct: int) -> bool:
         """Set the fan to ``pct`` percent."""
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass,
             "fan",
             "set_percentage",
             {ATTR_ENTITY_ID: self._entity_id, "percentage": pct},
         )
 
-    async def turn_on(self) -> None:
+    async def turn_on(self) -> bool:
         """Turn the fan on."""
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass, "fan", SERVICE_TURN_ON, {ATTR_ENTITY_ID: self._entity_id}
         )
 
-    async def turn_off(self) -> None:
+    async def turn_off(self) -> bool:
         """Turn the fan off."""
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass, "fan", SERVICE_TURN_OFF, {ATTR_ENTITY_ID: self._entity_id}
         )
 
@@ -176,25 +190,24 @@ class SwitchDriver:
         self._domain = entity_id.split(".", 1)[0]
         self._off_threshold = off_threshold
 
-    async def set_speed(self, pct: int) -> None:
+    async def set_speed(self, pct: int) -> bool:
         """Turn on when ``pct`` exceeds the off threshold, otherwise off."""
         if pct > self._off_threshold:
-            await self.turn_on()
-        else:
-            await self.turn_off()
+            return await self.turn_on()
+        return await self.turn_off()
 
-    async def turn_on(self) -> None:
+    async def turn_on(self) -> bool:
         """Turn the device on."""
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass,
             self._domain,
             SERVICE_TURN_ON,
             {ATTR_ENTITY_ID: self._entity_id},
         )
 
-    async def turn_off(self) -> None:
+    async def turn_off(self) -> bool:
         """Turn the device off."""
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass,
             self._domain,
             SERVICE_TURN_OFF,
@@ -219,27 +232,26 @@ class LightDriver:
         self._hass = hass
         self._entity_id = entity_id
 
-    async def set_speed(self, pct: int) -> None:
+    async def set_speed(self, pct: int) -> bool:
         """Set brightness to ``pct`` percent, or turn off at zero demand."""
         if pct <= 0:
-            await self.turn_off()
-        else:
-            await _safe_service_call(
-                self._hass,
-                "light",
-                SERVICE_TURN_ON,
-                {ATTR_ENTITY_ID: self._entity_id, "brightness_pct": pct},
-            )
+            return await self.turn_off()
+        return await _safe_service_call(
+            self._hass,
+            "light",
+            SERVICE_TURN_ON,
+            {ATTR_ENTITY_ID: self._entity_id, "brightness_pct": pct},
+        )
 
-    async def turn_on(self) -> None:
+    async def turn_on(self) -> bool:
         """Turn the light on."""
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass, "light", SERVICE_TURN_ON, {ATTR_ENTITY_ID: self._entity_id}
         )
 
-    async def turn_off(self) -> None:
+    async def turn_off(self) -> bool:
         """Turn the light off."""
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass, "light", SERVICE_TURN_OFF, {ATTR_ENTITY_ID: self._entity_id}
         )
 
@@ -264,23 +276,23 @@ class NumberDriver:
         self._entity_id = entity_id
         self._domain = entity_id.split(".", 1)[0]
 
-    async def set_speed(self, pct: int) -> None:
+    async def set_speed(self, pct: int) -> bool:
         """Map a 0-100 percentage demand onto the 0-10 speed index."""
         value = max(0, min(10, round(pct / 10)))
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass,
             self._domain,
             "set_value",
             {ATTR_ENTITY_ID: self._entity_id, "value": value},
         )
 
-    async def turn_on(self) -> None:
+    async def turn_on(self) -> bool:
         """Set the numeric speed to its maximum."""
-        await self.set_speed(100)
+        return await self.set_speed(100)
 
-    async def turn_off(self) -> None:
+    async def turn_off(self) -> bool:
         """Set the numeric speed to zero."""
-        await self.set_speed(0)
+        return await self.set_speed(0)
 
     def is_on(self) -> bool:
         """Return whether the current numeric speed is positive."""
@@ -343,22 +355,23 @@ class ACInfinityDriver:
         self._speed_entity = speed_entity
         self._on_speed = on_speed
 
-    async def set_speed(self, pct: int) -> None:
+    async def set_speed(self, pct: int) -> bool:
         """Turn the port off at zero demand, otherwise drive mode On + intensity."""
         if pct <= 0:
-            await self._select_mode(_AC_INFINITY_MODE_OFF)
-        else:
-            await self._select_mode(_AC_INFINITY_MODE_ON)
-            await self._set_intensity(_scale_percentage_to_intensity(pct))
+            return await self._select_mode(_AC_INFINITY_MODE_OFF)
+        mode_ok = await self._select_mode(_AC_INFINITY_MODE_ON)
+        speed_ok = await self._set_intensity(_scale_percentage_to_intensity(pct))
+        return mode_ok and speed_ok
 
-    async def turn_on(self) -> None:
+    async def turn_on(self) -> bool:
         """Set the port to On at the configured on-speed."""
-        await self._select_mode(_AC_INFINITY_MODE_ON)
-        await self._set_intensity(self._on_speed)
+        mode_ok = await self._select_mode(_AC_INFINITY_MODE_ON)
+        speed_ok = await self._set_intensity(self._on_speed)
+        return mode_ok and speed_ok
 
-    async def turn_off(self) -> None:
+    async def turn_off(self) -> bool:
         """Set the port's mode to Off."""
-        await self._select_mode(_AC_INFINITY_MODE_OFF)
+        return await self._select_mode(_AC_INFINITY_MODE_OFF)
 
     def is_on(self) -> bool:
         """Return whether the port's mode is anything other than Off."""
@@ -369,16 +382,16 @@ class ACInfinityDriver:
             STATE_UNKNOWN,
         )
 
-    async def _select_mode(self, option: str) -> None:
-        await _safe_service_call(
+    async def _select_mode(self, option: str) -> bool:
+        return await _safe_service_call(
             self._hass,
             "select",
             "select_option",
             {ATTR_ENTITY_ID: self._mode_entity, "option": option},
         )
 
-    async def _set_intensity(self, value: int) -> None:
-        await _safe_service_call(
+    async def _set_intensity(self, value: int) -> bool:
+        return await _safe_service_call(
             self._hass,
             "number",
             "set_value",
@@ -445,25 +458,24 @@ class GenericOnOffDriver:
         self._domain = domain if domain in _ON_OFF_NATIVE_DOMAINS else "homeassistant"
         self._off_threshold = off_threshold
 
-    async def set_speed(self, pct: int) -> None:
+    async def set_speed(self, pct: int) -> bool:
         """Turn on when ``pct`` exceeds the off threshold, otherwise off."""
         if pct > self._off_threshold:
-            await self.turn_on()
-        else:
-            await self.turn_off()
+            return await self.turn_on()
+        return await self.turn_off()
 
-    async def turn_on(self) -> None:
+    async def turn_on(self) -> bool:
         """Turn the device on via its resolved service domain."""
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass,
             self._domain,
             SERVICE_TURN_ON,
             {ATTR_ENTITY_ID: self._entity_id},
         )
 
-    async def turn_off(self) -> None:
+    async def turn_off(self) -> bool:
         """Turn the device off via its resolved service domain."""
-        await _safe_service_call(
+        return await _safe_service_call(
             self._hass,
             self._domain,
             SERVICE_TURN_OFF,

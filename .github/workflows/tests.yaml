@@ -26,14 +26,14 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-node@v7.0.0
         name: Setup Node.js
         with:
           node-version: "24"
       - name: Test branch maintenance safeguards
         run: node --test .github/scripts/branch-cleanup.test.cjs
-      - uses: actions/setup-python@v6.2.0
+      - uses: actions/setup-python@v7.0.0
         name: Setup Python
         with:
           python-version: "3.14"
@@ -69,7 +69,7 @@ jobs:
           --cov-report=term-missing
           --cov-report=xml:coverage.xml
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           use_oidc: true
           files: ./coverage.xml
