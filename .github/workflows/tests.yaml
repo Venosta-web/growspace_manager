@@ -33,7 +33,7 @@ jobs:
           node-version: "24"
       - name: Test branch maintenance safeguards
         run: node --test .github/scripts/branch-cleanup.test.cjs
-      - uses: actions/setup-python@v6.2.0
+      - uses: actions/setup-python@v7.0.0
         name: Setup Python
         with:
           python-version: "3.14"
