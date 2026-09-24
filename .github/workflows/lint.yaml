@@ -31,10 +31,13 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install lint tools
-        run: >-
-          python -m pip install --upgrade
-          "pre-commit==4.6.2"
-          "ruff==0.15.12"
+        run: |
+          python -m pip install --upgrade \
+            "$(grep '^pre-commit==' requirements.txt)" \
+            "$(grep '^ruff==' requirements.txt)" \
+            "$(grep '^yamllint==' requirements.txt)"
+      - name: Check pre-commit lint tool versions
+        run: python .github/scripts/check_lint_tool_pins.py
       # Invoke the checked-in hook rather than duplicating its codespell options
       # here, so commits and CI enforce exactly the same spelling configuration.
       # Keeping this in the required Ruff job also makes spelling a merge gate.
@@ -70,6 +73,5 @@ jobs:
             )'
           )"
           pip install -r requirements.txt -c "$constraints_file"
-          pip install "mypy==1.20.2"
       - name: mypy
         run: mypy --follow-imports=silent custom_components/
