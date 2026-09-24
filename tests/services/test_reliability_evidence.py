@@ -77,6 +77,8 @@ async def test_unreadable_evidence_is_not_overwritten(hass: HomeAssistant) -> No
     assert store.snapshot("tent")["unreadable"] is True
     with pytest.raises(RuntimeError, match="unreadable"):
         await store.async_add("tent", "irrigation.requested")
+    with pytest.raises(RuntimeError, match="unreadable"):
+        await store.async_set_active("tent", "switch.pump", True)
     store._store.async_save.assert_not_awaited()
 
 

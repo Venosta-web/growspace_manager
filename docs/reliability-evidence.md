@@ -8,7 +8,7 @@ anything to Growspace Manager or another service.
 The response has `schema_version: 1`, `unreadable`, `growspace_id`, UTC `as_of`,
 `days_since_last_fault` (null until a fault is observed), and three counter maps:
 `lifetime`, `last_24h`, and `last_30d`. Counter names are stable dotted keys;
-missing counters have value zero. `runtime.automation_uptime_percent` is null
+absent counters mean zero. `runtime.automation_uptime_percent` is null
 when no runtime minute has been sampled. The diagnostic sensor's state is the
 lifetime count of `irrigation.completed_verified`; its attributes contain the
 same document. Config entry diagnostics include one such document per growspace.
