@@ -784,6 +784,24 @@ class GrowspaceFacade:
             growspace_id
         )
 
+    def get_humidifier_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the humidifier coordinator for a growspace, or None."""
+        return self._coordinator._subsystem_manager.get_humidifier_controller(
+            growspace_id
+        )
+
+    def get_circulation_fan_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the circulation fan coordinator for a growspace, or None."""
+        return self._coordinator._subsystem_manager.get_circulation_fan_controller(
+            growspace_id
+        )
+
+    def get_exhaust_fan_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the exhaust fan coordinator for a growspace, or None."""
+        return self._coordinator._subsystem_manager.get_exhaust_fan_controller(
+            growspace_id
+        )
+
     def calculate_biological_metrics(
         self, growspace_id: str, growspace: Growspace, days: StageDays
     ) -> dict[str, Any]:

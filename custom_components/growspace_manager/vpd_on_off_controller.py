@@ -66,6 +66,8 @@ class VpdOnOffController:
         self._last_turn_on_time: float = 0.0
         self._last_turn_off_time: float = 0.0
         self._retry_cancel: CALLBACK_TYPE | None = None
+        self._last_command: str | None = None
+        self._last_command_at: str | None = None
         self._day_night = DayNightTracker(growspace_id)
 
         self.growspace = main_coordinator.growspaces.get(growspace_id)
@@ -308,6 +310,27 @@ class VpdOnOffController:
             self._last_turn_on_time = time.monotonic()
         else:
             self._last_turn_off_time = time.monotonic()
+        self._last_command = "on" if turn_on else "off"
+        self._last_command_at = dt_util.now().isoformat()
+
+    def diagnostics_snapshot(self) -> dict[str, Any]:
+        """Return the configured VPD controller state without changing an output."""
+        stage = self._get_growth_stage()
+        is_day = self._day_night.determine(self.hass, self.light_sensors)
+        return {
+            "control_enabled": self.control_enabled,
+            "entities": self._get_all_controlled_entities(),
+            "ac_infinity_ports": [
+                {"mode_entity": device.mode_entity, "speed_entity": device.speed_entity}
+                for device in self._get_ac_infinity_devices()
+            ],
+            "vpd_sensor": self.vpd_sensor,
+            "stage": stage.value,
+            "period": "day" if is_day else "night",
+            "thresholds": self._get_current_thresholds(stage, is_day),
+            "last_command": self._last_command,
+            "last_command_at": self._last_command_at,
+        }
 
     def _fire_logbook_event(
         self,

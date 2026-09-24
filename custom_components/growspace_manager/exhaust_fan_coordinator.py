@@ -20,6 +20,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.util import dt as dt_util
 
 from .actuator_driver import resolve_actuator_drivers
 from .const import FanRegulationMode
@@ -59,6 +60,8 @@ class ExhaustFanCoordinator:
         self._day_night = DayNightTracker(growspace_id)
         self._temp_override_active: bool = False
         self._temp_override_direction: str | None = None
+        self._last_command: int | None = None
+        self._last_command_at: str | None = None
 
     @property
     def _env_config(self) -> EnvironmentConfig | None:
@@ -151,6 +154,30 @@ class ExhaustFanCoordinator:
             ):
                 return
             await driver.set_speed(speed)
+            self._last_command = speed
+            self._last_command_at = dt_util.now().isoformat()
+
+    def diagnostics_snapshot(self) -> dict[str, object]:
+        """Describe the configured exhaust controller and its last output."""
+        env = self._env_config
+        if env is None:
+            return {}
+        cfg = env.exhaust_fan_config
+        return {
+            "enabled": cfg.enabled,
+            "entities": list(env.exhaust_fan_entities),
+            "ac_infinity_ports": [
+                {"mode_entity": device.mode_entity, "speed_entity": device.speed_entity}
+                for device in env.exhaust_fan_ac_infinity_devices
+            ],
+            "thresholds": {
+                "temperature": cfg.temperature_target,
+                "humidity": cfg.humidity_target,
+                "vpd": self._effective_vpd_target(cfg),
+            },
+            "last_command": self._last_command,
+            "last_command_at": self._last_command_at,
+        }
 
     def _apply_critical_temp_override(
         self, cfg: ExhaustFanConfig, temperature: float | None, speed: int | None

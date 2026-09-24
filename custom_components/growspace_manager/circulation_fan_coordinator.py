@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.util import dt as dt_util
 
 from .actuator_driver import resolve_actuator_drivers
 from .const import FanRegulationMode
@@ -64,6 +65,8 @@ class CirculationFanCoordinator:
         self._temp_override_direction: str | None = None
         self._start_time: float = 0.0
         self._day_night = DayNightTracker(growspace_id)
+        self._last_command: int | None = None
+        self._last_command_at: str | None = None
 
     @property
     def _env_config(self) -> EnvironmentConfig | None:
@@ -210,6 +213,35 @@ class CirculationFanCoordinator:
             ):
                 return
             await driver.set_speed(speed)
+            self._last_command = speed
+            self._last_command_at = dt_util.now().isoformat()
+
+    def diagnostics_snapshot(self) -> dict[str, object]:
+        """Describe the configured circulation controller and its last output."""
+        env = self._env_config
+        if env is None:
+            return {}
+        cfg = env.circulation_fan_config
+        vpd_target = cfg.vpd_target
+        if cfg.stage_vpd_enabled:
+            is_day = self._day_night.determine(self.hass, env.light_sensors)
+            vpd_target = self._get_stage_vpd_target(cfg, is_day)
+        return {
+            "enabled": cfg.enabled,
+            "entities": list(env.circulation_fan_entities),
+            "ac_infinity_ports": [
+                {"mode_entity": device.mode_entity, "speed_entity": device.speed_entity}
+                for device in env.circulation_fan_ac_infinity_devices
+            ],
+            "regulation_mode": cfg.regulation_mode.value,
+            "thresholds": {
+                "temperature": cfg.temperature_target,
+                "humidity": cfg.humidity_target,
+                "vpd": vpd_target,
+            },
+            "last_command": self._last_command,
+            "last_command_at": self._last_command_at,
+        }
 
     def _get_stage_vpd_target(self, cfg: CirculationFanConfig, is_day: bool) -> float:
         """Resolve the effective VPD target from stage defaults.
