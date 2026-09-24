@@ -1090,6 +1090,9 @@ async def test_on_tick_creates_background_task(
     call_args = config_entry.async_create_background_task.call_args
     assert call_args[0][0] is mock_hass
     assert call_args[0][2] == "circulation_fan_regulate"
+    # The mock never runs the coroutine; close it, or whichever test is running
+    # when it is collected fails on "coroutine was never awaited".
+    call_args[0][1].close()
 
 
 # ---------------------------------------------------------------------------
