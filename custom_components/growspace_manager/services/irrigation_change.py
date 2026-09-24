@@ -97,6 +97,7 @@ IRRIGATION_CONFIG_CHANGE_FIELDS: frozenset[str] = frozenset(
         "max_cycle_seconds",
         "min_interval_minutes",
         "startup_grace_minutes",
+        "tank_unknown_grace_minutes",
         "skip_during_dark",
         "pause_on_low_tank",
         "log_to_logbook",

@@ -2,7 +2,7 @@
 
 import asyncio
 import contextlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -17,9 +17,11 @@ from custom_components.growspace_manager.models import (
     IrrigationConfig,
     IrrigationTank,
 )
+from custom_components.growspace_manager.tank_monitor import TankLevelMonitor
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util.dt import utcnow
 
 # This suite shares one `hass.states` mock across every sensor, so it
 # cannot model the pump's own state; its OFF readback is answered for them.
@@ -1342,8 +1344,9 @@ def _make_coordinator_with_tank(
         ]
     )
 
+    tank_state = State(tank_sensor, str(tank_level))
     mock_hass.states.get.side_effect = lambda eid: (
-        _make_state(str(tank_level)) if eid == tank_sensor else None
+        tank_state if eid == tank_sensor else None
     )
     return IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
@@ -1590,3 +1593,203 @@ async def test_startup_inhibit_is_not_recorded_for_an_idle_controller(
     record.assert_not_called()
     assert coordinator.controller_snapshot().state.value == "idle"
     coordinator.async_cancel_listeners()
+
+
+# --- Unknown Tank Level (#790, ADR-0050) ---
+
+
+def _persistent_notifications(hass: MagicMock) -> list[dict[str, object]]:
+    return [
+        c.args[2]
+        for c in hass.services.async_call.call_args_list
+        if c.args[:2] == ("persistent_notification", "create")
+    ]
+
+
+async def _run(coordinator: IrrigationCoordinator, event_data: dict) -> None:
+    with (
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch.object(
+            coordinator,
+            "_async_wait_for_switch_state",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, event_data
+        )
+
+
+def _tank_coordinator(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+    tank_state: State,
+    *,
+    pause_on_low_tank: bool = True,
+) -> IrrigationCoordinator:
+    coordinator = _make_coordinator_with_tank(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        pause_on_low_tank=pause_on_low_tank,
+        tank_sensor=tank_state.entity_id,
+        tank_level=0,
+    )
+    mock_hass.states.get.side_effect = lambda eid: (
+        tank_state if eid == tank_state.entity_id else None
+    )
+    mock_config_entry.runtime_data = mock_main_coordinator
+    return coordinator
+
+
+async def test_an_unknown_tank_refuses_a_manual_run(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """No valid reading since the start: nothing to hold, so refused at once."""
+    coordinator = _tank_coordinator(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        State("sensor.tank_level", "unavailable"),
+    )
+
+    with patch.object(
+        coordinator, "_record_safety_transition", new_callable=AsyncMock
+    ) as record:
+        await _run(coordinator, {"manual": True})
+
+    assert _turn_on_calls(mock_hass) == []
+    record.assert_awaited_once_with("inhibited", "tank_unknown")
+    [notification] = _persistent_notifications(mock_hass)
+    assert notification["title"] == "Tank Level Unknown — Test Growspace"
+    assert notification["notification_id"] == "growspace_tank_unknown_test_growspace"
+    assert "the level of tank 'Main Tank' is unknown" in str(notification["message"])
+
+
+async def test_an_unknown_tank_holds_the_controller_and_says_why(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    coordinator = _tank_coordinator(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        State("sensor.tank_level", "150"),
+    )
+
+    await _run(coordinator, {"time": "10:00:00"})
+    snapshot = coordinator.controller_snapshot()
+
+    assert _turn_on_calls(mock_hass) == []
+    assert snapshot.state.value == "inhibited"
+    [reason] = snapshot.reasons
+    assert reason.code == "tank_unknown"
+    assert reason.detail == (
+        "Irrigation skipped — tank 'Main Tank' level is unknown (implausible)"
+    )
+
+
+async def test_a_tank_that_stopped_reporting_is_refused(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """A frozen probe on a plausible value — the case nothing marks unavailable."""
+    long_ago = utcnow() - timedelta(hours=3)
+    coordinator = _tank_coordinator(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        State(
+            "sensor.tank_level",
+            "80",
+            last_changed=long_ago,
+            last_reported=long_ago,
+            last_updated=long_ago,
+        ),
+    )
+
+    await _run(coordinator, {"time": "10:00:00"})
+
+    assert _turn_on_calls(mock_hass) == []
+
+
+async def test_within_grace_the_last_valid_reading_is_used(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    coordinator = _tank_coordinator(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        State("sensor.tank_level", "80"),
+    )
+    coordinator.controller_snapshot()  # observes the valid reading
+    dropped = State("sensor.tank_level", "unavailable")
+    mock_hass.states.get.side_effect = lambda eid: (
+        dropped if eid == "sensor.tank_level" else None
+    )
+
+    await _run(coordinator, {"time": "10:00:00"})
+
+    assert len(_turn_on_calls(mock_hass)) == 1
+
+
+async def test_within_grace_a_low_last_reading_still_blocks(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    coordinator = _tank_coordinator(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        State("sensor.tank_level", "5"),
+    )
+    coordinator.controller_snapshot()
+    dropped = State("sensor.tank_level", "unavailable")
+    mock_hass.states.get.side_effect = lambda eid: (
+        dropped if eid == "sensor.tank_level" else None
+    )
+
+    await _run(coordinator, {"manual": True})
+
+    assert _turn_on_calls(mock_hass) == []
+    [notification] = _persistent_notifications(mock_hass)
+    assert notification["title"] == "Low Tank — Test Growspace"
+
+
+async def test_pause_off_keeps_todays_behaviour_for_an_unknown_tank(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    coordinator = _tank_coordinator(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        State("sensor.tank_level", "unavailable"),
+        pause_on_low_tank=False,
+    )
+
+    await _run(coordinator, {"time": "10:00:00"})
+
+    assert len(_turn_on_calls(mock_hass)) == 1
+
+
+async def test_the_gate_reads_the_tank_monitor_watches(
+    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+) -> None:
+    """The gate and the Tank Offline Alert share one watch per tank."""
+    with patch("custom_components.growspace_manager.tank_monitor.EntityQueries"):
+        monitor = TankLevelMonitor(mock_hass, mock_main_coordinator, AsyncMock())
+    mock_main_coordinator.tank_monitor = monitor
+    coordinator = _tank_coordinator(
+        mock_hass,
+        mock_config_entry,
+        mock_main_coordinator,
+        State("sensor.tank_level", "unavailable"),
+    )
+
+    with patch.object(
+        monitor.watches, "status", wraps=monitor.watches.status
+    ) as status:
+        await _run(coordinator, {"time": "10:00:00"})
+
+    assert _turn_on_calls(mock_hass) == []
+    status.assert_called()
+    assert coordinator._own_tank_watches is None

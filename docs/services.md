@@ -425,26 +425,26 @@ data:
 
 Binds physical environmental monitors, light schedules, and active climate controls to a growspace zone.
 
-| Parameter              | Type      | Required | Default | Description                                                  |
-| :--------------------- | :-------- | :------- | :------ | :----------------------------------------------------------- |
-| `growspace_id`         | `string`  | Yes      | -       | Growspace zone ID.                                           |
-| `temperature_sensor`   | `string`  | Yes      | -       | Ambient temperature sensor entity.                           |
-| `humidity_sensor`      | `string`  | Yes      | -       | Ambient relative humidity sensor entity.                     |
-| `vpd_sensor`           | `string`  | Yes      | -       | Vapor Pressure Deficit sensor entity (kPa).                  |
-| `co2_sensor`           | `string`  | No       | -       | Carbon Dioxide sensor entity (ppm).                          |
-| `circulation_fan`      | `string`  | No       | -       | Circulation fan switch/fan entity.                           |
-| `exhaust_entity`       | `string`  | No       | -       | Exhaust fan/damper switch/fan entity.                        |
-| `humidifier_entity`    | `string`  | No       | -       | Humidifier controller or switch.                             |
-| `dehumidifier_entity`  | `string`  | No       | -       | Dehumidifier controller or switch.                           |
-| `light_sensor`         | `string`  | No       | -       | Light level sensor or light switch status entity.            |
-| `soil_moisture_sensor` | `string`  | No       | -       | Substrate VWC soil moisture sensor entity.                   |
-| `stress_threshold`     | `float`   | No       | `0.70`  | Bayesian stress alert confidence threshold (0.50-0.95).      |
-| `mold_threshold`       | `float`   | No       | `0.75`  | Bayesian mold alert confidence threshold (0.50-0.95).        |
-| `control_dehumidifier` | `boolean` | No       | `false` | Enable active automated target steering of the dehumidifier. |
-| `sensor_groups`        | `object`  | No       | -       | Configuration mapping for multidimensional heatmaps.         |
-| `sensor_coordinates`   | `object`  | No       | -       | Coordinates map for multi-sensor configurations.             |
-| `irrigation_tanks`     | `object`  | No       | -       | Irrigation nutrient tank volume & EC configurations.         |
-| `light_leak_config`    | `object`  | No       | -       | Light Leak Guard settings — see below.                       |
+| Parameter              | Type      | Required | Default | Description                                                                                                                                                                                                                                                            |
+| :--------------------- | :-------- | :------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `growspace_id`         | `string`  | Yes      | -       | Growspace zone ID.                                                                                                                                                                                                                                                     |
+| `temperature_sensor`   | `string`  | Yes      | -       | Ambient temperature sensor entity.                                                                                                                                                                                                                                     |
+| `humidity_sensor`      | `string`  | Yes      | -       | Ambient relative humidity sensor entity.                                                                                                                                                                                                                               |
+| `vpd_sensor`           | `string`  | Yes      | -       | Vapor Pressure Deficit sensor entity (kPa).                                                                                                                                                                                                                            |
+| `co2_sensor`           | `string`  | No       | -       | Carbon Dioxide sensor entity (ppm).                                                                                                                                                                                                                                    |
+| `circulation_fan`      | `string`  | No       | -       | Circulation fan switch/fan entity.                                                                                                                                                                                                                                     |
+| `exhaust_entity`       | `string`  | No       | -       | Exhaust fan/damper switch/fan entity.                                                                                                                                                                                                                                  |
+| `humidifier_entity`    | `string`  | No       | -       | Humidifier controller or switch.                                                                                                                                                                                                                                       |
+| `dehumidifier_entity`  | `string`  | No       | -       | Dehumidifier controller or switch.                                                                                                                                                                                                                                     |
+| `light_sensor`         | `string`  | No       | -       | Light level sensor or light switch status entity.                                                                                                                                                                                                                      |
+| `soil_moisture_sensor` | `string`  | No       | -       | Substrate VWC soil moisture sensor entity.                                                                                                                                                                                                                             |
+| `stress_threshold`     | `float`   | No       | `0.70`  | Bayesian stress alert confidence threshold (0.50-0.95).                                                                                                                                                                                                                |
+| `mold_threshold`       | `float`   | No       | `0.75`  | Bayesian mold alert confidence threshold (0.50-0.95).                                                                                                                                                                                                                  |
+| `control_dehumidifier` | `boolean` | No       | `false` | Enable active automated target steering of the dehumidifier.                                                                                                                                                                                                           |
+| `sensor_groups`        | `object`  | No       | -       | Configuration mapping for multidimensional heatmaps.                                                                                                                                                                                                                   |
+| `sensor_coordinates`   | `object`  | No       | -       | Coordinates map for multi-sensor configurations.                                                                                                                                                                                                                       |
+| `irrigation_tanks`     | `object`  | No       | -       | Irrigation nutrient tank volume & EC configurations. Each tank may set `stale_after_minutes` (default 120): how long its sensor may go without reporting before its level counts as unknown; `0` turns this off for a sensor that reports only when the level changes. |
+| `light_leak_config`    | `object`  | No       | -       | Light Leak Guard settings — see below.                                                                                                                                                                                                                                 |
 
 #### Light Leak Guard (`light_leak_config`)
 
@@ -523,6 +523,22 @@ passes every other gate. Crop steering also resumes the day it was in: a
 restart after P1 completed resumes in P2, and the next shot's cooldown is
 measured from the last shot the pump confirmed before the restart.
 
+With `pause_on_low_tank` on (the default), a configured tank whose level is
+**unknown** also holds irrigation — scheduled, crop-steering and manual cycles
+alike — and the controller reads `inhibited` with reason `tank_unknown`. A level
+is unknown when the sensor is unavailable, when it has not reported for the
+tank's `stale_after_minutes` (default 120; `0` turns that check off for a
+sensor that reports only on change), or when it reads outside 0–100 %.
+For `tank_unknown_grace_minutes` (default 10) the last valid reading is used
+instead, so a short dropout does not stop anything; a tank with no valid reading
+since the start is unknown at once. Whether or not a cycle is due, and whatever
+`pause_on_low_tank` says, a tank unknown for longer than the grace period sends
+one **Tank Offline** notification to the growspace's notification target and
+raises a persistent notification; both are followed by a "back online" message
+when the tank reports again. A probe that keeps dropping out is announced at
+most once an hour. Set `pause_on_low_tank: false` to keep irrigating on an
+unknown tank; the notifications still go out.
+
 A fault blocks scheduled and manual cycles and survives a Home Assistant restart.
 The last 500 safety events are kept in the integration's safety store and included
 in diagnostics, independent of Recorder retention. A repair appears in Settings
@@ -544,14 +560,15 @@ start a cycle.
 
 Sets the basic plumbing hardware profiles and default cycle times for simple timer waterings.
 
-| Parameter                | Type      | Required | Default | Description                                               |
-| :----------------------- | :-------- | :------- | :------ | :-------------------------------------------------------- |
-| `growspace_id`           | `string`  | Yes      | -       | Target growspace zone ID.                                 |
-| `irrigation_pump_entity` | `string`  | No       | -       | Feed pump switch entity ID.                               |
-| `drain_pump_entity`      | `string`  | No       | -       | Drainage pump switch entity ID.                           |
-| `irrigation_duration`    | `integer` | No       | -       | Standard duration to run feed pump (seconds).             |
-| `drain_duration`         | `integer` | No       | -       | Standard duration to run drain pump (seconds).            |
-| `startup_grace_minutes`  | `integer` | No       | `5`     | Minimum startup hold on automatic cycles (0–120 minutes). |
+| Parameter                    | Type      | Required | Default | Description                                                                                                                 |
+| :--------------------------- | :-------- | :------- | :------ | :-------------------------------------------------------------------------------------------------------------------------- |
+| `growspace_id`               | `string`  | Yes      | -       | Target growspace zone ID.                                                                                                   |
+| `irrigation_pump_entity`     | `string`  | No       | -       | Feed pump switch entity ID.                                                                                                 |
+| `drain_pump_entity`          | `string`  | No       | -       | Drainage pump switch entity ID.                                                                                             |
+| `irrigation_duration`        | `integer` | No       | -       | Standard duration to run feed pump (seconds).                                                                               |
+| `drain_duration`             | `integer` | No       | -       | Standard duration to run drain pump (seconds).                                                                              |
+| `startup_grace_minutes`      | `integer` | No       | `5`     | Minimum startup hold on automatic cycles (0–120 minutes).                                                                   |
+| `tank_unknown_grace_minutes` | `integer` | No       | `10`    | How long a tank's level may be unknown before irrigation pauses on it and the offline notification is sent (0–120 minutes). |
 
 ### `growspace_manager.set_irrigation_strategy`
 

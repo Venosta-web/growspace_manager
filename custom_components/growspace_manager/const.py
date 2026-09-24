@@ -618,6 +618,9 @@ class NotificationTier(StrEnum):
     # alerts once per episode, and must never be muted because a Bayesian
     # critical alert happened to go out in the last half hour.
     LIGHT_LEAK = "light_leak"
+    # The Tank Offline Alert (ADR-0050): once per episode, rate-limited by the
+    # tank watch itself, and likewise never muted by a Bayesian alert.
+    TANK_OFFLINE = "tank_offline"
 
 
 class GrowspaceSensorType(StrEnum):

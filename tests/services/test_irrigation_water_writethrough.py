@@ -31,7 +31,7 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 
 # This suite shares one `hass.states` mock across every sensor, so it
 # cannot model the pump's own state; its OFF readback is answered for them.
@@ -158,10 +158,17 @@ async def test_completed_cycle_records_pump_estimate_when_not_tank_mode(
     assert growspace.water_usage.total_liters == pytest.approx(3.0)
 
 
-async def test_completed_cycle_skips_write_in_tank_mode(make_coordinator) -> None:
+async def test_completed_cycle_skips_write_in_tank_mode(
+    make_coordinator, mock_hass: MagicMock
+) -> None:
     """No pump-estimate write occurs in Tank-Derived Water Mode (ADR-0017)."""
     growspace = _pump_growspace(tank_mode=True)
     coordinator = make_coordinator(growspace)
+    # The tank reads, or the Pump Cycle Gate refuses the cycle (ADR-0050).
+    tank = State("sensor.tank", "80")
+    mock_hass.states.get.side_effect = lambda entity_id: (
+        tank if entity_id == "sensor.tank" else MagicMock()
+    )
 
     await _run_cycle(coordinator, 30)
 
