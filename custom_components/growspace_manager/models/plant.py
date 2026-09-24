@@ -152,7 +152,8 @@ class Plant(BaseModel):
     last_ipm: str | None = None
     last_ipm_type: str | None = None
     phi_clearance_date: str | None = None
-    stage_history: list[StageHistoryItem] = field(default_factory=list)
+    # Stored history is untrusted; Plant Lifecycle validates it and reports repairs.
+    stage_history: list[Any] = field(default_factory=list)
     phenotype_score: PhenotypeScore = field(default_factory=PhenotypeScore)
     harvest_metrics: HarvestMetrics = field(default_factory=HarvestMetrics)
     drying_data: DryingData = field(default_factory=DryingData)

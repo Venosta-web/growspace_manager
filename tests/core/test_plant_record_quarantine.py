@@ -40,7 +40,7 @@ async def test_segmented_load_save_keeps_bad_plant_and_repairs_on_recovery(
         "growspace_id": "tent",
         "row": "2.0",
         "strain": "Old strain",
-        "stage_history": ["broken"],
+        "genetics": 5,
     }
     original_bad = deepcopy(bad)
     await storage.plants_store.async_save({"plants": {"good": good, "bad": bad}})
@@ -82,7 +82,7 @@ async def test_initial_coordinator_loader_shares_quarantine_with_storage(
     """The coordinator's injected-data path uses the same loader and save state."""
     entry = MockConfigEntry(domain=DOMAIN, data={}, options={})
     entry.add_to_hass(hass)
-    bad = {"plant_id": "bad", "growspace_id": "tent", "stage_history": ["broken"]}
+    bad = {"plant_id": "bad", "growspace_id": "tent", "genetics": 5}
     coordinator = GrowspaceCoordinator.build(
         hass,
         entry,
