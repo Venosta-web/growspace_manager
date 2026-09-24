@@ -43,6 +43,7 @@ from .irrigation import (
 __all__ = [
     "ENVIRONMENT_FIELD_OWNERSHIP",
     "CirculationFanConfig",
+    "ClimateFailSafeConfig",
     "DLIState",
     "EnergyTracking",
     "EnvironmentConfig",
@@ -236,6 +237,33 @@ class LightLeakConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class ClimateFailSafeConfig(BaseModel):
+    """Configuration for the Climate Fail-Safe (#792).
+
+    When a climate controller's control sensor has had no usable reading for
+    longer than ``sensor_timeout_minutes``, the humidifier and dehumidifier go
+    to their safe state and the exhaust to ``exhaust_fallback_speed``; control
+    resumes when the sensor reads again. A sensor is stale once it has not
+    reported for three of its learned intervals, capped by
+    ``sensor_stale_after_minutes`` (0: never stale).
+
+    A safe state is ``off``, ``on`` or ``hold`` (leave the device as it is);
+    the humidifier and dehumidifier may not both be ``on``. A
+    ``*_max_runtime_minutes`` above 0 switches that device off after running
+    that long without a break. It is its own sub-config so no card tab that
+    replaces a device's config whole can drop it.
+    """
+
+    sensor_timeout_minutes: int = 10
+    sensor_stale_after_minutes: int = 30
+    humidifier_safe_state: str = "off"
+    dehumidifier_safe_state: str = "off"
+    exhaust_fallback_speed: int = 50
+    humidifier_max_runtime_minutes: int = 0
+    dehumidifier_max_runtime_minutes: int = 0
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -318,6 +346,9 @@ class EnvironmentConfig(BaseModel):
     exhaust_fan_config: ExhaustFanConfig = field(default_factory=ExhaustFanConfig)
     growlight_config: GrowLightConfig = field(default_factory=GrowLightConfig)
     light_leak_config: LightLeakConfig = field(default_factory=LightLeakConfig)
+    climate_fail_safe_config: ClimateFailSafeConfig = field(
+        default_factory=ClimateFailSafeConfig
+    )
     vpd_optimal_overrides: dict[str, dict[str, dict[str, float]]] = field(
         default_factory=dict
     )
@@ -418,6 +449,9 @@ class EnvironmentConfig(BaseModel):
 
         if data.get("light_leak_config") is None:
             data["light_leak_config"] = {}
+
+        if data.get("climate_fail_safe_config") is None:
+            data["climate_fail_safe_config"] = {}
 
         # Migration: singular -> plural list
         migrations = {
@@ -592,6 +626,7 @@ ENVIRONMENT_FIELD_OWNERSHIP: dict[str, FieldOwnership] = {
     "exhaust_fan_config": _SUB_CONFIG,
     "growlight_config": _SUB_CONFIG,
     "light_leak_config": _SUB_CONFIG,
+    "climate_fail_safe_config": _SUB_CONFIG,
     "vpd_optimal_overrides": _GROWER,
 }
 

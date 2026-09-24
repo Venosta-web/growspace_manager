@@ -7,6 +7,11 @@ fan, exhaust has no single regulation mode and no dynamic wind layer.
 
 This slice excludes the source-air gate and the critical-temperature override —
 those are handled by separate slices.
+
+Its regulation sensors are read for freshness as well as plausibility through
+the growspace's ``ClimateSafety``. When every one of them has had no usable
+reading for the Fail-Safe Timeout, the exhaust runs at its fallback speed until
+one reads again (#792); a shorter loss holds the last speed.
 """
 
 from __future__ import annotations
@@ -22,7 +27,9 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
 from .actuator_driver import resolve_actuator_drivers
+from .climate_safety import ClimateSafety, Plausible
 from .const import FanRegulationMode
+from .domain.climate_fail_safe import ClimateRole
 from .domain.day_night import DayNightTracker
 from .domain.fan_control import (
     compute_exhaust_demand,
@@ -35,6 +42,7 @@ from .domain.sensor_validity import (
     PlausibleRange,
     temperature_range,
 )
+from .reliability_store import climate_command_failure
 from .utils import VPDCalculator, read_plausible_value
 
 if TYPE_CHECKING:
@@ -44,6 +52,22 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _TICK_INTERVAL = timedelta(seconds=10)
+
+# The plausible range of each regulation measurement (#789).
+_REGULATION_RANGES: dict[FanRegulationMode, Plausible] = {
+    FanRegulationMode.TEMPERATURE: temperature_range,
+    FanRegulationMode.HUMIDITY: HUMIDITY_RANGE,
+    FanRegulationMode.VPD: VPD_RANGE,
+}
+
+
+def _regulation_sensors(env: EnvironmentConfig, mode: FanRegulationMode) -> list[str]:
+    """Return the configured sensors of one regulation measurement."""
+    return {
+        FanRegulationMode.TEMPERATURE: env.temperature_sensors,
+        FanRegulationMode.HUMIDITY: env.humidity_sensors,
+        FanRegulationMode.VPD: env.vpd_sensors,
+    }[mode]
 
 
 class ExhaustFanCoordinator:
@@ -55,12 +79,14 @@ class ExhaustFanCoordinator:
         config_entry: ConfigEntry,
         growspace_id: str,
         main_coordinator: GrowspaceCoordinator,
+        safety: ClimateSafety | None = None,
     ) -> None:
         """Initialize the ExhaustFanCoordinator."""
         self.hass = hass
         self.config_entry = config_entry
         self.growspace_id = growspace_id
         self.main_coordinator = main_coordinator
+        self._safety = safety or ClimateSafety(hass, growspace_id, main_coordinator)
         self._remove_tick: Callable[[], None] | None = None
         self._day_night = DayNightTracker(growspace_id)
         self._temp_override_active: bool = False
@@ -122,28 +148,7 @@ class ExhaustFanCoordinator:
         if not cfg.enabled or not self._has_exhaust_actuators:
             return
 
-        vpd_target = self._effective_vpd_target(cfg)
-        lung_room_temp, lung_room_vpd = self._read_lung_room_conditions()
-        temperature = self._read_sensor(FanRegulationMode.TEMPERATURE)
-        speed = compute_exhaust_demand(
-            temperature,
-            self._read_sensor(FanRegulationMode.HUMIDITY),
-            self._read_sensor(FanRegulationMode.VPD),
-            temperature_target=cfg.temperature_target,
-            temperature_tolerance=cfg.temperature_tolerance,
-            humidity_target=cfg.humidity_target,
-            humidity_tolerance=cfg.humidity_tolerance,
-            vpd_target=vpd_target,
-            vpd_tolerance=cfg.vpd_tolerance,
-            min_speed=cfg.min_speed,
-            max_speed=cfg.max_speed,
-            lung_room_temperature=lung_room_temp,
-            lung_room_vpd=lung_room_vpd,
-            minimum_source_air_temperature=(
-                self._env_config.minimum_source_air_temperature
-            ),
-        )
-        speed = self._apply_critical_temp_override(cfg, temperature, speed)
+        speed = await self._async_regulated_speed(self._env_config)
         if speed is None:
             return
 
@@ -158,9 +163,43 @@ class ExhaustFanCoordinator:
                 self.growspace_id
             ):
                 return
-            await driver.set_speed(speed)
+            if not await driver.set_speed(speed):
+                self._safety.record(climate_command_failure(ClimateRole.EXHAUST))
             self._last_command = speed
             self._last_command_at = dt_util.now().isoformat()
+
+    async def _async_regulated_speed(self, env: EnvironmentConfig) -> int | None:
+        """Return the speed to command, or None to hold the last one.
+
+        The fallback speed once every regulation sensor has been lost for the
+        Fail-Safe Timeout; otherwise the combined demand, which is None while
+        no sensor reads.
+        """
+        if await self._safety.async_failure(
+            ClimateRole.EXHAUST, self._regulation_inputs(env)
+        ):
+            return self._safety.exhaust_fallback_speed()
+        cfg = env.exhaust_fan_config
+        vpd_target = self._effective_vpd_target(cfg)
+        lung_room_temp, lung_room_vpd = self._read_lung_room_conditions()
+        temperature = self._read_sensor(env, FanRegulationMode.TEMPERATURE)
+        speed = compute_exhaust_demand(
+            temperature,
+            self._read_sensor(env, FanRegulationMode.HUMIDITY),
+            self._read_sensor(env, FanRegulationMode.VPD),
+            temperature_target=cfg.temperature_target,
+            temperature_tolerance=cfg.temperature_tolerance,
+            humidity_target=cfg.humidity_target,
+            humidity_tolerance=cfg.humidity_tolerance,
+            vpd_target=vpd_target,
+            vpd_tolerance=cfg.vpd_tolerance,
+            min_speed=cfg.min_speed,
+            max_speed=cfg.max_speed,
+            lung_room_temperature=lung_room_temp,
+            lung_room_vpd=lung_room_vpd,
+            minimum_source_air_temperature=env.minimum_source_air_temperature,
+        )
+        return self._apply_critical_temp_override(cfg, temperature, speed)
 
     def diagnostics_snapshot(self) -> dict[str, object]:
         """Describe the configured exhaust controller and its last output."""
@@ -182,6 +221,7 @@ class ExhaustFanCoordinator:
             },
             "last_command": self._last_command,
             "last_command_at": self._last_command_at,
+            "fail_safe": self._safety.is_failed(ClimateRole.EXHAUST),
         }
 
     def _apply_critical_temp_override(
@@ -231,24 +271,22 @@ class ExhaustFanCoordinator:
             plants, cfg.stage_vpd_overrides, cfg.vpd_target, is_day
         )
 
-    def _read_sensor(self, mode: FanRegulationMode) -> float | None:
-        """Read the first available sensor value for the given measurement."""
-        if self._env_config is None:
-            return None
-        plausible: PlausibleRange | Callable[[str | None], PlausibleRange]
-        if mode == FanRegulationMode.HUMIDITY:
-            sensors, plausible = self._env_config.humidity_sensors, HUMIDITY_RANGE
-        elif mode == FanRegulationMode.TEMPERATURE:
-            sensors = self._env_config.temperature_sensors
-            plausible = temperature_range
-        elif mode == FanRegulationMode.VPD:
-            sensors, plausible = self._env_config.vpd_sensors, VPD_RANGE
-        else:
-            # Defends against a stale/invalid regulation_mode in stored config
-            # (mypy sees this as unreachable since the enum above is exhaustive).
-            return None  # type: ignore[unreachable]
+    def _regulation_inputs(self, env: EnvironmentConfig) -> dict[str, Plausible]:
+        """Return the regulation sensors the demand reads, with their ranges."""
+        inputs: dict[str, Plausible] = {}
+        for mode, plausible in _REGULATION_RANGES.items():
+            if sensors := _regulation_sensors(env, mode):
+                inputs.setdefault(sensors[0], plausible)
+        return inputs
 
-        return self._read_entity_value(sensors[0], plausible) if sensors else None
+    def _read_sensor(
+        self, env: EnvironmentConfig, mode: FanRegulationMode
+    ) -> float | None:
+        """Read the measurement's regulation sensor, or None when it cannot be trusted."""
+        sensors = _regulation_sensors(env, mode)
+        if not sensors:
+            return None
+        return self._safety.reading(sensors[0], _REGULATION_RANGES[mode]).value
 
     def _read_entity_value(
         self,
@@ -289,6 +327,7 @@ class ExhaustFanCoordinator:
 
     def unload(self) -> None:
         """Stop the polling tick."""
+        self._safety.withdraw(ClimateRole.EXHAUST)
         if self._remove_tick is not None:
             self._remove_tick()
             self._remove_tick = None

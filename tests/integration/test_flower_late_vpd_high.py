@@ -99,6 +99,9 @@ async def test_retry_fires_after_timer_lock_expires_with_stable_vpd(
             "custom_components.growspace_manager.vpd_on_off_controller.async_track_state_change_event"
         ),
         patch(
+            "custom_components.growspace_manager.vpd_on_off_controller.async_track_time_interval"
+        ),
+        patch(
             "custom_components.growspace_manager.vpd_on_off_controller.async_call_later",
             side_effect=fake_async_call_later,
         ),
@@ -113,7 +116,7 @@ async def test_retry_fires_after_timer_lock_expires_with_stable_vpd(
         "switch",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "switch.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
     assert coordinator._last_turn_on_time > 0
 
@@ -152,7 +155,7 @@ async def test_retry_fires_after_timer_lock_expires_with_stable_vpd(
         "switch",
         SERVICE_TURN_OFF,
         {ATTR_ENTITY_ID: "switch.dehumidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -177,6 +180,9 @@ async def test_retry_not_duplicated_on_repeated_locked_checks(
     with (
         patch(
             "custom_components.growspace_manager.vpd_on_off_controller.async_track_state_change_event"
+        ),
+        patch(
+            "custom_components.growspace_manager.vpd_on_off_controller.async_track_time_interval"
         ),
         patch(
             "custom_components.growspace_manager.vpd_on_off_controller.async_call_later",
@@ -220,6 +226,9 @@ async def test_retry_cancelled_on_unload(
     with (
         patch(
             "custom_components.growspace_manager.vpd_on_off_controller.async_track_state_change_event"
+        ),
+        patch(
+            "custom_components.growspace_manager.vpd_on_off_controller.async_track_time_interval"
         ),
         patch(
             "custom_components.growspace_manager.vpd_on_off_controller.async_call_later",

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from custom_components.growspace_manager.circulation_fan_coordinator import (
     CirculationFanCoordinator,
 )
+from custom_components.growspace_manager.climate_safety import ClimateSafety
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
@@ -129,18 +130,20 @@ class SubsystemManager:
         await light_cycle_tracker.async_setup()
         self.light_cycle_trackers[growspace_id] = light_cycle_tracker
 
+        # One Climate Fail-Safe and Humidity Interlock per growspace (#792).
+        safety = ClimateSafety(self.hass, growspace_id, self.coordinator)
         controllers: list[EnvironmentController] = [
             DehumidifierCoordinator(
-                self.hass, self.entry, growspace_id, self.coordinator
+                self.hass, self.entry, growspace_id, self.coordinator, safety
             ),
             HumidifierCoordinator(
-                self.hass, self.entry, growspace_id, self.coordinator
+                self.hass, self.entry, growspace_id, self.coordinator, safety
             ),
             CirculationFanCoordinator(
                 self.hass, self.entry, growspace_id, self.coordinator
             ),
             ExhaustFanCoordinator(
-                self.hass, self.entry, growspace_id, self.coordinator
+                self.hass, self.entry, growspace_id, self.coordinator, safety
             ),
             GrowLightCoordinator(self.hass, self.entry, growspace_id, self.coordinator),
         ]

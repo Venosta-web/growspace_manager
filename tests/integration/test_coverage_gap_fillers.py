@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+from custom_components.growspace_manager.climate_safety import ClimateSafety
 from custom_components.growspace_manager.config_handlers.environment_config_handler import (
     EnvironmentConfigHandler,
 )
@@ -18,6 +19,7 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.dehumidifier_coordinator import (
     DehumidifierCoordinator,
 )
+from custom_components.growspace_manager.domain.climate_fail_safe import ClimateRole
 from custom_components.growspace_manager.domain.day_night import DayNightTracker
 
 # Direct imports of the functions we want to test
@@ -180,6 +182,9 @@ async def test_dehumidifier_coordinator_control_exceptions(hass: HomeAssistant) 
     """Test _control_devices exception handling and domain fallback."""
     coordinator = Mock(spec=DehumidifierCoordinator)
     coordinator.hass = hass
+    coordinator._safety = ClimateSafety(hass, "gs1", MagicMock())
+    coordinator._ROLE = ClimateRole.DEHUMIDIFIER
+    coordinator._on_since = None
     coordinator._last_turn_on_time = 0.0
     coordinator._last_turn_off_time = 0.0
     coordinator._get_ac_infinity_devices = MagicMock(return_value=[])
@@ -203,7 +208,7 @@ async def test_dehumidifier_coordinator_control_exceptions(hass: HomeAssistant) 
             "homeassistant",
             "turn_on",
             {"entity_id": "light.fake_dehumidifier"},
-            blocking=False,
+            blocking=True,
         )
 
     # Test 2: Exception handling
@@ -212,14 +217,18 @@ async def test_dehumidifier_coordinator_control_exceptions(hass: HomeAssistant) 
         "homeassistant.core.ServiceRegistry.async_call",
         side_effect=HomeAssistantError("Boom"),
     ):
-        # Should not raise
+        # Should not raise, and the failed command is counted
         await coordinator._control_devices(True)
+    coordinator._safety.main_coordinator.reliability.record.assert_called_with(
+        "gs1", "climate.command_failure.dehumidifier"
+    )
 
 
 def test_dehumidifier_coordinator_vpd_parsing(hass: HomeAssistant) -> None:
     """Test _get_current_vpd parsing logic."""
     coordinator = Mock(spec=DehumidifierCoordinator)
     coordinator.hass = hass
+    coordinator._safety = ClimateSafety(hass, "gs1", MagicMock())
     coordinator.vpd_sensor = "sensor.vpd"
     coordinator._get_current_vpd = DehumidifierCoordinator._get_current_vpd.__get__(
         coordinator, DehumidifierCoordinator
