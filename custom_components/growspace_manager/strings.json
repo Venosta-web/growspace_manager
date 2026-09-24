@@ -641,6 +641,10 @@
     }
   },
   "issues": {
+    "plant_record_unreadable": {
+      "title": "Plant {plant_id} could not be loaded",
+      "description": "The stored record for Plant {plant_id} could not be loaded: {reason}. Growspace Manager has preserved the record in quarantine during saves. Check or restore the record in the Home Assistant storage file; it will be loaded automatically once valid."
+    },
     "irrigation_arm_review": {
       "title": "Review migrated irrigation arm for {growspace}",
       "description": "This growspace already had irrigation configured, so it was kept armed during the safety upgrade. Check the pump and schedule, then disarm it if automatic watering should pause."

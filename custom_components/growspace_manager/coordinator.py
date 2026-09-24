@@ -39,6 +39,7 @@ from .models import Growspace, GrowspaceEvent, NutrientInventory, Plant
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
 from .photoperiod_flip_checker import PhotoperiodFlipChecker
+from .plant_record_loader import load_plant_records
 from .presentation import PlantViewModelBuilder
 from .reliability_store import ReliabilityStore
 from .service_coordinator_locator import ServiceCoordinatorLocator
@@ -183,6 +184,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.import_export_manager = import_export_manager
         self.validator = validator
         self.options = options or {}
+        self._quarantined_plants: dict[str, Any] = {}
         self.irrigation_safety = IrrigationSafetyStore(hass, entry.entry_id)
         self.reliability = ReliabilityStore(hass, entry.entry_id)
         self.created_entity_ids: list[tuple[str, str, str]] = []
@@ -412,23 +414,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
         # Deserialize plants using mashumaro
-        raw_plants = data.get("plants", {})
-        plants = {}
-        for pid, pdata in raw_plants.items():
-            if isinstance(pdata, Plant):
-                plants[pid] = pdata
-            elif isinstance(pdata, dict):
-                try:
-                    plants[pid] = Plant.from_dict(pdata)
-                except ValueError, KeyError, TypeError, Exception:
-                    _LOGGER.exception(
-                        "Failed to load plant %s due to data structure mismatch",
-                        pid,
-                    )
-            else:
-                _LOGGER.error(
-                    "Failed to load plant %s (invalid type: %s)", pid, type(pdata)
-                )
+        plants = load_plant_records(self.hass, data, self._quarantined_plants)
 
         # Update the repository with deserialized objects
         self._data_repository.load_growspaces(growspaces)

@@ -72,7 +72,7 @@ def test_load_plants_inner_data_mismatch(storage, repository_mock) -> None:
             side_effect=ValueError("Data structure mismatch"),
         ),
         patch(
-            "custom_components.growspace_manager.storage_manager._LOGGER.exception"
+            "custom_components.growspace_manager.plant_record_loader._LOGGER.exception"
         ) as mock_log_exc,
     ):
         storage._load_plants(data)
