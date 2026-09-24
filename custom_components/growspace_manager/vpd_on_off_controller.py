@@ -27,6 +27,7 @@ from .domain.climate_fail_safe import (
     runtime_exceeded,
 )
 from .domain.day_night import DayNightTracker
+from .domain.manual_override import Subsystem
 from .domain.sensor_validity import VPD_RANGE
 from .domain.stage_calculator import determine_coordinator_stage
 from .models import GrowspaceEvent
@@ -75,6 +76,11 @@ class VpdOnOffController:
     _DEFAULT_MIN_RUNTIME: ClassVar[int] = 300
     _DEFAULT_MIN_OFFTIME: ClassVar[int] = 300
     _ROLE: ClassVar[ClimateRole]
+
+    @property
+    def _subsystem(self) -> Subsystem:
+        """The Manual Override subsystem this device belongs to (#793)."""
+        return Subsystem(self._ROLE.value)
 
     def __init__(
         self,
@@ -207,8 +213,8 @@ class VpdOnOffController:
 
     async def async_check_and_control(self) -> None:
         """Evaluate VPD against stage thresholds and drive the device."""
-        if not self.main_coordinator.irrigation_safety.automation_enabled(
-            self.growspace_id
+        if not self.main_coordinator.irrigation_safety.commands_allowed(
+            self.growspace_id, self._subsystem
         ):
             return
         entities = self._get_all_controlled_entities()
@@ -365,10 +371,14 @@ class VpdOnOffController:
         """Turn on or off every controlled actuator through its driver."""
         main = getattr(self, "main_coordinator", None)
         safety = getattr(main, "irrigation_safety", None)
-        if safety is not None and not safety.automation_enabled(self.growspace_id):
+        if safety is not None and not safety.commands_allowed(
+            self.growspace_id, self._subsystem
+        ):
             return
         for driver in self._resolve_drivers():
-            if safety is not None and not safety.automation_enabled(self.growspace_id):
+            if safety is not None and not safety.commands_allowed(
+                self.growspace_id, self._subsystem
+            ):
                 return
             done = await (driver.turn_on() if turn_on else driver.turn_off())
             if not done:

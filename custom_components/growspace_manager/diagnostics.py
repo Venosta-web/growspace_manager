@@ -139,6 +139,10 @@ async def async_get_config_entry_diagnostics(
                 growspace_id: record.as_dict()
                 for growspace_id, record in coordinator.irrigation_safety.emergency_stops.items()
             },
+            "overrides": {
+                growspace_id: [override.as_dict() for override in by_subsystem.values()]
+                for growspace_id, by_subsystem in coordinator.irrigation_safety.overrides.items()
+            },
             "fault_record_unreadable": coordinator.irrigation_safety.unreadable,
             "ledger": list(coordinator.irrigation_safety.ledger)[-100:],
         },

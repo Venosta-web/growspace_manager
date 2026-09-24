@@ -504,6 +504,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         # Cancel all sub-coordinator listeners
         self.async_cancel_subsystems()
+        self.irrigation_safety.async_stop_overrides()
 
         # Unsubscribe all tank water trackers
         await self.services.growspaces.async_unsubscribe_all_trackers()

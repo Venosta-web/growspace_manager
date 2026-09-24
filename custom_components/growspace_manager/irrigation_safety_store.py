@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
+from datetime import datetime, timedelta
 import logging
 from os.path import exists
 from typing import Any
 from uuid import uuid4
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.storage import Store
 from homeassistant.util.dt import utcnow
 
 from .const import EVENT_GROWSPACE_LOG_ENTRY
 from .domain.irrigation_safety import FaultRecord, SafetyReason
+from .domain.manual_override import MAX_OVERRIDE_DURATION, ManualOverride, Subsystem
 
 _LOGGER = logging.getLogger(__name__)
 _LEDGER_LIMIT = 500
@@ -30,6 +34,11 @@ class IrrigationSafetyStore:
         self.faults: dict[str, FaultRecord] = {}
         self.emergency_stops: dict[str, FaultRecord] = {}
         self.controls: dict[str, dict[str, bool]] = {}
+        # Manual Overrides (#793), per growspace and subsystem. An expired one
+        # no longer holds anything even before its timer has removed it.
+        self.overrides: dict[str, dict[Subsystem, ManualOverride]] = {}
+        self._override_timers: dict[tuple[str, Subsystem], Callable[[], None]] = {}
+        self._override_listeners: list[Callable[[str, Subsystem], None]] = []
         self._legacy_controls = False
         self.ledger: deque[dict[str, Any]] = deque(maxlen=_LEDGER_LIMIT)
         self.unreadable = False
@@ -48,6 +57,7 @@ class IrrigationSafetyStore:
                 return
             self.faults, self.emergency_stops, self.ledger = self._decode(data)
             self.controls, self._legacy_controls = self._decode_controls(data)
+            self.overrides = self._decode_overrides(data)
         except Exception:
             _LOGGER.exception("Irrigation safety record is unreadable; all cycles held")
             self.unreadable = True
@@ -55,6 +65,28 @@ class IrrigationSafetyStore:
             self.faults.clear()
             self.emergency_stops.clear()
             self.controls.clear()
+            self.overrides.clear()
+
+    @staticmethod
+    def _decode_overrides(
+        data: dict[str, Any],
+    ) -> dict[str, dict[Subsystem, ManualOverride]]:
+        """Reject a malformed override: a person's hold must never silently lapse."""
+        raw = data.get("overrides", {})
+        if not isinstance(raw, dict):
+            raise TypeError("safety overrides are invalid")
+        overrides: dict[str, dict[Subsystem, ManualOverride]] = {}
+        for growspace_id, by_subsystem in raw.items():
+            if not isinstance(growspace_id, str) or not isinstance(by_subsystem, dict):
+                raise TypeError("safety overrides are invalid")
+            decoded = {}
+            for key, record in by_subsystem.items():
+                override = ManualOverride.from_dict(record)
+                if key != override.subsystem.value:
+                    raise ValueError("override filed under another subsystem")
+                decoded[override.subsystem] = override
+            overrides[growspace_id] = decoded
+        return overrides
 
     @staticmethod
     def _decode_controls(
@@ -119,6 +151,28 @@ class IrrigationSafetyStore:
         """Return a durable operator stop without masking unreadable fault data."""
         return self.emergency_stops.get(growspace_id) if not self.unreadable else None
 
+    def override_for(
+        self, growspace_id: str, subsystem: Subsystem
+    ) -> ManualOverride | None:
+        """Return the Manual Override holding ``subsystem``, if it still holds."""
+        override = self.overrides.get(growspace_id, {}).get(subsystem)
+        return override if override is not None and override.active(utcnow()) else None
+
+    def active_overrides(self, growspace_id: str) -> list[ManualOverride]:
+        """Return every Manual Override still holding in ``growspace_id``."""
+        return [
+            override
+            for subsystem in Subsystem
+            if (override := self.override_for(growspace_id, subsystem)) is not None
+        ]
+
+    def commands_allowed(self, growspace_id: str, subsystem: Subsystem) -> bool:
+        """Permit a controller's commands unless the operator or a person holds it."""
+        return (
+            self.automation_enabled(growspace_id)
+            and self.override_for(growspace_id, subsystem) is None
+        )
+
     def automation_enabled(self, growspace_id: str) -> bool:
         """Permit automatic output commands unless the operator has stopped them."""
         return (
@@ -152,16 +206,178 @@ class IrrigationSafetyStore:
             if action == "irrigation armed"
             else "system"
         )
+        self._log(growspace_id, f"Safety {action} by {actor}", user_id)
+
+    def _log(self, growspace_id: str, message: str, user_id: str | None) -> None:
         self._hass.bus.async_fire(
             EVENT_GROWSPACE_LOG_ENTRY,
             {
                 "growspace_id": growspace_id,
                 "category": "alert",
-                "message": f"Safety {action} by {actor}",
+                "message": message,
                 "timestamp": utcnow().isoformat(),
                 "user_id": user_id,
             },
         )
+
+    async def _append(self, row: dict[str, Any]) -> None:
+        """Write one ledger row through, failing closed if it cannot be saved."""
+        if self.unreadable:
+            raise RuntimeError("Irrigation safety record is unreadable")
+        self.ledger.append({"at": utcnow().isoformat(), **row})
+        try:
+            await self._save()
+        except Exception:
+            self.unreadable = True
+            raise
+
+    async def async_record_event(
+        self, growspace_id: str, action: str, **fields: Any
+    ) -> None:
+        """Write an observed safety event, such as an Unexpected On, to the ledger."""
+        await self._append({"growspace_id": growspace_id, "action": action, **fields})
+
+    @callback
+    def add_override_listener(
+        self, listener: Callable[[str, Subsystem], None]
+    ) -> Callable[[], None]:
+        """Call ``listener`` whenever a Manual Override starts or ends."""
+        self._override_listeners.append(listener)
+
+        @callback
+        def remove() -> None:
+            if listener in self._override_listeners:
+                self._override_listeners.remove(listener)
+
+        return remove
+
+    @callback
+    def _notify_override(self, growspace_id: str, subsystem: Subsystem) -> None:
+        for listener in list(self._override_listeners):
+            listener(growspace_id, subsystem)
+
+    async def async_set_override(
+        self,
+        growspace_id: str,
+        subsystem: Subsystem,
+        duration: timedelta,
+        user_id: str | None,
+        reason: str | None = None,
+    ) -> ManualOverride:
+        """Hand ``subsystem`` to a person for ``duration``, audited, then persist it.
+
+        A second call replaces the first, so an override is extended or cut
+        short by setting it again.
+        """
+        if not timedelta(0) < duration <= MAX_OVERRIDE_DURATION:
+            raise ValueError("Override duration must be between 1 second and 24 hours")
+        now = utcnow()
+        override = ManualOverride(subsystem, now, now + duration, user_id, reason)
+        if self.unreadable:
+            raise RuntimeError("Irrigation safety record is unreadable")
+        self.overrides.setdefault(growspace_id, {})[subsystem] = override
+        await self._append(
+            {
+                "growspace_id": growspace_id,
+                "action": "override_set",
+                **override.as_dict(),
+            }
+        )
+        self._schedule_expiry(growspace_id, override)
+        actor = f"HA user {user_id}" if user_id else "system"
+        self._log(
+            growspace_id,
+            f"Manual override of {subsystem} by {actor} until "
+            f"{override.expires_at.isoformat()}" + (f": {reason}" if reason else ""),
+            user_id,
+        )
+        self._notify_override(growspace_id, subsystem)
+        return override
+
+    async def async_clear_override(
+        self,
+        growspace_id: str,
+        subsystem: Subsystem,
+        user_id: str | None,
+        *,
+        expired: bool = False,
+    ) -> None:
+        """End a Manual Override, by a person or by its own expiry."""
+        if self.unreadable:
+            raise RuntimeError("Irrigation safety record is unreadable")
+        override = self.overrides.get(growspace_id, {}).pop(subsystem, None)
+        if override is None:
+            raise ValueError(f"No manual override of {subsystem} is set")
+        if not self.overrides[growspace_id]:
+            del self.overrides[growspace_id]
+        if cancel := self._override_timers.pop((growspace_id, subsystem), None):
+            cancel()
+        await self._append(
+            {
+                "growspace_id": growspace_id,
+                "action": "override_expired" if expired else "override_cleared",
+                "subsystem": subsystem.value,
+                "user_id": user_id,
+            }
+        )
+        self._log(
+            growspace_id,
+            f"Manual override of {subsystem} expired"
+            if expired
+            else f"Manual override of {subsystem} cleared by "
+            + (f"HA user {user_id}" if user_id else "system"),
+            user_id,
+        )
+        self._notify_override(growspace_id, subsystem)
+
+    def _schedule_expiry(self, growspace_id: str, override: ManualOverride) -> None:
+        key = (growspace_id, override.subsystem)
+        if cancel := self._override_timers.pop(key, None):
+            cancel()
+
+        @callback
+        def expire(_now: datetime) -> None:
+            self._override_timers.pop(key, None)
+            self._hass.async_create_task(
+                self._async_expire(growspace_id, override),
+                name=f"growspace_override_expiry_{growspace_id}_{override.subsystem}",
+            )
+
+        self._override_timers[key] = async_track_point_in_utc_time(
+            self._hass, expire, override.expires_at
+        )
+
+    async def _async_expire(self, growspace_id: str, override: ManualOverride) -> None:
+        """Remove an override its timer found expired, unless it was replaced."""
+        if self.overrides.get(growspace_id, {}).get(override.subsystem) != override:
+            return
+        try:
+            await self.async_clear_override(
+                growspace_id, override.subsystem, None, expired=True
+            )
+        except Exception:
+            # It has already stopped holding: override_for reads the clock.
+            _LOGGER.exception(
+                "Could not record the expiry of the %s override in %s",
+                override.subsystem,
+                growspace_id,
+            )
+
+    async def async_start_overrides(self) -> None:
+        """Expire what ran out while stopped, and time the rest (after load)."""
+        for growspace_id, by_subsystem in list(self.overrides.items()):
+            for override in list(by_subsystem.values()):
+                if override.active(utcnow()):
+                    self._schedule_expiry(growspace_id, override)
+                else:
+                    await self._async_expire(growspace_id, override)
+
+    @callback
+    def async_stop_overrides(self) -> None:
+        """Cancel the expiry timers; the overrides themselves stay persisted."""
+        for cancel in self._override_timers.values():
+            cancel()
+        self._override_timers.clear()
 
     async def async_initialize_controls(self, growspaces: dict[str, Any]) -> list[str]:
         """Migrate existing irrigation once, before coordinators can command it."""
@@ -433,6 +649,13 @@ class IrrigationSafetyStore:
                     for key, record in self.emergency_stops.items()
                 },
                 "controls": self.controls,
+                "overrides": {
+                    growspace_id: {
+                        subsystem.value: override.as_dict()
+                        for subsystem, override in by_subsystem.items()
+                    }
+                    for growspace_id, by_subsystem in self.overrides.items()
+                },
                 "ledger": list(self.ledger),
             }
         )

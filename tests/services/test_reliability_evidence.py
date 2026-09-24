@@ -41,6 +41,7 @@ from custom_components.growspace_manager.services.report import (
 from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE, MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.setup import async_setup_component
 from homeassistant.util.dt import utcnow
 
 NOW = datetime(2026, 9, 24, 12, tzinfo=UTC)
@@ -434,9 +435,12 @@ async def test_armed_runtime_and_unexpected_on_are_observed(
     runtime.irrigation_safety = safety
     runtime.reliability = ReliabilityStore(hass, "armed-observation")
     runtime.growspaces = {"tent": growspace}
+    runtime.services.notifications.manager.async_send_notification = AsyncMock()
     irrigation = IrrigationCoordinator(
         hass, MagicMock(runtime_data=runtime), "tent", runtime
     )
+    # A pump ON at startup is an Unexpected On (#793), announced as one.
+    await async_setup_component(hass, "persistent_notification", {})
     hass.states.async_set("switch.pump", "on")
 
     irrigation._async_probe_control_sensors()

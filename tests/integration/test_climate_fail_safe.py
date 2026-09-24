@@ -139,7 +139,7 @@ def _growspace(**fail_safe: Any) -> Growspace:
 def _runtime(hass: HomeAssistant, growspace: Growspace) -> MagicMock:
     runtime = MagicMock()
     runtime.reliability = ReliabilityStore(hass, "climate-fail-safe")
-    runtime.irrigation_safety.automation_enabled.return_value = True
+    runtime.irrigation_safety.commands_allowed.return_value = True
     runtime.growspaces = {growspace.id: growspace}
     runtime.services.growspaces.get_growspace_plants.return_value = []
     runtime.services.notifications.manager.async_send_notification = AsyncMock()
@@ -540,7 +540,7 @@ async def test_the_exhaust_stops_commanding_once_automation_is_paused(
     """A pause that lands mid-tick holds the rest of the fans."""
     hass.states.async_set(HUMIDITY, "80")
     exhaust = _exhaust(hass, _exhaust_growspace())
-    exhaust.main_coordinator.irrigation_safety.automation_enabled.side_effect = [
+    exhaust.main_coordinator.irrigation_safety.commands_allowed.side_effect = [
         True,
         False,
     ]

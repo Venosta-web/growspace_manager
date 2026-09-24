@@ -1,5 +1,6 @@
 """Snapshot tests for Growspace Manager models."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -12,6 +13,10 @@ from custom_components.growspace_manager.dehumidifier_coordinator import (
 )
 from custom_components.growspace_manager.diagnostics import (
     async_get_config_entry_diagnostics,
+)
+from custom_components.growspace_manager.domain.manual_override import (
+    ManualOverride,
+    Subsystem,
 )
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
@@ -153,8 +158,19 @@ async def test_diagnostics_snapshot(
     coordinator.services.growspaces.get_humidifier_coordinator.return_value = None
     coordinator.services.growspaces.get_circulation_fan_coordinator.return_value = None
     coordinator.services.growspaces.get_exhaust_fan_coordinator.return_value = None
+    started = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
     coordinator.irrigation_safety = SimpleNamespace(
-        faults={}, emergency_stops={}, unreadable=False, ledger=[]
+        faults={},
+        emergency_stops={},
+        overrides={
+            "gs1": {
+                Subsystem.EXHAUST: ManualOverride(
+                    Subsystem.EXHAUST, started, started + timedelta(minutes=30)
+                )
+            }
+        },
+        unreadable=False,
+        ledger=[],
     )
     coordinator.reliability = ReliabilityStore(hass, "diagnostics")
     coordinator.reliability.record("gs1", ReliabilityCounter.REQUESTED)

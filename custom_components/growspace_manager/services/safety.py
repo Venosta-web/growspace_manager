@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
@@ -10,8 +11,10 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv
 
 from ..const import DOMAIN
+from ..domain.manual_override import MAX_OVERRIDE_DURATION, MAX_REASON_LENGTH, Subsystem
 from ..reliability_store import ReliabilityCounter
 
 if TYPE_CHECKING:
@@ -20,6 +23,30 @@ if TYPE_CHECKING:
 
 
 SAFETY_SCHEMA = vol.Schema({vol.Optional("growspace_id"): str})
+
+
+def _override_duration(value: object) -> object:
+    """Accept a duration a person can give, and refuse any past the maximum."""
+    duration = cv.time_period(value)
+    if not timedelta(0) < duration <= MAX_OVERRIDE_DURATION:
+        raise vol.Invalid("An override lasts more than 0 seconds and at most 24 hours")
+    return duration
+
+
+SET_OVERRIDE_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): str,
+        vol.Required("subsystem"): vol.Coerce(Subsystem),
+        vol.Required("duration"): _override_duration,
+        vol.Optional("reason"): vol.All(str, vol.Length(max=MAX_REASON_LENGTH)),
+    }
+)
+CLEAR_OVERRIDE_SCHEMA = vol.Schema(
+    {
+        vol.Required("growspace_id"): str,
+        vol.Required("subsystem"): vol.Coerce(Subsystem),
+    }
+)
 
 
 def _loaded_coordinators(hass: HomeAssistant) -> list[GrowspaceCoordinator]:
@@ -201,3 +228,33 @@ async def handle_reset_safety(hass: HomeAssistant, call: ServiceCall) -> None:
             continue
         await store.async_reset_emergency_stop(growspace_id, user.id)
         coordinator.async_update_listeners()
+
+
+async def handle_set_override(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Hand one subsystem to a person: Growspace Manager commands none of it.
+
+    Any user may set one; like the automation switch it only ever withdraws
+    Growspace Manager's commands. The caller is written to the Safety Ledger.
+    """
+    ((coordinator, growspace_id),) = _targets(hass, call.data["growspace_id"])
+    try:
+        await coordinator.irrigation_safety.async_set_override(
+            growspace_id,
+            call.data["subsystem"],
+            call.data["duration"],
+            call.context.user_id,
+            call.data.get("reason") or None,
+        )
+    except (RuntimeError, ValueError) as err:
+        raise ServiceValidationError(f"Cannot set override: {err}") from err
+
+
+async def handle_clear_override(hass: HomeAssistant, call: ServiceCall) -> None:
+    """End a Manual Override early; control resumes on the next decision."""
+    ((coordinator, growspace_id),) = _targets(hass, call.data["growspace_id"])
+    try:
+        await coordinator.irrigation_safety.async_clear_override(
+            growspace_id, call.data["subsystem"], call.context.user_id
+        )
+    except (RuntimeError, ValueError) as err:
+        raise ServiceValidationError(f"Cannot clear override: {err}") from err

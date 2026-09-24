@@ -624,6 +624,9 @@ class NotificationTier(StrEnum):
     # The invalid control sensor alert (#789): once per episode, rate-limited by
     # the sensor watch itself, and likewise never muted by a Bayesian alert.
     SENSOR_INVALID = "sensor_invalid"
+    # An Unexpected On (#793): a managed pump running outside any cycle of ours.
+    # Once per episode — it lasts until the pump reads OFF — and never muted.
+    UNEXPECTED_ON = "unexpected_on"
 
 
 class GrowspaceSensorType(StrEnum):

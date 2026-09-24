@@ -33,6 +33,17 @@
       }),
       'ledger': list([
       ]),
+      'overrides': dict({
+        'gs1': list([
+          dict({
+            'expires_at': '2026-09-24T10:30:00+00:00',
+            'reason': None,
+            'started_at': '2026-09-24T10:00:00+00:00',
+            'subsystem': 'exhaust',
+            'user_id': None,
+          }),
+        ]),
+      }),
     }),
     'reliability': dict({
       'gs1': dict({
@@ -517,6 +528,7 @@
       'soil_trigger_percent': None,
       'startup_grace_minutes': 5,
       'tank_unknown_grace_minutes': 10,
+      'unexpected_on_policy': 'alert',
       'veg_day_hours': 18,
     }),
     'irrigation_strategy': dict({

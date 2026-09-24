@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .manual_override import ManualOverride
 
 # The Startup Inhibit (#786). After any start or reload a growspace holds every
 # automatic cycle until a grace period has passed *and* each control sensor has
@@ -105,6 +108,9 @@ class ControllerSnapshot:
     reasons: tuple[SafetyReason, ...] = ()
     fault_id: str | None = None
     since: str | None = None
+    # Every Manual Override holding a subsystem of the growspace (#793),
+    # whatever it holds; one holding irrigation is also among ``reasons``.
+    manual_overrides: tuple[ManualOverride, ...] = ()
 
     @property
     def requires_ack(self) -> bool:
@@ -118,6 +124,7 @@ class ControllerSnapshot:
             "fault_id": self.fault_id,
             "requires_ack": self.requires_ack,
             "since": self.since,
+            "overrides": [override.as_dict() for override in self.manual_overrides],
         }
 
 
@@ -129,8 +136,37 @@ def controller_snapshot(
     inhibits: tuple[SafetyReason, ...] = (),
     fault: FaultRecord | None = None,
     emergency_stop: SafetyReason | None = None,
+    holds: tuple[SafetyReason, ...] = (),
+    manual_overrides: tuple[ManualOverride, ...] = (),
 ) -> ControllerSnapshot:
-    """Evaluate controller state in safety precedence order."""
+    """Evaluate controller state in safety precedence order.
+
+    ``holds`` — a person holding the pumps (#793) — hold manual runs as well
+    as automatic ones, so they read ``inhibited`` on a configured controller
+    even when nothing is automated. ``manual_overrides`` are only reported.
+    """
+    snapshot = _precedence(
+        configured=configured,
+        automation_enabled=automation_enabled,
+        running=running,
+        inhibits=inhibits,
+        fault=fault,
+        emergency_stop=emergency_stop,
+        holds=holds,
+    )
+    return replace(snapshot, manual_overrides=manual_overrides)
+
+
+def _precedence(
+    *,
+    configured: bool,
+    automation_enabled: bool,
+    running: bool,
+    inhibits: tuple[SafetyReason, ...],
+    fault: FaultRecord | None,
+    emergency_stop: SafetyReason | None,
+    holds: tuple[SafetyReason, ...],
+) -> ControllerSnapshot:
     if emergency_stop is not None:
         return ControllerSnapshot(
             ControllerState.EMERGENCY_STOP,
@@ -146,6 +182,9 @@ def controller_snapshot(
         )
     if running:
         return ControllerSnapshot(ControllerState.RUNNING)
+    if configured and holds:
+        held = (*holds, *inhibits) if automation_enabled else holds
+        return ControllerSnapshot(ControllerState.INHIBITED, held, since=held[0].since)
     if not configured or not automation_enabled:
         return ControllerSnapshot(ControllerState.IDLE)
     if inhibits:

@@ -125,6 +125,7 @@ A logbook event (category `irrigation_error`) fired when an irrigation or drain 
 
 - **Low tank skip** — `pause_on_low_tank` is enabled and a configured tank is below its warning level. Always logged, regardless of `log_to_logbook`.
 - **Invalid moisture sensor** — crop steering is withholding shots because the moisture sensor has been unavailable, stale or implausible for longer than `sensor_alert_delay_minutes`; logged once per episode with its recovery, regardless of `log_to_logbook`.
+- **Unexpected On** — a managed pump read ON outside any cycle of Growspace Manager's own and, under the default `alert` policy, automatic irrigation is holding until it reads OFF (#793). Always logged, regardless of `log_to_logbook`.
 - **Unknown tank skip** — `pause_on_low_tank` is enabled and a configured tank has been at an Unknown Tank Level (unavailable, stale or implausible) for longer than `tank_unknown_grace_minutes`. Always logged, regardless of `log_to_logbook`.
 - **Safety guard skip** — the daily cycle count or volume limit has been reached. Always logged, regardless of `log_to_logbook`.
 - **Cycle abort** — the running cycle was cancelled mid-execution. Always logged.

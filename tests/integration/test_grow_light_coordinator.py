@@ -642,7 +642,7 @@ async def test_regulation_stops_when_automation_is_disabled(
 ) -> None:
     """A safety veto prevents the first light command."""
     main = _make_coordinator(_make_env())
-    main.irrigation_safety.automation_enabled.return_value = False
+    main.irrigation_safety.commands_allowed.return_value = False
     coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main)
 
     await coord._async_regulate()
@@ -656,7 +656,7 @@ async def test_regulation_rechecks_safety_between_lights(
     """A safety veto raised mid-pass leaves later lights untouched."""
     env = _make_env(growlight_entities=["switch.first", "switch.second"])
     main = _make_coordinator(env)
-    main.irrigation_safety.automation_enabled.side_effect = [True, True, False]
+    main.irrigation_safety.commands_allowed.side_effect = [True, True, False]
     coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main)
 
     with _at(datetime(2026, 7, 3, 12)):
@@ -676,7 +676,7 @@ async def test_ac_reconcile_honors_safety_before_each_device(
         growlight_entities=[], ac_infinity_devices=[_ac_device(), _ac_device()]
     )
     main = _make_coordinator(env)
-    main.irrigation_safety.automation_enabled.side_effect = safety_results
+    main.irrigation_safety.commands_allowed.side_effect = safety_results
     coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main)
 
     with _patch_push() as push:
@@ -707,7 +707,7 @@ async def test_leak_switch_off_respects_safety_veto(mock_hass: MagicMock) -> Non
     """The guard leaves lights alone when automation is disabled."""
     env = _make_env(growlight_entities=["switch.grow"])
     main = _make_coordinator(env)
-    main.irrigation_safety.automation_enabled.return_value = False
+    main.irrigation_safety.commands_allowed.return_value = False
     coord = GrowLightCoordinator(mock_hass, MagicMock(), "gs1", main)
 
     await coord._switch_off_growlights(env)

@@ -129,6 +129,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         await coordinator.irrigation_safety.async_initialize_controls(
             coordinator.growspaces
         )
+        coordinator.irrigation_safety.add_override_listener(
+            lambda *_: coordinator.async_update_listeners()
+        )
+        await coordinator.irrigation_safety.async_start_overrides()
 
     entry.runtime_data = coordinator
 

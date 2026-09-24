@@ -38,6 +38,9 @@ def context() -> tuple[HomeAssistant, MagicMock, MagicMock, IrrigationSafetyStor
     irrigation._configured_outputs.return_value = ("switch.pump",)
     coordinator.services.growspaces.get_irrigation_coordinator.return_value = irrigation
     store = IrrigationSafetyStore.__new__(IrrigationSafetyStore)
+    store.overrides = {}
+    store._override_timers = {}
+    store._override_listeners = []
     store.faults = {
         "tent": FaultRecord(
             "fault-1",

@@ -13,6 +13,9 @@ from custom_components.growspace_manager.const import ShotSizingMode, SubstrateM
 from custom_components.growspace_manager.domain.irrigation_safety import (
     DEFAULT_STARTUP_GRACE_MINUTES,
 )
+from custom_components.growspace_manager.domain.manual_override import (
+    UnexpectedOnPolicy,
+)
 from custom_components.growspace_manager.domain.sensor_validity import (
     DEFAULT_SENSOR_ALERT_DELAY_MINUTES,
     DEFAULT_SENSOR_STALE_AFTER_MINUTES,
@@ -324,6 +327,18 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 "moisture_zero_is_implausible",
                 default=irrigation_options.get("moisture_zero_is_implausible", False),
             ): selector.BooleanSelector(),
+            vol.Optional(
+                "unexpected_on_policy",
+                default=irrigation_options.get(
+                    "unexpected_on_policy", UnexpectedOnPolicy.ALERT.value
+                ),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[policy.value for policy in UnexpectedOnPolicy],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    translation_key="unexpected_on_policy",
+                )
+            ),
             vol.Optional(
                 "log_to_logbook",
                 default=irrigation_options.get("log_to_logbook", True),

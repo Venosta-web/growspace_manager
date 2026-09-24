@@ -27,6 +27,7 @@ from .domain.fan_control import (
     evaluate_temp_override,
     resolve_stage_vpd_target,
 )
+from .domain.manual_override import Subsystem
 from .reliability_store import climate_command_failure
 
 if TYPE_CHECKING:
@@ -119,8 +120,8 @@ class CirculationFanCoordinator:
 
     async def _async_regulate(self) -> None:
         """Read sensors and regulate only while this growspace permits commands."""
-        if not self.main_coordinator.irrigation_safety.automation_enabled(
-            self.growspace_id
+        if not self.main_coordinator.irrigation_safety.commands_allowed(
+            self.growspace_id, Subsystem.CIRCULATION
         ):
             return
         if self._env_config is None:
@@ -210,8 +211,8 @@ class CirculationFanCoordinator:
             switch_off_threshold=cfg.min_speed,
         )
         for driver in drivers:
-            if not self.main_coordinator.irrigation_safety.automation_enabled(
-                self.growspace_id
+            if not self.main_coordinator.irrigation_safety.commands_allowed(
+                self.growspace_id, Subsystem.CIRCULATION
             ):
                 return
             if not await driver.set_speed(speed):

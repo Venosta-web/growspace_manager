@@ -11,11 +11,12 @@ import time as monotonic_time
 from typing import TYPE_CHECKING, Any, override
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_STATE_CHANGED, STATE_OFF
+from homeassistant.const import EVENT_STATE_CHANGED, STATE_OFF, STATE_ON
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import (
     async_call_later,
+    async_track_state_change_event,
     async_track_time_change,
     async_track_time_interval,
 )
@@ -47,6 +48,16 @@ from .domain.irrigation_schedule import (
     remove_items,
     schedulable_events,
     upsert_item,
+)
+from .domain.manual_override import (
+    FAULT_UNEXPECTED_ON,
+    MANUAL_OVERRIDE,
+    OVERRIDE_DETECTED,
+    Subsystem,
+    UnexpectedOnPolicy,
+    UnexpectedOnResponse,
+    detected_override_reason,
+    respond_to_on,
 )
 from .domain.pump_cycle import (
     CycleVerdict,
@@ -162,6 +173,17 @@ class BaseIrrigationCoordinator:
         # Tank watches of our own, only when there is no TankLevelMonitor to
         # share (legacy isolated fixtures).
         self._own_tank_watches: TankWatchBook | None = None
+        # Outputs a cycle of ours has commanded ON and not yet read back OFF —
+        # the in-flight record an ON is checked against (#793).
+        self._commanded_outputs: set[str] = set()
+        # Outputs a person is running: an Unexpected On under the alert
+        # policy, with when it was seen. Automatic irrigation holds on it.
+        self._detected_overrides: dict[str, str] = {}
+        # Outputs being switched off under enforce_off right now.
+        self._enforcing_off: set[str] = set()
+        self._watched_outputs: tuple[str, ...] = ()
+        self._cancel_pump_watch: Callable[[], None] | None = None
+        self._cancel_override_listener: Callable[[], None] | None = None
 
     @property
     def last_cycle_timestamp(self) -> str | None:
@@ -328,7 +350,250 @@ class BaseIrrigationCoordinator:
             inhibits=inhibits,
             fault=fault,
             emergency_stop=emergency_stop.reason if emergency_stop else None,
+            holds=self._override_reasons(),
+            manual_overrides=tuple(store.active_overrides(self._growspace_id))
+            if store
+            else (),
         )
+
+    def _override_reasons(self) -> tuple[SafetyReason, ...]:
+        """Return the holds a person has on the pumps, the declared one first."""
+        store = self._safety_store
+        reasons: list[SafetyReason] = []
+        if store is not None and (
+            override := store.override_for(self._growspace_id, Subsystem.IRRIGATION)
+        ):
+            reasons.append(override.safety_reason())
+        if self._detected_overrides:
+            reasons.append(detected_override_reason(self._detected_overrides))
+        return tuple(reasons)
+
+    def _person_hold(self) -> str | None:
+        """Return why a person holds the pumps, if one does (#793)."""
+        reasons = self._override_reasons()
+        return reasons[0].code if reasons else None
+
+    def _in_flight(self, output: str) -> bool:
+        """Whether an ON of ``output`` is ours: commanded, or being stopped."""
+        return (
+            output in self._commanded_outputs
+            or output in self._off_retries
+            or output in self._enforcing_off
+        )
+
+    def _unexpected_on_policy(self) -> UnexpectedOnPolicy:
+        """Return the configured policy; an unreadable one alerts, never actuates."""
+        try:
+            return UnexpectedOnPolicy(
+                self.growspace.irrigation_config.unexpected_on_policy
+            )
+        except ValueError:
+            return UnexpectedOnPolicy.ALERT
+
+    @callback
+    def _ensure_pump_watch(self) -> None:
+        """Follow every managed pump's state, resubscribing when they change."""
+        outputs = self._configured_outputs()
+        if outputs == self._watched_outputs and self._cancel_pump_watch is not None:
+            return
+        self._cancel_pump_watch_listener()
+        self._watched_outputs = outputs
+        for output in list(self._detected_overrides):
+            if output not in outputs:
+                del self._detected_overrides[output]
+        if outputs:
+            self._cancel_pump_watch = async_track_state_change_event(
+                self.hass, list(outputs), self._on_pump_state
+            )
+
+    def _cancel_pump_watch_listener(self) -> None:
+        if self._cancel_pump_watch is not None:
+            self._cancel_pump_watch()
+            self._cancel_pump_watch = None
+
+    @callback
+    def _on_pump_state(self, event: Event[EventStateChangedData]) -> None:
+        """Hand a pump's ON edge, or the OFF ending a person's run, to the shell."""
+        output = event.data["entity_id"]
+        new_state, old_state = event.data["new_state"], event.data["old_state"]
+        if new_state is None:
+            return
+        if new_state.state == STATE_ON and (
+            old_state is None or old_state.state != STATE_ON
+        ):
+            self.hass.async_create_task(
+                self._async_observe_on(output),
+                name=f"growspace_pump_on_{self._growspace_id}_{output}",
+            )
+        elif new_state.state == STATE_OFF and output in self._detected_overrides:
+            self.hass.async_create_task(
+                self._async_person_finished(output),
+                name=f"growspace_pump_off_{self._growspace_id}_{output}",
+            )
+
+    def _unexpected_on_notification_id(self, output: str) -> str:
+        return f"growspace_pump_unexpected_on_{self._growspace_id}_{output}"
+
+    async def _async_observe_on(self, output: str) -> None:
+        """Answer a managed pump reading ON: ours, a person's, or to be stopped.
+
+        Under the default ``alert`` policy it is a person's: it is announced,
+        and automatic irrigation holds until it reads OFF. Under
+        ``enforce_off`` it is switched off, read back and latched as a Fault.
+        """
+        if output in self._detected_overrides or output in self._enforcing_off:
+            return
+        store = self._safety_store
+        policy = self._unexpected_on_policy()
+        response = respond_to_on(
+            in_flight=self._in_flight(output),
+            overridden=store is not None
+            and store.override_for(self._growspace_id, Subsystem.IRRIGATION)
+            is not None,
+            commands_allowed=store is None
+            or store.automation_enabled(self._growspace_id),
+            policy=policy,
+        )
+        if response is None:
+            return
+        self._record(ReliabilityCounter.UNEXPECTED_ON)
+        name = self.growspace.name
+        _LOGGER.warning(
+            "%s switched on outside Growspace Manager in %s (%s)",
+            output,
+            self._growspace_id,
+            response,
+        )
+        if response is UnexpectedOnResponse.ALERT:
+            self._detected_overrides[output] = utcnow().isoformat()
+            await self._async_record_unexpected_on(output, policy, response)
+            message = (
+                f"{output} was switched on outside Growspace Manager. It is "
+                "treated as someone watering by hand: automatic irrigation in "
+                f"'{name}' waits until it reads off, and Growspace Manager "
+                "will not switch it off."
+            )
+            title = f"Pump switched on by hand — {name}"
+            self._fire_logbook_event(message, CATEGORY_IRRIGATION_ERROR)
+            await self._async_record_controller_state()
+        else:
+            self._enforcing_off.add(output)
+            try:
+                off_confirmed = await self._async_command_off(output)
+                await self._async_record_unexpected_on(
+                    output, policy, response, off_confirmed=off_confirmed
+                )
+                detail = f"{output} was switched on outside Growspace Manager"
+                if off_confirmed:
+                    await self._latch_fault(
+                        f"{FAULT_UNEXPECTED_ON}:{output}",
+                        f"{detail}; switched off under enforce_off",
+                        output,
+                    )
+                else:
+                    await self._async_off_unconfirmed(
+                        output,
+                        f"fault_off_unconfirmed:{output}",
+                        f"{detail} and did not read back OFF after turn_off",
+                    )
+            finally:
+                self._enforcing_off.discard(output)
+            message = (
+                f"{output} was switched on outside Growspace Manager and was "
+                + ("switched off" if off_confirmed else "told to switch off")
+                + f". Irrigation in '{name}' is stopped until an administrator "
+                "acknowledges the fault."
+            )
+            title = f"Pump switched off — {name}"
+        await self.hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "title": title,
+                "message": message,
+                "notification_id": self._unexpected_on_notification_id(output),
+            },
+            blocking=False,
+        )
+        await self._async_notify(title, message, tier=NotificationTier.UNEXPECTED_ON)
+
+    async def _async_record_unexpected_on(
+        self,
+        output: str,
+        policy: UnexpectedOnPolicy,
+        response: UnexpectedOnResponse,
+        **fields: Any,
+    ) -> None:
+        """Write an Unexpected On to the Safety Ledger, never blocking its effect."""
+        store = self._safety_store
+        if store is None or store.unreadable:
+            return
+        try:
+            await store.async_record_event(
+                self._growspace_id,
+                "unexpected_on",
+                output=output,
+                policy=policy.value,
+                response=response.value,
+                **fields,
+            )
+        except Exception:
+            # The store now reads unreadable, which holds every cycle.
+            _LOGGER.exception("Could not record an unexpected ON of %s", output)
+
+    async def _async_person_finished(self, output: str) -> None:
+        """Release the hold once the pump a person was running reads OFF."""
+        if self._detected_overrides.pop(output, None) is None:
+            return
+        store = self._safety_store
+        if store is not None and not store.unreadable:
+            try:
+                await store.async_record_event(
+                    self._growspace_id, "override_detected_cleared", output=output
+                )
+            except Exception:
+                _LOGGER.exception("Could not record %s reading OFF again", output)
+        self._fire_logbook_event(
+            f"{output} reads off again — automatic irrigation resumes",
+            category="irrigation",
+        )
+        await self.hass.services.async_call(
+            "persistent_notification",
+            "dismiss",
+            {"notification_id": self._unexpected_on_notification_id(output)},
+            blocking=False,
+        )
+        await self._async_record_controller_state()
+
+    @callback
+    def _on_override_change(self, growspace_id: str, subsystem: Subsystem) -> None:
+        """Hand irrigation over when a Manual Override of it starts, and report."""
+        if growspace_id != self._growspace_id or subsystem is not Subsystem.IRRIGATION:
+            return
+        self.hass.async_create_task(
+            self._async_override_changed(),
+            name=f"growspace_override_{self._growspace_id}",
+        )
+
+    async def _async_override_changed(self) -> None:
+        """Close our cycle as an override starts; look at the pumps as it ends."""
+        store = self._safety_store
+        if store is not None and store.override_for(
+            self._growspace_id, Subsystem.IRRIGATION
+        ):
+            # A cycle of ours in flight is closed — its own OFF is the last
+            # command Growspace Manager sends the pump until the override ends.
+            for task in self._running_tasks.values():
+                if task and not task.done():
+                    self._override_cancelled_tasks.add(task)
+                    task.cancel()
+        else:
+            # A pump the person left running is now an Unexpected On.
+            for output in self._configured_outputs():
+                state = self.hass.states.get(output)
+                if state is not None and state.state == STATE_ON:
+                    await self._async_observe_on(output)
+        await self._async_record_controller_state()
 
     async def _latch_fault(self, code: str, detail: str, output: str) -> bool:
         """Persist a hardware disagreement and surface a Home Assistant repair.
@@ -544,12 +809,18 @@ class BaseIrrigationCoordinator:
             self._cancel_sensor_probe = async_track_time_interval(
                 self.hass, self._async_sensor_tick, timedelta(minutes=1)
             )
-        # A pump reading ON before any cycle of this start. Detecting it while
-        # running is #793's; until then this is the only place it is seen.
+        store = self._safety_store
+        if store is not None and self._cancel_override_listener is None:
+            self._cancel_override_listener = store.add_override_listener(
+                self._on_override_change
+            )
+        # A pump reading ON before any cycle of this start is an Unexpected On
+        # like any other; from here on the watch sees each ON as it happens.
+        self._ensure_pump_watch()
         for output in self._configured_outputs():
             state = self.hass.states.get(output)
-            if state is not None and state.state == "on":
-                self._record(ReliabilityCounter.UNEXPECTED_ON)
+            if state is not None and state.state == STATE_ON:
+                await self._async_observe_on(output)
         await self._async_record_controller_state()
 
     @callback
@@ -582,6 +853,7 @@ class BaseIrrigationCoordinator:
 
     async def _async_sensor_tick(self, *_: Any) -> None:
         """Probe the control sensors, then follow the moisture sensor's episode."""
+        self._ensure_pump_watch()
         self._async_probe_control_sensors()
         await self._async_watch_moisture_sensor()
 
@@ -667,13 +939,18 @@ class BaseIrrigationCoordinator:
             blocking=False,
         )
 
-    async def _async_notify(self, title: str, message: str) -> None:
-        """Push to the growspace's notification target on the sensor alert tier."""
+    async def _async_notify(
+        self,
+        title: str,
+        message: str,
+        tier: NotificationTier = NotificationTier.SENSOR_INVALID,
+    ) -> None:
+        """Push to the growspace's notification target, on the sensor alert tier."""
         await self._main_coordinator.services.notifications.manager.async_send_notification(
             self._growspace_id,
             title,
             message,
-            tier=NotificationTier.SENSOR_INVALID,
+            tier=tier,
         )
 
     async def _async_poll_startup_inhibit(self, *_: Any) -> None:
@@ -774,6 +1051,11 @@ class BaseIrrigationCoordinator:
             # Teardown, not a schedule reload: the poll belongs to this
             # coordinator's start and must not outlive it.
             self._cancel_startup_poll_listener()
+            self._cancel_pump_watch_listener()
+            self._watched_outputs = ()
+            if self._cancel_override_listener is not None:
+                self._cancel_override_listener()
+                self._cancel_override_listener = None
             for cancel_retry in self._off_retries.values():
                 cancel_retry()
             self._off_retries.clear()
@@ -1288,7 +1570,8 @@ class BaseIrrigationCoordinator:
             store.automation_enabled(self._growspace_id)
             and (manual or store.irrigation_armed(self._growspace_id))
         ):
-            return None
+            # A person holding the pumps holds manual runs too (#793).
+            return self._person_hold()
         if store.emergency_stop_for(self._growspace_id):
             return SkipReason.EMERGENCY_STOP.value
         if not store.automation_enabled(self._growspace_id):
@@ -1307,8 +1590,17 @@ class BaseIrrigationCoordinator:
         store = self._safety_store
         manual = bool(event_data.get("manual", False))
         hold = self._operator_hold(manual=manual)
+        if hold is None and not self._in_flight(pump_entity):
+            pump_state = self.hass.states.get(pump_entity)
+            if pump_state is not None and pump_state.state == STATE_ON:
+                # Already running, and not by us: confirming ON would book a
+                # person's water as ours and then switch it off under them.
+                await self._async_observe_on(pump_entity)
+                hold = self._operator_hold(manual=manual)
         if hold is not None:
             self._record(skipped(hold))
+            if hold in (MANUAL_OVERRIDE, OVERRIDE_DETECTED):
+                await self._async_record_controller_state()
             return
         # Ask the Pump Cycle Gate whether this cycle may fire (ADR-0021). The
         # gate is a pure decision; this method owns the resulting effects.
@@ -1369,6 +1661,9 @@ class BaseIrrigationCoordinator:
         # A cycle that could not be opened: (reason code, detail). Booked as
         # not delivered once the pump has been read back OFF (#785).
         open_failure: tuple[str, str] | None = None
+        # Whether turn_on was sent. A cycle stopped before it sends no OFF
+        # either: Growspace Manager stops only what it started (#793).
+        commanded = False
         cycle_task = asyncio.current_task()
         # The ON wait is part of a healthy cycle, so the deadline allows for it.
         deadline = (
@@ -1419,6 +1714,8 @@ class BaseIrrigationCoordinator:
             if self._operator_hold(manual=manual) is not None:
                 abort_cause = AbortCause.OVERRIDE
                 return
+            commanded = True
+            self._commanded_outputs.add(pump_entity)
             try:
                 await self.hass.services.async_call(
                     "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
@@ -1555,7 +1852,9 @@ class BaseIrrigationCoordinator:
                 pump_entity,
             )
             closing = True
-            off_confirmed = await self._async_command_off(pump_entity)
+            off_confirmed = (
+                await self._async_command_off(pump_entity) if commanded else True
+            )
             if start_dt is not None:
                 if cycle_finished:
                     self._record(
@@ -1581,6 +1880,8 @@ class BaseIrrigationCoordinator:
                     )
             finally:
                 cancel_watchdog()
+                # Read back OFF, or handed to the OFF retries: no longer ours.
+                self._commanded_outputs.discard(pump_entity)
                 self._reliability.clear_active(self._growspace_id, pump_entity)
                 self._active_events.pop(event_type, None)
                 self._main_coordinator.async_update_listeners()
@@ -1694,6 +1995,11 @@ class BaseIrrigationCoordinator:
         if snapshot.requires_ack:
             raise ServiceValidationError(
                 f"Irrigation is {snapshot.state.value} for growspace '{self._growspace_id}'"
+            )
+        if held := self._override_reasons():
+            raise ServiceValidationError(
+                f"Irrigation in growspace '{self._growspace_id}' is held: "
+                f"{held[0].detail}"
             )
         pump_entity = options.irrigation_pump_entity
         if not pump_entity:

@@ -36,6 +36,8 @@ All services provided by the Growspace Manager integration can be invoked from H
    - [growspace_manager.remove_environment](#growspace_managerremove_environment)
    - [growspace_manager.set_dehumidifier_control](#growspace_managerset_dehumidifier_control)
 5. [Smart Irrigation & Steering](#smart-irrigation--steering)
+   - [growspace_manager.set_override](#growspace_managerset_override)
+   - [growspace_manager.clear_override](#growspace_managerclear_override)
    - [growspace_manager.set_irrigation_settings](#growspace_managerset_irrigation_settings)
    - [growspace_manager.set_irrigation_strategy](#growspace_managerset_irrigation_strategy)
    - [growspace_manager.add_irrigation_time](#growspace_manageradd_irrigation_time)
@@ -526,10 +528,34 @@ Each growspace with an irrigation or drain output exposes an enum sensor named
 `ready`, `running`, `inhibited` (a transient gate such as a low tank, daily cap,
 or dark period), `fault` (a latched hardware disagreement), or
 `emergency_stop` (a durable state for the operator stop control in #791). Its attributes are `reasons`, a list
-of `{code, detail, since}` objects, `fault_id`, `requires_ack`, and `since`.
-Reason codes are stable machine identifiers; current hardware codes are
-`fault_off_unconfirmed:<entity>`, `fault_watchdog_off_unconfirmed:<entity>`,
-`fault_on_unconfirmed:<entity>` and `fault_on_command_failed:<entity>`.
+of `{code, detail, since}` objects, `fault_id`, `requires_ack`, `since`, and
+`overrides`, every [manual override](#growspace_managerset_override) the
+growspace has, whatever it holds, as `{subsystem, started_at, expires_at,
+user_id, reason}`. Reason codes are stable machine identifiers; current
+hardware codes are `fault_off_unconfirmed:<entity>`,
+`fault_watchdog_off_unconfirmed:<entity>`, `fault_on_unconfirmed:<entity>`,
+`fault_on_command_failed:<entity>` and `fault_unexpected_on:<entity>`.
+
+Growspace Manager watches every pump it manages. A pump that reads `on` while
+no cycle of its own is running — someone at the relay, another automation, or a
+relay glitching — is an **unexpected ON**. What follows depends on
+`unexpected_on_policy`:
+
+- `alert` (the default) treats it as a person watering by hand. A notification
+  and a persistent notification go out, the controller reads `inhibited` with
+  reason `override_detected`, and no cycle runs — scheduled, crop-steering or
+  manual — until the pump reads `off` again. Growspace Manager does not switch
+  it off, and it does not book that water as its own.
+- `enforce_off` switches the pump off, reads it back and latches
+  `fault_unexpected_on:<entity>` (or `fault_off_unconfirmed:<entity>`, with the
+  OFF retries, if it will not read off), which an administrator must
+  acknowledge. With growspace automation off or an emergency stop latched it
+  only alerts, because then Growspace Manager sends no commands at all.
+
+A pump that is already on when a start begins is treated the same way. Every
+unexpected ON is written to the safety ledger, with the policy and what was
+done. While a [manual override](#growspace_managerset_override) holds
+irrigation, a pump reading `on` is expected and nothing is raised.
 
 Every pump is read back after it is told OFF: first after one second, then
 every half second, for up to six seconds. A pump that has not reported `off` by
@@ -591,6 +617,39 @@ The last 500 safety events are kept in the integration's safety store and includ
 in diagnostics, independent of Recorder retention. A repair appears in Settings
 until an administrator acknowledges the fault.
 
+### `growspace_manager.set_override`
+
+Hand one subsystem of a growspace to a person for a while. Until the override
+expires or is cleared, Growspace Manager sends that subsystem no commands at
+all: no cycle, no regulation tick, no fail-safe, no OFF. A cycle already
+running when irrigation is taken over is closed first — its own OFF is the last
+command the pump gets. The override is written to the safety store before the
+call returns, survives a restart, and is listed in the controller sensor's
+`overrides`; an irrigation override also reads `inhibited` with reason
+`manual_override`. The caller's HA user ID and the reason go into the safety
+ledger. Any user may set one: it only ever takes commands away. The emergency
+stop still commands everything to its safe state.
+
+When an irrigation override ends, a pump the person left running is an
+unexpected ON like any other.
+
+| Parameter      | Type       | Required | Description                                                                                                    |
+| :------------- | :--------- | :------- | :------------------------------------------------------------------------------------------------------------- |
+| `growspace_id` | `string`   | Yes      | Growspace whose subsystem a person is taking over.                                                             |
+| `subsystem`    | `string`   | Yes      | `irrigation` (irrigation and drain pumps), `exhaust`, `circulation`, `humidifier`, `dehumidifier` or `lights`. |
+| `duration`     | `duration` | Yes      | How long it lasts, more than zero and at most 24 hours. Setting it again replaces the override.                |
+| `reason`       | `string`   | No       | Why, up to 200 characters; shown in the controller state and the ledger.                                       |
+
+### `growspace_manager.clear_override`
+
+End a manual override early. Growspace Manager resumes control of the subsystem
+on its next decision. Refused when no override of that subsystem is set.
+
+| Parameter      | Type     | Required | Description                               |
+| :------------- | :------- | :------- | :---------------------------------------- |
+| `growspace_id` | `string` | Yes      | Growspace whose override to clear.        |
+| `subsystem`    | `string` | Yes      | The subsystem to hand back to automation. |
+
 ### `growspace_manager.acknowledge_fault`
 
 Re-arm a latched fault after every affected output has been verified OFF. The
@@ -607,18 +666,19 @@ start a cycle.
 
 Sets the basic plumbing hardware profiles and default cycle times for simple timer waterings.
 
-| Parameter                      | Type      | Required | Default | Description                                                                                                                 |
-| :----------------------------- | :-------- | :------- | :------ | :-------------------------------------------------------------------------------------------------------------------------- |
-| `growspace_id`                 | `string`  | Yes      | -       | Target growspace zone ID.                                                                                                   |
-| `irrigation_pump_entity`       | `string`  | No       | -       | Feed pump switch entity ID.                                                                                                 |
-| `drain_pump_entity`            | `string`  | No       | -       | Drainage pump switch entity ID.                                                                                             |
-| `irrigation_duration`          | `integer` | No       | -       | Standard duration to run feed pump (seconds).                                                                               |
-| `drain_duration`               | `integer` | No       | -       | Standard duration to run drain pump (seconds).                                                                              |
-| `startup_grace_minutes`        | `integer` | No       | `5`     | Minimum startup hold on automatic cycles (0–120 minutes).                                                                   |
-| `tank_unknown_grace_minutes`   | `integer` | No       | `10`    | How long a tank's level may be unknown before irrigation pauses on it and the offline notification is sent (0–120 minutes). |
-| `sensor_stale_after_minutes`   | `integer` | No       | `30`    | The longest the moisture and pore EC sensors may go without reporting before they are stale (0–1440 minutes; `0` is off).   |
-| `sensor_alert_delay_minutes`   | `integer` | No       | `15`    | How long the moisture sensor may be invalid before its notification is sent (0–1440 minutes).                               |
-| `moisture_zero_is_implausible` | `boolean` | No       | `false` | Treat a moisture reading of exactly 0 as implausible.                                                                       |
+| Parameter                      | Type      | Required | Default | Description                                                                                                                                              |
+| :----------------------------- | :-------- | :------- | :------ | :------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `growspace_id`                 | `string`  | Yes      | -       | Target growspace zone ID.                                                                                                                                |
+| `irrigation_pump_entity`       | `string`  | No       | -       | Feed pump switch entity ID.                                                                                                                              |
+| `drain_pump_entity`            | `string`  | No       | -       | Drainage pump switch entity ID.                                                                                                                          |
+| `irrigation_duration`          | `integer` | No       | -       | Standard duration to run feed pump (seconds).                                                                                                            |
+| `drain_duration`               | `integer` | No       | -       | Standard duration to run drain pump (seconds).                                                                                                           |
+| `startup_grace_minutes`        | `integer` | No       | `5`     | Minimum startup hold on automatic cycles (0–120 minutes).                                                                                                |
+| `tank_unknown_grace_minutes`   | `integer` | No       | `10`    | How long a tank's level may be unknown before irrigation pauses on it and the offline notification is sent (0–120 minutes).                              |
+| `sensor_stale_after_minutes`   | `integer` | No       | `30`    | The longest the moisture and pore EC sensors may go without reporting before they are stale (0–1440 minutes; `0` is off).                                |
+| `sensor_alert_delay_minutes`   | `integer` | No       | `15`    | How long the moisture sensor may be invalid before its notification is sent (0–1440 minutes).                                                            |
+| `moisture_zero_is_implausible` | `boolean` | No       | `false` | Treat a moisture reading of exactly 0 as implausible.                                                                                                    |
+| `unexpected_on_policy`         | `string`  | No       | `alert` | What a pump switched on outside Growspace Manager leads to: `alert` or `enforce_off`. See [Irrigation controller safety](#irrigation-controller-safety). |
 
 ### `growspace_manager.set_irrigation_strategy`
 

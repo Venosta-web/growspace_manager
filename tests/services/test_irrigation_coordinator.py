@@ -1,8 +1,10 @@
 """Tests for the IrrigationCoordinator."""
 
 import asyncio
+from collections.abc import Callable
 import contextlib
 from datetime import datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -783,6 +785,20 @@ async def test_run_pump_cycle_cleanup(
     assert "irrigation" not in coordinator._running_tasks
 
 
+def _pump_off_then(*moisture: Any) -> Callable[[str], Any]:
+    """Read the pump as OFF, and the moisture sensor as ``moisture`` in turn.
+
+    The cycle reads the pump before it starts: one already ON is a person's and
+    holds the cycle (#793).
+    """
+    readings = iter(moisture)
+
+    def get(entity_id: str) -> Any:
+        return Mock(state="off") if entity_id.startswith("switch.") else next(readings)
+
+    return get
+
+
 async def test_run_pump_cycle_with_moisture_logging(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
@@ -811,7 +827,9 @@ async def test_run_pump_cycle_with_moisture_logging(
             # We can use a simpler approach or side_effect on the mock instance directly.
             pass
 
-    mock_hass.states.get.side_effect = [mock_before_state, mock_after_state]
+    mock_hass.states.get.side_effect = _pump_off_then(
+        mock_before_state, mock_after_state
+    )
 
     with (
         patch("asyncio.sleep", new_callable=AsyncMock),
@@ -852,7 +870,9 @@ async def test_run_pump_cycle_moisture_after_only(
 
     mock_after_state = _moisture_state("55.8")
 
-    mock_hass.states.get.side_effect = [mock_before_state, mock_after_state]
+    mock_hass.states.get.side_effect = _pump_off_then(
+        mock_before_state, mock_after_state
+    )
 
     with (
         patch("asyncio.sleep", new_callable=AsyncMock),
@@ -894,7 +914,9 @@ async def test_run_pump_cycle_defers_completion_report_until_sensor_settles(
 
     mock_before_state = _moisture_state("40.0")
     mock_after_state = _moisture_state("60.0")
-    mock_hass.states.get.side_effect = [mock_before_state, mock_after_state]
+    mock_hass.states.get.side_effect = _pump_off_then(
+        mock_before_state, mock_after_state
+    )
 
     real_sleep = asyncio.sleep
     settling_started = asyncio.Event()

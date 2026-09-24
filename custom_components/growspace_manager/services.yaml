@@ -23,6 +23,69 @@ reset_safety:
       selector:
         text:
 
+set_override:
+  name: Set manual override
+  description: >-
+    Hand one subsystem of a growspace to a person for a while. Growspace Manager
+    sends that subsystem no commands until the override expires or is cleared;
+    a running irrigation cycle is stopped first. Survives a restart.
+  fields:
+    growspace_id:
+      name: Growspace ID
+      description: Growspace whose subsystem a person is taking over.
+      required: true
+      selector:
+        text:
+    subsystem:
+      name: Subsystem
+      description: The outputs to leave alone.
+      required: true
+      selector:
+        select:
+          options:
+            - irrigation
+            - exhaust
+            - circulation
+            - humidifier
+            - dehumidifier
+            - lights
+    duration:
+      name: Duration
+      description: How long the override lasts, at most 24 hours. Setting it again replaces it.
+      required: true
+      selector:
+        duration:
+    reason:
+      name: Reason
+      description: Why, for the safety ledger and the controller state.
+      required: false
+      selector:
+        text:
+
+clear_override:
+  name: Clear manual override
+  description: End a manual override early; Growspace Manager resumes control of the subsystem.
+  fields:
+    growspace_id:
+      name: Growspace ID
+      description: Growspace whose override to clear.
+      required: true
+      selector:
+        text:
+    subsystem:
+      name: Subsystem
+      description: The subsystem to hand back.
+      required: true
+      selector:
+        select:
+          options:
+            - irrigation
+            - exhaust
+            - circulation
+            - humidifier
+            - dehumidifier
+            - lights
+
 acknowledge_fault:
   name: Acknowledge irrigation fault
   description: Re-arm a growspace only after every affected irrigation output reads OFF. Requires an administrator.
@@ -1598,6 +1661,17 @@ set_irrigation_settings:
       required: false
       selector:
         boolean:
+    unexpected_on_policy:
+      description: >-
+        What a pump switched on outside Growspace Manager leads to. "alert"
+        notifies and holds automatic irrigation until it reads off; "enforce_off"
+        switches it off, reads it back and latches a fault.
+      required: false
+      selector:
+        select:
+          options:
+            - alert
+            - enforce_off
     log_to_logbook:
       description: Record irrigation activity in the Home Assistant logbook.
       required: false
