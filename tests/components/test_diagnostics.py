@@ -24,6 +24,9 @@ from custom_components.growspace_manager.irrigation_coordinator import (
     BaseIrrigationCoordinator,
     IrrigationCoordinator,
 )
+from custom_components.growspace_manager.services.growspace_facade import (
+    GrowspaceFacade,
+)
 from homeassistant.core import HomeAssistant
 
 
@@ -191,3 +194,57 @@ def test_fan_diagnostics_reports_targets_and_commands() -> None:
         }
         assert result["last_command"] == 55
         assert result["last_command_at"] == "2024-01-01T12:00:00"
+
+
+def test_fan_diagnostics_handles_missing_and_stage_targets() -> None:
+    """A removed growspace has no snapshot; stage VPD overrides are resolved."""
+    main = SimpleNamespace(growspaces={})
+    exhaust = object.__new__(ExhaustFanCoordinator)
+    exhaust.growspace_id = "gs1"
+    exhaust.main_coordinator = main
+    assert exhaust.diagnostics_snapshot() == {}
+
+    circulation = object.__new__(CirculationFanCoordinator)
+    circulation.growspace_id = "gs1"
+    circulation.main_coordinator = main
+    assert circulation.diagnostics_snapshot() == {}
+
+    cfg = SimpleNamespace(
+        enabled=True,
+        stage_vpd_enabled=True,
+        vpd_target=1.0,
+        regulation_mode=SimpleNamespace(value="vpd"),
+        temperature_target=25.0,
+        humidity_target=60.0,
+    )
+    env = SimpleNamespace(
+        circulation_fan_config=cfg,
+        circulation_fan_entities=[],
+        circulation_fan_ac_infinity_devices=[],
+        light_sensors=[],
+    )
+    main.growspaces["gs1"] = SimpleNamespace(environment_config=env)
+    circulation.hass = MagicMock()
+    circulation._day_night = SimpleNamespace(determine=lambda _hass, _sensors: True)
+    circulation._get_stage_vpd_target = MagicMock(return_value=1.5)
+    circulation._last_command = None
+    circulation._last_command_at = None
+    assert circulation.diagnostics_snapshot()["thresholds"]["vpd"] == 1.5
+    circulation._get_stage_vpd_target.assert_called_once_with(cfg, True)
+
+
+def test_climate_facade_reaches_each_controller() -> None:
+    """Diagnostics getters use the subsystem manager's typed lookup."""
+    facade = object.__new__(GrowspaceFacade)
+    manager = SimpleNamespace(
+        get_humidifier_controller=MagicMock(return_value="humidifier"),
+        get_circulation_fan_controller=MagicMock(return_value="circulation"),
+        get_exhaust_fan_controller=MagicMock(return_value="exhaust"),
+    )
+    facade._coordinator = SimpleNamespace(_subsystem_manager=manager)
+    assert facade.get_humidifier_coordinator("gs1") == "humidifier"
+    assert facade.get_circulation_fan_coordinator("gs1") == "circulation"
+    assert facade.get_exhaust_fan_coordinator("gs1") == "exhaust"
+    manager.get_humidifier_controller.assert_called_once_with("gs1")
+    manager.get_circulation_fan_controller.assert_called_once_with("gs1")
+    manager.get_exhaust_fan_controller.assert_called_once_with("gs1")
