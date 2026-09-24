@@ -53,8 +53,8 @@ syrupy>=5.0.0
 
 # Local dev and CI lint tooling. The lint workflow reads these pins directly;
 # its check_lint_tool_pins step verifies the pre-commit Ruff/yamllint revisions.
-ruff==0.15.12
-mypy==1.20.2
+ruff==0.16.8
+mypy==2.3.1
 pre-commit==4.6.2
-yamllint==1.37.1
+yamllint==1.38.0
 codespell==2.4.3
