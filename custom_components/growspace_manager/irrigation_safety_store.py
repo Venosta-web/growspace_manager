@@ -360,6 +360,37 @@ class IrrigationSafetyStore:
             self.ledger = previous_ledger
             raise
 
+    async def async_record_not_delivered(
+        self,
+        growspace_id: str,
+        output: str,
+        reason_code: str,
+        detail: str,
+        *,
+        consecutive: int,
+        off_confirmed: bool,
+    ) -> None:
+        """Record a pump cycle that was failed closed instead of delivered."""
+        if self.unreadable:
+            raise RuntimeError("Irrigation safety record is unreadable")
+        self.ledger.append(
+            {
+                "at": utcnow().isoformat(),
+                "growspace_id": growspace_id,
+                "action": "cycle_not_delivered",
+                "output": output,
+                "reason_code": reason_code,
+                "detail": detail,
+                "consecutive": consecutive,
+                "off_confirmed": off_confirmed,
+            }
+        )
+        try:
+            await self._save()
+        except Exception:
+            self.unreadable = True
+            raise
+
     async def async_record_transition(
         self, growspace_id: str, state: str, reason_code: str | None = None
     ) -> bool:

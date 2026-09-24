@@ -496,8 +496,23 @@ Each growspace with an irrigation or drain output exposes an enum sensor named
 or dark period), `fault` (a latched hardware disagreement), or
 `emergency_stop` (a durable state for the operator stop control in #791). Its attributes are `reasons`, a list
 of `{code, detail, since}` objects, `fault_id`, `requires_ack`, and `since`.
-Reason codes are stable machine identifiers; current hardware codes include
-`fault_on_unconfirmed:<entity>` and `fault_off_unconfirmed:<entity>`.
+Reason codes are stable machine identifiers; current hardware codes are
+`fault_off_unconfirmed:<entity>`, `fault_watchdog_off_unconfirmed:<entity>`,
+`fault_on_unconfirmed:<entity>` and `fault_on_command_failed:<entity>`.
+
+Every pump is read back after it is told OFF: first after one second, then
+every half second, for up to six seconds. A pump that has not reported `off` by
+then latches `fault_off_unconfirmed`. Growspace Manager sends OFF again at once,
+raises a persistent notification, and keeps sending OFF every minute — also
+after a restart — until the pump reads `off`. The fault stays latched until it
+is acknowledged.
+
+A cycle whose `turn_on` is refused, or whose pump does not report `on` within
+ten seconds, is stopped, read back, and recorded in the safety store as not
+delivered: it does not count towards the daily cycle and volume limits, adds no
+water, and does not restart a crop-steering cooldown. Three such cycles in a row
+on the same pump latch `fault_on_command_failed` or `fault_on_unconfirmed`; a
+cycle that confirms in between starts the count again.
 
 After Home Assistant starts or the integration reloads, the controller reads
 `inhibited` with reason `startup_inhibit` until `startup_grace_minutes` (default 5) have passed **and** the soil moisture sensor (while crop steering is on) and

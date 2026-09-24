@@ -21,6 +21,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 
+# This suite shares one `hass.states` mock across every sensor, so it
+# cannot model the pump's own state; its OFF readback is answered for them.
+pytestmark = pytest.mark.usefixtures("pump_reads_back_off")
+
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
 

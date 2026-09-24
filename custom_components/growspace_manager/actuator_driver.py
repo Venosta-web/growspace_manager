@@ -13,6 +13,7 @@ to its device's native control surface.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 import logging
 from typing import Protocol
@@ -62,6 +63,41 @@ async def _safe_service_call(
             data.get(ATTR_ENTITY_ID),
             exc_info=True,
         )
+
+
+async def async_confirm_state(
+    hass: HomeAssistant,
+    entity_id: str,
+    want: str,
+    *,
+    first_read: float = 1.0,
+    poll: float = 0.5,
+    timeout: float = 6.0,
+) -> bool:
+    """Read an actuator back after a command until it reports ``want``.
+
+    The first read waits ``first_read`` seconds, so an optimistic state written
+    the instant the command returned is not taken as the device's answer. Reads
+    then repeat every ``poll`` seconds until ``timeout`` has passed since the
+    command. The schedule is counted, not clocked, so the number of reads never
+    depends on how late the event loop wakes this coroutine.
+
+    The defaults are patient on purpose (#785): a Zigbee plug has been seen to
+    report OFF 1.6 s after the command, and a readback that gives up at the
+    first disagreement latches a false fault on it. A device that never reports
+    ``want`` still answers ``False`` within ``timeout`` seconds.
+    """
+    if first_read > 0:
+        await asyncio.sleep(first_read)
+    waited = first_read
+    while True:
+        state = hass.states.get(entity_id)
+        if state is not None and state.state == want:
+            return True
+        if poll <= 0 or waited + poll > timeout:
+            return False
+        await asyncio.sleep(poll)
+        waited += poll
 
 
 class ActuatorDriver(Protocol):
