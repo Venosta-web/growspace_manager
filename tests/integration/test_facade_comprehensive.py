@@ -128,7 +128,7 @@ async def test_update_growspace_with_name_change(mock_coordinator) -> None:
     mock_dr = MagicMock()
     mock_device = MagicMock()
     mock_device.id = "dev_id"
-    mock_dr.async_get_device.return_value = mock_device
+    mock_dr.async_get_device_by_identifier.return_value = mock_device
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         await facade.growspaces.update_growspace("gs1", name="New Name")
 

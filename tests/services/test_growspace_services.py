@@ -83,7 +83,7 @@ async def test_handle_add_growspace(
     mock_device = MagicMock()
     mock_device.name = "mobile_app_test"
     mock_device.config_entries = {"mobile_app_test"}
-    mock_async_get.return_value.devices = {"device_id": mock_device}
+    mock_async_get.return_value.devices = [mock_device]
 
     await mock_coordinator.services.growspaces.add_growspace_from_call(
         mock_hass, mock_strain_library, mock_call
@@ -138,7 +138,7 @@ async def test_handle_add_growspace_no_mobile_app_notification(
         "plants_per_row": 3,
         "notification_target": "non_existent_mobile_app",
     }
-    mock_async_get.return_value.devices = {}  # No mobile devices registered
+    mock_async_get.return_value.devices = []  # No mobile devices registered
 
     await mock_coordinator.services.growspaces.add_growspace_from_call(
         mock_hass, mock_strain_library, mock_call
@@ -168,7 +168,7 @@ async def test_handle_add_growspace_exception(
     mock_coordinator._growspace_manager.add_growspace.side_effect = Exception(
         "Add failed"
     )
-    mock_async_get.return_value.devices = {}
+    mock_async_get.return_value.devices = []
 
     with pytest.raises(ServiceValidationError, match="Operation failed: Add failed"):
         await mock_coordinator.services.growspaces.add_growspace_from_call(

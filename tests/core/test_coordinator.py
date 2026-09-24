@@ -716,7 +716,7 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
     assert gs.id not in coordinator.notification_state.enabled
 
     # Verify device removed
-    assert dev_reg.async_get_device(identifiers={(DOMAIN, gs.id)}) is None
+    assert not dev_reg.async_get_devices(identifiers={(DOMAIN, gs.id)})
     assert entity_reg.async_get(active_entity.entity_id) is None
     assert entity_reg.async_get(disabled_entity.entity_id) is None
 
@@ -2146,7 +2146,7 @@ async def test_async_remove_growspace_device_removal_error(
     # Mock device registry
     mock_dr = MagicMock()
     # Raise exception when getting device
-    mock_dr.async_get_device.side_effect = Exception("Registry Error")
+    mock_dr.async_get_devices.side_effect = Exception("Registry Error")
 
     with (
         patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr),
