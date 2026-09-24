@@ -384,7 +384,7 @@ def test_storage_load_plants(storage, repository_mock) -> None:
             return_value=plant_obj,
         ),
         patch(
-            "custom_components.growspace_manager.storage_manager._LOGGER.error"
+            "custom_components.growspace_manager.plant_record_loader._LOGGER.error"
         ) as mock_log_error,
     ):
         storage._load_plants(data)
@@ -404,7 +404,7 @@ def test_storage_load_plants_inner_exception(storage, repository_mock) -> None:
             side_effect=Exception("Inner"),
         ),
         patch(
-            "custom_components.growspace_manager.storage_manager._LOGGER.exception"
+            "custom_components.growspace_manager.plant_record_loader._LOGGER.exception"
         ) as mock_log_exc,
     ):
         storage._load_plants(data)

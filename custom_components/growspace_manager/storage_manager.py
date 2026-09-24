@@ -33,10 +33,10 @@ from .models import (
     IrrigationRecipe,
     NutrientInventory,
     NutrientPreset,
-    Plant,
     PollinationEvent,
     SeedBatch,
 )
+from .plant_record_loader import load_plant_records
 
 if TYPE_CHECKING:
     from .data_access.growspace_repository import GrowspaceRepository
@@ -92,6 +92,7 @@ class StorageManager:
         notification_state: NotificationState | None = None,
         recipe_library: IrrigationRecipeLibrary | None = None,
         program_library: IrrigationProgramLibrary | None = None,
+        quarantined_plants: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the StorageManager."""
         self.hass = hass
@@ -101,6 +102,9 @@ class StorageManager:
         self.notification_state = notification_state
         self.recipe_library = recipe_library
         self.program_library = program_library
+        self.quarantined_plants = (
+            quarantined_plants if quarantined_plants is not None else {}
+        )
 
         # Segmented stores
         self.config_store: Store[dict[str, Any]] = Store(
@@ -208,6 +212,7 @@ class StorageManager:
         """Gather plant data for storage."""
         return {
             "plants": {p.plant_id: asdict(p) for p in self.repository.get_all_plants()},
+            "quarantined_plants": self.quarantined_plants.copy(),
         }
 
     def _get_genetics_data(self) -> dict[str, Any]:
@@ -327,30 +332,7 @@ class StorageManager:
         migrations (strain→genetics, row/col sanitization, stage_history building).
         """
         try:
-            raw_plants = data.get("plants", {})
-            plants: dict[str, Plant] = {}
-
-            for pid, pdata in raw_plants.items():
-                try:
-                    if isinstance(pdata, dict):
-                        # Mashumaro handles all migrations via __pre_deserialize__
-                        plants[pid] = Plant.from_dict(pdata)
-                    elif isinstance(pdata, Plant):
-                        # Already a Plant instance
-                        plants[pid] = pdata
-                    else:
-                        _LOGGER.error(
-                            "Failed to load plant %s (invalid type: %s)",
-                            pid,
-                            type(pdata),
-                        )
-                except ValueError, KeyError, TypeError:
-                    _LOGGER.exception(
-                        "Failed to load plant %s due to data structure mismatch", pid
-                    )
-                except Exception:
-                    _LOGGER.exception("Unexpected error loading plant %s", pid)
-
+            plants = load_plant_records(self.hass, data, self.quarantined_plants)
             self.repository.load_plants(plants)
             _LOGGER.info("Loaded %d plants", len(plants))
         except ValueError, KeyError, TypeError:

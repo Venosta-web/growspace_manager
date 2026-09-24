@@ -183,6 +183,7 @@ class CoordinatorBuilder:
             notification_state,
             recipe_library=recipe_library,
             program_library=program_library,
+            quarantined_plants=coordinator._quarantined_plants,  # noqa: SLF001
         )
 
         svc_ctx = ServiceContext(
