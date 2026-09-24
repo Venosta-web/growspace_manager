@@ -30,6 +30,7 @@ from custom_components.growspace_manager.models import (
     Growspace,
     IrrigationConfig,
 )
+from custom_components.growspace_manager.reliability_store import ReliabilityStore
 from custom_components.growspace_manager.services.safety import (
     _safe_state,
     _targets,
@@ -124,6 +125,7 @@ async def test_emergency_stop_commands_all_outputs_and_reset_checks_readback(
     coordinator = MagicMock()
     coordinator.growspaces = {"tent": growspace}
     coordinator.irrigation_safety = IrrigationSafetyStore(hass, "stop-controls")
+    coordinator.reliability = ReliabilityStore(hass, "stop-reliability")
     await coordinator.irrigation_safety.async_load()
     await coordinator.irrigation_safety.async_initialize_controls(
         coordinator.growspaces
@@ -161,6 +163,19 @@ async def test_emergency_stop_commands_all_outputs_and_reset_checks_readback(
     calls = service_hass.services.async_call
     await async_emergency_stop_growspace(service_hass, coordinator, "tent", "operator")
     assert calls.await_count == len(outputs)
+    assert (
+        coordinator.reliability.snapshot("tent")["lifetime"][
+            "controller.emergency_stop"
+        ]
+        == 1
+    )
+    await async_emergency_stop_growspace(service_hass, coordinator, "tent", "operator")
+    assert (
+        coordinator.reliability.snapshot("tent")["lifetime"][
+            "controller.emergency_stop"
+        ]
+        == 1
+    )
     assert coordinator.irrigation_safety.emergency_stop_for("tent") is not None
     restarted = IrrigationSafetyStore(hass, "stop-controls")
     await restarted.async_load()
@@ -186,6 +201,22 @@ async def test_emergency_stop_commands_all_outputs_and_reset_checks_readback(
     assert restarted.emergency_stop_for("tent") is None
     assert restarted.ledger[-1]["action"] == "reset_safety"
     assert restarted.ledger[-1]["user_id"] == "admin"
+
+
+async def test_emergency_stop_continues_when_reliability_write_fails(
+    hass: HomeAssistant,
+) -> None:
+    """Evidence failure does not prevent latching an emergency stop."""
+    coordinator = MagicMock()
+    coordinator.growspaces = {"tent": Growspace(id="tent", name="Tent")}
+    coordinator.irrigation_safety = IrrigationSafetyStore(hass, "stop-disk-full")
+    await coordinator.irrigation_safety.async_load()
+    coordinator.reliability = ReliabilityStore(hass, "stop-disk-full")
+    coordinator.reliability._store.async_save = AsyncMock(side_effect=OSError("full"))
+
+    await async_emergency_stop_growspace(hass, coordinator, "tent", "operator")
+
+    assert coordinator.irrigation_safety.emergency_stop_for("tent") is not None
 
 
 async def test_automation_off_blocks_pump_service_calls(hass: HomeAssistant) -> None:

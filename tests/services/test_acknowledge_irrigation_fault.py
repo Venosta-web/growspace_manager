@@ -14,6 +14,7 @@ from custom_components.growspace_manager.domain.irrigation_safety import (
 from custom_components.growspace_manager.irrigation_safety_store import (
     IrrigationSafetyStore,
 )
+from custom_components.growspace_manager.reliability_store import ReliabilityStore
 from custom_components.growspace_manager.services.irrigation import (
     handle_acknowledge_fault,
 )
@@ -113,6 +114,9 @@ async def test_ack_off_clears_and_audits_user(
 ) -> None:
     """A checked admin acknowledgement is durable and clears the repair."""
     hass, coordinator, call, store = context
+    reliability = ReliabilityStore.__new__(ReliabilityStore)
+    reliability.async_add = AsyncMock()
+    coordinator.reliability = reliability
     with patch(
         "custom_components.growspace_manager.services.irrigation.async_delete_issue"
     ) as delete:
@@ -120,7 +124,25 @@ async def test_ack_off_clears_and_audits_user(
     assert store.fault_for("tent", ("switch.pump",)) is None
     assert store.ledger[-1]["user_id"] == "admin"
     store._store.async_save.assert_awaited_once()
+    reliability.async_add.assert_awaited_once_with(
+        "tent", "controller.fault_acknowledged"
+    )
     delete.assert_called_once()
+
+
+async def test_ack_keeps_safety_result_when_reliability_write_fails(
+    context: tuple[HomeAssistant, MagicMock, MagicMock, IrrigationSafetyStore],
+) -> None:
+    """An optional counter failure does not undo a checked acknowledgement."""
+    hass, coordinator, call, store = context
+    reliability = ReliabilityStore.__new__(ReliabilityStore)
+    reliability.async_add = AsyncMock(side_effect=OSError("full"))
+    coordinator.reliability = reliability
+    with patch(
+        "custom_components.growspace_manager.services.irrigation.async_delete_issue"
+    ):
+        await handle_acknowledge_fault(hass, coordinator, call)
+    assert store.fault_for("tent", ("switch.pump",)) is None
 
 
 async def test_unreadable_record_rearms_only_after_off_check(
