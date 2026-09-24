@@ -7,7 +7,6 @@ import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.util import dt as dt_util
@@ -15,8 +14,10 @@ from homeassistant.util import dt as dt_util
 from .actuator_driver import resolve_on_off_drivers
 from .const import PlantStage
 from .domain.day_night import DayNightTracker
+from .domain.sensor_validity import VPD_RANGE
 from .domain.stage_calculator import determine_coordinator_stage
 from .models import GrowspaceEvent
+from .utils import read_plausible_value
 
 if TYPE_CHECKING:
     from .actuator_driver import ActuatorDriver
@@ -364,15 +365,8 @@ class VpdOnOffController:
         self.main_coordinator.add_event(self.growspace_id, event)
 
     def _get_current_vpd(self) -> float | None:
-        if not self.vpd_sensor:
-            return None
-        state = self.hass.states.get(self.vpd_sensor)
-        if not state or state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            return None
-        try:
-            return float(state.state)
-        except ValueError:
-            return None
+        """Return the VPD, or None when it is unavailable or implausible (#789)."""
+        return read_plausible_value(self.hass, self.vpd_sensor, VPD_RANGE)
 
     def _is_device_on(self) -> bool:
         return any(driver.is_on() for driver in self._resolve_drivers())

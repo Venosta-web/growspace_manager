@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 import math
 from typing import TYPE_CHECKING, Any
@@ -16,6 +17,7 @@ from .domain.date_logic import (
     parse_date_field,
     to_lifecycle_timestamp as to_lifecycle_timestamp_logic,
 )
+from .domain.sensor_validity import PlausibleRange, validate_reading
 from .integration_types import DateInput
 
 if TYPE_CHECKING:
@@ -194,6 +196,38 @@ def read_sensor_value(hass: HomeAssistant, sensor_id: str | None) -> float | Non
         return float(state.state)
     except ValueError, TypeError:
         return None
+
+
+def read_plausible_value(
+    hass: HomeAssistant,
+    sensor_id: str | None,
+    plausible: PlausibleRange | Callable[[str | None], PlausibleRange],
+) -> float | None:
+    """Read a sensor through ``domain/sensor_validity.py``, or None (#789).
+
+    Unavailable, non-numeric, NaN and out-of-range readings are all None — never
+    0. ``plausible`` may be a function of the state's unit of measurement, for
+    a quantity whose range depends on it. Freshness is not judged here: the
+    climate controllers' fail-safe on a sensor that stops reporting is #792's.
+    """
+    if not sensor_id:
+        return None
+    state = hass.states.get(sensor_id)
+    if state is None:
+        return None
+    band = (
+        plausible
+        if isinstance(plausible, PlausibleRange)
+        else plausible(state.attributes.get("unit_of_measurement"))
+    )
+    return validate_reading(
+        state.state,
+        changed_at=None,
+        reported_at=None,
+        now=datetime.now(),
+        max_age=None,
+        plausible=band,
+    ).value
 
 
 def is_light_sensor_on(hass: HomeAssistant, sensor_id: str) -> tuple[bool, bool]:

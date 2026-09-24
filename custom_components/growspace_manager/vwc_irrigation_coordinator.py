@@ -33,6 +33,7 @@ from .domain.ec_state import (
 from .domain.infiltration import InfiltrationMonitor
 from .domain.plant_metrics import count_live_plants
 from .domain.pump_cycle import cycle_runtime_limit
+from .domain.sensor_validity import PORE_EC_RANGE, ec_scale
 from .domain.shot_composer import FeedbackTuning, ShotComposer
 from .domain.steering_phase import (
     ShotRequest,
@@ -177,12 +178,16 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             # Reset warning flag if sensor is now present
             self._sensor_warning_logged = False
 
-            # Get current VWC reading
-            current_vwc = self._get_sensor_value(sensor_entity)
+            # The current VWC reading, only if it can be trusted: an
+            # unavailable, stale or implausible one is never read as a value
+            # (#789), and the controller state names why shots are withheld.
+            reading = self._read_moisture(sensor_entity)
+            current_vwc = reading.value
             if current_vwc is None:
                 _LOGGER.debug(
-                    "VWC Sensor %s is unavailable for growspace %s",
+                    "VWC Sensor %s is %s for growspace %s",
                     sensor_entity,
+                    reading.invalidity,
                     self._growspace_id,
                 )
                 self._infiltration.reset()
@@ -422,9 +427,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     def _average_pore_ec(self, growspace: Growspace) -> float | None:
         """Average the configured pore-EC sensors, or None if none are usable.
 
-        Skips ``unknown``/``unavailable``/non-numeric states exactly like the
-        VWC reading path, so a partial sensor dropout still yields a value from
-        the remaining sensors and a full dropout yields None (unavailable).
+        Each sensor is validated like the VWC reading (#789) — unavailable,
+        stale, or outside 0–20 mS/cm after a µS/cm reading is converted — and an
+        invalid one is left out, so a partial dropout still yields a value from
+        the remaining sensors and a full dropout yields None (unavailable). It
+        never holds irrigation: without pore EC, modulation is simply off.
         """
         sensors = growspace.environment_config.pore_ec_sensors
         if not sensors:
@@ -432,7 +439,12 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         values = [
             value
             for sensor in sensors
-            if (value := self._get_sensor_value(sensor)) is not None
+            if (
+                value := self._read_sensor(
+                    sensor, PORE_EC_RANGE, unit_scale=ec_scale
+                ).value
+            )
+            is not None
         ]
         if not values:
             return None
@@ -585,8 +597,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         )
         if tracker is None:
             return
-        sensor_entity = self.growspace.environment_config.soil_moisture_sensor
-        vwc = self._get_sensor_value(sensor_entity) if sensor_entity else None
+        vwc = self._moisture_value()
         if vwc is None:
             return
         tracker.record_shot(phase, now().isoformat(), vwc)
@@ -659,9 +670,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             wait_seconds=wait_seconds,
         )
         if event_type == "irrigation":
-            sensor_entity = self.growspace.environment_config.soil_moisture_sensor
-            if sensor_entity:
-                moisture_after = self._get_sensor_value(sensor_entity)
+            if self.growspace.environment_config.soil_moisture_sensor:
+                moisture_after = self._moisture_value()
                 self._composer.observe(
                     moisture_before,
                     moisture_after,

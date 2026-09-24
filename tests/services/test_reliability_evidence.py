@@ -387,21 +387,34 @@ async def test_control_sensor_probe_counts_implausible_tanks(
     assert _lifetime(irrigation)["sensors.implausible_readings"] == 1
 
 
-async def test_moisture_sensor_is_never_stale(hass: HomeAssistant) -> None:
-    """No staleness window is configured for moisture, so a quiet one is valid."""
+@pytest.mark.parametrize(
+    ("stale_after_minutes", "quiet_minutes", "stale_events"),
+    [(30, 31, 1), (30, 20, 0), (0, 10_000, 0)],
+)
+async def test_moisture_sensor_goes_stale_past_its_window(
+    hass: HomeAssistant,
+    stale_after_minutes: int,
+    quiet_minutes: float,
+    stale_events: int,
+) -> None:
+    """A quiet moisture sensor is stale past its cap (#789), never when that is off."""
     irrigation = _probe(
         hass,
         Growspace(
             id="tent",
             name="Tent",
             environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.vwc"),
+            irrigation_config=IrrigationConfig(
+                sensor_stale_after_minutes=stale_after_minutes
+            ),
             irrigation_strategy=IrrigationStrategy(enabled=True),
         ),
     )
-    quiet = _quiet_state("50", minutes=10_000)
+    quiet = _quiet_state("50", minutes=quiet_minutes)
     with patch.object(type(hass.states), "get", return_value=quiet):
         irrigation._async_probe_control_sensors()
-    assert "sensors.stale_events" not in _lifetime(irrigation)
+        irrigation._async_probe_control_sensors()
+    assert _lifetime(irrigation).get("sensors.stale_events", 0) == stale_events
 
 
 async def test_armed_runtime_and_unexpected_on_are_observed(
@@ -434,3 +447,27 @@ async def test_armed_runtime_and_unexpected_on_are_observed(
     counters = _lifetime(irrigation)
     assert counters["runtime.automation_eligible_minutes"] == 1
     assert counters["irrigation.readback.unexpected_on"] == 1
+
+
+async def test_a_tank_is_probed_once_and_only_with_a_sensor(
+    hass: HomeAssistant,
+) -> None:
+    """A tank without a sensor, or on the moisture sensor, adds no second reading."""
+    irrigation = _probe(
+        hass,
+        Growspace(
+            id="tent",
+            name="Tent",
+            environment_config=EnvironmentConfig(
+                soil_moisture_sensor="sensor.vwc",
+                irrigation_tanks=[
+                    IrrigationTank(name="Unwired", sensor_entity=""),
+                    IrrigationTank(name="Same probe", sensor_entity="sensor.vwc"),
+                ],
+            ),
+            irrigation_strategy=IrrigationStrategy(enabled=True),
+        ),
+    )
+    hass.states.async_set("sensor.vwc", "40")
+    assert list(irrigation._control_readings(utcnow())) == ["sensor.vwc"]
+    assert irrigation._control_sensors() == ("sensor.vwc",)

@@ -203,6 +203,9 @@
           "daily_volume_cap_liters": "Daily Volume Cap (L)",
           "pause_on_low_tank": "Pause When Tank Is Low",
           "tank_unknown_grace_minutes": "Tank Grace Period (minutes)",
+          "sensor_stale_after_minutes": "Sensor Stale After (minutes)",
+          "sensor_alert_delay_minutes": "Sensor Alert Delay (minutes)",
+          "moisture_zero_is_implausible": "Treat a Moisture Reading of 0 as Implausible",
           "skip_during_dark": "Skip During Dark Period",
           "log_to_logbook": "Log Waterings to the Logbook",
           "use_vwc_steering": "Enable VWC Crop Steering",
@@ -235,6 +238,9 @@
           "startup_grace_minutes": "After Home Assistant starts or the integration reloads, automatic irrigation waits at least this long, and until the moisture and tank sensors have each reported. Manual runs are not held.",
           "pause_on_low_tank": "Also pauses when a tank's level has been unavailable, stale or implausible for longer than the tank grace period, manual runs included.",
           "tank_unknown_grace_minutes": "How long a tank may go without a usable level before irrigation pauses on it and an offline alert is sent. The last valid reading is used meanwhile.",
+          "sensor_stale_after_minutes": "The longest the moisture and pore EC sensors may go without reporting before their reading is ignored as stale. A sensor that normally reports more often goes stale sooner, after three of its usual intervals. 0 turns the check off.",
+          "sensor_alert_delay_minutes": "Automatic shots are withheld as soon as the moisture sensor is unavailable, stale or implausible. After this long, one alert is sent; it clears when the sensor reports again.",
+          "moisture_zero_is_implausible": "Turn on if your moisture probe reads 0 when it is pulled out of the substrate, so that reading withholds shots instead of looking bone-dry.",
           "growspace_id_read_only": "The growspace these settings apply to. Read-only."
         }
       },

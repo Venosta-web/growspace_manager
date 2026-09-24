@@ -347,9 +347,10 @@ class SteeringPhaseMachine:
     def mark_sensor_unavailable(self) -> SteeringTickVerdict:
         """Release the [[Infiltration Gate]] hold on a VWC sensor dropout.
 
-        Deliberately keeps the current phase: unlike a *missing* sensor, a
-        momentarily unavailable one is not a configuration state and never
-        disabled steering. It still ends any hold — the measurement it rested on
+        A dropout is any reading that cannot be trusted — unavailable, stale or
+        implausible (#789) — and no shot is evaluated on it. Deliberately keeps
+        the current phase: unlike a *missing* sensor, a momentarily invalid one
+        is not a configuration state and never disabled steering. It still ends any hold — the measurement it rested on
         is gone, and the gate fails open on ``UNKNOWN`` — so the logbook may not
         leave the growspace reading as held across the dropout (ADR-0031).
         """

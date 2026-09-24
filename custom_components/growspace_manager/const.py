@@ -621,6 +621,9 @@ class NotificationTier(StrEnum):
     # The Tank Offline Alert (ADR-0050): once per episode, rate-limited by the
     # tank watch itself, and likewise never muted by a Bayesian alert.
     TANK_OFFLINE = "tank_offline"
+    # The invalid control sensor alert (#789): once per episode, rate-limited by
+    # the sensor watch itself, and likewise never muted by a Bayesian alert.
+    SENSOR_INVALID = "sensor_invalid"
 
 
 class GrowspaceSensorType(StrEnum):

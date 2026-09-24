@@ -824,6 +824,13 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("tank_unknown_grace_minutes"): vol.All(
                 vol.Coerce(int), vol.Range(min=0, max=120)
             ),
+            vol.Optional("sensor_stale_after_minutes"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=1440)
+            ),
+            vol.Optional("sensor_alert_delay_minutes"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=1440)
+            ),
+            vol.Optional("moisture_zero_is_implausible"): bool,
             vol.Optional("skip_during_dark"): bool,
             vol.Optional("pause_on_low_tank"): bool,
             vol.Optional("log_to_logbook"): bool,

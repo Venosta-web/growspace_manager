@@ -13,6 +13,10 @@ from custom_components.growspace_manager.const import ShotSizingMode, SubstrateM
 from custom_components.growspace_manager.domain.irrigation_safety import (
     DEFAULT_STARTUP_GRACE_MINUTES,
 )
+from custom_components.growspace_manager.domain.sensor_validity import (
+    DEFAULT_SENSOR_ALERT_DELAY_MINUTES,
+    DEFAULT_SENSOR_STALE_AFTER_MINUTES,
+)
 from custom_components.growspace_manager.domain.unknown_tank_level import (
     DEFAULT_TANK_UNKNOWN_GRACE_MINUTES,
 )
@@ -288,6 +292,38 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                     mode=selector.NumberSelectorMode.BOX,
                 )
             ),
+            vol.Optional(
+                "sensor_stale_after_minutes",
+                default=irrigation_options.get(
+                    "sensor_stale_after_minutes", DEFAULT_SENSOR_STALE_AFTER_MINUTES
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=1440,
+                    step=1,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "sensor_alert_delay_minutes",
+                default=irrigation_options.get(
+                    "sensor_alert_delay_minutes", DEFAULT_SENSOR_ALERT_DELAY_MINUTES
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=1440,
+                    step=1,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "moisture_zero_is_implausible",
+                default=irrigation_options.get("moisture_zero_is_implausible", False),
+            ): selector.BooleanSelector(),
             vol.Optional(
                 "log_to_logbook",
                 default=irrigation_options.get("log_to_logbook", True),
