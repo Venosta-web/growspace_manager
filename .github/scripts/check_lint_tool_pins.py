@@ -1,4 +1,4 @@
-"""Fail CI when pre-commit lint hooks drift from requirements.txt."""
+"""Fail CI when lint tool pins or their local hooks drift."""
 
 from __future__ import annotations
 
@@ -9,43 +9,42 @@ import sys
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-HOOK_REPOS = {
-    "ruff": "https://github.com/astral-sh/ruff-pre-commit",
-    "yamllint": "https://github.com/adrienverge/yamllint.git",
+HOOK_ENTRIES = {
+    "ruff-check": "python3 .github/scripts/run_pinned_lint_tool.py ruff check --force-exclude",
+    "ruff-format": "python3 .github/scripts/run_pinned_lint_tool.py ruff format --force-exclude",
+    "yamllint": "python3 .github/scripts/run_pinned_lint_tool.py yamllint",
+    "codespell": "python3 .github/scripts/run_pinned_lint_tool.py codespell",
 }
-LINT_TOOLS = ("ruff", "mypy", "yamllint")
+LINT_TOOLS = ("ruff", "mypy", "yamllint", "codespell")
 
 
 def check_lint_tool_pins(requirements: str, pre_commit_config: str) -> list[str]:
     """Return actionable errors for missing, duplicate, or mismatched pins."""
     errors: list[str] = []
-    pins: dict[str, str] = {}
     for tool in LINT_TOOLS:
         declarations = re.findall(
             rf"^{tool}(?:==([^\s#]+))?\s*(?:#.*)?$", requirements, re.MULTILINE
         )
         if len(declarations) != 1 or not declarations[0]:
             errors.append(f"{tool}: requirements.txt must have exactly one == pin")
-        else:
-            pins[tool] = declarations[0]
-
     config = yaml.safe_load(pre_commit_config)
     repos = config.get("repos", []) if isinstance(config, dict) else []
-    for tool, url in HOOK_REPOS.items():
+    for hook_id, entry in HOOK_ENTRIES.items():
         matches = [
-            repo for repo in repos if isinstance(repo, dict) and repo.get("repo") == url
+            (repo, hook)
+            for repo in repos
+            if isinstance(repo, dict)
+            for hook in repo.get("hooks", [])
+            if isinstance(hook, dict) and hook.get("id") == hook_id
         ]
-        if len(matches) != 1:
-            errors.append(
-                f"{tool}: .pre-commit-config.yaml must contain exactly one {url} hook repo"
-            )
-            continue
-        revision = matches[0].get("rev")
-        if tool in pins and revision != f"v{pins[tool]}":
-            errors.append(
-                f"{tool}: requirements.txt pins {pins[tool]}, "
-                f"but .pre-commit-config.yaml rev is {revision!r}"
-            )
+        if (
+            len(matches) != 1
+            or matches[0][0].get("repo") != "local"
+            or matches[0][1].get("entry") != entry
+        ):
+            errors.append(f"{hook_id}: expected one local hook with entry {entry!r}")
+        elif matches[0][1].get("language") != "system":
+            errors.append(f"{hook_id}: local hook must use language: system")
     return errors
 
 

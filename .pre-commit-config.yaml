@@ -1,34 +1,5 @@
 ---
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Checked against requirements.txt by lint.yaml's check_lint_tool_pins step.
-    rev: v0.15.12
-    hooks:
-      - id: ruff-check
-        args:
-          - --fix
-      - id: ruff-format
-        files: ^(custom_components|tests)/.+\.(py|pyi)$
-  - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
-    hooks:
-      - id: codespell
-        args:
-          - --ignore-words-list=hass,tage,trough
-          - --quiet-level=2
-        # These are tracked for tests or debugging, but are not first-party
-        # prose:
-        # captured SeedFinder HTML, generated Ruff output, the authoritative
-        # generated card fixture, and generated Syrupy snapshots. Keep authored
-        # dotfiles and data files
-        # in scope so `--all-files` remains a repository-wide check.
-        exclude: >-
-          (?x)^(
-            custom_components/growspace_manager/
-            (ruff_output\.txt|search_results\.html)
-            |tests/fixtures/lovelace/growspace-manager-card\.js
-            |tests/.+/snapshots/.+\.ambr
-          )$
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -40,11 +11,6 @@ repos:
         args:
           - --branch=main
           - --branch=dev
-  - repo: https://github.com/adrienverge/yamllint.git
-    # Checked against requirements.txt by lint.yaml's check_lint_tool_pins step.
-    rev: v1.37.1
-    hooks:
-      - id: yamllint
   - repo: https://github.com/rbubley/mirrors-prettier
     rev: v3.6.2
     hooks:
@@ -75,6 +41,41 @@ repos:
         files: ^(custom_components|tests)/.+\.py$
   - repo: local
     hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: python3 .github/scripts/run_pinned_lint_tool.py ruff check --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        args: [--fix]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        entry: python3 .github/scripts/run_pinned_lint_tool.py ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        files: ^(custom_components|tests)/.+\.(py|pyi)$
+        require_serial: true
+      - id: codespell
+        name: codespell
+        entry: python3 .github/scripts/run_pinned_lint_tool.py codespell
+        language: system
+        types: [text]
+        args:
+          - --ignore-words-list=hass,tage,trough
+          - --quiet-level=2
+        # Generated fixtures, captured output, and snapshots are not prose.
+        exclude: >-
+          (?x)^(
+            custom_components/growspace_manager/
+            (ruff_output\.txt|search_results\.html)
+            |tests/fixtures/lovelace/growspace-manager-card\.js
+            |tests/.+/snapshots/.+\.ambr
+          )$
+      - id: yamllint
+        name: yamllint
+        entry: python3 .github/scripts/run_pinned_lint_tool.py yamllint
+        language: system
+        types: [file, yaml]
       - id: pytest
         name: pytest
         entry: ../../.venv/bin/pytest

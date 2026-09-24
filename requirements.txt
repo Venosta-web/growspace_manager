@@ -57,4 +57,4 @@ ruff==0.15.12
 mypy==1.20.2
 pre-commit==4.6.2
 yamllint==1.37.1
-codespell
+codespell==2.4.3
