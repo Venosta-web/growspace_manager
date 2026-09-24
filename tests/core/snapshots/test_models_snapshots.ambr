@@ -7,7 +7,9 @@
     'coordinator_data': dict({
       'growspaces': dict({
         'gs1': dict({
+          'camera_url': '**REDACTED**',
           'name': 'Test Growspace',
+          'notification_target': '**REDACTED**',
           'unique_id': '**REDACTED**',
         }),
       }),
@@ -18,6 +20,7 @@
       'data': dict({
         'latitude': '**REDACTED**',
         'some': 'data',
+        'vision_access_token': '**REDACTED**',
       }),
       'entry_id': 'test_entry',
     }),
@@ -32,13 +35,78 @@
       ]),
     }),
     'subsystems': dict({
+      'circulation_fan': dict({
+      }),
       'dehumidifier': dict({
+        'gs1': dict({
+          'ac_infinity_ports': list([
+          ]),
+          'control_enabled': True,
+          'entities': list([
+            'switch.dehumidifier',
+          ]),
+          'last_command': 'unavailable',
+          'last_command_at': 'unavailable',
+          'period': 'day',
+          'stage': 'veg',
+          'thresholds': dict({
+            'off': 0.7,
+            'on': 0.6,
+          }),
+          'vpd_sensor': 'sensor.vpd',
+        }),
+      }),
+      'exhaust_fan': dict({
+      }),
+      'humidifier': dict({
       }),
       'irrigation': dict({
+        'gs1': dict({
+          'active_events': dict({
+            'irrigation': dict({
+              'start_time': '2024-01-01T12:00:00',
+            }),
+          }),
+          'controller': dict({
+            'fault_id': 'unavailable',
+            'reasons': list([
+            ]),
+            'requires_ack': False,
+            'since': 'unavailable',
+            'state': 'running',
+          }),
+          'cycles_today': 2,
+          'ec_state': dict({
+            'pore_ec': 'unavailable',
+            'recommendation': 'hold',
+          }),
+          'last_cycle_timestamp': '2024-01-01T11:00:00',
+          'mode': 'steering',
+          'next_scheduled_cycle': 'unavailable',
+          'phase': 'P2',
+          'projected_shot_window': dict({
+            'end': '2024-01-01T13:10:00',
+            'start': '2024-01-01T13:00:00',
+          }),
+          'shot_composition': dict({
+            'last_shot': 'unavailable',
+            'suppressed_by': 'infiltrating',
+          }),
+          'tanks': list([
+            dict({
+              'level': 'unavailable',
+              'name': 'Feed',
+              'sensor_entity': 'sensor.tank',
+              'valid': False,
+              'warning_level': 20.0,
+            }),
+          ]),
+          'volume_dispensed_today': 1.5,
+        }),
       }),
     }),
     'system_stats': dict({
-      'growspace_count': 0,
+      'growspace_count': 1,
       'plant_count': 0,
       'strain_library_count': 0,
     }),

@@ -705,6 +705,22 @@ class BaseIrrigationCoordinator:
                 )
         return readings
 
+    def tank_diagnostics(self) -> list[dict[str, Any]]:
+        """Report every configured tank, including sensors without a valid reading."""
+        readings = []
+        for tank in self.growspace.environment_config.irrigation_tanks:
+            level = self._get_sensor_value(tank.sensor_entity)
+            readings.append(
+                {
+                    "name": tank.name,
+                    "sensor_entity": tank.sensor_entity,
+                    "valid": level is not None,
+                    "level": level,
+                    "warning_level": tank.warning_level,
+                }
+            )
+        return readings
+
     async def _async_fire_low_tank_notification(
         self, tank_name: str, level: float
     ) -> None:
