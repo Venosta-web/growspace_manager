@@ -1,0 +1,64 @@
+---
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: prerelease
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+
+  - package-ecosystem: pip
+    directory: /
+    target-branch: prerelease
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    # Only these pins are independent of Home Assistant's constraints and the
+    # pytest-homeassistant-custom-component pin set.
+    allow:
+      - dependency-name: fpdf2
+      - dependency-name: mashumaro
+      - dependency-name: beautifulsoup4
+      - dependency-name: aiosqlite
+      - dependency-name: python-dateutil
+      - dependency-name: pycares
+      - dependency-name: ruff
+      - dependency-name: mypy
+      - dependency-name: pre-commit
+      - dependency-name: yamllint
+      - dependency-name: codespell
+    groups:
+      dev-tooling:
+        patterns:
+          - ruff
+          - mypy
+          - pre-commit
+          - yamllint
+          - codespell
+    ignore:
+      # HA and its custom-component test harness must move together (#822).
+      - dependency-name: homeassistant
+      - dependency-name: pytest-homeassistant-custom-component
+      - dependency-name: hassil
+      - dependency-name: home-assistant-intents
+      # The harness pins this pytest stack exactly; independent updates break it.
+      - dependency-name: pytest*
+      - dependency-name: coverage
+      - dependency-name: freezegun
+      - dependency-name: requests-mock
+      - dependency-name: syrupy
+      - dependency-name: pipdeptree
+      # HA's package_constraints.txt governs these; allow above excludes all
+      # other HA-constrained packages without enumerating the whole file.
+      - dependency-name: Pillow
+      - dependency-name: voluptuous
+      - dependency-name: pydantic
+      - dependency-name: aiodhcpwatcher
+      - dependency-name: PyTurboJPEG
