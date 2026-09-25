@@ -123,6 +123,9 @@ class GrowspaceFacade:
                 growspace.id, growspace
             )
         )
+        await self._coordinator.capture_continuity.async_apply_camera_assignment(
+            growspace.id, growspace.environment_config.camera_entities
+        )
         _LOGGER.info("Added growspace %s (%s)", growspace.name, growspace.id)
         return growspace
 
@@ -150,6 +153,11 @@ class GrowspaceFacade:
         # Mirrors add_growspace, which sets these up.
         self._coordinator._subsystem_manager.teardown_growspace_sub_coordinators(
             growspace_id
+        )
+        # A removed growspace holds no camera; its conditions clear and its
+        # durable Triage Alerts stay.
+        await self._coordinator.capture_continuity.async_apply_camera_assignment(
+            growspace_id, ()
         )
 
     async def setup_sub_coordinators(self, growspace_id: str) -> None:

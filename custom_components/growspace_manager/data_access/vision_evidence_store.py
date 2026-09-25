@@ -29,6 +29,7 @@ from custom_components.growspace_manager.models.vision_evidence import (
     BaselineMember,
     BaselineState,
     CaptureFileVariant,
+    CaptureMarker,
     CaptureTrigger,
     CheckupStatus,
     ComparisonOutcome,
@@ -412,6 +413,69 @@ class VisionEvidenceStore:
         captures = [_capture_from_row(row) for row in await cursor.fetchall()]
         captures.reverse()
         return captures
+
+    async def async_get_latest_capture_marker(
+        self, growspace_id: str, camera_id: str
+    ) -> CaptureMarker | None:
+        """Return where one camera's evidence in one growspace currently ends."""
+        cursor = await self._require_db().execute(
+            "SELECT captured_at, capture_id FROM vision_capture"
+            " WHERE growspace_id = ? AND camera_id = ?"
+            " ORDER BY captured_at DESC, capture_id DESC LIMIT 1",
+            (growspace_id, camera_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return CaptureMarker(captured_at=row[0], capture_id=row[1])
+
+    async def async_get_capture_evidence(
+        self,
+        growspace_id: str,
+        camera_id: str,
+        *,
+        after: CaptureMarker | None = None,
+    ) -> list[tuple[VisionCapture, VisualComparisonResult | None]]:
+        """Return every capture of one camera in one growspace, oldest first.
+
+        Each capture is paired with the first comparison recorded for it — the
+        one a live checkup produced — because later additive results under
+        another scoring policy are history, not what the checkup acted on.
+        ``after`` excludes everything at or before one marker.  Nothing here
+        reads image files, and nothing caps the row count: a consumer that
+        replays evidence must see all of it.
+        """
+        # The empty marker sorts before every stored capture.
+        bound = after or CaptureMarker(captured_at="", capture_id="")
+        params = (
+            growspace_id,
+            camera_id,
+            bound.captured_at,
+            bound.captured_at,
+            bound.capture_id,
+        )
+        db = self._require_db()
+        cursor = await db.execute(
+            "SELECT c.* FROM vision_capture AS c"
+            " WHERE c.growspace_id = ? AND c.camera_id = ?"
+            " AND (c.captured_at > ? OR (c.captured_at = ? AND c.capture_id > ?))"
+            " ORDER BY c.captured_at, c.capture_id",
+            params,
+        )
+        captures = [_capture_from_row(row) for row in await cursor.fetchall()]
+        cursor = await db.execute(
+            "SELECT r.* FROM vision_comparison_result AS r"
+            " JOIN vision_capture AS c ON c.capture_id = r.capture_id"
+            " WHERE c.growspace_id = ? AND c.camera_id = ?"
+            " AND (c.captured_at > ? OR (c.captured_at = ? AND c.capture_id > ?))"
+            " ORDER BY r.evaluated_at DESC, r.result_id DESC",
+            params,
+        )
+        # Newest first, so the last write for each capture is its earliest result.
+        first: dict[str, VisualComparisonResult] = {}
+        for row in await cursor.fetchall():
+            first[row["capture_id"]] = _comparison_from_row(row)
+        return [(capture, first.get(capture.capture_id)) for capture in captures]
 
     async def async_get_quality_history(self, camera_id: str) -> QualityHistory:
         """Reconstruct one camera's durable relative-rail state."""

@@ -650,6 +650,50 @@ async def test_async_load(coordinator: GrowspaceCoordinator) -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_load_recovers_continuity_before_any_checkup(
+    coordinator: GrowspaceCoordinator,
+) -> None:
+    """Streaks are rebuilt, with each growspace's cameras, before scheduling."""
+    coordinator.storage_manager.config_store.async_load = AsyncMock(
+        return_value={
+            "growspaces": {
+                "gs1": {
+                    "id": "gs1",
+                    "name": "Growspace1",
+                    "rows": 1,
+                    "plants_per_row": 1,
+                    "environment_config": {"camera_entities": ["camera.canopy"]},
+                }
+            }
+        }
+    )
+    coordinator.storage_manager.plants_store.async_load = AsyncMock(return_value={})
+    coordinator.storage_manager.legacy_store.async_load = AsyncMock(return_value=None)
+    coordinator.storage_manager.async_save = AsyncMock()  # type: ignore[method-assign]
+    order = MagicMock()
+    coordinator.alert_monitor.async_start = order.alerts  # type: ignore[method-assign]
+    order.alerts.side_effect = AsyncMock()
+    coordinator.capture_continuity.async_start = order.continuity  # type: ignore[method-assign]
+    order.continuity.side_effect = AsyncMock()
+    coordinator.vision_scheduler.async_load_latest_checkups = AsyncMock()  # type: ignore[method-assign]
+    coordinator.vision_scheduler.schedule_all_growspaces = order.schedule  # type: ignore[method-assign]
+
+    with patch.object(
+        coordinator._growspace_manager,
+        "ensure_default_growspaces",
+        new_callable=AsyncMock,
+    ):
+        await coordinator.async_load()
+
+    assert [name for name, _args, _kwargs in order.mock_calls] == [
+        "alerts",
+        "continuity",
+        "schedule",
+    ]
+    order.continuity.assert_called_once_with({"gs1": ["camera.canopy"]})
+
+
+@pytest.mark.asyncio
 async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None:
     """Test the complete removal of a growspace and its contents.
 

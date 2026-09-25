@@ -25,6 +25,7 @@ from custom_components.growspace_manager.models.vision_evidence import (
     BaselineMember,
     BaselineState,
     CaptureFileVariant,
+    CaptureMarker,
     CaptureTrigger,
     CheckupStatus,
     ComparisonOutcome,
@@ -576,6 +577,55 @@ async def test_comparison_trend_contains_only_earlier_compatible_scores(
     )
 
     assert trend == [(comparisons[0], "environmental_risk")]
+    await store.async_close()
+
+
+@pytest.mark.asyncio
+async def test_capture_evidence_is_every_capture_after_a_marker(
+    tmp_path: Path,
+) -> None:
+    """A replay sees all of a camera's evidence past a marker, oldest first."""
+    store = VisionEvidenceStore(tmp_path / "growspace_vision.db", tmp_path / "images")
+    await store.async_setup()
+    assert await store.async_get_latest_capture_marker("gs-1", "camera.canopy") is None
+
+    first = await _start_capture(store)
+    completed, embedding, bucket, member, live = _analysis_records(first)
+    await store.async_record_analysis(
+        completed, embedding=embedding, comparison=live, bucket=bucket, member=member
+    )
+    # A later additive result under another scoring policy is history; the
+    # checkup acted on the one it produced.
+    rescored = replace(
+        live,
+        result_id="result-2",
+        evaluated_at="2026-09-03T06:00:00+00:00",
+        outcome=ComparisonOutcome.SCORED,
+        anomaly_score=1.0,
+        verdict=ComparisonVerdict.MATERIAL_SCENE_CHANGE,
+        scoring_policy_version=2,
+        bucket_id=None,
+        admitted_to_baseline=False,
+    )
+    await store.async_record_analysis(completed, comparison=rescored)
+    second = await _start_capture(
+        store, captured_at=datetime(2026, 9, 1, 7, tzinfo=UTC)
+    )
+    # Same instant, later identity: a marker tie is broken the way rows sort.
+    third = await _start_capture(store, captured_at=datetime(2026, 9, 1, 7, tzinfo=UTC))
+
+    assert await store.async_get_capture_evidence("gs-1", "camera.canopy") == [
+        (completed, live),
+        (second, None),
+        (third, None),
+    ]
+    assert await store.async_get_capture_evidence(
+        "gs-1", "camera.canopy", after=CaptureMarker.of(second)
+    ) == [(third, None)]
+    assert await store.async_get_capture_evidence("gs-2", "camera.canopy") == []
+    assert await store.async_get_latest_capture_marker(
+        "gs-1", "camera.canopy"
+    ) == CaptureMarker.of(third)
     await store.async_close()
 
 

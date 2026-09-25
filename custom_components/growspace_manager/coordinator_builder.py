@@ -237,10 +237,11 @@ class CoordinatorBuilder:
         # Reads the coordinator's live options, so a connection change made in
         # the options flow takes effect without rebuilding the coordinator.
         vision_connection = VisionConnection(self.hass, lambda: coordinator.options)
+        evidence_store = self.hass.data.get(DOMAIN, {}).get("vision_evidence_store")
         vision_scheduler = VisionCheckupScheduler(
             self.hass,
             coordinator,
-            evidence_store=self.hass.data.get(DOMAIN, {}).get("vision_evidence_store"),
+            evidence_store=evidence_store,
         )
         briefing_scheduler = BriefingScheduler(self.hass, coordinator)
         photoperiod_checker = PhotoperiodFlipChecker(self.hass, coordinator)
@@ -256,7 +257,9 @@ class CoordinatorBuilder:
             store=alert_store,
             ai_assistant_factory=_make_ai_assistant,
         )
-        capture_continuity = CaptureContinuityMonitor(continuity_store, alert_monitor)
+        capture_continuity = CaptureContinuityMonitor(
+            continuity_store, alert_monitor, evidence_store
+        )
 
         # ------------------------------------------------------------------
         # Phase 4 – attach all services to the coordinator
