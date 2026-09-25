@@ -9,8 +9,11 @@ repos:
         exclude: (.vscode|.devcontainer)
       - id: no-commit-to-branch
         args:
+          # The main checkout sits on prerelease; this is what keeps commits
+          # out of it now that the hooks no longer depend on a worktree's depth.
           - --branch=main
           - --branch=dev
+          - --branch=prerelease
   - repo: https://github.com/rbubley/mirrors-prettier
     rev: v3.6.2
     hooks:
@@ -43,21 +46,21 @@ repos:
     hooks:
       - id: ruff-check
         name: ruff check
-        entry: python3 .github/scripts/run_pinned_lint_tool.py ruff check --force-exclude
+        entry: python3 .github/scripts/run_venv_tool.py ruff check --force-exclude
         language: system
         types_or: [python, pyi, jupyter]
         args: [--fix]
         require_serial: true
       - id: ruff-format
         name: ruff format
-        entry: python3 .github/scripts/run_pinned_lint_tool.py ruff format --force-exclude
+        entry: python3 .github/scripts/run_venv_tool.py ruff format --force-exclude
         language: system
         types_or: [python, pyi, jupyter]
         files: ^(custom_components|tests)/.+\.(py|pyi)$
         require_serial: true
       - id: codespell
         name: codespell
-        entry: python3 .github/scripts/run_pinned_lint_tool.py codespell
+        entry: python3 .github/scripts/run_venv_tool.py codespell
         language: system
         types: [text]
         args:
@@ -73,19 +76,19 @@ repos:
           )$
       - id: yamllint
         name: yamllint
-        entry: python3 .github/scripts/run_pinned_lint_tool.py yamllint
+        entry: python3 .github/scripts/run_venv_tool.py yamllint
         language: system
         types: [file, yaml]
       - id: pytest
         name: pytest
-        entry: ../../.venv/bin/pytest
+        entry: python3 .github/scripts/run_venv_tool.py pytest
         language: system
         pass_filenames: false
         types: [python]
         files: ^(custom_components|tests)/.+\.py$
       - id: mypy
         name: mypy
-        entry: ../../.venv/bin/mypy
+        entry: python3 .github/scripts/run_venv_tool.py mypy
         args: [--follow-imports=silent]
         language: system
         require_serial: true

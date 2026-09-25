@@ -21,16 +21,22 @@ HOOKS = """repos:
   - repo: local
     hooks:
       - id: ruff-check
-        entry: python3 .github/scripts/run_pinned_lint_tool.py ruff check --force-exclude
+        entry: python3 .github/scripts/run_venv_tool.py ruff check --force-exclude
         language: system
       - id: ruff-format
-        entry: python3 .github/scripts/run_pinned_lint_tool.py ruff format --force-exclude
+        entry: python3 .github/scripts/run_venv_tool.py ruff format --force-exclude
         language: system
       - id: yamllint
-        entry: python3 .github/scripts/run_pinned_lint_tool.py yamllint
+        entry: python3 .github/scripts/run_venv_tool.py yamllint
         language: system
       - id: codespell
-        entry: python3 .github/scripts/run_pinned_lint_tool.py codespell
+        entry: python3 .github/scripts/run_venv_tool.py codespell
+        language: system
+      - id: pytest
+        entry: python3 .github/scripts/run_venv_tool.py pytest
+        language: system
+      - id: mypy
+        entry: python3 .github/scripts/run_venv_tool.py mypy
         language: system
 """
 
@@ -62,10 +68,21 @@ def test_unpinned_tool_is_rejected(tool: str) -> None:
     )
 
 
-@pytest.mark.parametrize("hook", ["ruff-check", "ruff-format", "yamllint", "codespell"])
+@pytest.mark.parametrize(
+    "hook", ["ruff-check", "ruff-format", "yamllint", "codespell", "pytest", "mypy"]
+)
 def test_missing_or_changed_hook_is_rejected(hook: str) -> None:
     changed = HOOKS.replace(f"id: {hook}", f"id: missing-{hook}")
     assert f"{hook}: expected one local hook" in "\n".join(
+        checker.check_lint_tool_pins(REQUIREMENTS, changed)
+    )
+
+
+def test_fixed_venv_path_entry_is_rejected() -> None:
+    changed = HOOKS.replace(
+        "python3 .github/scripts/run_venv_tool.py pytest", "../../.venv/bin/pytest"
+    )
+    assert "pytest: expected one local hook" in "\n".join(
         checker.check_lint_tool_pins(REQUIREMENTS, changed)
     )
 

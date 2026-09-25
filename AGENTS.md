@@ -11,21 +11,37 @@ git worktree add .worktrees/<branch-name> -b <branch-name> origin/<base>
 cd .worktrees/<branch-name>
 ```
 
-- The pre-commit worktree guard rejects commits made in the main checkout;
-  override deliberately with `ALLOW_MAIN_CHECKOUT=1` for quick fixes only.
+- `no-commit-to-branch` rejects commits on `main`, `dev` and `prerelease`,
+  which is what keeps the main checkout (normally on `prerelease`) clean.
 - If the working tree looks wrong or edits seem to have vanished, trust
   `origin`, not the checkout — another session may have moved HEAD.
 - Clean up with `git worktree remove` once the PR is open.
 
 ## Test environment
 
-One repo-local `.venv` (Python 3.14) lives in the main checkout and every
-worktree shares it: `.venv/bin/pytest` from the main checkout,
-`../../.venv/bin/pytest` from a worktree — the path the pre-commit hooks
-already use. **Never the HA core venv at `/home/maxi/core/core/.venv`**: its
-syrupy is newer than the one `pytest-homeassistant-custom-component` pins, so
-every test import dies at collection. Building or refreshing the venv is
-documented in `CLAUDE.md`.
+Every Python pre-commit hook — pytest, mypy, ruff, yamllint, codespell — runs
+through `.github/scripts/run_venv_tool.py`, which takes the first of:
+
+1. `<worktree>/.venv/bin/<tool>` — the checkout's own `.venv`, whether a real
+   directory or a symlink to another venv;
+2. the main checkout's `.venv/bin/<tool>`, found through
+   `git rev-parse --git-common-dir`;
+3. `PATH`, for the lint tools only, which is how CI runs codespell and yamllint.
+   pytest and mypy refuse instead, naming each venv path they tried.
+
+So a worktree may carry its own venv, and its commits are then checked with
+that environment rather than the main checkout's; a worktree without one keeps
+using the main venv. A branch that moves a pin needs a private venv built from
+its own `requirements.txt` — rebuilding the main venv from a branch's pins is
+what broke validation for every other worktree on 2026-09-24. Hub ADR 0004
+("Python hooks run the worktree's own venv") records the decision.
+
+Run tests with the venv the hooks would pick: `.venv/bin/pytest` when the
+checkout has one, otherwise `../../.venv/bin/pytest` from a
+`.worktrees/<name>` worktree. **Never the HA core venv at
+`/home/maxi/core/core/.venv`**: its syrupy is newer than the one
+`pytest-homeassistant-custom-component` pins, so every test import dies at
+collection. Building or refreshing a venv is documented in `CLAUDE.md`.
 
 ## Home Assistant test stack updates
 
