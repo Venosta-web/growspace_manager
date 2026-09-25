@@ -15,6 +15,7 @@ from custom_components.growspace_manager.capture_continuity_monitor import (
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.continuity_notifier import (
     ContinuityNotifier,
+    DeliveryChannel,
     continuity_notification_id,
 )
 from homeassistant.core import HomeAssistant
@@ -92,10 +93,10 @@ async def notifier(hass: HomeAssistant):
 
 
 async def test_unreadable_rows_cost_only_themselves(notifier) -> None:
-    """A garbled row is discarded; a channel this version lacks is left out."""
+    """A garbled row is discarded; an unknown channel is left out."""
     notifier.store.data = {
         "deliveries": [
-            _row("capture-1", "delivered", device={"status": "pending"}),
+            _row("capture-1", "delivered", unknown={"status": "pending"}),
             _row("capture-2", "no such status"),
             {"activation_id": "capture-3"},
             "not a row",
@@ -104,7 +105,13 @@ async def test_unreadable_rows_cost_only_themselves(notifier) -> None:
 
     await notifier.async_start([_activation(origin=ActivationOrigin.HISTORICAL)])
 
-    assert notifier.store.data == {"deliveries": [_row("capture-1", "delivered")]}
+    assert notifier.store.data == {
+        "deliveries": [
+            _row(
+                "capture-1", "delivered", device={"status": "suppressed", "attempts": 0}
+            )
+        ]
+    }
 
 
 async def test_start_keeps_unfinished_and_current_records_only(notifier) -> None:
@@ -190,3 +197,30 @@ async def test_identity_falls_back_to_ids(hass, notifier) -> None:
     assert notification["message"].endswith(
         "\n\nCamera: camera.canopy\nGrowspace: gone"
     )
+
+
+async def test_removed_device_target_suppresses_queued_action(notifier) -> None:
+    """A target removed before its task runs cannot produce a retry backlog."""
+    growspace = SimpleNamespace(
+        name="Test Tent", notification_target="notify.mobile_app_grower"
+    )
+    notifier._coordinator.growspaces["tent1"] = growspace
+    notifier._spawn = lambda *_args: None
+    await notifier.async_start([])
+    await notifier.async_announce(_activation())
+    assert notifier.store.data["deliveries"][0]["channels"]["device"] == {
+        "status": "pending",
+        "attempts": 0,
+    }
+
+    growspace.notification_target = None
+    (key,) = notifier._deliveries
+    await notifier._async_attempt(key, DeliveryChannel.DEVICE)
+    saves = notifier.store.saves
+    await notifier._async_attempt(key, DeliveryChannel.DEVICE)
+
+    assert notifier.store.data["deliveries"][0]["channels"]["device"] == {
+        "status": "suppressed",
+        "attempts": 0,
+    }
+    assert notifier.store.saves == saves

@@ -19,7 +19,8 @@ activation announce itself again::
                 "camera_id": "camera.canopy",
                 "activated_at": "<ISO>",
                 "channels": {
-                    "home_assistant": {"status": "pending", "attempts": 0}
+                    "home_assistant": {"status": "pending", "attempts": 0},
+                    "device": {"status": "pending", "attempts": 0}
                 }
             },
             ...
@@ -33,9 +34,9 @@ activation recovery reports as new — never neither.
 
 **Delivery is at-least-once, not exactly-once.** A channel is attempted until
 its success is recorded, under a stable per-streak notification id. A crash
-between sending and recording success sends again under that same id, which
-for a Home Assistant persistent notification replaces the first rather than
-adding a second. Nothing here claims more than that.
+between sending and recording success sends again under that same id. Home
+Assistant replaces its persistent notification; a mobile app can repeat an
+alert or sound because end-device receipt is not acknowledged.
 
 The growspace notification switch mutes delivery, never the Triage Alert. A
 channel that is muted when it would be attempted is recorded as suppressed and
@@ -55,6 +56,7 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
 
 from .capture_continuity_monitor import ActivationOrigin
+from .const import NOTIFICATION_CHANNEL, NOTIFICATION_GROUP, NOTIFICATION_ICON
 from .domain.capture_continuity import CAPTURE_CONTINUITY_MESSAGE
 
 if TYPE_CHECKING:
@@ -80,6 +82,7 @@ class DeliveryChannel(StrEnum):
     """Where a Capture Continuity Break is announced."""
 
     HOME_ASSISTANT = "home_assistant"
+    DEVICE = "device"
 
 
 class DeliveryStatus(StrEnum):
@@ -154,7 +157,8 @@ class ContinuityNotifier:
         self._deliveries: dict[_DeliveryKey, _Delivery] = {}
         self._retries: dict[tuple[_DeliveryKey, DeliveryChannel], CALLBACK_TYPE] = {}
         self._senders: dict[DeliveryChannel, Callable[[_Delivery], Awaitable[None]]] = {
-            DeliveryChannel.HOME_ASSISTANT: self._async_send_persistent
+            DeliveryChannel.HOME_ASSISTANT: self._async_send_persistent,
+            DeliveryChannel.DEVICE: self._async_send_device,
         }
 
     # ------------------------------------------------------------------
@@ -175,6 +179,13 @@ class ContinuityNotifier:
             delivery.key: delivery
             for delivery in _load_deliveries(data.get("deliveries", []))
         }
+        # A record written before device delivery existed has already seen
+        # its activation. Adding a target or upgrading must not page it now.
+        for delivery in self._deliveries.values():
+            delivery.channels.setdefault(
+                DeliveryChannel.DEVICE,
+                _ChannelProgress(status=DeliveryStatus.SUPPRESSED),
+            )
         current: set[_DeliveryKey] = set()
         for activation in activations:
             key = _key(activation)
@@ -253,13 +264,20 @@ class ContinuityNotifier:
             if self._muted(activation.growspace_id)
             else DeliveryStatus.PENDING
         )
+        device_status = (
+            DeliveryStatus.SUPPRESSED
+            if status is DeliveryStatus.SUPPRESSED
+            or self._device_target(activation.growspace_id) is None
+            else DeliveryStatus.PENDING
+        )
         return _Delivery(
             activation_id=activation.activation_id,
             growspace_id=activation.growspace_id,
             camera_id=activation.camera_id,
             activated_at=activation.activated_at,
             channels={
-                channel: _ChannelProgress(status=status) for channel in self._senders
+                DeliveryChannel.HOME_ASSISTANT: _ChannelProgress(status=status),
+                DeliveryChannel.DEVICE: _ChannelProgress(status=device_status),
             },
         )
 
@@ -285,6 +303,8 @@ class ContinuityNotifier:
         """
         delivery = self._deliveries[key]
         progress = delivery.channels[channel]
+        if progress.status is not DeliveryStatus.PENDING:
+            return
         if self._muted(delivery.growspace_id):
             progress.status = DeliveryStatus.SUPPRESSED
             await self._async_save()
@@ -319,7 +339,8 @@ class ContinuityNotifier:
                 )
                 self._schedule_retry(key, channel, delay)
         else:
-            progress.status = DeliveryStatus.DELIVERED
+            if progress.status is DeliveryStatus.PENDING:
+                progress.status = DeliveryStatus.DELIVERED
         await self._async_save()
 
     @callback
@@ -356,6 +377,39 @@ class ContinuityNotifier:
             },
             blocking=True,
         )
+
+    async def _async_send_device(self, delivery: _Delivery) -> None:
+        """Await the configured mobile notify action for this streak."""
+        target = self._device_target(delivery.growspace_id)
+        if target is None:
+            # The target was removed after activation; absence is suppression,
+            # not a failed action to retry until a new phone is configured.
+            delivery.channels[DeliveryChannel.DEVICE].status = DeliveryStatus.SUPPRESSED
+            return
+        title, message = self._render(delivery)
+        await self._hass.services.async_call(
+            "notify",
+            target,
+            {
+                "title": title,
+                "message": message,
+                "data": {
+                    "tag": continuity_notification_id(*delivery.key),
+                    "group": NOTIFICATION_GROUP,
+                    "channel": NOTIFICATION_CHANNEL,
+                    "notification_icon": NOTIFICATION_ICON,
+                    "push": {"thread-id": NOTIFICATION_GROUP},
+                },
+            },
+            blocking=True,
+        )
+
+    def _device_target(self, growspace_id: str) -> str | None:
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        target = getattr(growspace, "notification_target", None)
+        if not isinstance(target, str) or not target:
+            return None
+        return target.removeprefix("notify.")
 
     def _render(self, delivery: _Delivery) -> tuple[str, str]:
         """Name the growspace and camera around the canonical message."""
