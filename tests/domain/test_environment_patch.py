@@ -277,6 +277,26 @@ def test_tank_runtime_carried_over_for_matched_tank() -> None:
     ]
 
 
+def test_tank_staleness_window_is_a_grower_field() -> None:
+    """A re-sent tank sets its staleness window, and 0 survives as 0."""
+    current = _lived_in_config()
+    patch = patch_from_service_call(
+        {
+            "irrigation_tanks": [
+                {
+                    "sensor_entity": "sensor.tank_a",
+                    "name": "Tank A",
+                    "warning_level": 25.0,
+                    "stale_after_minutes": 0,
+                }
+            ]
+        }
+    )
+    verdict = apply_environment_patch(current, patch)
+    assert verdict.config.irrigation_tanks[0].stale_after_minutes == 0
+    assert "irrigation_tanks" in verdict.changed_fields
+
+
 def test_restated_tank_without_runtime_is_not_a_change() -> None:
     """Runtime carry-over happens before diffing, so runtime never reads as change."""
     current = _lived_in_config()

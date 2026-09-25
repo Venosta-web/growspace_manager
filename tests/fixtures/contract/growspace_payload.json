@@ -159,6 +159,7 @@
         "is_warning": false,
         "name": "nutrient_tank",
         "sensor_entity": "sensor.contract_tank",
+        "stale_after_minutes": 0,
         "volume_liters": 120.0,
         "warning_level": 25.0,
         "water_history": {
@@ -930,7 +931,7 @@
             "name": "nutrient_tank",
             "peak_level": 95.0,
             "sensor_entity": "sensor.subarea_tank",
-            "stale_after_minutes": 120,
+            "stale_after_minutes": 0,
             "volume_liters": 120.0,
             "warning_level": 25.0,
             "water_history": {
