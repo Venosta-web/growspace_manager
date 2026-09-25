@@ -17,6 +17,7 @@ from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
 from .capture_continuity_monitor import CaptureContinuityMonitor
 from .const import COORDINATOR_UPDATE_INTERVAL_MINUTES, DOMAIN, VERSION
+from .continuity_notifier import ContinuityNotifier
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
@@ -216,6 +217,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         photoperiod_checker: PhotoperiodFlipChecker,
         alert_monitor: AlertMonitor,
         capture_continuity: CaptureContinuityMonitor,
+        continuity_notifier: ContinuityNotifier,
         conversation_store: ConversationStore,
         tank_monitor: TankLevelMonitor,
     ) -> None:
@@ -244,6 +246,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.photoperiod_checker = photoperiod_checker
         self.alert_monitor = alert_monitor
         self.capture_continuity = capture_continuity
+        self.continuity_notifier = continuity_notifier
         self.conversation_store = conversation_store
         self.tank_monitor = tank_monitor
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
@@ -512,6 +515,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if hasattr(self, "environment_reporter"):
             self.environment_reporter.unload()
         self._notification_manager.shutdown()
+        self.continuity_notifier.async_stop()
         self.tank_monitor.async_stop()
         self.vision_scheduler.async_stop()
         await self.vision_connection.async_shutdown()

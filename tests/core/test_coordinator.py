@@ -909,11 +909,14 @@ async def test_set_notifications_enabled(coordinator: GrowspaceCoordinator) -> N
 
     # Initialize self.data so set_notifications_enabled doesn't fail
     coordinator.view_model_builder.build_data_property()
+    mute = AsyncMock()
+    coordinator.continuity_notifier.async_mute = mute  # type: ignore[method-assign]
 
-    # Disable notifications
+    # Disable notifications: continuity delivery still being retried stops too
     await coordinator.services.notifications.set_notifications_enabled(gs.id, False)
     assert coordinator.services.notifications.is_notifications_enabled(gs.id) is False
     coordinator.async_commit.assert_awaited_once()
+    mute.assert_awaited_once_with(gs.id)
 
     # Enable notifications
     coordinator.async_commit.reset_mock()
@@ -921,6 +924,7 @@ async def test_set_notifications_enabled(coordinator: GrowspaceCoordinator) -> N
     await coordinator.services.notifications.set_notifications_enabled(gs.id, True)
     assert coordinator.services.notifications.is_notifications_enabled(gs.id) is True
     coordinator.async_commit.assert_awaited_once()
+    mute.assert_awaited_once()
 
     # Non-existent growspace
     coordinator.async_commit.reset_mock()

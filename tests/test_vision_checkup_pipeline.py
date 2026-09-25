@@ -8,14 +8,28 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_capture_events,
+    async_fire_time_changed,
+)
 
 from custom_components.growspace_manager.alert_monitor import AlertMonitor
 from custom_components.growspace_manager.capture_continuity_monitor import (
     ActivationOrigin,
     CaptureContinuityMonitor,
 )
+from custom_components.growspace_manager.const import DOMAIN, NotificationTier
+from custom_components.growspace_manager.continuity_notifier import (
+    MAX_ATTEMPTS,
+    RETRY_DELAYS,
+    ContinuityNotifier,
+)
 from custom_components.growspace_manager.data_access.vision_evidence_store import (
     VisionEvidenceStore,
+)
+from custom_components.growspace_manager.domain.capture_continuity import (
+    CAPTURE_CONTINUITY_MESSAGE,
 )
 from custom_components.growspace_manager.domain.evidence_fusion import (
     AvailableFusionOutcome,
@@ -31,6 +45,7 @@ from custom_components.growspace_manager.models.vision_evidence import (
     ComparisonVerdict,
     ObservationSource,
 )
+from custom_components.growspace_manager.notification_manager import NotificationManager
 from custom_components.growspace_manager.notifications.evaluation_snapshot import (
     EvaluationSnapshot,
 )
@@ -56,6 +71,11 @@ from custom_components.growspace_manager.vision_models import (
     QualitySignals,
     VisionAnalysis,
 )
+from homeassistant.components import persistent_notification
+from homeassistant.const import EVENT_CALL_SERVICE
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 
 NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 REJECTED_ANALYSIS = VisionAnalysis(
@@ -108,8 +128,19 @@ def _evaluation(sensor_type: str) -> EvaluationSnapshot:
     )
 
 
+def _notifier(hass, coordinator, delivery_store):
+    """Deliver through a real notifier on a real Home Assistant, or record only.
+
+    Most pipeline tests run on a mock Home Assistant and are not about
+    delivery; they get a notifier that only records what it was told.
+    """
+    if hass is None:
+        return SimpleNamespace(async_start=AsyncMock(), async_announce=AsyncMock())
+    return ContinuityNotifier(hass, coordinator, delivery_store)
+
+
 @asynccontextmanager
-async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
+async def _pipeline(tmp_path, *, ai_settings: dict | None = None, hass=None):
     store = VisionEvidenceStore(tmp_path / "vision.db", tmp_path / "images")
     await store.async_setup()
     pipeline = None
@@ -166,10 +197,14 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
                 vision_checkup_config=SimpleNamespace(enabled=True),
             ),
         )
+        notifications_enabled: dict[str, bool] = {}
         notifications = SimpleNamespace(
             latest_evaluation=lambda _growspace_id, sensor_type: _evaluation(
                 sensor_type
-            )
+            ),
+            is_notifications_enabled=lambda growspace_id: notifications_enabled.get(
+                growspace_id, True
+            ),
         )
         coordinator = SimpleNamespace(
             growspaces={"tent1": growspace},
@@ -178,7 +213,13 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
             services=SimpleNamespace(notifications=notifications),
             async_update_listeners=MagicMock(),
         )
-        hass = MagicMock()
+        real_hass = hass
+        if hass is None:
+            hass = MagicMock()
+        else:
+            entry = MockConfigEntry(domain=DOMAIN)
+            entry.add_to_hass(hass)
+            coordinator.config_entry = entry
         hass.config.media_dirs = {"local": str(tmp_path / "media")}
         # The durable alert path is the thing under test, so the checkup runs
         # against the real Alert Monitor and the real continuity owner rather
@@ -192,8 +233,10 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
         )
         await alert_monitor.async_start()
         continuity_store = _MemoryStore()
+        delivery_store = _MemoryStore()
+        notifier = _notifier(real_hass, coordinator, delivery_store)
         capture_continuity = CaptureContinuityMonitor(
-            continuity_store, alert_monitor, store
+            continuity_store, alert_monitor, store, notifier
         )
         await capture_continuity.async_start({"tent1": ["camera.canopy"]})
         coordinator.alert_monitor = alert_monitor
@@ -221,11 +264,17 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
                 capture_continuity=capture_continuity,
                 alert_store=alert_store,
                 continuity_store=continuity_store,
+                delivery_store=delivery_store,
+                notifier=notifier,
+                notifications_enabled=notifications_enabled,
+                real_hass=real_hass,
                 paths=(tmp_path / "vision.db", tmp_path / "images"),
             )
             yield pipeline
     finally:
         # A restart inside the test replaces the store; close whichever is open.
+        if pipeline is not None and hasattr(pipeline.notifier, "async_stop"):
+            pipeline.notifier.async_stop()
         await store.async_close()
         if pipeline is not None:
             await pipeline.store.async_close()
@@ -249,8 +298,13 @@ async def _restart(pipeline, assignments: dict | None = None) -> None:
         ai_assistant_factory=None,
     )
     await alert_monitor.async_start()
+    if hasattr(pipeline.notifier, "async_stop"):
+        pipeline.notifier.async_stop()
+    notifier = _notifier(
+        pipeline.real_hass, pipeline.coordinator, pipeline.delivery_store
+    )
     capture_continuity = CaptureContinuityMonitor(
-        pipeline.continuity_store, alert_monitor, store
+        pipeline.continuity_store, alert_monitor, store, notifier
     )
     await capture_continuity.async_start(
         assignments
@@ -258,6 +312,7 @@ async def _restart(pipeline, assignments: dict | None = None) -> None:
         else {"tent1": pipeline.growspace.environment_config.camera_entities}
     )
     pipeline.alert_monitor = pipeline.coordinator.alert_monitor = alert_monitor
+    pipeline.notifier = notifier
     pipeline.capture_continuity = pipeline.coordinator.capture_continuity = (
         capture_continuity
     )
@@ -1009,6 +1064,452 @@ async def test_upgrade_manufactures_no_alert_for_a_break_that_already_ended(
         assert alert["condition_active"] is True
         assert _activation(pipeline).origin is ActivationOrigin.HISTORICAL
         assert _streak(pipeline).consecutive_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Continuity notifications (#741): the grower hears about each new break once
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def notifications(hass):
+    """A real Home Assistant with persistent notifications available."""
+    assert await async_setup_component(hass, "persistent_notification", {})
+    return hass
+
+
+def _shown(hass) -> dict:
+    """Every continuity notification Home Assistant is currently showing."""
+    return {
+        notification_id: notification
+        for notification_id, notification in (
+            persistent_notification._async_get_or_create_notifications(hass).items()
+        )
+        if notification_id.startswith("growspace_capture_continuity_")
+    }
+
+
+def _sends(calls) -> list[dict]:
+    """Every persistent notification the integration asked Home Assistant for."""
+    return [
+        call.data["service_data"]
+        for call in calls
+        if call.data["domain"] == "persistent_notification"
+        and call.data["service"] == "create"
+    ]
+
+
+def _deliveries(pipeline) -> list[dict]:
+    return json.loads(pipeline.delivery_store.data)["deliveries"]
+
+
+def _channel(pipeline) -> dict:
+    (delivery,) = _deliveries(pipeline)
+    return delivery["channels"]["home_assistant"]
+
+
+async def _settle(pipeline) -> None:
+    await pipeline.real_hass.async_block_till_done(wait_background_tasks=True)
+
+
+async def _advance(pipeline, delay: timedelta) -> None:
+    """Let Home Assistant's clock run on, so due retries fire."""
+    async_fire_time_changed(pipeline.real_hass, dt_util.utcnow() + delay)
+    await _settle(pipeline)
+
+
+async def _mute(pipeline) -> None:
+    """Flip the growspace notification switch off, as the switch entity does."""
+    pipeline.notifications_enabled["tent1"] = False
+    await pipeline.notifier.async_mute("tent1")
+
+
+@asynccontextmanager
+async def _unsendable(pipeline):
+    """Refuse every persistent notification until the block ends.
+
+    Yields the requests that were refused.
+    """
+    hass = pipeline.real_hass
+    create = hass.services.async_services_for_domain("persistent_notification")[
+        "create"
+    ]
+    refused: list = []
+
+    async def _refuse(call) -> None:
+        refused.append(call)
+        raise HomeAssistantError("persistent notifications unavailable")
+
+    hass.services.async_register("persistent_notification", "create", _refuse)
+    try:
+        yield refused
+    finally:
+        hass.services.async_register(
+            "persistent_notification", "create", create.job.target, create.schema
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_new_break_shows_one_notification_without_a_device_target(
+    notifications, tmp_path
+) -> None:
+    """Third qualifying capture: one alert, one notification, one delivery record."""
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        pipeline.growspace.notification_target = None
+        notifications.states.async_set(
+            "camera.canopy", "idle", {"friendly_name": "Canopy"}
+        )
+
+        await _reject(pipeline, 2)
+        await _settle(pipeline)
+        assert _shown(notifications) == {}
+
+        await _reject(pipeline)
+        await _settle(pipeline)
+
+        (alert,) = _continuity_alerts(pipeline)
+        activation = _activation(pipeline)
+        (notification,) = _shown(notifications).values()
+        assert notification["notification_id"] == (
+            "growspace_capture_continuity_tent1_camera.canopy_"
+            f"{activation.activation_id}"
+        )
+        assert notification["title"] == "⚠️ Capture Continuity Break: Test Tent"
+        assert notification["message"] == (
+            f"{CAPTURE_CONTINUITY_MESSAGE}\n\n"
+            "Camera: Canopy (camera.canopy)\nGrowspace: Test Tent"
+        )
+        assert alert["description"] == CAPTURE_CONTINUITY_MESSAGE
+        assert _deliveries(pipeline) == [
+            {
+                "activation_id": activation.activation_id,
+                "growspace_id": "tent1",
+                "camera_id": "camera.canopy",
+                "activated_at": activation.activated_at.isoformat(),
+                "channels": {"home_assistant": {"status": "delivered", "attempts": 0}},
+            }
+        ]
+
+
+@pytest.mark.asyncio
+async def test_a_break_is_announced_once_per_streak(notifications, tmp_path) -> None:
+    """Continuation, restart and Inbox trimming stay quiet; a new streak does not."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        pipeline.alert_monitor.MAX_ALERTS = 2
+        await _reject(pipeline, 4)
+        await _settle(pipeline)
+        assert len(_sends(calls)) == 1
+
+        for _ in range(3):
+            await pipeline.alert_monitor.async_record_alert(
+                "tent1", "stress", ["vpd"], 0.9
+            )
+        await _restart(pipeline)
+        await _reject(pipeline)
+        await _settle(pipeline)
+
+        assert _activation(pipeline).origin is ActivationOrigin.HISTORICAL
+        assert len(_sends(calls)) == 1
+        assert _channel(pipeline)["status"] == "delivered"
+
+        # A baseline, then one scored comparable capture to clear and re-arm.
+        await _accept(pipeline, BASELINE_SIZE + 1)
+        assert _activation(pipeline) is None
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+
+        first, second = _sends(calls)
+        assert first["notification_id"] != second["notification_id"]
+        assert len(_shown(notifications)) == 2
+        # The finished record of the streak that ended has nothing left to guard.
+        (delivery,) = _deliveries(pipeline)
+        assert delivery["activation_id"] == _activation(pipeline).activation_id
+
+
+@pytest.mark.asyncio
+async def test_an_upgrade_announces_nothing_it_rediscovers(
+    notifications, tmp_path
+) -> None:
+    """Activations found by an upgrade were never news to this delivery store."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        pipeline.notifications_enabled["tent1"] = False
+        await _reject(pipeline, 3)
+        pipeline.notifications_enabled["tent1"] = True
+        pipeline.continuity_store.data = None
+        pipeline.delivery_store.data = None
+
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        assert _activation(pipeline).origin is ActivationOrigin.HISTORICAL
+        assert _sends(calls) == []
+        assert _deliveries(pipeline) == []
+
+
+@pytest.mark.asyncio
+async def test_muting_suppresses_delivery_but_never_the_alert(
+    notifications, tmp_path
+) -> None:
+    """A muted activation stays unannounced, even once notifications return."""
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        pipeline.notifications_enabled["tent1"] = False
+
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+
+        (alert,) = _continuity_alerts(pipeline)
+        assert alert["condition_active"] is True
+        assert _channel(pipeline) == {"status": "suppressed", "attempts": 0}
+        assert _shown(notifications) == {}
+
+        pipeline.notifications_enabled["tent1"] = True
+        await _reject(pipeline)
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        assert _shown(notifications) == {}
+        assert _channel(pipeline)["status"] == "suppressed"
+
+        # A baseline, then one scored comparable capture to clear and re-arm.
+        await _accept(pipeline, BASELINE_SIZE + 1)
+        assert _activation(pipeline) is None
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+
+        assert len(_shown(notifications)) == 1
+
+
+@pytest.mark.asyncio
+async def test_unrelated_cooldowns_plants_and_ai_cannot_touch_the_warning(
+    notifications, tmp_path
+) -> None:
+    """The generic sender's cooldown, no-Plants gate and AI rewrite do not apply."""
+    ai_settings = {"ai_enabled": True, "assistant_id": "conversation.grow_master"}
+    async with _pipeline(
+        tmp_path, hass=notifications, ai_settings=ai_settings
+    ) as pipeline:
+        rewriter = SimpleNamespace(async_rewrite=AsyncMock(return_value="rewritten"))
+        manager = NotificationManager(notifications, pipeline.coordinator, rewriter)
+        pipeline.coordinator.services.notifications.manager = manager
+        pipeline.coordinator.services.growspaces = SimpleNamespace(
+            get_growspace_plants=lambda _growspace_id: []
+        )
+        manager.trigger_cooldown("tent1")
+        assert manager._is_on_cooldown(
+            "tent1", NotificationTier.WARNING, dt_util.utcnow()
+        )
+
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+
+        (notification,) = _shown(notifications).values()
+        assert notification["message"].startswith(CAPTURE_CONTINUITY_MESSAGE)
+        rewriter.async_rewrite.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_delivery_retries_without_failing_the_checkup(
+    notifications, tmp_path
+) -> None:
+    """The checkup completes, the alert is recorded once, and delivery follows."""
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        await _reject(pipeline, 2)
+        async with _unsendable(pipeline):
+            outcome = await pipeline.scheduler.run_vision_analysis("tent1", "early")
+            await _settle(pipeline)
+
+            assert outcome.checkup.status is CheckupStatus.COMPLETED
+            assert len(_continuity_alerts(pipeline)) == 1
+            assert _channel(pipeline) == {"status": "pending", "attempts": 1}
+            assert await pipeline.store.async_get_capture_evidence(
+                "tent1", "camera.canopy"
+            )
+
+        await _advance(pipeline, RETRY_DELAYS[0])
+
+        assert len(_shown(notifications)) == 1
+        assert _channel(pipeline) == {"status": "delivered", "attempts": 1}
+        assert len(_continuity_alerts(pipeline)) == 1
+
+
+@pytest.mark.asyncio
+async def test_retries_are_bounded(notifications, tmp_path) -> None:
+    """A channel that keeps failing is given up; its Triage Alert remains."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        async with _unsendable(pipeline) as refused:
+            await _reject(pipeline, 3)
+            await _settle(pipeline)
+            for delay in RETRY_DELAYS:
+                await _advance(pipeline, delay)
+            assert len(refused) == MAX_ATTEMPTS
+
+            await _advance(pipeline, timedelta(days=1))
+
+            assert len(refused) == MAX_ATTEMPTS
+        assert _channel(pipeline) == {"status": "failed", "attempts": MAX_ATTEMPTS}
+        assert _continuity_alerts(pipeline)[0]["condition_active"] is True
+
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        assert len(_sends(calls)) == MAX_ATTEMPTS
+        assert _shown(notifications) == {}
+
+
+@pytest.mark.asyncio
+async def test_muting_cancels_a_pending_retry(notifications, tmp_path) -> None:
+    """A retry due after the switch went off is never sent, nor after un-muting."""
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        async with _unsendable(pipeline):
+            await _reject(pipeline, 3)
+            await _settle(pipeline)
+        assert _channel(pipeline)["status"] == "pending"
+
+        await _mute(pipeline)
+        pipeline.notifications_enabled["tent1"] = True
+        await _advance(pipeline, timedelta(days=1))
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        assert _shown(notifications) == {}
+        assert _channel(pipeline) == {"status": "suppressed", "attempts": 1}
+
+
+@pytest.mark.asyncio
+async def test_a_retry_that_finds_the_growspace_muted_is_suppressed(
+    notifications, tmp_path
+) -> None:
+    """Muting by any route is honoured when the retry comes due."""
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        async with _unsendable(pipeline):
+            await _reject(pipeline, 3)
+            await _settle(pipeline)
+        pipeline.notifications_enabled["tent1"] = False
+
+        await _advance(pipeline, RETRY_DELAYS[0])
+
+        assert _shown(notifications) == {}
+        assert _channel(pipeline) == {"status": "suppressed", "attempts": 1}
+
+
+@pytest.mark.asyncio
+async def test_unload_cancels_retries_and_restart_resumes_them(
+    notifications, tmp_path
+) -> None:
+    """Retry work follows the integration's lifecycle; progress survives it."""
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        async with _unsendable(pipeline):
+            await _reject(pipeline, 3)
+            await _settle(pipeline)
+
+        pipeline.notifier.async_stop()
+        await _advance(pipeline, timedelta(days=1))
+        assert _shown(notifications) == {}
+
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        assert len(_shown(notifications)) == 1
+        assert _channel(pipeline) == {"status": "delivered", "attempts": 1}
+
+
+@pytest.mark.asyncio
+async def test_restart_before_the_send_delivers_once(notifications, tmp_path) -> None:
+    """The record was written but the attempt never ran: restart sends it."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        with patch.object(pipeline.notifier, "_spawn"):
+            await _reject(pipeline, 3)
+        assert _channel(pipeline)["status"] == "pending"
+
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        assert len(_sends(calls)) == 1
+        assert _channel(pipeline)["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_restart_between_send_and_recorded_success_may_resend_the_same_id(
+    notifications, tmp_path
+) -> None:
+    """At-least-once: the repeat carries the same id, so one notification shows."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        save = pipeline.delivery_store.async_save
+
+        async def _lose_success(data: dict) -> None:
+            if any(
+                channel["status"] == "delivered"
+                for delivery in data["deliveries"]
+                for channel in delivery["channels"].values()
+            ):
+                raise OSError("power cut")
+            await save(data)
+
+        with patch.object(
+            pipeline.delivery_store, "async_save", side_effect=_lose_success
+        ):
+            await _reject(pipeline, 3)
+            await _settle(pipeline)
+        assert _channel(pipeline)["status"] == "pending"
+
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        first, second = _sends(calls)
+        assert first == second
+        assert len(_shown(notifications)) == 1
+        assert _channel(pipeline)["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_a_checkup_interrupted_before_delivery_is_announced_after_restart(
+    notifications, tmp_path
+) -> None:
+    """Evidence written, intake crashed: the new activation is still announced."""
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        await _reject(pipeline, 2)
+        with patch.object(
+            pipeline.capture_continuity,
+            "async_record_capture",
+            side_effect=RuntimeError("stopped mid-checkup"),
+        ):
+            await _reject(pipeline)
+
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        assert _activation(pipeline).origin is ActivationOrigin.NEW
+        assert len(_shown(notifications)) == 1
+        assert _channel(pipeline)["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_a_recorded_delivery_is_not_repeated_for_an_unprocessed_capture(
+    notifications, tmp_path
+) -> None:
+    """Delivered, then progress was lost: the activation is new but already told."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        await _reject(pipeline, 2)
+        with patch.object(
+            pipeline.continuity_store,
+            "async_save",
+            side_effect=OSError("disk full"),
+        ):
+            await _reject(pipeline)
+            await _settle(pipeline)
+
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        assert _activation(pipeline).origin is ActivationOrigin.NEW
+        assert len(_sends(calls)) == 1
+        assert _channel(pipeline)["status"] == "delivered"
 
 
 def test_evidence_projection_helpers_cover_available_and_unavailable_shapes() -> None:

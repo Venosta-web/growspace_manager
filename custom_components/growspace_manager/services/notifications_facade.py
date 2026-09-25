@@ -40,7 +40,11 @@ class NotificationsFacade:
         await self._coordinator.async_commit()
 
     async def set_notifications_enabled(self, growspace_id: str, enabled: bool) -> None:
-        """Enable or disable notifications for a growspace."""
+        """Enable or disable notifications for a growspace.
+
+        Muting also abandons any continuity announcement still being retried;
+        un-muting sends no backlog.
+        """
         if growspace_id not in self._coordinator.growspaces:
             self._coordinator.notification_settings.set_notifications_state(
                 growspace_id, enabled
@@ -50,6 +54,8 @@ class NotificationsFacade:
             growspace_id, enabled
         )
         await self._coordinator.async_commit()
+        if not enabled:
+            await self._coordinator.continuity_notifier.async_mute(growspace_id)
 
     def is_notifications_enabled(self, growspace_id: str) -> bool:
         """Check if notifications are enabled for a growspace."""
