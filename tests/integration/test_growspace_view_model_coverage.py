@@ -209,6 +209,7 @@ def test_get_environment_attributes(hass: HomeAssistant, builder):
         assert attrs["irrigation_pump_state"] == "off"
         assert len(attrs["irrigation_tanks"]) == 1
         assert attrs["irrigation_tanks"][0]["is_warning"] is True
+        assert attrs["irrigation_tanks"][0]["stale_after_minutes"] == 120
         assert attrs["sensor_groups"][0]["id"] == "g1"
 
 

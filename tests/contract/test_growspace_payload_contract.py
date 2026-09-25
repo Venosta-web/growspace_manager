@@ -188,6 +188,7 @@ def _maximal_environment_config(prefix: str) -> EnvironmentConfig:
                 enable_lights_bias=True,
                 enable_vpd_weighting=True,
                 volume_liters=120.0,
+                stale_after_minutes=0,
                 last_recorded_level=72.0,
                 peak_level=95.0,
                 water_history=TankWaterHistory(

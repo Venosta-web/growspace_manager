@@ -674,6 +674,10 @@ class GrowspaceViewModelBuilder:
                         "name": tank.name,
                         "warning_level": tank.warning_level,
                         "volume_liters": tank.volume_liters,
+                        # Read back so the card can show it and send it
+                        # again: every tank save restates the whole item, and
+                        # a field it cannot see resets to the default.
+                        "stale_after_minutes": tank.stale_after_minutes,
                         "fill_level": fill_level,
                         "is_warning": fill_level is not None
                         and fill_level <= tank.warning_level,
