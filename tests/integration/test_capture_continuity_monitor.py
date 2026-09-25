@@ -103,6 +103,15 @@ def alert_monitor():
 
 
 @pytest.fixture
+def notifier():
+    """Record which activations the monitor hands on for delivery."""
+    subject = MagicMock()
+    subject.async_start = AsyncMock()
+    subject.async_announce = AsyncMock()
+    return subject
+
+
+@pytest.fixture
 def store():
     return _MemoryStore()
 
@@ -117,8 +126,8 @@ async def evidence(tmp_path):
 
 
 @pytest.fixture
-async def monitor(store, alert_monitor, evidence):
-    subject = CaptureContinuityMonitor(store, alert_monitor, evidence)
+async def monitor(store, alert_monitor, evidence, notifier):
+    subject = CaptureContinuityMonitor(store, alert_monitor, evidence, notifier)
     await subject.async_start({GROWSPACE_ID: [CAMERA_ID], "tent2": [CAMERA_ID]})
     return subject
 
@@ -162,7 +171,9 @@ async def test_accepted_capture_without_a_verdict_neither_advances_nor_clears(
     assert streak.condition_active is True
 
 
-async def test_later_captures_update_the_same_alert(monitor, alert_monitor) -> None:
+async def test_later_captures_update_the_same_alert(
+    monitor, alert_monitor, notifier
+) -> None:
     """The fourth qualifying capture updates the break rather than raising one."""
     transitions = [
         await monitor.async_record_capture(_capture(number), None)
@@ -188,6 +199,10 @@ async def test_later_captures_update_the_same_alert(monitor, alert_monitor) -> N
     assert latest.reason_counts == (
         (ContinuityReason.FRAME_REJECTED, 3),
         (ContinuityReason.MATERIAL_SCENE_CHANGE, 1),
+    )
+    # Only the activation itself is handed on for delivery.
+    notifier.async_announce.assert_awaited_once_with(
+        monitor.activation(GROWSPACE_ID, CAMERA_ID)
     )
 
 
@@ -317,7 +332,7 @@ async def test_unchanged_assignment_writes_nothing(monitor, store) -> None:
 
 
 async def test_assignments_follow_configuration_at_start(
-    alert_monitor, evidence
+    alert_monitor, evidence, notifier
 ) -> None:
     """Stored rows are kept, unreadable ones reopened, unconfigured ones retired."""
     kept = {"captured_at": BASE_TIME.isoformat(), "capture_id": "capture-0"}
@@ -346,7 +361,7 @@ async def test_assignments_follow_configuration_at_start(
             ]
         }
     )
-    monitor = CaptureContinuityMonitor(store, alert_monitor, evidence)
+    monitor = CaptureContinuityMonitor(store, alert_monitor, evidence, notifier)
 
     await monitor.async_start(
         {GROWSPACE_ID: [CAMERA_ID, "camera.side"], "tent2": ["camera.garbled"]}
@@ -365,18 +380,23 @@ async def test_assignments_follow_configuration_at_start(
     assert rows[(GROWSPACE_ID, CAMERA_ID)]["evidence_after"] is None
     alert_monitor.async_reconcile_capture_continuity.assert_awaited_once()
     assert alert_monitor.async_reconcile_capture_continuity.await_args.args == ([],)
+    # Delivery starts only once recovery has settled what is historical.
+    (activations,) = notifier.async_start.await_args.args
+    assert list(activations) == []
 
 
 async def test_without_an_evidence_store_nothing_is_recovered(
-    store, alert_monitor
+    store, alert_monitor, notifier
 ) -> None:
     """No store means no checkup ever ran here, so there is nothing to rebuild."""
-    monitor = CaptureContinuityMonitor(store, alert_monitor, None)
+    monitor = CaptureContinuityMonitor(store, alert_monitor, None, notifier)
 
     await monitor.async_start({GROWSPACE_ID: [CAMERA_ID]})
 
     assert store.data is None
     alert_monitor.async_reconcile_capture_continuity.assert_not_awaited()
+    # Delivery still resumes whatever an earlier run left unfinished.
+    notifier.async_start.assert_awaited_once_with(())
 
     # An assignment made while nothing on record can be read begins now, so
     # evidence written before it can never be adopted later.

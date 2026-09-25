@@ -15,6 +15,7 @@ from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
 from .capture_continuity_monitor import CaptureContinuityMonitor
 from .const import DOMAIN
+from .continuity_notifier import ContinuityNotifier
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
@@ -110,6 +111,9 @@ class CoordinatorBuilder:
         )
         continuity_store: Store[dict[str, Any]] = Store(
             self.hass, 1, "growspace_manager.capture_continuity"
+        )
+        continuity_delivery_store: Store[dict[str, Any]] = Store(
+            self.hass, 1, "growspace_manager.continuity_notifications"
         )
         conversation_store = ConversationStore(
             Store(self.hass, 1, "growspace_manager.ai_conversations")
@@ -257,8 +261,11 @@ class CoordinatorBuilder:
             store=alert_store,
             ai_assistant_factory=_make_ai_assistant,
         )
+        continuity_notifier = ContinuityNotifier(
+            self.hass, coordinator, continuity_delivery_store
+        )
         capture_continuity = CaptureContinuityMonitor(
-            continuity_store, alert_monitor, evidence_store
+            continuity_store, alert_monitor, evidence_store, continuity_notifier
         )
 
         # ------------------------------------------------------------------
@@ -289,6 +296,7 @@ class CoordinatorBuilder:
             photoperiod_checker=photoperiod_checker,
             alert_monitor=alert_monitor,
             capture_continuity=capture_continuity,
+            continuity_notifier=continuity_notifier,
             conversation_store=conversation_store,
             tank_monitor=tank_monitor,
         )

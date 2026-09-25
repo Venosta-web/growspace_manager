@@ -74,6 +74,7 @@ if TYPE_CHECKING:
     from homeassistant.helpers.storage import Store
 
     from .alert_monitor import AlertMonitor
+    from .continuity_notifier import ContinuityNotifier
     from .data_access.vision_evidence_store import VisionEvidenceStore
     from .models.vision_evidence import VisionCapture, VisualComparisonResult
 
@@ -150,6 +151,7 @@ class CaptureContinuityMonitor:
         store: Store[dict[str, Any]],
         alert_monitor: AlertMonitor,
         evidence_store: VisionEvidenceStore | None,
+        notifier: ContinuityNotifier,
     ) -> None:
         """Initialise the monitor.
 
@@ -162,10 +164,14 @@ class CaptureContinuityMonitor:
             evidence_store: The Vision Evidence Store streaks are recovered
                 from, or ``None`` when it failed to open. Without it no
                 checkup can run, so there is nothing to recover or record.
+            notifier: Announces each genuinely new activation to the grower.
+                It is started here, once recovery has settled which
+                activations are historical.
         """
         self._store = store
         self._alert_monitor = alert_monitor
         self._evidence = evidence_store
+        self._notifier = notifier
         self._assignments: dict[_AssignmentKey, _Assignment] = {}
         self._streaks: dict[_AssignmentKey, CaptureContinuityState] = {}
         self._activations: dict[_AssignmentKey, ContinuityActivation] = {}
@@ -179,12 +185,13 @@ class CaptureContinuityMonitor:
 
         ``assignments`` maps each configured Growspace to the cameras it holds;
         a stored assignment missing from it is retired, and its active
-        condition cleared. Must run before the first checkup is scheduled and
-        before anything delivers notifications, so that which activations are
-        historical is settled first.
+        condition cleared. Must run before the first checkup is scheduled. It
+        starts notification delivery itself, last, so that which activations
+        are historical is settled before anything could announce one.
         """
         if self._evidence is None:
             _LOGGER.debug("No Vision Evidence Store; continuity recovery skipped")
+            await self._notifier.async_start(())
             return
         data = await self._store.async_load() or {}
         upgrading = "assignments" not in data
@@ -222,6 +229,7 @@ class CaptureContinuityMonitor:
             recovered, cleared_at=dt_util.utcnow()
         )
         await self._async_save()
+        await self._notifier.async_start(self._activations.values())
 
     # ------------------------------------------------------------------
     # Capture intake
@@ -271,8 +279,9 @@ class CaptureContinuityMonitor:
         if decision.state is not previous:
             await self._async_report(key, event, decision)
 
-        # Only after the alert: a crash before this line leaves the capture
-        # unprocessed, so recovery still treats what it activated as new.
+        # Only after the alert and its delivery record: a crash before this
+        # line leaves the capture unprocessed, so recovery still treats what
+        # it activated as new and announces it if nothing recorded it yet.
         assignment.processed_through = marker
         await self._async_save()
         return decision.transition
@@ -305,6 +314,8 @@ class CaptureContinuityMonitor:
             await self._alert_monitor.async_record_capture_continuity_break(
                 decision.state
             )
+            if decision.transition is ContinuityTransition.ACTIVATED:
+                await self._notifier.async_announce(self._activations[key])
 
     # ------------------------------------------------------------------
     # Assignment intake
