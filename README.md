@@ -12,9 +12,13 @@ Automation is opt-in. Nothing moves water until you arm irrigation on a
 growspace, and the climate controllers only drive devices you bind to them.
 Before you let it run unattended, read
 **[Safety and limitations](#safety-and-limitations)** for what it does when a
-sensor, a relay or Home Assistant itself fails, and what it cannot do. The
+sensor, a relay or Home Assistant itself fails, and what it cannot do. Then fit
+the **[hardware fail-safes](docs/HARDWARE.md)** and work through the
+**[commissioning guide](docs/COMMISSIONING.md)** on your own equipment. The
 **[feature matrix](docs/FEATURE_MATRIX.md)** records how each feature has been
 verified: by automated tests, on a simulated instance, or on physical hardware.
+[HARDWARE.md](docs/HARDWARE.md#supported-and-tested-devices) lists the devices
+that have been tested.
 
 It comes in two parts: this integration holds the data and runs the
 automation, and the
@@ -148,8 +152,9 @@ Each growspace has:
   - a relay that powers up OFF;
   - a float or leak switch that cuts the pump's power directly.
 
-  A commissioning guide for physical hardware is tracked in
-  [#799](https://github.com/Venosta-web/growspace_manager/issues/799).
+  [HARDWARE.md](docs/HARDWARE.md) shows how, with an ESPHome example. The
+  [commissioning guide](docs/COMMISSIONING.md) tests all of it before you
+  trust it.
 
 - **It does not measure water.** Volumes are estimated from the flow rate you
   configure, not metered.

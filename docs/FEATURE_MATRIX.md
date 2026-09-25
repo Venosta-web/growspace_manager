@@ -49,7 +49,7 @@ behaviour itself.
 | Subsystem diagnostics (#795)                                                                   | 1.2.4b477 | Automated test                                                                                                     | `tests/components/test_diagnostics.py`                                                                |
 | Durable reliability evidence (#796)                                                            | 1.2.4b480 | Automated test                                                                                                     | `tests/services/test_reliability_evidence.py`                                                         |
 | Daily safety counters survive a restart (#787)                                                 | —         | Not built                                                                                                          | —                                                                                                     |
-| DST and clock-jump behaviour of schedules                                                      | —         | Not verified: no dedicated test, and no commissioning case                                                         | —                                                                                                     |
+| DST and clock-jump behaviour of schedules                                                      | —         | Not verified: no dedicated test; see [commissioning case 13](COMMISSIONING.md#13-dst-and-time-boundaries)          | —                                                                                                     |
 
 ## Cultivation features
 
@@ -146,8 +146,8 @@ linked there.
 ## Not verified
 
 - **Irrigation on physical hardware.** No physical commissioning run has been
-  recorded. The commissioning guide is
-  [#799](https://github.com/Venosta-web/growspace_manager/issues/799).
+  recorded. The [commissioning guide](COMMISSIONING.md) gives the procedure,
+  and [HARDWARE.md](HARDWARE.md#supported-and-tested-devices) lists the devices.
 - **Climate actuators on physical hardware.** No record exists.
 - **The irrigation safety work from #785 onward on a live instance.** No
   simulated run has been made since it landed.
