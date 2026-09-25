@@ -73,6 +73,10 @@ async def test_add_growspace_registers_device(mock_coordinator) -> None:
     mock_coordinator._subsystem_manager.async_setup_growspace_sub_coordinators.assert_awaited_once_with(
         "gs1", gs
     )
+    # A growspace created with cameras holds its Camera Assignments from the start.
+    mock_coordinator.capture_continuity.async_apply_camera_assignment.assert_awaited_once_with(
+        "gs1", gs.environment_config.camera_entities
+    )
 
 
 @pytest.mark.asyncio

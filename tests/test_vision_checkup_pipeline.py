@@ -2,7 +2,8 @@
 
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,6 +11,7 @@ import pytest
 
 from custom_components.growspace_manager.alert_monitor import AlertMonitor
 from custom_components.growspace_manager.capture_continuity_monitor import (
+    ActivationOrigin,
     CaptureContinuityMonitor,
 )
 from custom_components.growspace_manager.data_access.vision_evidence_store import (
@@ -72,16 +74,20 @@ REJECTED_ANALYSIS = VisionAnalysis(
 
 
 class _MemoryStore:
-    """Stand-in for a Home Assistant Store that keeps one payload in memory."""
+    """Stand-in for a Home Assistant Store that keeps one payload in memory.
+
+    Payloads round-trip through JSON as a real Store's do, so what survives a
+    restart here is exactly what would survive one on disk.
+    """
 
     def __init__(self) -> None:
-        self.data: dict | None = None
+        self.data: str | None = None
 
     async def async_load(self) -> dict | None:
-        return self.data
+        return json.loads(self.data) if self.data is not None else None
 
     async def async_save(self, data: dict) -> None:
-        self.data = data
+        self.data = json.dumps(data)
 
 
 def _evaluation(sensor_type: str) -> EvaluationSnapshot:
@@ -106,6 +112,7 @@ def _evaluation(sensor_type: str) -> EvaluationSnapshot:
 async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
     store = VisionEvidenceStore(tmp_path / "vision.db", tmp_path / "images")
     await store.async_setup()
+    pipeline = None
     try:
         image = SimpleNamespace(content=b"jpeg bytes", content_type="image/jpeg")
         model = ModelIdentity(model_id="dinov2-small", model_version="1.0.0")
@@ -176,15 +183,19 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
         # The durable alert path is the thing under test, so the checkup runs
         # against the real Alert Monitor and the real continuity owner rather
         # than mocks that would accept any policy the scheduler invented.
+        alert_store = _MemoryStore()
         alert_monitor = AlertMonitor(
             hass,
             coordinator=coordinator,
-            store=_MemoryStore(),
+            store=alert_store,
             ai_assistant_factory=None,
         )
         await alert_monitor.async_start()
-        capture_continuity = CaptureContinuityMonitor(_MemoryStore(), alert_monitor)
-        await capture_continuity.async_start()
+        continuity_store = _MemoryStore()
+        capture_continuity = CaptureContinuityMonitor(
+            continuity_store, alert_monitor, store
+        )
+        await capture_continuity.async_start({"tent1": ["camera.canopy"]})
         coordinator.alert_monitor = alert_monitor
         coordinator.capture_continuity = capture_continuity
         scheduler = VisionCheckupScheduler(hass, coordinator, evidence_store=store)
@@ -199,7 +210,7 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
                 return_value=NOW,
             ),
         ):
-            yield SimpleNamespace(
+            pipeline = SimpleNamespace(
                 scheduler=scheduler,
                 store=store,
                 client=client,
@@ -208,9 +219,51 @@ async def _pipeline(tmp_path, *, ai_settings: dict | None = None):
                 analyzed=analyzed,
                 alert_monitor=alert_monitor,
                 capture_continuity=capture_continuity,
+                alert_store=alert_store,
+                continuity_store=continuity_store,
+                paths=(tmp_path / "vision.db", tmp_path / "images"),
             )
+            yield pipeline
     finally:
+        # A restart inside the test replaces the store; close whichever is open.
         await store.async_close()
+        if pipeline is not None:
+            await pipeline.store.async_close()
+
+
+async def _restart(pipeline, assignments: dict | None = None) -> None:
+    """Stop and start again over the durable stores the pipeline wrote.
+
+    The Vision Evidence Store is closed and reopened from its file; the Alert
+    Monitor and the continuity owner are rebuilt from their persisted payloads
+    alone, so nothing in memory survives.
+    """
+    await pipeline.store.async_close()
+    store = VisionEvidenceStore(*pipeline.paths)
+    await store.async_setup()
+    pipeline.store = store
+    alert_monitor = AlertMonitor(
+        pipeline.scheduler.hass,
+        coordinator=pipeline.coordinator,
+        store=pipeline.alert_store,
+        ai_assistant_factory=None,
+    )
+    await alert_monitor.async_start()
+    capture_continuity = CaptureContinuityMonitor(
+        pipeline.continuity_store, alert_monitor, store
+    )
+    await capture_continuity.async_start(
+        assignments
+        if assignments is not None
+        else {"tent1": pipeline.growspace.environment_config.camera_entities}
+    )
+    pipeline.alert_monitor = pipeline.coordinator.alert_monitor = alert_monitor
+    pipeline.capture_continuity = pipeline.coordinator.capture_continuity = (
+        capture_continuity
+    )
+    pipeline.scheduler = VisionCheckupScheduler(
+        pipeline.scheduler.hass, pipeline.coordinator, evidence_store=store
+    )
 
 
 @pytest.mark.asyncio
@@ -535,6 +588,427 @@ async def test_unassigning_the_camera_clears_without_erasing_the_alert(
         streak = pipeline.capture_continuity.active_streak("tent1", "camera.canopy")
         assert streak is not None
         assert streak.consecutive_count == 2
+
+
+async def _fail(pipeline) -> None:
+    """Run a scheduled checkup whose Vision Analysis never completes."""
+    pipeline.client.async_analyze.side_effect = RuntimeError("vision unavailable")
+    await pipeline.scheduler.run_vision_analysis("tent1", "early")
+
+
+async def _manual(pipeline) -> None:
+    """Run a grower-requested checkup the quality gate rejects."""
+    pipeline.client.async_analyze.side_effect = None
+    pipeline.client.async_analyze.return_value = REJECTED_ANALYSIS
+    await pipeline.scheduler.run_vision_analysis("tent1", "manual")
+
+
+async def _scene_change(pipeline) -> None:
+    """Run a scheduled checkup scored as a material scene change."""
+    pipeline.client.async_analyze.side_effect = None
+    pipeline.client.async_analyze.return_value = replace(
+        pipeline.analyzed,
+        embedding=SimpleNamespace(dimension=2, values=(0.0, 1.0)),
+    )
+    await pipeline.scheduler.run_vision_analysis("tent1", "early")
+
+
+def _streak(pipeline):
+    return pipeline.capture_continuity.active_streak("tent1", "camera.canopy")
+
+
+def _activation(pipeline):
+    return pipeline.capture_continuity.activation("tent1", "camera.canopy")
+
+
+def _stored_alerts(pipeline) -> list[dict]:
+    return json.loads(pipeline.alert_store.data)["alerts"]
+
+
+def _rewrite_alerts(pipeline, alerts: list[dict]) -> None:
+    pipeline.alert_store.data = json.dumps({"alerts": alerts})
+
+
+@pytest.mark.asyncio
+async def test_recovery_agrees_with_live_evaluation_over_a_long_mixed_streak(
+    tmp_path,
+) -> None:
+    """Replaying retained evidence rebuilds exactly the streak live intake held.
+
+    Twelve qualifying captures with failures, manual captures and accepted
+    captures no baseline could score yet between them: far past any three-row
+    window, and every non-qualifying kind in the gaps.
+    """
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 2)
+        await _accept(pipeline, BASELINE_SIZE)
+        await _fail(pipeline)
+        await _manual(pipeline)
+        await _scene_change(pipeline)
+        await _reject(pipeline, 4)
+        await _fail(pipeline)
+        await _scene_change(pipeline)
+        await _manual(pipeline)
+        await _reject(pipeline, 4)
+        live = _streak(pipeline)
+        live_activation = _activation(pipeline)
+        assert live is not None
+        assert live.consecutive_count == 12
+        assert live_activation is not None
+        assert live_activation.origin is ActivationOrigin.NEW
+        (alert,) = _continuity_alerts(pipeline)
+
+        await _restart(pipeline)
+
+        assert _streak(pipeline) == live
+        recovered = _activation(pipeline)
+        assert recovered == replace(live_activation, origin=ActivationOrigin.HISTORICAL)
+        assert _continuity_alerts(pipeline) == [alert]
+
+
+@pytest.mark.asyncio
+async def test_restart_keeps_pre_threshold_progress(tmp_path) -> None:
+    """Two qualifying captures before a restart still count toward the third."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 2)
+        started = _streak(pipeline)
+
+        await _restart(pipeline)
+
+        assert _streak(pipeline) == started
+        assert _activation(pipeline) is None
+        assert _continuity_alerts(pipeline) == []
+
+        await _reject(pipeline)
+
+        (alert,) = _continuity_alerts(pipeline)
+        assert alert["consecutive_count"] == 3
+        assert _streak(pipeline).streak_started_capture_id == (
+            started.streak_started_capture_id
+        )
+        assert _activation(pipeline).origin is ActivationOrigin.NEW
+
+
+@pytest.mark.asyncio
+async def test_restart_keeps_an_active_streak_and_its_one_alert(tmp_path) -> None:
+    """The original start, count, condition and acknowledgement all survive."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 4)
+        (alert,) = _continuity_alerts(pipeline)
+        assert await pipeline.alert_monitor.resolve_alert(alert["id"], "cleaned lens")
+        before = _streak(pipeline)
+
+        await _restart(pipeline)
+
+        assert _streak(pipeline) == before
+        (recovered,) = _continuity_alerts(pipeline)
+        assert recovered["id"] == alert["id"]
+        assert recovered["timestamp"] == alert["timestamp"]
+        assert recovered["consecutive_count"] == 4
+        assert recovered["condition_active"] is True
+        assert recovered["resolved"] is True
+        assert recovered["resolution_note"] == "cleaned lens"
+        assert _activation(pipeline).origin is ActivationOrigin.HISTORICAL
+
+        await _reject(pipeline)
+
+        (continued,) = _continuity_alerts(pipeline)
+        assert continued["id"] == alert["id"]
+        assert continued["consecutive_count"] == 5
+
+
+@pytest.mark.asyncio
+async def test_pruned_images_do_not_shorten_a_recovered_streak(tmp_path) -> None:
+    """Image retention deletes files, never the evidence rows a replay reads."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 3)
+        before = _streak(pipeline)
+        pruned = await pipeline.store.async_prune_images(
+            image_retention_days=1, now=NOW + timedelta(days=30)
+        )
+        assert pruned > 0
+
+        await _restart(pipeline)
+
+        assert _streak(pipeline) == before
+        assert _continuity_alerts(pipeline)[0]["condition_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_capture_persisted_but_never_processed_activates_as_new(
+    tmp_path,
+) -> None:
+    """A checkup interrupted after its evidence was written is not history."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 2)
+        with patch.object(
+            pipeline.capture_continuity,
+            "async_record_capture",
+            side_effect=RuntimeError("stopped mid-checkup"),
+        ):
+            await _reject(pipeline)
+        assert _continuity_alerts(pipeline) == []
+
+        await _restart(pipeline)
+
+        (alert,) = _continuity_alerts(pipeline)
+        assert alert["condition_active"] is True
+        assert alert["consecutive_count"] == 3
+        assert _activation(pipeline).origin is ActivationOrigin.NEW
+
+
+@pytest.mark.asyncio
+async def test_interruption_after_the_alert_does_not_duplicate_it(tmp_path) -> None:
+    """The alert landed but progress was not recorded: one alert, still new."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 2)
+        with patch.object(
+            pipeline.continuity_store,
+            "async_save",
+            side_effect=OSError("disk full"),
+        ):
+            await _reject(pipeline)
+        (alert,) = _continuity_alerts(pipeline)
+
+        await _restart(pipeline)
+
+        assert _continuity_alerts(pipeline) == [alert]
+        assert _activation(pipeline).origin is ActivationOrigin.NEW
+
+
+@pytest.mark.asyncio
+async def test_cleared_alerts_and_acknowledgement_survive_restart(tmp_path) -> None:
+    """Cleared conditions stay cleared, resolved or not, and nothing is invented."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _accept(pipeline, BASELINE_SIZE)
+        await _reject(pipeline, 3)
+        first = _continuity_alerts(pipeline)[0]
+        assert await pipeline.alert_monitor.resolve_alert(first["id"], "re-aimed")
+        await _accept(pipeline)
+        await _reject(pipeline, 3)
+        await _accept(pipeline)
+        before = _continuity_alerts(pipeline)
+        assert [alert["condition_active"] for alert in before] == [False, False]
+        assert [alert["resolved"] for alert in before] == [True, False]
+
+        await _restart(pipeline)
+
+        assert _continuity_alerts(pipeline) == before
+        assert _streak(pipeline) is None
+        assert _activation(pipeline) is None
+
+        await _reject(pipeline, 3)
+
+        alerts = _continuity_alerts(pipeline)
+        assert len(alerts) == 3
+        assert alerts[2]["condition_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_inbox_trimming_cannot_reset_or_renew_an_activation(tmp_path) -> None:
+    """The bounded Inbox keeps a live condition and is never the streak's source."""
+    async with _pipeline(tmp_path) as pipeline:
+        pipeline.alert_monitor.MAX_ALERTS = 2
+        await _reject(pipeline, 3)
+        (alert,) = _continuity_alerts(pipeline)
+        for _ in range(3):
+            await pipeline.alert_monitor.async_record_alert(
+                "tent1", "stress", ["vpd"], 0.9
+            )
+        assert _continuity_alerts(pipeline) == [alert]
+        assert len(pipeline.alert_monitor.get_alerts()) == 2
+
+        await _restart(pipeline)
+        await _reject(pipeline)
+
+        (continued,) = _continuity_alerts(pipeline)
+        assert continued["id"] == alert["id"]
+        assert continued["consecutive_count"] == 4
+        assert _activation(pipeline).origin is ActivationOrigin.HISTORICAL
+
+
+@pytest.mark.asyncio
+async def test_an_inbox_that_lost_the_alert_does_not_make_the_activation_new(
+    tmp_path,
+) -> None:
+    """Streak state comes from evidence; the current condition is shown again."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 3)
+        activation = _activation(pipeline)
+        _rewrite_alerts(pipeline, [])
+
+        await _restart(pipeline)
+
+        assert _streak(pipeline).consecutive_count == 3
+        assert _activation(pipeline) == replace(
+            activation, origin=ActivationOrigin.HISTORICAL
+        )
+        (alert,) = _continuity_alerts(pipeline)
+        assert alert["condition_active"] is True
+        assert alert["timestamp"] == int(activation.activated_at.timestamp())
+
+
+@pytest.mark.asyncio
+async def test_a_returning_camera_does_not_inherit_its_previous_assignment(
+    tmp_path,
+) -> None:
+    """Evidence from before a re-assignment cannot complete a streak after it."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 2)
+        await pipeline.capture_continuity.async_apply_camera_assignment("tent1", [])
+        await pipeline.capture_continuity.async_apply_camera_assignment(
+            "tent1", ["camera.canopy"]
+        )
+
+        await _restart(pipeline)
+
+        assert _streak(pipeline) is None
+        await _reject(pipeline)
+        assert _streak(pipeline).consecutive_count == 1
+        assert _continuity_alerts(pipeline) == []
+
+
+@pytest.mark.asyncio
+async def test_a_camera_moved_elsewhere_leaves_its_condition_behind(
+    tmp_path,
+) -> None:
+    """Another Growspace never recovers this one's evidence; this one's clears."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 3)
+        assert await pipeline.alert_monitor.resolve_alert(
+            _continuity_alerts(pipeline)[0]["id"], "moved it"
+        )
+
+        await _restart(pipeline, {"tent2": ["camera.canopy"]})
+
+        assert pipeline.capture_continuity.active_streak("tent2", "camera.canopy") is (
+            None
+        )
+        assert _streak(pipeline) is None
+        (alert,) = _continuity_alerts(pipeline)
+        assert alert["condition_active"] is False
+        assert alert["cleared_at"] is not None
+        assert alert["resolved"] is True
+        assert alert["resolution_note"] == "moved it"
+
+
+@pytest.mark.asyncio
+async def test_orphan_evidence_cannot_activate_a_recreated_growspace(tmp_path) -> None:
+    """Pinned captures a deleted growspace left behind stay out of its successor."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _accept(pipeline, BASELINE_SIZE)
+        await _scene_change(pipeline)
+        await _scene_change(pipeline)
+        await pipeline.capture_continuity.async_apply_camera_assignment("tent1", [])
+        await pipeline.store.async_delete_growspace("tent1")
+        orphans = await pipeline.store.async_get_capture_evidence(
+            "tent1", "camera.canopy"
+        )
+        assert [
+            comparison.verdict
+            for _capture, comparison in orphans
+            if comparison is not None and comparison.verdict is not None
+        ] == [ComparisonVerdict.MATERIAL_SCENE_CHANGE] * 2
+        await pipeline.capture_continuity.async_apply_camera_assignment(
+            "tent1", ["camera.canopy"]
+        )
+
+        await _restart(pipeline)
+        await _reject(pipeline)
+
+        assert _streak(pipeline).consecutive_count == 1
+        assert _continuity_alerts(pipeline) == []
+
+
+@pytest.mark.asyncio
+async def test_upgrade_corrects_three_row_evidence_and_keeps_the_grower_note(
+    tmp_path,
+) -> None:
+    """An alert raised by the old window is corrected in place, not replaced."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 2)
+        await _fail(pipeline)
+        await _manual(pipeline)
+        await _reject(pipeline, 3)
+        streak = _streak(pipeline)
+        (stored,) = _stored_alerts(pipeline)
+        # What the three-row window wrote: no activation identity, a count of
+        # three and a start inside the streak rather than at its beginning.
+        stored.pop("activation_id")
+        stored.update(
+            consecutive_count=3,
+            reason_counts={"frame_rejected": 3},
+            streak_started_at=(NOW + timedelta(hours=1)).isoformat(),
+            resolved=True,
+            resolution_notes="checked the camera",
+        )
+        _rewrite_alerts(pipeline, [stored])
+        pipeline.continuity_store.data = json.dumps(
+            {"streaks": [{"growspace_id": "tent1", "camera_id": "camera.canopy"}]}
+        )
+
+        await _restart(pipeline)
+
+        (alert,) = _continuity_alerts(pipeline)
+        assert alert["id"] == stored["alert_id"]
+        assert alert["consecutive_count"] == 5
+        assert alert["reason_counts"] == {"frame_rejected": 5}
+        assert alert["streak_started_at"] == int(NOW.timestamp())
+        assert alert["latest_capture_id"] == streak.latest_capture_id
+        assert alert["condition_active"] is True
+        assert alert["resolved"] is True
+        assert alert["resolution_note"] == "checked the camera"
+        assert _stored_alerts(pipeline)[0]["activation_id"] == (
+            streak.streak_started_capture_id
+        )
+        assert _activation(pipeline).origin is ActivationOrigin.HISTORICAL
+
+
+@pytest.mark.asyncio
+async def test_upgrade_clears_a_condition_the_old_window_invented(tmp_path) -> None:
+    """Transport failures were never rejections; the streak keeps its real count."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _reject(pipeline, 2)
+        await _fail(pipeline)
+        await pipeline.alert_monitor.async_record_capture_continuity_break(
+            replace(_streak(pipeline), consecutive_count=3, condition_active=True)
+        )
+        (stored,) = _stored_alerts(pipeline)
+        stored.pop("activation_id")
+        stored["resolution_notes"] = "saw it"
+        _rewrite_alerts(pipeline, [stored])
+        pipeline.continuity_store.data = None
+
+        await _restart(pipeline)
+
+        (alert,) = _continuity_alerts(pipeline)
+        assert alert["id"] == stored["alert_id"]
+        assert alert["condition_active"] is False
+        assert alert["cleared_at"] is not None
+        assert alert["resolution_note"] == "saw it"
+        assert _streak(pipeline).consecutive_count == 2
+        assert _activation(pipeline) is None
+
+
+@pytest.mark.asyncio
+async def test_upgrade_manufactures_no_alert_for_a_break_that_already_ended(
+    tmp_path,
+) -> None:
+    """History nobody was shown is not written into the Inbox after the fact."""
+    async with _pipeline(tmp_path) as pipeline:
+        await _accept(pipeline, BASELINE_SIZE)
+        await _reject(pipeline, 3)
+        await _accept(pipeline)
+        await _reject(pipeline, 3)
+        _rewrite_alerts(pipeline, [])
+        pipeline.continuity_store.data = None
+
+        await _restart(pipeline)
+
+        (alert,) = _continuity_alerts(pipeline)
+        assert alert["condition_active"] is True
+        assert _activation(pipeline).origin is ActivationOrigin.HISTORICAL
+        assert _streak(pipeline).consecutive_count == 3
 
 
 def test_evidence_projection_helpers_cover_available_and_unavailable_shapes() -> None:

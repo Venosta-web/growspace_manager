@@ -547,6 +547,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_commit()
         self.reliability.record_start(self.growspaces)
 
+        # Continuity streaks are recovered from durable evidence before any
+        # checkup can run, so a scheduled capture never lands on a streak that
+        # has not been rebuilt yet and which activations are historical is
+        # settled before anything could announce one.
+        await self.alert_monitor.async_start()
+        await self.capture_continuity.async_start(
+            {
+                growspace_id: growspace.environment_config.camera_entities
+                for growspace_id, growspace in self.growspaces.items()
+            }
+        )
+
         # Probe Growspace Vision once at setup so the status the card reads is
         # populated before the first coordinator tick.
         await self.vision_connection.async_refresh()
@@ -557,8 +569,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.briefing_scheduler.start()
         self.photoperiod_checker.schedule_all_growspaces()
         await self.tank_monitor.async_start()
-        await self.alert_monitor.async_start()
-        await self.capture_continuity.async_start()
         await self.conversation_store.async_load()
 
         # Initialize environment reporter after data load

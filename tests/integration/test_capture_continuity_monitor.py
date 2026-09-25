@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from custom_components.growspace_manager.capture_continuity_monitor import (
+    ActivationOrigin,
     CaptureContinuityMonitor,
+)
+from custom_components.growspace_manager.data_access.vision_evidence_store import (
+    VisionEvidenceStore,
 )
 from custom_components.growspace_manager.domain.capture_continuity import (
     ContinuityReason,
@@ -93,6 +98,7 @@ def alert_monitor():
     monitor = MagicMock()
     monitor.async_record_capture_continuity_break = AsyncMock()
     monitor.async_clear_capture_continuity_break = AsyncMock()
+    monitor.async_reconcile_capture_continuity = AsyncMock()
     return monitor
 
 
@@ -102,9 +108,18 @@ def store():
 
 
 @pytest.fixture
-async def monitor(store, alert_monitor):
-    subject = CaptureContinuityMonitor(store, alert_monitor)
-    await subject.async_start()
+async def evidence(tmp_path):
+    """An empty Vision Evidence Store: nothing on record, nothing to recover."""
+    subject = VisionEvidenceStore(tmp_path / "vision.db", tmp_path / "images")
+    await subject.async_setup()
+    yield subject
+    await subject.async_close()
+
+
+@pytest.fixture
+async def monitor(store, alert_monitor, evidence):
+    subject = CaptureContinuityMonitor(store, alert_monitor, evidence)
+    await subject.async_start({GROWSPACE_ID: [CAMERA_ID], "tent2": [CAMERA_ID]})
     return subject
 
 
@@ -176,15 +191,49 @@ async def test_later_captures_update_the_same_alert(monitor, alert_monitor) -> N
     )
 
 
-async def test_manual_capture_leaves_no_trace(monitor, store) -> None:
-    """A grower's on-demand check cannot advance, clear or persist anything."""
+async def test_manual_capture_neither_advances_nor_clears(
+    monitor, alert_monitor
+) -> None:
+    """A grower's on-demand check cannot move the streak either way."""
+    await monitor.async_record_capture(_capture(1), None)
+
     transition = await monitor.async_record_capture(
-        _capture(1, trigger=CaptureTrigger.MANUAL), None
+        _capture(2, trigger=CaptureTrigger.MANUAL), None
     )
 
     assert transition is ContinuityTransition.NONE
-    assert monitor.active_streak(GROWSPACE_ID, CAMERA_ID) is None
-    assert store.data is None
+    assert monitor.active_streak(GROWSPACE_ID, CAMERA_ID).consecutive_count == 1
+    alert_monitor.async_clear_capture_continuity_break.assert_not_awaited()
+
+
+async def test_a_capture_already_folded_in_is_ignored(monitor) -> None:
+    """Processing the same capture twice cannot count it twice."""
+    await monitor.async_record_capture(_capture(1), None)
+    await monitor.async_record_capture(_capture(2), None)
+
+    transition = await monitor.async_record_capture(_capture(1), None)
+
+    assert transition is ContinuityTransition.NONE
+    assert monitor.active_streak(GROWSPACE_ID, CAMERA_ID).consecutive_count == 2
+
+
+async def test_live_activation_is_new_until_its_condition_clears(monitor) -> None:
+    """The activation a checkup raises is news; comparable evidence ends it."""
+    for number in (1, 2, 3):
+        await monitor.async_record_capture(_capture(number), None)
+
+    activation = monitor.activation(GROWSPACE_ID, CAMERA_ID)
+    assert activation is not None
+    assert activation.activation_id == "capture-1"
+    assert activation.activated_at == BASE_TIME + timedelta(hours=3)
+    assert activation.origin is ActivationOrigin.NEW
+
+    await monitor.async_record_capture(
+        _capture(4, analysis_state=AnalysisState.ANALYZED),
+        _comparison(ComparisonVerdict.NORMAL),
+    )
+
+    assert monitor.activation(GROWSPACE_ID, CAMERA_ID) is None
 
 
 async def test_concurrent_assignments_keep_separate_evidence(
@@ -215,7 +264,18 @@ async def test_unassigning_clears_the_condition_and_drops_the_streak(
     call = alert_monitor.async_clear_capture_continuity_break.await_args
     assert call.args == (GROWSPACE_ID, CAMERA_ID)
     assert monitor.active_streak(GROWSPACE_ID, CAMERA_ID) is None
+    assert monitor.activation(GROWSPACE_ID, CAMERA_ID) is None
 
+    # A capture that was in flight when the camera left belongs to nobody.
+    assert (
+        await monitor.async_record_capture(_capture(4), None)
+        is ContinuityTransition.NONE
+    )
+    assert monitor.active_streak(GROWSPACE_ID, CAMERA_ID) is None
+
+    await monitor.async_apply_camera_assignment(
+        GROWSPACE_ID, ["camera.side", CAMERA_ID]
+    )
     await monitor.async_record_capture(_capture(5), None)
     streak = monitor.active_streak(GROWSPACE_ID, CAMERA_ID)
     assert streak is not None
@@ -247,58 +307,96 @@ async def test_assignment_of_another_growspace_leaves_this_streak_alone(
     alert_monitor.async_clear_capture_continuity_break.assert_not_awaited()
 
 
-async def test_streaks_survive_a_restart(store, alert_monitor) -> None:
-    """A live streak is durable, so a restart cannot re-arm a break from zero."""
-    first = CaptureContinuityMonitor(store, alert_monitor)
-    await first.async_start()
-    for number in (1, 2):
-        await first.async_record_capture(_capture(number), None)
+async def test_unchanged_assignment_writes_nothing(monitor, store) -> None:
+    """Re-saving the same cameras is not an assignment change."""
+    saved = store.data
 
-    restarted = CaptureContinuityMonitor(store, alert_monitor)
-    await restarted.async_start()
-    transition = await restarted.async_record_capture(_capture(3), None)
+    await monitor.async_apply_camera_assignment(GROWSPACE_ID, [CAMERA_ID])
 
-    assert transition is ContinuityTransition.ACTIVATED
-    reloaded = restarted.active_streak(GROWSPACE_ID, CAMERA_ID)
-    assert reloaded is not None
-    assert reloaded.consecutive_count == 3
-    assert reloaded.streak_started_at == BASE_TIME + timedelta(hours=1)
-    assert reloaded.reason_counts == ((ContinuityReason.FRAME_REJECTED, 3),)
+    assert store.data is saved
 
 
-async def test_unreadable_stored_streak_is_discarded(alert_monitor) -> None:
-    """A corrupt row costs its own streak, not every other camera's."""
+async def test_assignments_follow_configuration_at_start(
+    alert_monitor, evidence
+) -> None:
+    """Stored rows are kept, unreadable ones reopened, unconfigured ones retired."""
+    kept = {"captured_at": BASE_TIME.isoformat(), "capture_id": "capture-0"}
     store = _MemoryStore(
         {
-            "streaks": [
-                {"growspace_id": "tent2", "camera_id": "camera.missing-fields"},
-                {
-                    "growspace_id": "tent2",
-                    "camera_id": "camera.bad-timestamp",
-                    "streak_started_at": "the day before yesterday",
-                    "consecutive_count": 2,
-                    "reason_counts": {"frame_rejected": 2},
-                    "latest_capture_id": "capture-2",
-                    "latest_captured_at": BASE_TIME.isoformat(),
-                    "condition_active": False,
-                },
+            "assignments": [
+                {"growspace_id": GROWSPACE_ID, "camera_id": CAMERA_ID},
                 {
                     "growspace_id": GROWSPACE_ID,
-                    "camera_id": CAMERA_ID,
-                    "streak_started_at": BASE_TIME.isoformat(),
-                    "consecutive_count": 2,
-                    "reason_counts": {"frame_rejected": 2},
-                    "latest_capture_id": "capture-2",
-                    "latest_captured_at": BASE_TIME.isoformat(),
-                    "condition_active": False,
+                    "camera_id": "camera.side",
+                    "evidence_after": kept,
+                    "processed_through": kept,
+                },
+                {
+                    "growspace_id": "tent2",
+                    "camera_id": "camera.gone",
+                    "evidence_after": None,
+                    "processed_through": None,
+                },
+                {
+                    "growspace_id": "tent2",
+                    "camera_id": "camera.garbled",
+                    "evidence_after": "not a marker",
+                    "processed_through": None,
                 },
             ]
         }
     )
-    monitor = CaptureContinuityMonitor(store, alert_monitor)
+    monitor = CaptureContinuityMonitor(store, alert_monitor, evidence)
 
-    await monitor.async_start()
+    await monitor.async_start(
+        {GROWSPACE_ID: [CAMERA_ID, "camera.side"], "tent2": ["camera.garbled"]}
+    )
 
-    assert monitor.active_streak("tent2", "camera.missing-fields") is None
-    assert monitor.active_streak("tent2", "camera.bad-timestamp") is None
-    assert monitor.active_streak(GROWSPACE_ID, CAMERA_ID) is not None
+    rows = {
+        (row["growspace_id"], row["camera_id"]): row
+        for row in store.data["assignments"]
+    }
+    assert set(rows) == {
+        (GROWSPACE_ID, CAMERA_ID),
+        (GROWSPACE_ID, "camera.side"),
+        ("tent2", "camera.garbled"),
+    }
+    assert rows[(GROWSPACE_ID, "camera.side")]["evidence_after"] == kept
+    assert rows[(GROWSPACE_ID, CAMERA_ID)]["evidence_after"] is None
+    alert_monitor.async_reconcile_capture_continuity.assert_awaited_once()
+    assert alert_monitor.async_reconcile_capture_continuity.await_args.args == ([],)
+
+
+async def test_without_an_evidence_store_nothing_is_recovered(
+    store, alert_monitor
+) -> None:
+    """No store means no checkup ever ran here, so there is nothing to rebuild."""
+    monitor = CaptureContinuityMonitor(store, alert_monitor, None)
+
+    await monitor.async_start({GROWSPACE_ID: [CAMERA_ID]})
+
+    assert store.data is None
+    alert_monitor.async_reconcile_capture_continuity.assert_not_awaited()
+
+    # An assignment made while nothing on record can be read begins now, so
+    # evidence written before it can never be adopted later.
+    await monitor.async_apply_camera_assignment(GROWSPACE_ID, [CAMERA_ID])
+    (row,) = store.data["assignments"]
+    assert row["evidence_after"]["capture_id"] == ""
+    earlier = replace(
+        _capture(1), captured_at=datetime(2025, 12, 1, tzinfo=UTC).isoformat()
+    )
+    assert earlier.captured_at < row["evidence_after"]["captured_at"]
+    await monitor.async_record_capture(earlier, None)
+    assert monitor.active_streak(GROWSPACE_ID, CAMERA_ID) is None
+
+    await monitor.async_record_capture(_capture(2), None)
+    assert monitor.active_streak(GROWSPACE_ID, CAMERA_ID).consecutive_count == 1
+
+
+async def test_an_unparsable_capture_time_is_refused_loudly(monitor) -> None:
+    """A capture the store could not have written is a bug, not evidence."""
+    with pytest.raises(ValueError, match="Unparsable capture timestamp"):
+        await monitor.async_record_capture(
+            replace(_capture(1), captured_at="the day before yesterday"), None
+        )
