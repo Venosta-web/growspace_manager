@@ -1099,6 +1099,15 @@ def _sends(calls) -> list[dict]:
     ]
 
 
+def _device_sends(calls) -> list[dict]:
+    return [
+        call.data["service_data"]
+        for call in calls
+        if call.data["domain"] == "notify"
+        and call.data["service"] == "mobile_app_grower"
+    ]
+
+
 def _deliveries(pipeline) -> list[dict]:
     return json.loads(pipeline.delivery_store.data)["deliveries"]
 
@@ -1106,6 +1115,11 @@ def _deliveries(pipeline) -> list[dict]:
 def _channel(pipeline) -> dict:
     (delivery,) = _deliveries(pipeline)
     return delivery["channels"]["home_assistant"]
+
+
+def _device_channel(pipeline) -> dict:
+    (delivery,) = _deliveries(pipeline)
+    return delivery["channels"]["device"]
 
 
 async def _settle(pipeline) -> None:
@@ -1186,9 +1200,166 @@ async def test_a_new_break_shows_one_notification_without_a_device_target(
                 "growspace_id": "tent1",
                 "camera_id": "camera.canopy",
                 "activated_at": activation.activated_at.isoformat(),
-                "channels": {"home_assistant": {"status": "delivered", "attempts": 0}},
+                "channels": {
+                    "home_assistant": {"status": "delivered", "attempts": 0},
+                    "device": {"status": "suppressed", "attempts": 0},
+                },
             }
         ]
+
+
+@pytest.mark.asyncio
+async def test_device_and_home_assistant_announce_each_new_streak(
+    notifications, tmp_path
+) -> None:
+    """Three captures page both channels; continuation and restart stay quiet."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    notifications.services.async_register(
+        "notify", "mobile_app_grower", lambda call: None
+    )
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        pipeline.growspace.notification_target = "notify.mobile_app_grower"
+        notifications.states.async_set(
+            "camera.canopy", "idle", {"friendly_name": "Canopy"}
+        )
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+
+        assert len(_continuity_alerts(pipeline)) == 1
+        assert len(_sends(calls)) == len(_device_sends(calls)) == 1
+        device = _device_sends(calls)[0]
+        assert device["title"] == "⚠️ Capture Continuity Break: Test Tent"
+        assert device["message"] == (
+            f"{CAPTURE_CONTINUITY_MESSAGE}\n\n"
+            "Camera: Canopy (camera.canopy)\nGrowspace: Test Tent"
+        )
+        assert device["data"]["tag"] == _sends(calls)[0]["notification_id"]
+        assert _device_channel(pipeline) == {"status": "delivered", "attempts": 0}
+
+        await _reject(pipeline)
+        await _restart(pipeline)
+        await _settle(pipeline)
+        assert len(_sends(calls)) == len(_device_sends(calls)) == 1
+
+        await _accept(pipeline, BASELINE_SIZE + 1)
+        assert _activation(pipeline) is None
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+        assert len(_sends(calls)) == len(_device_sends(calls)) == 2
+        assert (
+            _device_sends(calls)[0]["data"]["tag"]
+            != _device_sends(calls)[1]["data"]["tag"]
+        )
+
+
+@pytest.mark.asyncio
+async def test_device_failure_retries_without_resending_home_assistant(
+    notifications, tmp_path
+) -> None:
+    """A failed mobile action has its own progress, including across restart."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    attempts = 0
+
+    async def mobile(call) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise HomeAssistantError("phone unavailable")
+
+    notifications.services.async_register("notify", "mobile_app_grower", mobile)
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        pipeline.growspace.notification_target = "mobile_app_grower"
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+        assert _channel(pipeline)["status"] == "delivered"
+        assert _device_channel(pipeline) == {"status": "pending", "attempts": 1}
+
+        await _restart(pipeline)
+        await _settle(pipeline)
+        assert attempts == 2
+        assert _device_channel(pipeline) == {"status": "delivered", "attempts": 1}
+        assert len(_sends(calls)) == 1
+        assert len(_device_sends(calls)) == 2
+
+
+@pytest.mark.asyncio
+async def test_home_assistant_failure_does_not_block_device(
+    notifications, tmp_path
+) -> None:
+    """A successful device action is not repeated while Home Assistant retries."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    notifications.services.async_register(
+        "notify", "mobile_app_grower", lambda call: None
+    )
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        pipeline.growspace.notification_target = "mobile_app_grower"
+        async with _unsendable(pipeline):
+            await _reject(pipeline, 3)
+            await _settle(pipeline)
+        assert _channel(pipeline) == {"status": "pending", "attempts": 1}
+        assert _device_channel(pipeline) == {"status": "delivered", "attempts": 0}
+        assert len(_device_sends(calls)) == 1
+
+        await _advance(pipeline, RETRY_DELAYS[0])
+        assert _channel(pipeline) == {"status": "delivered", "attempts": 1}
+        assert len(_device_sends(calls)) == 1
+
+
+@pytest.mark.asyncio
+async def test_target_added_during_active_streak_waits_for_the_next_streak(
+    notifications, tmp_path
+) -> None:
+    """A phone added after activation gets no backlog, even after restart."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+    notifications.services.async_register(
+        "notify", "mobile_app_grower", lambda call: None
+    )
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        pipeline.growspace.notification_target = None
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+        assert _device_channel(pipeline)["status"] == "suppressed"
+
+        pipeline.growspace.notification_target = "notify.mobile_app_grower"
+        await _reject(pipeline)
+        await _restart(pipeline)
+        await _settle(pipeline)
+        assert _device_sends(calls) == []
+
+        await _accept(pipeline, BASELINE_SIZE + 1)
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+        assert len(_device_sends(calls)) == 1
+        assert _device_channel(pipeline)["status"] == "delivered"
+
+
+@pytest.mark.asyncio
+async def test_muting_cancels_pending_device_retry_without_clearing_alert(
+    notifications, tmp_path
+) -> None:
+    """The switch suppresses the failed device channel and its scheduled retry."""
+    calls = async_capture_events(notifications, EVENT_CALL_SERVICE)
+
+    async def refused(call) -> None:
+        raise HomeAssistantError("phone unavailable")
+
+    notifications.services.async_register("notify", "mobile_app_grower", refused)
+    async with _pipeline(tmp_path, hass=notifications) as pipeline:
+        pipeline.growspace.notification_target = "mobile_app_grower"
+        await _reject(pipeline, 3)
+        await _settle(pipeline)
+        assert _channel(pipeline)["status"] == "delivered"
+        assert _device_channel(pipeline) == {"status": "pending", "attempts": 1}
+
+        await _mute(pipeline)
+        pipeline.notifications_enabled["tent1"] = True
+        await _advance(pipeline, timedelta(days=1))
+        await _restart(pipeline)
+        await _settle(pipeline)
+
+        assert _device_channel(pipeline) == {"status": "suppressed", "attempts": 1}
+        assert len(_device_sends(calls)) == 1
+        assert len(_continuity_alerts(pipeline)) == 1
 
 
 @pytest.mark.asyncio
