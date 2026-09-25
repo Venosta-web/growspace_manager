@@ -51,7 +51,7 @@ pytest-xdist
 freezegun
 requests-mock
 hassil==3.12.1
-home-assistant-intents==2026.8.28
+home-assistant-intents
 syrupy>=5.0.0
 
 # Local dev and CI lint tooling. The lint workflow reads these pins directly;
