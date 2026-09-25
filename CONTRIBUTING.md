@@ -44,8 +44,8 @@ git worktree add .worktrees/<branch-name> -b <branch-name> origin/prerelease
 cd .worktrees/<branch-name>
 ```
 
-Worktrees must sit at exactly `.worktrees/<name>`, because the pre-commit hooks
-find the shared virtual environment at `../../.venv`. For a change that also
+The pre-commit hooks use the worktree's own `.venv` when it has one, and the
+main checkout's otherwise. For a change that also
 touches the card, run `./scripts/feature new <name>` from the hub instead. It
 creates a matched pair of worktrees with the same branch in both repositories.
 

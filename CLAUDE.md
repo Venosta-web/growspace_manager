@@ -19,12 +19,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Testing
 
-Tests run against the **repo-local** venv at `.venv` in the main checkout (Python 3.14+, built from `requirements.txt`). Worktrees share that one venv — they do not get their own:
+Tests run against a **repo-local** venv (Python 3.14+, built from `requirements.txt`). The main checkout has one at `.venv`; a worktree may have its own `.venv`, and otherwise uses the main checkout's. The pre-commit hooks pick the same one — see "Test environment" in `AGENTS.md`:
 
-| Running from                     | Path                                                              |
-| -------------------------------- | ----------------------------------------------------------------- |
-| the main checkout                | `.venv/bin/pytest`                                                |
-| a `.worktrees/<branch>` worktree | `../../.venv/bin/pytest` — the same path the pre-commit hooks use |
+| Running from                                       | Path                     |
+| -------------------------------------------------- | ------------------------ |
+| the main checkout, or a worktree with its own venv | `.venv/bin/pytest`       |
+| a `.worktrees/<branch>` worktree without one       | `../../.venv/bin/pytest` |
 
 **Never use the Home Assistant core venv at `/home/maxi/core/core/.venv`.** It is HA core's own test environment, so it carries HA core's syrupy rather than the version `pytest-homeassistant-custom-component` pins, and every test import then dies inside `pytest_homeassistant_custom_component/syrupy.py` on a symbol newer syrupy removed. It surfaces as a collection error, which reads like a broken test rather than a wrong interpreter.
 
@@ -46,7 +46,7 @@ Tests run against the **repo-local** venv at `.venv` in the main checkout (Pytho
 # Always run tests again without --snapshot-update to verify
 ```
 
-`pytest.ini` sets `pythonpath = .`, so no `PYTHONPATH` export is needed as long as pytest runs from the checkout root (which is what makes the shared venv work from a worktree).
+`pytest.ini` sets `pythonpath = .`, so no `PYTHONPATH` export is needed as long as pytest runs from the checkout root (which is what makes the main checkout's venv work from a worktree).
 
 #### Creating or refreshing the venv
 

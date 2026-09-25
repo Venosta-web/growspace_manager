@@ -1,4 +1,4 @@
-"""Fail CI when lint tool pins or their local hooks drift."""
+"""Fail CI when lint tool pins or their local Python hooks drift."""
 
 from __future__ import annotations
 
@@ -10,10 +10,12 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK_ENTRIES = {
-    "ruff-check": "python3 .github/scripts/run_pinned_lint_tool.py ruff check --force-exclude",
-    "ruff-format": "python3 .github/scripts/run_pinned_lint_tool.py ruff format --force-exclude",
-    "yamllint": "python3 .github/scripts/run_pinned_lint_tool.py yamllint",
-    "codespell": "python3 .github/scripts/run_pinned_lint_tool.py codespell",
+    "ruff-check": "python3 .github/scripts/run_venv_tool.py ruff check --force-exclude",
+    "ruff-format": "python3 .github/scripts/run_venv_tool.py ruff format --force-exclude",
+    "yamllint": "python3 .github/scripts/run_venv_tool.py yamllint",
+    "codespell": "python3 .github/scripts/run_venv_tool.py codespell",
+    "pytest": "python3 .github/scripts/run_venv_tool.py pytest",
+    "mypy": "python3 .github/scripts/run_venv_tool.py mypy",
 }
 LINT_TOOLS = ("ruff", "mypy", "yamllint", "codespell")
 
