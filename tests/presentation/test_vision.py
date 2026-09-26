@@ -149,6 +149,7 @@ async def test_checkup_projection_exposes_capture_evidence_and_authenticated_ima
             {
                 "capture_id": capture.capture_id,
                 "camera_id": "camera.canopy",
+                "framing_epoch_id": "epoch-1",
                 "captured_at": "2026-09-01T06:00:01+00:00",
                 "analysis_state": "analyzed",
                 "image": {

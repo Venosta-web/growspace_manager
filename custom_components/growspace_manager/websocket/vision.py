@@ -213,6 +213,7 @@ async def websocket_get_vision_history_v2(
     v1: list[dict[str, Any]] = []
     v1_total = 0
     capture_total = 0
+    camera_baselines: list[dict[str, Any]] = []
     if store is not None:
         media_dirs = hass.config.media_dirs
         media_source = "local" if "local" in media_dirs else next(iter(media_dirs))
@@ -225,6 +226,10 @@ async def websocket_get_vision_history_v2(
         ]
         v1_total = await store.async_count_checkups(msg["growspace_id"])
         capture_total = await store.async_count_captures(msg["growspace_id"])
+        camera_baselines = [
+            await store.async_get_camera_baseline(msg["growspace_id"], camera_id)
+            for camera_id in growspace.environment_config.camera_entities
+        ]
     legacy = [
         serialize_legacy_vision_result(item)
         for item in growspace.vision_checkup_history
@@ -234,6 +239,7 @@ async def websocket_get_vision_history_v2(
         "history": history,
         "total": v1_total + len(legacy),
         "capture_total": capture_total,
+        "camera_baselines": camera_baselines,
     }
 
 
