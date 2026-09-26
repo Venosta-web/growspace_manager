@@ -92,13 +92,15 @@ def record_daily_water(
 def is_tank_derived_mode(growspace: Growspace) -> bool:
     """Return True when reservoir-level inference is the measurement source.
 
-    Active when at least one tank has ``volume_liters`` configured and no
-    flow or drain-volume sensors are set (which would measure directly).
+    Active when at least one tank has ``volume_liters`` configured.
+    ``irrigation_flow_sensors`` and ``drain_volume_sensors`` play no part: no
+    reading of either is converted to litres, so letting them switch this off
+    traded the tank figure for the Pump-Cycle Water Estimate (#853).
     """
-    env = growspace.environment_config
-    if env.irrigation_flow_sensors or env.drain_volume_sensors:
-        return False
-    return any(tank.volume_liters is not None for tank in env.irrigation_tanks)
+    return any(
+        tank.volume_liters is not None
+        for tank in growspace.environment_config.irrigation_tanks
+    )
 
 
 def _water_usage_today(growspace: Growspace, reference_date: str) -> float:

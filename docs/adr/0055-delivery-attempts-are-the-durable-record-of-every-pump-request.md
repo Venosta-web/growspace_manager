@@ -47,4 +47,4 @@ Every request that reaches the [[Pump Cycle Gate]] now becomes one **[[Delivery 
 
 - ADR-0054's storage (item 4) is replaced; its rule stands. Dispensed Volume is today's charges summed over the growspace's attempts.
 - A crash mid-shot under the default `alert` policy no longer leaves our own pump running as a person's: it is switched off at start. Until this lands, that is present-day behaviour, because `_in_flight` lives only in memory (#854).
-- `irrigation_flow_sensors` stays what it is, a field whose only effect is to switch Tank-Derived Water Mode off (#853). What the metered stage is configured by is the map's flow-meter item.
+- `irrigation_flow_sensors` stays what it is, a field no code reads as a measurement. It used to switch Tank-Derived Water Mode off, and since #853 it does not (ADR-0017, amended). What the metered stage is configured by is the map's flow-meter item.

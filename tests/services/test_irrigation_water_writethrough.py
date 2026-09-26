@@ -48,9 +48,9 @@ def _pump_growspace(*, tank_mode: bool) -> Growspace:
     """Build a growspace with a known pump flow rate.
 
     ``tank_mode`` toggles the *only* trigger that flips
-    ``is_tank_derived_mode``: a tank with ``volume_liters`` configured and no
-    flow/drain-volume sensors. Everything else is held constant so the gating
-    tests prove the gate and nothing else.
+    ``is_tank_derived_mode``: a tank with ``volume_liters`` configured.
+    Everything else is held constant so the gating tests prove the gate and
+    nothing else.
     """
     env = EnvironmentConfig()
     if tank_mode:
@@ -179,6 +179,29 @@ async def test_completed_cycle_skips_write_in_tank_mode(
     growspace = _pump_growspace(tank_mode=True)
     coordinator = make_coordinator(growspace)
     # The tank reads, or the Pump Cycle Gate refuses the cycle (ADR-0050).
+    tank = State("sensor.tank", "80")
+    mock_hass.states.get.side_effect = lambda entity_id: (
+        tank if entity_id == "sensor.tank" else MagicMock()
+    )
+
+    await _run_cycle(coordinator, 30, freezer)
+
+    assert growspace.water_usage.daily_readings == []
+    assert growspace.water_usage.total_liters == 0.0
+
+
+async def test_flow_sensor_does_not_reopen_the_pump_estimate_in_tank_mode(
+    make_coordinator, mock_hass: MagicMock, freezer: FrozenDateTimeFactory
+) -> None:
+    """A configured flow meter is never read, so the tank still measures (#853).
+
+    Were it to switch Tank-Derived Water Mode off, the shot would be booked as
+    a pump estimate and the figure would quietly become the less accurate one.
+    """
+    growspace = _pump_growspace(tank_mode=True)
+    growspace.environment_config.irrigation_flow_sensors = ["sensor.flow"]
+    growspace.environment_config.drain_volume_sensors = ["sensor.drain"]
+    coordinator = make_coordinator(growspace)
     tank = State("sensor.tank", "80")
     mock_hass.states.get.side_effect = lambda entity_id: (
         tank if entity_id == "sensor.tank" else MagicMock()

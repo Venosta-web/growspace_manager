@@ -121,25 +121,20 @@ def _should_create_derived_water_sensor(
     growspace: Growspace,
     tank: Any,
 ) -> bool:
-    """Return True only when tank-derived water inference should activate.
+    """Return True when tank-derived water inference can run for ``tank``.
 
-    This sensor is a fallback: it infers water consumption from tank level
-    changes when no dedicated flow or drain volume sensors are configured.
+    It needs the tank's ``volume_liters`` and nothing else: configured flow and
+    drain volume sensors are never read as litres, so they replace nothing
+    (#853).
     """
-    env = growspace.environment_config
-    return (
-        tank.volume_liters is not None
-        and not env.irrigation_flow_sensors
-        and not env.drain_volume_sensors
-    )
+    return tank.volume_liters is not None
 
 
 class TankDerivedWaterSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
     """Sensor reporting water consumption inferred from tank level changes.
 
-    Used as a fallback when no dedicated irrigation flow or drain volume
-    sensors are present. Consumption is calculated from the difference
-    in measured tank level readings over time, scaled by the tank volume.
+    Consumption is calculated from the difference in measured tank level
+    readings over time, scaled by the tank volume.
     """
 
     _attr_device_class = SensorDeviceClass.WATER
