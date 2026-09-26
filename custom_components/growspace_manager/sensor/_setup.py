@@ -29,6 +29,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .crop_steering import CropSteeringSensor
 from .drying import DryingMoistureSensor, DryingWeightSensor
 from .environment import AirExchangeSensor, DLISensor, ECTargetSensor
+from .grow_run import ActiveRunSensor
 from .irrigation_controller import IrrigationControllerSensor
 from .overview import GrowspaceListSensor, GrowspaceOverviewSensor
 from .plant import PlantEntity
@@ -315,6 +316,9 @@ async def _create_initial_entities(
         initial_entities.append(
             GrowspaceReliabilitySensor(coordinator, growspace_id, growspace.name)
         )
+        initial_entities.append(
+            ActiveRunSensor(coordinator, growspace_id, growspace.name)
+        )
 
         if growspace.environment_config and growspace.environment_config.energy_sensors:
             initial_entities.append(
@@ -386,6 +390,7 @@ async def _update_growspace_entities(
                     GrowspaceReliabilitySensor(
                         coordinator, growspace_id, growspace.name
                     ),
+                    ActiveRunSensor(coordinator, growspace_id, growspace.name),
                 ]
             )
 

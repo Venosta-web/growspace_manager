@@ -24,6 +24,7 @@ from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
 from .environment_analyzer import EnvironmentAnalyzer
 from .event_bus_pkg import GrowspaceEventBus
+from .grow_run_store import GrowRunStore
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .integration_types import DateInput
@@ -188,6 +189,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._quarantined_plants: dict[str, Any] = {}
         self.irrigation_safety = IrrigationSafetyStore(hass, entry.entry_id)
         self.reliability = ReliabilityStore(hass, entry.entry_id)
+        self.grow_runs = GrowRunStore(hass, entry.entry_id)
         self.created_entity_ids: list[tuple[str, str, str]] = []
 
     def _attach_services(
@@ -538,6 +540,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.storage_manager.async_load(self.options)
         await self.irrigation_safety.async_load()
         await self.reliability.async_load()
+        await self.grow_runs.async_load()
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.

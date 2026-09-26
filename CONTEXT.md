@@ -115,7 +115,7 @@ A two-column comparison of exactly two Finalized Grow Runs belonging to the same
 _Avoid_: growspace comparison, live comparison
 
 **Active Run Sensor**
-The single lightweight Home Assistant entity that exposes one Growspace's current Grow Run for dashboards and automations. Its state is the active Run Sequence Number or `none`, with compact identity, label, start, duration, participant-count, and Run Revision attributes; detailed history remains behind the integration API.
+The single lightweight Home Assistant entity that exposes one Growspace's current Grow Run for dashboards and automations. Its state is the active Run Sequence Number or `none`, with compact identity, label, start, duration, participant-count, and Run Revision attributes; detailed history remains behind the integration API. It is `sensor.<growspace>_active_run` (`translation_key` `active_run`); its attribute keys are fixed whatever the state — `run_id`, `label`, `started_at`, `duration_days` (whole local days in the Run Timezone), `participant_count`, `run_revision` — and all but `run_revision` are null without an Active Run, because the Run Revision is what a Start must name. It reads unavailable while the Run history is unreadable. `domain/grow_run.py` owns the shape; `sensor/grow_run.py` publishes it (#668).
 _Avoid_: run entity collection, historical run sensor
 
 **Grow Run State Graph**
@@ -191,7 +191,7 @@ A JSON or PDF representation of one selected Grow Run containing its identity, s
 _Avoid_: grow report export, live dashboard dump
 
 **Run Lifecycle Authorization**
-The permission rule that Growspace controllers may start, complete, finalize, and edit descriptive metadata, while only Home Assistant administrators may reopen, void, correct harvest attribution, or purge Run history.
+The permission rule that Growspace controllers may start, complete, finalize, and edit descriptive metadata, while only Home Assistant administrators may reopen, void, correct harvest attribution, or purge Run history. A **Growspace controller** is a Home Assistant user with entity _control_ permission on the Growspace's Active Run Sensor: every ordinary user and administrator, never a read-only user. It is asked on every command (`services/grow_runs.require_controller`), never remembered.
 _Avoid_: card-only permission, unaudited automation
 
 **Run Audit Entry**
@@ -215,7 +215,7 @@ A monotonic display number allocated within one Growspace. Allocated numbers are
 _Avoid_: run ID, calendar run number
 
 **Run Revision**
-The monotonic version of one Growspace's Run collection used to reject stale lifecycle commands and atomically preserve the zero-or-one-active-Run rule.
+The monotonic version of one Growspace's Run collection used to reject stale lifecycle commands and atomically preserve the zero-or-one-active-Run rule. Each lifecycle command names the revision it was decided on (`expected_run_revision` on `growspace_manager/start_grow_run`); the Run Ledger checks, mutates, persists and only then publishes under one lock. Every refusal is a result rather than a WebSocket error — `grow_run.revision_conflict`, `grow_run.already_active`, `grow_run.not_authorized`, `grow_run.store_unreadable` — and carries the current revision and Active Run, so a stale command is answered with where the ledger really is.
 _Avoid_: updated timestamp, run sequence
 
 **Purge Run History**

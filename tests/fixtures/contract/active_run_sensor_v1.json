@@ -1,0 +1,24 @@
+{
+  "active": {
+    "attributes": {
+      "duration_days": 61,
+      "label": "Autumn",
+      "participant_count": 2,
+      "run_id": "run-1",
+      "run_revision": 4,
+      "started_at": "2026-07-24T20:30:00+00:00"
+    },
+    "state": "4"
+  },
+  "none": {
+    "attributes": {
+      "duration_days": null,
+      "label": null,
+      "participant_count": null,
+      "run_id": null,
+      "run_revision": 3,
+      "started_at": null
+    },
+    "state": "none"
+  }
+}
