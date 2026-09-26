@@ -1,6 +1,6 @@
 # The Daily Caps Enforce a Durable Dispensed Volume, Not the Water Figure
 
-**Status:** Accepted — not yet implemented
+**Status:** Accepted — not yet implemented. Item 4's storage is replaced by [ADR-0055](0055-delivery-attempts-are-the-durable-record-of-every-pump-request.md); the rule is unchanged.
 
 Growspace Manager kept two unreconciled answers to "how much water today" (#546). The daily cycle limit and daily volume cap enforced an in-memory counter, `_cycles_today` / `_volume_dispensed_today`, which a restart set back to zero mid-day. The card displayed [[Aggregate Water Use]] (ADR-0017), which is persisted but, in [[Tank-Derived Water Mode]], measures reservoir drop rather than pump runtime. The card showed both, as "Dispensed today" and "Liters today", with nothing to say why they differed.
 
@@ -24,4 +24,4 @@ They are two concepts, and they stay two. The caps enforce **[[Dispensed Volume]
 
 - `IrrigationSafetyStore` gains a per-growspace daily record, and the [[Pump Cycle Gate]] reads it instead of the coordinator's counters. The gate itself stays pure.
 - The Pump-Cycle Water Estimate stops using the planned-or-longer figure, so pump-estimate totals for growspaces with aborted shots will read lower than before.
-- #549's execution ledger may later become the source Dispensed Volume is derived from. This ADR fixes the rule, not the storage, and the ledger is free to replace the record if it keeps the rule.
+- #549 made the Delivery Attempt store the source Dispensed Volume is derived from, replacing the `{date, cycles, liters}` record of item 4 (ADR-0055). Everything else here stands.
