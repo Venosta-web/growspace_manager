@@ -41,7 +41,7 @@ from custom_components.growspace_manager.models import (
 from homeassistant.config_entries import HANDLERS
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.helpers import selector
+from homeassistant.helpers import area_registry as ar, entity_registry as er, selector
 from tests.common import MockConfigEntry
 
 
@@ -197,10 +197,10 @@ async def test_config_flow_user_step_show_form(
 
 
 @pytest.mark.asyncio
-async def test_config_flow_user_step_create_entry(
+async def test_config_flow_user_step_routes_to_first_growspace(
     hass: HomeAssistant, mock_coordinator
 ) -> None:
-    """Test that the user step creates a config entry with the provided name.
+    """The integration name is retained while the first growspace is required.
 
     Args:
         hass: The Home Assistant instance.
@@ -210,16 +210,20 @@ async def test_config_flow_user_step_create_entry(
 
     result = await flow.async_step_user(user_input={"name": "My Growspace"})
 
-    assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert result.get("title") == "My Growspace"
-    assert result.get("data") == {"name": "My Growspace"}
+    assert result.get("type") == FlowResultType.FORM
+    assert result.get("step_id") == "add_growspace"
+    markers = {marker.schema: marker for marker in result["data_schema"].schema}
+    assert isinstance(markers["name"], vol.Required)
+    assert isinstance(markers["setup_preset"], vol.Required)
+    assert markers["temperature_sensor"].description is None
+    assert flow._integration_name == "My Growspace"
 
 
 @pytest.mark.asyncio
 async def test_config_flow_user_step_default_name(
     hass: HomeAssistant, mock_coordinator
 ) -> None:
-    """Test that the user step creates a config entry with the default name.
+    """The default integration name is retained for the second step.
 
     Args:
         hass: The Home Assistant instance.
@@ -229,8 +233,8 @@ async def test_config_flow_user_step_default_name(
 
     result = await flow.async_step_user(user_input={"name": DEFAULT_NAME})
 
-    assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert result.get("data") == {"name": DEFAULT_NAME}
+    assert result.get("type") == FlowResultType.FORM
+    assert flow._integration_name == DEFAULT_NAME
 
 
 @pytest.mark.asyncio
@@ -268,19 +272,117 @@ async def test_config_flow_add_growspace_with_data(
 
     user_input = {
         "name": "Test Growspace",
+        "setup_preset": "living_soil",
         "rows": 5,
         "plants_per_row": 5,
-        "length": 120,
-        "width": 120,
-        "height": 200,
-        "notification_target": "mobile_app_test",
     }
-
+    await flow.async_step_user({"name": "My Integration"})
     result = await flow.async_step_add_growspace(user_input=user_input)
 
     assert result.get("type") == FlowResultType.CREATE_ENTRY
-    assert "pending_growspace" in result.get("data", {})
-    assert result["data"]["pending_growspace"]["name"] == "Test Growspace"
+    assert result["title"] == "My Integration"
+    assert result["data"] == {
+        "name": "My Integration",
+        "pending_growspace": {
+            "name": "Test Growspace",
+            "rows": 5,
+            "plants_per_row": 5,
+            "setup_preset": "living_soil",
+            "growspace_type": "flower",
+            "environment_config": {},
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_initial_growspace_with_optional_climate_sensors(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """The flow carries climate choices to the pending create operation."""
+    flow = ConfigFlow()
+    flow.hass = hass
+    await flow.async_step_user({"name": "My Integration"})
+
+    result = await flow.async_step_add_growspace(
+        {
+            "name": "Mother Room",
+            "setup_preset": "mother_clone_room",
+            "rows": 2,
+            "plants_per_row": 3,
+            "temperature_sensor": "sensor.room_temperature",
+            "humidity_sensor": "sensor.room_humidity",
+            "vpd_sensor": "sensor.room_vpd",
+        }
+    )
+
+    pending = result["data"]["pending_growspace"]
+    assert pending["growspace_type"] == "mother"
+    assert pending["environment_config"] == {
+        "temperature_sensor": "sensor.room_temperature",
+        "humidity_sensor": "sensor.room_humidity",
+        "vpd_sensor": "sensor.room_vpd",
+    }
+
+
+@pytest.mark.asyncio
+async def test_initial_growspace_rejects_unknown_preset(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """A stale or forged preset cannot create a config entry."""
+    flow = ConfigFlow()
+    flow.hass = hass
+    await flow.async_step_user({"name": "My Integration"})
+
+    result = await flow.async_step_add_growspace(
+        {
+            "name": "Tent",
+            "setup_preset": "unknown",
+            "rows": 2,
+            "plants_per_row": 2,
+        }
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "unknown"}
+
+
+@pytest.mark.asyncio
+async def test_initial_growspace_suggests_sensors_in_selected_area(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """Area suggestions only include registered sensors in that area."""
+    area = ar.async_get(hass).async_create("Grow Room")
+    registry = er.async_get(hass)
+    entity = registry.async_get_or_create(
+        "sensor", "test", "temp-1", suggested_object_id="room_temperature"
+    )
+    registry.async_update_entity(entity.entity_id, area_id=area.id)
+    hass.states.async_set(
+        "sensor.room_temperature", "22", {"device_class": "temperature"}
+    )
+    humidity = registry.async_get_or_create(
+        "sensor", "test", "humidity-1", suggested_object_id="room_humidity"
+    )
+    registry.async_update_entity(humidity.entity_id, area_id=area.id)
+    hass.states.async_set(humidity.entity_id, "55", {"device_class": "humidity"})
+    vpd = registry.async_get_or_create(
+        "sensor", "test", "vpd-1", suggested_object_id="room_vpd"
+    )
+    registry.async_update_entity(vpd.entity_id, area_id=area.id)
+    hass.states.async_set(vpd.entity_id, "1.2")
+    flow = ConfigFlow()
+    flow.hass = hass
+
+    result = await flow.async_step_user({"name": "My Integration", "area_id": area.id})
+
+    markers = {marker.schema: marker for marker in result["data_schema"].schema}
+    assert markers["temperature_sensor"].description == {
+        "suggested_value": "sensor.room_temperature"
+    }
+    assert markers["humidity_sensor"].description == {
+        "suggested_value": humidity.entity_id
+    }
+    assert markers["vpd_sensor"].description == {"suggested_value": vpd.entity_id}
 
 
 @pytest.mark.asyncio
@@ -1208,7 +1310,9 @@ async def test_config_flow_user_step_exception(
     flow = ConfigFlow()
     flow.hass = hass
 
-    with patch.object(flow, "async_create_entry", side_effect=Exception("Test error")):
+    with patch.object(
+        flow, "_initial_growspace_schema", side_effect=Exception("Test error")
+    ):
         result = await flow.async_step_user(user_input={"name": "Test"})
         assert result.get("type") == FlowResultType.FORM
         assert result.get("errors") == {"base": "unknown"}
@@ -3804,7 +3908,7 @@ async def test_config_flow_user_step_error_uses_a_translation_key(
     flow.hass = hass
 
     with patch.object(
-        ConfigFlow, "async_create_entry", side_effect=RuntimeError("boom")
+        ConfigFlow, "_initial_growspace_schema", side_effect=RuntimeError("boom")
     ):
         result = await flow.async_step_user(user_input={"name": "My Growspace"})
 

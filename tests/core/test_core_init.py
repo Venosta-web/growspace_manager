@@ -21,6 +21,7 @@ from custom_components.growspace_manager import (
     async_setup_entry,
     async_unload_entry,
 )
+from custom_components.growspace_manager.config_flow import ConfigFlow
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.schemas import (
     ACKNOWLEDGE_FAULT_SCHEMA,
@@ -818,16 +819,18 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
     # Mock async_forward_entry_setups to avoid integration loading implementation
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={
-            "pending_growspace": {
-                "name": "Pending",
-                "rows": 4,
-                "plants_per_row": 4,
-            }
-        },
+    flow = ConfigFlow()
+    flow.hass = hass
+    await flow.async_step_user({"name": "My Integration"})
+    flow_result = await flow.async_step_add_growspace(
+        {
+            "name": "Pending",
+            "setup_preset": "simple_soil_tent",
+            "rows": 4,
+            "plants_per_row": 4,
+        }
     )
+    entry = MockConfigEntry(domain=DOMAIN, data=flow_result["data"])
     entry.add_to_hass(hass)
 
     with (
@@ -881,7 +884,10 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pending_growspace_success(hass: HomeAssistant) -> None:
+@pytest.mark.parametrize("temperature_sensor", [None, "sensor.dry_temperature"])
+async def test_pending_growspace_success(
+    hass: HomeAssistant, temperature_sensor: str | None
+) -> None:
     """Test successful pending growspace creation."""
     hass.data.setdefault(DOMAIN, {})
     hass.http = MagicMock()
@@ -889,16 +895,19 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
     hass.config_entries.async_forward_entry_setups = AsyncMock()
     hass.config_entries.async_update_entry = MagicMock()
 
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={
-            "pending_growspace": {
-                "name": "Pending",
-                "rows": 4,
-                "plants_per_row": 4,
-            }
-        },
-    )
+    flow = ConfigFlow()
+    flow.hass = hass
+    await flow.async_step_user({"name": "My Integration"})
+    growspace_input = {
+        "name": "Pending",
+        "setup_preset": "drying_room",
+        "rows": 4,
+        "plants_per_row": 4,
+    }
+    if temperature_sensor:
+        growspace_input["temperature_sensor"] = temperature_sensor
+    flow_result = await flow.async_step_add_growspace(growspace_input)
+    entry = MockConfigEntry(domain=DOMAIN, data=flow_result["data"])
     entry.add_to_hass(hass)
 
     with (
@@ -939,7 +948,17 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
 
             # Verify successful creation logging and data update
             coordinator_mock.services.growspaces.add_growspace.assert_called_once_with(
-                name="Pending", rows=4, plants_per_row=4, notification_target=None
+                name="Pending",
+                rows=4,
+                plants_per_row=4,
+                notification_target=None,
+                growspace_type="dry",
+                setup_preset="drying_room",
+                environment_config=(
+                    {"temperature_sensor": temperature_sensor}
+                    if temperature_sensor
+                    else {}
+                ),
             )
             hass.config_entries.async_update_entry.assert_called_once()
             call_args = hass.config_entries.async_update_entry.call_args
