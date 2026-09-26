@@ -197,6 +197,7 @@ class CoordinatorBuilder:
             invalidate_cache=cache.invalidate,
             save_layout_callback=coordinator.async_save_plant_layout_snapshot,
             publish_callback=coordinator.async_publish_committed_state,
+            hand_watering_callback=coordinator.abandon_pending_irrigation_observation,
         )
 
         growspace_manager = GrowspaceManager(

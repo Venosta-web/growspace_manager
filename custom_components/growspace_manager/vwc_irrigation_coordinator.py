@@ -10,7 +10,7 @@ reset, and the pump cycle.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any, override
@@ -36,12 +36,14 @@ from .domain.pump_cycle import cycle_runtime_limit
 from .domain.sensor_validity import PORE_EC_RANGE, ec_scale
 from .domain.shot_composer import FeedbackTuning, ShotComposer
 from .domain.steering_phase import (
+    INFILTRATION_BACKSTOP_INTERVALS,
     ShotRequest,
     SteeringPhaseMachine,
     SteeringTickInputs,
     SteeringTickVerdict,
     phase_boundary_times,
     resolve_day_hours,
+    shot_params_for_phase,
 )
 from .irrigation_coordinator import BaseIrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
@@ -50,6 +52,16 @@ if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingObservation:
+    """Feedback inputs frozen when an automatic pump cycle ends."""
+
+    end_dt: datetime
+    deadline: datetime
+    moisture_before: float
+    tuning: FeedbackTuning
 
 
 class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
@@ -83,6 +95,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # distinct *sensor* updates rather than on loop ticks, so it needs the
         # freshness-aware read below.
         self._infiltration = InfiltrationMonitor()
+        self._pending_observation: _PendingObservation | None = None
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
         self._sensor_warning_logged = False
@@ -152,6 +165,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """Reset crop-steering target tracking at local midnight."""
         self._machine.reset()
         self._composer.reset()
+        self._pending_observation = None
 
     async def _update_loop(self, _now: datetime) -> None:
         """Main update loop triggered every minute."""
@@ -199,6 +213,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             # substrate keeps absorbing whether or not steering is halted, and a
             # gap in the samples would be indistinguishable from a dropout.
             self._record_infiltration(sensor_entity, current_vwc)
+            self._resolve_pending_observation()
 
             if self._is_halted_by_runoff_ec(growspace):
                 return
@@ -275,6 +290,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                     self._growspace_id,
                 )
                 self._composer.reset()
+                self._pending_observation = None
 
             if config.log_to_logbook and verdict.transition_message:
                 self._fire_logbook_event(
@@ -397,6 +413,54 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         if last_updated is None:
             return
         self._infiltration.record(current_vwc, last_updated)
+
+    @override
+    def _irrigation_cycle_started(self, *, manual: bool) -> None:
+        """A confirmed follow-up invalidates the previous cycle's feedback."""
+        self._pending_observation = None
+
+    @override
+    def _irrigation_cycle_ended(
+        self, *, end_dt: datetime, moisture_before: float | None, manual: bool
+    ) -> None:
+        """Retain only a completed automatic shot with a measurable baseline."""
+        if manual or moisture_before is None:
+            return
+        strategy = self.growspace.irrigation_strategy
+        phase = "P2" if self._machine.canonical_phase == "p2" else "P1"
+        _, interval_minutes = shot_params_for_phase(strategy, phase)
+        self._pending_observation = _PendingObservation(
+            end_dt=end_dt,
+            deadline=end_dt
+            + timedelta(
+                minutes=INFILTRATION_BACKSTOP_INTERVALS
+                * interval_minutes
+                * self._composer.interval_factor
+            ),
+            moisture_before=moisture_before,
+            tuning=FeedbackTuning.from_strategy(strategy),
+        )
+
+    def _resolve_pending_observation(self) -> None:
+        """Use only a post-cycle sensor sample, or abandon the observation."""
+        pending = self._pending_observation
+        if pending is None:
+            return
+        last_start = self._last_shot_dt()
+        if now() > pending.deadline or (
+            last_start is not None and last_start > pending.end_dt
+        ):
+            self._pending_observation = None
+            return
+        moisture_after = self._infiltration.settled_after(pending.end_dt)
+        if moisture_after is None:
+            return
+        self._pending_observation = None
+        self._composer.observe(pending.moisture_before, moisture_after, pending.tuning)
+
+    def abandon_pending_observation(self) -> None:
+        """A hand watering reported now invalidates the pump-only delta."""
+        self._pending_observation = None
 
     def _feed_substrate_reading(self, current_vwc: float, growspace: Growspace) -> None:
         """Feed the current VWC reading to the growspace's SubstrateTracker.
@@ -647,34 +711,3 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             self._composer.interval_factor,
             now(),
         )
-
-    @override
-    async def _async_report_cycle_completion(
-        self,
-        *,
-        event_type: str,
-        start_dt: datetime,
-        end_dt: datetime,
-        duration_sec: float,
-        moisture_before: float | None,
-        volume_dispensed_today: float,
-        wait_seconds: float,
-    ) -> None:
-        """Wait for the moisture sensor to settle, report cycle completion, and update dynamic shot scaling."""
-        await super()._async_report_cycle_completion(
-            event_type=event_type,
-            start_dt=start_dt,
-            end_dt=end_dt,
-            duration_sec=duration_sec,
-            moisture_before=moisture_before,
-            volume_dispensed_today=volume_dispensed_today,
-            wait_seconds=wait_seconds,
-        )
-        if event_type == "irrigation":
-            if self.growspace.environment_config.soil_moisture_sensor:
-                moisture_after = self._moisture_value()
-                self._composer.observe(
-                    moisture_before,
-                    moisture_after,
-                    FeedbackTuning.from_strategy(self.growspace.irrigation_strategy),
-                )
