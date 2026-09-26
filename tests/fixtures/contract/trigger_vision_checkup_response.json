@@ -14,6 +14,7 @@
           "stress_reasons": [],
           "verdict": "within_evaluated_range"
         },
+        "framing_epoch_id": "contract-epoch",
         "fusion": {
           "confidence": "confirmed",
           "coverage": "complete",

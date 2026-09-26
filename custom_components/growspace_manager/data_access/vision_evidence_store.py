@@ -51,6 +51,7 @@ from custom_components.growspace_manager.models.vision_evidence import (
 )
 
 from .vision_evidence_schema import (
+    VISION_BASELINE_MEMBERS_REQUIRED,
     VISION_EVIDENCE_MIGRATIONS,
     VISION_EVIDENCE_SCHEMA_VERSION,
 )
@@ -147,6 +148,108 @@ class VisionEvidenceStore:
             return
         await self._db.close()
         self._db = None
+
+    async def async_restart_visual_baseline(
+        self, growspace_id: str, camera_id: str
+    ) -> dict[str, str]:
+        """Atomically start a camera-wide epoch in the active Grow Run.
+
+        Capture creation uses the same lock, so an overlapping capture gets
+        either the old epoch or this one. Historical buckets remain intact.
+        """
+        async with self._write_lock:
+            db = self._require_db()
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                started_at = datetime.now(UTC).isoformat()
+                grow_run_id = await self._async_get_or_create_grow_run(
+                    growspace_id, started_at
+                )
+                epoch_id = str(uuid.uuid7())
+                await db.execute(
+                    "INSERT INTO vision_framing_epoch"
+                    " (epoch_id, growspace_id, camera_id, started_at, reason)"
+                    " VALUES (?, ?, ?, ?, 'manual_restart')",
+                    (epoch_id, growspace_id, camera_id, started_at),
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return {
+            "epoch_id": epoch_id,
+            "grow_run_id": grow_run_id,
+            "started_at": started_at,
+            "reason": "manual_restart",
+        }
+
+    async def async_get_camera_baseline(
+        self, growspace_id: str, camera_id: str
+    ) -> dict[str, object]:
+        """Read the current epoch and readiness of each scheduled light window."""
+        async with self._write_lock:
+            return await self._async_get_camera_baseline_unlocked(
+                growspace_id, camera_id
+            )
+
+    async def _async_get_camera_baseline_unlocked(
+        self, growspace_id: str, camera_id: str
+    ) -> dict[str, object]:
+        """Read one consistent camera state under the store lock."""
+        db = self._require_db()
+        cursor = await db.execute(
+            "SELECT epoch_id, started_at, reason FROM vision_framing_epoch"
+            " WHERE growspace_id = ? AND camera_id = ?"
+            " ORDER BY rowid DESC LIMIT 1",
+            (growspace_id, camera_id),
+        )
+        epoch = await cursor.fetchone()
+        cursor = await db.execute(
+            "SELECT grow_run_id FROM vision_grow_run_ref WHERE growspace_id = ?",
+            (growspace_id,),
+        )
+        run = await cursor.fetchone()
+        windows: dict[str, dict[str, object]] = {
+            window: {
+                "state": "collecting",
+                "samples_collected": 0,
+                "samples_required": VISION_BASELINE_MEMBERS_REQUIRED,
+            }
+            for window in ("early", "mid", "late")
+        }
+        if epoch is not None and run is not None:
+            cursor = await db.execute(
+                "SELECT light_window, state, member_count, members_required"
+                " FROM vision_baseline_bucket"
+                " WHERE growspace_id = ? AND camera_id = ?"
+                " AND grow_run_id = ? AND framing_epoch_id = ?"
+                " ORDER BY created_at DESC, rowid DESC",
+                (growspace_id, camera_id, run[0], epoch["epoch_id"]),
+            )
+            seen_windows: set[str] = set()
+            for bucket in await cursor.fetchall():
+                window = bucket["light_window"]
+                if window not in seen_windows:
+                    windows[window] = {
+                        "state": bucket["state"],
+                        "samples_collected": bucket["member_count"],
+                        "samples_required": bucket["members_required"],
+                    }
+                    seen_windows.add(window)
+        return {
+            "camera_id": camera_id,
+            "grow_run_id": run[0] if run is not None else None,
+            "epoch": (
+                {
+                    "epoch_id": epoch["epoch_id"],
+                    "started_at": epoch["started_at"],
+                    "reason": epoch["reason"],
+                }
+                if epoch is not None
+                else None
+            ),
+            "windows": windows,
+        }
 
     async def async_start_capture(
         self,
@@ -658,6 +761,26 @@ class VisionEvidenceStore:
                 )
                 if cursor.rowcount != 1:
                     raise KeyError(f"Capture {capture_id} does not exist")
+                if bucket is not None:
+                    cursor = await db.execute(
+                        "SELECT growspace_id, camera_id, grow_run_id,"
+                        " framing_epoch_id, light_window FROM vision_capture"
+                        " WHERE capture_id = ?",
+                        (capture_id,),
+                    )
+                    provenance = await cursor.fetchone()
+                    if provenance is None:  # pragma: no cover - updated above
+                        raise RuntimeError("Capture disappeared during analysis")
+                    if (
+                        provenance["growspace_id"] != bucket.growspace_id
+                        or provenance["camera_id"] != bucket.camera_id
+                        or provenance["grow_run_id"] != bucket.grow_run_id
+                        or provenance["framing_epoch_id"] != bucket.framing_epoch_id
+                        or provenance["light_window"] != bucket.light_window.value
+                    ):
+                        raise ValueError(
+                            "Baseline Bucket provenance must match capture"
+                        )
                 if embedding is not None:
                     await self._async_insert_embedding(embedding)
                 if bucket is not None:
@@ -1337,7 +1460,7 @@ class VisionEvidenceStore:
         cursor = await db.execute(
             "SELECT epoch_id FROM vision_framing_epoch"
             " WHERE growspace_id = ? AND camera_id = ?"
-            " ORDER BY started_at DESC LIMIT 1",
+            " ORDER BY rowid DESC LIMIT 1",
             (growspace_id, camera_id),
         )
         row = await cursor.fetchone()

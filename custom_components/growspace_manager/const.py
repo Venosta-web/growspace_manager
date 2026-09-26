@@ -734,6 +734,7 @@ class GrowspaceService(StrEnum):
     SET_EC_TARGET_RANGE = "set_ec_target_range"
     # Vision Checkup Services
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
+    RESTART_VISUAL_BASELINE = "restart_visual_baseline"
     # Tank Configuration Services
     CONFIGURE_TANK = "configure_tank"
     # Drying & Curing Services

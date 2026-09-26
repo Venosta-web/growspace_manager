@@ -2471,6 +2471,27 @@ trigger_vision_checkup:
       selector:
         text:
 
+restart_visual_baseline:
+  name: Restart visual baseline
+  description: >-
+    Start a new visual baseline for one configured camera. Earlier snapshots
+    and analyses remain in history. The camera collects a new baseline in
+    every light window from its next checkups.
+  fields:
+    growspace_id:
+      name: Growspace ID
+      description: The ID of the growspace containing the camera.
+      required: true
+      selector:
+        text:
+    camera_id:
+      name: Camera
+      description: A camera entity configured for this growspace.
+      required: true
+      selector:
+        entity:
+          domain: camera
+
 add_seed_batch:
   description: Add a seed batch to the genetics inventory
   fields:

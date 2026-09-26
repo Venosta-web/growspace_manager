@@ -548,6 +548,7 @@ async def test_websocket_get_vision_history_v2_merges_frozen_legacy_tail(
         ],
         "total": 2,
         "capture_total": 0,
+        "camera_baselines": [],
     }
     assert growspace.vision_checkup_history == [legacy]
 

@@ -1,4 +1,32 @@
 {
+  "camera_baselines": [
+    {
+      "camera_id": "camera.contract_4",
+      "epoch": {
+        "epoch_id": "contract-epoch",
+        "reason": "manual_restart",
+        "started_at": "2026-09-03T06:00:00+00:00"
+      },
+      "grow_run_id": "contract-run",
+      "windows": {
+        "early": {
+          "samples_collected": 0,
+          "samples_required": 30,
+          "state": "collecting"
+        },
+        "late": {
+          "samples_collected": 0,
+          "samples_required": 30,
+          "state": "collecting"
+        },
+        "mid": {
+          "samples_collected": 0,
+          "samples_required": 30,
+          "state": "collecting"
+        }
+      }
+    }
+  ],
   "capture_total": 4,
   "history": [
     {
@@ -14,6 +42,7 @@
             "stress_reasons": [],
             "verdict": "within_evaluated_range"
           },
+          "framing_epoch_id": "contract-epoch",
           "fusion": {
             "confidence": "confirmed",
             "coverage": "complete",
@@ -89,6 +118,7 @@
             "stress_reasons": ["high_vpd"],
             "verdict": "risk"
           },
+          "framing_epoch_id": "contract-epoch",
           "fusion": {
             "confidence": "monitor",
             "coverage": "partial",
@@ -127,6 +157,7 @@
             "stress_reasons": [],
             "verdict": "unavailable"
           },
+          "framing_epoch_id": "contract-epoch",
           "fusion": {
             "unavailable_reasons": [
               "vision_unavailable",
@@ -169,6 +200,7 @@
             "stress_reasons": [],
             "verdict": "unavailable"
           },
+          "framing_epoch_id": "contract-epoch",
           "fusion": {
             "unavailable_reasons": ["vision_unavailable"]
           },

@@ -10,6 +10,7 @@ from custom_components.growspace_manager.presentation.vision import (
     async_serialize_vision_checkup,
 )
 from custom_components.growspace_manager.schemas import (
+    SERVICE_RESTART_VISUAL_BASELINE_SCHEMA,
     SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
 )
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
@@ -21,6 +22,28 @@ if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def handle_restart_visual_baseline(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    call: ServiceCall,
+) -> dict[str, Any]:
+    """Start a manual Framing Epoch for one configured camera."""
+    growspace_id = call.data["growspace_id"]
+    camera_id = call.data["camera_id"]
+    growspace = coordinator.growspaces.get(growspace_id)
+    if growspace is None:
+        raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+    if camera_id not in growspace.environment_config.camera_entities:
+        raise ServiceValidationError(
+            f"Camera '{camera_id}' is not configured for growspace '{growspace_id}'"
+        )
+    store = hass.data.get(DOMAIN, {}).get("vision_evidence_store")
+    if store is None:
+        raise ServiceValidationError("The Vision Evidence Store is unavailable")
+    epoch = await store.async_restart_visual_baseline(growspace_id, camera_id)
+    return {"growspace_id": growspace_id, "camera_id": camera_id, **epoch}
 
 
 async def handle_trigger_vision_checkup(
@@ -78,6 +101,12 @@ async def handle_trigger_vision_checkup(
 
 
 SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.RESTART_VISUAL_BASELINE,
+        handle_restart_visual_baseline,
+        SERVICE_RESTART_VISUAL_BASELINE_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    ),
     ServiceDefinition(
         GrowspaceService.TRIGGER_VISION_CHECKUP,
         handle_trigger_vision_checkup,
