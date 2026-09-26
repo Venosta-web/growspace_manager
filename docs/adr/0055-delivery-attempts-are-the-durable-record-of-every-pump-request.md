@@ -1,6 +1,6 @@
 # Delivery Attempts Are the Durable Record of Every Pump Request
 
-**Status:** Accepted — not yet implemented
+**Status:** Accepted — partly implemented. #787 records every irrigation attempt from confirm-ON, when it is charged, to its close as `completed` or `aborted`, and derives Dispensed Volume from them in the per-growspace store of item 5, retention, row limit and fail-closed read included. Suppressed attempts, the write before the ON command, drain attempts, the trigger evidence beyond its kind, `not_delivered` windows, metered evidence and the restart handling of item 9 are not yet.
 
 Nothing recorded one pump request from start to end (#549). [[Reliability Evidence]] counts requested, fired and completed cycles but keeps no individual cycle. The [[Safety Ledger]] keeps events, but only transitions, faults and not-delivered cycles, in one 500-row ring shared by every growspace. The [[In-flight Marker]] notes only that a pump is running. So "what happened to the 14:30 shot", and "why was I capped", had no answer, and a restart could not tell our own interrupted shot from a person at the pump.
 

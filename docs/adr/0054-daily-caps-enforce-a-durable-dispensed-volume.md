@@ -1,6 +1,6 @@
 # The Daily Caps Enforce a Durable Dispensed Volume, Not the Water Figure
 
-**Status:** Accepted — not yet implemented. Item 4's storage is replaced by [ADR-0055](0055-delivery-attempts-are-the-durable-record-of-every-pump-request.md); the rule is unchanged.
+**Status:** Accepted. Items 1–4 are implemented (#787); the calibration signal of item 5 and the card of item 6 are not yet. Item 4's storage is replaced by [ADR-0055](0055-delivery-attempts-are-the-durable-record-of-every-pump-request.md); the rule is unchanged.
 
 Growspace Manager kept two unreconciled answers to "how much water today" (#546). The daily cycle limit and daily volume cap enforced an in-memory counter, `_cycles_today` / `_volume_dispensed_today`, which a restart set back to zero mid-day. The card displayed [[Aggregate Water Use]] (ADR-0017), which is persisted but, in [[Tank-Derived Water Mode]], measures reservoir drop rather than pump runtime. The card showed both, as "Dispensed today" and "Liters today", with nothing to say why they differed.
 
