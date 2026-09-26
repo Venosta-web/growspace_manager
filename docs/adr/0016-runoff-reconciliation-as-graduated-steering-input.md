@@ -3,7 +3,7 @@
 **Status:** Accepted
 
 **Depends on ADR-0015** ([[EC State]]). This ADR turns runoff from a binary
-safety cut-off into a real, graduated steering signal — and it does so *through*
+safety cut-off into a real, graduated steering signal — and it does so _through_
 the `ECState` seam, not as a sixth scattered code path.
 
 Today runoff has two behaviors and one corpse:
@@ -16,9 +16,9 @@ Today runoff has two behaviors and one corpse:
 - `target_runoff_percent` — **dead**: stored, settable, shown in the view model,
   read by nothing. The grower's stated runoff goal influences zero decisions.
 
-A professional runoff conversation is graduated, not binary: *within* the EC
+A professional runoff conversation is graduated, not binary: _within_ the EC
 band and at target runoff %, hold; runoff EC drifting high, bias toward flush
-(bigger shots, more runoff) *before* it hits the panic threshold; the hard halt
+(bigger shots, more runoff) _before_ it hits the panic threshold; the hard halt
 is the **top** of that ramp, not a separate world.
 
 ## Decision
@@ -51,7 +51,7 @@ Runoff is a **bias on the same enum**:
   escalates `HOLD → FLUSH`.
 - Pore EC within band and runoff healthy → `HOLD`.
 - The existing binary halt is surfaced as a **separate `halt_irrigation: bool`
-  field on `ECState`**, *not* a member of `ECRecommendation`. It is computed
+  field on `ECState`**, _not_ a member of `ECRecommendation`. It is computed
   unconditionally from `drain_ec > halt_on_runoff_ec_threshold`, **independent of
   `ec_modulation_enabled`**. `_is_halted_by_runoff_ec` reads the bool;
   `_compute_ec_modulation` reads the enum. Two criticality levels (a safety
@@ -66,23 +66,23 @@ so **no new actuation path is introduced** — `FLUSH`-by-runoff and
 runoff awareness; the actuator stays single.
 
 **Which EC drives the magnitude (implementation decision).** The helper maps an
-EC reading's excursion *past the band* to a factor, so a pore reading that is
-*within* the band yields exactly 1.0 — meaning a runoff-driven `FLUSH` (pore
+EC reading's excursion _past the band_ to a factor, so a pore reading that is
+_within_ the band yields exactly 1.0 — meaning a runoff-driven `FLUSH` (pore
 within band) would otherwise change the recommendation without enlarging the
 shot. The resolution: the magnitude reads **whichever EC is driving the flush**.
 A pore-driven flush/stack uses pore EC (byte-identical to today); a runoff-driven
 flush uses the **runoff EC**, which sits above the band precisely when salts are
 stacking. Both go through the one unchanged helper, so a fired shot stays
 explainable from a single factor. A runoff `FLUSH` whose runoff EC happens to be
-within the band yields a modest 1.0 — acceptable, since the over-target *delta*
+within the band yields a modest 1.0 — acceptable, since the over-target _delta_
 that triggered it does not by itself imply the substrate EC is high.
 
 ### 3. Runoff feeds the Crop Steering Score
 
 `calculate_crop_steering_score` ignores runoff entirely today. Runoff joins the
 score on a **shared EC axis**, not as a fourth independent component — because the
-pore-[[EC Trend]] and a sustained [[Feed-to-Runoff EC Delta]] are *correlated EC
-signals* (both report salts moving). Summing both at full ±0.3 would make the
+pore-[[EC Trend]] and a sustained [[Feed-to-Runoff EC Delta]] are _correlated EC
+signals_ (both report salts moving). Summing both at full ±0.3 would make the
 EC-ish contribution ±0.6 — larger than dryback's ±0.4 — inverting the intended
 primacy of dryback. So the EC axis holds **one** value, capped ±0.3:
 
@@ -100,17 +100,17 @@ is unchanged for growers without a runoff pen.
 
 **The ratified bucket (HITL gate, now closed).** "Sustained" reuses §2's notion —
 unanimous agreement across the tail (last 2–3 entries) of the already-persisted
-`DrainConfig.readings`, scored on the *weakest* agreeing reading (no new state, no
+`DrainConfig.readings`, scored on the _weakest_ agreeing reading (no new state, no
 [[SubstrateTracker]] involvement; ADR-0010 keeps it recorder-free). Symmetric,
 keyed off the grower's `max_ec_delta` (Δmax):
 
-| weakest reading in tail | nudge |
-|---|---|
-| ≥ 2·Δmax | +0.3 |
-| ≥ Δmax | +0.2 |
-| straddles / within ±Δmax | 0.0 |
-| ≤ −Δmax | −0.2 |
-| ≤ −2·Δmax | −0.3 |
+| weakest reading in tail  | nudge |
+| ------------------------ | ----- |
+| ≥ 2·Δmax                 | +0.3  |
+| ≥ Δmax                   | +0.2  |
+| straddles / within ±Δmax | 0.0   |
+| ≤ −Δmax                  | −0.2  |
+| ≤ −2·Δmax                | −0.3  |
 
 The +0.2 tier fires at exactly the `max_ec_delta` point §2's flush-bias engages,
 so actuator and readout agree. [[Runoff Percentage]] does **not** feed the score
@@ -143,10 +143,10 @@ so the score logic stays a pure function and no method is added to `ECState`.
 
 Folding `HALT` into `ECRecommendation` was the original sketch and is rejected.
 ADR-0015 specifies that when `ec_modulation_enabled` is False the recommendation
-is `UNAVAILABLE` (factor 1.0) — the enum is the *modulation* machine, gated by the
+is `UNAVAILABLE` (factor 1.0) — the enum is the _modulation_ machine, gated by the
 modulation opt-in. A grower with a runoff-EC sensor and a halt threshold set but
-who has **not** opted into EC Modulation would then have their *safety halt
-computed inside a machine that is switched off*. A safety cut-off must not depend
+who has **not** opted into EC Modulation would then have their _safety halt
+computed inside a machine that is switched off_. A safety cut-off must not depend
 on an unrelated advisory opt-in. `halt_irrigation` is therefore its own boolean,
 evaluated unconditionally from `drain_ec > halt_on_runoff_ec_threshold`. This is
 what makes the ADR's own claim — "the safety floor never depends on the richest
@@ -157,11 +157,11 @@ the floor to the modulation opt-in.
 
 Runoff reconciliation degrades cleanly along [[Sensor-Gated Capability]]:
 
-| Grower has…                              | They get…                                                |
-|------------------------------------------|----------------------------------------------------------|
-| Pore-EC only                             | Exactly ADR-0015 behavior; runoff inert                  |
-| Drain **EC** readings, no volumes        | [[Feed-to-Runoff EC Delta]] reconciliation + the `halt_irrigation` safety cut-off. **No** [[Runoff Percentage]] |
-| Drain EC **and** volume sensors          | Full reconciliation incl. [[Runoff Percentage]] vs. target |
+| Grower has…                       | They get…                                                                                                       |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Pore-EC only                      | Exactly ADR-0015 behavior; runoff inert                                                                         |
+| Drain **EC** readings, no volumes | [[Feed-to-Runoff EC Delta]] reconciliation + the `halt_irrigation` safety cut-off. **No** [[Runoff Percentage]] |
+| Drain EC **and** volume sensors   | Full reconciliation incl. [[Runoff Percentage]] vs. target                                                      |
 
 The hard halt works with **no volumes at all** (it reads `drain_ec` only), so the
 safety floor never depends on the richest sensor tier.
@@ -181,7 +181,7 @@ recommendation falls back to pore-only `STACK/HOLD/FLUSH/UNAVAILABLE`,
 `_is_halted_by_runoff_ec` reverts to its standalone threshold check, and the
 score drops its runoff component. ADR-0015's `ECState` still stands and still
 reconciles feed vs. pore. The two ADRs are layered, not entangled: 0016 is a
-*bias and a score component*, removable without touching 0015's interface beyond
+_bias and a score component_, removable without touching 0015's interface beyond
 three additive fields.
 
 ## Rejected alternatives
@@ -191,17 +191,17 @@ three additive fields.
   scaling P2 shots, fighting or compounding with no single explainable factor.
   CONTEXT.md's [[Shot Size Composition]] is explicit that a fired shot must be
   explainable from independent, named factors; a second EC actuator breaks that
-  contract. Runoff must speak *through* the one EC recommendation.
+  contract. Runoff must speak _through_ the one EC recommendation.
 - **Make runoff % a hard gate (suspend when off-target) like the EC halt.**
   Rejected: runoff percentage is noisy (channeling, uneven emitters, a single
   mis-measured catch) and a low-confidence signal compared to the EC pen.
   Gating irrigation on it would strand plants on a bad reading. It earns a
-  *score nudge and a flush bias*, not a cut-off; only runoff **EC** (the
+  _score nudge and a flush bias_, not a cut-off; only runoff **EC** (the
   higher-confidence, safety-relevant signal) keeps the hard `halt_irrigation` cut-off.
 - **Resurrect `target_runoff_percent` as a closed actuation loop (drive shot
   size to hit a runoff %).** Rejected for v1: there is no dosing hardware and
   runoff % responds to shot size with long, media-dependent lag; a naive
-  proportional loop would oscillate. It becomes an *observability + bias* signal
+  proportional loop would oscillate. It becomes an _observability + bias_ signal
   now; a true runoff-% setpoint loop is explicitly deferred.
 
 ## Migration / back-compat
@@ -217,10 +217,10 @@ change. `target_runoff_percent` and `max_ec_delta` keep their current defaults
 ## Tension flagged
 
 The runoff score component is the first time the [[Crop Steering Score]] reads a
-*config target* (`target_runoff_percent`, `max_ec_delta`) rather than a pure
-measurement. The score stays an absolute −1…+1 *measurement* (ADR-0012's
+_config target_ (`target_runoff_percent`, `max_ec_delta`) rather than a pure
+measurement. The score stays an absolute −1…+1 _measurement_ (ADR-0012's
 invariant), but "how far runoff EC sits past the grower's max-delta target" is a
 measurement-relative-to-a-setting — the same shape as [[Intent Deviation]].
 Recorded here so a future reader does not mistake it for the score bending toward
 a declared intent: it does not; it reads a physical salt-accumulation signal that
-happens to be *thresholded* by a grower-set tolerance.
+happens to be _thresholded_ by a grower-set tolerance.

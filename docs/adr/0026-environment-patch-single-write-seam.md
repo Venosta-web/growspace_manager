@@ -79,7 +79,7 @@ hand-preserve and which writer you were standing in — a shallow seam whose bug
 
 - Adding an EnvironmentConfig field = model field + one classification row (forced
   at import); every writer preserves it automatically, and no writer changes.
-- Behavioural change: automations that relied on *omission* to clear a field must
+- Behavioural change: automations that relied on _omission_ to clear a field must
   now send an explicit empty value. `services.yaml` needs updating and the Lovelace
   card needs a coordinated audit for omit-to-clear assumptions (the card sends full
   payloads, so the expected impact is nil — but it must be verified, cross-repo).
