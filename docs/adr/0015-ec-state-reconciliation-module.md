@@ -10,7 +10,7 @@ Modulation scales P2 shots). **Runoff/drain** EC drives only a binary halt
 (`_is_halted_by_runoff_ec`). The **runoff target** (`target_runoff_percent`) is
 dead weight — stored, settable, shown in the view model, read by nothing; its
 sibling `max_ec_delta` only fires a log-warning on a manual `log_drain_reading`,
-and *that* logic is duplicated verbatim across `managers/growspace.py` and
+and _that_ logic is duplicated verbatim across `managers/growspace.py` and
 `services/growspace_facade.py`.
 
 For a professional grower the feed chart, the substrate pen, and the runoff pen
@@ -76,28 +76,28 @@ ec_ramp_curves` and `IrrigationConfig.ec_target_ranges`.
 
 - **Feed EC and pore EC are never conflated.** This is the load-bearing
   invariant from CONTEXT.md's [[Pore EC Target Band]]: pore EC legitimately runs
-  *above* feed EC when stacking. `ECState` keeps `active_feed_ec` and `pore_ec`
+  _above_ feed EC when stacking. `ECState` keeps `active_feed_ec` and `pore_ec`
   in separate fields and the recommendation is computed **only** from
   `pore_ec` vs. the [[Pore EC Target Band]] — never from feed EC. Feed target and
-  runoff are carried for *display and for ADR-0016's reconciliation*, never to
+  runoff are carried for _display and for ADR-0016's reconciliation_, never to
   override the pore-band decision in v1.
 - **The recommendation maps 1:1 onto today's EC Modulation tri-state.** `STACK`
   ⇔ pore EC below band (factor < 1.0), `HOLD` ⇔ within band (factor 1.0),
   `FLUSH` ⇔ above band (factor > 1.0), `UNAVAILABLE` ⇔ no reading / opt-out
   (factor exactly 1.0, available False). The numeric factor still comes from the
   existing `_ec_modulation_factor_for_reading` pure helper — `ECState` chooses
-  the *direction*, the helper computes the *magnitude*.
+  the _direction_, the helper computes the _magnitude_.
 - **Feed-target stage resolves to the furthest-along stage present.** A growspace
   has **no single canonical stage** — `view_model_builder.py` tracks per-stage
   weeks (`veg_week`, `flower_week`, …) independently from each stage's max-days.
-  So feed-target resolution must *pick* a stage, and the rule is deliberately the
+  So feed-target resolution must _pick_ a stage, and the rule is deliberately the
   **most advanced stage with live plants** (flower over veg over seedling). It
   never under-feeds the most EC-demanding cohort; the cost is over-stating EC for
   younger plants in a mixed tent, accepted because the target is advisory
   (reconciliation display + a bounded score nudge, not actuation). `week` is then
   `days_to_week(max_days_in_that_stage)`, reusing the view model's existing
-  per-stage day counts — no new week concept is invented. (Rejected: *dominant
-  stage by plant count* — simpler-sounding but can feed flower plants a veg-week
+  per-stage day counts — no new week concept is invented. (Rejected: _dominant
+  stage by plant count_ — simpler-sounding but can feed flower plants a veg-week
   EC when seedlings outnumber them, the more dangerous error.)
 
 ### Unavailable / error modes ([[Sensor-Gated Capability]])
@@ -115,12 +115,12 @@ Each field degrades independently to `None`; nothing raises:
 
 ### What lives behind the seam vs. what callers keep
 
-| Behind `ECState`                                     | Callers keep                          |
-|------------------------------------------------------|---------------------------------------|
-| Feed-target resolution (ramp curve → week → range)   | Firing the pump / safety caps         |
-| Pore-vs-band direction → `ECRecommendation`          | The `_ec_modulation_factor_for_reading` magnitude helper |
-| Latest-runoff lookup + feed→runoff delta             | `ShotComposition` diagnostics assembly |
-| The duplicated drain-reading append + `max_ec_delta` warning | Notification delivery (manager-owned)         |
+| Behind `ECState`                                             | Callers keep                                             |
+| ------------------------------------------------------------ | -------------------------------------------------------- |
+| Feed-target resolution (ramp curve → week → range)           | Firing the pump / safety caps                            |
+| Pore-vs-band direction → `ECRecommendation`                  | The `_ec_modulation_factor_for_reading` magnitude helper |
+| Latest-runoff lookup + feed→runoff delta                     | `ShotComposition` diagnostics assembly                   |
+| The duplicated drain-reading append + `max_ec_delta` warning | Notification delivery (manager-owned)                    |
 
 `_compute_ec_modulation` shrinks to: build `ECState`, branch on
 `recommendation`, return `(factor, available)`. It no longer knows the band
@@ -146,10 +146,10 @@ Delete `domain/ec_state.py`. What breaks, and is the breakage proportionate?
 - The crop-steering score loses any EC-target awareness it gained (in 0016).
 - The two drain call sites must re-duplicate the append/window/warning.
 
-Nothing *outside* EC reasoning breaks — feed-target CRUD, the display sensor,
+Nothing _outside_ EC reasoning breaks — feed-target CRUD, the display sensor,
 and the view-model payload still function because the module **reads** those
 representations, it does not own their storage. That is the right depth: the
-module is the one place EC is *interpreted*, not the one place it is *stored*.
+module is the one place EC is _interpreted_, not the one place it is _stored_.
 
 ## Rejected alternatives
 
@@ -167,7 +167,7 @@ module is the one place EC is *interpreted*, not the one place it is *stored*.
   `StageEnvironmentalTargets` precedent (a pure per-call object, not a
   coordinator) is the established shape for exactly this.
 - **Fold EC reasoning into the existing `SubstrateTracker`.** Rejected:
-  the tracker is deliberately *measurement history* (ADR-0010, recorder-free,
+  the tracker is deliberately _measurement history_ (ADR-0010, recorder-free,
   chart-only) — it must never become a place that reads config targets or emits
   actuation recommendations. Feed targets and recommendations are config/decision
   concerns, not measured events.
@@ -186,8 +186,8 @@ driven purely by pore-vs-band, as today.
 
 ADR-0012 ([[Steering Mode]] preset stamp) stamps the [[Pore EC Target Band]] but
 **not** any feed-EC target — feed EC is hand-mixed and the stamp deliberately
-never touches it. `ECState` honors this: it *resolves* a feed target from the
-grower's separately-configured ramp curve/range but never *writes* one and never
+never touches it. `ECState` honors this: it _resolves_ a feed target from the
+grower's separately-configured ramp curve/range but never _writes_ one and never
 lets the feed target move the band. No contradiction, but the boundary is worth
 recording: the stamp owns the band, the grower owns the feed curve, and
 `ECState` only reads both.

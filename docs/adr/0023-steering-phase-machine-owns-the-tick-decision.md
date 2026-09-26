@@ -68,7 +68,7 @@ disagree. The coordinator property is a one-line adapter.
 
 One deliberate subtlety preserved from the old ordering: when a single tick
 performs the P1→P2 transition, the composer reset used to run (inside
-`_set_phase`) *before* the cooldown check read `interval_factor`. Since the
+`_set_phase`) _before_ the cooldown check read `interval_factor`. Since the
 machine now receives the factor as a pre-tick input, it substitutes 1.0 for the
 cooldown check on exactly that tick (`reset_pending`), matching the old
 behaviour.

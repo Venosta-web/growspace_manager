@@ -11,12 +11,12 @@ The fix is the **Sensor Settling Delay**: wait `min(measured_cycle_duration, 15s
 Two structural questions had genuine alternatives:
 
 1. **Where does the wait live relative to "cycle is done"?**
-   - *Inline*: extend the `finally` block — sleep, then read sensor, then report, then release `_running_tasks`/`_active_events`. Simple, but ties up to 15 extra seconds of "this event type is busy", blocking a fast-following scheduled or manual cycle even though the pump is already off and hardware is ready.
-   - *Background task*: release `_running_tasks`/`_active_events` and turn the pump off immediately as today; spawn a separate task that sleeps, reads the sensor, and reports.
+   - _Inline_: extend the `finally` block — sleep, then read sensor, then report, then release `_running_tasks`/`_active_events`. Simple, but ties up to 15 extra seconds of "this event type is busy", blocking a fast-following scheduled or manual cycle even though the pump is already off and hardware is ready.
+   - _Background task_: release `_running_tasks`/`_active_events` and turn the pump off immediately as today; spawn a separate task that sleeps, reads the sensor, and reports.
 
 2. **What does the background task read — live coordinator state, or a snapshot?**
-   - *Live*: re-read `self._volume_dispensed_today`, `self._cycles_today`, etc. when the task wakes up. Simpler, but if a new cycle starts during the 15s window, the report would describe the *old* cycle using the *new* cycle's counters.
-   - *Snapshot*: capture every value the report needs (`start_dt`, `end_dt`, `duration_sec`, `moisture_before`, `volume_dispensed_today`, `cycles_today`, `event_type`) into local variables before spawning the task. The task's only "live" read is the post-wait moisture sensor value — the one thing that *must* be read late.
+   - _Live_: re-read `self._volume_dispensed_today`, `self._cycles_today`, etc. when the task wakes up. Simpler, but if a new cycle starts during the 15s window, the report would describe the _old_ cycle using the _new_ cycle's counters.
+   - _Snapshot_: capture every value the report needs (`start_dt`, `end_dt`, `duration_sec`, `moisture_before`, `volume_dispensed_today`, `cycles_today`, `event_type`) into local variables before spawning the task. The task's only "live" read is the post-wait moisture sensor value — the one thing that _must_ be read late.
 
 ## Decision
 
@@ -48,7 +48,7 @@ overshot (ADR-0031 Context; ADR-0014 amendment for the correction).
 
 **The two consumers are split.** The [[Settled Observation]] moves out of this
 task entirely and waits on the [[Infiltration]] signal instead of a timer. The
-alternative — retiming *this* wait so both consumers share one settled reading —
+alternative — retiming _this_ wait so both consumers share one settled reading —
 was rejected: it would push logbook entries minutes behind the cycle they
 describe, rewriting this ADR's "up to 15s out of step" consequence into "up to
 several minutes," and it would put a reading corrupted by a fast-following cycle

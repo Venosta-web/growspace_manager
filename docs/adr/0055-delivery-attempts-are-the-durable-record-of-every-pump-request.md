@@ -17,7 +17,7 @@ Every request that reaches the [[Pump Cycle Gate]] now becomes one **[[Delivery 
    - An unreadable store **holds that growspace's cycles**, reported the way `fault_record_unreadable` is.
    - Anything older than 7 days survives as the daily water sums, the Reliability Evidence counts, and whatever Grow Runs later project.
 6. **What an attempt records.**
-   - **Identity:** a stable `attempt_id`, `growspace_id` and `output`. A zone identity is added by #548.
+   - **Identity:** a stable `attempt_id`, `growspace_id` and `output`. The [[Irrigation Zone]] is recorded too (ADR-0057).
    - **Trigger and its evidence:** for `schedule`, the slot; for `steering`, the phase, the triggering VWC reading, base seconds and the VWC and EC factors; for `manual`, the HA `user_id`; for `drain`, the slot.
    - **Plan:** planned seconds, and the flow rate that turned them into planned litres, snapshotted so a later config edit cannot rewrite history.
    - **Timestamps:** `requested_at`, `on_commanded_at`, `on_confirmed_at`, `off_commanded_at` and `off_confirmed_at`.
