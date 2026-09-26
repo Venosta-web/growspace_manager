@@ -170,6 +170,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
                 rows=pending["rows"],
                 plants_per_row=pending["plants_per_row"],
                 notification_target=pending.get("notification_target"),
+                **{
+                    key: pending[key]
+                    for key in ("growspace_type", "setup_preset", "environment_config")
+                    if key in pending
+                },
             )
             _LOGGER.info(
                 "Created pending growspace: %s", pending.get("name", "unknown")
@@ -180,7 +185,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             new_data.pop("pending_growspace")
             hass.config_entries.async_update_entry(entry, data=new_data)
 
-        except KeyError, RuntimeError:
+        except Exception:
             _LOGGER.exception(
                 "Failed to create pending growspace %s",
                 pending.get("name", "unknown"),

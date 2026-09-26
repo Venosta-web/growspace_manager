@@ -108,6 +108,7 @@ class GrowspaceManager(BaseService):
         notification_target: str | None = None,
         device_id: str | None = None,
         growspace_type: GrowspaceType = GrowspaceType.FLOWER,
+        setup_preset: str | None = None,
         dimensions: dict[str, Any] | None = None,
         environment_config: dict[str, Any] | None = None,
         irrigation_config: dict[str, Any] | None = None,
@@ -132,6 +133,7 @@ class GrowspaceManager(BaseService):
                 "notification_target": notification_target,
                 "device_id": device_id,
                 "growspace_type": growspace_type,
+                "setup_preset": setup_preset,
             }
 
             if dimensions is not None:
@@ -372,6 +374,14 @@ class GrowspaceManager(BaseService):
                 changes.append(f"notification_target: {current} -> {nt}")
                 growspace.notification_target = nt
                 updated = True
+
+        if (
+            "setup_preset" in kwargs
+            and kwargs["setup_preset"] != growspace.setup_preset
+        ):
+            growspace.setup_preset = kwargs["setup_preset"]
+            changes.append("setup_preset updated")
+            updated = True
 
         if "environment_config" in kwargs:
             growspace.environment_config = kwargs["environment_config"]

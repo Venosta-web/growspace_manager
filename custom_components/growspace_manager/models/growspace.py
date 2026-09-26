@@ -746,6 +746,7 @@ class Growspace(BaseModel):
     humidifier_config: dict[str, Any] = field(default_factory=dict)
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
+    setup_preset: str | None = None
     drain_config: DrainConfig = field(default_factory=lambda: DrainConfig())
     energy_tracking: EnergyTracking = field(default_factory=lambda: EnergyTracking())
     water_usage: WaterUsageData = field(default_factory=lambda: WaterUsageData())

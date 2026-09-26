@@ -5,7 +5,21 @@
         "title": "Set up Growspace Manager",
         "description": "Configure your Growspace Manager integration",
         "data": {
-          "name": "Integration Name"
+          "name": "Integration Name",
+          "area_id": "Area with growspace sensors (optional)"
+        }
+      },
+      "add_growspace": {
+        "title": "Create your first growspace",
+        "description": "Choose a setup preset and grid. Climate sensors can be added now or later.",
+        "data": {
+          "name": "Growspace name",
+          "setup_preset": "Setup preset",
+          "rows": "Rows",
+          "plants_per_row": "Plants per row",
+          "temperature_sensor": "Temperature sensor (optional)",
+          "humidity_sensor": "Humidity sensor (optional)",
+          "vpd_sensor": "VPD sensor (optional)"
         }
       }
     },
