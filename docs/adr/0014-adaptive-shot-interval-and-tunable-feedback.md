@@ -216,6 +216,10 @@ be machinery for no behaviour.
   this change moves exactly one variable; excluding them is a separate
   behaviour change with its own blast radius (a grower who mostly hand-waters
   would go from trained to never-trained) and deserves its own argument.
+
+  **Superseded by ADR-0056 (#550):** Manual Runs never train Adaptive Shot
+  Control, and a Manual Run or Hand Watering reported now abandons a pending
+  observation.
 - **CONTEXT.md's [[Adaptive Shot Control]] entry becomes true.** It already
   claimed the coordinator "triggers `observe()` after each settled cycle" — a
   description of the intent, never of the code. The gap is now closed rather

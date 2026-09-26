@@ -1920,6 +1920,7 @@ class BaseIrrigationCoordinator:
                     self._raise_delivery_issue()
                     raise
                 self._last_cycle_timestamp = start_dt.isoformat()
+                self._irrigation_cycle_started(manual=manual)
                 # Written the moment the pump confirms, not at the end of the
                 # cycle, so a restart mid-shot still knows this shot happened.
                 self._main_coordinator.async_schedule_save()
@@ -2018,6 +2019,17 @@ class BaseIrrigationCoordinator:
             off_confirmed = (
                 await self._async_command_off(pump_entity) if commanded else True
             )
+            if (
+                event_type == "irrigation"
+                and start_dt is not None
+                and cycle_finished
+                and off_confirmed
+            ):
+                self._irrigation_cycle_ended(
+                    end_dt=end_dt,
+                    moisture_before=moisture_before,
+                    manual=manual,
+                )
             if closed is not None:
                 # Recorded once OFF is read back, or known not to be.
                 self._deliveries.close(
@@ -2062,6 +2074,17 @@ class BaseIrrigationCoordinator:
                     )
             if event_type in self._running_tasks:
                 self._running_tasks.pop(event_type)
+
+    def _irrigation_cycle_started(self, *, manual: bool) -> None:
+        """Let a steering coordinator invalidate feedback on a confirmed run."""
+
+    def abandon_pending_observation(self) -> None:
+        """A time-based coordinator has no adaptive feedback to discard."""
+
+    def _irrigation_cycle_ended(
+        self, *, end_dt: datetime, moisture_before: float | None, manual: bool
+    ) -> None:
+        """Let a steering coordinator retain a completed cycle for feedback."""
 
     @callback
     def _async_spawn_settling_report(

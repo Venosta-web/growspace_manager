@@ -44,6 +44,7 @@ class InfiltrationMonitor:
     def __init__(self) -> None:
         """Start with an empty sample ring."""
         self._samples: list[_Sample] = []
+        self._recent: list[_Sample] = []
 
     def record(self, vwc: float, sensor_last_updated: datetime) -> None:
         """Append a sample, but only when the sensor's own timestamp advances.
@@ -56,6 +57,7 @@ class InfiltrationMonitor:
         if self._samples and sensor_last_updated <= self._samples[-1].at:
             return
         self._samples.append(_Sample(vwc, sensor_last_updated))
+        self._recent = [*self._recent, self._samples[-1]][-2:]
         cutoff = sensor_last_updated - timedelta(
             minutes=SUBSTRATE_INFILTRATION_WINDOW_MINUTES
         )
@@ -75,6 +77,18 @@ class InfiltrationMonitor:
             return InfiltrationState.DRYING
         return InfiltrationState.SETTLED
 
+    def settled_after(self, end_dt: datetime) -> float | None:
+        """Return a post-cycle reading once its own recent slope stops rising."""
+        if len(self._recent) < 2 or self._recent[0].at <= end_dt:
+            return None
+        previous, latest = self._recent
+        minutes = (latest.at - previous.at).total_seconds() / 60.0
+        slope = (latest.vwc - previous.vwc) / minutes
+        if slope > SUBSTRATE_INFILTRATION_DEADBAND_PP_PER_MIN:
+            return None
+        return latest.vwc
+
     def reset(self) -> None:
         """Discard every sample."""
         self._samples.clear()
+        self._recent.clear()

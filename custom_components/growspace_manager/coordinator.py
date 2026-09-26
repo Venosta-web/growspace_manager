@@ -457,6 +457,12 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.data = self.view_model_builder.build_data_property()
         await self._publish_current_data()
 
+    def abandon_pending_irrigation_observation(self, growspace_id: str) -> None:
+        """Discard feedback when hand watering changes a growspace's VWC."""
+        irrigation = self._subsystem_manager.irrigation_coordinators.get(growspace_id)
+        if irrigation is not None:
+            irrigation.abandon_pending_observation()
+
     async def _publish_current_data(self) -> None:
         """Notify projections and dependent coordinators of committed data."""
         self.async_set_updated_data(self.data)

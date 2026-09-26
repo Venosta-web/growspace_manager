@@ -116,3 +116,34 @@ def test_reset_discards_the_measurement() -> None:
     monitor.record(52.0, _at(10))
 
     assert monitor.state is InfiltrationState.UNKNOWN
+
+
+def test_settled_after_uses_only_distinct_post_cycle_updates() -> None:
+    monitor = InfiltrationMonitor()
+    monitor.record(45.0, _at(-4))
+    monitor.record(46.5, _at(1))
+    assert monitor.settled_after(_T0) is None
+    monitor.record(48.0, _at(6))
+    assert monitor.settled_after(_T0) is None
+    monitor.record(48.1, _at(11))
+    assert monitor.state is InfiltrationState.INFILTRATING
+    assert monitor.settled_after(_T0) == 48.1
+
+
+def test_settled_after_accepts_drying_and_rejects_pre_cycle_samples() -> None:
+    monitor = InfiltrationMonitor()
+    monitor.record(48.0, _at(0))
+    monitor.record(50.0, _at(1))
+    assert monitor.settled_after(_T0) is None
+    monitor.record(49.0, _at(2))
+    assert monitor.settled_after(_T0) == 49.0
+    monitor.reset()
+    assert monitor.settled_after(_T0) is None
+
+
+def test_settled_after_does_not_use_the_gate_window() -> None:
+    monitor = InfiltrationMonitor()
+    monitor.record(48.0, _at(1))
+    monitor.record(48.1, _at(21))
+    assert monitor.state is InfiltrationState.UNKNOWN
+    assert monitor.settled_after(_T0) == 48.1
