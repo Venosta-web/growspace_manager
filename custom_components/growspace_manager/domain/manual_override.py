@@ -10,6 +10,9 @@ Two ways a person takes an output over, and one rule for each:
   Growspace Manager's own in flight. By default that is treated as a person's
   action: alert, and hold automatic irrigation while it lasts. The opt-in
   ``enforce_off`` policy switches it off and latches a Fault instead.
+
+A pump found ON that a cycle of ours was running when the previous process
+stopped is neither: that cycle is closed, which switches it off (#854).
 """
 
 from __future__ import annotations
@@ -55,11 +58,14 @@ class UnexpectedOnResponse(StrEnum):
 
     ALERT = "alert"
     ENFORCE_OFF = "enforce_off"
+    # Not an Unexpected On: our own cycle, left running by a stopped process.
+    STOP_INTERRUPTED = "stop_interrupted"
 
 
 def respond_to_on(
     *,
     in_flight: bool,
+    interrupted: bool,
     overridden: bool,
     commands_allowed: bool,
     policy: UnexpectedOnPolicy,
@@ -68,11 +74,20 @@ def respond_to_on(
 
     It is expected while a cycle of ours has it — commanded ON and not yet read
     back OFF — and while a Manual Override has handed irrigation to a person.
+
+    A cycle of ours the previous process was running when it stopped is
+    ``interrupted``: that cycle is closed, and a cycle closing always sends its
+    own OFF, whatever the policy, the controls or an override say (#854).
+
     Otherwise it always alerts. It is switched off only under ``enforce_off``,
     and only while Growspace Manager may command the growspace at all: with
     automation off or an emergency stop latched it sends nothing, not even OFF.
     """
-    if in_flight or overridden:
+    if in_flight:
+        return None
+    if interrupted:
+        return UnexpectedOnResponse.STOP_INTERRUPTED
+    if overridden:
         return None
     if policy is UnexpectedOnPolicy.ENFORCE_OFF and commands_allowed:
         return UnexpectedOnResponse.ENFORCE_OFF

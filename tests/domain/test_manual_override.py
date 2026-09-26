@@ -34,21 +34,28 @@ ALERT, ENFORCE = UnexpectedOnPolicy.ALERT, UnexpectedOnPolicy.ENFORCE_OFF
 
 
 @pytest.mark.parametrize(
-    ("in_flight", "overridden", "allowed", "policy", "expected"),
+    ("in_flight", "interrupted", "overridden", "allowed", "policy", "expected"),
     [
         # Ours: commanded ON and not yet read back OFF.
-        (True, False, True, ENFORCE, None),
+        (True, False, False, True, ENFORCE, None),
+        (True, True, False, True, ALERT, None),
         # A Manual Override handed irrigation to a person.
-        (False, True, True, ENFORCE, None),
-        (False, False, True, ALERT, UnexpectedOnResponse.ALERT),
-        (False, False, True, ENFORCE, UnexpectedOnResponse.ENFORCE_OFF),
+        (False, False, True, True, ENFORCE, None),
+        (False, False, False, True, ALERT, UnexpectedOnResponse.ALERT),
+        (False, False, False, True, ENFORCE, UnexpectedOnResponse.ENFORCE_OFF),
         # Automation off or an emergency stop: no command, not even OFF.
-        (False, False, False, ENFORCE, UnexpectedOnResponse.ALERT),
-        (False, False, False, ALERT, UnexpectedOnResponse.ALERT),
+        (False, False, False, False, ENFORCE, UnexpectedOnResponse.ALERT),
+        (False, False, False, False, ALERT, UnexpectedOnResponse.ALERT),
+        # Ours from before a restart (#854): closed, whatever else holds.
+        (False, True, False, True, ALERT, UnexpectedOnResponse.STOP_INTERRUPTED),
+        (False, True, False, True, ENFORCE, UnexpectedOnResponse.STOP_INTERRUPTED),
+        (False, True, True, True, ALERT, UnexpectedOnResponse.STOP_INTERRUPTED),
+        (False, True, False, False, ALERT, UnexpectedOnResponse.STOP_INTERRUPTED),
     ],
 )
 def test_an_on_is_ours_a_persons_or_to_be_stopped(
     in_flight: bool,
+    interrupted: bool,
     overridden: bool,
     allowed: bool,
     policy: UnexpectedOnPolicy,
@@ -57,6 +64,7 @@ def test_an_on_is_ours_a_persons_or_to_be_stopped(
     assert (
         respond_to_on(
             in_flight=in_flight,
+            interrupted=interrupted,
             overridden=overridden,
             commands_allowed=allowed,
             policy=policy,

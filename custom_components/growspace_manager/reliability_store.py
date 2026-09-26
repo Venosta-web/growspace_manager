@@ -7,8 +7,10 @@ days, so the 30-day view has day resolution.
 Recording never waits on the disk. Effect shells call ``record`` from pump
 fail-safe and emergency-stop paths, so a counter updates memory at once and a
 coalesced save follows; Home Assistant's final write flushes a pending save on
-shutdown. An in-flight marker is saved without the delay, because the restart
-it exists to detect is the one that would lose a delayed write.
+shutdown. An in-flight marker is saved without the delay, set and cleared
+alike: the restart it exists to detect is the one that would lose a delayed
+write, and a marker outliving its cycle would have the next start take a
+person's pump for ours and switch it off (#854).
 """
 
 from __future__ import annotations
@@ -286,10 +288,10 @@ class ReliabilityStore:
             return
         row = self._data.get(growspace_id)
         if row is not None and row.get("active", {}).pop(output, None) is not None:
-            self._schedule_save()
+            self._schedule_save(0)
 
     def active_outputs(self, growspace_id: str) -> tuple[str, ...]:
-        """Return output markers left by a prior runtime."""
+        """Return the outputs a cycle has marked and not yet cleared."""
         return tuple(self._data.get(growspace_id, {}).get("active", {}))
 
     @callback
@@ -297,8 +299,10 @@ class ReliabilityStore:
         """Count this Home Assistant start once per growspace.
 
         A marker still present means the previous process stopped mid-cycle;
-        it is counted and cleared. Rows of growspaces that no longer exist are
-        dropped here, so a removed growspace does not keep its storage.
+        it is counted, and kept until the irrigation coordinator has closed
+        that cycle by reading its pump OFF (#854). Rows of growspaces that no
+        longer exist are dropped here, so a removed growspace does not keep
+        its storage.
         """
         if self.unreadable:
             return
@@ -313,7 +317,6 @@ class ReliabilityStore:
             counted.add(start_key)
             if self.active_outputs(growspace_id):
                 self.record(growspace_id, ReliabilityCounter.HA_START_INFLIGHT)
-                self._data[growspace_id]["active"] = {}
             self.record(growspace_id, ReliabilityCounter.HA_START)
         self._schedule_save()
 

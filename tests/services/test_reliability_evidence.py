@@ -78,7 +78,11 @@ async def test_reliability_survives_restart_and_bounds_recent_buckets(
 
 
 async def test_recording_never_waits_on_the_disk(hass: HomeAssistant) -> None:
-    """A counter is visible at once; its write is coalesced, a marker's is not."""
+    """A counter is visible at once; its write is coalesced, a marker's is not.
+
+    Neither setting nor clearing a marker waits: one left behind by a cycle
+    that did close would have the next start switch a person's pump off.
+    """
     store = ReliabilityStore(hass, "delayed")
     store._store.async_save = AsyncMock(side_effect=OSError("disk full"))
     store._store.async_delay_save = MagicMock()
@@ -94,7 +98,7 @@ async def test_recording_never_waits_on_the_disk(hass: HomeAssistant) -> None:
     assert [call.args[1] for call in store._store.async_delay_save.call_args_list] == [
         SAVE_DELAY_SECONDS,
         0,
-        SAVE_DELAY_SECONDS,
+        0,
     ]
     (data_func, _delay) = store._store.async_delay_save.call_args.args
     assert data_func() is store._data
@@ -209,7 +213,11 @@ async def test_open_counter_families_are_bounded(
 async def test_start_is_counted_once_and_removed_growspaces_are_dropped(
     hass: HomeAssistant,
 ) -> None:
-    """A start counts once per process and forgets growspaces that are gone."""
+    """A start counts once per process and forgets growspaces that are gone.
+
+    The marker it counts stays: the irrigation coordinator closes that cycle
+    and clears it once the pump reads OFF (#854).
+    """
     store = ReliabilityStore(hass, "starts")
     store.record("removed", ReliabilityCounter.REQUESTED)
     store.mark_active("tent", "switch.pump")
@@ -221,7 +229,7 @@ async def test_start_is_counted_once_and_removed_growspaces_are_dropped(
     tent = store.snapshot("tent")["lifetime"]
     assert tent[ReliabilityCounter.HA_START] == 1
     assert tent[ReliabilityCounter.HA_START_INFLIGHT] == 1
-    assert store.active_outputs("tent") == ()
+    assert store.active_outputs("tent") == ("switch.pump",)
     veg = store.snapshot("veg")["lifetime"]
     assert veg[ReliabilityCounter.HA_START] == 1
     assert ReliabilityCounter.HA_START_INFLIGHT not in veg

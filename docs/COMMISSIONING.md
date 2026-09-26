@@ -295,9 +295,15 @@ is not running, nothing in it can stop a pump.
 - At the next start, `runtime.ha_start_inflight` counts a start that found a
   cycle still marked as running. No separate "shot interrupted" alert is sent.
   Then the startup inhibit from case 4 applies.
-- A pump that reads ON at the start is handled as case 3. **Under the default
-  `alert` policy that pump stays on**, and you get a notification. Under
-  `enforce_off` it is switched off, read back, and a fault latches.
+- A pump that reads ON at the start **while that cycle was still marked as
+  running** is Growspace Manager's own. It is switched off and read back,
+  whatever `unexpected_on_policy` says, and an `interrupted_cycle` row is
+  written to the Safety Ledger. If it will not read OFF,
+  `fault_off_unconfirmed` latches and OFF is re-sent every minute. A plug that
+  reports late and then restores ON is treated the same way.
+  ([#854](https://github.com/Venosta-web/growspace_manager/issues/854))
+- A pump that reads ON with no cycle marked as running is handled as case 3:
+  under the default `alert` policy it stays on and you get a notification.
 
 **Record** the relay's power-on setting, how long the pump ran in step 2 and
 what stopped it, the pump state when power returned, and what Growspace

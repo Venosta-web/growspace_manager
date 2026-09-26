@@ -161,9 +161,13 @@ minute, and the full history is in the export. The state is recorded.
   memory at once. Writes are coalesced and reach the disk within 60 seconds, and
   Home Assistant flushes any pending write when it stops. A crash can therefore
   lose up to a minute of counts.
-- **In-flight marker.** The in-flight marker is written without that delay,
-  because the restart it exists to detect is the one that would lose a delayed
-  write.
+- **In-flight marker.** The in-flight marker is written and cleared without
+  that delay. The restart it exists to detect is the one that would lose a
+  delayed write. A marker left behind by a cycle that did close would make the
+  next start switch off a pump a person had turned on.
+- **A marker found at a start** is counted once, and kept until its pump reads
+  OFF. A pump that reads ON at that start, or later, is switched off as the
+  cycle's own ([#854](https://github.com/Venosta-web/growspace_manager/issues/854)).
 - **Unreadable file.** If the stored file cannot be decoded, the error is logged
   once. From then on:
   - `unreadable` is `true` in the document;
