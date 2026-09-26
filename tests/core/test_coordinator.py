@@ -1637,7 +1637,7 @@ async def test_async_load_does_not_wait_on_reliability_writes(
 async def test_async_load_counts_inflight_output_once_per_ha_process(
     hass: HomeAssistant, hass_storage: dict[str, Any]
 ) -> None:
-    """A persisted ON marker becomes one restart observation, then clears."""
+    """A persisted ON marker is one restart observation, and stays to be closed."""
     coordinator = create_test_coordinator(hass, data={})
     key = f"growspace_manager.reliability_{coordinator.config_entry.entry_id}"
     hass_storage[key] = {
@@ -1651,7 +1651,7 @@ async def test_async_load_counts_inflight_output_once_per_ha_process(
     counters = coordinator.reliability.snapshot("clone")["lifetime"]
     assert counters["runtime.ha_start"] == 1
     assert counters["runtime.ha_start_inflight"] == 1
-    assert coordinator.reliability.active_outputs("clone") == ()
+    assert coordinator.reliability.active_outputs("clone") == ("switch.pump",)
 
     await coordinator.async_load()
     counters = coordinator.reliability.snapshot("clone")["lifetime"]

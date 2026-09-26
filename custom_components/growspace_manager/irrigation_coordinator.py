@@ -194,7 +194,8 @@ class BaseIrrigationCoordinator:
         # Outputs a person is running: an Unexpected On under the alert
         # policy, with when it was seen. Automatic irrigation holds on it.
         self._detected_overrides: dict[str, str] = {}
-        # Outputs being switched off under enforce_off right now.
+        # Outputs being switched off outside a cycle right now: an Unexpected
+        # On under enforce_off, or a cycle a stopped process left running.
         self._enforcing_off: set[str] = set()
         self._watched_outputs: tuple[str, ...] = ()
         self._cancel_pump_watch: Callable[[], None] | None = None
@@ -451,6 +452,23 @@ class BaseIrrigationCoordinator:
             or output in self._enforcing_off
         )
 
+    def _interrupted(self, output: str) -> bool:
+        """Whether a cycle of ours that a stopped process was running has it.
+
+        Its In-flight Marker outlived that process. This process marks and
+        clears its own cycles in step with commanding the pump, so a marker on
+        an output none of its cycles holds is the previous one's (#854).
+        """
+        return output not in self._commanded_outputs and output in (
+            self._reliability.active_outputs(self._growspace_id)
+        )
+
+    @callback
+    def _release_interrupted(self, output: str) -> None:
+        """Clear a stopped process's marker: its pump read OFF, the cycle is over."""
+        if self._interrupted(output):
+            self._reliability.clear_active(self._growspace_id, output)
+
     def _unexpected_on_policy(self) -> UnexpectedOnPolicy:
         """Return the configured policy; an unreadable one alerts, never actuates."""
         try:
@@ -495,11 +513,13 @@ class BaseIrrigationCoordinator:
                 self._async_observe_on(output),
                 name=f"growspace_pump_on_{self._growspace_id}_{output}",
             )
-        elif new_state.state == STATE_OFF and output in self._detected_overrides:
-            self.hass.async_create_task(
-                self._async_person_finished(output),
-                name=f"growspace_pump_off_{self._growspace_id}_{output}",
-            )
+        elif new_state.state == STATE_OFF:
+            self._release_interrupted(output)
+            if output in self._detected_overrides:
+                self.hass.async_create_task(
+                    self._async_person_finished(output),
+                    name=f"growspace_pump_off_{self._growspace_id}_{output}",
+                )
 
     def _unexpected_on_notification_id(self, output: str) -> str:
         return f"growspace_pump_unexpected_on_{self._growspace_id}_{output}"
@@ -510,6 +530,7 @@ class BaseIrrigationCoordinator:
         Under the default ``alert`` policy it is a person's: it is announced,
         and automatic irrigation holds until it reads OFF. Under
         ``enforce_off`` it is switched off, read back and latched as a Fault.
+        A cycle of ours that a stopped process left running is closed instead.
         """
         if output in self._detected_overrides or output in self._enforcing_off:
             return
@@ -517,6 +538,7 @@ class BaseIrrigationCoordinator:
         policy = self._unexpected_on_policy()
         response = respond_to_on(
             in_flight=self._in_flight(output),
+            interrupted=self._interrupted(output),
             overridden=store is not None
             and store.override_for(self._growspace_id, Subsystem.IRRIGATION)
             is not None,
@@ -525,6 +547,9 @@ class BaseIrrigationCoordinator:
             policy=policy,
         )
         if response is None:
+            return
+        if response is UnexpectedOnResponse.STOP_INTERRUPTED:
+            await self._async_stop_interrupted(output)
             return
         self._record(ReliabilityCounter.UNEXPECTED_ON)
         name = self.growspace.name
@@ -587,6 +612,41 @@ class BaseIrrigationCoordinator:
         )
         await self._async_notify(title, message, tier=NotificationTier.UNEXPECTED_ON)
 
+    async def _async_stop_interrupted(self, output: str) -> None:
+        """Close a cycle of ours that a stopped process left running (#854).
+
+        It is switched off and read back as any cycle closing is, whatever the
+        policy; one that will not read OFF latches ``fault_off_unconfirmed``
+        and keeps being stopped. Its marker is cleared either way: read back
+        OFF, or handed to the OFF retries, the pump is no longer that cycle's.
+        """
+        self._enforcing_off.add(output)
+        try:
+            off_confirmed = await self._async_command_off(output)
+            _LOGGER.warning(
+                "%s read ON from a cycle of %s the previous run did not close; %s",
+                output,
+                self._growspace_id,
+                "switched off" if off_confirmed else "it did not read back OFF",
+            )
+            await self._async_record_ledger_event(
+                "interrupted_cycle", output=output, off_confirmed=off_confirmed
+            )
+            detail = f"{output} was still on from a cycle a restart interrupted"
+            if off_confirmed:
+                self._fire_logbook_event(
+                    f"{detail} — switched off", CATEGORY_IRRIGATION_ERROR
+                )
+            else:
+                await self._async_off_unconfirmed(
+                    output,
+                    f"fault_off_unconfirmed:{output}",
+                    f"{detail} and did not read back OFF after turn_off",
+                )
+        finally:
+            self._enforcing_off.discard(output)
+            self._reliability.clear_active(self._growspace_id, output)
+
     async def _async_record_unexpected_on(
         self,
         output: str,
@@ -595,21 +655,24 @@ class BaseIrrigationCoordinator:
         **fields: Any,
     ) -> None:
         """Write an Unexpected On to the Safety Ledger, never blocking its effect."""
+        await self._async_record_ledger_event(
+            "unexpected_on",
+            output=output,
+            policy=policy.value,
+            response=response.value,
+            **fields,
+        )
+
+    async def _async_record_ledger_event(self, action: str, **fields: Any) -> None:
+        """Write an observed event to the Safety Ledger, never blocking its effect."""
         store = self._safety_store
         if store is None or store.unreadable:
             return
         try:
-            await store.async_record_event(
-                self._growspace_id,
-                "unexpected_on",
-                output=output,
-                policy=policy.value,
-                response=response.value,
-                **fields,
-            )
+            await store.async_record_event(self._growspace_id, action, **fields)
         except Exception:
             # The store now reads unreadable, which holds every cycle.
-            _LOGGER.exception("Could not record an unexpected ON of %s", output)
+            _LOGGER.exception("Could not record %s of %s", action, fields.get("output"))
 
     async def _async_person_finished(self, output: str) -> None:
         """Release the hold once the pump a person was running reads OFF."""
@@ -885,9 +948,19 @@ class BaseIrrigationCoordinator:
                 self._on_override_change
             )
         # A pump reading ON before any cycle of this start is an Unexpected On
-        # like any other; from here on the watch sees each ON as it happens.
+        # like any other — unless a cycle of ours the previous run did not
+        # close still has it. From here on the watch sees each ON as it happens.
         self._ensure_pump_watch()
-        for output in self._configured_outputs():
+        outputs = self._configured_outputs()
+        for output in self._reliability.active_outputs(self._growspace_id):
+            state = self.hass.states.get(output)
+            # A pump not reporting yet keeps its marker: a smart plug that
+            # joins late and restores ON is still that cycle's.
+            if output not in outputs or (
+                state is not None and state.state == STATE_OFF
+            ):
+                self._release_interrupted(output)
+        for output in outputs:
             state = self.hass.states.get(output)
             if state is not None and state.state == STATE_ON:
                 await self._async_observe_on(output)
