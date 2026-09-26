@@ -388,6 +388,10 @@ _Avoid_: subarea (that is air — climate sensors for a region, with no plants a
 The one output per growspace that moves water into its [[Irrigation Zone]]s — a pump, or a master valve on pressurised mains. Only one zone is ever open on it at a time, so a flow meter on the supply line always measures exactly the one open zone. A grower with two feeds has two growspaces. See ADR-0058.
 _Avoid_: pump group (ruled out), master pump.
 
+**Scale Envelope**
+What Growspace Manager claims to support and tests to: **6** [[Irrigation Zone]]s per growspace, **4** probes of each substrate quantity and **8** valves per zone, and **10** irrigated growspaces per instance — so at most 60 zones and 10 simultaneous deliveries, one per [[Irrigation Supply]]. The zone count is derived from pump time, not observed: six zones fit one default 15-minute interval with shots up to 118 s at worst-case confirmation overhead. New configuration past it (a 7th zone, a 5th probe, a 9th valve) is refused with `envelope_exceeded`; an instance past 10 irrigated growspaces gets a Repairs warning and nothing stops. One envelope, no profiles; a limit moves only with the load test that proves it. See ADR-0060.
+_Avoid_: capacity, supported maximum (vague about whether it is tested).
+
 **Manual Run**
 A pump cycle Growspace Manager runs because a person asked for it (`run_irrigation_cycle`), through every gate but the dark check and the [[Startup Inhibit]]. It is a [[Delivery Attempt]] with a `manual` trigger, charges [[Dispensed Volume]] like any other cycle, and never trains [[Adaptive Shot Control]]. See ADR-0056.
 _Avoid_: manual delivery, manual watering, manual cycle.
