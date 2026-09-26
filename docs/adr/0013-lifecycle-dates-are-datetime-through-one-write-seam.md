@@ -1,6 +1,6 @@
 # Lifecycle dates are datetime, written through one seam
 
-A [[Lifecycle Timestamp]] (`seedling_start … cure_start` on `Plant`) is a timezone-aware **ISO 8601 datetime string** — date *and* time — at every layer: config-flow create, stage transitions, cloning, WebSocket update, and storage. Date-only (`YYYY-MM-DD`) is no longer a representation the system *produces*.
+A [[Lifecycle Timestamp]] (`seedling_start … cure_start` on `Plant`) is a timezone-aware **ISO 8601 datetime string** — date _and_ time — at every layer: config-flow create, stage transitions, cloning, WebSocket update, and storage. Date-only (`YYYY-MM-DD`) is no longer a representation the system _produces_.
 
 The decision the system makes about that representation lives in exactly one place: `to_lifecycle_timestamp(supplied)` in `domain/date_logic.py`. Given a supplied value (str / `date` / `datetime`) it preserves the moment; given `None` it defaults to `dt_util.now()`. It always returns an ISO datetime **string**. Every write site calls it instead of formatting inline.
 

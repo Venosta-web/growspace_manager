@@ -10,7 +10,7 @@ single master toggle.
 ## Interval adapts via a cooldown factor, not a new trigger
 
 P2 maintenance shots already self-space: they fire when VWC drops below
-`target − maintenance_dryback` (or `soil_trigger_percent`), so the *actual* P2
+`target − maintenance_dryback` (or `soil_trigger_percent`), so the _actual_ P2
 spacing already tracks how fast the substrate dries. `p1/p2_shot_interval_minutes`
 is only a **minimum-cooldown floor**. Adaptive interval therefore does **not**
 introduce a new trigger or replace the dryback mechanism — it scales that
@@ -49,7 +49,7 @@ below 1.0, interval ceiling above 1.0).
 `dynamic_shot_enabled` defaults **True**. The size feedback shipped always-on
 and undocumented, so defaulting off would silently disable it for existing
 growspaces on upgrade; defaulting on preserves that behavior, and the genuinely
-new capability is the *ability to turn it off*. The cost is that interval
+new capability is the _ability to turn it off_. The cost is that interval
 adaptation also switches on for existing growspaces — a real behavior change,
 mitigated by a modest default `dynamic_interval_ceiling` and the fact that a
 well-tuned space rarely overshoots, so the factor sits near 1.0 in practice.
@@ -60,11 +60,11 @@ Everything above assumed `observe()` receives the VWC the shot actually
 achieved. It did not. `moisture_after` was read after ADR-0008's
 `min(duration, 15s)` wait — mid-[[Infiltration]] by construction — so `d_actual`
 was systematically **smaller** than the true rise. The controller therefore read
-*undershoot* where the substrate overshot, and the rules above then recovered
+_undershoot_ where the substrate overshot, and the rules above then recovered
 the size factor toward 1.0 (bigger shots) and relaxed the interval factor toward
 1.0 (shorter cooldowns). The feedback loop written to correct overshoot was
 biased toward **more water**, compounding the error it exists to remove.
-ADR-0031's [[Infiltration Gate]] stops the overshoot being *created*; this
+ADR-0031's [[Infiltration Gate]] stops the overshoot being _created_; this
 amendment fixes the measurement that mistrains the correction.
 
 ### The measurement waits for a signal, not a timer
@@ -80,7 +80,7 @@ from it.
 **Readiness must not reuse the monitor's ring-wide `state`**, and this is the
 one place an implementer will get it wrong. `state` computes its slope
 `_samples[0]` → `_samples[-1]` across the whole
-`SUBSTRATE_INFILTRATION_WINDOW_MINUTES` ring, so a *level shift* inside the
+`SUBSTRATE_INFILTRATION_WINDOW_MINUTES` ring, so a _level shift_ inside the
 window reads as a positive slope long after motion has stopped. A shot ending at
 T on a 5-minute probe, 45.0% settling to 48.0% by T+6:
 
@@ -103,7 +103,7 @@ Three sub-decisions, each with a rejected alternative:
 
 - **`drying` satisfies the wait, not only `settled`.** Falling VWC is
   unambiguous evidence infiltration finished. Requiring flatness would strand
-  growspaces with a brisk [[Dryback]] — the *well-tuned* case — whose slope can
+  growspaces with a brisk [[Dryback]] — the _well-tuned_ case — whose slope can
   cross from rising to falling without a tick inside the deadband, starving
   feedback on exactly the spaces that are working. The cost is a reading below
   the true peak, bounded by one to two sample intervals of dryback: ~0.1–0.5pp
@@ -112,8 +112,8 @@ Three sub-decisions, each with a rejected alternative:
   spiky reading, converting a small systematic bias into an occasional large one
   in the shot-shrinking direction.
 - **Requiring post-`end_dt` samples is the whole safety property.** A bare
-  `state is SETTLED` check is not merely weaker, it fails *silently toward the
-  original bug*: right after a shot, a 5-minute probe's sample ring still holds
+  `state is SETTLED` check is not merely weaker, it fails _silently toward the
+  original bug_: right after a shot, a 5-minute probe's sample ring still holds
   only pre-shot flat readings, reporting `settled` before the cycle has appeared
   in the data at all. The monitor's window cutoff runs only inside `record()`,
   so a dead probe likewise leaves a stale ring reporting `settled` forever.
@@ -143,7 +143,7 @@ Note the bound (`3 × interval`) deliberately exceeds the cooldown
 (`1 × interval`), so a shot firing mid-observation is normal operation. That
 makes abandonment load-bearing rather than an edge case: without it, a second
 shot's water would be attributed to the first shot's delta, and the controller
-would read a large *overshoot* on a fiction — replacing today's systematic
+would read a large _overshoot_ on a fiction — replacing today's systematic
 under-read with an occasional wild over-read. Shortening the bound to dodge this
 was rejected: it would time out on precisely the slow-substrate growspaces the
 feature exists to serve.
@@ -182,7 +182,7 @@ The P1→P2 case is the likelier one, since that transition happens while shots
 are actively firing.
 
 This is deliberately the **opposite** rule to the monitor's, and the contrast is
-the point: `InfiltrationMonitor` is explicitly *not* reset at midnight
+the point: `InfiltrationMonitor` is explicitly _not_ reset at midnight
 (ADR-0031 decision 2) because infiltration is a physical process with no daily
 state, while the pending observation is control-loop lineage whose only purpose
 is to move factors that were just cleared. Two pieces of retained state on the
@@ -203,8 +203,8 @@ be machinery for no behaviour.
   light cycle.
 - **`observe()` no longer runs once per cycle.** A slow probe, a fast shot
   cadence or a flaky sensor now yields few observations or none, leaving the
-  factors near nominal for much of the day. Adaptation becomes *less active but
-  directionally correct*, where it was fully active and biased toward more
+  factors near nominal for much of the day. Adaptation becomes _less active but
+  directionally correct_, where it was fully active and biased toward more
   water. This is the trade, not a free win.
 - **The Infiltration Gate now does double duty.** By enforcing spacing it is
   also what keeps observations viable; a growspace that shots faster than its
