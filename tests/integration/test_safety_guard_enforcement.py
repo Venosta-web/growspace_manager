@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from custom_components.growspace_manager.const import (
@@ -18,6 +19,7 @@ from custom_components.growspace_manager.irrigation_coordinator import (
 from custom_components.growspace_manager.models import Growspace, IrrigationConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from tests.delivery_helpers import charge_today
 
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
@@ -150,7 +152,9 @@ async def test_cycle_skipped_when_max_cycles_reached(
     mock_hass: MagicMock,
 ) -> None:
     """When cycles_today >= max_cycles_per_day, the cycle is skipped."""
-    irrigation_coordinator._cycles_today = 3  # Already at the configured limit of 3
+    charge_today(
+        irrigation_coordinator, cycles=3
+    )  # Already at the configured limit of 3
 
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         await irrigation_coordinator._run_pump_cycle(
@@ -170,7 +174,7 @@ async def test_cycle_runs_when_below_max_cycles(
     mock_hass: MagicMock,
 ) -> None:
     """Cycle runs normally when cycles_today < max_cycles_per_day."""
-    irrigation_coordinator._cycles_today = 2  # Below limit of 3
+    charge_today(irrigation_coordinator, cycles=2)  # Below limit of 3
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await irrigation_coordinator._run_pump_cycle(
@@ -188,7 +192,7 @@ async def test_max_cycles_limit_not_applied_to_drain(
     mock_hass: MagicMock,
 ) -> None:
     """Drain cycles are NOT subject to max_cycles_per_day."""
-    irrigation_coordinator._cycles_today = 999  # Way above the limit
+    charge_today(irrigation_coordinator, cycles=999)  # Way above the limit
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await irrigation_coordinator._run_pump_cycle(
@@ -245,7 +249,7 @@ async def test_cycle_skipped_when_volume_cap_would_be_exceeded(
     """Cycle is skipped when running it would push volume_dispensed_today over the cap."""
     # Cap is 1.0 L, flow = 10 ml/s, duration = 30s → 0.3 L per cycle
     # Pre-fill to 0.8 L — adding 0.3 L would exceed the 1.0 L cap
-    irrigation_coordinator._volume_dispensed_today = 0.8
+    charge_today(irrigation_coordinator, cycles=1, liters=0.8)
 
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         await irrigation_coordinator._run_pump_cycle(
@@ -263,7 +267,7 @@ async def test_cycle_runs_when_volume_fits_within_cap(
 ) -> None:
     """Cycle runs normally when its volume fits within the remaining cap."""
     # 0.7 L used, cap = 1.0 L, cycle = 0.3 L → 1.0 L exactly, allowed
-    irrigation_coordinator._volume_dispensed_today = 0.7
+    charge_today(irrigation_coordinator, cycles=1, liters=0.7)
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await irrigation_coordinator._run_pump_cycle(
@@ -281,7 +285,7 @@ async def test_volume_cap_not_applied_to_drain(
     mock_hass: MagicMock,
 ) -> None:
     """Volume cap only guards irrigation cycles, not drain cycles."""
-    irrigation_coordinator._volume_dispensed_today = 999.0  # Way over cap
+    charge_today(irrigation_coordinator, cycles=1, liters=999.0)  # Way over cap
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await irrigation_coordinator._run_pump_cycle(
@@ -302,7 +306,7 @@ async def test_volume_cap_not_applied_when_flow_rate_is_zero(
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
     ].irrigation_config.pump_flow_rate_ml_per_sec = 0.0
-    irrigation_coordinator._volume_dispensed_today = 0.99  # Near the cap
+    charge_today(irrigation_coordinator, cycles=1, liters=0.99)  # Near the cap
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await irrigation_coordinator._run_pump_cycle(
@@ -321,11 +325,14 @@ async def test_volume_cap_not_applied_when_flow_rate_is_zero(
 
 async def test_counters_reset_at_midnight(
     irrigation_coordinator: IrrigationCoordinator,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
-    """Calling _async_reset_daily_counters resets both counters to zero."""
-    irrigation_coordinator._cycles_today = 5
-    irrigation_coordinator._volume_dispensed_today = 2.5
+    """Both caps read zero once local midnight has passed."""
+    freezer.move_to("2026-09-25 23:00:00+00:00")
+    charge_today(irrigation_coordinator, cycles=5, liters=2.5)
+    assert irrigation_coordinator.cycles_today == 5
 
+    freezer.move_to("2026-09-26 00:00:01+00:00")
     await irrigation_coordinator._async_reset_daily_counters()
 
     assert irrigation_coordinator.cycles_today == 0
@@ -366,7 +373,7 @@ async def test_logbook_skip_event_fired_on_cycle_limit_skip(
     mock_hass: MagicMock,
 ) -> None:
     """A logbook safety-skip event is fired when a cycle is skipped due to cycle limit."""
-    irrigation_coordinator._cycles_today = 3
+    charge_today(irrigation_coordinator, cycles=3)
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await irrigation_coordinator._run_pump_cycle(
@@ -388,7 +395,7 @@ async def test_logbook_skip_event_fired_on_volume_cap_skip(
     mock_hass: MagicMock,
 ) -> None:
     """A logbook safety-skip event is fired when a cycle is skipped due to volume cap."""
-    irrigation_coordinator._volume_dispensed_today = 0.8
+    charge_today(irrigation_coordinator, cycles=1, liters=0.8)
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await irrigation_coordinator._run_pump_cycle(

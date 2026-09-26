@@ -19,6 +19,9 @@ from custom_components.growspace_manager.const import (
     GrowspaceService,
     SteeringMode,
 )
+from custom_components.growspace_manager.domain.delivery_attempt import (
+    DELIVERY_RECORD_UNREADABLE,
+)
 from custom_components.growspace_manager.reliability_store import ReliabilityCounter
 from custom_components.growspace_manager.schemas import (
     ACKNOWLEDGE_FAULT_SCHEMA,
@@ -301,7 +304,10 @@ async def handle_acknowledge_fault(
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     irrigation = await _get_irrigation_coordinator(coordinator, growspace_id)
     store = coordinator.irrigation_safety
-    fault = store.fault_for(growspace_id, irrigation._configured_outputs())
+    fault = (
+        store.fault_for(growspace_id, irrigation._configured_outputs())
+        or irrigation._delivery_fault()
+    )
     if fault is None:
         raise ServiceValidationError(f"Growspace '{growspace_id}' has no latched fault")
 
@@ -326,7 +332,10 @@ async def handle_acknowledge_fault(
             f"Cannot acknowledge irrigation fault; outputs not confirmed OFF: {', '.join(not_off)}"
         )
     was_unreadable = store.unreadable
-    await store.async_acknowledge(growspace_id, user.id)
+    if fault.fault_id == DELIVERY_RECORD_UNREADABLE:
+        await irrigation._async_acknowledge_deliveries(user.id)
+    else:
+        await store.async_acknowledge(growspace_id, user.id)
     coordinator.reliability.record(growspace_id, ReliabilityCounter.FAULT_ACKNOWLEDGED)
     repair_ids = set(coordinator.growspaces) if was_unreadable else set()
     repair_ids.add(growspace_id)

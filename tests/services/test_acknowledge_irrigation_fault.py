@@ -7,6 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.domain.delivery_attempt import (
+    DELIVERY_RECORD_UNREADABLE,
+)
 from custom_components.growspace_manager.domain.irrigation_safety import (
     FaultRecord,
     SafetyReason,
@@ -36,6 +39,7 @@ def context() -> tuple[HomeAssistant, MagicMock, MagicMock, IrrigationSafetyStor
     coordinator = MagicMock()
     irrigation = MagicMock()
     irrigation._configured_outputs.return_value = ("switch.pump",)
+    irrigation._delivery_fault.return_value = None
     coordinator.services.growspaces.get_irrigation_coordinator.return_value = irrigation
     store = IrrigationSafetyStore.__new__(IrrigationSafetyStore)
     store.overrides = {}
@@ -173,3 +177,26 @@ async def test_unreadable_record_checks_other_growspaces_outputs(
     with pytest.raises(ServiceValidationError, match="switch.other"):
         await handle_acknowledge_fault(hass, coordinator, call)
     assert store.unreadable
+
+
+async def test_an_unreadable_delivery_record_is_acknowledged_by_the_coordinator(
+    context: tuple[HomeAssistant, MagicMock, MagicMock, IrrigationSafetyStore],
+) -> None:
+    """A delivery-record fault re-arms through its own record, not the latch map."""
+    hass, coordinator, call, store = context
+    store.faults.clear()
+    irrigation = coordinator.services.growspaces.get_irrigation_coordinator.return_value
+    irrigation._delivery_fault.return_value = FaultRecord(
+        DELIVERY_RECORD_UNREADABLE,
+        SafetyReason(DELIVERY_RECORD_UNREADABLE, "unreadable", "now"),
+        ("switch.pump",),
+    )
+    irrigation._async_acknowledge_deliveries = AsyncMock()
+    with patch(
+        "custom_components.growspace_manager.services.irrigation.async_delete_issue"
+    ) as delete:
+        await handle_acknowledge_fault(hass, coordinator, call)
+
+    irrigation._async_acknowledge_deliveries.assert_awaited_once_with("admin")
+    store._store.async_save.assert_not_awaited()
+    delete.assert_called_once_with(hass, "growspace_manager", "irrigation_fault_tent")

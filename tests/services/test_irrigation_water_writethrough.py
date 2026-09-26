@@ -1,7 +1,7 @@
 """Tests for pump-cycle water write-through into WaterUsageData (ADR-0017).
 
 A completed irrigation cycle on a growspace that is *not* in Tank-Derived
-Water Mode persists its estimated volume (pump runtime × flow rate) into
+Water Mode persists its estimated volume (measured ON time × flow rate) into
 ``WaterUsageData`` tagged ``pump_estimate``, so pump-only / no-flow growspaces
 report water end-to-end and survive a restart. In tank mode the write is
 skipped (the reservoir already measures that water — see ADR-0017).
@@ -10,6 +10,7 @@ skipped (the reservoir already measures that water — see ADR-0017).
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
@@ -113,10 +114,21 @@ def mock_config_entry() -> MagicMock:
     return entry
 
 
-async def _run_cycle(coordinator: IrrigationCoordinator, duration: int) -> None:
-    """Drive one full irrigation cycle with instant sleeps and switch confirms."""
+def _clock_sleep(freezer: FrozenDateTimeFactory) -> AsyncMock:
+    """Return an instant sleep that moves the frozen clock on by its seconds.
+
+    The estimate is the pump's measured ON time (ADR-0054), so a shot has to
+    take its time on the clock for the water it books to be its plan.
+    """
+    return AsyncMock(side_effect=lambda seconds, *_: freezer.tick(seconds))
+
+
+async def _run_cycle(
+    coordinator: IrrigationCoordinator, duration: int, freezer: FrozenDateTimeFactory
+) -> None:
+    """Drive one full irrigation cycle with clocked sleeps and switch confirms."""
     with (
-        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("asyncio.sleep", new=_clock_sleep(freezer)),
         patch.object(
             coordinator,
             "_async_wait_for_switch_state",
@@ -127,6 +139,8 @@ async def _run_cycle(coordinator: IrrigationCoordinator, duration: int) -> None:
         await coordinator._run_pump_cycle(
             "irrigation", "switch.irrigation_pump", duration, {"time": "10:00:00"}
         )
+        # The settling report the shot spawned sleeps on the same clock.
+        await _drain_tasks()
 
 
 async def _drain_tasks() -> None:
@@ -142,14 +156,14 @@ async def _drain_tasks() -> None:
 
 
 async def test_completed_cycle_records_pump_estimate_when_not_tank_mode(
-    make_coordinator,
+    make_coordinator, freezer: FrozenDateTimeFactory
 ) -> None:
     """A completed cycle persists its volume tagged pump_estimate (ADR-0017)."""
     growspace = _pump_growspace(tank_mode=False)
     coordinator = make_coordinator(growspace)
 
     # 30s × 100 ml/s = 3000 ml = 3.0 L
-    await _run_cycle(coordinator, 30)
+    await _run_cycle(coordinator, 30, freezer)
 
     readings = growspace.water_usage.daily_readings
     assert len(readings) == 1
@@ -159,7 +173,7 @@ async def test_completed_cycle_records_pump_estimate_when_not_tank_mode(
 
 
 async def test_completed_cycle_skips_write_in_tank_mode(
-    make_coordinator, mock_hass: MagicMock
+    make_coordinator, mock_hass: MagicMock, freezer: FrozenDateTimeFactory
 ) -> None:
     """No pump-estimate write occurs in Tank-Derived Water Mode (ADR-0017)."""
     growspace = _pump_growspace(tank_mode=True)
@@ -170,31 +184,33 @@ async def test_completed_cycle_skips_write_in_tank_mode(
         tank if entity_id == "sensor.tank" else MagicMock()
     )
 
-    await _run_cycle(coordinator, 30)
+    await _run_cycle(coordinator, 30, freezer)
 
     assert growspace.water_usage.daily_readings == []
     assert growspace.water_usage.total_liters == 0.0
 
 
 async def test_recorded_pump_water_is_committed_for_persistence(
-    make_coordinator,
+    make_coordinator, freezer: FrozenDateTimeFactory
 ) -> None:
     """The write is committed through the coordinator so it survives a restart."""
     growspace = _pump_growspace(tank_mode=False)
     coordinator = make_coordinator(growspace)
 
-    await _run_cycle(coordinator, 30)
+    await _run_cycle(coordinator, 30, freezer)
 
-    # Persistence path, not only the in-memory daily-cap counter.
+    # Persistence path for the water figure; the caps keep their own record.
     coordinator._main_coordinator.async_commit.assert_awaited()
 
 
-async def test_pump_water_appears_in_aggregate_water_use(make_coordinator) -> None:
+async def test_pump_water_appears_in_aggregate_water_use(
+    make_coordinator, freezer: FrozenDateTimeFactory
+) -> None:
     """Pump-only / no-flow water surfaces in the briefing Water Use KPI."""
     growspace = _pump_growspace(tank_mode=False)
     coordinator = make_coordinator(growspace)
 
-    await _run_cycle(coordinator, 30)
+    await _run_cycle(coordinator, 30, freezer)
 
     # No tank trackers (pump-only growspace); KPI must still report the water.
     figures = compute_growspace_water(growspace, [])
@@ -204,7 +220,9 @@ async def test_pump_water_appears_in_aggregate_water_use(make_coordinator) -> No
 
 
 async def test_vwc_fired_shot_records_pump_estimate(
-    mock_hass: MagicMock, mock_config_entry: MagicMock
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
     """A real crop-steering shot writes through the pump-cycle path (AC #2).
 
@@ -230,7 +248,7 @@ async def test_vwc_fired_shot_records_pump_estimate(
     )
 
     with (
-        patch("asyncio.sleep", new_callable=AsyncMock),
+        patch("asyncio.sleep", new=_clock_sleep(freezer)),
         patch.object(
             coordinator,
             "_async_wait_for_switch_state",

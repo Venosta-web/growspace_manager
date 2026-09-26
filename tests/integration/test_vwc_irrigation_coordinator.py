@@ -30,6 +30,7 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
 from homeassistant.util import dt as dt_util
+from tests.delivery_helpers import charge_today
 
 # This suite shares one `hass.states` mock across every sensor, so it
 # cannot model the pump's own state; its OFF readback is answered for them.
@@ -594,7 +595,7 @@ async def test_vwc_skips_watering_when_max_cycles_reached(
 ) -> None:
     """When max_cycles_per_day is reached, VWC does not water even if VWC is low."""
     mock_growspace.irrigation_config.max_cycles_per_day = 3
-    vwc_coordinator._cycles_today = 3  # Already at the limit
+    charge_today(vwc_coordinator, cycles=3)  # Already at the limit
 
     now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
     with patch(

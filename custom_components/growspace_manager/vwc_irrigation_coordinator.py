@@ -98,6 +98,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         _LOGGER.info(
             "Setting up VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
+        await self._async_load_deliveries()
         self._register_daily_reset_listener()
         self._restore_steering_state()
         self._resume_off_retries()

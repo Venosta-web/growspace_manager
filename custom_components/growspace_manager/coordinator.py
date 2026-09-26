@@ -22,6 +22,7 @@ from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
+from .delivery_attempt_store import DeliveryAttemptStore
 from .environment_analyzer import EnvironmentAnalyzer
 from .event_bus_pkg import GrowspaceEventBus
 from .grow_run_store import GrowRunStore
@@ -189,6 +190,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._quarantined_plants: dict[str, Any] = {}
         self.irrigation_safety = IrrigationSafetyStore(hass, entry.entry_id)
         self.reliability = ReliabilityStore(hass, entry.entry_id)
+        self.deliveries = DeliveryAttemptStore(hass, entry.entry_id)
         self.grow_runs = GrowRunStore(hass, entry.entry_id)
         self.created_entity_ids: list[tuple[str, str, str]] = []
 

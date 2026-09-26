@@ -9,11 +9,13 @@ from functools import partial
 import logging
 import time as monotonic_time
 from typing import TYPE_CHECKING, Any, override
+from uuid import uuid4
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED, STATE_OFF, STATE_ON
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import (
     async_call_later,
     async_track_state_change_event,
@@ -29,15 +31,27 @@ from .const import (
     ATTR_GROWSPACE_ID,
     CATEGORY_ALERT,
     CATEGORY_IRRIGATION_ERROR,
+    DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
     SENSOR_SETTLING_DELAY_CAP_SECONDS,
     NotificationTier,
+)
+from .delivery_attempt_store import (
+    DeliveryAttemptStore,
+    DeliveryRecordUnreadable,
+    GrowspaceDeliveries,
+)
+from .domain.delivery_attempt import (
+    DELIVERY_RECORD_UNREADABLE,
+    DeliveryAttempt,
+    attempt_trigger,
 )
 from .domain.irrigation_safety import (
     ON_COMMAND_FAILED,
     ON_UNCONFIRMED,
     ControllerSnapshot,
     ControllerState,
+    FaultRecord,
     SafetyReason,
     controller_snapshot,
     open_failure_latches,
@@ -148,9 +162,10 @@ class BaseIrrigationCoordinator:
         self._override_cancelled_tasks: set[asyncio.Task[Any]] = set()
         self._settling_tasks: set[asyncio.Task[Any]] = set()
         self._active_events: dict[str, dict[str, Any]] = {}
-        # Daily safety-guard counters (reset by sub-coordinators at midnight)
-        self._cycles_today: int = 0
-        self._volume_dispensed_today: float = 0.0
+        # The Delivery Attempts the daily caps are derived from (ADR-0054/0055).
+        # Memory only until setup loads the durable ones; legacy isolated
+        # fixtures without a DeliveryAttemptStore keep it that way.
+        self._deliveries = GrowspaceDeliveries(growspace_id)
         self._inhibit_since: dict[str, str] = {}
         # The Startup Inhibit (#786): None until setup begins it, so a
         # coordinator that was never set up is never held by it.
@@ -225,13 +240,13 @@ class BaseIrrigationCoordinator:
 
     @property
     def cycles_today(self) -> int:
-        """Return the number of irrigation cycles completed today."""
-        return self._cycles_today
+        """Return the pump starts charged against today's cycle limit."""
+        return self._deliveries.dispensed().cycles
 
     @property
     def volume_dispensed_today(self) -> float:
-        """Return total irrigation volume dispensed today in litres."""
-        return self._volume_dispensed_today
+        """Return the litres charged against today's volume cap (Dispensed Volume)."""
+        return self._deliveries.dispensed().liters
 
     @property
     def growspace(self) -> Growspace:
@@ -281,7 +296,7 @@ class BaseIrrigationCoordinator:
             store.fault_for(self._growspace_id, self._configured_outputs())
             if store
             else None
-        )
+        ) or self._delivery_fault()
         emergency_stop = store.emergency_stop_for(self._growspace_id) if store else None
         running = bool(self._active_events)
         automation_enabled = bool(
@@ -326,8 +341,8 @@ class BaseIrrigationCoordinator:
                     tank_readings=tank_readings,
                     unknown_tanks=unknown_tanks,
                     lights_dark=self._is_lights_dark(),
-                    cycles_today=self._cycles_today,
-                    volume_today=self._volume_dispensed_today,
+                    cycles_today=self.cycles_today,
+                    volume_today=self.volume_dispensed_today,
                     cycle_volume_l=self._compute_cycle_volume_liters(
                         config.irrigation_duration or 0
                     ),
@@ -354,6 +369,61 @@ class BaseIrrigationCoordinator:
             manual_overrides=tuple(store.active_overrides(self._growspace_id))
             if store
             else (),
+        )
+
+    def _delivery_fault(self) -> FaultRecord | None:
+        """Hold every cycle while the growspace's Delivery Attempts are unreadable.
+
+        A cap whose history is unknown has to assume it is spent, and it is
+        reported the way ``fault_record_unreadable`` is (ADR-0055).
+        """
+        if not self._deliveries.unreadable:
+            return None
+        return FaultRecord(
+            DELIVERY_RECORD_UNREADABLE,
+            SafetyReason(
+                DELIVERY_RECORD_UNREADABLE,
+                "Stored irrigation delivery record could not be read or written",
+                self._deliveries.unreadable_since or utcnow().isoformat(),
+            ),
+            self._configured_outputs(),
+        )
+
+    async def _async_load_deliveries(self) -> None:
+        """Restore today's Dispensed Volume before any cycle can be decided."""
+        store = getattr(self._main_coordinator, "deliveries", None)
+        if not isinstance(store, DeliveryAttemptStore):
+            return
+        self._deliveries = await store.async_load(self._growspace_id)
+        if self._deliveries.unreadable:
+            self._raise_delivery_issue()
+
+    async def _async_acknowledge_deliveries(self, user_id: str) -> None:
+        """Clear an unreadable delivery record and audit who did."""
+        await self._deliveries.async_acknowledge()
+        store = self._safety_store
+        if store is not None and not store.unreadable:
+            await store.async_record_event(
+                self._growspace_id,
+                "acknowledge",
+                fault_id=DELIVERY_RECORD_UNREADABLE,
+                user_id=user_id,
+            )
+
+    def _raise_delivery_issue(self) -> None:
+        """Say why the growspace is held, as a startup fault is said."""
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"irrigation_fault_{self._growspace_id}",
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key="irrigation_fault",
+            translation_placeholders={
+                "growspace": self.growspace.name,
+                "detail": "Stored irrigation delivery record could not be read "
+                "or written",
+            },
         )
 
     def _override_reasons(self) -> tuple[SafetyReason, ...]:
@@ -1003,13 +1073,15 @@ class BaseIrrigationCoordinator:
         )
 
     async def _async_reset_daily_counters(self, *_: Any) -> None:
-        """Reset daily safety-guard counters at local midnight."""
+        """Reset subclass daily state at local midnight.
+
+        The daily caps need no reset: Dispensed Volume sums only the charges
+        dated today, so yesterday's stop counting on their own (ADR-0054).
+        """
         _LOGGER.debug(
-            "Resetting daily irrigation counters for growspace %s",
+            "Resetting daily irrigation state for growspace %s",
             self._growspace_id,
         )
-        self._cycles_today = 0
-        self._volume_dispensed_today = 0.0
         self._reset_extra_daily_state()
 
     def _reset_extra_daily_state(self) -> None:
@@ -1254,8 +1326,8 @@ class BaseIrrigationCoordinator:
 
         Skipped in Tank-Derived Water Mode, where the reservoir already measures
         this water — writing a pump estimate too would double-count. Commits
-        through the main coordinator so the figure survives a restart (the
-        in-memory daily-cap counter does not).
+        through the main coordinator so the figure survives a restart. It is
+        never what the daily caps enforce; that is Dispensed Volume (ADR-0054).
         """
         if liters <= 0:
             return
@@ -1366,8 +1438,8 @@ class BaseIrrigationCoordinator:
         """
         return safety_cap_blocks(
             self.growspace.irrigation_config,
-            self._cycles_today,
-            self._volume_dispensed_today,
+            self.cycles_today,
+            self.volume_dispensed_today,
             self._compute_cycle_volume_liters(duration),
         )
 
@@ -1627,8 +1699,8 @@ class BaseIrrigationCoordinator:
             tank_readings=tank_readings,
             unknown_tanks=unknown_tanks,
             lights_dark=False if latched else self._is_lights_dark(),
-            cycles_today=self._cycles_today,
-            volume_today=self._volume_dispensed_today,
+            cycles_today=self.cycles_today,
+            volume_today=self.volume_dispensed_today,
             cycle_volume_l=cycle_volume_l,
             fault=snapshot.state.value == "fault",
             emergency_stop=snapshot.state.value == "emergency_stop",
@@ -1653,6 +1725,9 @@ class BaseIrrigationCoordinator:
         self._main_coordinator.async_update_listeners()
 
         start_dt = None
+        # The Delivery Attempt charged when the pump confirms ON, and its close.
+        attempt: DeliveryAttempt | None = None
+        closed: DeliveryAttempt | None = None
         cycle_finished = False
         abort_cause: AbortCause | None = None
         moisture_before = None
@@ -1753,6 +1828,24 @@ class BaseIrrigationCoordinator:
             self._reliability.mark_active(self._growspace_id, pump_entity)
 
             if event_type == "irrigation":
+                # Charged against the daily caps now, and on disk before the
+                # shot proceeds, so a restart mid-shot keeps it counted.
+                attempt = DeliveryAttempt.actuated(
+                    attempt_id=uuid4().hex,
+                    growspace_id=self._growspace_id,
+                    output=pump_entity,
+                    trigger=attempt_trigger(event_data),
+                    planned_s=duration,
+                    flow_rate_ml_per_sec=config.pump_flow_rate_ml_per_sec,
+                    on_commanded_at=command_dt,
+                    on_confirmed_at=start_dt,
+                    charge_date=as_local(start_dt).date(),
+                )
+                try:
+                    await self._deliveries.async_charge(attempt)
+                except DeliveryRecordUnreadable:
+                    self._raise_delivery_issue()
+                    raise
                 self._last_cycle_timestamp = start_dt.isoformat()
                 # Written the moment the pump confirms, not at the end of the
                 # cycle, so a restart mid-shot still knows this shot happened.
@@ -1791,6 +1884,7 @@ class BaseIrrigationCoordinator:
             ValueError,
             ServiceValidationError,
             GrowspaceError,
+            DeliveryRecordUnreadable,
         ) as e:
             abort_cause = AbortCause.ERROR
             _LOGGER.error(
@@ -1815,24 +1909,20 @@ class BaseIrrigationCoordinator:
                 if start_dt:
                     duration_sec = (end_dt - start_dt).total_seconds()
 
-                    # Update daily counters for completed irrigation cycles.
-                    # The planned duration is normally the driver — asyncio.sleep
-                    # is what the pump runs for — but a late wake-up can run the
-                    # pump past it. Book whichever is larger so the daily volume
-                    # and its cap never under-count water that physically flowed.
-                    # A cycle that never confirmed ON has no start_dt and books
+                    # Close the attempt on the measured ON time. The water
+                    # booked is what ran, so a shot aborted early shows only
+                    # its seconds; the cap keeps the plan it charged, topped up
+                    # if a late wake-up ran the pump past it (ADR-0054). A
+                    # cycle that never confirmed ON has no start_dt and books
                     # nothing here; it is recorded as not delivered instead.
-                    if event_type == "irrigation":
-                        billed_volume_l = max(
-                            cycle_volume_l,
-                            self._compute_cycle_volume_liters(duration_sec),
+                    if attempt is not None:
+                        closed = attempt.closed(
+                            off_commanded_at=end_dt,
+                            abort_cause=abort_cause.value if abort_cause else None,
                         )
-                        self._cycles_today += 1
-                        self._volume_dispensed_today += billed_volume_l
-                        self._record(
-                            ReliabilityCounter.ESTIMATED_WATER_L, billed_volume_l
-                        )
-                        await self._async_record_pump_water(billed_volume_l)
+                        estimated_l = closed.estimated_l or 0.0
+                        self._record(ReliabilityCounter.ESTIMATED_WATER_L, estimated_l)
+                        await self._async_record_pump_water(estimated_l)
 
                     self._async_spawn_settling_report(
                         event_type=event_type,
@@ -1840,7 +1930,7 @@ class BaseIrrigationCoordinator:
                         end_dt=end_dt,
                         duration_sec=duration_sec,
                         moisture_before=moisture_before,
-                        volume_dispensed_today=self._volume_dispensed_today,
+                        volume_dispensed_today=self.volume_dispensed_today,
                     )
             except Exception as e:  # noqa: BLE001
                 _LOGGER.error("Failed to log %s event: %s", event_type, e)
@@ -1855,6 +1945,11 @@ class BaseIrrigationCoordinator:
             off_confirmed = (
                 await self._async_command_off(pump_entity) if commanded else True
             )
+            if closed is not None:
+                # Recorded once OFF is read back, or known not to be.
+                self._deliveries.close(
+                    closed.read_back_off(utcnow()) if off_confirmed else closed
+                )
             if start_dt is not None:
                 if cycle_finished:
                     self._record(
@@ -2079,6 +2174,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
     @override
     async def async_setup(self) -> None:
         """Set up the irrigation schedules."""
+        await self._async_load_deliveries()
         self._register_daily_reset_listener()
 
         # Load schedules without triggering updates

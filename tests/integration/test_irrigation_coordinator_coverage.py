@@ -5,6 +5,7 @@ import contextlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
@@ -22,6 +23,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util.dt import utcnow
+from tests.delivery_helpers import charge_today
 
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
@@ -494,7 +496,7 @@ async def test_check_safety_guards_max_cycles_reached(
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
     ].irrigation_config.max_cycles_per_day = 2
-    coordinator._cycles_today = 2
+    charge_today(coordinator, cycles=2)
 
     reason = coordinator._check_safety_guards(30)
     assert reason is SkipReason.CYCLE_LIMIT
@@ -515,7 +517,6 @@ async def test_check_safety_guards_volume_cap_exceeded(
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
     ].irrigation_config.pump_flow_rate_ml_per_sec = 100.0
-    coordinator._volume_dispensed_today = 0.0
 
     reason = coordinator._check_safety_guards(30)
     assert reason is SkipReason.VOLUME_CAP
@@ -532,7 +533,7 @@ async def test_run_pump_cycle_safety_guard_blocks(
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
     ].irrigation_config.max_cycles_per_day = 2
-    coordinator._cycles_today = 2
+    charge_today(coordinator, cycles=2)
 
     with patch(
         "custom_components.growspace_manager.irrigation_coordinator._LOGGER"
@@ -566,19 +567,25 @@ async def test_run_pump_cycle_safety_guard_blocks(
 
 
 async def test_async_reset_daily_counters(
-    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
-    """Test that _async_reset_daily_counters resets daily counters."""
+    """The caps start the day at zero without the reset clearing anything."""
+    freezer.move_to("2026-09-25 23:59:00+00:00")
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    coordinator._cycles_today = 5
-    coordinator._volume_dispensed_today = 4.2
+    charge_today(coordinator, cycles=5, liters=4.2)
 
+    freezer.move_to("2026-09-26 00:00:00+00:00")
     await coordinator._async_reset_daily_counters()
 
-    assert coordinator._cycles_today == 0
-    assert coordinator._volume_dispensed_today == 0.0
+    assert coordinator.cycles_today == 0
+    assert coordinator.volume_dispensed_today == 0.0
+    # Yesterday's charges are still the record of yesterday.
+    assert len(coordinator._deliveries.attempts) == 5
 
 
 async def test_next_scheduled_cycle_no_times(
