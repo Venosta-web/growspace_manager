@@ -22,6 +22,9 @@ from custom_components.growspace_manager.const import (
     GrowspaceService,
     SteeringMode,
 )
+from custom_components.growspace_manager.delivery_attempt_store import (
+    DeliveryAttemptStore,
+)
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
@@ -154,6 +157,9 @@ class GrowspaceFacade:
         self._coordinator._subsystem_manager.teardown_growspace_sub_coordinators(
             growspace_id
         )
+        # Its Delivery Attempts go with it rather than wait, unread, forever.
+        if isinstance(self._coordinator.deliveries, DeliveryAttemptStore):
+            await self._coordinator.deliveries.async_remove(growspace_id)
         # A removed growspace holds no camera; its conditions clear and its
         # durable Triage Alerts stay.
         await self._coordinator.capture_continuity.async_apply_camera_assignment(

@@ -111,8 +111,10 @@ Each growspace has:
 - A pump that is on when Home Assistant starts is handled as an
   **unexpected ON** (next section). **By default that pump stays on**, which
   includes a pump left on by a crash or power cut in the middle of a shot.
-- The daily cycle and volume counters are kept in memory. **A restart resets
-  them**, which gives that day a fresh cap budget
+- The daily cycle limit and volume cap survive the restart. A shot is charged
+  against them on disk the moment its pump reports ON, so a shot the restart
+  interrupted still counts. They start again at local midnight, also when Home
+  Assistant was down over it
   ([#787](https://github.com/Venosta-web/growspace_manager/issues/787)).
 
 ### When the hardware disagrees

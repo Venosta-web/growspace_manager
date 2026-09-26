@@ -262,8 +262,10 @@ Home Assistant is restarted cleanly while a shot runs.
 controller's reasons after the start, and the time of the first automatic shot
 afterwards.
 
-The daily cycle and volume counters are held in memory, so a restart resets
-them and the day gets a fresh cap budget
+The daily cycle and volume counts survive the restart. `cycles_today` and
+`volume_dispensed_today` in the diagnostics read the same after the start as
+before it, and the interrupted shot is among them: it was charged its whole
+planned volume when the pump reported ON
 ([#787](https://github.com/Venosta-web/growspace_manager/issues/787)).
 
 ### 5. Host power loss
