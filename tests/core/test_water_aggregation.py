@@ -71,14 +71,32 @@ def test_tank_mode_inactive_without_volume():
     assert is_tank_derived_mode(gs) is False
 
 
-def test_tank_mode_inactive_when_flow_sensor_present():
+def test_tank_mode_stays_active_when_flow_sensor_configured():
+    """No reading of a flow sensor is ever converted to litres (#853).
+
+    Configuring one must not trade the tank-derived figure for the pump
+    estimate, which is the less accurate of the two.
+    """
     gs = _growspace(tank_volume=200.0, flow_sensors=["sensor.flow"])
-    assert is_tank_derived_mode(gs) is False
+    assert is_tank_derived_mode(gs) is True
 
 
-def test_tank_mode_inactive_when_drain_sensor_present():
+def test_tank_mode_stays_active_when_drain_sensor_configured():
+    """Drain volume is runoff, not delivery, and is not read as either (#853)."""
     gs = _growspace(tank_volume=200.0, drain_sensors=["sensor.drain"])
-    assert is_tank_derived_mode(gs) is False
+    assert is_tank_derived_mode(gs) is True
+
+
+def test_flow_sensor_keeps_the_tank_derived_figure():
+    """The water figure's source does not move when a flow sensor is added (#853)."""
+    gs = _growspace(
+        tank_volume=200.0,
+        flow_sensors=["sensor.flow"],
+        drain_sensors=["sensor.drain"],
+    )
+    trackers = [_FakeTracker(today=8.0, since=50.0)]
+    figures = compute_growspace_water(gs, trackers, reference_date="2026-06-15")
+    assert figures == WaterUseFigures(today=8.0, cycle=50.0, source="tank_derived")
 
 
 # ── non-tank path: WaterUsageData holds manual + pump (both written through) ──

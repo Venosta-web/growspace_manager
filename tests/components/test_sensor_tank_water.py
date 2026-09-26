@@ -72,14 +72,16 @@ def test_should_create_when_no_flow_or_drain_sensors():
     assert _should_create_derived_water_sensor(growspace, tank) is True
 
 
-def test_should_not_create_when_flow_sensors_present():
+def test_should_create_when_flow_sensors_present():
+    """A flow sensor is configured but never read, so it replaces nothing (#853)."""
     _, growspace, tank = _make_coordinator(flow_sensors=["sensor.flow"])
-    assert _should_create_derived_water_sensor(growspace, tank) is False
+    assert _should_create_derived_water_sensor(growspace, tank) is True
 
 
-def test_should_not_create_when_drain_sensors_present():
+def test_should_create_when_drain_sensors_present():
+    """A drain volume sensor is configured but never read (#853)."""
     _, growspace, tank = _make_coordinator(drain_sensors=["sensor.drain"])
-    assert _should_create_derived_water_sensor(growspace, tank) is False
+    assert _should_create_derived_water_sensor(growspace, tank) is True
 
 
 def test_should_not_create_when_no_volume():

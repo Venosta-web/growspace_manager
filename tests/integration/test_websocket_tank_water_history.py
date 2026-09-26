@@ -123,28 +123,23 @@ async def test_aggregates_liters_across_tanks(
     assert all(b["liters"] == pytest.approx(1.5) for b in result["buckets"])
 
 
-async def test_returns_empty_buckets_when_flow_sensors_configured(
+async def test_returns_history_when_flow_and_drain_sensors_configured(
     hass: HomeAssistant, mock_connection: MagicMock
 ) -> None:
-    """Returns empty buckets list when growspace uses flow sensors."""
-    coord = _make_coordinator(flow_sensors=["sensor.flow1"])
+    """Configured-but-unread flow and drain sensors hide no tank history (#853)."""
+    tracker = MagicMock()
+    tracker.get_history_24h.return_value = _make_buckets(96, liters=1.0)
+    coord = _make_coordinator(
+        flow_sensors=["sensor.flow1"],
+        drain_sensors=["sensor.drain1"],
+        trackers={"tank1": tracker},
+    )
 
     msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
 
     result = await websocket_get_tank_water_history(hass, coord, msg)
-    assert result["buckets"] == []
-
-
-async def test_returns_empty_buckets_when_drain_sensors_configured(
-    hass: HomeAssistant, mock_connection: MagicMock
-) -> None:
-    """Returns empty buckets list when growspace uses drain sensors."""
-    coord = _make_coordinator(drain_sensors=["sensor.drain1"])
-
-    msg = {"id": 1, "growspace_id": "tent1", "range": "24h"}
-
-    result = await websocket_get_tank_water_history(hass, coord, msg)
-    assert result["buckets"] == []
+    assert len(result["buckets"]) == 96
+    assert all(b["liters"] == pytest.approx(1.0) for b in result["buckets"])
 
 
 async def test_all_zero_buckets_when_no_consumption(
