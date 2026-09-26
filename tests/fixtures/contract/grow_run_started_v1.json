@@ -1,0 +1,13 @@
+{
+  "active_run": {
+    "label": "Autumn",
+    "participant_count": 2,
+    "run_id": "run-1",
+    "run_revision": 4,
+    "sequence_number": 4,
+    "started_at": "2026-07-24T20:30:00+00:00",
+    "timezone": "Europe/Berlin"
+  },
+  "outcome": "started",
+  "run_revision": 4
+}

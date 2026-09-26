@@ -62,6 +62,11 @@ def async_describe_events(
                 return _describe_irrigation_error_event(data)
             case "environment":
                 return _describe_environment_event(data)
+            case "grow_run":
+                return {
+                    LOGBOOK_ENTRY_NAME: "Grow Run",
+                    LOGBOOK_ENTRY_MESSAGE: data.get("message") or "Run changed",
+                }
             case _:
                 return _describe_default_event(category, data)
 

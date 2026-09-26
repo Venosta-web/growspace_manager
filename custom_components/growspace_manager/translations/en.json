@@ -717,6 +717,9 @@
       "reliability": {
         "name": "Reliability"
       },
+      "active_run": {
+        "name": "Active Run"
+      },
       "energy_usage": {
         "name": "Energy Usage"
       },
