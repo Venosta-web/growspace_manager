@@ -16,7 +16,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
-from homeassistant.helpers import selector
+from homeassistant.helpers import device_registry as dr, entity_registry as er, selector
 import homeassistant.helpers.config_validation as cv
 
 from .config_handlers import (
@@ -35,6 +35,7 @@ from .config_handlers import (
     StrainConfigHandler,
 )
 from .const import DEFAULT_NAME, DOMAIN
+from .models.growspace import GrowspaceType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,8 +48,21 @@ STEP_INIT = {
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Optional("name", default=DEFAULT_NAME): cv.string,
+        vol.Optional("area_id"): selector.AreaSelector(),
     }
 )
+
+# The preset ID is stored on Growspace for the card's setup checklist. Only the
+# existing growspace type is stamped here; no cultivation targets are chosen.
+INITIAL_PRESETS: dict[str, GrowspaceType] = {
+    "simple_soil_tent": GrowspaceType.FLOWER,
+    "living_soil": GrowspaceType.FLOWER,
+    "coco_crop_steering": GrowspaceType.FLOWER,
+    "hydroponic_room": GrowspaceType.FLOWER,
+    "mother_clone_room": GrowspaceType.MOTHER,
+    "drying_room": GrowspaceType.DRY,
+    "curing_room": GrowspaceType.CURE,
+}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -81,14 +95,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if user_input is not None:
                 name = user_input.get("name", DEFAULT_NAME)
+                self._integration_name = name
+                self._area_id = user_input.get("area_id")
                 _LOGGER.debug(
                     "Processing user input, storing integration name: %s",
                     name,
                 )
-                return self.async_create_entry(
-                    title=name,
-                    data={"name": name},
-                )
+                return await self.async_step_add_growspace()
 
             _LOGGER.debug("Showing initial user form")
             return self.async_show_form(
@@ -100,9 +113,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Error in async_step_user")
             return self.async_show_form(
                 step_id="user",
-                data_schema=vol.Schema(
-                    {vol.Optional("name", default=DEFAULT_NAME): cv.string}
-                ),
+                data_schema=STEP_USER_DATA_SCHEMA,
                 errors={"base": "unknown"},
             )
 
@@ -111,8 +122,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Handle adding a growspace during the initial setup.
 
-        This is an optional step that allows the user to create their first
-        growspace immediately after adding the integration.
+        Create the first growspace before completing integration setup.
 
         Args:
             user_input: The user's input from the form, if any.
@@ -128,7 +138,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "name": user_input["name"],
                     "rows": user_input["rows"],
                     "plants_per_row": user_input["plants_per_row"],
-                    "notification_target": user_input.get("notification_target"),
+                    "setup_preset": user_input["setup_preset"],
+                    "growspace_type": INITIAL_PRESETS[user_input["setup_preset"]].value,
+                    "environment_config": {
+                        key: user_input[key]
+                        for key in (
+                            "temperature_sensor",
+                            "humidity_sensor",
+                            "vpd_sensor",
+                        )
+                        if user_input.get(key)
+                    },
                 }
 
                 entry = self.async_create_entry(
@@ -142,9 +162,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Error in async_step_add_growspace")
                 return self.async_show_form(
                     step_id="add_growspace",
-                    data_schema=GrowspaceConfigHandler(
-                        self.hass, None
-                    ).get_add_growspace_schema(),
+                    data_schema=self._initial_growspace_schema(),
                     errors={"base": "unknown"},
                 )
 
@@ -154,10 +172,71 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         _LOGGER.debug("Showing add_growspace form")
         return self.async_show_form(
             step_id="add_growspace",
-            data_schema=GrowspaceConfigHandler(
-                self.hass, None
-            ).get_add_growspace_schema(),
+            data_schema=self._initial_growspace_schema(),
         )
+
+    def _initial_growspace_schema(self) -> vol.Schema:
+        """Build the short first-run form, suggesting sensors from the selected area."""
+        suggested: dict[str, str] = {}
+        area_id = getattr(self, "_area_id", None)
+        if area_id:
+            entities = er.async_get(self.hass)
+            devices = dr.async_get(self.hass)
+            for entry in entities.entities.values():
+                device = devices.async_get(entry.device_id) if entry.device_id else None
+                assigned_area = entry.area_id or (device.area_id if device else None)
+                if assigned_area != area_id:
+                    continue
+                state = self.hass.states.get(entry.entity_id)
+                if state is None:
+                    continue
+                device_class = state.attributes.get("device_class")
+                for key in ("temperature", "humidity"):
+                    if device_class == key:
+                        suggested.setdefault(f"{key}_sensor", entry.entity_id)
+                if entry.entity_id.startswith("sensor.") and "vpd" in entry.entity_id:
+                    suggested.setdefault("vpd_sensor", entry.entity_id)
+
+        schema: dict[Any, Any] = {
+            vol.Required("name"): selector.TextSelector(),
+            vol.Required(
+                "setup_preset", default="simple_soil_tent"
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value=value, label=value.replace("_", " ").title()
+                        )
+                        for value in INITIAL_PRESETS
+                    ]
+                )
+            ),
+            vol.Required("rows", default=4): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Required("plants_per_row", default=4): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=20, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+        }
+        for key, device_class in (
+            ("temperature_sensor", "temperature"),
+            ("humidity_sensor", "humidity"),
+            ("vpd_sensor", None),
+        ):
+            marker = (
+                vol.Optional(key, description={"suggested_value": suggested[key]})
+                if key in suggested
+                else vol.Optional(key)
+            )
+            config: selector.EntitySelectorConfig = {"domain": "sensor"}
+            if device_class:
+                config["device_class"] = device_class
+            schema[marker] = selector.EntitySelector(config)
+        return vol.Schema(schema)
 
     @staticmethod
     @callback

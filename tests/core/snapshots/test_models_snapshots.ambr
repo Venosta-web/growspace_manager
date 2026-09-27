@@ -572,6 +572,7 @@
     'notification_target': None,
     'plants_per_row': 4,
     'rows': 2,
+    'setup_preset': None,
     'subareas': list([
     ]),
     'substrate_history': dict({

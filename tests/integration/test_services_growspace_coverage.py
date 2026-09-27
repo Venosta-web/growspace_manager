@@ -143,6 +143,39 @@ async def test_add_growspace_no_notification_target(
 
 
 @pytest.mark.asyncio
+async def test_add_growspace_keeps_onboarding_preset_and_climate(
+    service, repository_mock
+) -> None:
+    """The pending growspace fields survive the manager's model conversion."""
+    await service.add_growspace(
+        "Dry Room",
+        growspace_type="dry",
+        setup_preset="drying_room",
+        environment_config={"temperature_sensor": "sensor.dry_temperature"},
+    )
+
+    growspace = repository_mock.add_growspace.call_args.args[0]
+    assert growspace.growspace_type == GrowspaceType.DRY
+    assert growspace.setup_preset == "drying_room"
+    assert growspace.environment_config.temperature_sensor == "sensor.dry_temperature"
+    assert growspace.to_dict()["setup_preset"] == "drying_room"
+
+
+@pytest.mark.asyncio
+async def test_update_growspace_setup_preset(
+    service, repository_mock, save_callback_mock
+) -> None:
+    """A later checklist can change the stored preset without a target stamp."""
+    growspace = Growspace(id="gs1", name="Test", setup_preset="simple_soil_tent")
+    _setup_growspaces(repository_mock, {"gs1": growspace})
+
+    await service.update_growspace("gs1", setup_preset="living_soil")
+
+    assert growspace.setup_preset == "living_soil"
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_update_growspace_no_changes(
     service, repository_mock, save_callback_mock
 ) -> None:
