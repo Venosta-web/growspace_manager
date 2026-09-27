@@ -623,7 +623,7 @@ The most recent past day on which an [[Irrigation Zone]] steered cleanly on its 
 _Avoid_: baseline day (a Baseline Bucket is Vision's).
 
 **Zone Headline**
-The one state an [[Irrigation Zone]]'s label shows on the card, chosen by precedence: holding or replaying in [[Degraded Control]], then substituting on a Witness Probe, then watering, then waiting in the [[Supply Queue]], then steering. It shows only the zone's own state. Holds that stop the whole growspace — the daily cap, a [[Fault]], the emergency stop, an operator hold — are shown once for the growspace and never stamped on every zone, because doing so hides the zone that is also replaying. The card derives it from the `zones` read and stores nothing. See ADR-0066.
+The one state an [[Irrigation Zone]] shows on the card — its glyph in the irrigation dialog's zone scope, its status and its banner — chosen by precedence: holding or replaying in [[Degraded Control]], then substituting on a Witness Probe, then watering, then queued in the [[Supply Queue]], then steering. It shows only the zone's own state. Holds that stop the whole growspace — the daily cap, a [[Fault]], the emergency stop, an operator hold — are shown once for the growspace and never stamped on every zone, because doing so hides the zone that is also replaying. The card derives it from the `zones` read and stores nothing. See ADR-0066.
 _Avoid_: zone status (the controller's state is growspace-wide), zone health (names only the probes).
 
 **Startup Inhibit**

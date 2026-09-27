@@ -59,5 +59,5 @@ The first two are wrong answers the product acts on. The third exists because se
 - The recipe's wire shape gains `revision`. The zone's gains `applied_recipe {id, revision, values}` and `recipe_updated` beside `applied_recipe_drifted`. Per ADR-0045 and ADR-0030 the golden fixture carries both populated and non-null.
 - `edit_recipe` can no longer reach the light fields, which move into provenance, so they are fixed at capture.
 - A single-zone grower who sets drains or caps through a schedule recipe loses that in 1.4.0. The implementing PR adds its line under `### Changed` in `CHANGELOG.md` (ADR-0063), and `docs/upgrading/zones.md` names it.
-- The edit dialog's zone list and the per-zone "recipe updated" state belong to the card surface (#864). [ADR-0066](0066-the-card-draws-zones-on-the-grid-and-explains-them-in-sentences.md) leaves them to the ticket that implements this record.
+- The edit dialog's zone list and the per-zone "recipe updated" state belong to the card surface (#864). [ADR-0066](0066-zones-are-a-scope-over-the-irrigation-dialog-and-a-zones-day-is-a-timeline.md) puts the per-zone "recipe updated" state on a zone's status card, and leaves the edit dialog's zone list to the ticket that implements this record.
 - The store grows by one Applied Recipe of about 20 values per zone: at most 60 across ADR-0060's envelope.
