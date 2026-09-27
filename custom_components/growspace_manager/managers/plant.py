@@ -747,7 +747,6 @@ class PlantManager(BaseService):
                 key in regular_updates and regular_updates[key] != getattr(plant, key)
                 for key in ("row", "col")
             )
-
             plant_snapshot = deepcopy(plant)
             growspace_snapshots = {
                 growspace_id: deepcopy(self.repository.get_growspace(growspace_id))
@@ -986,6 +985,11 @@ class PlantManager(BaseService):
                 key in updates and updates[key] != getattr(plant, key)
                 for key in ("row", "col")
             )
+            plant_snapshot = deepcopy(plant)
+            growspace_snapshots = {
+                growspace_id: deepcopy(self.repository.get_growspace(growspace_id))
+                for growspace_id in {old_growspace_id, new_growspace_id}
+            }
 
             for key in DATE_FIELDS:
                 if key in updates:
@@ -1010,7 +1014,16 @@ class PlantManager(BaseService):
                 self._advance_layout_revision(new_growspace_id)
             elif position_changed:
                 self._advance_layout_revision(old_growspace_id)
-            await self._save()
+            try:
+                await self._save()
+            except BaseException:
+                self._restore_plant(plant, plant_snapshot)
+                self.repository.add_plant(plant)
+                for growspace_id, snapshot in growspace_snapshots.items():
+                    if snapshot is not None:
+                        self.repository.add_growspace(snapshot)
+                    self._invalidate(growspace_id)
+                raise
 
         self._fire_event(
             "plant_updated",
@@ -1029,10 +1042,24 @@ class PlantManager(BaseService):
             plant = self.repository.get_plant(plant_id)
             if not plant:
                 return False
+            sent_snapshot = self.notification_state.sent.get(plant_id)
+            previous_revision = self.repository.require_growspace(
+                plant.growspace_id
+            ).layout_revision
             self.repository.remove_plant(plant_id)
             self.notification_state.sent.pop(plant_id, None)
             self._advance_layout_revision(plant.growspace_id)
-            await self._save()
+            try:
+                await self._save()
+            except BaseException:
+                self.repository.add_plant(plant)
+                if sent_snapshot is not None:
+                    self.notification_state.sent[plant_id] = sent_snapshot
+                self.repository.require_growspace(
+                    plant.growspace_id
+                ).layout_revision = previous_revision
+                self._invalidate(plant.growspace_id)
+                raise
 
         self._fire_event(
             "plant_removed",
@@ -1070,6 +1097,11 @@ class PlantManager(BaseService):
 
             p1_row, p1_col = plant1.row, plant1.col
             p2_row, p2_col = plant2.row, plant2.col
+            plant1_snapshot = deepcopy(plant1)
+            plant2_snapshot = deepcopy(plant2)
+            previous_revision = self.repository.require_growspace(
+                plant1.growspace_id
+            ).layout_revision
 
             plant1.row, plant1.col = p2_row, p2_col
             plant2.row, plant2.col = p1_row, p1_col
@@ -1079,7 +1111,16 @@ class PlantManager(BaseService):
             plant2.updated_at = now
 
             self._advance_layout_revision(plant1.growspace_id)
-            await self._save()
+            try:
+                await self._save()
+            except BaseException:
+                self._restore_plant(plant1, plant1_snapshot)
+                self._restore_plant(plant2, plant2_snapshot)
+                self.repository.require_growspace(
+                    plant1.growspace_id
+                ).layout_revision = previous_revision
+                self._invalidate(plant1.growspace_id)
+                raise
 
         # Fire events
         if p1 := self.repository.get_plant(plant1_id):
@@ -1283,6 +1324,8 @@ class PlantManager(BaseService):
             )
 
             relocated: list[str] = []
+            plant_snapshots: dict[str, Plant] = {}
+            growspace_snapshots: dict[str, Any] = {}
             updated_at = plant_updated_date()
             for plant_id in plant_ids:
                 plant = self.repository.get_plant(plant_id)
@@ -1315,6 +1358,12 @@ class PlantManager(BaseService):
                 occupied.add(cell)
 
                 source_growspace_id = plant.growspace_id
+                plant_snapshots[plant_id] = deepcopy(plant)
+                for growspace_key in (source_growspace_id, target_growspace_id):
+                    if growspace_key not in growspace_snapshots:
+                        growspace_snapshots[growspace_key] = deepcopy(
+                            self.repository.get_growspace(growspace_key)
+                        )
                 plant.growspace_id = target_growspace_id
                 plant.row = new_row
                 plant.col = new_col
@@ -1342,7 +1391,18 @@ class PlantManager(BaseService):
                 self._invalidate(growspace_id)
 
             if relocated:
-                await self._save()
+                try:
+                    await self._save()
+                except BaseException:
+                    for plant_id, snapshot in plant_snapshots.items():
+                        self._restore_plant(
+                            self.repository.require_plant(plant_id), snapshot
+                        )
+                    for growspace_id, snapshot in growspace_snapshots.items():
+                        if snapshot is not None:
+                            self.repository.add_growspace(snapshot)
+                        self._invalidate(growspace_id)
+                    raise
 
         for growspace_id, layout_revision in affected.items():
             if layout_revision:

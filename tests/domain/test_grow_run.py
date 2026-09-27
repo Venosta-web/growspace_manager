@@ -15,12 +15,15 @@ from custom_components.growspace_manager.domain.grow_run import (
     BaselineState,
     GrowRun,
     OpeningBaseline,
+    PlantMovementFact,
     RunAlreadyActive,
     RunCommand,
     RunLedger,
     RunMetadata,
+    RunParticipation,
     RunRevisionConflict,
     RunStatus,
+    run_details,
     run_summary,
     sensor_state,
 )
@@ -156,6 +159,48 @@ def test_a_ledger_survives_its_durable_form() -> None:
     assert RunLedger.from_dict(json.loads(json.dumps(ledger.as_dict()))) == ledger
 
 
+def test_participation_and_fact_reject_corrupt_intervals_and_flags() -> None:
+    """Corruption cannot silently change half-open intervals or outbox state."""
+    with pytest.raises(ValueError, match="closes before"):
+        RunParticipation.from_dict(
+            {
+                "plant_id": "p1",
+                "opened_at": STARTED.isoformat(),
+                "closed_at": (STARTED - timedelta(seconds=1)).isoformat(),
+            }
+        )
+    with pytest.raises(TypeError, match="not boolean"):
+        PlantMovementFact.from_dict(
+            {
+                "fact_id": "f1",
+                "plant_id": "p1",
+                "at": STARTED.isoformat(),
+                "kind": "entry",
+                "source_growspace_id": None,
+                "target_growspace_id": "tent",
+                "source_run_id": None,
+                "target_run_id": "run-1",
+                "projected": "yes",
+            }
+        )
+
+
+def test_duplicate_open_intervals_and_movement_ids_are_refused() -> None:
+    """A damaged Run cannot inflate participation or replay one movement twice."""
+    document = _stored()
+    document["runs"][0]["participations"].append(
+        document["runs"][0]["participations"][0]
+    )
+    with pytest.raises(ValueError, match="more than one open"):
+        RunLedger.from_dict(document)
+
+    wire = _wire_forms()["grow_run_details_v1"]
+    document = _stored()
+    document["runs"][0]["movement_history"] = [wire["run"]["movement_history"][0]] * 2
+    with pytest.raises(ValueError, match="appears twice"):
+        RunLedger.from_dict(document)
+
+
 def _stored() -> dict[str, Any]:
     ledger, _ = _start(RunLedger("tent"))
     return json.loads(json.dumps(ledger.as_dict()))
@@ -239,6 +284,20 @@ def _wire_forms() -> dict[str, Any]:
         _start(ledger, expected=3, run_id="run-2")
     except RunRevisionConflict as refused:
         refusal = refusal_result(refused)
+    moved = ledger.project_movement(
+        PlantMovementFact(
+            fact_id="fact-1",
+            plant_id="p1",
+            at=STARTED + timedelta(days=7),
+            kind="transplant",
+            source_growspace_id="tent",
+            target_growspace_id="other",
+            source_run_id="run-1",
+            target_run_id=None,
+        )
+    )
+    projected_run = moved.active_run
+    assert projected_run is not None
     return {
         "active_run_sensor_v1": {
             # As Home Assistant publishes them: the state is always a string.
@@ -251,6 +310,7 @@ def _wire_forms() -> dict[str, Any]:
             "active_run": run_summary(run, ledger.revision),
         },
         "grow_run_refused_v1": refusal,
+        "grow_run_details_v1": run_details(projected_run, moved.revision),
     }
 
 

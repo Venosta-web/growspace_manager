@@ -573,17 +573,21 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
     genetics_manager = MagicMock()
     genetics_manager.get_serialization_data.return_value = {}
 
-    with patch(
-        "custom_components.growspace_manager.storage_manager.Store"
-    ) as mock_store_cls:
+    with (
+        patch(
+            "custom_components.growspace_manager.storage_manager.Store"
+        ) as mock_store_cls,
+        patch(
+            "custom_components.growspace_manager.storage_manager.PlantActivityStore"
+        ) as mock_plant_store_cls,
+    ):
         mock_config_store = MagicMock()
         mock_plants_store = MagicMock()
         mock_genetics_store = MagicMock()
         mock_genetics_store.async_save = AsyncMock()
-        # StorageManager now creates 4 stores: config, plants, genetics, legacy
+        mock_plant_store_cls.return_value = mock_plants_store
         mock_store_cls.side_effect = [
             mock_config_store,
-            mock_plants_store,
             mock_genetics_store,
             MagicMock(),
         ]
@@ -595,7 +599,7 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
 
         with (
             patch.object(storage, "_get_config_data", return_value={}),
-            patch.object(storage, "_get_plants_data", return_value={}),
+            patch.object(storage, "_get_plants_data", return_value={"plants": {}}),
         ):
             await storage.async_force_save()
 
@@ -603,14 +607,19 @@ async def test_storage_manager_force_save_coverage(hass: HomeAssistant) -> None:
         mock_plants_store.async_save.assert_awaited_once()
 
     # Test async_save (debounced)
-    with patch(
-        "custom_components.growspace_manager.storage_manager.Store"
-    ) as mock_store_cls:
+    with (
+        patch(
+            "custom_components.growspace_manager.storage_manager.Store"
+        ) as mock_store_cls,
+        patch(
+            "custom_components.growspace_manager.storage_manager.PlantActivityStore"
+        ) as mock_plant_store_cls,
+    ):
         mock_config_store = MagicMock()
         mock_plants_store = MagicMock()
+        mock_plant_store_cls.return_value = mock_plants_store
         mock_store_cls.side_effect = [
             mock_config_store,
-            mock_plants_store,
             MagicMock(),
             MagicMock(),
         ]
@@ -652,20 +661,25 @@ async def test_storage_manager_load_coverage(hass: HomeAssistant) -> None:
     genetics_manager = MagicMock()
     serializer = MagicMock()
 
-    with patch(
-        "custom_components.growspace_manager.storage_manager.Store"
-    ) as mock_store_cls:
+    with (
+        patch(
+            "custom_components.growspace_manager.storage_manager.Store"
+        ) as mock_store_cls,
+        patch(
+            "custom_components.growspace_manager.storage_manager.PlantActivityStore"
+        ) as mock_plant_store_cls,
+    ):
         mock_config_store = MagicMock()
         mock_plants_store = MagicMock()
         mock_genetics_store = MagicMock()
         mock_legacy_store = MagicMock()
-        # StorageManager now creates 4 stores: config, plants, genetics, legacy
+        # The Plant store has its own migration class.
         mock_store_cls.side_effect = [
             mock_config_store,
-            mock_plants_store,
             mock_genetics_store,
             mock_legacy_store,
         ]
+        mock_plant_store_cls.return_value = mock_plants_store
         mock_genetics_store.async_load = AsyncMock(return_value=None)
 
         storage = StorageManager(hass, repository, nutrient_manager, genetics_manager)
