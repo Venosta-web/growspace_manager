@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -900,20 +899,12 @@ class GrowspaceFacade:
         call: ServiceCall,
     ) -> None:
         """Unpack an add_growspace ServiceCall and delegate to add_growspace."""
-        device_registry = dr.async_get(hass)
-        # Home Assistant before 2026.9 exposes `devices` as an id -> entry
-        # mapping, which iterates ids; 2026.9 made it a view that iterates the
-        # entries. The integration supports both, so read entries either way.
-        devices = device_registry.devices
-        entries = devices.values() if isinstance(devices, Mapping) else devices
-        mobile_devices = [
-            d.name
-            for d in entries
-            if any("mobile_app" in entry_id for entry_id in d.config_entries)
-        ]
+        # A notification target is a notify service name (`mobile_app_<device>`,
+        # optionally `notify.`-prefixed), the value the card and options flow
+        # offer and the notifiers call. It is stored as given, as
+        # update_growspace does: a service that is not registered yet (the
+        # companion app not connected) is still the one the user chose.
         notification_target = call.data.get(ATTR_NOTIFICATION_TARGET)
-        if notification_target and notification_target not in mobile_devices:
-            notification_target = None
 
         name = call.data[ATTR_NAME]
         rows = call.data[ATTR_ROWS]

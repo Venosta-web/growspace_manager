@@ -66,9 +66,7 @@ def mock_call():
 
 
 @pytest.mark.asyncio
-@patch("homeassistant.helpers.device_registry.async_get")
 async def test_handle_add_growspace(
-    mock_async_get,
     mock_hass,
     mock_coordinator,
     mock_strain_library,
@@ -81,10 +79,6 @@ async def test_handle_add_growspace(
         "plants_per_row": 3,
         "notification_target": "mobile_app_test",
     }
-    mock_device = MagicMock()
-    mock_device.name = "mobile_app_test"
-    mock_device.config_entries = {"mobile_app_test"}
-    mock_async_get.return_value.devices = {"device-1": mock_device}
 
     await mock_coordinator.services.growspaces.add_growspace_from_call(
         mock_hass, mock_strain_library, mock_call
@@ -97,39 +91,7 @@ async def test_handle_add_growspace(
 
 
 @pytest.mark.asyncio
-@patch("homeassistant.helpers.device_registry.async_get")
-async def test_handle_add_growspace_reads_the_2026_9_device_view(
-    mock_async_get,
-    mock_hass,
-    mock_coordinator,
-    mock_strain_library,
-    mock_call,
-) -> None:
-    """Home Assistant 2026.9 iterates registry entries, not their ids."""
-    mock_call.data = {
-        "name": "Test GS",
-        "rows": 2,
-        "plants_per_row": 3,
-        "notification_target": "mobile_app_test",
-    }
-    mock_device = MagicMock()
-    mock_device.name = "mobile_app_test"
-    mock_device.config_entries = {"mobile_app_test"}
-    mock_async_get.return_value.devices = [mock_device]
-
-    await mock_coordinator.services.growspaces.add_growspace_from_call(
-        mock_hass, mock_strain_library, mock_call
-    )
-
-    mock_coordinator._growspace_manager.add_growspace.assert_awaited_once_with(
-        name="Test GS", rows=2, plants_per_row=3, notification_target="mobile_app_test"
-    )
-
-
-@pytest.mark.asyncio
-@patch("homeassistant.helpers.device_registry.async_get")
 async def test_handle_add_growspace_with_preset_creates_that_room(
-    mock_async_get,
     mock_hass,
     mock_coordinator,
     mock_strain_library,
@@ -142,7 +104,6 @@ async def test_handle_add_growspace_with_preset_creates_that_room(
         "plants_per_row": 3,
         "setup_preset": "drying_room",
     }
-    mock_async_get.return_value.devices = {}
 
     await mock_coordinator.services.growspaces.add_growspace_from_call(
         mock_hass, mock_strain_library, mock_call
@@ -211,41 +172,35 @@ async def test_handle_update_growspace(
 
 
 @pytest.mark.asyncio
-@patch("homeassistant.helpers.device_registry.async_get")
-async def test_handle_add_growspace_no_mobile_app_notification(
-    mock_async_get,
+async def test_handle_add_growspace_keeps_a_target_no_device_is_named(
     mock_hass,
     mock_coordinator,
     mock_strain_library,
     mock_call,
 ) -> None:
-    """Test handle_add_growspace when notification_target is not a mobile app."""
+    """The target is a notify service name, stored as given like update does."""
     mock_call.data = {
         "name": "Test GS",
         "rows": 2,
         "plants_per_row": 3,
-        "notification_target": "non_existent_mobile_app",
+        "notification_target": "notify.mobile_app_not_connected_yet",
     }
-    mock_async_get.return_value.devices = {}  # No mobile devices registered
 
     await mock_coordinator.services.growspaces.add_growspace_from_call(
         mock_hass, mock_strain_library, mock_call
     )
 
     mock_coordinator._growspace_manager.add_growspace.assert_awaited_once_with(
-        name="Test GS", rows=2, plants_per_row=3, notification_target=None
-    )
-    mock_coordinator._growspace_manager.add_growspace.assert_awaited_once_with(
-        name="Test GS", rows=2, plants_per_row=3, notification_target=None
+        name="Test GS",
+        rows=2,
+        plants_per_row=3,
+        notification_target="notify.mobile_app_not_connected_yet",
     )
     mock_hass.bus.async_fire.assert_not_called()
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
-@patch("homeassistant.helpers.device_registry.async_get")
 async def test_handle_add_growspace_exception(
-    mock_async_get,
     mock_hass,
     mock_coordinator,
     mock_strain_library,
@@ -256,7 +211,6 @@ async def test_handle_add_growspace_exception(
     mock_coordinator._growspace_manager.add_growspace.side_effect = Exception(
         "Add failed"
     )
-    mock_async_get.return_value.devices = {}
 
     with pytest.raises(ServiceValidationError, match="Operation failed: Add failed"):
         await mock_coordinator.services.growspaces.add_growspace_from_call(
@@ -447,9 +401,7 @@ async def test_handle_ask_grow_advice_llm_failure(
 
 
 @pytest.mark.asyncio
-@patch("homeassistant.helpers.device_registry.async_get")
 async def test_handle_add_growspace_growspace_error(
-    mock_async_get,
     mock_hass,
     mock_coordinator,
     mock_strain_library,
@@ -460,7 +412,6 @@ async def test_handle_add_growspace_growspace_error(
     mock_coordinator._growspace_manager.add_growspace.side_effect = GrowspaceError(
         "Specific error"
     )
-    mock_async_get.return_value.devices = {}
 
     with pytest.raises(ServiceValidationError, match="Specific error"):
         await mock_coordinator.services.growspaces.add_growspace_from_call(
