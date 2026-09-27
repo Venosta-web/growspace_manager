@@ -67,4 +67,4 @@ Two facts shape the answer.
 - Nothing changes for a zone left on `hold`, which is every zone after upgrade, except that its Degraded Control alert names the day it could replay. What #863 tells existing users is only that the setting exists.
 - `SubstrateHistory` gains `reference_days`. The Delivery Attempt trigger gains `fallback`. The zone's reported state gains `fallback`, with its cause and Reference Day.
 - A zone set to `replay` with no Reference Day holds, and its alert says there is nothing to replay. That is a new zone, one whose day length just changed, or one degraded for more than about six days.
-- #864 (the card) can show a zone as replaying, which day it replays, and its replay shots, from the state and the attempts. It needs no further backend state.
+- #864 (the card, [ADR-0066](0066-zones-are-a-scope-over-the-irrigation-dialog-and-a-zones-day-is-a-timeline.md)) can show a zone as replaying, which day it replays, and its replay shots, from the state and the attempts. It needs no further backend state.

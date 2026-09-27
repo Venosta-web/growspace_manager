@@ -88,7 +88,7 @@ Most growers will never fit a meter. So actuator confirmation stays the complete
     - the Tank–Pump Disagreement's state and its last days;
     - each meter's Unattributed Flow.
 
-    #864 decides how the card shows them. Where there is a fix to apply, the Calibration Proposal is the fix.
+    #864 decides how the card shows them ([ADR-0066](0066-zones-are-a-scope-over-the-irrigation-dialog-and-a-zones-day-is-a-timeline.md)). Where there is a fix to apply, the Calibration Proposal is the fix.
 
 ## Considered Options
 

@@ -37,7 +37,7 @@ Each growspace gets one **[[Supply Queue]]**, and a zone waits in it with a **[[
    - Once the hold clears, zones claim again by their own decisions.
 9. **Restart.** The queue lives in memory only. A restart drops it and nothing is replayed (ADR-0049). A claim that never reached the gate has no attempt to close.
 10. **The shared cap is not divided.** The daily caps stay per growspace (ADR-0057). A zone that uses up the allowance before others have had a turn is accepted as the safe direction. Each attempt it suppresses names the cap, and today's attempts already show which zones used it.
-11. **When the zones cannot all be served on time**, every zone is still served, only less often: its effective interval stretches to the queue's cycle. Nothing is skipped for being late. ADR-0060's configuration-time Repairs warning is the only alert. The wait is visible on every attempt through `due_at`, and how the card shows it belongs to #864.
+11. **When the zones cannot all be served on time**, every zone is still served, only less often: its effective interval stretches to the queue's cycle. Nothing is skipped for being late. ADR-0060's configuration-time Repairs warning is the only alert. The wait is visible on every attempt through `due_at`, and how the card shows it belongs to #864 ([ADR-0066](0066-zones-are-a-scope-over-the-irrigation-dialog-and-a-zones-day-is-a-timeline.md)).
 12. **Seam.** The queue is a pure `domain/supply_queue.py` in the Steering Phase Machine's mould: plain values in, the next claim out, and zero-mock tests. The growspace's [[Irrigation Controller]] is its effects shell. It replaces today's cancel-the-running-task code in the schedule handler, the steering shot and the Manual Run.
 
 ## Considered Options
@@ -60,4 +60,4 @@ Each growspace gets one **[[Supply Queue]]**, and a zone waits in it with a **[[
 - **A single-zone growspace changes behaviour too.** A scheduled shot or Manual Run arriving during a running shot now waits for it instead of cancelling it. How existing users are told belongs to #863.
 - The Delivery Attempt gains `due_at`. The Steering Tick Verdict's `suppressed_by` gains `queued`, for a tick that would fire while its zone's claim is already waiting. It remains a diagnostic that nothing branches on.
 - `tests/envelope/` (ADR-0060) drives the queue with the full 6 zones, so its tick budget and pump-time arithmetic include arbitration.
-- #864 (the card) can show a zone as queued and a delivered shot's wait. It needs no new backend state beyond `due_at` and the steering diagnostic.
+- #864 (the card, [ADR-0066](0066-zones-are-a-scope-over-the-irrigation-dialog-and-a-zones-day-is-a-timeline.md)) can show a zone as queued and a delivered shot's wait. It needs no new backend state beyond `due_at` and the steering diagnostic.
