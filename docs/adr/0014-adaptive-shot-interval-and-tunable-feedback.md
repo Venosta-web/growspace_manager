@@ -220,6 +220,7 @@ be machinery for no behaviour.
   **Superseded by ADR-0056 (#550):** Manual Runs never train Adaptive Shot
   Control, and a Manual Run or Hand Watering reported now abandons a pending
   observation.
+
 - **CONTEXT.md's [[Adaptive Shot Control]] entry becomes true.** It already
   claimed the coordinator "triggers `observe()` after each settled cycle" — a
   description of the intent, never of the code. The gap is now closed rather
