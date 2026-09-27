@@ -258,7 +258,36 @@ async def _build_payloads(hass: HomeAssistant) -> dict[str, object]:
         severity="high",
         recommendations=["Historical recommendation."],
     )
-    growspace = SimpleNamespace(vision_checkup_history=[legacy])
+    growspace = SimpleNamespace(
+        vision_checkup_history=[legacy],
+        environment_config=SimpleNamespace(camera_entities=["camera.contract_4"]),
+    )
+    store.async_get_camera_baseline.return_value = {
+        "camera_id": "camera.contract_4",
+        "grow_run_id": "contract-run",
+        "epoch": {
+            "epoch_id": "contract-epoch",
+            "started_at": "2026-09-03T06:00:00+00:00",
+            "reason": "manual_restart",
+        },
+        "windows": {
+            "early": {
+                "state": "collecting",
+                "samples_collected": 0,
+                "samples_required": 30,
+            },
+            "mid": {
+                "state": "collecting",
+                "samples_collected": 0,
+                "samples_required": 30,
+            },
+            "late": {
+                "state": "collecting",
+                "samples_collected": 0,
+                "samples_required": 30,
+            },
+        },
+    }
     coordinator = MagicMock()
     coordinator.growspaces = {"contract-growspace": growspace}
     coordinator.vision_connection.status = VisionStatus(

@@ -49,6 +49,7 @@ async def _start_capture(
     *,
     captured_at: datetime = datetime(2026, 9, 1, 6, tzinfo=UTC),
     checkup_id: str | None = None,
+    camera_id: str = "camera.canopy",
 ):
     """Create the common pending capture used by repository behavior tests."""
     if checkup_id is None:
@@ -67,7 +68,7 @@ async def _start_capture(
         checkup_id=checkup_id,
         growspace_id="gs-1",
         growspace_name="Flower Tent",
-        camera_id="camera.canopy",
+        camera_id=camera_id,
         captured_at=captured_at,
         light_window=LightWindow.EARLY,
         light_state=LightState.ON,
@@ -508,6 +509,127 @@ async def test_analysis_evidence_is_one_durable_write(tmp_path: Path) -> None:
         embedding
     ]
     await reopened.async_close()
+
+
+@pytest.mark.asyncio
+async def test_manual_restart_is_camera_wide_durable_and_preserves_history(
+    tmp_path: Path,
+) -> None:
+    """Old evidence stays readable while each window starts collecting anew."""
+    database = tmp_path / "vision.db"
+    images = tmp_path / "images"
+    store = VisionEvidenceStore(database, images)
+    await store.async_setup()
+    uninitialized = await store.async_get_camera_baseline("gs-1", "camera.canopy")
+    assert uninitialized["epoch"] is None
+    assert uninitialized["windows"]["early"]["state"] == "collecting"
+    old = await _start_capture(store)
+    other = await _start_capture(store, camera_id="camera.side")
+    completed, embedding, bucket, member, comparison = _analysis_records(old)
+    epoch = await store.async_restart_visual_baseline("gs-1", "camera.canopy")
+    assert epoch["reason"] == "manual_restart"
+    state = await store.async_get_camera_baseline("gs-1", "camera.canopy")
+    assert state["epoch"]["epoch_id"] == epoch["epoch_id"]
+    assert all(
+        window["state"] == "collecting" and window["samples_collected"] == 0
+        for window in state["windows"].values()
+    )
+    assert (await store.async_get_camera_baseline("gs-1", "camera.side"))["epoch"][
+        "epoch_id"
+    ] == other.framing_epoch_id
+
+    # Analysis finishing after the action still writes only to its capture's epoch.
+    await store.async_record_analysis(
+        completed,
+        embedding=embedding,
+        comparison=comparison,
+        bucket=bucket,
+        member=member,
+    )
+    assert (await store.async_get_camera_baseline("gs-1", "camera.canopy"))["windows"][
+        "early"
+    ]["samples_collected"] == 0
+    fresh = await _start_capture(store)
+    assert fresh.framing_epoch_id == epoch["epoch_id"]
+    assert fresh.grow_run_id == old.grow_run_id
+    assert fresh.framing_epoch_id != old.framing_epoch_id
+
+    new_capture, new_embedding, new_bucket, new_member, new_comparison = (
+        _analysis_records(fresh)
+    )
+    new_bucket = replace(new_bucket, bucket_id="bucket-2")
+    new_member = replace(new_member, bucket_id="bucket-2")
+    new_comparison = replace(new_comparison, bucket_id="bucket-2", result_id="result-2")
+    with pytest.raises(ValueError, match="provenance must match capture"):
+        await store.async_record_analysis(
+            new_capture,
+            bucket=replace(new_bucket, framing_epoch_id=old.framing_epoch_id),
+        )
+    await store.async_record_analysis(
+        new_capture,
+        embedding=new_embedding,
+        comparison=new_comparison,
+        bucket=new_bucket,
+        member=new_member,
+    )
+    assert (await store.async_get_camera_baseline("gs-1", "camera.canopy"))["windows"][
+        "early"
+    ] == {
+        "state": "monitoring",
+        "samples_collected": 1,
+        "samples_required": 30,
+    }
+
+    await store.async_close()
+    reopened = VisionEvidenceStore(database, images)
+    await reopened.async_setup()
+    assert (await reopened.async_get_camera_baseline("gs-1", "camera.canopy"))["epoch"][
+        "epoch_id"
+    ] == epoch["epoch_id"]
+    assert await reopened.async_get_capture(old.capture_id) == completed
+    assert await reopened.async_get_comparison_results(old.capture_id) == [comparison]
+    assert await reopened.async_get_baseline_bucket(bucket.bucket_id) == bucket
+    assert await reopened.async_get_capture(fresh.capture_id) == new_capture
+    assert await reopened.async_get_baseline_bucket(new_bucket.bucket_id) == new_bucket
+    await reopened.async_close()
+
+
+@pytest.mark.asyncio
+async def test_manual_restart_survives_reopen_before_next_capture(
+    tmp_path: Path,
+) -> None:
+    """The empty collecting state is persisted without a following checkup."""
+    database = tmp_path / "vision.db"
+    images = tmp_path / "images"
+    store = VisionEvidenceStore(database, images)
+    await store.async_setup()
+    epoch = await store.async_restart_visual_baseline("gs-1", "camera.canopy")
+    await store.async_close()
+    reopened = VisionEvidenceStore(database, images)
+    await reopened.async_setup()
+    state = await reopened.async_get_camera_baseline("gs-1", "camera.canopy")
+    assert state["epoch"]["epoch_id"] == epoch["epoch_id"]
+    assert state["windows"]["early"]["samples_collected"] == 0
+    await reopened.async_close()
+
+
+@pytest.mark.asyncio
+async def test_manual_restart_rolls_back_if_epoch_write_fails(tmp_path: Path) -> None:
+    """A failed action leaves the current camera boundary untouched."""
+    store = VisionEvidenceStore(tmp_path / "vision.db", tmp_path / "images")
+    await store.async_setup()
+    capture = await _start_capture(store)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            store,
+            "_async_get_or_create_grow_run",
+            AsyncMock(side_effect=RuntimeError("write failed")),
+        )
+        with pytest.raises(RuntimeError, match="write failed"):
+            await store.async_restart_visual_baseline("gs-1", "camera.canopy")
+    state = await store.async_get_camera_baseline("gs-1", "camera.canopy")
+    assert state["epoch"]["epoch_id"] == capture.framing_epoch_id
+    await store.async_close()
 
 
 @pytest.mark.asyncio

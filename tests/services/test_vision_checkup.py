@@ -8,6 +8,7 @@ import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.services.vision_checkup import (
+    handle_restart_visual_baseline,
     handle_trigger_vision_checkup,
 )
 from homeassistant.exceptions import ServiceValidationError
@@ -98,3 +99,54 @@ async def test_trigger_vision_checkup_growspace_not_found(mock_coordinator):
 
     with pytest.raises(ServiceValidationError, match="not found"):
         await handle_trigger_vision_checkup(hass, mock_coordinator, call)
+
+
+@pytest.mark.asyncio
+async def test_restart_visual_baseline_validates_before_writing(mock_coordinator):
+    """Unknown growspaces and unconfigured cameras leave evidence untouched."""
+    hass = MagicMock()
+    store = AsyncMock()
+    hass.data = {DOMAIN: {"vision_evidence_store": store}}
+    growspace = mock_coordinator.growspaces["tent1"]
+    growspace.environment_config.camera_entities = ["camera.canopy"]
+    call = MagicMock()
+    call.data = {"growspace_id": "missing", "camera_id": "camera.canopy"}
+    with pytest.raises(ServiceValidationError, match="Growspace 'missing' not found"):
+        await handle_restart_visual_baseline(hass, mock_coordinator, call)
+    call.data = {"growspace_id": "tent1", "camera_id": "camera.other"}
+    with pytest.raises(ServiceValidationError, match="not configured"):
+        await handle_restart_visual_baseline(hass, mock_coordinator, call)
+    store.async_restart_visual_baseline.assert_not_awaited()
+
+    hass.data[DOMAIN] = {}
+    call.data["camera_id"] = "camera.canopy"
+    with pytest.raises(ServiceValidationError, match="Store is unavailable"):
+        await handle_restart_visual_baseline(hass, mock_coordinator, call)
+
+
+@pytest.mark.asyncio
+async def test_restart_visual_baseline_returns_epoch(mock_coordinator):
+    """The Home Assistant action reports its durable boundary."""
+    hass = MagicMock()
+    store = AsyncMock()
+    store.async_restart_visual_baseline.return_value = {
+        "epoch_id": "epoch-2",
+        "grow_run_id": "run-1",
+        "started_at": "2026-09-26T10:00:00+00:00",
+        "reason": "manual_restart",
+    }
+    hass.data = {DOMAIN: {"vision_evidence_store": store}}
+    mock_coordinator.growspaces["tent1"].environment_config.camera_entities = [
+        "camera.canopy"
+    ]
+    call = MagicMock()
+    call.data = {"growspace_id": "tent1", "camera_id": "camera.canopy"}
+    result = await handle_restart_visual_baseline(hass, mock_coordinator, call)
+    store.async_restart_visual_baseline.assert_awaited_once_with(
+        "tent1", "camera.canopy"
+    )
+    assert result == {
+        "growspace_id": "tent1",
+        "camera_id": "camera.canopy",
+        **store.async_restart_visual_baseline.return_value,
+    }

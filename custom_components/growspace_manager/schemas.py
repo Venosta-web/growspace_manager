@@ -1370,6 +1370,13 @@ SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA = vol.Schema(
     }
 )
 
+SERVICE_RESTART_VISUAL_BASELINE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): cv.string,
+        vol.Required("camera_id"): cv.entity_id,
+    }
+)
+
 # --- Genetics Schemas ---
 
 _PHENO_SCORE_VALIDATOR = vol.Any(
