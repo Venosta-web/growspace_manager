@@ -1,6 +1,6 @@
 # ADR 0017 — Aggregate Water Use Across Manual, Tank-Derived, and Pump-Cycle Sources
 
-**Status:** Accepted (supersedes part of [ADR-0007](./0007-water-usage-sensor-reads-tank-tracker-directly.md)); amended by [#853](https://github.com/Venosta-web/growspace_manager/issues/853)
+**Status:** Accepted (supersedes part of [ADR-0007](./0007-water-usage-sensor-reads-tank-tracker-directly.md)); amended by [#853](https://github.com/Venosta-web/growspace_manager/issues/853); a fourth source, `metered`, is added by [ADR-0064](./0064-flow-meters-are-evidence-and-a-flow-rate-is-only-ever-proposed.md)
 
 > **Amendment (#853).** Tank-Derived Water Mode no longer gates on the absence of
 > `irrigation_flow_sensors` or `drain_volume_sensors`. Neither is read as litres,
@@ -77,6 +77,7 @@ condition decides whether a tank gets its `TankDerivedWaterSensor` and whether
   manual. Today's figure settles at midnight and the cycle figure at the next
   `reset_water_tracking`. Turning on `volume_liters` mid-cycle has always done the
   same.
-- Metered delivery, meaning a flow meter that is actually read, is still open. Its
-  configuration is the flow-meter item on #544. When it lands it has to decide its
-  own precedence against the tank, and must not do so by gating tank mode again.
+- Metered delivery, meaning a flow meter that is actually read, was left to the
+  flow-meter item on #544. ADR-0064 decides it: a fully metered growspace takes its
+  measurement source from its metered attempts ahead of the tank, as a precedence
+  rule, and tank mode stays active.
