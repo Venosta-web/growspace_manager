@@ -1,6 +1,6 @@
 # ADR 0045 — Irrigation Recipes are substrate-relative, provenance is not authority, and the program holds by default
 
-**Status:** Accepted (extends [ADR-0012](./0012-steering-mode-preset-stamp.md); builds on [ADR-0011](./0011-shot-volume-scales-with-live-plant-count.md) and [ADR-0029](./0029-irrigation-schedule-pure-time-rules.md); delivery governed by [ADR-0030](./0030-cross-repo-contract-fixture.md))
+**Status:** Accepted (extends [ADR-0012](./0012-steering-mode-preset-stamp.md); builds on [ADR-0011](./0011-shot-volume-scales-with-live-plant-count.md) and [ADR-0029](./0029-irrigation-schedule-pure-time-rules.md); delivery governed by [ADR-0030](./0030-cross-repo-contract-fixture.md); the drift comparison and the light fields are amended by [ADR-0065](./0065-a-zone-keeps-the-recipe-revision-it-was-stamped-with.md))
 
 ## Context
 
@@ -35,6 +35,8 @@ Pot size normalizes. **Media does not.** ADR-0012's own table is a set of discre
 A recipe carries its authoring context — media, `liters_per_pot`, flow rate, and the stage + week it was authored in — as **[[Recipe Provenance]]**. Provenance is descriptive only. It drives the media-mismatch warning and sorts the picker; it never gates an apply and never decides when a recipe runs. _When_ is decided by the [[Irrigation Program]] slot, or by the grower for a direct apply. Applying a flower-week-3 recipe to a week-5 tent is a supported deliberate act.
 
 Applying records `applied_recipe_id` + `recipe_applied_at` on the strategy — nullable, `None` meaning "never applied" as a real third state, exactly parallel to `declared_steering_mode`. **No drift hash is stored**: recipes are held by reference, so "has the grower tweaked since applying?" is a live field comparison computed on read. Apply keeps ADR-0012's semantics unchanged, including that applying always writes.
+
+_Amended by ADR-0065:_ an edited recipe made every zone that ran it read as drifted and then stalled auto-advance under a hand tweak nobody made. A stamp now keeps an Applied Recipe — the recipe's values at a numbered Recipe Revision — and drift is judged against that copy. A copy of what was stamped cannot go stale the way a hash of a by-reference recipe does. A zone stamp also no longer writes `lights_on_time` or `auto_light_tracking`, which are provenance.
 
 ### 3. The program holds whenever it has no unambiguous instruction
 

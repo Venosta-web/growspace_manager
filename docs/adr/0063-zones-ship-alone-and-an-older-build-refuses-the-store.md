@@ -62,6 +62,7 @@ Four facts about how this reaches a user shape the answer.
 
 - ADR-0057 decision 6 is amended: the migration runs in the `Store` migrate function to version 2, and a downgrade refuses setup instead of stopping irrigation and losing the zones.
 - `Store` users in this integration gain a rule: a major version bump writes a Pre-Migration Copy first.
+- The version 2 migration also backfills ADR-0065: every recipe gets `revision: 1`, and every stamp an Applied Recipe copying its recipe's current values.
 - 1.3.0 has to be cut before the migration work merges, and the map's Notes carry that cut-off.
 - `CHANGELOG.md`'s `[1.2.3] - Unreleased` heading is stale and is corrected when the 1.3.0 section is written.
 - The hub gains `./scripts/backend-hacs-update`, and the backend gains `tests/fixtures/upgrade/`.
