@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -900,9 +901,14 @@ class GrowspaceFacade:
     ) -> None:
         """Unpack an add_growspace ServiceCall and delegate to add_growspace."""
         device_registry = dr.async_get(hass)
+        # Home Assistant before 2026.9 exposes `devices` as an id -> entry
+        # mapping, which iterates ids; 2026.9 made it a view that iterates the
+        # entries. The integration supports both, so read entries either way.
+        devices = device_registry.devices
+        entries = devices.values() if isinstance(devices, Mapping) else devices
         mobile_devices = [
             d.name
-            for d in device_registry.devices
+            for d in entries
             if any("mobile_app" in entry_id for entry_id in d.config_entries)
         ]
         notification_target = call.data.get(ATTR_NOTIFICATION_TARGET)
