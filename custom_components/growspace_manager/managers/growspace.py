@@ -18,6 +18,11 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
+from custom_components.growspace_manager.domain.setup_preset import (
+    inferred_modules,
+    patch_modules,
+    stamp_modules,
+)
 from custom_components.growspace_manager.events import (
     EVENT_GROWSPACE_ADDED,
     EVENT_GROWSPACE_REMOVED,
@@ -134,6 +139,9 @@ class GrowspaceManager(BaseService):
                 "device_id": device_id,
                 "growspace_type": growspace_type,
                 "setup_preset": setup_preset,
+                "setup_modules": (
+                    stamp_modules(setup_preset) if setup_preset is not None else None
+                ),
             }
 
             if dimensions is not None:
@@ -375,13 +383,24 @@ class GrowspaceManager(BaseService):
                 growspace.notification_target = nt
                 updated = True
 
-        if (
-            "setup_preset" in kwargs
-            and kwargs["setup_preset"] != growspace.setup_preset
-        ):
-            growspace.setup_preset = kwargs["setup_preset"]
-            changes.append("setup_preset updated")
+        # A preset is a stamp (ADR-0012): choosing one — even the one already
+        # declared — rewrites the modules, discarding hand edits.
+        if _is_given(kwargs, "setup_preset"):
+            preset = kwargs["setup_preset"]
+            growspace.setup_preset = preset
+            growspace.setup_modules = stamp_modules(preset)
+            changes.append(f"setup_preset stamped: {preset}")
             updated = True
+
+        if "setup_modules" in kwargs:
+            modules = patch_modules(
+                growspace.setup_modules or inferred_modules(growspace.id),
+                kwargs["setup_modules"],
+            )
+            if modules != growspace.setup_modules:
+                growspace.setup_modules = modules
+                changes.append("setup_modules updated")
+                updated = True
 
         if "environment_config" in kwargs:
             growspace.environment_config = kwargs["environment_config"]

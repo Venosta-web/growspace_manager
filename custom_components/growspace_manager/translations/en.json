@@ -568,6 +568,10 @@
         "notification_target": {
           "name": "Notification Target",
           "description": "Notification service target (e.g., mobile_app_your_phone)"
+        },
+        "setup_preset": {
+          "name": "Setup preset",
+          "description": "Kind of room. Sets the growspace type and which setup modules the card offers; never writes a cultivation target."
         }
       }
     },

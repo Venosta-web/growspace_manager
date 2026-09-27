@@ -32,6 +32,7 @@ from custom_components.growspace_manager.domain.moisture_band import (
     effective_moisture_band,
     is_percentage_unit,
 )
+from custom_components.growspace_manager.domain.setup_preset import inferred_modules
 from custom_components.growspace_manager.domain.steering_phase import resolve_day_hours
 from custom_components.growspace_manager.tank_water_tracker import (
     consumption_buckets_24h,
@@ -249,6 +250,14 @@ class GrowspaceViewModelBuilder:
                 "name": growspace.name,
                 "type": gs_type,
                 "notification_target": growspace.notification_target,
+                "setup_preset": growspace.setup_preset,
+                # The stamped Setup Modules; a never-stamped canonical growspace
+                # reports the modules its kind of room implies. None: unstamped.
+                "setup_modules": (
+                    growspace.setup_modules
+                    if growspace.setup_modules is not None
+                    else inferred_modules(growspace.id)
+                ),
             },
             "grid": {
                 "rows": growspace.rows,

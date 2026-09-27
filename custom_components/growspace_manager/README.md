@@ -295,6 +295,7 @@ Registers a new physical growspace zone.
 | `rows` | `integer` | Yes | - | Number of rows in grid (1-20). |
 | `plants_per_row` | `integer` | Yes | - | Number of columns in grid (1-20). |
 | `notification_target` | `string` | No | - | Mobile notification service name. |
+| `setup_preset` | `string` | No | - | Setup Preset: sets the growspace type and which setup modules the card offers. Never writes a target. |
 
 #### `growspace_manager.update_growspace`
 
@@ -306,6 +307,8 @@ Updates configuration of an existing growspace.
 | `rows` | `integer` | No | - | New row grid count. |
 | `plants_per_row` | `integer` | No | - | New columns per row count. |
 | `notification_target` | `string` | No | - | Updated notification target. |
+| `setup_preset` | `string` | No | - | Re-stamp this preset's setup modules, discarding hand edits. The type is left alone. |
+| `setup_modules` | `object` | No | - | Partial edit of the offered modules (`lights`, `air`, `climate`, `irrigation`, `substrate`), e.g. `{"irrigation": false}`. |
 
 _Example:_
 

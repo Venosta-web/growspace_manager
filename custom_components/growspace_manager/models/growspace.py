@@ -747,6 +747,9 @@ class Growspace(BaseModel):
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
     setup_preset: str | None = None
+    # Offered Setup Modules, stamped by a Setup Preset (domain/setup_preset.py).
+    # None means never stamped; the card then offers every module.
+    setup_modules: dict[str, bool] | None = None
     drain_config: DrainConfig = field(default_factory=lambda: DrainConfig())
     energy_tracking: EnergyTracking = field(default_factory=lambda: EnergyTracking())
     water_usage: WaterUsageData = field(default_factory=lambda: WaterUsageData())

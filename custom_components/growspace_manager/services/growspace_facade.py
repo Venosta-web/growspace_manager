@@ -26,6 +26,7 @@ from custom_components.growspace_manager.delivery_attempt_store import (
     DeliveryAttemptStore,
 )
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
+from custom_components.growspace_manager.domain.setup_preset import SETUP_PRESETS
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
     determine_coordinator_stage,
@@ -912,11 +913,22 @@ class GrowspaceFacade:
         rows = call.data[ATTR_ROWS]
         plants_per_row = call.data[ATTR_PLANTS_PER_ROW]
 
+        preset = call.data.get("setup_preset")
         growspace_id = await self.add_growspace(
             name=name,
             rows=rows,
             plants_per_row=plants_per_row,
             notification_target=notification_target,
+            # A preset names the kind of room, so it also decides the type a
+            # new growspace is created with; it never retypes an existing one.
+            **(
+                {
+                    "setup_preset": preset,
+                    "growspace_type": SETUP_PRESETS[preset].growspace_type,
+                }
+                if preset
+                else {}
+            ),
         )
 
         _LOGGER.info("Growspace %s added successfully via service call", growspace_id)
@@ -942,6 +954,8 @@ class GrowspaceFacade:
                 ATTR_ROWS,
                 ATTR_PLANTS_PER_ROW,
                 ATTR_NOTIFICATION_TARGET,
+                "setup_preset",
+                "setup_modules",
             )
             if attr in call.data
         }

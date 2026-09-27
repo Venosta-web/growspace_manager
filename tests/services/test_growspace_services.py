@@ -7,6 +7,7 @@ import pytest
 from custom_components.growspace_manager.const import CONF_AI_ENABLED, CONF_ASSISTANT_ID
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.exceptions import GrowspaceError
+from custom_components.growspace_manager.models import GrowspaceType
 from custom_components.growspace_manager.services.ai_assistant import (
     handle_ask_grow_advice,
 )
@@ -93,6 +94,63 @@ async def test_handle_add_growspace(
         name="Test GS", rows=2, plants_per_row=3, notification_target="mobile_app_test"
     )
     mock_hass.bus.async_fire.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("homeassistant.helpers.device_registry.async_get")
+async def test_handle_add_growspace_with_preset_creates_that_room(
+    mock_async_get,
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+) -> None:
+    """A preset on add_growspace also decides the new growspace's type."""
+    mock_call.data = {
+        "name": "Dry Room",
+        "rows": 2,
+        "plants_per_row": 3,
+        "setup_preset": "drying_room",
+    }
+    mock_async_get.return_value.devices = []
+
+    await mock_coordinator.services.growspaces.add_growspace_from_call(
+        mock_hass, mock_strain_library, mock_call
+    )
+
+    mock_coordinator._growspace_manager.add_growspace.assert_awaited_once_with(
+        name="Dry Room",
+        rows=2,
+        plants_per_row=3,
+        notification_target=None,
+        setup_preset="drying_room",
+        growspace_type=GrowspaceType.DRY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_update_growspace_forwards_setup_fields(
+    mock_hass,
+    mock_coordinator,
+    mock_strain_library,
+    mock_call,
+) -> None:
+    """The preset stamp and a module edit reach the manager untouched."""
+    mock_call.data = {
+        "growspace_id": "gs1",
+        "setup_preset": "living_soil",
+        "setup_modules": {"irrigation": True},
+    }
+
+    await mock_coordinator.services.growspaces.update_growspace_from_call(
+        mock_hass, mock_strain_library, mock_call
+    )
+
+    mock_coordinator._growspace_manager.update_growspace.assert_awaited_once_with(
+        "gs1",
+        setup_preset="living_soil",
+        setup_modules={"irrigation": True},
+    )
 
 
 @pytest.mark.asyncio
