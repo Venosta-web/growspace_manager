@@ -292,10 +292,65 @@ class RunParticipation:
     def from_dict(cls, value: Any) -> RunParticipation:
         """Read the durable form back."""
         value = _dict(value, "participation")
-        return cls(
+        interval = cls(
             plant_id=_str(value.get("plant_id"), "participation.plant_id"),
             opened_at=_moment(value.get("opened_at"), "participation.opened_at"),
             closed_at=_opt_moment(value.get("closed_at"), "participation.closed_at"),
+        )
+        if interval.closed_at is not None and interval.closed_at < interval.opened_at:
+            raise ValueError("Participation closes before it opens")
+        return interval
+
+
+@dataclass(frozen=True, slots=True)
+class PlantMovementFact:
+    """A durable observation of a successful Plant location mutation."""
+
+    fact_id: str
+    plant_id: str
+    at: datetime
+    kind: str
+    source_growspace_id: str | None
+    target_growspace_id: str | None
+    source_run_id: str | None
+    target_run_id: str | None
+    projected: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form of the fact."""
+        return {
+            "fact_id": self.fact_id,
+            "plant_id": self.plant_id,
+            "at": self.at.isoformat(),
+            "kind": self.kind,
+            "source_growspace_id": self.source_growspace_id,
+            "target_growspace_id": self.target_growspace_id,
+            "source_run_id": self.source_run_id,
+            "target_run_id": self.target_run_id,
+            "projected": self.projected,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> PlantMovementFact:
+        """Validate one fact read from the Plant outbox."""
+        value = _dict(value, "activity fact")
+        projected = value.get("projected", False)
+        if not isinstance(projected, bool):
+            raise TypeError("fact.projected is not boolean")
+        return cls(
+            fact_id=_str(value.get("fact_id"), "fact.id"),
+            plant_id=_str(value.get("plant_id"), "fact.plant_id"),
+            at=_moment(value.get("at"), "fact.at"),
+            kind=_str(value.get("kind"), "fact.kind"),
+            source_growspace_id=_opt_str(
+                value.get("source_growspace_id"), "fact.source"
+            ),
+            target_growspace_id=_opt_str(
+                value.get("target_growspace_id"), "fact.target"
+            ),
+            source_run_id=_opt_str(value.get("source_run_id"), "fact.source_run"),
+            target_run_id=_opt_str(value.get("target_run_id"), "fact.target_run"),
+            projected=projected,
         )
 
 
@@ -350,6 +405,7 @@ class GrowRun:
     metadata: RunMetadata = field(default_factory=RunMetadata)
     baseline: OpeningBaseline = field(default_factory=OpeningBaseline)
     participations: tuple[RunParticipation, ...] = ()
+    movement_history: tuple[PlantMovementFact, ...] = ()
     audit: tuple[RunAuditEntry, ...] = ()
 
     @property
@@ -376,6 +432,7 @@ class GrowRun:
             "metadata": self.metadata.as_dict(),
             "baseline": self.baseline.as_dict(),
             "participations": [row.as_dict() for row in self.participations],
+            "movement_history": [row.as_dict() for row in self.movement_history],
             "audit": [row.as_dict() for row in self.audit],
         }
 
@@ -383,7 +440,7 @@ class GrowRun:
     def from_dict(cls, value: Any) -> GrowRun:
         """Read the durable form back, refusing anything incomplete."""
         value = _dict(value, "run")
-        return cls(
+        run = cls(
             run_id=_str(value.get("run_id"), "run.run_id"),
             growspace_id=_str(value.get("growspace_id"), "run.growspace_id"),
             sequence_number=_int(value.get("sequence_number"), "run.sequence", 1),
@@ -396,11 +453,26 @@ class GrowRun:
                 RunParticipation.from_dict(row)
                 for row in _list(value.get("participations"), "run.participations")
             ),
+            movement_history=tuple(
+                PlantMovementFact.from_dict(row)
+                for row in _list(
+                    value.get("movement_history", []), "run.movement_history"
+                )
+            ),
             audit=tuple(
                 RunAuditEntry.from_dict(row)
                 for row in _list(value.get("audit"), "run.audit")
             ),
         )
+        open_plants = [
+            row.plant_id for row in run.participations if row.closed_at is None
+        ]
+        if len(open_plants) != len(set(open_plants)):
+            raise ValueError("a Plant has more than one open Run Participation")
+        fact_ids = [row.fact_id for row in run.movement_history]
+        if len(fact_ids) != len(set(fact_ids)):
+            raise ValueError("a movement fact appears twice in one Run")
+        return run
 
 
 @dataclass(frozen=True, slots=True)
@@ -426,6 +498,51 @@ class RunLedger:
                 current_revision=self.revision,
                 active_run=self.active_run,
             )
+
+    def project_movement(self, fact: PlantMovementFact) -> RunLedger:
+        """Apply one fact once, closing and opening half-open intervals."""
+        run_ids = {fact.source_run_id, fact.target_run_id} - {None}
+        changed = False
+        runs: list[GrowRun] = []
+        for run in self.runs:
+            if run.run_id not in run_ids or any(
+                row.fact_id == fact.fact_id for row in run.movement_history
+            ):
+                runs.append(run)
+                continue
+            intervals = list(run.participations)
+            exits = fact.source_run_id == run.run_id and (
+                fact.target_run_id != run.run_id or fact.target_growspace_id is None
+            )
+            enters = fact.target_run_id == run.run_id and (
+                fact.source_run_id != run.run_id or fact.source_growspace_id is None
+            )
+            if exits:
+                for index in range(len(intervals) - 1, -1, -1):
+                    interval = intervals[index]
+                    if (
+                        interval.plant_id == fact.plant_id
+                        and interval.closed_at is None
+                    ):
+                        intervals[index] = replace(interval, closed_at=fact.at)
+                        break
+            if enters and not any(
+                row.plant_id == fact.plant_id and row.closed_at is None
+                for row in intervals
+            ):
+                intervals.append(RunParticipation(fact.plant_id, fact.at))
+            runs.append(
+                replace(
+                    run,
+                    participations=tuple(intervals),
+                    movement_history=(
+                        *run.movement_history,
+                        replace(fact, projected=True),
+                    ),
+                )
+            )
+            changed = True
+        return replace(self, runs=tuple(runs)) if changed else self
 
     def start(
         self,
@@ -529,6 +646,18 @@ def run_summary(run: GrowRun, revision: int) -> dict[str, Any]:
         "timezone": run.timezone,
         "participant_count": run.participant_count,
         "run_revision": revision,
+    }
+
+
+def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
+    """The selected Run's Participants and chronological movement history."""
+    return {
+        "outcome": "found",
+        "run": {
+            **run_summary(run, revision),
+            "participations": [row.as_dict() for row in run.participations],
+            "movement_history": [row.as_dict() for row in run.movement_history],
+        },
     }
 
 

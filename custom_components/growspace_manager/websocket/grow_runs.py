@@ -21,6 +21,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     MAX_TEXT_LENGTH,
     GrowRunRefused,
     RunMetadata,
+    run_details,
     run_summary,
 )
 from custom_components.growspace_manager.services.grow_runs import async_start_grow_run
@@ -30,6 +31,7 @@ from homeassistant.core import HomeAssistant
 from ._common import WS_MSG_USER, WSCommand
 
 WS_TYPE_START_GROW_RUN = "growspace_manager/start_grow_run"
+WS_TYPE_GET_GROW_RUN = "growspace_manager/get_grow_run"
 
 OUTCOME_STARTED = "started"
 OUTCOME_REFUSED = "refused"
@@ -48,6 +50,14 @@ SCHEMA_WS_START_GROW_RUN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Optional("goals"): vol.Any(
             None, vol.All(str, vol.Length(max=MAX_TEXT_LENGTH))
         ),
+    }
+)
+
+SCHEMA_WS_GET_GROW_RUN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_GROW_RUN,
+        vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("run_id"): vol.All(str, vol.Length(min=1)),
     }
 )
 
@@ -97,7 +107,25 @@ async def websocket_start_grow_run(
     }
 
 
+async def websocket_get_grow_run(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Read a selected Run's Participants and durable movement history."""
+    ledger = coordinator.grow_runs.ledger(msg["growspace_id"])
+    run = next((row for row in ledger.runs if row.run_id == msg["run_id"]), None)
+    if run is None:
+        return {"outcome": "not_found"}
+    return run_details(run, ledger.revision)
+
+
 COMMANDS: list[WSCommand] = [
+    WSCommand(
+        WS_TYPE_GET_GROW_RUN,
+        websocket_get_grow_run,
+        SCHEMA_WS_GET_GROW_RUN,
+    ),
     WSCommand(
         WS_TYPE_START_GROW_RUN,
         websocket_start_grow_run,

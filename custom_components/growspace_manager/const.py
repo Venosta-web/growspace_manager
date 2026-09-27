@@ -7,6 +7,7 @@ from .domain.stage import PLANT_STAGES, PlantStage  # noqa: F401
 
 DOMAIN: Final = "growspace_manager"
 STORAGE_VERSION: Final = 1
+STORAGE_VERSION_PLANTS: Final = 2
 VERSION: Final = "0.3.5"
 STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
 STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"

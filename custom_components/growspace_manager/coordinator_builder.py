@@ -188,6 +188,7 @@ class CoordinatorBuilder:
             recipe_library=recipe_library,
             program_library=program_library,
             quarantined_plants=coordinator._quarantined_plants,  # noqa: SLF001
+            active_run=coordinator.grow_runs.active_run,
         )
 
         svc_ctx = ServiceContext(

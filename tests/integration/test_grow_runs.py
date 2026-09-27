@@ -12,6 +12,7 @@ from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.domain.grow_run import (
+    PlantMovementFact,
     RunMetadata,
     RunStoreUnreadable,
 )
@@ -25,6 +26,7 @@ from custom_components.growspace_manager.services.grow_runs import (
     require_controller,
 )
 from custom_components.growspace_manager.websocket.grow_runs import (
+    WS_TYPE_GET_GROW_RUN,
     WS_TYPE_START_GROW_RUN,
 )
 from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
@@ -199,6 +201,282 @@ async def test_a_missing_output_is_recorded_as_unavailable(
     assert [(s.entity_id, s.state) for s in run.baseline.equipment] == [
         ("switch.nowhere", "unavailable")
     ]
+
+
+async def test_plant_exit_reentry_and_removal_project_once_and_are_readable(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """Run intervals are half-open; a returning Plant remains one Participant."""
+    coordinator, growspace_id, (plant_id,) = await _tent(init_integration, plants=1)
+    other = await coordinator.services.growspaces.add_growspace(name="Other Tent")
+    run, _ = await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(hass),
+    )
+    await coordinator.services.plants.update_plant(plant_id, growspace_id=other.id)
+    await coordinator.services.plants.update_plant(plant_id, growspace_id=growspace_id)
+    await coordinator.services.plants.remove_plant(plant_id)
+
+    projected = coordinator.grow_runs.active_run(growspace_id)
+    assert projected is not None
+    assert projected.participant_count == 1
+    assert len(projected.participations) == 2
+    assert all(row.closed_at is not None for row in projected.participations)
+    assert all(row.opened_at <= row.closed_at for row in projected.participations)
+    assert [row.kind for row in projected.movement_history] == [
+        "transplant",
+        "re_entry",
+        "removal",
+    ]
+    assert len({row.fact_id for row in projected.movement_history}) == 3
+    assert all(fact.projected for fact in coordinator.storage_manager.activity_facts)
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": WS_TYPE_GET_GROW_RUN,
+            "growspace_id": growspace_id,
+            "run_id": run.run_id,
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"]
+    assert response["result"]["outcome"] == "found"
+    assert len(response["result"]["run"]["participations"]) == 2
+    assert len(response["result"]["run"]["movement_history"]) == 3
+    await client.send_json_auto_id(
+        {"type": WS_TYPE_GET_GROW_RUN, "growspace_id": growspace_id, "run_id": "absent"}
+    )
+    assert (await client.receive_json())["result"] == {"outcome": "not_found"}
+    reloaded = GrowRunStore(hass, init_integration.entry_id)
+    await reloaded.async_load()
+    restored = reloaded.active_run(growspace_id)
+    assert restored is not None
+    assert len(restored.participations) == 2
+    assert len(restored.movement_history) == 3
+    plant_document = await coordinator.storage_manager.plants_store.async_load()
+    assert len(plant_document["activity_facts"]) >= 3
+    assert all(row["fact_id"] for row in plant_document["activity_facts"])
+
+
+async def test_projection_retries_after_partial_commit_without_duplicates(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """The Plant succeeds with a pending fact; replay is safe after an ACK loss."""
+    coordinator, growspace_id, _ = await _tent(init_integration, plants=0)
+    run, _ = await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(hass),
+    )
+    with pytest.raises(ValueError, match="references a missing Run"):
+        await coordinator.grow_runs.async_project_movement(
+            PlantMovementFact(
+                fact_id="broken-reference",
+                plant_id="p1",
+                at=run.started_at,
+                kind="removal",
+                source_growspace_id=growspace_id,
+                target_growspace_id=None,
+                source_run_id="missing",
+                target_run_id=None,
+            )
+        )
+    with patch.object(
+        coordinator.grow_runs, "async_project_movement", side_effect=OSError("disk")
+    ):
+        plant = await coordinator.services.plants.add_plant(
+            growspace_id=growspace_id, strain="OG Kush"
+        )
+    pending = [
+        fact
+        for fact in coordinator.storage_manager.activity_facts
+        if fact.plant_id == plant.plant_id
+    ]
+    assert len(pending) == 1 and not pending[0].projected
+    assert coordinator.grow_runs.active_run(growspace_id).participant_count == 0
+
+    with patch.object(
+        coordinator.storage_manager,
+        "async_mark_fact_projected",
+        side_effect=OSError("ack lost"),
+    ):
+        await coordinator._async_project_activity()
+    assert coordinator.grow_runs.active_run(growspace_id).participant_count == 1
+    assert not pending[0].projected
+    reloaded = GrowRunStore(hass, init_integration.entry_id)
+    await reloaded.async_load()
+    assert len(reloaded.active_run(growspace_id).movement_history) == 1
+    durable = await coordinator.storage_manager.plants_store.async_load()
+    assert any(
+        row["fact_id"] == pending[0].fact_id and not row["projected"]
+        for row in durable["activity_facts"]
+    )
+
+    await coordinator._async_project_activity()
+    projected = coordinator.grow_runs.active_run(growspace_id)
+    assert projected.participant_count == 1
+    assert len(projected.participations) == 1
+    assert len(projected.movement_history) == 1
+    assert [
+        fact.projected
+        for fact in coordinator.storage_manager.activity_facts
+        if fact.plant_id == plant.plant_id
+    ] == [True]
+
+
+async def test_failed_plant_write_does_not_announce_a_move_or_emit_a_fact(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """A rejected move leaves the Plant and Activity outbox at their old image."""
+    coordinator, growspace_id, (plant_id,) = await _tent(init_integration, plants=1)
+    other = await coordinator.services.growspaces.add_growspace(name="Other Tent")
+    await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(hass),
+    )
+    before = len(coordinator.storage_manager.activity_facts)
+    with patch.object(
+        coordinator.storage_manager.plants_store,
+        "async_save",
+        side_effect=OSError("plant disk full"),
+    ):
+        with pytest.raises(OSError, match="plant disk full"):
+            await coordinator.services.plants.update_plant(
+                plant_id, growspace_id=other.id
+            )
+    assert coordinator.plants[plant_id].growspace_id == growspace_id
+    assert len(coordinator.storage_manager.activity_facts) == before
+    assert coordinator.grow_runs.active_run(growspace_id).movement_history == ()
+
+
+async def test_unreadable_run_history_does_not_block_plant_and_reconciles_later(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """A Plant move survives Run-store repair and gains its original interval."""
+    coordinator, growspace_id, (plant_id,) = await _tent(init_integration, plants=1)
+    other = await coordinator.services.growspaces.add_growspace(name="Other Tent")
+    await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(hass),
+    )
+    coordinator.grow_runs.unreadable = True
+    await coordinator.services.plants.update_plant(plant_id, growspace_id=other.id)
+    await coordinator.services.plants.update_plant(plant_id, growspace_id=growspace_id)
+    pending = [
+        fact
+        for fact in coordinator.storage_manager.activity_facts
+        if fact.plant_id == plant_id and not fact.projected
+    ]
+    assert len(pending) == 2
+    assert pending[0].source_run_id is None
+    assert pending[1].target_run_id is None
+    coordinator.grow_runs.unreadable = False
+    await coordinator._async_project_activity()
+    restored = coordinator.grow_runs.active_run(growspace_id)
+    assert restored.participations[0].closed_at is not None
+    assert len(restored.participations) == 2
+    assert restored.participations[1].closed_at is None
+    assert restored.movement_history[0].source_run_id == restored.run_id
+    assert restored.movement_history[1].target_run_id == restored.run_id
+
+
+async def test_staged_layout_move_projects_after_its_plant_snapshot(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    """The layout transaction's separate save path also emits one movement."""
+    coordinator, growspace_id, (plant_id,) = await _tent(init_integration, plants=1)
+    await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(hass),
+    )
+    revision = coordinator.growspaces[growspace_id].layout_revision
+    await coordinator.services.plants.set_plant_layout(
+        growspace_id,
+        revision,
+        [{"plant_id": plant_id, "row": 2, "col": 2}],
+    )
+    run = coordinator.grow_runs.active_run(growspace_id)
+    assert run.participant_count == 1
+    assert [fact.kind for fact in run.movement_history] == ["move"]
+    assert run.participations[0].closed_at is None
+
+
+@pytest.mark.parametrize("operation", ["remove", "switch", "relocate"])
+async def test_failed_batch_movement_restores_plants_and_outbox(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    operation: str,
+) -> None:
+    """A Plant-store failure never leaves a later save to invent a movement."""
+    coordinator, growspace_id, plant_ids = await _tent(init_integration, plants=2)
+    other = await coordinator.services.growspaces.add_growspace(
+        name="Other Tent", rows=2, plants_per_row=2
+    )
+    coordinator.notification_state.sent[plant_ids[0]] = ["sent"]
+    before = {
+        plant_id: (
+            coordinator.plants[plant_id].growspace_id,
+            coordinator.plants[plant_id].row,
+            coordinator.plants[plant_id].col,
+        )
+        for plant_id in plant_ids
+    }
+    fact_count = len(coordinator.storage_manager.activity_facts)
+    revisions = {
+        growspace_id: coordinator.growspaces[growspace_id].layout_revision,
+        other.id: coordinator.growspaces[other.id].layout_revision,
+    }
+    if operation == "remove":
+        mutation = coordinator.services.plants.remove_plant(plant_ids[0])
+    elif operation == "switch":
+        mutation = coordinator.services.plants.switch_plants(*plant_ids)
+    else:
+        mutation = coordinator.services.plants.relocate_to_growspace(
+            other.id, [plant_ids[0]]
+        )
+    with patch.object(
+        coordinator.storage_manager.plants_store,
+        "async_save",
+        side_effect=OSError("plant disk full"),
+    ):
+        with pytest.raises(OSError, match="plant disk full"):
+            await mutation
+    assert {
+        plant_id: (
+            coordinator.plants[plant_id].growspace_id,
+            coordinator.plants[plant_id].row,
+            coordinator.plants[plant_id].col,
+        )
+        for plant_id in plant_ids
+    } == before
+    assert len(coordinator.storage_manager.activity_facts) == fact_count
+    assert coordinator.notification_state.sent[plant_ids[0]] == ["sent"]
+    assert {
+        growspace_id: coordinator.growspaces[growspace_id].layout_revision,
+        other.id: coordinator.growspaces[other.id].layout_revision,
+    } == revisions
 
 
 # ---------------------------------------------------------------------------
