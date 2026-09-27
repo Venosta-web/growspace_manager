@@ -71,3 +71,25 @@ async def test_plant_migration_refuses_when_backup_fails(
         with pytest.raises(OSError, match="disk full"):
             await PlantActivityStore(hass, 2, STORAGE_KEY_PLANTS).async_load()
     assert hass_storage[STORAGE_KEY_PLANTS]["version"] == 1
+
+
+@pytest.mark.asyncio
+async def test_plant_migration_refuses_unknown_old_version(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """An unknown old format is left untouched rather than guessed into v2."""
+    document = {"plants": {"plant-1": {"growspace_id": "tent"}}}
+    hass_storage[STORAGE_KEY_PLANTS] = {
+        "version": 0,
+        "minor_version": 1,
+        "key": STORAGE_KEY_PLANTS,
+        "data": document,
+    }
+    with patch(
+        "custom_components.growspace_manager.storage_manager._copy_plant_store_before_migration"
+    ) as copy:
+        with pytest.raises(ValueError, match="Unsupported Plant store version: 0"):
+            await PlantActivityStore(hass, 2, STORAGE_KEY_PLANTS).async_load()
+    copy.assert_not_called()
+    assert hass_storage[STORAGE_KEY_PLANTS]["version"] == 0
+    assert hass_storage[STORAGE_KEY_PLANTS]["data"] == document
