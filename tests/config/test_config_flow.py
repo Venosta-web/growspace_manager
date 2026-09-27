@@ -370,6 +370,21 @@ async def test_initial_growspace_suggests_sensors_in_selected_area(
     )
     registry.async_update_entity(vpd.entity_id, area_id=area.id)
     hass.states.async_set(vpd.entity_id, "1.2")
+    other_area = ar.async_get(hass).async_create("Other Room")
+    other_temperature = registry.async_get_or_create(
+        "sensor", "test", "other-temp", suggested_object_id="other_temperature"
+    )
+    registry.async_update_entity(other_temperature.entity_id, area_id=other_area.id)
+    hass.states.async_set(
+        other_temperature.entity_id, "19", {"device_class": "temperature"}
+    )
+    unavailable_humidity = registry.async_get_or_create(
+        "sensor",
+        "test",
+        "unavailable-humidity",
+        suggested_object_id="unavailable_humidity",
+    )
+    registry.async_update_entity(unavailable_humidity.entity_id, area_id=area.id)
     flow = ConfigFlow()
     flow.hass = hass
 
