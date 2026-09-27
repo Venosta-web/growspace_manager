@@ -578,7 +578,7 @@ The transient hold every growspace starts under after a start or reload (ADR-004
 _Avoid_: warm-up, boot delay (it waits on sensors, not only on a clock).
 
 **Fault**
-A hardware disagreement with a pump command, recorded with a stable reason code and affected outputs: a [[Pump Readback]] that never read OFF, or a run of [[Unconfirmed Pump Cycle]]s. It is latched before another cycle can begin and clears only when an administrator calls `acknowledge_fault` while every affected output reads OFF. Corrupt stored safety metadata fails closed as `fault_record_unreadable`.
+A hardware disagreement with a pump command, recorded with a stable reason code and affected outputs: a [[Pump Readback]] that never read OFF, or a run of [[Unconfirmed Pump Cycle]]s. It is latched before another cycle can begin and clears only when an administrator calls `acknowledge_fault` while every affected output reads OFF. Corrupt stored safety metadata fails closed as `fault_record_unreadable`. A growspace whose zone migration produced the wrong shape is held as `zone_migration_invalid` on its irrigation only; being about data rather than hardware, it clears itself once the growspace passes the check (ADR-0063).
 
 **Manual Override**
 A person declaring that they have one subsystem of a growspace — `irrigation` (both pumps), `exhaust`, `circulation`, `humidifier`, `dehumidifier` or `lights` — for a stated time of at most 24 hours (`set_override`, `clear_override`; #793, ADR-0053). Until it expires or is cleared, Growspace Manager sends that subsystem no command of any kind: no cycle, no regulation tick, no fail-safe, no OFF. A cycle already running when irrigation is taken over is closed first, so its own OFF is the last command the pump gets. It is written through to the safety store with the caller's HA user, survives a restart, and expires by its own timer — or, if it ran out while Home Assistant was stopped, at the next start. A stored one that cannot be read fails closed like every other safety record. The emergency stop is not an output command in this sense and still reaches every output. `domain/manual_override.py` owns the record; `IrrigationSafetyStore.commands_allowed` is the one gate the controllers ask.
@@ -877,6 +877,10 @@ The complete document one [[Template Library]] is: every [[Named Template]] with
 
 **Store Containment**
 What happens when a [[Template Library]]'s `.storage` document was written at a newer store version: it is left byte-for-byte, nothing is read out of it — reads included, since half a library answered confidently is how a newer store becomes a lossy older one — the library reports itself read-only, and a Home Assistant repair issue names the found and supported versions. Every other Growspace Manager feature carries on; the way out is the newer integration or a [[Library Backup]] this version can read. There is deliberately no downgrade and no reset.
+
+**Pre-Migration Copy**
+The untouched old document a Growspace Manager store writes as `<key>.v<old major>` before its first save at a new major version — `growspace_manager.v1` for the zone migration. Written once, never updated, never read by the integration and kept indefinitely; it is what a rollback copies back before an older version is installed. The major bump itself is what makes an older build refuse the store instead of rewriting it, the [[Store Containment]] rule for builds that predate it. See ADR-0063.
+_Avoid_: backup (a [[Library Backup]] is a document the grower exports and restores).
 
 ## Label Calibration and Printing
 
