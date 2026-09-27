@@ -88,6 +88,17 @@ class TestAsyncWaterPlant:
     """Tests for the async_water_plant coordinator method."""
 
     @pytest.mark.asyncio
+    async def test_hand_watering_abandons_pending_feedback(
+        self, watering_coordinator: GrowspaceCoordinator
+    ) -> None:
+        irrigation = MagicMock()
+        watering_coordinator._subsystem_manager.irrigation_coordinators["test_gs"] = (
+            irrigation
+        )
+        await watering_coordinator.services.plants.water_plant("test_plant", amount=1.0)
+        irrigation.abandon_pending_observation.assert_called_once_with()
+
+    @pytest.mark.asyncio
     async def test_water_plant_updates_last_watered(
         self, watering_coordinator: GrowspaceCoordinator
     ) -> None:

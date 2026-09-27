@@ -29,6 +29,7 @@ class ServiceContext:
         | None
     ) = None
     publish_callback: Callable[[], Awaitable[None]] | None = None
+    hand_watering_callback: Callable[[str], None] | None = None
 
 
 class BaseService:

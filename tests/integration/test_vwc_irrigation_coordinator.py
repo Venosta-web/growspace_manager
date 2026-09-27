@@ -1,7 +1,7 @@
 """Tests for the VWC Irrigation Coordinator."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1276,6 +1276,11 @@ async def test_phase_transition_resets_composer_factors(
     """A verdict flagging the P1->P2 transition resets both composer factors."""
     vwc_coordinator._composer.size_factor = 0.6
     vwc_coordinator._composer.interval_factor = 1.4
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC),
+        moisture_before=40.0,
+        manual=False,
+    )
 
     verdict = SteeringTickVerdict(
         phase="P2 - Maintenance",
@@ -1290,6 +1295,7 @@ async def test_phase_transition_resets_composer_factors(
 
     assert vwc_coordinator._composer.size_factor == 1.0
     assert vwc_coordinator._composer.interval_factor == 1.0
+    assert vwc_coordinator._pending_observation is None
 
 
 async def test_daily_reset_resets_composer_factors(
@@ -1298,21 +1304,23 @@ async def test_daily_reset_resets_composer_factors(
     """The midnight daily-state reset returns both composer factors to 1.0."""
     vwc_coordinator._composer.size_factor = 0.6
     vwc_coordinator._composer.interval_factor = 1.4
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC),
+        moisture_before=40.0,
+        manual=False,
+    )
 
     vwc_coordinator._reset_extra_daily_state()
 
     assert vwc_coordinator._composer.size_factor == 1.0
     assert vwc_coordinator._composer.interval_factor == 1.0
+    assert vwc_coordinator._pending_observation is None
 
 
-async def test_cycle_completion_feeds_composer(
+async def test_fixed_delay_completion_does_not_feed_composer(
     vwc_coordinator: VWCIrrigationCoordinator,
 ) -> None:
-    """A settled irrigation cycle feeds the moisture delta to the ShotComposer.
-
-    Target 50.0, before 40.0, settled after 55.0 -> ratio 1.5 -> size factor 0.5.
-    The base completion behaviour is stubbed so only the wiring is exercised.
-    """
+    """The 15-second logbook reading never updates feedback."""
     now_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
     with (
         patch.object(
@@ -1332,8 +1340,104 @@ async def test_cycle_completion_feeds_composer(
             wait_seconds=0.0,
         )
 
+    assert vwc_coordinator._composer.size_factor == 1.0
+    assert vwc_coordinator._composer.interval_factor == 1.0
+
+
+def test_settled_observation_updates_composer_once(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator._infiltration.record(45.0, end)
+    vwc_coordinator._infiltration.record(55.0, end.replace(minute=1))
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=end.replace(minute=2),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+        assert vwc_coordinator._composer.size_factor == 1.0
+        vwc_coordinator._infiltration.record(55.02, end.replace(minute=2))
+        vwc_coordinator._resolve_pending_observation()
+        assert vwc_coordinator._composer.size_factor == 0.5
+        assert vwc_coordinator._composer.interval_factor == 1.5
+        vwc_coordinator._resolve_pending_observation()
+        assert vwc_coordinator._pending_observation is None
+
+
+def test_pending_observation_abandons_on_timeout_or_followup(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator._composer.interval_factor = 1.5
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    deadline = vwc_coordinator._pending_observation.deadline
+    assert deadline == end + timedelta(minutes=3 * 15 * 1.5)
+    vwc_coordinator._composer.interval_factor = 1.0
+    assert vwc_coordinator._pending_observation.deadline == deadline
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=deadline + timedelta(seconds=1),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+    assert vwc_coordinator._pending_observation is None
+
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator._last_cycle_timestamp = (end + timedelta(minutes=1)).isoformat()
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=end + timedelta(minutes=2),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+    assert vwc_coordinator._pending_observation is None
+
+
+def test_manual_run_and_hand_watering_abandon_feedback(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator._irrigation_cycle_started(manual=True)
+    assert vwc_coordinator._pending_observation is None
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=True
+    )
+    assert vwc_coordinator._pending_observation is None
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator.abandon_pending_observation()
+    assert vwc_coordinator._pending_observation is None
+
+
+def test_dropout_requires_two_new_post_cycle_samples(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator._infiltration.record(55.0, end + timedelta(minutes=1))
+    vwc_coordinator._infiltration.reset()
+    vwc_coordinator._infiltration.record(55.01, end + timedelta(minutes=2))
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=end + timedelta(minutes=3),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+        assert vwc_coordinator._pending_observation is not None
+        vwc_coordinator._infiltration.record(55.02, end + timedelta(minutes=3))
+        vwc_coordinator._resolve_pending_observation()
+    assert vwc_coordinator._pending_observation is None
     assert vwc_coordinator._composer.size_factor == 0.5
-    assert vwc_coordinator._composer.interval_factor == 1.5
 
 
 @pytest.mark.parametrize(

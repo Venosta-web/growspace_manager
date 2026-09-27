@@ -72,6 +72,8 @@ class WateringService(BaseService):
         plant = await self._water_plant_internal(
             plant_id, amount, nutrients, preset_id, invalidate_cache=True
         )
+        if self._ctx.hand_watering_callback is not None:
+            self._ctx.hand_watering_callback(plant.growspace_id)
         await self._save()
         return plant
 
@@ -155,6 +157,9 @@ class WateringService(BaseService):
                 preset_id,
                 invalidate_cache=False,
             )
+
+        if self._ctx.hand_watering_callback is not None:
+            self._ctx.hand_watering_callback(growspace_id)
 
         # Bulk invalidation
         self._invalidate(growspace_id)
