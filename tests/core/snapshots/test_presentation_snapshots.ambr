@@ -244,6 +244,8 @@
       'name': 'Test Room',
       'notification_target': None,
       'overview_entity_id': 'sensor.gs_test_overview',
+      'setup_modules': None,
+      'setup_preset': None,
       'type': 'normal',
     }),
     'irrigation': dict({

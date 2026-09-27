@@ -20,6 +20,7 @@ from custom_components.growspace_manager.const import (
     SubstrateMediaType,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.domain.setup_preset import stamp_modules
 from custom_components.growspace_manager.models import (
     ACInfinityDevice,
     ACInfinityGrowLight,
@@ -286,6 +287,9 @@ def _maximal_growspace() -> Growspace:
         rows=2,
         plants_per_row=2,
         notification_target="notify.mobile_app_grower",
+        setup_preset="coco_crop_steering",
+        # Stamped, then hand-edited: the wire carries the edit, not the table.
+        setup_modules={**stamp_modules("coco_crop_steering"), "substrate": False},
         created_at="2026-01-01T00:00:00+00:00",
         device_id="contract-growspace-device",
         environment_config=environment_config,

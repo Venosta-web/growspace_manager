@@ -126,6 +126,7 @@ from .const import (
     SubstrateMediaType,
 )
 from .domain.manual_override import UnexpectedOnPolicy
+from .domain.setup_preset import SETUP_MODULES, SETUP_PRESETS
 from .validation import valid_date_or_none, valid_growspace_id
 
 
@@ -183,6 +184,7 @@ ADD_GROWSPACE_SCHEMA = vol.Schema(
         vol.Required("rows"): vol.All(int, vol.Range(min=1)),
         vol.Required("plants_per_row"): vol.All(int, vol.Range(min=1)),
         vol.Optional("notification_target"): str,
+        vol.Optional("setup_preset"): vol.In(list(SETUP_PRESETS)),
     }
 )
 
@@ -201,6 +203,12 @@ UPDATE_GROWSPACE_SCHEMA = vol.Schema(
         vol.Optional("rows"): vol.All(int, vol.Range(min=1)),
         vol.Optional("plants_per_row"): vol.All(int, vol.Range(min=1)),
         vol.Optional("notification_target"): str,
+        # Stamps the preset's Setup Modules, even when it is the one declared.
+        vol.Optional("setup_preset"): vol.In(list(SETUP_PRESETS)),
+        # A partial edit of the offered modules, merged over the stamp.
+        vol.Optional("setup_modules"): vol.Schema(
+            {vol.Optional(module): cv.boolean for module in SETUP_MODULES}
+        ),
     }
 )
 

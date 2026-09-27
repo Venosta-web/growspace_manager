@@ -6,6 +6,14 @@
 An enduring cultivation venue that exists independently of any one crop or operating episode. Its Grow Runs partition its historical activity without replacing its identity.
 _Avoid_: run, crop, batch
 
+**Setup Preset**
+The kind of room a Growspace is — `simple_soil_tent`, `living_soil`, `coco_crop_steering`, `hydroponic_room`, `mother_clone_room`, `drying_room`, `curing_room` — chosen in the config flow's first-growspace step, on `add_growspace`, or from the card's setup checklist. Choosing one is a **preset stamp** in the [[Steering Mode]] sense (ADR-0064): it writes the preset's [[Setup Module]] set once, then survives only as the label `setup_preset`; re-choosing the declared preset re-stamps and discards hand edits. It never writes a cultivation target. When a Growspace is _created_ with a preset, the preset also sets its `growspace_type`; stamping an existing Growspace leaves the type alone.
+_Avoid_: profile, template, room type
+
+**Setup Module**
+One subsystem the card's setup checklist can offer for a Growspace: `lights`, `air` (circulation and exhaust), `climate`, `irrigation`, `substrate`. The stored `setup_modules` map says which are offered; `None` means never stamped, and the card then offers all of them. A module's role is fixed, not per-preset: `lights` and `air` are core, the other three optional. Editable one module at a time through `update_growspace`'s `setup_modules`. The canonical `mother`/`clone`/`dry`/`cure` Growspaces are never stamped, so the `get_data` identity block reports the modules their room implies until someone edits them.
+_Avoid_: feature flag, capability (that is [[Sensor-Gated Capability]])
+
 **Grow Run**
 A bounded, growspace-local operating episode whose records belong to one enduring Growspace. A Growspace has at most one active Grow Run; runs never overlap, their boundaries are explicitly started and completed, and a Plant may participate in different runs as it moves between growspaces.
 _Avoid_: Grow Cycle, reporting window, harvest batch

@@ -35,7 +35,7 @@ from .config_handlers import (
     StrainConfigHandler,
 )
 from .const import DEFAULT_NAME, DOMAIN
-from .models.growspace import GrowspaceType
+from .domain.setup_preset import SETUP_PRESETS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,18 +51,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Optional("area_id"): selector.AreaSelector(),
     }
 )
-
-# The preset ID is stored on Growspace for the card's setup checklist. Only the
-# existing growspace type is stamped here; no cultivation targets are chosen.
-INITIAL_PRESETS: dict[str, GrowspaceType] = {
-    "simple_soil_tent": GrowspaceType.FLOWER,
-    "living_soil": GrowspaceType.FLOWER,
-    "coco_crop_steering": GrowspaceType.FLOWER,
-    "hydroponic_room": GrowspaceType.FLOWER,
-    "mother_clone_room": GrowspaceType.MOTHER,
-    "drying_room": GrowspaceType.DRY,
-    "curing_room": GrowspaceType.CURE,
-}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -139,7 +127,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "rows": user_input["rows"],
                     "plants_per_row": user_input["plants_per_row"],
                     "setup_preset": user_input["setup_preset"],
-                    "growspace_type": INITIAL_PRESETS[user_input["setup_preset"]].value,
+                    "growspace_type": SETUP_PRESETS[
+                        user_input["setup_preset"]
+                    ].growspace_type.value,
                     "environment_config": {
                         key: user_input[key]
                         for key in (
@@ -207,7 +197,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         selector.SelectOptionDict(
                             value=value, label=value.replace("_", " ").title()
                         )
-                        for value in INITIAL_PRESETS
+                        for value in SETUP_PRESETS
                     ]
                 )
             ),

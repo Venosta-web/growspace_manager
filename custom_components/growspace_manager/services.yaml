@@ -171,6 +171,21 @@ add_growspace:
       required: false
       selector:
         text:
+    setup_preset:
+      description: >-
+        Kind of room. Sets the growspace type and which setup modules the card
+        offers; never writes a cultivation target.
+      required: false
+      selector:
+        select:
+          options:
+            - simple_soil_tent
+            - living_soil
+            - coco_crop_steering
+            - hydroponic_room
+            - mother_clone_room
+            - drying_room
+            - curing_room
 
 ask_grow_advice:
   description: >-
@@ -1900,6 +1915,28 @@ update_growspace:
       required: false
       selector:
         text:
+    setup_preset:
+      description: >-
+        Stamp this preset's setup modules, discarding hand edits. The
+        growspace type is left alone.
+      required: false
+      selector:
+        select:
+          options:
+            - simple_soil_tent
+            - living_soil
+            - coco_crop_steering
+            - hydroponic_room
+            - mother_clone_room
+            - drying_room
+            - curing_room
+    setup_modules:
+      description: >-
+        Partial edit of the offered setup modules (lights, air, climate,
+        irrigation, substrate), e.g. {"irrigation": false}.
+      required: false
+      selector:
+        object:
 
 print_label:
   description: >-

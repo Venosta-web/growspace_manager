@@ -400,6 +400,14 @@
     "name": "Contract Growspace",
     "notification_target": "notify.mobile_app_grower",
     "overview_entity_id": null,
+    "setup_modules": {
+      "air": true,
+      "climate": true,
+      "irrigation": true,
+      "lights": true,
+      "substrate": false
+    },
+    "setup_preset": "coco_crop_steering",
     "type": "normal"
   },
   "irrigation": {
