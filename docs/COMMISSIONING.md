@@ -295,15 +295,24 @@ is not running, nothing in it can stop a pump.
 - At the next start, `runtime.ha_start_inflight` counts a start that found a
   cycle still marked as running. No separate "shot interrupted" alert is sent.
   Then the startup inhibit from case 4 applies.
-- A pump that reads ON at the start **while that cycle was still marked as
-  running** is Growspace Manager's own. It is switched off and read back,
-  whatever `unexpected_on_policy` says, and an `interrupted_cycle` row is
-  written to the Safety Ledger. If it will not read OFF,
-  `fault_off_unconfirmed` latches and OFF is re-sent every minute. A plug that
-  reports late and then restores ON is treated the same way.
-  ([#854](https://github.com/Venosta-web/growspace_manager/issues/854))
-- A pump that reads ON with no cycle marked as running is handled as case 3:
-  under the default `alert` policy it stays on and you get a notification.
+- A pump that reads ON at the start **while that cycle's Delivery Attempt was
+  still open** is Growspace Manager's own. This is true even when the power
+  failed after the ON command and before the pump confirmed ON. It is switched
+  off and read back, whatever `unexpected_on_policy` says, and an
+  `interrupted_cycle` row is written to the Safety Ledger. If it will not read
+  OFF, `fault_off_unconfirmed` latches and OFF is re-sent every minute. A plug
+  that reports late and then restores ON is treated the same way. A drain
+  cycle is recognised by its in-flight marker instead.
+  ([#854](https://github.com/Venosta-web/growspace_manager/issues/854),
+  [#884](https://github.com/Venosta-web/growspace_manager/issues/884))
+- The shot's attempt closes as `interrupted` and keeps the planned volume it
+  was charged when the pump confirmed ON, so `cycles_today` and
+  `volume_dispensed_today` do not change. If the pump reads OFF at the start,
+  the attempt's end is its planned end or the moment the start found it,
+  whichever is earlier.
+- A pump that reads ON with no open attempt and no cycle marked as running is
+  handled as case 3: under the default `alert` policy it stays on and you get a
+  notification.
 
 **Record** the relay's power-on setting, how long the pump ran in step 2 and
 what stopped it, the pump state when power returned, and what Growspace

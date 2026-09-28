@@ -462,7 +462,7 @@ class BaseIrrigationCoordinator:
         """
         interrupted = {
             output
-            for output in self._reliability.active_outputs(self._growspace_id)
+            for output in self._interrupted_outputs()
             if (state := self.hass.states.get(output)) is not None
             and state.state == STATE_ON
         }
@@ -470,21 +470,48 @@ class BaseIrrigationCoordinator:
             sorted(self._commanded_outputs | set(self._off_retries) | interrupted)
         )
 
+    def _interrupted_outputs(self) -> list[str]:
+        """The outputs a cycle of a stopped process may still hold.
+
+        One whose Delivery Attempt was still open when the growspace's attempts
+        were read (ADR-0055 item 9), written before its ON command and so
+        there even when the crash came before confirmation; or one whose
+        In-flight Marker outlived that process (#854), which drains, not yet
+        Delivery Attempts, still depend on.
+        """
+        return sorted(
+            {attempt.output for attempt in self._deliveries.left_open()}
+            | set(self._reliability.active_outputs(self._growspace_id))
+        )
+
     def _interrupted(self, output: str) -> bool:
         """Whether a cycle of ours that a stopped process was running has it.
 
-        Its In-flight Marker outlived that process. This process marks and
-        clears its own cycles in step with commanding the pump, so a marker on
-        an output none of its cycles holds is the previous one's (#854).
+        This process marks and clears its own cycles in step with commanding
+        the pump, so a marker on an output none of its cycles holds is the
+        previous one's; an attempt it left open is only ever the previous one's.
         """
-        return output not in self._commanded_outputs and output in (
-            self._reliability.active_outputs(self._growspace_id)
+        return (
+            output not in self._commanded_outputs
+            and output in self._interrupted_outputs()
         )
 
     @callback
-    def _release_interrupted(self, output: str) -> None:
-        """Clear a stopped process's marker: its pump read OFF, the cycle is over."""
-        if self._interrupted(output):
+    def _release_interrupted(self, output: str, *, read_off: bool = True) -> None:
+        """End a stopped process's cycle on ``output``: its pump read OFF.
+
+        Its open attempts close ``interrupted``, with OFF read back unless the
+        output is no longer managed and nothing was read. Its marker is cleared
+        unless a cycle of this process holds the output now. An output being
+        switched off here is left to that, which records its own OFF.
+        """
+        if output in self._enforcing_off:
+            return
+        now = utcnow()
+        self._deliveries.interrupt(
+            output, now, off_confirmed_at=now if read_off else None
+        )
+        if output not in self._commanded_outputs:
             self._reliability.clear_active(self._growspace_id, output)
 
     def _unexpected_on_policy(self) -> UnexpectedOnPolicy:
@@ -631,14 +658,17 @@ class BaseIrrigationCoordinator:
         await self._async_notify(title, message, tier=NotificationTier.UNEXPECTED_ON)
 
     async def _async_stop_interrupted(self, output: str) -> None:
-        """Close a cycle of ours that a stopped process left running (#854).
+        """Close a cycle of ours that a stopped process left running.
 
         It is switched off and read back as any cycle closing is, whatever the
         policy; one that will not read OFF latches ``fault_off_unconfirmed``
-        and keeps being stopped. Its marker is cleared either way: read back
-        OFF, or handed to the OFF retries, the pump is no longer that cycle's.
+        and keeps being stopped. Its open attempts close ``interrupted`` and
+        its marker is cleared either way: read back OFF, or handed to the OFF
+        retries, the pump is no longer that cycle's (#854, ADR-0055 item 9).
         """
         self._enforcing_off.add(output)
+        commanded_at = utcnow()
+        off_confirmed = False
         try:
             off_confirmed = await self._async_command_off(output)
             _LOGGER.warning(
@@ -663,6 +693,12 @@ class BaseIrrigationCoordinator:
                 )
         finally:
             self._enforcing_off.discard(output)
+            self._deliveries.interrupt(
+                output,
+                commanded_at,
+                off_commanded_at=commanded_at,
+                off_confirmed_at=utcnow() if off_confirmed else None,
+            )
             self._reliability.clear_active(self._growspace_id, output)
 
     async def _async_record_unexpected_on(
@@ -970,14 +1006,15 @@ class BaseIrrigationCoordinator:
         # close still has it. From here on the watch sees each ON as it happens.
         self._ensure_pump_watch()
         outputs = self._configured_outputs()
-        for output in self._reliability.active_outputs(self._growspace_id):
+        for output in self._interrupted_outputs():
             state = self.hass.states.get(output)
-            # A pump not reporting yet keeps its marker: a smart plug that
-            # joins late and restores ON is still that cycle's.
-            if output not in outputs or (
-                state is not None and state.state == STATE_OFF
-            ):
+            # A pump not reporting yet keeps its cycle open: a smart plug that
+            # joins late and restores ON is still that cycle's. One no longer
+            # managed is closed on whatever it reads.
+            if state is not None and state.state == STATE_OFF:
                 self._release_interrupted(output)
+            elif output not in outputs:
+                self._release_interrupted(output, read_off=False)
         for output in outputs:
             state = self.hass.states.get(output)
             if state is not None and state.state == STATE_ON:

@@ -9,6 +9,7 @@ set up on it: nothing in memory crosses over.
 from __future__ import annotations
 
 import asyncio
+import copy
 from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -29,6 +30,7 @@ from custom_components.growspace_manager.domain.delivery_attempt import (
     AttemptOutcome,
     AttemptState,
     AttemptTrigger,
+    DeliveryAttempt,
 )
 from custom_components.growspace_manager.domain.irrigation_safety import ControllerState
 from custom_components.growspace_manager.irrigation_coordinator import (
@@ -418,6 +420,191 @@ async def test_a_crash_before_confirm_on_leaves_an_open_attempt(
         assert attempt.state is AttemptState.REQUESTED
         assert attempt.is_open
         assert after.cycles_today == 0
+        stopped.set()
+        await task
+
+
+# --- The next start closes what a crash left open (ADR-0055 item 9) --------------
+
+
+async def _crash(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    pump: list[str],
+    *,
+    before_confirm: bool,
+) -> DeliveryAttempt:
+    """Run a real shot and stop its process there, the pump left running.
+
+    Stopped between the ON command and its confirmation, or mid-shot. What the
+    process wrote through is left on disk exactly as it was, and the process
+    then runs out writing nothing more, as a crashed one does not.
+    """
+    before = await _start(hass)
+    reached = asyncio.Event()
+    crashed = asyncio.Event()
+
+    async def stop_here(*_: Any, **__: Any) -> bool:
+        reached.set()
+        await crashed.wait()
+        return False
+
+    async def shot(seconds: float, *_: Any) -> None:
+        if seconds == SHOT_S:
+            await stop_here()
+
+    patcher = (
+        patch.object(before, "_async_wait_for_switch_state", new=stop_here)
+        if before_confirm
+        else patch(
+            "custom_components.growspace_manager.irrigation_coordinator.asyncio.sleep",
+            new=shot,
+        )
+    )
+    with patcher:
+        task = hass.async_create_task(
+            before._run_pump_cycle("irrigation", PUMP, SHOT_S, {})
+        )
+        await reached.wait()
+        on_disk = copy.deepcopy(hass_storage[KEY])
+        (left,) = before._deliveries.attempts
+        before._deliveries._store = None
+        crashed.set()
+        await task
+    await hass.async_block_till_done()
+    hass_storage[KEY] = on_disk
+    hass.states.async_set(PUMP, "on")
+    pump.clear()
+    return left
+
+
+async def _started(hass: HomeAssistant) -> IrrigationCoordinator:
+    """A new process's coordinator, through the start that looks at the pumps."""
+    coordinator = await _start(hass)
+    await coordinator._async_begin_startup_inhibit()
+    await hass.async_block_till_done()
+    return coordinator
+
+
+async def test_a_crash_after_the_on_command_is_our_pump_and_is_switched_off(
+    hass: HomeAssistant,
+    clock: FrozenDateTimeFactory,
+    pump: list[str],
+    hass_storage: dict[str, Any],
+) -> None:
+    """Commanded ON, never confirmed: the pump reading ON is ours, not a person's.
+
+    No In-flight Marker exists yet, since it is written at confirm-ON; the
+    attempt written before the command is what says whose run this is.
+    """
+    clock.move_to(_at("08:00"))
+    left = await _crash(hass, hass_storage, pump, before_confirm=True)
+    assert left.state is AttemptState.REQUESTED
+    clock.tick(5)
+
+    after = await _started(hass)
+
+    assert pump == ["turn_off"]
+    assert hass.states.get(PUMP).state == "off"
+    (attempt,) = after._deliveries.attempts
+    assert attempt.attempt_id == left.attempt_id
+    assert attempt.outcome is AttemptOutcome.INTERRUPTED
+    assert attempt.ended_at == left.requested_at
+    assert attempt.off_commanded_at == _at("08:00") + timedelta(seconds=5)
+    assert attempt.off_confirmed
+    assert (attempt.charged_l, attempt.estimated_l) == (0.0, None)
+    assert after.cycles_today == 0
+    assert after._detected_overrides == {}
+
+    await _flush_batch(hass, clock)
+    (stored,) = hass_storage[KEY]["data"]["attempts"]
+    assert (stored["state"], stored["outcome"]) == ("closed", "interrupted")
+    after.async_cancel_listeners()
+
+
+async def test_a_crash_mid_shot_is_switched_off_and_keeps_its_charge(
+    hass: HomeAssistant,
+    clock: FrozenDateTimeFactory,
+    pump: list[str],
+    hass_storage: dict[str, Any],
+) -> None:
+    """Found ON 10 s into a 30 s shot: stopped there, charged its whole plan."""
+    clock.move_to(_at("08:00"))
+    left = await _crash(hass, hass_storage, pump, before_confirm=False)
+    assert left.state is AttemptState.ACTUATED
+    clock.move_to(left.on_confirmed_at + timedelta(seconds=10))
+
+    after = await _started(hass)
+
+    assert pump == ["turn_off"]
+    (attempt,) = after._deliveries.attempts
+    assert attempt.outcome is AttemptOutcome.INTERRUPTED
+    assert attempt.ended_at == left.on_confirmed_at + timedelta(seconds=10)
+    assert attempt.estimated_l == pytest.approx(0.1)
+    assert attempt.charged_l == pytest.approx(0.3)
+    assert attempt.off_confirmed
+    assert after.cycles_today == 1
+    assert after.volume_dispensed_today == pytest.approx(0.3)
+
+    await _flush_batch(hass, clock)
+    (stored,) = hass_storage[KEY]["data"]["attempts"]
+    assert stored["outcome"] == "interrupted"
+    assert stored["charged_l"] == pytest.approx(0.3)
+    after.async_cancel_listeners()
+
+
+async def test_a_shot_a_crash_left_that_reads_off_ends_within_its_plan(
+    hass: HomeAssistant,
+    clock: FrozenDateTimeFactory,
+    pump: list[str],
+    hass_storage: dict[str, Any],
+) -> None:
+    """Found OFF an hour later: nothing is sent, and it ran its plan at most."""
+    clock.move_to(_at("08:00"))
+    left = await _crash(hass, hass_storage, pump, before_confirm=False)
+    # The relay lost power with the host and came back OFF.
+    hass.states.async_set(PUMP, "off")
+    clock.move_to(_at("09:00"))
+
+    after = await _started(hass)
+
+    assert pump == []
+    (attempt,) = after._deliveries.attempts
+    assert attempt.outcome is AttemptOutcome.INTERRUPTED
+    assert attempt.ended_at == left.on_confirmed_at + timedelta(seconds=SHOT_S)
+    assert attempt.estimated_l == pytest.approx(0.3)
+    assert attempt.off_commanded_at is None
+    assert attempt.off_confirmed_at == _at("09:00")
+    assert after.cycles_today == 1
+    after.async_cancel_listeners()
+
+
+async def test_an_attempt_of_this_process_is_never_left_open(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory
+) -> None:
+    """Only what the file held open when read belongs to a stopped process."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+    in_flight = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def shot_in_progress(seconds: float, *_: Any) -> None:
+        if seconds == SHOT_S:
+            in_flight.set()
+            await stopped.wait()
+
+    with patch(
+        "custom_components.growspace_manager.irrigation_coordinator.asyncio.sleep",
+        new=shot_in_progress,
+    ):
+        task = hass.async_create_task(
+            coordinator._run_pump_cycle("irrigation", PUMP, SHOT_S, {})
+        )
+        await in_flight.wait()
+
+        assert coordinator._deliveries.attempts[0].is_open
+        assert coordinator._deliveries.left_open() == []
+        assert coordinator._interrupted_outputs() == []
         stopped.set()
         await task
 

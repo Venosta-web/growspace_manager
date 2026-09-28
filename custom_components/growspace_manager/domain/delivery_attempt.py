@@ -14,12 +14,12 @@ gate passes, actuated (and charged) when its pump confirms ON, and closed as
 closed ``suppressed`` without ever reaching the pump, and a run of those with
 one reason is one row. A request that was never confirmed ON closes
 ``not_delivered``, or ``aborted`` when something stopped it first, and charges
-nothing.
+nothing. One a stopped process left open is closed ``interrupted`` by the next
+start, keeping whatever confirm-ON charged.
 
 This module holds the records and the arithmetic, and is free of Home
-Assistant. Drain attempts, the ``not_delivered`` window, closing an attempt a
-restart left open as ``interrupted``, and metered evidence are the rest of
-ADR-0055 and are not recorded yet.
+Assistant. Drain attempts, the ``not_delivered`` window and metered evidence
+are the rest of ADR-0055 and are not recorded yet.
 """
 
 from __future__ import annotations
@@ -66,6 +66,7 @@ class AttemptOutcome(StrEnum):
     NOT_DELIVERED = "not_delivered"
     COMPLETED = "completed"
     ABORTED = "aborted"
+    INTERRUPTED = "interrupted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,7 +170,8 @@ class DeliveryAttempt:
     ``charge_date`` is the local day the pump confirmed ON, and is set only
     then. The charge belongs to that day even when a top-up lands after
     midnight. A merged run of suppressions keeps its first request as
-    ``requested_at`` and its last as ``last_requested_at``.
+    ``requested_at`` and its last as ``last_requested_at``. ``ended_at`` is set
+    only on an ``interrupted`` attempt: the end its evidence bounds it to.
     """
 
     attempt_id: str
@@ -193,6 +195,7 @@ class DeliveryAttempt:
     estimated_l: float | None = None
     suppressed_count: int = 0
     last_requested_at: datetime | None = None
+    ended_at: datetime | None = None
 
     @classmethod
     def requested(
@@ -252,6 +255,7 @@ class DeliveryAttempt:
             self.on_confirmed_at,
             self.off_commanded_at,
             self.off_confirmed_at,
+            self.ended_at,
         )
         return max(moment for moment in moments if moment is not None)
 
@@ -354,6 +358,46 @@ class DeliveryAttempt:
             off_commanded_at=off_commanded_at,
         )
 
+    def interrupted(
+        self,
+        found_at: datetime,
+        *,
+        off_commanded_at: datetime | None = None,
+        off_confirmed_at: datetime | None = None,
+    ) -> DeliveryAttempt:
+        """Close an attempt a stopped process left open, as ``interrupted``.
+
+        Nothing watched the pump between the attempt's last record and
+        ``found_at``, the start that found it, so its end is bounded by the
+        evidence. An actuated shot ends at the earlier of its planned end and
+        ``found_at``, and its estimate runs to there: it keeps the charge
+        confirm-ON gave it and is never topped up. A request that never
+        confirmed ON ends at its last recorded moment and charges nothing.
+
+        ``off_commanded_at`` is set when its pump still read ON and was
+        switched off; ``off_confirmed_at`` whenever its pump was read OFF.
+        """
+        if not self.is_open:
+            raise ValueError("attempt is closed, not open")
+        if self.on_confirmed_at is None:
+            ended_at = self.on_commanded_at or self.requested_at
+            estimated_l = None
+        else:
+            planned_end = self.on_confirmed_at + timedelta(seconds=self.planned_s)
+            ended_at = max(self.on_confirmed_at, min(found_at, planned_end))
+            estimated_l = _liters(
+                (ended_at - self.on_confirmed_at).total_seconds(),
+                self.flow_rate_ml_per_sec,
+            )
+        return replace(
+            self,
+            outcome=AttemptOutcome.INTERRUPTED,
+            ended_at=ended_at,
+            estimated_l=estimated_l,
+            off_commanded_at=off_commanded_at,
+            off_confirmed_at=off_confirmed_at,
+        )
+
     def read_back_off(self, at: datetime) -> DeliveryAttempt:
         """Record that the closed attempt's pump was read back OFF."""
         return replace(self, off_confirmed_at=at)
@@ -387,6 +431,7 @@ class DeliveryAttempt:
             "evidence": "estimated" if self.estimated_l is not None else None,
             "suppressed_count": self.suppressed_count,
             "last_requested_at": _iso(self.last_requested_at),
+            "ended_at": _iso(self.ended_at),
         }
 
     @classmethod
@@ -447,6 +492,7 @@ class DeliveryAttempt:
             estimated_l=float(estimated) if estimated is not None else None,
             suppressed_count=count,
             last_requested_at=_optional_aware(value.get("last_requested_at")),
+            ended_at=_optional_aware(value.get("ended_at")),
         )
         attempt._check_whole(value.get("state"))
         return attempt
@@ -469,6 +515,8 @@ class DeliveryAttempt:
             raise ValueError("delivery attempt has a suppression count out of place")
         if suppressed and (self.reason is None or self.on_commanded_at is not None):
             raise ValueError("a suppressed delivery attempt reached the pump")
+        if (self.outcome is AttemptOutcome.INTERRUPTED) != (self.ended_at is not None):
+            raise ValueError("delivery attempt has an end time out of place")
 
 
 def dispensed_volume(attempts: Iterable[DeliveryAttempt], day: date) -> DispensedVolume:

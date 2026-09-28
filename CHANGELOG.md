@@ -62,6 +62,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on. If that write fails, the pump is no longer switched on at all: the
   growspace is held under `delivery_record_unreadable` straight away, where
   before the pump ran until the write at confirm-ON failed.
+- A pump found ON at start while an irrigation attempt was still open is
+  Growspace Manager's own interrupted shot, not someone watering by hand. This
+  now includes a crash after the ON command but before the pump confirmed ON,
+  which used to count as an Unexpected On and, under the default `alert`
+  policy, was left running. The pump is switched off and read back whatever
+  `unexpected_on_policy` says. Every attempt still open at start closes as
+  `interrupted` and keeps whatever it was charged at confirm-ON. If its pump
+  reads OFF, it ends at its planned end or the moment it was found, whichever
+  is earlier. Nothing is replayed.
 
 ### Deprecated
 
