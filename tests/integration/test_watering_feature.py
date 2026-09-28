@@ -311,7 +311,11 @@ class TestAsyncWaterGrowspace:
         self, watering_coordinator: GrowspaceCoordinator
     ) -> None:
         count = await watering_coordinator.services.growspaces.water_growspace(
-            "test_gs", amount=3.0, user_id="ha-user", from_monitored_tank=True
+            "test_gs",
+            amount=3.0,
+            watered_at=(dt_util.now() - timedelta(days=1)).isoformat(),
+            user_id="ha-user",
+            from_monitored_tank=True,
         )
         assert count == 2
         readings = watering_coordinator.growspaces["test_gs"].water_usage.daily_readings
