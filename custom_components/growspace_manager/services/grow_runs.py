@@ -11,11 +11,18 @@ and not a read-only user. It is asked on every command, never remembered.
 Participants from the start boundary, and the Run Opening Baseline records
 this Growspace's condition sensors and every output Growspace Manager
 commands, as they read at that moment.
+
+**Starting in the past** (#670). A start may name an earlier local day. It
+then claims the Growspace's Unattributed Activity from that day on: the plan
+the grower previewed is recomputed under the same locks the commit holds, a
+conflicting boundary refuses it, and the claimed facts leave the ledger in
+the write that gives them to the Run.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import date
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from homeassistant.auth.permissions.const import POLICY_CONTROL
@@ -32,6 +39,7 @@ from ..domain.grow_run import (
     RunMetadata,
     RunNotAuthorized,
 )
+from ..domain.unattributed_activity import ClaimPlan, claim_preview, plan_claim
 from ..exceptions import GrowspaceNotFoundError
 from .safety import managed_outputs
 
@@ -107,6 +115,60 @@ def opening_baseline(
     )
 
 
+def _plants_in(coordinator: GrowspaceCoordinator, growspace_id: str) -> list[str]:
+    return sorted(
+        plant.plant_id
+        for plant in coordinator.plants.values()
+        if plant.growspace_id == growspace_id
+    )
+
+
+def _plan(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    growspace_id: str,
+    started_on: date,
+) -> ClaimPlan:
+    store = coordinator.grow_runs
+    return plan_claim(
+        store.ledger(growspace_id),
+        store.unattributed(growspace_id),
+        started_on=started_on,
+        now=dt_util.utcnow(),
+        timezone=hass.config.time_zone,
+        retention_days=store.retention_days,
+        plant_ids=_plants_in(coordinator, growspace_id),
+    )
+
+
+async def async_preview_grow_run_start(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    *,
+    growspace_id: str,
+    started_on: date,
+) -> dict[str, Any]:
+    """What starting on ``started_on`` would claim; nothing is written.
+
+    Raises `RunStoreUnreadable` while the history cannot be read.
+    """
+    if growspace_id not in coordinator.growspaces:
+        raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+    async with coordinator.lock:
+        await coordinator.async_project_activity()
+        plan = _plan(hass, coordinator, growspace_id, started_on)
+    names = {
+        plant.plant_id: plant.strain
+        for plant in coordinator.plants.values()
+        if plant.strain
+    }
+    return claim_preview(
+        plan,
+        revision=coordinator.grow_runs.ledger(growspace_id).revision,
+        names=names,
+    )
+
+
 async def async_start_grow_run(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -115,10 +177,13 @@ async def async_start_grow_run(
     expected_revision: int,
     metadata: RunMetadata,
     user: User | None,
+    started_on: date | None = None,
 ) -> tuple[GrowRun, int]:
     """Start a Run; return it and the Growspace's new Run Revision.
 
-    Raises a `GrowRunRefused` for every refusal the caller can act on.
+    With ``started_on`` the Run starts at that local day's midnight and
+    claims the Unattributed Activity since. Raises a `GrowRunRefused` for
+    every refusal the caller can act on.
     """
     if growspace_id not in coordinator.growspaces:
         raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
@@ -132,23 +197,34 @@ async def async_start_grow_run(
         raise
     # The plant lock first, so no Plant can move across the start boundary
     # between being counted and the Run being committed.
-    async with coordinator.lock, store.lock:
-        ledger, run = store.ledger(growspace_id).start(
-            expected_revision=expected_revision,
-            run_id=uuid4().hex,
-            command_id=uuid4().hex,
-            now=dt_util.utcnow(),
-            timezone=hass.config.time_zone,
-            metadata=metadata,
-            baseline=opening_baseline(hass, coordinator, growspace_id),
-            plant_ids=sorted(
-                plant.plant_id
-                for plant in coordinator.plants.values()
-                if plant.growspace_id == growspace_id
-            ),
-            actor_user_id=user_id,
-        )
-        await store.async_commit(ledger)
+    async with coordinator.lock:
+        # Every fact already committed must be in the ledger before it is
+        # claimed; a pending one would otherwise miss the reconstruction.
+        if started_on is not None:
+            await coordinator.async_project_activity()
+        async with store.lock:
+            ledger = store.ledger(growspace_id)
+            activity = store.unattributed(growspace_id)
+            plan = None
+            if started_on is not None:
+                ledger.require_revision(expected_revision)
+                plan = _plan(hass, coordinator, growspace_id, started_on)
+                if plan.conflict is not None:
+                    raise plan.conflict
+            ledger, run = ledger.start(
+                expected_revision=expected_revision,
+                run_id=uuid4().hex,
+                command_id=uuid4().hex,
+                now=dt_util.utcnow(),
+                timezone=hass.config.time_zone,
+                metadata=metadata,
+                baseline=opening_baseline(hass, coordinator, growspace_id),
+                plant_ids=_plants_in(coordinator, growspace_id),
+                actor_user_id=user_id,
+                claim=None if plan is None else plan.history,
+            )
+            remaining = activity.close() if plan is None else plan.remaining(activity)
+            await store.async_commit(ledger, activities=(remaining,))
     store.announce_start(run, user_id)
     coordinator.async_update_listeners()
     return run, ledger.revision

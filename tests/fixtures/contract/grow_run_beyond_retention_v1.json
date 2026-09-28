@@ -1,0 +1,9 @@
+{
+  "outcome": "refused",
+  "refusal": {
+    "active_run": null,
+    "code": "grow_run.beyond_retention",
+    "current_revision": 2,
+    "message": "Activity that old is no longer kept, so nothing can be claimed for it; record that history as an Imported Run instead"
+  }
+}

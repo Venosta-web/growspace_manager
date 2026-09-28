@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plant entries, exits, moves, harvests, and removals now appear in each Grow
   Run's participation history. Pending movement facts survive restarts and retry
   safely after a failed projection.
+- A Grow Run can start on an earlier day. While a growspace has no active run it
+  keeps its plant movement and a daily summary for 365 days (the new "Keep
+  activity outside Grow Runs for" general option); `preview_grow_run_start`
+  shows the participants, claimed activity, uncovered gaps and any conflicting
+  boundary, and `start_grow_run` with `started_on` claims that activity for the
+  new run in one write. Older history is refused and pointed at an imported run.
 
 ### Changed
 
