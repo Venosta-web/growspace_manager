@@ -248,6 +248,15 @@ def _conflict(
             "Activity that old is no longer kept, so nothing can be claimed "
             "for it; record that history as an Imported Run instead"
         )
+    elif (
+        latest is not None
+        and latest.completed_at is not None
+        and (started_at < latest.completed_at)
+    ):
+        # A Completed Run's operating interval is half-open: the next Run may
+        # start at its boundary, never inside it (#671).
+        refusal, boundary = RunBoundaryConflict, latest.completed_at
+        message = f"Run #{latest.sequence_number} ended later; Runs never overlap"
     elif latest is not None and started_at <= latest.started_at:
         refusal, boundary = RunBoundaryConflict, latest.started_at
         message = f"Run #{latest.sequence_number} started later; Runs never overlap"

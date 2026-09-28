@@ -34,6 +34,7 @@ from .domain.grow_run import (
     GrowRun,
     HarvestOutcome,
     PlantMovementFact,
+    RunCommand,
     RunLedger,
     RunStoreUnreadable,
 )
@@ -49,6 +50,8 @@ EVENT_GROW_RUN_LIFECYCLE = f"{DOMAIN}_grow_run_lifecycle"
 
 #: The logbook category a lifecycle command is written under.
 CATEGORY_GROW_RUN = "grow_run"
+
+_PAST_TENSE = {RunCommand.START: "started", RunCommand.COMPLETE: "completed"}
 
 
 class GrowRunStore:
@@ -187,19 +190,20 @@ class GrowRunStore:
                 ledger = self.ledger(growspace_id)
                 # If history was unreadable when the Plant committed, the fact
                 # still survived in the Plant document. Attribute it now using
-                # the Run that was active at the fact's timestamp.
-                active = ledger.active_run
-                if active is not None and active.started_at <= fact.at:
+                # the Run whose operating interval holds the fact's timestamp,
+                # which may since have completed.
+                owner = ledger.run_at(fact.at)
+                if owner is not None:
                     if (
                         growspace_id == fact.source_growspace_id
                         and fact.source_run_id is None
                     ):
-                        fact = replace(fact, source_run_id=active.run_id)
+                        fact = replace(fact, source_run_id=owner.run_id)
                     if (
                         growspace_id == fact.target_growspace_id
                         and fact.target_run_id is None
                     ):
-                        fact = replace(fact, target_run_id=active.run_id)
+                        fact = replace(fact, target_run_id=owner.run_id)
                 expected = {
                     run_id
                     for location, run_id in (
@@ -281,8 +285,14 @@ class GrowRunStore:
                 if updated != ledger:
                     await self.async_commit(updated)
 
-    def announce_start(self, run: GrowRun, user_id: str | None) -> None:
-        """Emit the lifecycle event and the logbook line for a committed start."""
+    def announce(self, run: GrowRun) -> None:
+        """Emit the lifecycle event and logbook line for the Run's last command.
+
+        The Run Audit Entry just committed is the whole description: which
+        command, who, when, and the revision it produced.
+        """
+        entry = run.audit[-1]
+        user_id = entry.actor_user_id
         actor = f"HA user {user_id}" if user_id else "the system"
         self._hass.bus.async_fire(
             EVENT_GROW_RUN_LIFECYCLE,
@@ -290,8 +300,12 @@ class GrowRunStore:
                 "growspace_id": run.growspace_id,
                 "run_id": run.run_id,
                 "sequence_number": run.sequence_number,
-                "command": "start",
-                "revision": run.audit[-1].resulting_revision,
+                "command": entry.command.value,
+                "command_id": entry.command_id,
+                "status": run.status.value,
+                "at": entry.at.isoformat(),
+                "user_id": user_id,
+                "revision": entry.resulting_revision,
             },
         )
         self._hass.bus.async_fire(
@@ -299,8 +313,9 @@ class GrowRunStore:
             {
                 "growspace_id": run.growspace_id,
                 "category": CATEGORY_GROW_RUN,
-                "message": f"Run #{run.sequence_number} started by {actor}",
-                "timestamp": run.started_at.isoformat(),
+                "message": f"Run #{run.sequence_number} "
+                f"{_PAST_TENSE[entry.command]} by {actor}",
+                "timestamp": entry.at.isoformat(),
                 "user_id": user_id,
             },
         )

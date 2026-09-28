@@ -18,7 +18,10 @@ from custom_components.growspace_manager.const import (
 )
 from custom_components.growspace_manager.domain.grow_run import GapReason, RunMetadata
 from custom_components.growspace_manager.grow_run_store import GrowRunStore
-from custom_components.growspace_manager.services.grow_runs import async_start_grow_run
+from custom_components.growspace_manager.services.grow_runs import (
+    async_complete_grow_run,
+    async_start_grow_run,
+)
 from custom_components.growspace_manager.websocket._common import WS_MSG_USER
 from custom_components.growspace_manager.websocket.grow_runs import (
     WS_TYPE_PREVIEW_GROW_RUN_START,
@@ -528,3 +531,64 @@ async def test_a_malformed_ledger_makes_the_history_unreadable(
     assert store.unreadable
     await store.async_observe(dt_util.utcnow(), {"tent": []})
     assert hass_storage[key]["data"] == document
+
+
+async def test_a_completed_run_bounds_the_next_backdated_start(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Completion opens coverage at its boundary; no backdate reaches inside (#671)."""
+    freezer.move_to(T0)
+    coordinator, growspace_id, plant_ids = await _tent(init_integration)
+    admin = await _admin(hass)
+    run, _ = await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=admin,
+    )
+    assert coordinator.grow_runs.unattributed(growspace_id).covered_since is None
+    freezer.tick(timedelta(days=3))
+    completed, revision = await async_complete_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        run_id=run.run_id,
+        expected_revision=1,
+        acknowledged=["plants_present"],
+        user=admin,
+    )
+    boundary = completed.completed_at
+    assert boundary == dt_util.utcnow()
+    activity = coordinator.grow_runs.unattributed(growspace_id)
+    assert activity.covered_since == boundary
+    # The day before the Run is still retained; the boundary's day is new.
+    today = activity.days[-1]
+    assert [row.day for row in activity.days] == [
+        _local_day(hass, T0),
+        _local_day(hass, boundary),
+    ]
+    assert set(today.plant_ids) == set(plant_ids)
+
+    same_day = _local_day(hass, boundary)
+    conflict = (await _preview(hass, coordinator, growspace_id, same_day))["preview"][
+        "conflict"
+    ]
+    assert conflict["code"] == "grow_run.boundary_conflict"
+    assert conflict["boundary"] == boundary.isoformat()
+    refused = await _start_on(hass, coordinator, growspace_id, same_day, revision)
+    assert refused["refusal"]["code"] == "grow_run.boundary_conflict"
+
+    await _next_day(coordinator, freezer)
+    await _next_day(coordinator, freezer)
+    next_day = same_day + timedelta(days=1)
+    preview = (await _preview(hass, coordinator, growspace_id, next_day))["preview"]
+    assert preview["conflict"] is None
+    assert preview["gaps"] == []
+    started = await _start_on(hass, coordinator, growspace_id, next_day, revision)
+    assert started["outcome"] == "started"
+    assert started["active_run"]["sequence_number"] == 2
+    assert started["active_run"]["started_at"] == _midnight(hass, next_day).isoformat()

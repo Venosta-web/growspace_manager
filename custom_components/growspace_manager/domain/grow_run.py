@@ -33,9 +33,19 @@ CODE_STORE_UNREADABLE = "grow_run.store_unreadable"
 CODE_BEYOND_RETENTION = "grow_run.beyond_retention"
 CODE_BOUNDARY_CONFLICT = "grow_run.boundary_conflict"
 
+CODE_NOT_ACTIVE = "grow_run.not_active"
+CODE_IRRIGATION_DELIVERING = "grow_run.irrigation_delivering"
+CODE_ACKNOWLEDGEMENT_REQUIRED = "grow_run.acknowledgement_required"
+
+# Run Completion Preview warnings. Each one names a Plant or outcome at risk; a
+# completion must acknowledge every warning the preview holds when it commits.
+WARNING_PLANTS_PRESENT = "plants_present"
+WARNING_MISSING_OUTCOMES = "missing_outcomes"
+WARNING_ATTRIBUTION_GAPS = "attribution_gaps"
+
 
 class RunStatus(StrEnum):
-    """The Grow Run State Graph's states. Only ``active`` is reachable yet."""
+    """The Grow Run State Graph's states. ``active`` and ``completed`` are reachable."""
 
     ACTIVE = "active"
     COMPLETED = "completed"
@@ -47,6 +57,7 @@ class RunCommand(StrEnum):
     """The lifecycle commands a Run Audit Entry can record."""
 
     START = "start"
+    COMPLETE = "complete"
 
 
 class GrowRunRefused(Exception):
@@ -110,6 +121,24 @@ class RunBoundaryConflict(GrowRunRefused):
     """
 
     code = CODE_BOUNDARY_CONFLICT
+
+
+class RunNotActive(GrowRunRefused):
+    """The command names a Run that is not the Growspace's Active Run."""
+
+    code = CODE_NOT_ACTIVE
+
+
+class RunIrrigationDelivering(GrowRunRefused):
+    """Integration-controlled irrigation is delivering water at the boundary."""
+
+    code = CODE_IRRIGATION_DELIVERING
+
+
+class RunAcknowledgementRequired(GrowRunRefused):
+    """The completion did not acknowledge every warning its preview holds now."""
+
+    code = CODE_ACKNOWLEDGEMENT_REQUIRED
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +661,8 @@ class GrowRun:
     audit: tuple[RunAuditEntry, ...] = ()
     daily_summaries: tuple[DailySummary, ...] = ()
     backdate: RunBackdate | None = None
+    #: The end of the half-open operating interval; absent while Active.
+    completed_at: datetime | None = None
 
     @property
     def participant_count(self) -> int:
@@ -645,6 +676,12 @@ class GrowRun:
             now.astimezone(zone).date() - self.started_at.astimezone(zone).date()
         ).days
 
+    def covers(self, moment: datetime) -> bool:
+        """Whether ``moment`` falls inside the half-open operating interval."""
+        return self.started_at <= moment and (
+            self.completed_at is None or moment < self.completed_at
+        )
+
     def as_dict(self) -> dict[str, Any]:
         """Return the durable form."""
         return {
@@ -654,6 +691,9 @@ class GrowRun:
             "status": self.status.value,
             "timezone": self.timezone,
             "started_at": self.started_at.isoformat(),
+            "completed_at": (
+                self.completed_at.isoformat() if self.completed_at else None
+            ),
             "metadata": self.metadata.as_dict(),
             "baseline": self.baseline.as_dict(),
             "participations": [row.as_dict() for row in self.participations],
@@ -675,6 +715,7 @@ class GrowRun:
             status=RunStatus(value.get("status")),
             timezone=_zone(value.get("timezone"), "run.timezone"),
             started_at=_moment(value.get("started_at"), "run.started_at"),
+            completed_at=_opt_moment(value.get("completed_at"), "run.completed_at"),
             metadata=RunMetadata.from_dict(value.get("metadata")),
             baseline=OpeningBaseline.from_dict(value.get("baseline")),
             participations=tuple(
@@ -718,7 +759,197 @@ class GrowRun:
         outcome_ids = [row.plant_id for row in run.harvest_outcomes]
         if len(outcome_ids) != len(set(outcome_ids)):
             raise ValueError("a Plant has more than one harvest outcome in one Run")
+        if run.status is RunStatus.ACTIVE and run.completed_at is not None:
+            raise ValueError("an Active Run has a completion boundary")
+        if run.status is RunStatus.COMPLETED:
+            if run.completed_at is None or run.completed_at < run.started_at:
+                raise ValueError("a Completed Run has no valid completion boundary")
+            if open_plants:
+                raise ValueError("a Completed Run still has open participation")
         return run
+
+
+# ---------------------------------------------------------------------------
+# The Run Completion Preview
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class PresentPlant:
+    """A Plant standing in the Growspace as the Run would complete."""
+
+    plant_id: str
+    strain_name: str
+    phenotype_name: str
+    stage: str
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the wire form."""
+        return {
+            "plant_id": self.plant_id,
+            "strain_name": self.strain_name,
+            "phenotype_name": self.phenotype_name,
+            "stage": self.stage,
+        }
+
+
+#: Harvest outcome states that leave the Run's Yield incomplete: ``pending``
+#: may still receive a dry weight while the Run is Completed; ``incomplete``
+#: was chosen when its Plant was deleted and never will.
+MISSING_OUTCOME_STATES = ("pending", "incomplete")
+
+
+@dataclass(frozen=True, slots=True)
+class AttributionGap:
+    """Something the Run's participation history cannot yet account for.
+
+    ``pending_fact``: a movement recorded in this Growspace inside the Run that
+    has not been projected. ``unrecorded_presence``: a Plant standing here with
+    no open participation. Both mean the Run would complete on an incomplete
+    history of who was in it.
+    """
+
+    kind: str
+    plant_id: str
+    fact_id: str | None = None
+    at: datetime | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the wire form."""
+        return {
+            "kind": self.kind,
+            "plant_id": self.plant_id,
+            "fact_id": self.fact_id,
+            "at": self.at.isoformat() if self.at else None,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CompletionPreview:
+    """What completing the Active Run at ``completed_at`` would do and risk.
+
+    It is computed afresh at commit as well as for the grower, so the warnings
+    a completion must acknowledge are the ones true when it lands, not the ones
+    true when the dialog opened.
+    """
+
+    run: GrowRun
+    revision: int
+    completed_at: datetime
+    plants_present: tuple[PresentPlant, ...] = ()
+    missing_outcomes: tuple[HarvestOutcome, ...] = ()
+    attribution_gaps: tuple[AttributionGap, ...] = ()
+    delivering_outputs: tuple[str, ...] = ()
+    retrospective_note: str | None = None
+
+    @property
+    def closing(self) -> tuple[RunParticipation, ...]:
+        """The participation intervals the boundary will close."""
+        return tuple(row for row in self.run.participations if row.closed_at is None)
+
+    @property
+    def warnings(self) -> tuple[str, ...]:
+        """The risks a completion must acknowledge, in a stable order."""
+        return tuple(
+            code
+            for code, present in (
+                (WARNING_PLANTS_PRESENT, self.plants_present),
+                (WARNING_MISSING_OUTCOMES, self.missing_outcomes),
+                (WARNING_ATTRIBUTION_GAPS, self.attribution_gaps),
+            )
+            if present
+        )
+
+    @property
+    def blockers(self) -> tuple[str, ...]:
+        """What refuses the completion outright rather than asking."""
+        return (CODE_IRRIGATION_DELIVERING,) if self.delivering_outputs else ()
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the wire form the Run Completion Preview is drawn from."""
+        return {
+            "run": run_summary(self.run, self.revision),
+            "completed_at": self.completed_at.isoformat(),
+            "duration_days": self.run.local_days(self.completed_at),
+            "closing_participations": [row.as_dict() for row in self.closing],
+            "plants_present": [row.as_dict() for row in self.plants_present],
+            "missing_outcomes": [
+                {
+                    "plant_id": row.plant_id,
+                    "strain": row.strain,
+                    "phenotype": row.phenotype,
+                    "state": row.state,
+                }
+                for row in self.missing_outcomes
+            ],
+            # Metric Coverage, one ``{"metric", "coverage_percent"}`` row per Run
+            # metric. No Run metric is measured yet (#676-#679 add them), so
+            # nothing's coverage can fall short; the key is here so those
+            # metrics add rows, not shape.
+            "coverage": [],
+            "attribution_gaps": [row.as_dict() for row in self.attribution_gaps],
+            "retrospective_note": self.retrospective_note,
+            "delivering_outputs": list(self.delivering_outputs),
+            "warnings": list(self.warnings),
+            "blockers": list(self.blockers),
+        }
+
+
+def preview_completion(
+    ledger: RunLedger,
+    *,
+    now: datetime,
+    plants_present: list[PresentPlant] | tuple[PresentPlant, ...],
+    pending_facts: list[PlantMovementFact] | tuple[PlantMovementFact, ...],
+    delivering_outputs: list[str] | tuple[str, ...],
+    retrospective_note: str | None,
+) -> CompletionPreview:
+    """Preview completing the ledger's Active Run at ``now``.
+
+    Missing outcomes are the Run's own Harvest Outcome snapshots still pending
+    a dry weight or recorded as incomplete. ``pending_facts`` are the Plant
+    outbox's unprojected facts, of any Growspace.
+    """
+    run = ledger.active_run
+    if run is None:
+        raise RunNotActive(
+            "This growspace has no Active Run to complete",
+            current_revision=ledger.revision,
+        )
+    missing = tuple(
+        sorted(
+            (
+                row
+                for row in run.harvest_outcomes
+                if row.state in MISSING_OUTCOME_STATES
+            ),
+            key=lambda row: row.plant_id,
+        )
+    )
+    open_plants = {row.plant_id for row in run.participations if row.closed_at is None}
+    gaps = [
+        AttributionGap("pending_fact", fact.plant_id, fact.fact_id, fact.at)
+        for fact in pending_facts
+        if not fact.projected
+        and run.covers(fact.at)
+        and run.growspace_id in (fact.source_growspace_id, fact.target_growspace_id)
+    ]
+    pending_plants = {gap.plant_id for gap in gaps}
+    gaps.extend(
+        AttributionGap("unrecorded_presence", plant.plant_id)
+        for plant in plants_present
+        if plant.plant_id not in open_plants and plant.plant_id not in pending_plants
+    )
+    return CompletionPreview(
+        run=run,
+        revision=ledger.revision,
+        completed_at=now,
+        plants_present=tuple(sorted(plants_present, key=lambda row: row.plant_id)),
+        missing_outcomes=missing,
+        attribution_gaps=tuple(gaps),
+        delivering_outputs=tuple(sorted(set(delivering_outputs))),
+        retrospective_note=_text(retrospective_note, MAX_TEXT_LENGTH),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -735,6 +966,18 @@ class RunLedger:
         """The one Active Run, if there is one."""
         return next((r for r in self.runs if r.status is RunStatus.ACTIVE), None)
 
+    def run_at(self, moment: datetime) -> GrowRun | None:
+        """The Active or Completed Run whose operating interval holds ``moment``."""
+        return next(
+            (
+                run
+                for run in self.runs
+                if run.status in (RunStatus.ACTIVE, RunStatus.COMPLETED)
+                and run.covers(moment)
+            ),
+            None,
+        )
+
     def require_revision(self, expected: int) -> None:
         """Refuse a command decided on any revision but this one."""
         if expected != self.revision:
@@ -746,16 +989,29 @@ class RunLedger:
             )
 
     def project_movement(self, fact: PlantMovementFact) -> RunLedger:
-        """Apply one fact once, closing and opening half-open intervals."""
+        """Apply one fact once, closing and opening half-open intervals.
+
+        A fact can reach a Run after it completed: it was recorded before the
+        boundary but projected after it. Inside the operating interval it still
+        counts, against the boundary -- an interval completion closed is the
+        one it re-closes earlier, and an entry opens one that ends there. A
+        fact at or after the boundary is outside the Run and changes nothing.
+        """
         run_ids = {fact.source_run_id, fact.target_run_id} - {None}
         changed = False
         runs: list[GrowRun] = []
         for run in self.runs:
-            if run.run_id not in run_ids or any(
-                row.fact_id == fact.fact_id for row in run.movement_history
+            if (
+                run.run_id not in run_ids
+                or run.status not in (RunStatus.ACTIVE, RunStatus.COMPLETED)
+                or not run.covers(fact.at)
+                or any(row.fact_id == fact.fact_id for row in run.movement_history)
             ):
                 runs.append(run)
                 continue
+            # Still open: unclosed while Active, closed only by the boundary once
+            # Completed. For an Active Run both read ``closed_at is None``.
+            boundary = run.completed_at
             intervals = list(run.participations)
             exits = fact.source_run_id == run.run_id and (
                 fact.target_run_id != run.run_id or fact.target_growspace_id is None
@@ -768,15 +1024,16 @@ class RunLedger:
                     interval = intervals[index]
                     if (
                         interval.plant_id == fact.plant_id
-                        and interval.closed_at is None
+                        and interval.closed_at == boundary
+                        and interval.opened_at <= fact.at
                     ):
                         intervals[index] = replace(interval, closed_at=fact.at)
                         break
             if enters and not any(
-                row.plant_id == fact.plant_id and row.closed_at is None
+                row.plant_id == fact.plant_id and row.closed_at == boundary
                 for row in intervals
             ):
-                intervals.append(RunParticipation(fact.plant_id, fact.at))
+                intervals.append(RunParticipation(fact.plant_id, fact.at, boundary))
             runs.append(
                 replace(
                     run,
@@ -886,6 +1143,80 @@ class RunLedger:
         )
         return ledger, run
 
+    def complete(
+        self,
+        *,
+        expected_revision: int,
+        run_id: str,
+        preview: CompletionPreview,
+        acknowledged: list[str] | tuple[str, ...] | set[str],
+        command_id: str,
+        actor_user_id: str | None,
+    ) -> tuple[RunLedger, GrowRun]:
+        """End the Active Run at the preview's boundary; return the new ledger.
+
+        Every open participation closes at the boundary, the Run becomes
+        Completed, and the retrospective note becomes its notes. Irrigation
+        delivering water refuses outright; any warning the grower did not
+        acknowledge refuses and asks again.
+        """
+        self.require_revision(expected_revision)
+        run = self.active_run
+        if run is None or run.run_id != run_id or preview.run.run_id != run_id:
+            raise RunNotActive(
+                "That Run is not this growspace's Active Run",
+                current_revision=self.revision,
+                active_run=run,
+            )
+        if preview.delivering_outputs:
+            raise RunIrrigationDelivering(
+                "Irrigation is delivering water through "
+                f"{', '.join(preview.delivering_outputs)}; complete the run "
+                "once it has finished",
+                current_revision=self.revision,
+                active_run=run,
+            )
+        if unacknowledged := [
+            code for code in preview.warnings if code not in set(acknowledged)
+        ]:
+            raise RunAcknowledgementRequired(
+                f"Completing Run #{run.sequence_number} needs acknowledgement "
+                f"of: {', '.join(unacknowledged)}",
+                current_revision=self.revision,
+                active_run=run,
+            )
+        boundary = preview.completed_at
+        if boundary < run.started_at:
+            raise ValueError("a Run cannot complete before it started")
+        resulting = self.revision + 1
+        completed = replace(
+            run,
+            status=RunStatus.COMPLETED,
+            completed_at=boundary,
+            metadata=replace(run.metadata, notes=preview.retrospective_note),
+            participations=tuple(
+                replace(row, closed_at=boundary) if row.closed_at is None else row
+                for row in run.participations
+            ),
+            audit=(
+                *run.audit,
+                RunAuditEntry(
+                    at=boundary,
+                    command=RunCommand.COMPLETE,
+                    command_id=command_id,
+                    actor_user_id=actor_user_id,
+                    prior_revision=self.revision,
+                    resulting_revision=resulting,
+                ),
+            ),
+        )
+        ledger = replace(
+            self,
+            revision=resulting,
+            runs=tuple(completed if row is run else row for row in self.runs),
+        )
+        return ledger, completed
+
     def as_dict(self) -> dict[str, Any]:
         """Return the durable form."""
         return {
@@ -936,15 +1267,28 @@ def _attribute(
     )
 
 
+#: Which metrics a Run's status gives it: Live Run Metrics while Active,
+#: Pending Run Metrics once Completed, a frozen Finalization Snapshot after.
+METRICS_STATE = {
+    RunStatus.ACTIVE: "live",
+    RunStatus.COMPLETED: "pending",
+    RunStatus.FINALIZED: "frozen",
+    RunStatus.VOIDED: "excluded",
+}
+
+
 def run_summary(run: GrowRun, revision: int) -> dict[str, Any]:
     """The compact wire form of one Run at one Run Revision."""
     return {
         "run_id": run.run_id,
         "sequence_number": run.sequence_number,
         "label": run.metadata.label,
+        "status": run.status.value,
         "started_at": run.started_at.isoformat(),
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
         "timezone": run.timezone,
         "participant_count": run.participant_count,
+        "metrics_state": METRICS_STATE[run.status],
         "run_revision": revision,
     }
 
@@ -955,6 +1299,7 @@ def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
         "outcome": "found",
         "run": {
             **run_summary(run, revision),
+            "notes": run.metadata.notes,
             "participations": [row.as_dict() for row in run.participations],
             "movement_history": [row.as_dict() for row in run.movement_history],
             "harvest_outcomes": [row.as_dict() for row in run.harvest_outcomes],

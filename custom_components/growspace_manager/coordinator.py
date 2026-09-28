@@ -469,7 +469,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         candidate_data = self.view_model_builder.build_data_property()
         await self.storage_manager.async_force_save()
         await self.async_project_activity()
-        await self._async_project_harvest_outcomes()
+        await self.async_project_harvest_outcomes()
         self.data = candidate_data
         await self._publish_current_data()
 
@@ -505,7 +505,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except Exception:
             _LOGGER.exception("Unattributed Activity coverage was not recorded")
 
-    async def _async_project_harvest_outcomes(self) -> None:
+    async def async_project_harvest_outcomes(self) -> None:
         """Retry source snapshots from the committed Plant image."""
         try:
             await self.grow_runs.async_project_harvest_outcomes(
@@ -520,6 +520,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.cache.invalidate()
         self.data = self.view_model_builder.build_data_property()
         await self._publish_current_data()
+
+    def irrigation_delivering_outputs(self, growspace_id: str) -> tuple[str, ...]:
+        """The outputs a growspace's irrigation holds ON now; none without one."""
+        irrigation = self._subsystem_manager.irrigation_coordinators.get(growspace_id)
+        return irrigation.delivering_outputs() if irrigation is not None else ()
 
     def abandon_pending_irrigation_observation(self, growspace_id: str) -> None:
         """Discard feedback when hand watering changes a growspace's VWC."""
@@ -614,7 +619,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.reliability.async_load()
         await self.grow_runs.async_load()
         await self.async_project_activity()
-        await self._async_project_harvest_outcomes()
+        await self.async_project_harvest_outcomes()
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.

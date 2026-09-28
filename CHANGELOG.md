@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plant entries, exits, moves, harvests, and removals now appear in each Grow
   Run's participation history. Pending movement facts survive restarts and retry
   safely after a failed projection.
+- A Grow Run can be completed. `growspace_manager/preview_grow_run_completion`
+  shows the completion moment, duration, the participation that will close,
+  Plants still present, harvest outcomes still pending or incomplete, coverage,
+  attribution gaps and the retrospective note; `growspace_manager/complete_grow_run`
+  commits it once every warning is acknowledged. Completion is refused while
+  Growspace Manager's own irrigation is delivering water, clears the Active Run
+  Sensor, and emits a `complete` Grow Run Lifecycle Event. Run summaries now
+  carry `status`, `completed_at` and `metrics_state` (`live` while Active,
+  `pending` once Completed).
 - A Grow Run can start on an earlier day. While a growspace has no active run it
   keeps its plant movement and a daily summary for 365 days (the new "Keep
   activity outside Grow Runs for" general option); `preview_grow_run_start`
