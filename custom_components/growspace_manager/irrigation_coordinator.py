@@ -45,6 +45,7 @@ from .domain.delivery_attempt import (
     DELIVERY_RECORD_UNREADABLE,
     DeliveryAttempt,
     attempt_trigger,
+    trigger_evidence,
 )
 from .domain.irrigation_safety import (
     ON_COMMAND_FAILED,
@@ -1740,6 +1741,50 @@ class BaseIrrigationCoordinator:
             return "automation_off"
         return "irrigation_disarmed"
 
+    def _new_attempt(
+        self,
+        pump_entity: str,
+        duration: int,
+        event_data: Mapping[str, Any],
+        requested_at: datetime,
+    ) -> DeliveryAttempt:
+        """Return a Requested attempt for this pump request (ADR-0055).
+
+        The flow rate is snapshotted here, so a later configuration edit cannot
+        rewrite what the attempt planned or charged.
+        """
+        return DeliveryAttempt.requested(
+            attempt_id=uuid4().hex,
+            growspace_id=self._growspace_id,
+            output=pump_entity,
+            trigger=attempt_trigger(event_data),
+            trigger_evidence=trigger_evidence(event_data),
+            planned_s=duration,
+            flow_rate_ml_per_sec=self.growspace.irrigation_config.pump_flow_rate_ml_per_sec,
+            requested_at=requested_at,
+        )
+
+    def _suppress(
+        self,
+        event_type: str,
+        pump_entity: str,
+        duration: int,
+        event_data: Mapping[str, Any],
+        requested_at: datetime,
+        reason: str,
+    ) -> None:
+        """Record a request the gate or an operator hold refused (ADR-0055).
+
+        Drains are not Delivery Attempts yet, so only irrigation is recorded.
+        """
+        if event_type != "irrigation":
+            return
+        self._deliveries.suppress(
+            self._new_attempt(pump_entity, duration, event_data, requested_at).refused(
+                reason
+            )
+        )
+
     async def _run_pump_cycle(  # noqa: C901 - safety effect shell handles every exit
         self,
         event_type: str,
@@ -1749,6 +1794,7 @@ class BaseIrrigationCoordinator:
     ) -> None:
         """Run the on-off cycle for a pump and send notifications."""
         self._record(ReliabilityCounter.REQUESTED)
+        requested_at = utcnow()
         store = self._safety_store
         manual = bool(event_data.get("manual", False))
         hold = self._operator_hold(manual=manual)
@@ -1761,6 +1807,9 @@ class BaseIrrigationCoordinator:
                 hold = self._operator_hold(manual=manual)
         if hold is not None:
             self._record(skipped(hold))
+            self._suppress(
+                event_type, pump_entity, duration, event_data, requested_at, hold
+            )
             if hold in (MANUAL_OVERRIDE, OVERRIDE_DETECTED):
                 await self._async_record_controller_state()
             return
@@ -1797,7 +1846,11 @@ class BaseIrrigationCoordinator:
             startup_inhibit=startup.detail if startup else None,
         )
         if not verdict.fire:
-            self._record(skipped(verdict.reason.value if verdict.reason else "unknown"))
+            refused = verdict.reason.value if verdict.reason else "unknown"
+            self._record(skipped(refused))
+            self._suppress(
+                event_type, pump_entity, duration, event_data, requested_at, refused
+            )
             if verdict.reason not in (SkipReason.FAULT, SkipReason.EMERGENCY_STOP):
                 await self._record_safety_transition(
                     "inhibited", verdict.reason.value if verdict.reason else None
@@ -1815,7 +1868,8 @@ class BaseIrrigationCoordinator:
         self._main_coordinator.async_update_listeners()
 
         start_dt = None
-        # The Delivery Attempt charged when the pump confirms ON, and its close.
+        # The irrigation Delivery Attempt, written before the ON command and
+        # charged when the pump confirms ON, and its close.
         attempt: DeliveryAttempt | None = None
         closed: DeliveryAttempt | None = None
         cycle_finished = False
@@ -1875,10 +1929,27 @@ class BaseIrrigationCoordinator:
                     f"Irrigation started — {duration}s on {pump_entity}",
                 )
 
-            command_dt = utcnow()
-            if self._operator_hold(manual=manual) is not None:
+            if (hold := self._operator_hold(manual=manual)) is not None:
                 abort_cause = AbortCause.OVERRIDE
+                self._suppress(
+                    event_type, pump_entity, duration, event_data, requested_at, hold
+                )
                 return
+            if event_type == "irrigation":
+                # On disk before the ON command, so a crash between the command
+                # and its confirmation still leaves an open attempt behind. A
+                # write that fails holds the growspace and commands nothing.
+                attempt = self._new_attempt(
+                    pump_entity, duration, event_data, requested_at
+                )
+                try:
+                    await self._deliveries.async_request(attempt)
+                except DeliveryRecordUnreadable:
+                    self._raise_delivery_issue()
+                    raise
+            command_dt = utcnow()
+            if attempt is not None:
+                attempt = attempt.commanded(command_dt)
             commanded = True
             self._commanded_outputs.add(pump_entity)
             try:
@@ -1917,20 +1988,10 @@ class BaseIrrigationCoordinator:
             self._open_failures.pop(pump_entity, None)
             self._reliability.mark_active(self._growspace_id, pump_entity)
 
-            if event_type == "irrigation":
+            if attempt is not None:
                 # Charged against the daily caps now, and on disk before the
                 # shot proceeds, so a restart mid-shot keeps it counted.
-                attempt = DeliveryAttempt.actuated(
-                    attempt_id=uuid4().hex,
-                    growspace_id=self._growspace_id,
-                    output=pump_entity,
-                    trigger=attempt_trigger(event_data),
-                    planned_s=duration,
-                    flow_rate_ml_per_sec=config.pump_flow_rate_ml_per_sec,
-                    on_commanded_at=command_dt,
-                    on_confirmed_at=start_dt,
-                    charge_date=as_local(start_dt).date(),
-                )
+                attempt = attempt.confirmed_on(start_dt, as_local(start_dt).date())
                 try:
                     await self._deliveries.async_charge(attempt)
                 except DeliveryRecordUnreadable:
@@ -2006,7 +2067,7 @@ class BaseIrrigationCoordinator:
                     # if a late wake-up ran the pump past it (ADR-0054). A
                     # cycle that never confirmed ON has no start_dt and books
                     # nothing here; it is recorded as not delivered instead.
-                    if attempt is not None:
+                    if attempt is not None and attempt.is_actuated:
                         closed = attempt.closed(
                             off_commanded_at=end_dt,
                             abort_cause=abort_cause.value if abort_cause else None,
@@ -2047,10 +2108,22 @@ class BaseIrrigationCoordinator:
                     moisture_before=moisture_before,
                     manual=manual,
                 )
+            if attempt is not None and not attempt.is_actuated:
+                # Requested but never confirmed ON: it charges nothing. Stopped
+                # first, it was aborted; otherwise the pump failed to open.
+                cause = abort_cause.value if abort_cause else None
+                closed = attempt.unconfirmed(
+                    off_commanded_at=end_dt if commanded else None,
+                    abort_cause=cause
+                    or (None if open_failure else AbortCause.ERROR.value),
+                    reason=open_failure[0] if open_failure else None,
+                )
             if closed is not None:
                 # Recorded once OFF is read back, or known not to be.
                 self._deliveries.close(
-                    closed.read_back_off(utcnow()) if off_confirmed else closed
+                    closed.read_back_off(utcnow())
+                    if off_confirmed and closed.off_commanded_at is not None
+                    else closed
                 )
             if start_dt is not None:
                 if cycle_finished:
@@ -2188,11 +2261,14 @@ class BaseIrrigationCoordinator:
         )
         self._main_coordinator.add_event(self._growspace_id, event)
 
-    async def async_manual_run(self, duration: int | None) -> None:
+    async def async_manual_run(
+        self, duration: int | None, user_id: str | None = None
+    ) -> None:
         """Trigger a manual irrigation cycle, bypassing the schedule.
 
         Args:
             duration: Duration in seconds. Uses the configured default when None.
+            user_id: The Home Assistant user who asked, recorded on the attempt.
 
         Raises:
             ServiceValidationError: When no irrigation pump entity is configured or
@@ -2241,7 +2317,10 @@ class BaseIrrigationCoordinator:
         task = self._config_entry.async_create_background_task(
             self.hass,
             self._run_pump_cycle(
-                "irrigation", pump_entity, int(effective_duration), {"manual": True}
+                "irrigation",
+                pump_entity,
+                int(effective_duration),
+                {"manual": True, "user_id": user_id},
             ),
             f"irrigation_manual_run_{self._growspace_id}",
         )

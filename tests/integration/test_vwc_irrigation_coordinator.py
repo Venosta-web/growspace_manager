@@ -7,6 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
+from custom_components.growspace_manager.domain.delivery_attempt import (
+    AttemptTrigger,
+    TriggerEvidence,
+)
 from custom_components.growspace_manager.domain.ec_state import (
     ec_modulation_factor_for_reading,
 )
@@ -190,17 +194,18 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
                 t0,  # 1. the loop's validated VWC read
                 t0,  # 2. _set_phase("P1 - Ramp Up") logbook event
                 t0,  # 3. the shot's validated VWC read (substrate tracker)
-                t0,  # 4. controller_snapshot's moisture check
-                t0,  # 5. _active_events["start"]
-                t0,  # 6. moisture_before
-                t0,  # 7. _fire_logbook_event("Irrigation started…")
-                t0,  # 8. command_dt = utcnow() (before switch.turn_on)
-                t0,  # 9. start_dt = utcnow() (switch confirmed 'on')
-                t10,  # 10. end_dt = utcnow()
-                t10,  # 11. controller_snapshot's moisture check
-                t10,  # 12. the composer's moisture_after
-                t10,  # 13. _fire_logbook_event("Irrigation completed…")
-                t10,  # 14. the completion report's moisture_after
+                t0,  # 4. requested_at, as the request reaches the gate
+                t0,  # 5. controller_snapshot's moisture check
+                t0,  # 6. _active_events["start"]
+                t0,  # 7. moisture_before
+                t0,  # 8. _fire_logbook_event("Irrigation started…")
+                t0,  # 9. command_dt = utcnow() (before switch.turn_on)
+                t0,  # 10. start_dt = utcnow() (switch confirmed 'on')
+                t10,  # 11. end_dt = utcnow()
+                t10,  # 12. controller_snapshot's moisture check
+                t10,  # 13. the composer's moisture_after
+                t10,  # 14. _fire_logbook_event("Irrigation completed…")
+                t10,  # 15. the completion report's moisture_after
             ],
         ),
     ):
@@ -224,6 +229,18 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
         assert event.duration_sec == 10
         assert event.start_time is not None
         assert event.end_time is not None
+
+        # The shot's Delivery Attempt carries the decision behind it (ADR-0055).
+        (attempt,) = vwc_coordinator._deliveries.attempts
+        assert attempt.trigger is AttemptTrigger.STEERING
+        assert attempt.trigger_evidence == TriggerEvidence(
+            phase=attempt.trigger_evidence.phase,
+            vwc=40.0,
+            base_s=10.0,
+            vwc_factor=1.0,
+            ec_factor=1.0,
+        )
+        assert attempt.trigger_evidence.phase
 
 
 async def test_p1_target_reached(vwc_coordinator, mock_hass) -> None:
@@ -269,17 +286,18 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
                 # Case B: pump fires (phase stays P2, no extra logbook from _set_phase)
                 t0,  # 3. the loop's validated VWC read
                 t0,  # 4. the shot's validated VWC read (substrate tracker)
-                t0,  # 5. controller_snapshot's moisture check
-                t0,  # 6. _active_events["start"]
-                t0,  # 7. moisture_before
-                t0,  # 8. _fire_logbook_event("Irrigation started…")
-                t0,  # 9. command_dt = utcnow() (before switch.turn_on)
-                t0,  # 10. start_dt = utcnow() (switch confirmed 'on')
-                t10,  # 11. end_dt = utcnow()
-                t10,  # 12. controller_snapshot's moisture check
-                t10,  # 13. the composer's moisture_after
-                t10,  # 14. _fire_logbook_event("Irrigation completed…")
-                t10,  # 15. the completion report's moisture_after
+                t0,  # 5. requested_at, as the request reaches the gate
+                t0,  # 6. controller_snapshot's moisture check
+                t0,  # 7. _active_events["start"]
+                t0,  # 8. moisture_before
+                t0,  # 9. _fire_logbook_event("Irrigation started…")
+                t0,  # 10. command_dt = utcnow() (before switch.turn_on)
+                t0,  # 11. start_dt = utcnow() (switch confirmed 'on')
+                t10,  # 12. end_dt = utcnow()
+                t10,  # 13. controller_snapshot's moisture check
+                t10,  # 14. the composer's moisture_after
+                t10,  # 15. _fire_logbook_event("Irrigation completed…")
+                t10,  # 16. the completion report's moisture_after
             ],
         ),
     ):

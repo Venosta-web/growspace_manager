@@ -279,7 +279,9 @@ async def handle_run_irrigation_cycle(
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     duration = call.data.get(ATTR_DURATION)
     irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
-    await irrigation_coord.async_manual_run(duration=duration)
+    await irrigation_coord.async_manual_run(
+        duration=duration, user_id=call.context.user_id
+    )
     _LOGGER.info(
         "Manual irrigation cycle started for growspace '%s' (duration=%s)",
         growspace_id,

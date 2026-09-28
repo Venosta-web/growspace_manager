@@ -1096,14 +1096,14 @@ async def test_async_manual_run_triggers_pump_cycle(
     with patch.object(
         coordinator, "_run_pump_cycle", new_callable=AsyncMock
     ) as mock_run_cycle:
-        await coordinator.async_manual_run(duration=45)
+        await coordinator.async_manual_run(duration=45, user_id="user-1")
         await asyncio.sleep(0)
 
         mock_run_cycle.assert_awaited_once_with(
             "irrigation",
             "switch.irrigation_pump",
             45,
-            {"manual": True},
+            {"manual": True, "user_id": "user-1"},
         )
 
 
@@ -1125,7 +1125,7 @@ async def test_async_manual_run_uses_default_duration_when_none(
             "irrigation",
             "switch.irrigation_pump",
             30,  # default from fixture: irrigation_duration=30
-            {"manual": True},
+            {"manual": True, "user_id": None},
         )
 
 
