@@ -226,11 +226,103 @@ def test_a_commanded_request_ends_at_its_command() -> None:
     assert commanded.interrupted(ON + timedelta(minutes=5)).ended_at == ON
 
 
+def test_an_interrupted_drain_carries_no_volume() -> None:
+    closed = _drain(flow_rate_ml_per_sec=10.0).interrupted(ON + timedelta(hours=1))
+
+    assert closed.outcome is AttemptOutcome.INTERRUPTED
+    assert closed.ended_at == ON + timedelta(seconds=60)
+    assert (closed.charged_l, closed.estimated_l) == (0.0, None)
+    assert DeliveryAttempt.from_dict(closed.as_dict()) == closed
+
+
 def test_a_closed_attempt_is_not_interrupted() -> None:
     closed = _attempt().closed(off_commanded_at=ON + timedelta(seconds=60))
 
     with pytest.raises(ValueError, match="closed"):
         closed.interrupted(ON + timedelta(hours=1))
+
+
+def _drain(**overrides: Any) -> DeliveryAttempt:
+    """An actuated drain, planned 60 s with no flow rate, as the coordinator plans one."""
+    overrides.setdefault("flow_rate_ml_per_sec", None)
+    return _attempt(
+        trigger=AttemptTrigger.DRAIN,
+        trigger_evidence=TriggerEvidence(slot="14:30:00"),
+        **overrides,
+    )
+
+
+def test_a_drain_is_actuated_and_charges_nothing() -> None:
+    """A drain moves water out: confirmed ON, it has no charge date and no charge."""
+    attempt = _drain()
+
+    assert attempt.state is AttemptState.ACTUATED
+    assert not attempt.charges
+    assert attempt.charge_date is None
+    assert attempt.charged_l == 0.0
+    assert dispensed_volume([attempt], TODAY) == DispensedVolume()
+
+
+def test_a_closed_drain_carries_no_volume() -> None:
+    """Even with a flow rate on record, a drain is never topped up or estimated."""
+    closed = _drain(flow_rate_ml_per_sec=10.0).closed(
+        off_commanded_at=ON + timedelta(seconds=90)
+    )
+
+    assert closed.outcome is AttemptOutcome.COMPLETED
+    assert closed.charged_l == 0.0
+    assert closed.estimated_l is None
+    assert closed.as_dict()["evidence"] is None
+    assert dispensed_volume([closed], TODAY) == DispensedVolume()
+
+    aborted = _drain().closed(off_commanded_at=ON, abort_cause="watchdog")
+    assert aborted.outcome is AttemptOutcome.ABORTED
+    assert aborted.abort_cause == "watchdog"
+
+
+def test_a_not_delivered_attempt_records_when_water_may_have_moved() -> None:
+    """From the ON command to OFF read back: 10 s of ON wait and 6 s of readback."""
+    closed = (
+        _requested()
+        .commanded(ON)
+        .unconfirmed(
+            off_commanded_at=ON + timedelta(seconds=10), reason="on_unconfirmed"
+        )
+    )
+    assert closed.not_delivered_window == (ON, None)
+
+    read_back = closed.read_back_off(ON + timedelta(seconds=16))
+
+    assert read_back.not_delivered_window == (ON, ON + timedelta(seconds=16))
+    assert read_back.as_dict()["not_delivered_window"] == {
+        "start": "2026-09-26T14:30:00+00:00",
+        "end": "2026-09-26T14:30:16+00:00",
+    }
+    assert read_back.charged_l == 0.0
+    assert dispensed_volume([read_back], TODAY) == DispensedVolume()
+
+
+@pytest.mark.parametrize(
+    "attempt",
+    [
+        _requested(),
+        _attempt(),
+        _attempt().closed(off_commanded_at=ON + timedelta(seconds=60)),
+        _requested().unconfirmed(off_commanded_at=None, abort_cause="cancel"),
+        _suppressed(),
+    ],
+    ids=["requested", "actuated", "completed", "aborted-unconfirmed", "suppressed"],
+)
+def test_only_a_not_delivered_attempt_has_a_window(attempt: DeliveryAttempt) -> None:
+    """A delivered shot has its measured ON time; a refused one moved nothing."""
+    assert attempt.not_delivered_window is None
+    assert attempt.as_dict()["not_delivered_window"] is None
+
+
+def test_a_pump_never_commanded_is_not_an_undelivered_one() -> None:
+    """Not delivered means the ON command went out; before it, it is aborted."""
+    with pytest.raises(ValueError, match="never commanded"):
+        _requested().unconfirmed(off_commanded_at=None, reason="on_unconfirmed")
 
 
 def test_a_commanded_request_is_never_suppressed() -> None:
@@ -351,6 +443,16 @@ def test_the_trigger_is_read_from_the_request(
 ) -> None:
     """Manual wins over a phase; anything else was scheduled."""
     assert attempt_trigger(event_data) is trigger
+
+
+def test_a_drain_is_its_own_trigger_with_its_slot() -> None:
+    """A drain is told apart by its event type, and records the slot it ran at."""
+    event_data = {"time": "22:00:00", "duration": 45}
+
+    assert attempt_trigger(event_data, event_type="drain") is AttemptTrigger.DRAIN
+    assert trigger_evidence(event_data, event_type="drain").as_dict() == {
+        "slot": "22:00:00"
+    }
 
 
 @pytest.mark.parametrize(
@@ -496,6 +598,11 @@ def test_the_row_limit_evicts_uncharged_rows_of_today_before_any_charge() -> Non
             [_suppressed(trigger=AttemptTrigger.STEERING)],
             _suppressed(at=ON + timedelta(minutes=1), trigger=AttemptTrigger.STEERING),
         )[0],
+        _drain(),
+        _drain()
+        .closed(off_commanded_at=ON + timedelta(seconds=60))
+        .read_back_off(ON + timedelta(seconds=61)),
+        _suppressed(trigger=AttemptTrigger.DRAIN),
         _attempt().interrupted(
             ON + timedelta(hours=2),
             off_commanded_at=ON + timedelta(hours=2),
@@ -510,6 +617,9 @@ def test_the_row_limit_evicts_uncharged_rows_of_today_before_any_charge() -> Non
         "closed",
         "not-delivered",
         "suppressed",
+        "drain-actuated",
+        "drain-closed",
+        "drain-suppressed",
         "interrupted",
         "interrupted-request",
     ],
@@ -566,6 +676,7 @@ def test_the_wire_form_names_every_field() -> None:
         "charged_l": pytest.approx(0.6),
         "estimated_l": pytest.approx(0.6),
         "evidence": "estimated",
+        "not_delivered_window": None,
         "suppressed_count": 0,
         "last_requested_at": None,
         "ended_at": None,
@@ -652,6 +763,18 @@ _DROP = object()
         (_wire(_suppressed(), last_requested_at=None), ValueError),
         (_wire(_suppressed(), reason=None), ValueError),
         (_wire(_suppressed(), on_commanded_at=ON.isoformat()), ValueError),
+        (_wire(_drain(), charge_date="2026-09-26"), ValueError),
+        (_wire(_drain(), charged_l=0.6), ValueError),
+        (_wire(_drain(), estimated_l=0.6), ValueError),
+        (
+            _wire(
+                _requested()
+                .commanded(ON)
+                .unconfirmed(off_commanded_at=ON, reason="on_unconfirmed"),
+                on_commanded_at=None,
+            ),
+            ValueError,
+        ),
         (_wire(ended_at=ON.isoformat()), ValueError),
         (_wire(_attempt().interrupted(ON), ended_at=None), ValueError),
         (_wire(_attempt().interrupted(ON), ended_at="2026-09-26T14:30:00"), ValueError),
@@ -691,6 +814,10 @@ _DROP = object()
         "suppressed-without-last",
         "suppressed-without-reason",
         "suppressed-commanded",
+        "drain-with-date",
+        "drain-charged",
+        "drain-estimated",
+        "not-delivered-uncommanded",
         "ended-while-open",
         "interrupted-without-end",
         "naive-end",

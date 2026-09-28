@@ -400,12 +400,13 @@ async def test_enforce_off_sends_nothing_while_automation_is_off(
 
 
 # What a stopped process left behind for its cycle on the pump:
-# - ``marker``: only the In-flight Marker, as a drain leaves it, Drains not
-#   being Delivery Attempts yet (#854);
+# - ``marker``: only the In-flight Marker, all a start has when the attempts
+#   could not be read (#854);
 # - ``request``: an attempt written before the ON command and never confirmed,
 #   with no marker, which is written at confirm-ON — the gap #854 left open;
-# - ``shot``: a charged attempt and its marker, a crash mid-shot.
-LEFT_BEHIND = ("marker", "request", "shot")
+# - ``shot``: a charged attempt and its marker, a crash mid-shot;
+# - ``drain``: an uncharged drain attempt and its marker, a crash mid-drain.
+LEFT_BEHIND = ("marker", "request", "shot", "drain")
 
 
 def _crashed_at() -> datetime:
@@ -420,12 +421,12 @@ def _open_attempt(left: str, output: str) -> DeliveryAttempt:
         attempt_id=f"crashed-{left}",
         growspace_id="tent",
         output=output,
-        trigger=AttemptTrigger.SCHEDULE,
+        trigger=AttemptTrigger.DRAIN if left == "drain" else AttemptTrigger.SCHEDULE,
         planned_s=30,
         flow_rate_ml_per_sec=10.0,
         requested_at=crashed_at - timedelta(seconds=2),
     )
-    if left == "shot":
+    if left in ("shot", "drain"):
         return attempt.commanded(crashed_at - timedelta(seconds=1)).confirmed_on(
             crashed_at, dt_util.as_local(crashed_at).date()
         )

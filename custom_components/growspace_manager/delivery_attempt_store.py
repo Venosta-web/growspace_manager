@@ -6,7 +6,7 @@ disk before the cycle proceeds. The first is before the ON command, once the
 gate has passed, so a crash between command and confirmation still leaves an
 open attempt behind. The second is at confirm-ON, which charges it, so a restart
 mid-shot keeps the shot counted and no restart hands out a fresh daily
-allowance (#787). Its close only tops the charge up, and a suppressed request
+allowance (#787); a drain is written at both moments too, and never charged. Its close only tops the charge up, and a suppressed request
 charges nothing, so both go through a batched save: a lost one costs at most a
 top-up or a row of history.
 
@@ -150,8 +150,8 @@ class GrowspaceDeliveries:
     async def async_charge(self, attempt: DeliveryAttempt) -> None:
         """Charge an actuated attempt, and have it on disk before returning.
 
-        The charge is held in memory whatever happens next: the pump did
-        confirm ON. A failed write, or a file that was never readable, raises
+        A drain is written the same way and charges nothing. The charge is held
+        in memory whatever happens next: the pump did confirm ON. A failed write, or a file that was never readable, raises
         and leaves the growspace held.
         """
         self._put(attempt)

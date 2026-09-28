@@ -13,7 +13,7 @@ Two ways a person takes an output over, and one rule for each:
 
 A pump found ON that a cycle of ours was running when the previous process
 stopped is neither: that cycle is closed, which switches it off. Its open
-Delivery Attempt says it was ours (#884), or for a drain its In-flight Marker
+Delivery Attempt says it was ours (#884), and its In-flight Marker does too
 (#854).
 """
 

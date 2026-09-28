@@ -14,12 +14,15 @@ gate passes, actuated (and charged) when its pump confirms ON, and closed as
 closed ``suppressed`` without ever reaching the pump, and a run of those with
 one reason is one row. A request that was never confirmed ON closes
 ``not_delivered``, or ``aborted`` when something stopped it first, and charges
-nothing. One a stopped process left open is closed ``interrupted`` by the next
-start, keeping whatever confirm-ON charged.
+nothing, and records the window from its ON command to OFF read back in which
+water may still have moved. One a stopped process left open is closed
+``interrupted`` by the next start, keeping whatever confirm-ON charged.
+
+A drain is an attempt too, but it moves water out of the pots rather than into
+them, so it never charges: an actuated drain has no charge date and no volume.
 
 This module holds the records and the arithmetic, and is free of Home
-Assistant. Drain attempts, the ``not_delivered`` window and metered evidence
-are the rest of ADR-0055 and are not recorded yet.
+Assistant. Metered evidence is the rest of ADR-0055 and is not recorded yet.
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ class AttemptTrigger(StrEnum):
     SCHEDULE = "schedule"
     STEERING = "steering"
     MANUAL = "manual"
+    DRAIN = "drain"
 
 
 class AttemptState(StrEnum):
@@ -88,7 +92,7 @@ class TriggerEvidence:
     A schedule names its ``slot``; a steering shot its ``phase``, the ``vwc``
     reading that triggered it, its ``base_s`` and the ``vwc_factor`` and
     ``ec_factor`` it was composed with; a manual run the HA ``user_id`` of the
-    person who asked. Nothing else: a sensor series or a user name is left out
+    person who asked; a drain its ``slot``. Nothing else: a sensor series or a user name is left out
     on purpose (ADR-0055).
     """
 
@@ -134,8 +138,12 @@ class TriggerEvidence:
         )
 
 
-def attempt_trigger(event_data: Mapping[str, Any]) -> AttemptTrigger:
-    """Classify a pump request from the event data its caller passed."""
+def attempt_trigger(
+    event_data: Mapping[str, Any], *, event_type: str = "irrigation"
+) -> AttemptTrigger:
+    """Classify a pump request from its event type and the data its caller passed."""
+    if event_type == "drain":
+        return AttemptTrigger.DRAIN
     if event_data.get("manual"):
         return AttemptTrigger.MANUAL
     if "phase" in event_data:
@@ -143,9 +151,11 @@ def attempt_trigger(event_data: Mapping[str, Any]) -> AttemptTrigger:
     return AttemptTrigger.SCHEDULE
 
 
-def trigger_evidence(event_data: Mapping[str, Any]) -> TriggerEvidence:
+def trigger_evidence(
+    event_data: Mapping[str, Any], *, event_type: str = "irrigation"
+) -> TriggerEvidence:
     """Read the evidence its trigger kind records from a pump request."""
-    trigger = attempt_trigger(event_data)
+    trigger = attempt_trigger(event_data, event_type=event_type)
     if trigger is AttemptTrigger.MANUAL:
         return TriggerEvidence(user_id=_optional_text(event_data.get("user_id")))
     if trigger is AttemptTrigger.STEERING:
@@ -168,10 +178,11 @@ class DeliveryAttempt:
     """One irrigation request, from reaching the gate to its close.
 
     ``charge_date`` is the local day the pump confirmed ON, and is set only
-    then. The charge belongs to that day even when a top-up lands after
-    midnight. A merged run of suppressions keeps its first request as
-    ``requested_at`` and its last as ``last_requested_at``. ``ended_at`` is set
-    only on an ``interrupted`` attempt: the end its evidence bounds it to.
+    then, and never on a drain. The charge belongs to that day even when a
+    top-up lands after midnight. A merged run of suppressions keeps its first
+    request as ``requested_at`` and its last as ``last_requested_at``.
+    ``ended_at`` is set only on an ``interrupted`` attempt: the end its
+    evidence bounds it to.
     """
 
     attempt_id: str
@@ -237,6 +248,24 @@ class DeliveryAttempt:
         return self.outcome is None
 
     @property
+    def charges(self) -> bool:
+        """Whether confirming ON charges Dispensed Volume: anything but a drain."""
+        return self.trigger is not AttemptTrigger.DRAIN
+
+    @property
+    def not_delivered_window(self) -> tuple[datetime, datetime | None] | None:
+        """When water may have moved on an Unconfirmed Pump Cycle.
+
+        From the ON command to OFF read back, about 16 s at most: the 10 s ON
+        wait and the readback of OFF. The end is ``None`` when OFF was never
+        read back, which the OFF-unconfirmed fault answers for. Any other
+        attempt has no such window.
+        """
+        if self.outcome is not AttemptOutcome.NOT_DELIVERED:
+            return None
+        return _required(self.on_commanded_at), self.off_confirmed_at
+
+    @property
     def is_actuated(self) -> bool:
         """Whether its pump confirmed ON, which is what charges it."""
         return self.on_confirmed_at is not None
@@ -298,8 +327,13 @@ class DeliveryAttempt:
         return replace(self, on_commanded_at=at)
 
     def confirmed_on(self, at: datetime, charge_date: date) -> DeliveryAttempt:
-        """Return the attempt actuated, and charged its plan, at confirm-ON."""
+        """Return the attempt actuated, and charged its plan, at confirm-ON.
+
+        A drain is actuated and charged nothing.
+        """
         self._require(AttemptState.REQUESTED)
+        if not self.charges:
+            return replace(self, on_confirmed_at=at)
         return replace(
             self,
             on_confirmed_at=at,
@@ -317,15 +351,24 @@ class DeliveryAttempt:
 
         The estimate is the measured ON time. The charge keeps its plan and is
         only ever topped up, so an aborted shot costs the cap its whole plan and
-        a late wake-up that overran it costs what really ran.
+        a late wake-up that overran it costs what really ran. A drain has
+        neither: what it pumps out is not delivered water.
         """
         self._require(AttemptState.ACTUATED)
+        outcome = AttemptOutcome.ABORTED if abort_cause else AttemptOutcome.COMPLETED
+        if not self.charges:
+            return replace(
+                self,
+                outcome=outcome,
+                abort_cause=abort_cause,
+                off_commanded_at=off_commanded_at,
+            )
         confirmed = _required(self.on_confirmed_at)
         measured_s = (off_commanded_at - confirmed).total_seconds()
         estimated_l = _liters(measured_s, self.flow_rate_ml_per_sec)
         return replace(
             self,
-            outcome=AttemptOutcome.ABORTED if abort_cause else AttemptOutcome.COMPLETED,
+            outcome=outcome,
             abort_cause=abort_cause,
             off_commanded_at=off_commanded_at,
             estimated_l=estimated_l,
@@ -342,12 +385,15 @@ class DeliveryAttempt:
         """Close a requested attempt whose pump never confirmed ON.
 
         Stopped by something, it is ``aborted`` with that cause; otherwise the
-        pump failed to open and it is ``not_delivered`` with the reason. Either
-        way nothing is charged: only an actuated attempt charges.
+        pump failed to open and it is ``not_delivered`` with the reason, which
+        only a commanded pump can be. Either way nothing is charged: only an
+        actuated attempt charges.
         """
         self._require(AttemptState.REQUESTED)
         if abort_cause is None and reason is None:
             raise ValueError("an unconfirmed attempt closes with a cause or a reason")
+        if abort_cause is None and self.on_commanded_at is None:
+            raise ValueError("a pump never commanded ON is not an undelivered one")
         return replace(
             self,
             outcome=(
@@ -372,7 +418,8 @@ class DeliveryAttempt:
         evidence. An actuated shot ends at the earlier of its planned end and
         ``found_at``, and its estimate runs to there: it keeps the charge
         confirm-ON gave it and is never topped up. A request that never
-        confirmed ON ends at its last recorded moment and charges nothing.
+        confirmed ON ends at its last recorded moment and charges nothing. A
+        drain ends the same way as a shot and, as ever, carries no volume.
 
         ``off_commanded_at`` is set when its pump still read ON and was
         switched off; ``off_confirmed_at`` whenever its pump was read OFF.
@@ -385,9 +432,13 @@ class DeliveryAttempt:
         else:
             planned_end = self.on_confirmed_at + timedelta(seconds=self.planned_s)
             ended_at = max(self.on_confirmed_at, min(found_at, planned_end))
-            estimated_l = _liters(
-                (ended_at - self.on_confirmed_at).total_seconds(),
-                self.flow_rate_ml_per_sec,
+            estimated_l = (
+                _liters(
+                    (ended_at - self.on_confirmed_at).total_seconds(),
+                    self.flow_rate_ml_per_sec,
+                )
+                if self.charges
+                else None
             )
         return replace(
             self,
@@ -429,6 +480,7 @@ class DeliveryAttempt:
             "charged_l": self.charged_l,
             "estimated_l": self.estimated_l,
             "evidence": "estimated" if self.estimated_l is not None else None,
+            "not_delivered_window": _window(self.not_delivered_window),
             "suppressed_count": self.suppressed_count,
             "last_requested_at": _iso(self.last_requested_at),
             "ended_at": _iso(self.ended_at),
@@ -501,9 +553,11 @@ class DeliveryAttempt:
         """Refuse a record whose fields disagree about what happened."""
         if state != self.state.value:
             raise ValueError("delivery attempt state disagrees with its outcome")
-        if self.is_actuated != (self.charge_date is not None):
+        if not self.charges and (self.charged_l or self.estimated_l is not None):
+            raise ValueError("a drain attempt carries a volume")
+        if (self.is_actuated and self.charges) != (self.charge_date is not None):
             raise ValueError("delivery attempt has a charge date out of place")
-        if self.is_actuated:
+        if self.charge_date is not None:
             if self.charged_l < _liters(self.planned_s, self.flow_rate_ml_per_sec):
                 raise ValueError("delivery attempt is charged less than its plan")
         elif self.charged_l:
@@ -515,6 +569,11 @@ class DeliveryAttempt:
             raise ValueError("delivery attempt has a suppression count out of place")
         if suppressed and (self.reason is None or self.on_commanded_at is not None):
             raise ValueError("a suppressed delivery attempt reached the pump")
+        if (
+            self.outcome is AttemptOutcome.NOT_DELIVERED
+            and self.on_commanded_at is None
+        ):
+            raise ValueError("an undelivered attempt was never commanded")
         if (self.outcome is AttemptOutcome.INTERRUPTED) != (self.ended_at is not None):
             raise ValueError("delivery attempt has an end time out of place")
 
@@ -613,3 +672,12 @@ def _optional_aware(value: Any) -> datetime | None:
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+def _window(
+    window: tuple[datetime, datetime | None] | None,
+) -> dict[str, str | None] | None:
+    if window is None:
+        return None
+    start, end = window
+    return {"start": start.isoformat(), "end": _iso(end)}

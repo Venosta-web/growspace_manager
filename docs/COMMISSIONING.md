@@ -301,8 +301,7 @@ is not running, nothing in it can stop a pump.
   off and read back, whatever `unexpected_on_policy` says, and an
   `interrupted_cycle` row is written to the Safety Ledger. If it will not read
   OFF, `fault_off_unconfirmed` latches and OFF is re-sent every minute. A plug
-  that reports late and then restores ON is treated the same way. A drain
-  cycle is recognised by its in-flight marker instead.
+  that reports late and then restores ON is treated the same way.
   ([#854](https://github.com/Venosta-web/growspace_manager/issues/854),
   [#884](https://github.com/Venosta-web/growspace_manager/issues/884))
 - The shot's attempt closes as `interrupted` and keeps the planned volume it

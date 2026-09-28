@@ -62,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on. If that write fails, the pump is no longer switched on at all: the
   growspace is held under `delivery_record_unreadable` straight away, where
   before the pump ran until the write at confirm-ON failed.
+- Scheduled drains are now Delivery Attempts too, recorded with their schedule
+  slot and never charged against the daily caps; a refused drain is recorded as
+  `suppressed`. A drain is written to disk before its pump is switched on, so a
+  failed write now holds the growspace under `delivery_record_unreadable`
+  instead of draining. An Unconfirmed Pump Cycle's attempt records
+  `not_delivered_window`, from the ON command to OFF read back, in which water
+  may still have moved; it still charges nothing.
 - A pump found ON at start while an irrigation attempt was still open is
   Growspace Manager's own interrupted shot, not someone watering by hand. This
   now includes a crash after the ON command but before the pump confirmed ON,
