@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -307,6 +307,7 @@ def watering_service() -> WateringService:
     """Return a minimal WateringService."""
     repo = MagicMock()
     repo.plants = {}
+    repo.require_plant.side_effect = lambda plant_id: repo.plants[plant_id]
     repo.get_growspace_plants.return_value = []
     validator = MagicMock()
     nutrient_manager = MagicMock()
@@ -359,14 +360,11 @@ async def test_watering_enforces_rolling_window(
     watering_service.repository.plants["p1"] = plant
     watering_service.repository.get_growspace.return_value = growspace
 
+    tomorrow = datetime.combine(date.today() + timedelta(days=1), time(), tzinfo=UTC)
     with patch(
-        "custom_components.growspace_manager.services.watering_service.dt_util"
-    ) as mock_dt:
-        # Use a different date so a new entry is appended
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
-        mock_dt.now.return_value.isoformat.return_value = tomorrow
-        mock_dt.now.return_value.date.return_value.isoformat.return_value = tomorrow
-
+        "custom_components.growspace_manager.services.watering_service.dt_util.now",
+        return_value=tomorrow,
+    ):
         await watering_service._water_plant_internal(
             plant_id="p1",
             amount=1.0,

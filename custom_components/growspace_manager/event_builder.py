@@ -29,6 +29,11 @@ class EventBuilder:
         amount: float,
         preset_name: str | None,
         final_nutrients: dict[str, float],
+        *,
+        watering_id: str | None = None,
+        user_id: str | None = None,
+        watered_at: str | None = None,
+        from_monitored_tank: bool = False,
     ) -> GrowspaceEvent:
         """Create a watering event for the logbook.
 
@@ -41,7 +46,7 @@ class EventBuilder:
         Returns:
             GrowspaceEvent configured for watering.
         """
-        now_iso = dt_util.now().isoformat()
+        now_iso = watered_at or dt_util.now().isoformat()
         reasons = EventBuilder._build_watering_reasons(
             plant, amount, preset_name, final_nutrients
         )
@@ -55,6 +60,9 @@ class EventBuilder:
             severity=0.0,
             category=CATEGORY_WATERING,
             reasons=reasons,
+            watering_id=watering_id,
+            user_id=user_id,
+            from_monitored_tank=from_monitored_tank,
         )
 
     @staticmethod

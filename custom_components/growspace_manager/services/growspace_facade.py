@@ -540,10 +540,26 @@ class GrowspaceFacade:
         nutrients: dict[str, float] | None = None,
         preset_id: str | None = None,
         amount: float | None = None,
+        *,
+        watered_at: str | None = None,
+        from_monitored_tank: bool = False,
+        user_id: str | None = None,
     ) -> int:
         """Record a watering event for all plants in a growspace."""
+        report_options: dict[str, Any] = {}
+        if watered_at is not None:
+            report_options["watered_at"] = watered_at
+        if from_monitored_tank:
+            report_options["from_monitored_tank"] = True
+        if user_id is not None:
+            report_options["user_id"] = user_id
         return await self._coordinator.watering_service.async_water_growspace(
-            growspace_id, amount_per_plant, nutrients, preset_id, amount
+            growspace_id,
+            amount_per_plant,
+            nutrients,
+            preset_id,
+            amount,
+            **report_options,
         )
 
     # -------------------------------------------------------------------------

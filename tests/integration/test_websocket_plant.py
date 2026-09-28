@@ -13,6 +13,7 @@ from custom_components.growspace_manager.exceptions import (
     EntityNotFoundError,
     GrowspaceError,
 )
+from custom_components.growspace_manager.websocket._common import WS_MSG_USER
 from custom_components.growspace_manager.websocket.plant import (
     SCHEMA_WS_SET_PLANT_LAYOUT,
     websocket_add_plant,
@@ -144,7 +145,37 @@ async def test_water_plant_success(
     msg = {"id": 1, "plant_id": "p1", "amount": 500.0}
     await websocket_water_plant(hass, mock_coordinator, msg)
     mock_coordinator.services.plants.water_plant.assert_awaited_once_with(
-        plant_id="p1", amount=500.0, nutrients=None, preset_id=None
+        plant_id="p1",
+        amount=500.0,
+        nutrients=None,
+        preset_id=None,
+        watered_at=None,
+        from_monitored_tank=False,
+        user_id=None,
+    )
+
+
+async def test_water_plant_forwards_report_fields_and_actor(
+    hass: HomeAssistant, mock_coordinator: MagicMock
+) -> None:
+    user = MagicMock(id="ha-user")
+    msg = {
+        "id": 1,
+        "plant_id": "p1",
+        "amount": 1.0,
+        "watered_at": "2026-01-10T12:00:00+00:00",
+        "from_monitored_tank": True,
+        WS_MSG_USER: user,
+    }
+    await websocket_water_plant(hass, mock_coordinator, msg)
+    mock_coordinator.services.plants.water_plant.assert_awaited_once_with(
+        plant_id="p1",
+        amount=1.0,
+        nutrients=None,
+        preset_id=None,
+        watered_at="2026-01-10T12:00:00+00:00",
+        from_monitored_tank=True,
+        user_id="ha-user",
     )
 
 

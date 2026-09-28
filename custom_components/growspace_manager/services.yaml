@@ -2356,6 +2356,67 @@ apply_ipm:
         text:
           multiline: true
 
+water_plant:
+  description: Record water given by hand to one plant
+  fields:
+    plant_id:
+      description: Plant ID
+      required: true
+      selector:
+        text:
+    amount:
+      description: Liters given
+      required: true
+      selector:
+        number:
+          min: 0
+          step: 0.01
+    watered_at:
+      description: ISO timestamp with timezone, up to 7 days ago (defaults to now)
+      required: false
+      selector:
+        text:
+    from_monitored_tank:
+      description: Water came from a monitored tank
+      required: false
+      default: false
+      selector:
+        boolean:
+
+water_growspace:
+  description: Record water given by hand, split across plants in a growspace
+  fields:
+    growspace_id:
+      description: Growspace ID
+      required: true
+      selector:
+        text:
+    amount:
+      description: Total liters given across all plants
+      required: false
+      selector:
+        number:
+          min: 0
+          step: 0.01
+    amount_per_plant:
+      description: Liters given to each plant (used when amount is omitted)
+      required: false
+      selector:
+        number:
+          min: 0
+          step: 0.01
+    watered_at:
+      description: ISO timestamp with timezone, up to 7 days ago (defaults to now)
+      required: false
+      selector:
+        text:
+    from_monitored_tank:
+      description: Water came from a monitored tank
+      required: false
+      default: false
+      selector:
+        boolean:
+
 log_drain_reading:
   description: Log a drain/runoff EC measurement for a growspace
   fields:

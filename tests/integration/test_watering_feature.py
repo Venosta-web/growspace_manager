@@ -5,24 +5,29 @@ functionality, including coordinator methods, service handlers, and
 sensor attribute integration.
 """
 
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.domain.water_aggregation import (
+    compute_growspace_water,
+)
 from custom_components.growspace_manager.exceptions import (
+    GrowspaceError,
     GrowspaceNotFoundError,
     PlantNotFoundError,
 )
-from custom_components.growspace_manager.models import Growspace
+from custom_components.growspace_manager.models import Growspace, IrrigationTank
 from custom_components.growspace_manager.sensor import PlantEntity
 from custom_components.growspace_manager.services.irrigation_watering import (
     handle_water_growspace,
     handle_water_plant,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from tests.common import MockConfigEntry, async_capture_events
 
 from .common import create_plant
@@ -86,6 +91,112 @@ def watering_coordinator(hass: HomeAssistant) -> GrowspaceCoordinator:
 
 class TestAsyncWaterPlant:
     """Tests for the async_water_plant coordinator method."""
+
+    @pytest.mark.asyncio
+    async def test_report_identity_and_actor_are_persisted(
+        self, hass: HomeAssistant, watering_coordinator: GrowspaceCoordinator
+    ) -> None:
+        events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
+        await watering_coordinator.services.plants.water_plant(
+            "test_plant",
+            amount=1.25,
+            user_id="ha-user",
+            from_monitored_tank=True,
+        )
+        reading = watering_coordinator.growspaces["test_gs"].water_usage.daily_readings[
+            0
+        ]
+        assert reading["watering_id"]
+        assert reading["user_id"] == "ha-user"
+        assert reading["plant_id"] == "test_plant"
+        assert reading["from_monitored_tank"] is True
+        assert events[0].data["watering_id"] == reading["watering_id"]
+        assert events[0].data["user_id"] == "ha-user"
+        assert events[0].data["start_time"] == reading["watered_at"]
+
+    @pytest.mark.asyncio
+    async def test_report_time_bounds(
+        self, watering_coordinator: GrowspaceCoordinator
+    ) -> None:
+        now = dt_util.now()
+        await watering_coordinator.services.plants.water_plant(
+            "test_plant", 1.0, watered_at=(now - timedelta(days=7)).isoformat()
+        )
+        for invalid in (now - timedelta(days=7, seconds=1), now + timedelta(seconds=1)):
+            with pytest.raises(GrowspaceError):
+                await watering_coordinator.services.plants.water_plant(
+                    "test_plant", 1.0, watered_at=invalid.isoformat()
+                )
+        with pytest.raises(GrowspaceError):
+            await watering_coordinator.services.plants.water_plant(
+                "test_plant", 1.0, watered_at="2026-01-10T10:00:00"
+            )
+        assert (
+            len(watering_coordinator.growspaces["test_gs"].water_usage.daily_readings)
+            == 1
+        )
+
+    @pytest.mark.asyncio
+    async def test_late_report_uses_earlier_local_day_without_abandoning_feedback(
+        self, watering_coordinator: GrowspaceCoordinator
+    ) -> None:
+        irrigation = MagicMock()
+        watering_coordinator._subsystem_manager.irrigation_coordinators["test_gs"] = (
+            irrigation
+        )
+        now = datetime(2026, 1, 12, 0, 5, tzinfo=UTC)
+        past = datetime(2026, 1, 11, 23, 55, tzinfo=UTC)
+        watering_coordinator.plants["test_plant"].last_watered = now.isoformat()
+        with patch(
+            "custom_components.growspace_manager.services.watering_service.dt_util.now",
+            return_value=now,
+        ):
+            await watering_coordinator.services.plants.water_plant(
+                "test_plant", 1.0, watered_at=past.isoformat()
+            )
+        reading = watering_coordinator.growspaces["test_gs"].water_usage.daily_readings[
+            0
+        ]
+        assert reading["date"] == dt_util.as_local(past).date().isoformat()
+        assert watering_coordinator.plants["test_plant"].last_watered == now.isoformat()
+        irrigation.abandon_pending_observation.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_date_only_last_watered_does_not_regress(
+        self, watering_coordinator: GrowspaceCoordinator
+    ) -> None:
+        plant = watering_coordinator.plants["test_plant"]
+        plant.last_watered = "2026-01-12"
+        now = datetime(2026, 1, 12, 13, 0, tzinfo=UTC)
+        with patch(
+            "custom_components.growspace_manager.services.watering_service.dt_util.now",
+            return_value=now,
+        ):
+            await watering_coordinator.services.plants.water_plant(
+                "test_plant", 1.0, watered_at="2026-01-11T13:00:00+00:00"
+            )
+        assert plant.last_watered == "2026-01-12"
+
+    @pytest.mark.asyncio
+    async def test_monitored_tank_report_is_excluded_from_tank_figures(
+        self, watering_coordinator: GrowspaceCoordinator
+    ) -> None:
+        growspace = watering_coordinator.growspaces["test_gs"]
+        growspace.environment_config.irrigation_tanks = [
+            IrrigationTank(sensor_entity="sensor.tank", volume_liters=200.0)
+        ]
+        await watering_coordinator.services.plants.water_plant(
+            "test_plant", 2.0, from_monitored_tank=True
+        )
+        await watering_coordinator.services.plants.water_plant("test_plant_2", 1.0)
+        tracker = MagicMock()
+        tracker.get_total_liters_today.return_value = 4.0
+        tracker.get_total_liters_since.return_value = 10.0
+        figures = compute_growspace_water(growspace, [tracker])
+        assert figures.today == 5.0
+        assert figures.cycle == 11.0
+        growspace.environment_config.irrigation_tanks = []
+        assert compute_growspace_water(growspace, []).today == 3.0
 
     @pytest.mark.asyncio
     async def test_hand_watering_abandons_pending_feedback(
@@ -194,6 +305,20 @@ class TestAsyncWaterPlant:
 
 class TestAsyncWaterGrowspace:
     """Tests for the async_water_growspace coordinator method."""
+
+    @pytest.mark.asyncio
+    async def test_bulk_report_splits_amount_and_ids_by_plant(
+        self, watering_coordinator: GrowspaceCoordinator
+    ) -> None:
+        count = await watering_coordinator.services.growspaces.water_growspace(
+            "test_gs", amount=3.0, user_id="ha-user", from_monitored_tank=True
+        )
+        assert count == 2
+        readings = watering_coordinator.growspaces["test_gs"].water_usage.daily_readings
+        assert {item["plant_id"] for item in readings} == {"test_plant", "test_plant_2"}
+        assert len({item["watering_id"] for item in readings}) == 2
+        assert all(item["liters"] == 1.5 for item in readings)
+        assert all(item["user_id"] == "ha-user" for item in readings)
 
     @pytest.mark.asyncio
     async def test_water_growspace_updates_all_plants(
@@ -332,12 +457,19 @@ class TestServiceHandlers:
             "plant_id": "test_plant",
             "amount": 2.0,
             "nutrients": {"CalMag": 1.5},
+            "from_monitored_tank": True,
         }
+        call.context.user_id = "ha-user"
 
         await handle_water_plant(hass, watering_coordinator, call)
 
         # Verify plant was watered
         assert watering_coordinator.plants["test_plant"].last_watered is not None
+        reading = watering_coordinator.growspaces["test_gs"].water_usage.daily_readings[
+            0
+        ]
+        assert reading["user_id"] == "ha-user"
+        assert reading["from_monitored_tank"] is True
 
     @pytest.mark.asyncio
     async def test_handle_water_growspace(
@@ -352,6 +484,7 @@ class TestServiceHandlers:
             "amount_per_plant": 1.5,
             "nutrients": None,
         }
+        call.context.user_id = "ha-user"
 
         result = await handle_water_growspace(hass, watering_coordinator, call)
 

@@ -42,7 +42,15 @@ async def handle_water_plant(
         preset_id: str | None = call.data.get("preset_id")
 
         await coordinator.services.plants.water_plant(
-            plant_id, amount, nutrients, preset_id
+            plant_id,
+            amount,
+            nutrients,
+            preset_id,
+            watered_at=call.data.get("watered_at"),
+            from_monitored_tank=call.data.get("from_monitored_tank", False),
+            user_id=call.context.user_id
+            if isinstance(call.context.user_id, str)
+            else None,
         )
 
         _LOGGER.info(
@@ -79,7 +87,16 @@ async def handle_water_growspace(
         preset_id: str | None = call.data.get("preset_id")
 
         plants_watered = await coordinator.services.growspaces.water_growspace(
-            growspace_id, amount_per_plant, nutrients, preset_id, amount=amount
+            growspace_id,
+            amount_per_plant,
+            nutrients,
+            preset_id,
+            amount=amount,
+            watered_at=call.data.get("watered_at"),
+            from_monitored_tank=call.data.get("from_monitored_tank", False),
+            user_id=call.context.user_id
+            if isinstance(call.context.user_id, str)
+            else None,
         )
 
         _LOGGER.info(

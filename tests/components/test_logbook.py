@@ -80,7 +80,12 @@ def test_growspace_event_model() -> None:
     assert event.duration_sec == 300
     assert event.severity == 0.95
     assert event.category == "alert"
-    assert event.to_dict() == data
+    assert event.to_dict() == {
+        **data,
+        "watering_id": None,
+        "user_id": None,
+        "from_monitored_tank": None,
+    }
 
 
 # --- 3. Test Sensor Event Capture ---
