@@ -167,6 +167,81 @@ def test_an_unconfirmed_close_needs_a_cause_or_a_reason() -> None:
         _requested().unconfirmed(off_commanded_at=None)
 
 
+# --- A restart found it open (ADR-0055 item 9) ------------------------------------
+
+
+def test_a_shot_found_mid_plan_ends_where_it_was_found() -> None:
+    """Found OFF 20 s into a 60 s shot: that is the last it can have run."""
+    found = ON + timedelta(seconds=20)
+    shot = _attempt()
+
+    closed = shot.interrupted(found, off_confirmed_at=found)
+
+    assert closed.outcome is AttemptOutcome.INTERRUPTED
+    assert closed.state is AttemptState.CLOSED
+    assert closed.ended_at == found
+    assert closed.estimated_l == pytest.approx(0.2)
+    assert closed.charged_l == shot.charged_l == pytest.approx(0.6)
+    assert closed.charge_date == TODAY
+    assert closed.off_confirmed
+    assert closed.off_commanded_at is None
+    assert dispensed_volume([closed], TODAY) == DispensedVolume(1, pytest.approx(0.6))
+
+
+def test_a_shot_found_long_after_its_plan_keeps_its_charge_and_no_more() -> None:
+    """Hours unwatched are not estimated: the end is bounded by its plan."""
+    found = ON + timedelta(hours=3)
+
+    closed = _attempt().interrupted(
+        found, off_commanded_at=found, off_confirmed_at=found + timedelta(seconds=1)
+    )
+
+    assert closed.ended_at == ON + timedelta(seconds=60)
+    assert closed.estimated_l == pytest.approx(0.6)
+    assert closed.charged_l == pytest.approx(0.6)
+    assert closed.off_commanded_at == found
+    assert closed.off_confirmed
+
+
+def test_a_request_found_before_confirmation_ends_at_its_last_record() -> None:
+    """Nothing shows water moved, so nothing is estimated or charged."""
+    request = _requested()
+    found = ON + timedelta(minutes=5)
+
+    closed = request.interrupted(found, off_commanded_at=found)
+
+    assert closed.outcome is AttemptOutcome.INTERRUPTED
+    assert closed.ended_at == request.requested_at
+    assert closed.estimated_l is None
+    assert closed.charged_l == 0.0
+    assert closed.charge_date is None
+    assert not closed.off_confirmed
+    assert closed.last_seen_at == found
+    assert dispensed_volume([closed], TODAY) == DispensedVolume()
+
+
+def test_a_commanded_request_ends_at_its_command() -> None:
+    commanded = _requested().commanded(ON)
+
+    assert commanded.interrupted(ON + timedelta(minutes=5)).ended_at == ON
+
+
+def test_an_interrupted_drain_carries_no_volume() -> None:
+    closed = _drain(flow_rate_ml_per_sec=10.0).interrupted(ON + timedelta(hours=1))
+
+    assert closed.outcome is AttemptOutcome.INTERRUPTED
+    assert closed.ended_at == ON + timedelta(seconds=60)
+    assert (closed.charged_l, closed.estimated_l) == (0.0, None)
+    assert DeliveryAttempt.from_dict(closed.as_dict()) == closed
+
+
+def test_a_closed_attempt_is_not_interrupted() -> None:
+    closed = _attempt().closed(off_commanded_at=ON + timedelta(seconds=60))
+
+    with pytest.raises(ValueError, match="closed"):
+        closed.interrupted(ON + timedelta(hours=1))
+
+
 def _drain(**overrides: Any) -> DeliveryAttempt:
     """An actuated drain, planned 60 s with no flow rate, as the coordinator plans one."""
     overrides.setdefault("flow_rate_ml_per_sec", None)
@@ -528,6 +603,12 @@ def test_the_row_limit_evicts_uncharged_rows_of_today_before_any_charge() -> Non
         .closed(off_commanded_at=ON + timedelta(seconds=60))
         .read_back_off(ON + timedelta(seconds=61)),
         _suppressed(trigger=AttemptTrigger.DRAIN),
+        _attempt().interrupted(
+            ON + timedelta(hours=2),
+            off_commanded_at=ON + timedelta(hours=2),
+            off_confirmed_at=ON + timedelta(hours=2, seconds=1),
+        ),
+        _requested().interrupted(ON + timedelta(hours=2)),
     ],
     ids=[
         "requested",
@@ -539,6 +620,8 @@ def test_the_row_limit_evicts_uncharged_rows_of_today_before_any_charge() -> Non
         "drain-actuated",
         "drain-closed",
         "drain-suppressed",
+        "interrupted",
+        "interrupted-request",
     ],
 )
 def test_the_wire_form_round_trips(attempt: DeliveryAttempt) -> None:
@@ -596,6 +679,7 @@ def test_the_wire_form_names_every_field() -> None:
         "not_delivered_window": None,
         "suppressed_count": 0,
         "last_requested_at": None,
+        "ended_at": None,
     }
 
 
@@ -691,6 +775,9 @@ _DROP = object()
             ),
             ValueError,
         ),
+        (_wire(ended_at=ON.isoformat()), ValueError),
+        (_wire(_attempt().interrupted(ON), ended_at=None), ValueError),
+        (_wire(_attempt().interrupted(ON), ended_at="2026-09-26T14:30:00"), ValueError),
     ],
     ids=[
         "not-object",
@@ -731,6 +818,9 @@ _DROP = object()
         "drain-charged",
         "drain-estimated",
         "not-delivered-uncommanded",
+        "ended-while-open",
+        "interrupted-without-end",
+        "naive-end",
     ],
 )
 def test_a_malformed_record_is_refused_whole(

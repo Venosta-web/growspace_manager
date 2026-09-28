@@ -30,6 +30,14 @@ from custom_components.growspace_manager.const import (
     FanRegulationMode,
     NotificationTier,
 )
+from custom_components.growspace_manager.delivery_attempt_store import (
+    DeliveryAttemptStore,
+)
+from custom_components.growspace_manager.domain.delivery_attempt import (
+    AttemptOutcome,
+    AttemptTrigger,
+    DeliveryAttempt,
+)
 from custom_components.growspace_manager.domain.irrigation_safety import ControllerState
 from custom_components.growspace_manager.domain.manual_override import (
     MAX_REASON_LENGTH,
@@ -64,6 +72,7 @@ from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 from tests.common import async_mock_service
 
 PUMP = "switch.pump"
@@ -156,18 +165,23 @@ class Tent:
         snapshot = self.irrigation.controller_snapshot()
         return snapshot.state, snapshot.reasons[0].code if snapshot.reasons else None
 
+    def attempts(self) -> list[DeliveryAttempt]:
+        return self.irrigation._deliveries.attempts
+
     async def start(self) -> None:
+        await self.irrigation._async_load_deliveries()
         await self.irrigation._async_begin_startup_inhibit()
         await self.hass.async_block_till_done()
 
     async def restart(self, key: str) -> None:
-        """Stop, load the store from disk, and start a new coordinator on it."""
+        """Stop, load the stores from disk, and start a new coordinator on them."""
         self.irrigation.async_cancel_listeners()
         self.store.async_stop_overrides()
         restarted = IrrigationSafetyStore(self.hass, key)
         await restarted.async_load()
         await restarted.async_start_overrides()
         self.runtime.irrigation_safety = restarted
+        self.runtime.deliveries = DeliveryAttemptStore(self.hass, key)
         self.irrigation = _coordinator(self.hass, self.runtime)
         await self.start()
 
@@ -202,6 +216,7 @@ async def _tent(
     runtime = MagicMock()
     runtime.irrigation_safety = store
     runtime.reliability = ReliabilityStore(hass, key)
+    runtime.deliveries = DeliveryAttemptStore(hass, key)
     runtime.growspaces = {"tent": growspace}
     runtime.services.notifications.manager.async_send_notification = AsyncMock()
     pump = Pump(hass)
@@ -384,6 +399,55 @@ async def test_enforce_off_sends_nothing_while_automation_is_off(
 # --- A cycle of ours that a restart interrupted (#854) ---------------------------
 
 
+# What a stopped process left behind for its cycle on the pump:
+# - ``marker``: only the In-flight Marker, all a start has when the attempts
+#   could not be read (#854);
+# - ``request``: an attempt written before the ON command and never confirmed,
+#   with no marker, which is written at confirm-ON — the gap #854 left open;
+# - ``shot``: a charged attempt and its marker, a crash mid-shot;
+# - ``drain``: an uncharged drain attempt and its marker, a crash mid-drain.
+LEFT_BEHIND = ("marker", "request", "shot", "drain")
+
+
+def _crashed_at() -> datetime:
+    """Ten seconds into a 30 s shot, a moment before this start."""
+    return dt_util.utcnow() - timedelta(seconds=10)
+
+
+def _open_attempt(left: str, output: str) -> DeliveryAttempt:
+    """The attempt a process stopped at ``left`` wrote through, as it wrote it."""
+    crashed_at = _crashed_at()
+    attempt = DeliveryAttempt.requested(
+        attempt_id=f"crashed-{left}",
+        growspace_id="tent",
+        output=output,
+        trigger=AttemptTrigger.DRAIN if left == "drain" else AttemptTrigger.SCHEDULE,
+        planned_s=30,
+        flow_rate_ml_per_sec=10.0,
+        requested_at=crashed_at - timedelta(seconds=2),
+    )
+    if left in ("shot", "drain"):
+        return attempt.commanded(crashed_at - timedelta(seconds=1)).confirmed_on(
+            crashed_at, dt_util.as_local(crashed_at).date()
+        )
+    return attempt
+
+
+def _store_attempts(
+    hass_storage: dict[str, Any], key: str, *attempts: DeliveryAttempt
+) -> None:
+    storage_key = f"growspace_manager.deliveries_{key}_tent"
+    hass_storage[storage_key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": storage_key,
+        "data": {
+            "growspace_id": "tent",
+            "attempts": [attempt.as_dict() for attempt in attempts],
+        },
+    }
+
+
 async def _crashed_mid_shot(
     hass: HomeAssistant,
     hass_storage: dict[str, Any],
@@ -391,21 +455,26 @@ async def _crashed_mid_shot(
     pump_state: str | None = "on",
     policy: UnexpectedOnPolicy = UnexpectedOnPolicy.ALERT,
     marked: str = PUMP,
+    left: str = "marker",
 ) -> Tent:
     """A tent whose last process stopped while a cycle of ours had ``marked``.
 
-    The In-flight Marker is on disk, as the crashed process wrote it, and is
-    read the way a start reads it. The pump is left ``pump_state``: a relay
-    nobody switched off, or a smart plug restoring its last state.
+    What it left behind (``left``, one of ``LEFT_BEHIND``) is on disk as the
+    crashed process wrote it, and is read the way a start reads it. The pump is
+    left ``pump_state``: a relay nobody switched off, or a smart plug restoring
+    its last state.
     """
     tent = await _tent(hass, key, policy)
     storage_key = f"growspace_manager.reliability_{key}"
+    active = {} if left == "request" else {marked: _crashed_at().isoformat()}
     hass_storage[storage_key] = {
         "version": 1,
         "minor_version": 1,
         "key": storage_key,
-        "data": {"tent": {"active": {marked: "2026-09-26T03:00:00+00:00"}}},
+        "data": {"tent": {"active": active}},
     }
+    if left != "marker":
+        _store_attempts(hass_storage, key, _open_attempt(left, marked))
     await tent.runtime.reliability.async_load()
     tent.runtime.reliability.record_start(["tent"])
     if pump_state is None:
@@ -415,15 +484,29 @@ async def _crashed_mid_shot(
     return tent
 
 
+def _interrupted(tent: Tent, left: str) -> DeliveryAttempt | None:
+    """The crashed cycle's attempt, closed; None when it left only a marker."""
+    if left == "marker":
+        assert tent.attempts() == []
+        return None
+    (attempt,) = tent.attempts()
+    assert attempt.attempt_id == f"crashed-{left}"
+    assert attempt.outcome is AttemptOutcome.INTERRUPTED
+    return attempt
+
+
+@pytest.mark.parametrize("left", LEFT_BEHIND)
 async def test_a_shot_a_crash_left_running_is_switched_off_at_start(
     hass: HomeAssistant,
     hass_storage: dict[str, Any],
     notices: dict[str, list[ServiceCall]],
+    left: str,
 ) -> None:
     """Under the default alert policy it is ours, not someone watering by hand."""
-    tent = await _crashed_mid_shot(hass, hass_storage, "crashed")
+    tent = await _crashed_mid_shot(hass, hass_storage, f"crashed-{left}", left=left)
     await tent.start()
     try:
+        # Switched off, and nothing replayed.
         assert tent.pump.commands == ["turn_off"]
         assert tent.pump.state == "off"
         assert tent.state() == (ControllerState.READY, None)
@@ -431,12 +514,16 @@ async def test_a_shot_a_crash_left_running_is_switched_off_at_start(
         assert (row["output"], row["off_confirmed"]) == (PUMP, True)
         assert tent.ledger("unexpected_on") == []
         assert tent.counter("irrigation.readback.unexpected_on") == 0
-        assert tent.counter("runtime.ha_start_inflight") == 1
+        assert tent.counter("runtime.ha_start_inflight") == (left != "request")
         tent.notify.assert_not_awaited()
         assert notices["create"] == []
         assert tent.runtime.reliability.active_outputs("tent") == ()
+        if attempt := _interrupted(tent, left):
+            assert attempt.off_commanded_at is not None
+            assert attempt.off_confirmed
+            assert tent.irrigation._deliveries.left_open() == []
 
-        # Closed, the marker is spent: the next ON is a person's again.
+        # Closed, the cycle is spent: the next ON is a person's again.
         await tent.pump.person("on")
         assert tent.state() == (ControllerState.INHIBITED, "override_detected")
         assert tent.pump.commands == ["turn_off"]
@@ -444,11 +531,12 @@ async def test_a_shot_a_crash_left_running_is_switched_off_at_start(
         tent.irrigation.async_cancel_listeners()
 
 
+@pytest.mark.parametrize("left", LEFT_BEHIND)
 @pytest.mark.parametrize(
     "hold", ["enforce_off", "automation_off", "emergency_stop", "manual_override"]
 )
 async def test_a_shot_a_crash_left_running_is_switched_off_whatever_holds(
-    hass: HomeAssistant, hass_storage: dict[str, Any], hold: str
+    hass: HomeAssistant, hass_storage: dict[str, Any], hold: str, left: str
 ) -> None:
     """Closing our own cycle sends its own OFF, as a cycle closing always does."""
     policy = (
@@ -456,7 +544,9 @@ async def test_a_shot_a_crash_left_running_is_switched_off_whatever_holds(
         if hold == "enforce_off"
         else UnexpectedOnPolicy.ALERT
     )
-    tent = await _crashed_mid_shot(hass, hass_storage, f"crashed-{hold}", policy=policy)
+    tent = await _crashed_mid_shot(
+        hass, hass_storage, f"crashed-{hold}-{left}", policy=policy, left=left
+    )
     if hold == "automation_off":
         await tent.store.async_set_control("tent", "automation", False, "operator")
     elif hold == "emergency_stop":
@@ -471,15 +561,19 @@ async def test_a_shot_a_crash_left_running_is_switched_off_whatever_holds(
         assert tent.pump.state == "off"
         assert tent.ledger("unexpected_on") == []
         assert tent.store.faults.get("tent") is None
+        _interrupted(tent, left)
     finally:
         tent.irrigation.async_cancel_listeners()
         tent.store.async_stop_overrides()
 
 
+@pytest.mark.parametrize("left", LEFT_BEHIND)
 async def test_a_shot_a_crash_left_running_that_will_not_read_off_keeps_stopping_it(
-    hass: HomeAssistant, hass_storage: dict[str, Any]
+    hass: HomeAssistant, hass_storage: dict[str, Any], left: str
 ) -> None:
-    tent = await _crashed_mid_shot(hass, hass_storage, "crashed-stuck")
+    tent = await _crashed_mid_shot(
+        hass, hass_storage, f"crashed-stuck-{left}", left=left
+    )
     tent.pump.stuck = True
     await tent.start()
     try:
@@ -488,19 +582,29 @@ async def test_a_shot_a_crash_left_running_that_will_not_read_off_keeps_stopping
         assert tent.ledger("interrupted_cycle")[0]["off_confirmed"] is False
         assert PUMP in tent.irrigation._off_retries
         assert tent.ledger("unexpected_on") == []
+        if attempt := _interrupted(tent, left):
+            assert attempt.off_commanded_at is not None
+            assert not attempt.off_confirmed
     finally:
         tent.irrigation.async_cancel_listeners()
 
 
+@pytest.mark.parametrize("left", LEFT_BEHIND)
 async def test_a_pump_off_at_start_closes_the_interrupted_cycle(
-    hass: HomeAssistant, hass_storage: dict[str, Any]
+    hass: HomeAssistant, hass_storage: dict[str, Any], left: str
 ) -> None:
     """Read OFF, the cycle is over; a later ON is a person's."""
-    tent = await _crashed_mid_shot(hass, hass_storage, "crashed-off", "off")
+    tent = await _crashed_mid_shot(
+        hass, hass_storage, f"crashed-off-{left}", "off", left=left
+    )
     await tent.start()
     try:
         assert tent.pump.commands == []
         assert tent.runtime.reliability.active_outputs("tent") == ()
+        assert tent.ledger("interrupted_cycle") == []
+        if attempt := _interrupted(tent, left):
+            assert attempt.off_commanded_at is None
+            assert attempt.off_confirmed
 
         await tent.pump.person("on")
         assert tent.pump.state == "on"
@@ -509,48 +613,107 @@ async def test_a_pump_off_at_start_closes_the_interrupted_cycle(
         tent.irrigation.async_cancel_listeners()
 
 
+@pytest.mark.parametrize("left", LEFT_BEHIND)
 @pytest.mark.parametrize("pump_state", ["unavailable", None])
 async def test_a_pump_that_comes_back_on_after_start_is_still_ours(
-    hass: HomeAssistant, hass_storage: dict[str, Any], pump_state: str | None
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    pump_state: str | None,
+    left: str,
 ) -> None:
     """A smart plug that joins late and restores ON is the shot a crash left."""
-    tent = await _crashed_mid_shot(hass, hass_storage, "crashed-late", pump_state)
+    tent = await _crashed_mid_shot(
+        hass, hass_storage, f"crashed-late-{left}", pump_state, left=left
+    )
     await tent.start()
     try:
         assert tent.pump.commands == []
-        assert tent.runtime.reliability.active_outputs("tent") == (PUMP,)
+        assert tent.irrigation._interrupted_outputs() == [PUMP]
+        assert all(attempt.is_open for attempt in tent.attempts())
 
         await tent.pump.person("on")
 
         assert tent.pump.commands == ["turn_off"]
         assert tent.pump.state == "off"
         assert tent.state() == (ControllerState.READY, None)
-        assert tent.runtime.reliability.active_outputs("tent") == ()
+        assert tent.irrigation._interrupted_outputs() == []
+        _interrupted(tent, left)
     finally:
         tent.irrigation.async_cancel_listeners()
 
 
-async def test_a_marker_of_a_pump_no_longer_managed_is_dropped(
-    hass: HomeAssistant, hass_storage: dict[str, Any]
+@pytest.mark.parametrize("left", LEFT_BEHIND)
+async def test_a_plug_that_joins_late_reading_off_closes_it(
+    hass: HomeAssistant, hass_storage: dict[str, Any], left: str
 ) -> None:
     tent = await _crashed_mid_shot(
-        hass, hass_storage, "crashed-gone", "off", marked="switch.old_pump"
+        hass, hass_storage, f"crashed-late-off-{left}", None, left=left
+    )
+    await tent.start()
+    try:
+        await tent.pump.person("off")
+
+        assert tent.pump.commands == []
+        assert tent.irrigation._interrupted_outputs() == []
+        if attempt := _interrupted(tent, left):
+            assert attempt.off_confirmed
+    finally:
+        tent.irrigation.async_cancel_listeners()
+
+
+@pytest.mark.parametrize("left", LEFT_BEHIND)
+async def test_a_cycle_on_a_pump_no_longer_managed_is_closed(
+    hass: HomeAssistant, hass_storage: dict[str, Any], left: str
+) -> None:
+    """Nothing is sent to it; its attempt closes without an OFF read back."""
+    tent = await _crashed_mid_shot(
+        hass,
+        hass_storage,
+        f"crashed-gone-{left}",
+        "off",
+        marked="switch.old_pump",
+        left=left,
     )
     hass.states.async_set("switch.old_pump", "on")
     await tent.start()
     try:
         assert tent.pump.commands == []
-        assert tent.runtime.reliability.active_outputs("tent") == ()
+        assert tent.irrigation._interrupted_outputs() == []
+        if attempt := _interrupted(tent, left):
+            assert not attempt.off_confirmed
+            assert attempt.off_commanded_at is None
+    finally:
+        tent.irrigation.async_cancel_listeners()
+
+
+async def test_a_pump_on_with_only_closed_attempts_is_a_persons(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """No open attempt, no marker: an Unexpected On exactly as before."""
+    shot = _open_attempt("shot", PUMP)
+    completed = shot.closed(off_commanded_at=shot.requested_at + timedelta(seconds=32))
+    tent = await _tent(hass, "closed-then-on")
+    _store_attempts(hass_storage, "closed-then-on", completed)
+    await tent.pump.person("on")
+    await tent.start()
+    try:
+        assert tent.pump.commands == []
+        assert tent.pump.state == "on"
+        assert tent.state() == (ControllerState.INHIBITED, "override_detected")
+        assert tent.counter("irrigation.readback.unexpected_on") == 1
+        assert tent.ledger("interrupted_cycle") == []
+        assert tent.attempts() == [completed]
     finally:
         tent.irrigation.async_cancel_listeners()
 
 
 async def test_a_cycle_of_ours_keeps_its_marker_until_it_closes(tent: Tent) -> None:
-    """Our own cycle's marker is not a prior runtime's: nothing stops it early."""
+    """Our own cycle is not a prior runtime's: nothing stops it early."""
     seen: list[tuple[str, ...]] = []
 
     async def running(_seconds: float) -> None:
         seen.append(tent.runtime.reliability.active_outputs("tent"))
+        assert tent.irrigation._deliveries.left_open() == []
         await tent.irrigation._async_observe_on(PUMP)  # our own ON, observed
 
     with patch(f"{_COORDINATOR}.asyncio.sleep", new=running):
@@ -560,6 +723,8 @@ async def test_a_cycle_of_ours_keeps_its_marker_until_it_closes(tent: Tent) -> N
     assert set(seen) == {(PUMP,)}
     assert tent.pump.commands == ["turn_on", "turn_off"]
     assert tent.ledger("interrupted_cycle") == []
+    (attempt,) = tent.attempts()
+    assert attempt.outcome is AttemptOutcome.COMPLETED
 
 
 # --- Manual Override ------------------------------------------------------------

@@ -69,6 +69,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of draining. An Unconfirmed Pump Cycle's attempt records
   `not_delivered_window`, from the ON command to OFF read back, in which water
   may still have moved; it still charges nothing.
+- A pump found ON at start while an irrigation attempt was still open is
+  Growspace Manager's own interrupted shot, not someone watering by hand. This
+  now includes a crash after the ON command but before the pump confirmed ON,
+  which used to count as an Unexpected On and, under the default `alert`
+  policy, was left running. The pump is switched off and read back whatever
+  `unexpected_on_policy` says. Every attempt still open at start closes as
+  `interrupted` and keeps whatever it was charged at confirm-ON. If its pump
+  reads OFF, it ends at its planned end or the moment it was found, whichever
+  is earlier. Nothing is replayed.
 
 ### Deprecated
 

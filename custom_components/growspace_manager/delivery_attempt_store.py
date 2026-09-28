@@ -10,6 +10,11 @@ allowance (#787); a drain is written at both moments too, and never charged. Its
 charges nothing, so both go through a batched save: a lost one costs at most a
 top-up or a row of history.
 
+An attempt still open when the file is first read belongs to a process that
+stopped before closing it. The irrigation coordinator closes it
+``interrupted`` once its pump reads ON or OFF (ADR-0055 item 9), and a lost
+close is found open again at the next start.
+
 Each growspace has a file of its own, so a shot rewrites one growspace's week
 and not everyone's. A file that exists but cannot be read is never written
 over. It holds that growspace's cycles as a fault until it is repaired or an
@@ -19,6 +24,7 @@ is spent.
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 from os.path import exists
 from typing import Any
@@ -64,6 +70,8 @@ class GrowspaceDeliveries:
         self.unreadable = False
         self.unreadable_since: str | None = None
         self.loaded = False
+        # Attempts a previous process left open, until this one closes them.
+        self._left_open: set[str] = set()
         self._hass = hass
         self._key = f"growspace_manager.deliveries_{entry_id}_{growspace_id}"
         self._store: Store[dict[str, Any]] | None = (
@@ -83,6 +91,9 @@ class GrowspaceDeliveries:
                     self._fail_closed()
                 return
             self.attempts = self._decode(data)
+            self._left_open = {
+                attempt.attempt_id for attempt in self.attempts if attempt.is_open
+            }
         except Exception:
             _LOGGER.exception(
                 "Delivery Attempts of growspace %s are unreadable; its cycles are held",
@@ -157,6 +168,47 @@ class GrowspaceDeliveries:
         """Replace an open attempt with its close, saved in the next batch."""
         self._put(closed)
         self._delay_save()
+
+    def left_open(self, output: str | None = None) -> list[DeliveryAttempt]:
+        """Return the attempts a previous process left open, of ``output`` if given.
+
+        Only what was already open when the file was read counts. A cycle of
+        this process is open too while it runs, and it is this process's.
+        """
+        return [
+            attempt
+            for attempt in self.attempts
+            if attempt.attempt_id in self._left_open
+            and (output is None or attempt.output == output)
+        ]
+
+    def interrupt(
+        self,
+        output: str,
+        found_at: datetime,
+        *,
+        off_commanded_at: datetime | None = None,
+        off_confirmed_at: datetime | None = None,
+    ) -> list[DeliveryAttempt]:
+        """Close what a previous process left open on ``output`` as ``interrupted``.
+
+        Saved in the next batch, like any close: one that is lost is found
+        open, and closed, again at the next start.
+        """
+        closed = [
+            attempt.interrupted(
+                found_at,
+                off_commanded_at=off_commanded_at,
+                off_confirmed_at=off_confirmed_at,
+            )
+            for attempt in self.left_open(output)
+        ]
+        for attempt in closed:
+            self._left_open.discard(attempt.attempt_id)
+            self._put(attempt)
+        if closed:
+            self._delay_save()
+        return closed
 
     def _put(self, attempt: DeliveryAttempt) -> None:
         """Replace the attempt of the same id, or add it as a new row."""
