@@ -20,6 +20,10 @@ import pytest
 
 from custom_components.growspace_manager import actuator_driver
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.domain.delivery_attempt import (
+    AttemptOutcome,
+    DeliveryAttempt,
+)
 from custom_components.growspace_manager.domain.irrigation_safety import (
     FaultRecord,
     SafetyReason,
@@ -242,6 +246,15 @@ async def _run_cycles(
 def _liters(seconds: float) -> float:
     """Litres a pump at the fixture's flow rate delivers in ``seconds``."""
     return seconds * FLOW_ML_PER_SEC / 1000.0
+
+
+def _window_seconds(attempt: DeliveryAttempt) -> tuple[float, float | None]:
+    """The attempt's not-delivered window, as seconds from the ON command."""
+    window = attempt.not_delivered_window
+    assert window is not None
+    start, end = window
+    assert start == attempt.on_commanded_at
+    return 0.0, None if end is None else (end - start).total_seconds()
 
 
 def _not_delivered(coordinator: IrrigationCoordinator) -> list[dict[str, Any]]:
@@ -616,6 +629,65 @@ async def test_unconfirmed_on_is_stopped_and_not_delivered(
     assert not coordinator.controller_snapshot().requires_ack
 
 
+async def test_an_unconfirmed_cycle_records_its_window_and_charges_nothing(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """ON commanded at 0, the 10 s wait, OFF read back at the first 1 s read."""
+    await _run_cycles(coordinator, FakeSwitch(on_after=None))
+
+    (attempt,) = coordinator._deliveries.attempts
+    assert attempt.outcome is AttemptOutcome.NOT_DELIVERED
+    assert attempt.reason == "on_unconfirmed"
+    assert attempt.charged_l == 0.0
+    assert attempt.estimated_l is None
+    assert _window_seconds(attempt) == (0.0, pytest.approx(ON_WAIT + 1.0))
+    assert coordinator.cycles_today == 0
+    assert coordinator.volume_dispensed_today == 0
+
+
+async def test_the_window_is_at_most_about_sixteen_seconds(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """A pump slow to read OFF stretches it to the readback's 6 s, and no further."""
+    await _run_cycles(
+        coordinator, FakeSwitch(state="unavailable", on_after=None, off_after=5.8)
+    )
+
+    (attempt,) = coordinator._deliveries.attempts
+    _, end = _window_seconds(attempt)
+    assert end is not None
+    assert ON_WAIT + 5.8 <= end <= 16.0
+    assert not coordinator.controller_snapshot().requires_ack
+
+
+async def test_a_refused_turn_on_is_not_delivered_from_its_command(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """The command may still have reached the relay, so it has a window too."""
+    await _run_cycles(coordinator, FakeSwitch(on_error=HomeAssistantError("gone")))
+
+    (attempt,) = coordinator._deliveries.attempts
+    assert attempt.outcome is AttemptOutcome.NOT_DELIVERED
+    assert attempt.reason == "on_command_failed"
+    assert _window_seconds(attempt) == (0.0, pytest.approx(1.0))
+
+
+async def test_a_window_whose_off_never_reads_back_stays_open(
+    coordinator: IrrigationCoordinator,
+) -> None:
+    """No OFF readback, no end: the OFF-unconfirmed fault answers for the rest."""
+    await _run_cycles(
+        coordinator, FakeSwitch(state="unavailable", on_after=None, off_after=None)
+    )
+
+    (attempt,) = coordinator._deliveries.attempts
+    assert attempt.outcome is AttemptOutcome.NOT_DELIVERED
+    assert _window_seconds(attempt) == (0.0, None)
+    assert coordinator.controller_snapshot().reasons[0].code == (
+        f"fault_off_unconfirmed:{PUMP}"
+    )
+
+
 async def test_third_consecutive_unconfirmed_on_latches_a_fault(
     coordinator: IrrigationCoordinator,
 ) -> None:
@@ -628,6 +700,13 @@ async def test_third_consecutive_unconfirmed_on_latches_a_fault(
     assert snapshot.reasons[0].code == f"fault_on_unconfirmed:{PUMP}"
     assert "3 consecutive cycles" in snapshot.reasons[0].detail
     assert _turn_ons(run) == 3
+    # Three not-delivered attempts, none charged, and the fourth held by the fault.
+    *undelivered, held = coordinator._deliveries.attempts
+    assert [a.outcome for a in undelivered] == [AttemptOutcome.NOT_DELIVERED] * 3
+    assert all(a.not_delivered_window is not None for a in undelivered)
+    assert held.outcome is AttemptOutcome.SUPPRESSED
+    assert coordinator.cycles_today == 0
+    assert coordinator.volume_dispensed_today == 0
 
 
 async def test_repeated_turn_on_refusals_latch_under_their_own_code(
