@@ -424,7 +424,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self, *, end_dt: datetime, moisture_before: float | None, manual: bool
     ) -> None:
         """Retain only a completed automatic shot with a measurable baseline."""
-        if manual or moisture_before is None:
+        # Adaptive Shot Control measures the effect of a duration the composer
+        # chose. A grower's Manual Run never supplies a training observation.
+        if manual:
+            return
+        if moisture_before is None:
             return
         strategy = self.growspace.irrigation_strategy
         phase = "P2" if self._machine.canonical_phase == "p2" else "P1"
