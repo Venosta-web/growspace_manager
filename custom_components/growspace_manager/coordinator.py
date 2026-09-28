@@ -469,6 +469,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         candidate_data = self.view_model_builder.build_data_property()
         await self.storage_manager.async_force_save()
         await self.async_project_activity()
+        await self._async_project_harvest_outcomes()
         self.data = candidate_data
         await self._publish_current_data()
 
@@ -503,6 +504,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self.grow_runs.async_observe(dt_util.utcnow(), occupancy)
         except Exception:
             _LOGGER.exception("Unattributed Activity coverage was not recorded")
+
+    async def _async_project_harvest_outcomes(self) -> None:
+        """Retry source snapshots from the committed Plant image."""
+        try:
+            await self.grow_runs.async_project_harvest_outcomes(
+                list(self.plants.values())
+            )
+        except Exception:
+            _LOGGER.exception("Harvest outcomes remain pending for Run projection")
 
     async def async_publish_committed_state(self) -> None:
         """Publish domain state that was persisted through a staged transaction."""
@@ -604,6 +614,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.reliability.async_load()
         await self.grow_runs.async_load()
         await self.async_project_activity()
+        await self._async_project_harvest_outcomes()
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.

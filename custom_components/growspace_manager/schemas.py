@@ -268,6 +268,10 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
 REMOVE_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PLANT_ID): str,
+        vol.Optional("harvest_outcome_choice"): vol.In(
+            ["no_usable_yield", "incomplete"]
+        ),
+        vol.Optional("harvest_outcome_reason"): str,
     }
 )
 

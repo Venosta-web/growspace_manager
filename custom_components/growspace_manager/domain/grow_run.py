@@ -495,6 +495,73 @@ class RunBackdate:
 
 
 @dataclass(frozen=True, slots=True)
+class HarvestOutcome:
+    """Last committed harvest facts for a source Run, independent of the Plant."""
+
+    plant_id: str
+    strain: str
+    phenotype: str
+    source_growspace_id: str
+    state: str
+    reason: str | None
+    metrics: dict[str, Any]
+    quality_score: float | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire snapshot."""
+        return {
+            "plant_id": self.plant_id,
+            "strain": self.strain,
+            "phenotype": self.phenotype,
+            "source_growspace_id": self.source_growspace_id,
+            "state": self.state,
+            "reason": self.reason,
+            "metrics": dict(self.metrics),
+            "quality_score": self.quality_score,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> HarvestOutcome:
+        """Read a stored snapshot without inventing a missing outcome."""
+        value = _dict(value, "harvest outcome")
+        state = _str(value.get("state"), "outcome.state")
+        if state not in {"pending", "recorded", "no_usable_yield", "incomplete"}:
+            raise ValueError("unknown harvest outcome state")
+        reason = _opt_str(value.get("reason"), "outcome.reason")
+        if state == "no_usable_yield" and not (reason and reason.strip()):
+            raise ValueError("No Usable Yield needs a reason")
+        metrics = _dict(value.get("metrics"), "outcome.metrics")
+        dry_weight = metrics.get("dry_weight")
+        if dry_weight is not None and (
+            isinstance(dry_weight, bool)
+            or not isinstance(dry_weight, (int, float))
+            or dry_weight < 0
+        ):
+            raise ValueError("outcome.dry_weight is invalid")
+        if state == "no_usable_yield" and dry_weight != 0:
+            raise ValueError("No Usable Yield must record zero dry weight")
+        if state == "incomplete" and dry_weight is not None:
+            raise ValueError("an incomplete outcome cannot have a dry weight")
+        quality = value.get("quality_score")
+        if quality is not None and (
+            isinstance(quality, bool) or not isinstance(quality, (int, float))
+        ):
+            raise TypeError("outcome.quality_score is not numeric")
+        return cls(
+            plant_id=_str(value.get("plant_id"), "outcome.plant_id"),
+            strain=_opt_str(value.get("strain"), "outcome.strain") or "",
+            phenotype=_opt_str(value.get("phenotype"), "outcome.phenotype") or "",
+            source_growspace_id=_str(
+                value.get("source_growspace_id"), "outcome.source"
+            ),
+            state=state,
+            reason=reason,
+            metrics=metrics,
+            quality_score=quality,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ClaimedHistory:
     """Everything a backdated start takes from the Unattributed Activity Ledger.
 
@@ -561,6 +628,7 @@ class GrowRun:
     baseline: OpeningBaseline = field(default_factory=OpeningBaseline)
     participations: tuple[RunParticipation, ...] = ()
     movement_history: tuple[PlantMovementFact, ...] = ()
+    harvest_outcomes: tuple[HarvestOutcome, ...] = ()
     audit: tuple[RunAuditEntry, ...] = ()
     daily_summaries: tuple[DailySummary, ...] = ()
     backdate: RunBackdate | None = None
@@ -590,6 +658,7 @@ class GrowRun:
             "baseline": self.baseline.as_dict(),
             "participations": [row.as_dict() for row in self.participations],
             "movement_history": [row.as_dict() for row in self.movement_history],
+            "harvest_outcomes": [row.as_dict() for row in self.harvest_outcomes],
             "audit": [row.as_dict() for row in self.audit],
             "daily_summaries": [row.as_dict() for row in self.daily_summaries],
             "backdate": self.backdate.as_dict() if self.backdate else None,
@@ -618,6 +687,12 @@ class GrowRun:
                     value.get("movement_history", []), "run.movement_history"
                 )
             ),
+            harvest_outcomes=tuple(
+                HarvestOutcome.from_dict(row)
+                for row in _list(
+                    value.get("harvest_outcomes", []), "run.harvest_outcomes"
+                )
+            ),
             audit=tuple(
                 RunAuditEntry.from_dict(row)
                 for row in _list(value.get("audit"), "run.audit")
@@ -640,6 +715,9 @@ class GrowRun:
         fact_ids = [row.fact_id for row in run.movement_history]
         if len(fact_ids) != len(set(fact_ids)):
             raise ValueError("a movement fact appears twice in one Run")
+        outcome_ids = [row.plant_id for row in run.harvest_outcomes]
+        if len(outcome_ids) != len(set(outcome_ids)):
+            raise ValueError("a Plant has more than one harvest outcome in one Run")
         return run
 
 
@@ -711,6 +789,23 @@ class RunLedger:
             )
             changed = True
         return replace(self, runs=tuple(runs)) if changed else self
+
+    def project_harvest_outcome(
+        self, run_id: str, outcome: HarvestOutcome
+    ) -> RunLedger:
+        """Refresh a source snapshot while the Run is still editable."""
+        runs: list[GrowRun] = []
+        for run in self.runs:
+            if run.run_id != run_id:
+                runs.append(run)
+                continue
+            if run.status in {RunStatus.FINALIZED, RunStatus.VOIDED}:
+                return self
+            existing = tuple(
+                row for row in run.harvest_outcomes if row.plant_id != outcome.plant_id
+            )
+            runs.append(replace(run, harvest_outcomes=(*existing, outcome)))
+        return replace(self, runs=tuple(runs)) if tuple(runs) != self.runs else self
 
     def start(
         self,
@@ -862,6 +957,7 @@ def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
             **run_summary(run, revision),
             "participations": [row.as_dict() for row in run.participations],
             "movement_history": [row.as_dict() for row in run.movement_history],
+            "harvest_outcomes": [row.as_dict() for row in run.harvest_outcomes],
         },
     }
 

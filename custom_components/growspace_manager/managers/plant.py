@@ -146,6 +146,37 @@ class PlantManager(BaseService):
         payload = {"event_type": event_type, "data": data}
         self.hass.bus.async_fire("growspace_manager_updated", payload)
 
+    def _harvest_source_updates(
+        self,
+        plant: Plant,
+        source_growspace_id: str,
+        target: LifecycleStage,
+        harvest_metrics: dict[str, Any] | None = None,
+    ) -> dict[str, str | None]:
+        """Fix the source at dry entry, including an explicit no-Run case."""
+        if (
+            target is LifecycleStage.DRY
+            and harvest_metrics is not None
+            and harvest_metrics.get("dry_weight") == 0
+        ):
+            raise ValidationChangeError(
+                "Record No Usable Yield with a reason to set dry weight to zero"
+            )
+        if (
+            target is not LifecycleStage.DRY
+            or plant.harvest_source_growspace_id is not None
+        ):
+            return {}
+        active_run = (
+            self._ctx.active_run_callback(source_growspace_id)
+            if self._ctx.active_run_callback is not None
+            else None
+        )
+        return {
+            "harvest_source_growspace_id": source_growspace_id,
+            "harvest_source_run_id": active_run.run_id if active_run else None,
+        }
+
     def _advance_layout_revision(self, growspace_id: str) -> None:
         """Advance a growspace Layout Revision while the manager lock is held."""
         growspace = self.repository.get_growspace(growspace_id)
@@ -598,6 +629,12 @@ class PlantManager(BaseService):
                 if isinstance(decision, Applied):
                     updates[f"{canonical_target.value}_start"] = transition_timestamp
 
+                updates.update(
+                    self._harvest_source_updates(
+                        plant, source_growspace_id, canonical_target, harvest_metrics
+                    )
+                )
+
                 # The legacy calculator ranks fields by lifecycle order rather than
                 # timestamp. Clear higher-ranked fields on backward branches (most
                 # importantly flower -> veg) so stale stages cannot resurface.
@@ -753,6 +790,16 @@ class PlantManager(BaseService):
                 for growspace_id in {old_growspace_id, new_growspace_id}
             }
             event_updates = {**regular_updates, **lifecycle_updates}
+            if (
+                lifecycle.current_stage is not LifecycleStage.DRY
+                and lifecycle_updates.get("stage") == LifecycleStage.DRY.value
+            ):
+                lifecycle_updates.update(
+                    self._harvest_source_updates(
+                        plant, old_growspace_id, LifecycleStage.DRY
+                    )
+                )
+                event_updates.update(lifecycle_updates)
             try:
                 if "strain" in regular_updates:
                     plant.genetics.strain_name = regular_updates.pop("strain")
@@ -1042,6 +1089,13 @@ class PlantManager(BaseService):
             plant = self.repository.get_plant(plant_id)
             if not plant:
                 return False
+            if plant.harvest_source_run_id and plant.harvest_outcome_state not in {
+                "no_usable_yield",
+                "incomplete",
+            }:
+                raise ValidationChangeError(
+                    "A Harvest Source Plant needs an explicit outcome before deletion"
+                )
             sent_snapshot = self.notification_state.sent.get(plant_id)
             previous_revision = self.repository.require_growspace(
                 plant.growspace_id

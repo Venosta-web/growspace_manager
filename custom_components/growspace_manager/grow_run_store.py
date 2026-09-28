@@ -30,8 +30,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
-from .domain.grow_run import GrowRun, PlantMovementFact, RunLedger, RunStoreUnreadable
+from .domain.grow_run import (
+    GrowRun,
+    HarvestOutcome,
+    PlantMovementFact,
+    RunLedger,
+    RunStoreUnreadable,
+)
 from .domain.unattributed_activity import DEFAULT_RETENTION_DAYS, UnattributedActivity
+from .models.plant import Plant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -240,6 +247,39 @@ class GrowRunStore:
                     changed.append(observed)
             if changed:
                 await self.async_commit(activities=tuple(changed))
+
+    async def async_project_harvest_outcomes(self, plants: list[Plant]) -> None:
+        """Copy committed Plant outcomes into their source Runs.
+
+        Replaying all live Plants after startup or a failed projection is safe;
+        snapshots for deleted Plants remain in the Run ledger.
+        """
+        async with self.lock:
+            for plant in plants:
+                run_id = plant.harvest_source_run_id
+                source = plant.harvest_source_growspace_id
+                if run_id is None or source is None:
+                    continue
+                ledger = self.ledger(source)
+                if not any(run.run_id == run_id for run in ledger.runs):
+                    raise ValueError(f"Harvest source Run {run_id} is missing")
+                metrics = plant.harvest_metrics.to_dict()
+                state = plant.harvest_outcome_state
+                if state == "pending" and metrics.get("dry_weight") is not None:
+                    state = "recorded"
+                outcome = HarvestOutcome(
+                    plant_id=plant.plant_id,
+                    strain=plant.strain,
+                    phenotype=plant.phenotype,
+                    source_growspace_id=source,
+                    state=state,
+                    reason=plant.harvest_outcome_reason,
+                    metrics=metrics,
+                    quality_score=plant.phenotype_score.total_score,
+                )
+                updated = ledger.project_harvest_outcome(run_id, outcome)
+                if updated != ledger:
+                    await self.async_commit(updated)
 
     def announce_start(self, run: GrowRun, user_id: str | None) -> None:
         """Emit the lifecycle event and the logbook line for a committed start."""
