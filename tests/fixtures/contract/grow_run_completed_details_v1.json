@@ -1,0 +1,68 @@
+{
+  "outcome": "found",
+  "run": {
+    "completed_at": "2026-10-02T20:30:00+00:00",
+    "label": "Autumn",
+    "metrics_state": "pending",
+    "movement_history": [
+      {
+        "at": "2026-07-31T20:30:00+00:00",
+        "fact_id": "fact-1",
+        "kind": "transplant",
+        "plant_id": "p1",
+        "projected": true,
+        "source_growspace_id": "tent",
+        "source_run_id": "run-1",
+        "target_growspace_id": "other",
+        "target_run_id": null
+      },
+      {
+        "at": "2026-09-25T20:30:00+00:00",
+        "fact_id": "fact-2",
+        "kind": "harvest",
+        "plant_id": "p2",
+        "projected": true,
+        "source_growspace_id": "tent",
+        "source_run_id": "run-1",
+        "target_growspace_id": "dry",
+        "target_run_id": null
+      },
+      {
+        "at": "2026-09-26T20:30:00+00:00",
+        "fact_id": "fact-3",
+        "kind": "entry",
+        "plant_id": "p3",
+        "projected": true,
+        "source_growspace_id": null,
+        "source_run_id": null,
+        "target_growspace_id": "tent",
+        "target_run_id": "run-1"
+      }
+    ],
+    "notes": "Dense buds, slow dry",
+    "participant_count": 3,
+    "participations": [
+      {
+        "closed_at": "2026-07-31T20:30:00+00:00",
+        "opened_at": "2026-07-24T20:30:00+00:00",
+        "plant_id": "p1"
+      },
+      {
+        "closed_at": "2026-09-25T20:30:00+00:00",
+        "opened_at": "2026-07-24T20:30:00+00:00",
+        "plant_id": "p2"
+      },
+      {
+        "closed_at": "2026-10-02T20:30:00+00:00",
+        "opened_at": "2026-09-26T20:30:00+00:00",
+        "plant_id": "p3"
+      }
+    ],
+    "run_id": "run-1",
+    "run_revision": 5,
+    "sequence_number": 4,
+    "started_at": "2026-07-24T20:30:00+00:00",
+    "status": "completed",
+    "timezone": "Europe/Berlin"
+  }
+}

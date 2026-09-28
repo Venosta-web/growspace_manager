@@ -187,7 +187,7 @@ The provisional metrics of a Completed Grow Run while linked post-harvest outcom
 _Avoid_: final metrics, live metrics
 
 **Run Completion Preview**
-The confirmation view of a proposed completion boundary, duration, participation intervals that will close, Plants still present, missing harvest outcomes, coverage, attribution gaps, and retrospective note. Warnings do not block completion but require explicit acknowledgement when Plants or outcomes remain at risk.
+The confirmation view of a proposed completion boundary, duration, participation intervals that will close, Plants still present, missing harvest outcomes, coverage, attribution gaps, and retrospective note. Warnings do not block completion but require explicit acknowledgement when Plants or outcomes remain at risk. The warnings are `plants_present`, `missing_outcomes` (a Plant harvested out of the Run with no dry weight, or since removed) and `attribution_gaps` (an unprojected movement inside the Run, or a Plant standing here with no open participation); integration-controlled irrigation delivering water is the one blocker. `growspace_manager/complete_grow_run` names the Run, the Run Revision and the warnings it acknowledges, and the preview is rebuilt under the Plant and Run locks at commit, so a warning that appeared after the grower looked refuses as `grow_run.acknowledgement_required`. The boundary is the commit moment; a movement recorded before it but projected after still counts against it, and one at or after it is outside the Run. `domain/grow_run.py` owns the rules; `services/grow_runs.py` reads the Growspace (#671).
 _Avoid_: completion summary, automatic close
 
 **Run Finalization Snapshot**

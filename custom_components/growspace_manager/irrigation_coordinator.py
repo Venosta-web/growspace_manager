@@ -452,6 +452,23 @@ class BaseIrrigationCoordinator:
             or output in self._enforcing_off
         )
 
+    def delivering_outputs(self) -> tuple[str, ...]:
+        """The outputs integration-controlled irrigation holds ON right now.
+
+        A cycle of ours from command until OFF reads back, one whose OFF is
+        still being retried, and one a stopped process was running that still
+        reads ON. A person's ON is not ours and is not listed.
+        """
+        interrupted = {
+            output
+            for output in self._reliability.active_outputs(self._growspace_id)
+            if (state := self.hass.states.get(output)) is not None
+            and state.state == STATE_ON
+        }
+        return tuple(
+            sorted(self._commanded_outputs | set(self._off_retries) | interrupted)
+        )
+
     def _interrupted(self, output: str) -> bool:
         """Whether a cycle of ours that a stopped process was running has it.
 

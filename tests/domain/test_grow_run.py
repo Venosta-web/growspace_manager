@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 import json
 from pathlib import Path
@@ -12,10 +13,13 @@ import pytest
 from custom_components.growspace_manager.domain.grow_run import (
     CODE_ALREADY_ACTIVE,
     CODE_REVISION_CONFLICT,
+    WARNING_PLANTS_PRESENT,
     BaselineState,
     GrowRun,
     OpeningBaseline,
     PlantMovementFact,
+    PresentPlant,
+    RunAcknowledgementRequired,
     RunAlreadyActive,
     RunCommand,
     RunLedger,
@@ -23,6 +27,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     RunParticipation,
     RunRevisionConflict,
     RunStatus,
+    preview_completion,
     run_details,
     run_summary,
     sensor_state,
@@ -298,6 +303,61 @@ def _wire_forms() -> dict[str, Any]:
     )
     projected_run = moved.active_run
     assert projected_run is not None
+    ended = STARTED + timedelta(days=70)
+    harvested = moved.project_movement(
+        PlantMovementFact(
+            fact_id="fact-2",
+            plant_id="p2",
+            at=STARTED + timedelta(days=63),
+            kind="harvest",
+            source_growspace_id="tent",
+            target_growspace_id="dry",
+            source_run_id="run-1",
+            target_run_id=None,
+        )
+    ).project_movement(
+        PlantMovementFact(
+            fact_id="fact-3",
+            plant_id="p3",
+            at=STARTED + timedelta(days=64),
+            kind="entry",
+            source_growspace_id=None,
+            target_growspace_id="tent",
+            source_run_id=None,
+            target_run_id="run-1",
+        )
+    )
+    preview = preview_completion(
+        harvested,
+        now=ended,
+        plants_present=[
+            PresentPlant("p3", "OG Kush", "Pheno #1", "flower"),
+            PresentPlant("p4", "Amnesia", "", "veg"),
+        ],
+        dry_weights={"p2": None, "p3": None, "p4": None},
+        pending_facts=(),
+        delivering_outputs=("switch.tent_pump",),
+        retrospective_note="Dense buds, slow dry",
+    )
+    try:
+        harvested.complete(
+            expected_revision=harvested.revision,
+            run_id="run-1",
+            preview=replace(preview, delivering_outputs=()),
+            acknowledged=[WARNING_PLANTS_PRESENT],
+            command_id="cmd-complete",
+            actor_user_id="user-1",
+        )
+    except RunAcknowledgementRequired as refused:
+        unacknowledged = refusal_result(refused)
+    completed_ledger, completed = harvested.complete(
+        expected_revision=harvested.revision,
+        run_id="run-1",
+        preview=replace(preview, delivering_outputs=()),
+        acknowledged=list(preview.warnings),
+        command_id="cmd-complete",
+        actor_user_id="user-1",
+    )
     return {
         "active_run_sensor_v1": {
             # As Home Assistant publishes them: the state is always a string.
@@ -311,6 +371,19 @@ def _wire_forms() -> dict[str, Any]:
         },
         "grow_run_refused_v1": refusal,
         "grow_run_details_v1": run_details(projected_run, moved.revision),
+        "grow_run_completion_preview_v1": {
+            "outcome": "preview",
+            "preview": preview.as_dict(),
+        },
+        "grow_run_completed_v1": {
+            "outcome": "completed",
+            "run_revision": completed_ledger.revision,
+            "run": run_summary(completed, completed_ledger.revision),
+        },
+        "grow_run_completion_refused_v1": unacknowledged,
+        "grow_run_completed_details_v1": run_details(
+            completed, completed_ledger.revision
+        ),
     }
 
 

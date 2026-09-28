@@ -11,6 +11,12 @@ and not a read-only user. It is asked on every command, never remembered.
 Participants from the start boundary, and the Run Opening Baseline records
 this Growspace's condition sensors and every output Growspace Manager
 commands, as they read at that moment.
+
+**What a completion decides on** (#671). The Run Completion Preview is built
+from the same reads twice: once for the grower, and again under the locks at
+commit, so the warnings a completion must acknowledge and the irrigation that
+refuses it are the ones true at the boundary. The boundary is the moment of
+that commit; nothing is completed in the past.
 """
 
 from __future__ import annotations
@@ -27,10 +33,13 @@ import homeassistant.util.dt as dt_util
 from ..const import DOMAIN
 from ..domain.grow_run import (
     BaselineState,
+    CompletionPreview,
     GrowRun,
     OpeningBaseline,
+    PresentPlant,
     RunMetadata,
     RunNotAuthorized,
+    preview_completion,
 )
 from ..exceptions import GrowspaceNotFoundError
 from .safety import managed_outputs
@@ -49,12 +58,15 @@ def active_run_unique_id(growspace_id: str) -> str:
 
 
 def require_controller(
-    hass: HomeAssistant, growspace_id: str, user: User | None
+    hass: HomeAssistant,
+    growspace_id: str,
+    user: User | None,
+    action: str = "Starting",
 ) -> str:
     """Return the acting user's ID if they may operate this Growspace's Runs."""
     if user is None:
         raise RunNotAuthorized(
-            "Starting a Grow Run requires a signed-in Home Assistant user",
+            f"{action} a Grow Run requires a signed-in Home Assistant user",
             current_revision=None,
         )
     if user.is_admin:
@@ -69,7 +81,7 @@ def require_controller(
     )
     if not allowed:
         raise RunNotAuthorized(
-            "Starting a Grow Run requires permission to control this growspace",
+            f"{action} a Grow Run requires permission to control this growspace",
             current_revision=None,
         )
     return user.id
@@ -149,6 +161,113 @@ async def async_start_grow_run(
             actor_user_id=user_id,
         )
         await store.async_commit(ledger)
-    store.announce_start(run, user_id)
+    store.announce(run)
+    coordinator.async_update_listeners()
+    return run, ledger.revision
+
+
+#: A completion that leaves the retrospective note as it is.
+KEEP_NOTE = object()
+
+
+def _completion_preview(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    growspace_id: str,
+    retrospective_note: str | None | object,
+) -> CompletionPreview:
+    """Read what completing the Growspace's Active Run now would do and risk."""
+    ledger = coordinator.grow_runs.ledger(growspace_id)
+    active = ledger.active_run
+    return preview_completion(
+        ledger,
+        now=dt_util.utcnow(),
+        plants_present=[
+            PresentPlant(
+                plant.plant_id,
+                plant.genetics.strain_name,
+                plant.genetics.phenotype_name,
+                str(plant.stage),
+            )
+            for plant in coordinator.plants.values()
+            if plant.growspace_id == growspace_id
+        ],
+        dry_weights={
+            plant_id: plant.harvest_metrics.dry_weight
+            for plant_id, plant in coordinator.plants.items()
+        },
+        pending_facts=coordinator.storage_manager.activity_facts,
+        delivering_outputs=coordinator.irrigation_delivering_outputs(growspace_id),
+        retrospective_note=(
+            (active.metadata.notes if active is not None else None)
+            if retrospective_note is KEEP_NOTE
+            else retrospective_note  # type: ignore[arg-type]
+        ),
+    )
+
+
+def preview_grow_run_completion(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    *,
+    growspace_id: str,
+    retrospective_note: str | None | object = KEEP_NOTE,
+) -> CompletionPreview:
+    """The Run Completion Preview for the Growspace's Active Run, as of now.
+
+    Raises a `GrowRunRefused` when there is no Active Run or no readable
+    history, so the caller can say which.
+    """
+    if growspace_id not in coordinator.growspaces:
+        raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+    return _completion_preview(hass, coordinator, growspace_id, retrospective_note)
+
+
+async def async_complete_grow_run(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    *,
+    growspace_id: str,
+    run_id: str,
+    expected_revision: int,
+    acknowledged: list[str],
+    retrospective_note: str | None | object = KEEP_NOTE,
+    user: User | None,
+) -> tuple[GrowRun, int]:
+    """Complete the Active Run; return it and the Growspace's new Run Revision.
+
+    Raises a `GrowRunRefused` for every refusal the caller can act on.
+    """
+    if growspace_id not in coordinator.growspaces:
+        raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+    store = coordinator.grow_runs
+    try:
+        user_id = require_controller(hass, growspace_id, user, "Completing")
+    except RunNotAuthorized as refused:
+        ledger = store.ledger(growspace_id)
+        refused.current_revision = ledger.revision
+        refused.active_run = ledger.active_run
+        raise
+    # The plant lock first, so no Plant can move across the boundary between
+    # the preview being read and the Run being committed. Movements already
+    # committed are projected first, so the boundary closes what they opened.
+    async with coordinator.lock:
+        await coordinator.async_project_pending_activity()
+        async with store.lock:
+            # A stale command is answered as stale, whatever the preview says.
+            store.ledger(growspace_id).require_revision(expected_revision)
+            preview = _completion_preview(
+                hass, coordinator, growspace_id, retrospective_note
+            )
+            ledger, run = store.ledger(growspace_id).complete(
+                expected_revision=expected_revision,
+                run_id=run_id,
+                preview=preview,
+                acknowledged=acknowledged,
+                command_id=uuid4().hex,
+                actor_user_id=user_id,
+            )
+            await store.async_commit(ledger)
+    store.announce(run)
     coordinator.async_update_listeners()
     return run, ledger.revision

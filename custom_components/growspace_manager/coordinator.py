@@ -448,11 +448,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.cache.invalidate()
         candidate_data = self.view_model_builder.build_data_property()
         await self.storage_manager.async_force_save()
-        await self._async_project_activity()
+        await self.async_project_pending_activity()
         self.data = candidate_data
         await self._publish_current_data()
 
-    async def _async_project_activity(self) -> None:
+    async def async_project_pending_activity(self) -> None:
         """Drain durable Plant facts after commit and at restart."""
         for fact in tuple(self.storage_manager.activity_facts):
             if fact.projected:
@@ -469,10 +469,15 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_publish_committed_state(self) -> None:
         """Publish domain state that was persisted through a staged transaction."""
-        await self._async_project_activity()
+        await self.async_project_pending_activity()
         self.cache.invalidate()
         self.data = self.view_model_builder.build_data_property()
         await self._publish_current_data()
+
+    def irrigation_delivering_outputs(self, growspace_id: str) -> tuple[str, ...]:
+        """The outputs a growspace's irrigation holds ON now; none without one."""
+        irrigation = self._subsystem_manager.irrigation_coordinators.get(growspace_id)
+        return irrigation.delivering_outputs() if irrigation is not None else ()
 
     def abandon_pending_irrigation_observation(self, growspace_id: str) -> None:
         """Discard feedback when hand watering changes a growspace's VWC."""
@@ -566,7 +571,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.irrigation_safety.async_load()
         await self.reliability.async_load()
         await self.grow_runs.async_load()
-        await self._async_project_activity()
+        await self.async_project_pending_activity()
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.

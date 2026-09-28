@@ -1,7 +1,9 @@
 {
   "outcome": "found",
   "run": {
+    "completed_at": null,
     "label": "Autumn",
+    "metrics_state": "live",
     "movement_history": [
       {
         "at": "2026-07-31T20:30:00+00:00",
@@ -15,6 +17,7 @@
         "target_run_id": null
       }
     ],
+    "notes": null,
     "participant_count": 2,
     "participations": [
       {
@@ -32,6 +35,7 @@
     "run_revision": 4,
     "sequence_number": 4,
     "started_at": "2026-07-24T20:30:00+00:00",
+    "status": "active",
     "timezone": "Europe/Berlin"
   }
 }
