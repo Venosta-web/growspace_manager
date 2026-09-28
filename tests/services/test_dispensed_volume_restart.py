@@ -440,8 +440,16 @@ async def test_a_pump_that_never_reads_on_is_not_delivered_and_uncharged(
     assert attempt.on_commanded_at == _at("08:00")
     assert attempt.off_commanded_at is not None
     assert attempt.off_confirmed
+    assert attempt.not_delivered_window == (_at("08:00"), attempt.off_confirmed_at)
     assert coordinator.cycles_today == 0
     assert coordinator.volume_dispensed_today == 0.0
+
+    await _flush_batch(hass, clock)
+    (stored,) = hass_storage[KEY]["data"]["attempts"]
+    assert stored["not_delivered_window"] == {
+        "start": _at("08:00").isoformat(),
+        "end": stored["off_confirmed_at"],
+    }
 
 
 async def test_every_moment_of_a_shot_is_recorded(
@@ -535,19 +543,95 @@ async def test_an_operator_hold_is_a_suppressed_attempt(
     assert attempt.trigger_evidence.slot == "08:00:00"
 
 
-async def test_a_drain_refusal_is_not_an_attempt_yet(
-    hass: HomeAssistant, clock: FrozenDateTimeFactory
+async def _drain(hass: HomeAssistant, coordinator: IrrigationCoordinator) -> None:
+    await coordinator._run_pump_cycle("drain", PUMP, SHOT_S, {"time": "22:00:00"})
+    await hass.async_block_till_done()
+
+
+async def test_a_refused_drain_is_a_suppressed_drain_attempt(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory, pump: list[str]
 ) -> None:
-    """Drains get their attempts in the next slice of ADR-0055."""
-    clock.move_to(_at("08:00"))
+    """Irrigation disarmed holds a scheduled drain, and the refusal is recorded."""
+    clock.move_to(_at("22:00"))
     coordinator = await _start(hass)
     safety = IrrigationSafetyStore(hass, ENTRY_ID)
     await safety.async_load()
     coordinator._main_coordinator.irrigation_safety = safety
 
-    await coordinator._run_pump_cycle("drain", PUMP, SHOT_S, {"time": "08:00:00"})
+    await _drain(hass, coordinator)
 
-    assert coordinator._deliveries.attempts == []
+    assert pump == []
+    (attempt,) = coordinator._deliveries.attempts
+    assert attempt.outcome is AttemptOutcome.SUPPRESSED
+    assert attempt.reason == "irrigation_disarmed"
+    assert attempt.trigger is AttemptTrigger.DRAIN
+    assert attempt.trigger_evidence.slot == "22:00:00"
+
+
+async def test_a_drain_is_an_attempt_that_never_charges(
+    hass: HomeAssistant,
+    clock: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+    pump: list[str],
+) -> None:
+    """Written before ON, actuated, closed: and no cycle, no litres, no estimate."""
+    clock.move_to(_at("22:00"))
+    coordinator = await _start(hass)
+    seen: list[dict[str, Any]] = []
+
+    async def command(call: ServiceCall) -> None:
+        if call.service == "turn_on":
+            seen.extend(hass_storage[KEY]["data"]["attempts"])
+        hass.states.async_set(PUMP, "on" if call.service == "turn_on" else "off")
+
+    hass.services.async_register("switch", "turn_on", command)
+    hass.services.async_register("switch", "turn_off", command)
+    await _drain(hass, coordinator)
+
+    (requested,) = seen
+    assert requested["state"] == "requested"
+    assert requested["trigger"] == "drain"
+    assert coordinator.cycles_today == 0
+    assert coordinator.volume_dispensed_today == 0.0
+    assert coordinator.last_cycle_timestamp is None
+
+    await _flush_batch(hass, clock)
+    (stored,) = hass_storage[KEY]["data"]["attempts"]
+    assert stored["attempt_id"] == requested["attempt_id"]
+    assert stored["trigger_evidence"] == {"slot": "22:00:00"}
+    assert stored["outcome"] == "completed"
+    assert stored["on_confirmed_at"] is not None
+    assert stored["off_confirmed_at"] is not None
+    assert stored["charge_date"] is None
+    assert stored["charged_l"] == 0.0
+    assert stored["estimated_l"] is None
+    assert stored["flow_rate_ml_per_sec"] == 0.0
+
+    # And a restart reads it back without charging it.
+    after = await _start(hass)
+    assert after.cycles_today == 0
+
+
+async def test_a_drain_at_the_daily_limit_still_runs_and_moves_no_cap(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory, pump: list[str]
+) -> None:
+    """The caps neither hold a drain nor count it: the limit stays where it was."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+    for _ in range(3):
+        await _shot(hass, coordinator)
+    volume = coordinator.volume_dispensed_today
+    pump.clear()
+
+    clock.move_to(_at("22:00"))
+    await _drain(hass, coordinator)
+
+    assert pump == ["turn_on", "turn_off"]
+    assert coordinator.cycles_today == 3
+    assert coordinator.volume_dispensed_today == pytest.approx(volume)
+    drain = coordinator._deliveries.attempts[-1]
+    assert drain.trigger is AttemptTrigger.DRAIN
+    assert drain.outcome is AttemptOutcome.COMPLETED
 
 
 @pytest.mark.parametrize(
