@@ -642,9 +642,10 @@ class CompletionPreview:
             "closing_participations": [row.as_dict() for row in self.closing],
             "plants_present": [row.as_dict() for row in self.plants_present],
             "missing_outcomes": [row.as_dict() for row in self.missing_outcomes],
-            # Metric Coverage per Run metric. No Run metric is measured yet
-            # (#676-#679 add them), so there is nothing whose coverage could
-            # fall short; the key is here so those metrics add rows, not shape.
+            # Metric Coverage, one ``{"metric", "coverage_percent"}`` row per Run
+            # metric. No Run metric is measured yet (#676-#679 add them), so
+            # nothing's coverage can fall short; the key is here so those
+            # metrics add rows, not shape.
             "coverage": [],
             "attribution_gaps": [row.as_dict() for row in self.attribution_gaps],
             "retrospective_note": self.retrospective_note,
