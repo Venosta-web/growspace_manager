@@ -1083,16 +1083,25 @@ class PlantManager(BaseService):
         """Compatibility wrapper for update_plant."""
         return await self.update_plant(plant_id, **updates)
 
-    async def remove_plant(self, plant_id: str) -> bool:
-        """Remove a plant."""
+    async def remove_plant(self, plant_id: str, *, source_frozen: bool = False) -> bool:
+        """Remove a plant.
+
+        ``source_frozen`` says the Plant's Harvest Source Run is Finalized, so
+        its outcome is already history and no explicit one is asked for.
+        """
         async with self._lock:
             plant = self.repository.get_plant(plant_id)
             if not plant:
                 return False
-            if plant.harvest_source_run_id and plant.harvest_outcome_state not in {
-                "no_usable_yield",
-                "incomplete",
-            }:
+            if (
+                plant.harvest_source_run_id
+                and not source_frozen
+                and plant.harvest_outcome_state
+                not in {
+                    "no_usable_yield",
+                    "incomplete",
+                }
+            ):
                 raise ValidationChangeError(
                     "A Harvest Source Plant needs an explicit outcome before deletion"
                 )

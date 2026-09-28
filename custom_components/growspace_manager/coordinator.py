@@ -8,8 +8,9 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 import homeassistant.util.dt as dt_util
 
@@ -29,6 +30,7 @@ from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
 from .delivery_attempt_store import DeliveryAttemptStore
+from .domain.grow_run import ParticipantIdentity
 from .domain.unattributed_activity import (
     DEFAULT_RETENTION_DAYS as DEFAULT_UNATTRIBUTED_RETENTION_DAYS,
 )
@@ -506,13 +508,42 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.exception("Unattributed Activity coverage was not recorded")
 
     async def async_project_harvest_outcomes(self) -> None:
-        """Retry source snapshots from the committed Plant image."""
+        """Retry source snapshots from the committed Plant image.
+
+        The same image names each Run Participant, so the identity a Run is
+        finalized with is the last one its Plant had.
+        """
         try:
             await self.grow_runs.async_project_harvest_outcomes(
                 list(self.plants.values())
             )
         except Exception:
             _LOGGER.exception("Harvest outcomes remain pending for Run projection")
+        try:
+            await self.grow_runs.async_project_identities(self.participant_identities())
+        except Exception:
+            _LOGGER.exception("Run Participant identities were not refreshed")
+
+    def participant_identities(self) -> dict[str, ParticipantIdentity]:
+        """Each live Plant's identity, named as its Home Assistant entity is."""
+        registry = er.async_get(self.hass)
+        identities: dict[str, ParticipantIdentity] = {}
+        for plant in self.plants.values():
+            entity_id = registry.async_get_entity_id(
+                Platform.SENSOR, DOMAIN, f"{DOMAIN}_{plant.plant_id}"
+            )
+            entry = registry.async_get(entity_id) if entity_id else None
+            name = (entry.name or entry.original_name) if entry else None
+            genetics = plant.genetics
+            identities[plant.plant_id] = ParticipantIdentity(
+                plant_id=plant.plant_id,
+                plant_name=name or f"{plant.strain} ({plant.row},{plant.col})",
+                strain_id=genetics.strain_id,
+                strain_name=genetics.strain_name,
+                phenotype_id=genetics.phenotype_id,
+                phenotype_name=genetics.phenotype_name,
+            )
+        return identities
 
     async def async_publish_committed_state(self) -> None:
         """Publish domain state that was persisted through a staged transaction."""

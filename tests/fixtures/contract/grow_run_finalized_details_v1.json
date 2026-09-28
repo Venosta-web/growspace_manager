@@ -1,0 +1,241 @@
+{
+  "outcome": "found",
+  "run": {
+    "audit": [
+      {
+        "actor_user_id": "user-1",
+        "at": "2026-07-24T20:30:00+00:00",
+        "changed_fields": [],
+        "command": "start",
+        "command_id": "cmd-run-1",
+        "prior_revision": 3,
+        "resulting_revision": 4
+      },
+      {
+        "actor_user_id": "user-1",
+        "at": "2026-10-02T20:30:00+00:00",
+        "changed_fields": [],
+        "command": "complete",
+        "command_id": "cmd-complete",
+        "prior_revision": 4,
+        "resulting_revision": 5
+      },
+      {
+        "actor_user_id": "user-1",
+        "at": "2026-10-23T20:30:00+00:00",
+        "changed_fields": [],
+        "command": "finalize",
+        "command_id": "cmd-finalize",
+        "prior_revision": 5,
+        "resulting_revision": 6
+      },
+      {
+        "actor_user_id": "user-1",
+        "at": "2026-10-23T21:30:00+00:00",
+        "changed_fields": ["label"],
+        "command": "edit_metadata",
+        "command_id": "cmd-describe",
+        "prior_revision": 6,
+        "resulting_revision": 7
+      }
+    ],
+    "completed_at": "2026-10-02T20:30:00+00:00",
+    "goals": "Beat #3",
+    "harvest_outcomes": [
+      {
+        "entered_dry_at": null,
+        "metrics": {
+          "dry_weight": null
+        },
+        "phenotype": "A",
+        "plant_id": "p1",
+        "quality_score": null,
+        "reason": null,
+        "source_growspace_id": "tent",
+        "state": "pending",
+        "strain": "OG Kush"
+      },
+      {
+        "entered_dry_at": "2026-09-25T20:30:00+00:00",
+        "metrics": {
+          "dry_weight": 112.5
+        },
+        "phenotype": "Pheno #1",
+        "plant_id": "p2",
+        "quality_score": null,
+        "reason": null,
+        "source_growspace_id": "tent",
+        "state": "recorded",
+        "strain": "OG Kush"
+      }
+    ],
+    "label": "Autumn 2026",
+    "metrics_state": "frozen",
+    "movement_history": [
+      {
+        "at": "2026-07-31T20:30:00+00:00",
+        "fact_id": "fact-1",
+        "kind": "transplant",
+        "plant_id": "p1",
+        "projected": true,
+        "source_growspace_id": "tent",
+        "source_run_id": "run-1",
+        "target_growspace_id": "other",
+        "target_run_id": null
+      },
+      {
+        "at": "2026-09-25T20:30:00+00:00",
+        "fact_id": "fact-2",
+        "kind": "harvest",
+        "plant_id": "p2",
+        "projected": true,
+        "source_growspace_id": "tent",
+        "source_run_id": "run-1",
+        "target_growspace_id": "dry",
+        "target_run_id": null
+      },
+      {
+        "at": "2026-09-26T20:30:00+00:00",
+        "fact_id": "fact-3",
+        "kind": "entry",
+        "plant_id": "p3",
+        "projected": true,
+        "source_growspace_id": null,
+        "source_run_id": null,
+        "target_growspace_id": "tent",
+        "target_run_id": "run-1"
+      }
+    ],
+    "notes": "Dense buds, slow dry",
+    "participant_count": 3,
+    "participations": [
+      {
+        "closed_at": "2026-07-31T20:30:00+00:00",
+        "opened_at": "2026-07-24T20:30:00+00:00",
+        "plant_id": "p1"
+      },
+      {
+        "closed_at": "2026-09-25T20:30:00+00:00",
+        "opened_at": "2026-07-24T20:30:00+00:00",
+        "plant_id": "p2"
+      },
+      {
+        "closed_at": "2026-10-02T20:30:00+00:00",
+        "opened_at": "2026-09-26T20:30:00+00:00",
+        "plant_id": "p3"
+      }
+    ],
+    "run_id": "run-1",
+    "run_revision": 7,
+    "sequence_number": 4,
+    "snapshot": {
+      "complete": false,
+      "completed_at": "2026-10-02T20:30:00+00:00",
+      "counts": {
+        "harvest_source_plants": 2,
+        "missing_outcomes": 1,
+        "no_usable_yield": 0,
+        "participants": 3,
+        "recorded": 1
+      },
+      "coverage": [],
+      "duration_days": 70,
+      "finalized_at": "2026-10-23T20:30:00+00:00",
+      "format": 1,
+      "growspace_id": "tent",
+      "growspace_name": "Tent",
+      "harvest_window": null,
+      "metrics": [
+        {
+          "complete": false,
+          "definition_version": 1,
+          "metric": "yield",
+          "missing": [
+            {
+              "kind": "dry_weight",
+              "plant_id": "p1"
+            }
+          ],
+          "unit": "g",
+          "value": null
+        },
+        {
+          "complete": false,
+          "definition_version": 1,
+          "metric": "yield_per_harvest_source_plant",
+          "missing": [
+            {
+              "kind": "yield",
+              "plant_id": null
+            }
+          ],
+          "unit": "g",
+          "value": null
+        }
+      ],
+      "missing": [
+        {
+          "kind": "participant_identity",
+          "plant_id": "p3"
+        },
+        {
+          "kind": "entered_dry_at",
+          "plant_id": "p1"
+        },
+        {
+          "kind": "dry_weight",
+          "plant_id": "p1"
+        }
+      ],
+      "participants": [
+        {
+          "phenotype_id": 11,
+          "phenotype_name": "A",
+          "plant_id": "p1",
+          "plant_name": "OG Kush (1,1)",
+          "strain_id": 7,
+          "strain_name": "OG Kush"
+        },
+        {
+          "phenotype_id": 12,
+          "phenotype_name": "Pheno #1",
+          "plant_id": "p2",
+          "plant_name": "OG Kush (1,2)",
+          "strain_id": 7,
+          "strain_name": "OG Kush"
+        },
+        {
+          "phenotype_id": null,
+          "phenotype_name": "",
+          "plant_id": "p3",
+          "plant_name": "",
+          "strain_id": null,
+          "strain_name": ""
+        }
+      ],
+      "run_id": "run-1",
+      "sequence_number": 4,
+      "started_at": "2026-07-24T20:30:00+00:00",
+      "strains": [
+        {
+          "harvest_source_plants": 0,
+          "participants": 1,
+          "strain_id": null,
+          "strain_name": ""
+        },
+        {
+          "harvest_source_plants": 2,
+          "participants": 2,
+          "strain_id": 7,
+          "strain_name": "OG Kush"
+        }
+      ],
+      "timezone": "Europe/Berlin",
+      "uncovered_gaps": []
+    },
+    "started_at": "2026-07-24T20:30:00+00:00",
+    "status": "finalized",
+    "tags": ["organic"],
+    "timezone": "Europe/Berlin"
+  }
+}

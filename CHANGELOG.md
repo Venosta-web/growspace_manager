@@ -27,6 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shows the participants, claimed activity, uncovered gaps and any conflicting
   boundary, and `start_grow_run` with `started_on` claims that activity for the
   new run in one write. Older history is refused and pointed at an imported run.
+- A Completed Grow Run can be finalized. `preview_grow_run_finalization` shows
+  the Run Finalization Snapshot it would freeze — identity, boundaries, Run
+  Timezone, duration, Participant identities, counts, Strains, Harvest Window,
+  Yield and Yield per Harvest Source Plant with their Metric Definition
+  Versions, coverage, and every fact still missing — and `finalize_grow_run`
+  freezes it. A snapshot with a missing fact finalizes only once acknowledged,
+  and keeps the fact missing rather than counting it as zero. A Finalized Run
+  stays readable through `get_grow_run` after its Plants, Strains or Growspace
+  change or are deleted, and a Harvest Source Plant of a Finalized Run can be
+  deleted without choosing an outcome first. `list_grow_runs` names every Run a
+  growspace holds, and `update_grow_run_metadata` edits a Run's label, tags,
+  goals and notes in any status, audited, without touching its snapshot.
+  Harvest outcomes now record when their Plant entered dry (`entered_dry_at`),
+  and Run details carry `tags`, `goals`, `audit` and `snapshot`.
 
 ### Changed
 

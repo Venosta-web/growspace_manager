@@ -13,11 +13,13 @@ import pytest
 from custom_components.growspace_manager.domain.grow_run import (
     CODE_ALREADY_ACTIVE,
     CODE_REVISION_CONFLICT,
+    WARNING_INCOMPLETE_SNAPSHOT,
     WARNING_PLANTS_PRESENT,
     BaselineState,
     GrowRun,
     HarvestOutcome,
     OpeningBaseline,
+    ParticipantIdentity,
     PlantMovementFact,
     PresentPlant,
     RunAcknowledgementRequired,
@@ -29,6 +31,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     RunRevisionConflict,
     RunStatus,
     preview_completion,
+    preview_finalization,
     run_details,
     run_summary,
     sensor_state,
@@ -446,6 +449,61 @@ def _wire_forms() -> dict[str, Any]:
         command_id="cmd-complete",
         actor_user_id="user-1",
     )
+    # Finalizing (#673): p2 weighed in and entered dry on a known day, p1's
+    # outcome still pending, so the snapshot is incomplete and says why.
+    described = completed_ledger.refresh_identities(
+        {
+            "p1": ParticipantIdentity("p1", "OG Kush (1,1)", 7, "OG Kush", 11, "A"),
+            "p2": ParticipantIdentity(
+                "p2", "OG Kush (1,2)", 7, "OG Kush", 12, "Pheno #1"
+            ),
+        }
+    ).project_harvest_outcome(
+        "run-1",
+        HarvestOutcome(
+            plant_id="p2",
+            strain="OG Kush",
+            phenotype="Pheno #1",
+            source_growspace_id="tent",
+            state="recorded",
+            reason=None,
+            metrics={"dry_weight": 112.5},
+            quality_score=None,
+            entered_dry_at=STARTED + timedelta(days=63),
+        ),
+    )
+    finalized_at = ended + timedelta(days=21)
+    finalizing = preview_finalization(
+        described, "run-1", now=finalized_at, growspace_name="Tent"
+    )
+    try:
+        described.finalize(
+            expected_revision=described.revision,
+            run_id="run-1",
+            preview=finalizing,
+            acknowledged=[],
+            command_id="cmd-finalize",
+            actor_user_id="user-1",
+        )
+    except RunAcknowledgementRequired as refused:
+        finalization_refused = refusal_result(refused)
+    final_ledger, finalized = described.finalize(
+        expected_revision=described.revision,
+        run_id="run-1",
+        preview=finalizing,
+        acknowledged=[WARNING_INCOMPLETE_SNAPSHOT],
+        command_id="cmd-finalize",
+        actor_user_id="user-1",
+    )
+    edited_ledger, edited = final_ledger.update_metadata(
+        expected_revision=final_ledger.revision,
+        run_id="run-1",
+        metadata=replace(finalized.metadata, label="Autumn 2026"),
+        command_id="cmd-describe",
+        actor_user_id="user-1",
+        now=finalized_at + timedelta(hours=1),
+    )
+    assert finalized.snapshot is not None
     return {
         "active_run_sensor_v1": {
             # As Home Assistant publishes them: the state is always a string.
@@ -472,6 +530,28 @@ def _wire_forms() -> dict[str, Any]:
         "grow_run_completed_details_v1": run_details(
             completed, completed_ledger.revision
         ),
+        "grow_run_finalization_preview_v1": {
+            "outcome": "preview",
+            "preview": finalizing.as_dict(),
+        },
+        "grow_run_finalization_refused_v1": finalization_refused,
+        "grow_run_finalized_v1": {
+            "outcome": "finalized",
+            "run_revision": final_ledger.revision,
+            "run": run_summary(finalized, final_ledger.revision),
+            "snapshot": finalized.snapshot.as_dict(),
+        },
+        "grow_run_finalized_details_v1": run_details(edited, edited_ledger.revision),
+        "grow_run_list_v1": {
+            "outcome": "listed",
+            "run_revision": edited_ledger.revision,
+            "runs": [run_summary(edited, edited_ledger.revision)],
+        },
+        "grow_run_metadata_updated_v1": {
+            "outcome": "updated",
+            "run_revision": edited_ledger.revision,
+            "run": run_summary(edited, edited_ledger.revision),
+        },
     }
 
 

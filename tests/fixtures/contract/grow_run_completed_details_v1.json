@@ -1,9 +1,31 @@
 {
   "outcome": "found",
   "run": {
+    "audit": [
+      {
+        "actor_user_id": "user-1",
+        "at": "2026-07-24T20:30:00+00:00",
+        "changed_fields": [],
+        "command": "start",
+        "command_id": "cmd-run-1",
+        "prior_revision": 3,
+        "resulting_revision": 4
+      },
+      {
+        "actor_user_id": "user-1",
+        "at": "2026-10-02T20:30:00+00:00",
+        "changed_fields": [],
+        "command": "complete",
+        "command_id": "cmd-complete",
+        "prior_revision": 4,
+        "resulting_revision": 5
+      }
+    ],
     "completed_at": "2026-10-02T20:30:00+00:00",
+    "goals": "Beat #3",
     "harvest_outcomes": [
       {
+        "entered_dry_at": null,
         "metrics": {
           "dry_weight": null
         },
@@ -16,6 +38,7 @@
         "strain": "OG Kush"
       },
       {
+        "entered_dry_at": null,
         "metrics": {
           "dry_weight": null
         },
@@ -87,8 +110,10 @@
     "run_id": "run-1",
     "run_revision": 5,
     "sequence_number": 4,
+    "snapshot": null,
     "started_at": "2026-07-24T20:30:00+00:00",
     "status": "completed",
+    "tags": ["organic"],
     "timezone": "Europe/Berlin"
   }
 }

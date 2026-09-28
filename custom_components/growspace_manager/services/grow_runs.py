@@ -24,6 +24,12 @@ then claims the Growspace's Unattributed Activity from that day on: the plan
 the grower previewed is recomputed under the same locks the commit holds, a
 conflicting boundary refuses it, and the claimed facts leave the ledger in
 the write that gives them to the Run.
+
+**What a finalization freezes** (#673). Every committed movement, harvest
+outcome and Participant identity is copied into the Runs first, under the
+Plant lock, so the snapshot is drawn from the Plants' last state; from then on
+it is read from the Run alone. Neither finalizing nor describing a Run needs
+its Growspace to still exist: that is what makes the history outlive it.
 """
 
 from __future__ import annotations
@@ -42,12 +48,14 @@ from ..const import DOMAIN
 from ..domain.grow_run import (
     BaselineState,
     CompletionPreview,
+    FinalizationPreview,
     GrowRun,
     OpeningBaseline,
     PresentPlant,
     RunMetadata,
     RunNotAuthorized,
     preview_completion,
+    preview_finalization,
 )
 from ..domain.unattributed_activity import ClaimPlan, claim_preview, plan_claim
 from ..exceptions import GrowspaceNotFoundError
@@ -57,6 +65,7 @@ if TYPE_CHECKING:
     from homeassistant.auth.models import User
 
     from ..coordinator import GrowspaceCoordinator
+    from ..grow_run_store import GrowRunStore
 
 ACTIVE_RUN_KEY = "active_run"
 
@@ -201,13 +210,7 @@ async def async_start_grow_run(
     if growspace_id not in coordinator.growspaces:
         raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
     store = coordinator.grow_runs
-    try:
-        user_id = require_controller(hass, growspace_id, user)
-    except RunNotAuthorized as refused:
-        ledger = store.ledger(growspace_id)
-        refused.current_revision = ledger.revision
-        refused.active_run = ledger.active_run
-        raise
+    user_id = _authorize(hass, store, growspace_id, user, "Starting")
     # The plant lock first, so no Plant can move across the start boundary
     # between being counted and the Run being committed.
     async with coordinator.lock:
@@ -314,13 +317,7 @@ async def async_complete_grow_run(
     if growspace_id not in coordinator.growspaces:
         raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
     store = coordinator.grow_runs
-    try:
-        user_id = require_controller(hass, growspace_id, user, "Completing")
-    except RunNotAuthorized as refused:
-        ledger = store.ledger(growspace_id)
-        refused.current_revision = ledger.revision
-        refused.active_run = ledger.active_run
-        raise
+    user_id = _authorize(hass, store, growspace_id, user, "Completing")
     # The plant lock first, so no Plant can move across the boundary between
     # the preview being read and the Run being committed. Movements already
     # committed are projected first, so the boundary closes what they opened,
@@ -354,3 +351,129 @@ async def async_complete_grow_run(
     store.announce(run)
     coordinator.async_update_listeners()
     return run, ledger.revision
+
+
+def _authorize(
+    hass: HomeAssistant,
+    store: GrowRunStore,
+    growspace_id: str,
+    user: User | None,
+    action: str,
+) -> str:
+    """Return the acting user's ID, or refuse with where the ledger stands."""
+    try:
+        return require_controller(hass, growspace_id, user, action)
+    except RunNotAuthorized as refused:
+        ledger = store.ledger(growspace_id)
+        refused.current_revision = ledger.revision
+        refused.active_run = ledger.active_run
+        raise
+
+
+def _growspace_name(coordinator: GrowspaceCoordinator, growspace_id: str) -> str:
+    """The Growspace's name now, or its ID once the Growspace is gone."""
+    growspace = coordinator.growspaces.get(growspace_id)
+    return growspace.name if growspace is not None else growspace_id
+
+
+async def async_preview_grow_run_finalization(
+    coordinator: GrowspaceCoordinator, *, growspace_id: str, run_id: str
+) -> FinalizationPreview:
+    """What finalizing a Completed Run now would freeze; nothing of it is written.
+
+    The Plants' committed state is copied into the Runs first, exactly as a
+    finalization does, so the preview shows the snapshot that would land.
+    """
+    async with coordinator.lock:
+        await coordinator.async_project_activity()
+        await coordinator.async_project_harvest_outcomes()
+        return preview_finalization(
+            coordinator.grow_runs.ledger(growspace_id),
+            run_id,
+            now=dt_util.utcnow(),
+            growspace_name=_growspace_name(coordinator, growspace_id),
+        )
+
+
+async def async_finalize_grow_run(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    *,
+    growspace_id: str,
+    run_id: str,
+    expected_revision: int,
+    acknowledged: list[str],
+    user: User | None,
+) -> tuple[GrowRun, int]:
+    """Freeze a Completed Run; return it and the Growspace's new Run Revision.
+
+    Raises a `GrowRunRefused` for every refusal the caller can act on.
+    """
+    store = coordinator.grow_runs
+    user_id = _authorize(hass, store, growspace_id, user, "Finalizing")
+    async with coordinator.lock:
+        await coordinator.async_project_activity()
+        await coordinator.async_project_harvest_outcomes()
+        async with store.lock:
+            ledger = store.ledger(growspace_id)
+            ledger.require_revision(expected_revision)
+            preview = preview_finalization(
+                ledger,
+                run_id,
+                now=dt_util.utcnow(),
+                growspace_name=_growspace_name(coordinator, growspace_id),
+            )
+            ledger, run = ledger.finalize(
+                expected_revision=expected_revision,
+                run_id=run_id,
+                preview=preview,
+                acknowledged=acknowledged,
+                command_id=uuid4().hex,
+                actor_user_id=user_id,
+            )
+            await store.async_commit(ledger)
+    store.announce(run)
+    coordinator.async_update_listeners()
+    return run, ledger.revision
+
+
+async def async_update_grow_run_metadata(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    *,
+    growspace_id: str,
+    run_id: str,
+    expected_revision: int,
+    changes: dict[str, Any],
+    user: User | None,
+) -> tuple[GrowRun, int]:
+    """Edit a Run's label, tags, goals or notes; a field not named is kept.
+
+    Raises a `GrowRunRefused` for every refusal the caller can act on.
+    """
+    store = coordinator.grow_runs
+    user_id = _authorize(hass, store, growspace_id, user, "Describing")
+    async with store.lock:
+        ledger = store.ledger(growspace_id)
+        ledger.require_revision(expected_revision)
+        current = ledger.find(run_id).metadata
+        metadata = RunMetadata.create(
+            label=changes.get("label", current.label),
+            tags=changes.get("tags", current.tags),
+            goals=changes.get("goals", current.goals),
+            notes=changes.get("notes", current.notes),
+        )
+        updated, run = ledger.update_metadata(
+            expected_revision=expected_revision,
+            run_id=run_id,
+            metadata=metadata,
+            command_id=uuid4().hex,
+            actor_user_id=user_id,
+            now=dt_util.utcnow(),
+        )
+        if updated is ledger:
+            return run, ledger.revision
+        await store.async_commit(updated)
+    store.announce(run)
+    coordinator.async_update_listeners()
+    return run, updated.revision

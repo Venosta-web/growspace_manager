@@ -10,6 +10,13 @@ command is answered with where the ledger really is, never with a bare error.
 shows what a start on an earlier day would claim -- Participants, facts, days,
 uncovered gaps and any conflicting boundary -- and ``start_grow_run`` with the
 same ``started_on`` commits it.
+
+**Finalizing** (#673) is two commands as well: ``preview_grow_run_finalization``
+shows the Run Finalization Snapshot a Completed Run would freeze and what it
+lacks, and ``finalize_grow_run`` freezes it, acknowledging an incomplete one.
+``list_grow_runs`` names every Run a Growspace's ledger holds, and
+``update_grow_run_metadata`` edits a Run's description in any status. None of
+the four asks whether the Growspace still exists: its history outlives it.
 """
 
 from __future__ import annotations
@@ -25,6 +32,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     MAX_TAGS,
     MAX_TEXT_LENGTH,
     WARNING_ATTRIBUTION_GAPS,
+    WARNING_INCOMPLETE_SNAPSHOT,
     WARNING_MISSING_OUTCOMES,
     WARNING_PLANTS_PRESENT,
     GrowRunRefused,
@@ -35,8 +43,11 @@ from custom_components.growspace_manager.domain.grow_run import (
 from custom_components.growspace_manager.services.grow_runs import (
     KEEP_NOTE,
     async_complete_grow_run,
+    async_finalize_grow_run,
+    async_preview_grow_run_finalization,
     async_preview_grow_run_start,
     async_start_grow_run,
+    async_update_grow_run_metadata,
     preview_grow_run_completion,
 )
 from homeassistant.components import websocket_api
@@ -50,11 +61,20 @@ WS_TYPE_GET_GROW_RUN = "growspace_manager/get_grow_run"
 WS_TYPE_PREVIEW_GROW_RUN_COMPLETION = "growspace_manager/preview_grow_run_completion"
 WS_TYPE_COMPLETE_GROW_RUN = "growspace_manager/complete_grow_run"
 WS_TYPE_PREVIEW_GROW_RUN_START = "growspace_manager/preview_grow_run_start"
+WS_TYPE_LIST_GROW_RUNS = "growspace_manager/list_grow_runs"
+WS_TYPE_PREVIEW_GROW_RUN_FINALIZATION = (
+    "growspace_manager/preview_grow_run_finalization"
+)
+WS_TYPE_FINALIZE_GROW_RUN = "growspace_manager/finalize_grow_run"
+WS_TYPE_UPDATE_GROW_RUN_METADATA = "growspace_manager/update_grow_run_metadata"
 
 OUTCOME_STARTED = "started"
 OUTCOME_REFUSED = "refused"
 OUTCOME_PREVIEW = "preview"
 OUTCOME_COMPLETED = "completed"
+OUTCOME_LISTED = "listed"
+OUTCOME_FINALIZED = "finalized"
+OUTCOME_UPDATED = "updated"
 
 _NOTE = vol.Any(None, vol.All(str, vol.Length(max=MAX_TEXT_LENGTH)))
 
@@ -121,6 +141,53 @@ SCHEMA_WS_COMPLETE_GROW_RUN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Optional("retrospective_note"): _NOTE,
     }
 )
+
+
+SCHEMA_WS_LIST_GROW_RUNS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_LIST_GROW_RUNS,
+        vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+    }
+)
+
+SCHEMA_WS_PREVIEW_GROW_RUN_FINALIZATION = (
+    websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+        {
+            vol.Required("type"): WS_TYPE_PREVIEW_GROW_RUN_FINALIZATION,
+            vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+            vol.Required("run_id"): vol.All(str, vol.Length(min=1)),
+        }
+    )
+)
+
+SCHEMA_WS_FINALIZE_GROW_RUN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_FINALIZE_GROW_RUN,
+        vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("run_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("expected_run_revision"): vol.All(int, vol.Range(min=0)),
+        vol.Required("acknowledged_warnings"): [vol.In([WARNING_INCOMPLETE_SNAPSHOT])],
+    }
+)
+
+SCHEMA_WS_UPDATE_GROW_RUN_METADATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_UPDATE_GROW_RUN_METADATA,
+        vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("run_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("expected_run_revision"): vol.All(int, vol.Range(min=0)),
+        vol.Optional("label"): vol.Any(
+            None, vol.All(str, vol.Length(max=MAX_LABEL_LENGTH))
+        ),
+        vol.Optional("tags"): vol.All(
+            [vol.All(str, vol.Length(max=MAX_TAG_LENGTH))], vol.Length(max=MAX_TAGS)
+        ),
+        vol.Optional("goals"): _NOTE,
+        vol.Optional("notes"): _NOTE,
+    }
+)
+
+_METADATA_FIELDS = ("label", "tags", "goals", "notes")
 
 
 def refusal_result(refused: GrowRunRefused) -> dict[str, Any]:
@@ -243,6 +310,93 @@ async def websocket_get_grow_run(
     return run_details(run, ledger.revision)
 
 
+async def websocket_list_grow_runs(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Name every Run the Growspace's ledger holds, newest first."""
+    try:
+        ledger = coordinator.grow_runs.ledger(msg["growspace_id"])
+    except GrowRunRefused as refused:
+        return refusal_result(refused)
+    return {
+        "outcome": OUTCOME_LISTED,
+        "run_revision": ledger.revision,
+        "runs": [
+            run_summary(run, ledger.revision)
+            for run in sorted(ledger.runs, key=lambda row: -row.sequence_number)
+        ],
+    }
+
+
+async def websocket_preview_grow_run_finalization(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Show the snapshot finalizing a Completed Run would freeze, or why not."""
+    try:
+        preview = await async_preview_grow_run_finalization(
+            coordinator, growspace_id=msg["growspace_id"], run_id=msg["run_id"]
+        )
+    except GrowRunRefused as refused:
+        return refusal_result(refused)
+    return {"outcome": OUTCOME_PREVIEW, "preview": preview.as_dict()}
+
+
+async def websocket_finalize_grow_run(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Freeze a Completed Run, or say why not and where the ledger stands."""
+    try:
+        run, revision = await async_finalize_grow_run(
+            hass,
+            coordinator,
+            growspace_id=msg["growspace_id"],
+            run_id=msg["run_id"],
+            expected_revision=msg["expected_run_revision"],
+            acknowledged=msg["acknowledged_warnings"],
+            user=msg.get(WS_MSG_USER),
+        )
+    except GrowRunRefused as refused:
+        return refusal_result(refused)
+    assert run.snapshot is not None
+    return {
+        "outcome": OUTCOME_FINALIZED,
+        "run_revision": revision,
+        "run": run_summary(run, revision),
+        "snapshot": run.snapshot.as_dict(),
+    }
+
+
+async def websocket_update_grow_run_metadata(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Edit a Run's description, or say why not and where the ledger stands."""
+    try:
+        run, revision = await async_update_grow_run_metadata(
+            hass,
+            coordinator,
+            growspace_id=msg["growspace_id"],
+            run_id=msg["run_id"],
+            expected_revision=msg["expected_run_revision"],
+            changes={key: msg[key] for key in _METADATA_FIELDS if key in msg},
+            user=msg.get(WS_MSG_USER),
+        )
+    except GrowRunRefused as refused:
+        return refusal_result(refused)
+    return {
+        "outcome": OUTCOME_UPDATED,
+        "run_revision": revision,
+        "run": run_summary(run, revision),
+    }
+
+
 COMMANDS: list[WSCommand] = [
     WSCommand(
         WS_TYPE_GET_GROW_RUN,
@@ -269,6 +423,28 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_COMPLETE_GROW_RUN,
         websocket_complete_grow_run,
         SCHEMA_WS_COMPLETE_GROW_RUN,
+        actor=True,
+    ),
+    WSCommand(
+        WS_TYPE_LIST_GROW_RUNS,
+        websocket_list_grow_runs,
+        SCHEMA_WS_LIST_GROW_RUNS,
+    ),
+    WSCommand(
+        WS_TYPE_PREVIEW_GROW_RUN_FINALIZATION,
+        websocket_preview_grow_run_finalization,
+        SCHEMA_WS_PREVIEW_GROW_RUN_FINALIZATION,
+    ),
+    WSCommand(
+        WS_TYPE_FINALIZE_GROW_RUN,
+        websocket_finalize_grow_run,
+        SCHEMA_WS_FINALIZE_GROW_RUN,
+        actor=True,
+    ),
+    WSCommand(
+        WS_TYPE_UPDATE_GROW_RUN_METADATA,
+        websocket_update_grow_run_metadata,
+        SCHEMA_WS_UPDATE_GROW_RUN_METADATA,
         actor=True,
     ),
 ]

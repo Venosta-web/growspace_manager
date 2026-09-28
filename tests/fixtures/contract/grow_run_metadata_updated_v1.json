@@ -1,0 +1,16 @@
+{
+  "outcome": "updated",
+  "run": {
+    "completed_at": "2026-10-02T20:30:00+00:00",
+    "label": "Autumn 2026",
+    "metrics_state": "frozen",
+    "participant_count": 3,
+    "run_id": "run-1",
+    "run_revision": 7,
+    "sequence_number": 4,
+    "started_at": "2026-07-24T20:30:00+00:00",
+    "status": "finalized",
+    "timezone": "Europe/Berlin"
+  },
+  "run_revision": 7
+}
