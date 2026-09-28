@@ -3750,6 +3750,30 @@ async def test_options_flow_configure_general_submit(
     assert flow.current_options["show_sidebar"] is False
 
 
+@pytest.mark.asyncio
+async def test_options_flow_configure_general_offers_activity_retention(
+    hass: HomeAssistant, mock_coordinator
+) -> None:
+    """The Unattributed Activity retention defaults to 365 days and is kept (#670)."""
+    config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
+    config_entry.add_to_hass(hass)
+    config_entry.runtime_data = mock_coordinator
+    flow = OptionsFlowHandler(config_entry)
+    flow.hass = hass
+
+    form = await flow.async_step_configure_general()
+    schema = form["data_schema"].schema
+    key = next(k for k in schema if k == "unattributed_activity_retention_days")
+    assert key.default() == 365
+    assert schema[key]("30") == 30
+
+    result = await flow.async_step_configure_general(
+        user_input={"show_sidebar": True, "unattributed_activity_retention_days": 30}
+    )
+    assert result.get("type") == FlowResultType.CREATE_ENTRY
+    assert flow.current_options["unattributed_activity_retention_days"] == 30
+
+
 # ============================================================================
 # Additional Tests for 100% Coverage of config_flow.py
 # ============================================================================

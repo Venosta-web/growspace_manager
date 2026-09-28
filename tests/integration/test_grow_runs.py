@@ -324,7 +324,7 @@ async def test_projection_retries_after_partial_commit_without_duplicates(
         "async_mark_fact_projected",
         side_effect=OSError("ack lost"),
     ):
-        await coordinator.async_project_pending_activity()
+        await coordinator.async_project_activity()
     assert coordinator.grow_runs.active_run(growspace_id).participant_count == 1
     assert not pending[0].projected
     reloaded = GrowRunStore(hass, init_integration.entry_id)
@@ -336,7 +336,7 @@ async def test_projection_retries_after_partial_commit_without_duplicates(
         for row in durable["activity_facts"]
     )
 
-    await coordinator.async_project_pending_activity()
+    await coordinator.async_project_activity()
     projected = coordinator.grow_runs.active_run(growspace_id)
     assert projected.participant_count == 1
     assert len(projected.participations) == 1
@@ -652,7 +652,7 @@ async def test_unreadable_run_history_does_not_block_plant_and_reconciles_later(
     assert pending[0].source_run_id is None
     assert pending[1].target_run_id is None
     coordinator.grow_runs.unreadable = False
-    await coordinator.async_project_pending_activity()
+    await coordinator.async_project_activity()
     restored = coordinator.grow_runs.active_run(growspace_id)
     assert restored.participations[0].closed_at is not None
     assert len(restored.participations) == 2
@@ -1324,7 +1324,7 @@ async def test_a_fact_projected_after_restart_respects_the_boundary(
     assert reloaded.active_run(growspace_id) is None
     assert reloaded.ledger(growspace_id).runs[0] == finished
     coordinator.grow_runs = reloaded
-    await coordinator.async_project_pending_activity()
+    await coordinator.async_project_activity()
 
     healed = reloaded.ledger(growspace_id).runs[0]
     assert healed.status is RunStatus.COMPLETED

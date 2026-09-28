@@ -187,7 +187,7 @@ The provisional metrics of a Completed Grow Run while linked post-harvest outcom
 _Avoid_: final metrics, live metrics
 
 **Run Completion Preview**
-The confirmation view of a proposed completion boundary, duration, participation intervals that will close, Plants still present, missing harvest outcomes, coverage, attribution gaps, and retrospective note. Warnings do not block completion but require explicit acknowledgement when Plants or outcomes remain at risk. The warnings are `plants_present`, `missing_outcomes` (the Run's Harvest Outcomes still `pending` a dry weight or recorded `incomplete`) and `attribution_gaps` (an unprojected movement inside the Run, or a Plant standing here with no open participation); integration-controlled irrigation delivering water is the one blocker. `growspace_manager/complete_grow_run` names the Run, the Run Revision and the warnings it acknowledges, and the preview is rebuilt under the Plant and Run locks at commit, so a warning that appeared after the grower looked refuses as `grow_run.acknowledgement_required`. The boundary is the commit moment; a movement recorded before it but projected after still counts against it, and one at or after it is outside the Run. `domain/grow_run.py` owns the rules; `services/grow_runs.py` reads the Growspace (#671).
+The confirmation view of a proposed completion boundary, duration, participation intervals that will close, Plants still present, missing harvest outcomes, coverage, attribution gaps, and retrospective note. Warnings do not block completion but require explicit acknowledgement when Plants or outcomes remain at risk. The warnings are `plants_present`, `missing_outcomes` (the Run's Harvest Outcomes still `pending` a dry weight or recorded `incomplete`) and `attribution_gaps` (an unprojected movement inside the Run, or a Plant standing here with no open participation); integration-controlled irrigation delivering water is the one blocker. `growspace_manager/complete_grow_run` names the Run, the Run Revision and the warnings it acknowledges, and the preview is rebuilt under the Plant and Run locks at commit, so a warning that appeared after the grower looked refuses as `grow_run.acknowledgement_required`. The boundary is the commit moment; a movement recorded before it but projected after still counts against it, and one at or after it is outside the Run. The Growspace's Unattributed Activity coverage opens at the boundary in the same write, and a backdated start may begin at a Completed Run's boundary but never inside it (`grow_run.boundary_conflict`). `domain/grow_run.py` owns the rules; `services/grow_runs.py` reads the Growspace (#671).
 _Avoid_: completion summary, automatic close
 
 **Run Finalization Snapshot**
@@ -216,6 +216,16 @@ _Avoid_: default run, implicit run
 
 **Unattributed Activity Ledger**
 The Growspace-level facts and daily summaries retained while no Grow Run is active so a backdated Run can claim eligible activity transactionally. Its retention is configurable and defaults to 365 days; older history can only become an incomplete Imported Run.
+It holds the Plant movement facts no Run owns on this Growspace's side, one **Daily Summary** per local day (the Plants seen, entries, exits), and `covered_since` — the moment it began observing the Growspace Run-free; a start of any Run ends that coverage. It lives in the Grow Run store beside the Run Ledger, so a claim and the Run it creates are one write (`domain/unattributed_activity.py`, #670). Retention is the `unattributed_activity_retention_days` option under the general settings.
+_Avoid_: activity buffer, pre-run history
+
+**Backdated Start**
+Starting a Grow Run at local midnight of an earlier `started_on` day, within retention. `preview_grow_run_start` shows what it would claim — Participants, facts, days, [[Uncovered Gap]]s, and any conflicting boundary — and `start_grow_run` with the same `started_on` recomputes that plan under the lock and commits it: the claimed facts leave the ledger and become the Run's, attributed to it, and the Run Revision advances. Participation is walked back from the Plants standing now through the claimed facts, never inferred. A start before the retention horizon is refused `grow_run.beyond_retention` (an Imported Run is the only record for it); one in the future, over an Active Run, or reaching back over an earlier Run is refused `grow_run.boundary_conflict` or `grow_run.already_active`. The Run keeps a `backdate` record: the day asked for, where coverage began, the number of claimed facts and the gaps.
+_Avoid_: retroactive run, inferred start
+
+**Uncovered Gap**
+Part of a backdated Run's interval with nothing recorded for it: `before_recording`, from the requested start to where the ledger's coverage began — Plants standing then join from coverage, not from the requested day — or `not_observed`, a whole past local day on which Home Assistant never observed the Growspace. Gaps are shown and kept on the Run, never filled.
+_Avoid_: missing data, estimated interval
 _Avoid_: implicit run, Recorder history
 
 **Run Sequence Number**

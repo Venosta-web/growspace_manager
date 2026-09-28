@@ -11,18 +11,27 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+import homeassistant.util.dt as dt_util
 
 from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
 from .capture_continuity_monitor import CaptureContinuityMonitor
-from .const import COORDINATOR_UPDATE_INTERVAL_MINUTES, DOMAIN, VERSION
+from .const import (
+    CONF_UNATTRIBUTED_RETENTION_DAYS,
+    COORDINATOR_UPDATE_INTERVAL_MINUTES,
+    DOMAIN,
+    VERSION,
+)
 from .continuity_notifier import ContinuityNotifier
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
 from .delivery_attempt_store import DeliveryAttemptStore
+from .domain.unattributed_activity import (
+    DEFAULT_RETENTION_DAYS as DEFAULT_UNATTRIBUTED_RETENTION_DAYS,
+)
 from .environment_analyzer import EnvironmentAnalyzer
 from .event_bus_pkg import GrowspaceEventBus
 from .grow_run_store import GrowRunStore
@@ -191,7 +200,16 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.irrigation_safety = IrrigationSafetyStore(hass, entry.entry_id)
         self.reliability = ReliabilityStore(hass, entry.entry_id)
         self.deliveries = DeliveryAttemptStore(hass, entry.entry_id)
-        self.grow_runs = GrowRunStore(hass, entry.entry_id)
+        self.grow_runs = GrowRunStore(
+            hass,
+            entry.entry_id,
+            retention_days=int(
+                entry.options.get(
+                    CONF_UNATTRIBUTED_RETENTION_DAYS,
+                    DEFAULT_UNATTRIBUTED_RETENTION_DAYS,
+                )
+            ),
+        )
         self.created_entity_ids: list[tuple[str, str, str]] = []
 
     def _attach_services(
@@ -367,6 +385,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Keeps the Vision status cache warm so `get_vision_status` never has to
         # probe. It is a no-op while the cache is fresh (ADR 0043).
         await self.vision_connection.async_refresh_if_stale()
+        # A day passes without anything moving; this is what notices it.
+        await self._async_observe_unattributed_activity()
 
         return self.data
 
@@ -448,13 +468,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.cache.invalidate()
         candidate_data = self.view_model_builder.build_data_property()
         await self.storage_manager.async_force_save()
-        await self.async_project_pending_activity()
+        await self.async_project_activity()
         await self.async_project_harvest_outcomes()
         self.data = candidate_data
         await self._publish_current_data()
 
-    async def async_project_pending_activity(self) -> None:
-        """Drain durable Plant facts after commit and at restart."""
+    async def async_project_activity(self) -> None:
+        """Drain durable Plant facts after commit and at restart.
+
+        Then let each Run-free Growspace's Unattributed Activity Ledger note
+        who stands in it today. That is evidence, never a reason to fail the
+        cultivation change that got us here.
+        """
         for fact in tuple(self.storage_manager.activity_facts):
             if fact.projected:
                 continue
@@ -467,6 +492,18 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     fact.fact_id,
                 )
                 break
+        await self._async_observe_unattributed_activity()
+
+    async def _async_observe_unattributed_activity(self) -> None:
+        """Extend each Growspace's Unattributed Activity coverage to now."""
+        occupancy: dict[str, list[str]] = {gid: [] for gid in self.growspaces}
+        for plant in self.plants.values():
+            if plant.growspace_id in occupancy:
+                occupancy[plant.growspace_id].append(plant.plant_id)
+        try:
+            await self.grow_runs.async_observe(dt_util.utcnow(), occupancy)
+        except Exception:
+            _LOGGER.exception("Unattributed Activity coverage was not recorded")
 
     async def async_project_harvest_outcomes(self) -> None:
         """Retry source snapshots from the committed Plant image."""
@@ -479,7 +516,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_publish_committed_state(self) -> None:
         """Publish domain state that was persisted through a staged transaction."""
-        await self.async_project_pending_activity()
+        await self.async_project_activity()
         self.cache.invalidate()
         self.data = self.view_model_builder.build_data_property()
         await self._publish_current_data()
@@ -581,7 +618,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.irrigation_safety.async_load()
         await self.reliability.async_load()
         await self.grow_runs.async_load()
-        await self.async_project_pending_activity()
+        await self.async_project_activity()
         await self.async_project_harvest_outcomes()
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves

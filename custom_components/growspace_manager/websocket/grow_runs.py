@@ -5,6 +5,11 @@ starting a Run has to tell "someone else started one" from "you may not" from
 "the history is unreadable" and act differently on each, and each refusal
 carries the Growspace's current Run Revision and Active Run so it can: a stale
 command is answered with where the ledger really is, never with a bare error.
+
+**Starting in the past** (#670) is two commands: ``preview_grow_run_start``
+shows what a start on an earlier day would claim -- Participants, facts, days,
+uncovered gaps and any conflicting boundary -- and ``start_grow_run`` with the
+same ``started_on`` commits it.
 """
 
 from __future__ import annotations
@@ -30,11 +35,13 @@ from custom_components.growspace_manager.domain.grow_run import (
 from custom_components.growspace_manager.services.grow_runs import (
     KEEP_NOTE,
     async_complete_grow_run,
+    async_preview_grow_run_start,
     async_start_grow_run,
     preview_grow_run_completion,
 )
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
+import homeassistant.helpers.config_validation as cv
 
 from ._common import WS_MSG_USER, WSCommand
 
@@ -42,6 +49,7 @@ WS_TYPE_START_GROW_RUN = "growspace_manager/start_grow_run"
 WS_TYPE_GET_GROW_RUN = "growspace_manager/get_grow_run"
 WS_TYPE_PREVIEW_GROW_RUN_COMPLETION = "growspace_manager/preview_grow_run_completion"
 WS_TYPE_COMPLETE_GROW_RUN = "growspace_manager/complete_grow_run"
+WS_TYPE_PREVIEW_GROW_RUN_START = "growspace_manager/preview_grow_run_start"
 
 OUTCOME_STARTED = "started"
 OUTCOME_REFUSED = "refused"
@@ -64,6 +72,15 @@ SCHEMA_WS_START_GROW_RUN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Optional("goals"): vol.Any(
             None, vol.All(str, vol.Length(max=MAX_TEXT_LENGTH))
         ),
+        vol.Optional("started_on"): cv.date,
+    }
+)
+
+SCHEMA_WS_PREVIEW_GROW_RUN_START = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_PREVIEW_GROW_RUN_START,
+        vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("started_on"): cv.date,
     }
 )
 
@@ -141,6 +158,7 @@ async def websocket_start_grow_run(
             expected_revision=msg["expected_run_revision"],
             metadata=metadata,
             user=msg.get(WS_MSG_USER),
+            started_on=msg.get("started_on"),
         )
     except GrowRunRefused as refused:
         return refusal_result(refused)
@@ -195,6 +213,23 @@ async def websocket_complete_grow_run(
     }
 
 
+async def websocket_preview_grow_run_start(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Show what a start on an earlier day would claim; write nothing."""
+    try:
+        return await async_preview_grow_run_start(
+            hass,
+            coordinator,
+            growspace_id=msg["growspace_id"],
+            started_on=msg["started_on"],
+        )
+    except GrowRunRefused as refused:
+        return refusal_result(refused)
+
+
 async def websocket_get_grow_run(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -213,6 +248,11 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_GET_GROW_RUN,
         websocket_get_grow_run,
         SCHEMA_WS_GET_GROW_RUN,
+    ),
+    WSCommand(
+        WS_TYPE_PREVIEW_GROW_RUN_START,
+        websocket_preview_grow_run_start,
+        SCHEMA_WS_PREVIEW_GROW_RUN_START,
     ),
     WSCommand(
         WS_TYPE_START_GROW_RUN,
