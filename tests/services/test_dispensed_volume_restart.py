@@ -27,6 +27,7 @@ from custom_components.growspace_manager.delivery_attempt_store import (
 from custom_components.growspace_manager.domain.delivery_attempt import (
     DELIVERY_RECORD_UNREADABLE,
     AttemptOutcome,
+    AttemptState,
     AttemptTrigger,
 )
 from custom_components.growspace_manager.domain.irrigation_safety import ControllerState
@@ -113,6 +114,18 @@ async def _start(
     coordinator = IrrigationCoordinator(hass, entry, GROWSPACE_ID, main)
     await coordinator._async_load_deliveries()
     return coordinator
+
+
+async def _flush_batch(hass: HomeAssistant, clock: FrozenDateTimeFactory) -> None:
+    """Let the batched save write, however many saves it has coalesced.
+
+    Its timer is the first delay scheduled, and a later save only moves the
+    write time on; the timer checks the loop's clock against that, so the
+    clock has to have moved past it, not merely the timer fired.
+    """
+    clock.tick(CLOSE_SAVE_DELAY_SECONDS + 1)
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
 
 
 async def _shot(
@@ -297,15 +310,43 @@ async def test_an_unreadable_record_holds_every_cycle_as_a_fault(
     assert hass_storage[KEY]["data"]["attempts"] == [{"attempt_id": 3}]
 
 
-async def test_a_charge_that_cannot_be_written_stops_the_shot_and_holds(
+async def test_a_request_that_cannot_be_written_commands_nothing_and_holds(
     hass: HomeAssistant, clock: FrozenDateTimeFactory, pump: list[str]
 ) -> None:
-    """The write reaches disk before the cycle proceeds, or the cycle does not."""
+    """The first write reaches disk before the ON command, or there is no command."""
     clock.move_to(_at("08:00"))
     coordinator = await _start(hass)
 
     with patch.object(
         coordinator._deliveries._store, "async_save", side_effect=OSError("disk full")
+    ):
+        await _shot(hass, coordinator)
+
+    assert pump == []
+    assert coordinator.cycles_today == 0
+    assert coordinator.controller_snapshot().fault_id == DELIVERY_RECORD_UNREADABLE
+    assert ir.async_get(hass).async_get_issue(
+        DOMAIN, f"irrigation_fault_{GROWSPACE_ID}"
+    )
+    (attempt,) = coordinator._deliveries.attempts
+    assert attempt.outcome is AttemptOutcome.ABORTED
+    assert attempt.abort_cause == "error"
+    assert attempt.on_commanded_at is None
+    assert not attempt.off_confirmed
+
+
+async def test_a_charge_that_cannot_be_written_stops_the_shot_and_holds(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory, pump: list[str]
+) -> None:
+    """The charge reaches disk before the cycle proceeds, or the cycle does not."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+
+    # The request is written; the charge at confirm-ON is not.
+    with patch.object(
+        coordinator._deliveries._store,
+        "async_save",
+        side_effect=[None, OSError("disk full")],
     ):
         await _shot(hass, coordinator)
 
@@ -319,6 +360,256 @@ async def test_a_charge_that_cannot_be_written_stops_the_shot_and_holds(
     pump.clear()
     await _shot(hass, coordinator)
     assert pump == []
+
+
+async def test_the_request_is_on_disk_before_the_on_command(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """At the moment turn_on is called, the open attempt is already stored."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+    seen: list[dict[str, Any]] = []
+
+    async def command(call: ServiceCall) -> None:
+        if call.service == "turn_on":
+            seen.extend(hass_storage[KEY]["data"]["attempts"])
+        hass.states.async_set(PUMP, "on" if call.service == "turn_on" else "off")
+
+    hass.services.async_register("switch", "turn_on", command)
+    hass.services.async_register("switch", "turn_off", command)
+    await _shot(hass, coordinator)
+
+    (stored,) = seen
+    assert stored["state"] == "requested"
+    assert stored["requested_at"] == _at("08:00").isoformat()
+    assert stored["on_commanded_at"] is None
+    assert stored["charged_l"] == 0.0
+    assert stored["planned_s"] == SHOT_S
+    assert stored["flow_rate_ml_per_sec"] == 10.0
+    (after,) = hass_storage[KEY]["data"]["attempts"]
+    assert after["attempt_id"] == stored["attempt_id"]
+    assert after["state"] == "actuated"
+    assert after["charged_l"] == pytest.approx(0.3)
+
+
+async def test_a_crash_before_confirm_on_leaves_an_open_attempt(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory
+) -> None:
+    """Commanded, then Home Assistant stopped: the next start finds it open."""
+    clock.move_to(_at("08:00"))
+    before = await _start(hass)
+    commanded = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def never_confirms(*_: Any, **__: Any) -> bool:
+        commanded.set()
+        await stopped.wait()
+        return False
+
+    with patch.object(before, "_async_wait_for_switch_state", new=never_confirms):
+        task = hass.async_create_task(
+            before._run_pump_cycle("irrigation", PUMP, SHOT_S, {})
+        )
+        await commanded.wait()
+
+        after = await _start(hass)
+
+        (attempt,) = after._deliveries.attempts
+        assert attempt.state is AttemptState.REQUESTED
+        assert attempt.is_open
+        assert after.cycles_today == 0
+        stopped.set()
+        await task
+
+
+async def test_a_pump_that_never_reads_on_is_not_delivered_and_uncharged(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """No ON readback: stopped, read back OFF, closed with the reason."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+
+    with patch.object(
+        coordinator, "_async_wait_for_switch_state", new=AsyncMock(return_value=False)
+    ):
+        await _shot(hass, coordinator)
+
+    (attempt,) = coordinator._deliveries.attempts
+    assert attempt.outcome is AttemptOutcome.NOT_DELIVERED
+    assert attempt.reason == "on_unconfirmed"
+    assert attempt.on_commanded_at == _at("08:00")
+    assert attempt.off_commanded_at is not None
+    assert attempt.off_confirmed
+    assert coordinator.cycles_today == 0
+    assert coordinator.volume_dispensed_today == 0.0
+
+
+async def test_every_moment_of_a_shot_is_recorded(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory, hass_storage: dict[str, Any]
+) -> None:
+    """Requested, ON commanded and read, OFF commanded and read: all five."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+    await _shot(hass, coordinator)
+    await _flush_batch(hass, clock)
+
+    (stored,) = hass_storage[KEY]["data"]["attempts"]
+    assert stored["state"] == "closed"
+    assert stored["outcome"] == "completed"
+    for moment in (
+        "requested_at",
+        "on_commanded_at",
+        "on_confirmed_at",
+        "off_commanded_at",
+        "off_confirmed_at",
+    ):
+        assert stored[moment] is not None, moment
+    assert datetime.fromisoformat(stored["off_commanded_at"]) == _at("08:00") + (
+        timedelta(seconds=SHOT_S)
+    )
+    assert stored["charged_l"] == pytest.approx(0.3)
+    assert stored["estimated_l"] == pytest.approx(0.3)
+    assert stored["evidence"] == "estimated"
+
+
+async def test_a_run_of_refusals_is_one_suppressed_row(
+    hass: HomeAssistant,
+    clock: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+    pump: list[str],
+) -> None:
+    """Three shots over the limit are one row: the reason, a count, first and last."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+    for _ in range(3):
+        await _shot(hass, coordinator)
+    pump.clear()
+
+    for clock_time in ("09:00", "10:00", "11:00"):
+        clock.move_to(_at(clock_time))
+        await _shot(hass, coordinator)
+
+    assert pump == []
+    assert coordinator.cycles_today == 3
+    *_, refused = coordinator._deliveries.attempts
+    assert len(coordinator._deliveries.attempts) == 4
+    assert refused.outcome is AttemptOutcome.SUPPRESSED
+    assert refused.reason == "cycle_limit"
+    assert refused.suppressed_count == 3
+    assert refused.requested_at == _at("09:00")
+    assert refused.last_requested_at == _at("11:00")
+    assert refused.charged_l == 0.0
+
+    # Batched, like a close: on disk after the next save, not before.
+    assert all(
+        row["outcome"] != "suppressed" for row in hass_storage[KEY]["data"]["attempts"]
+    )
+    await _flush_batch(hass, clock)
+    stored = hass_storage[KEY]["data"]["attempts"][-1]
+    assert stored["outcome"] == "suppressed"
+    assert stored["suppressed_count"] == 3
+
+    # And it survives a restart as the same row.
+    after = await _start(hass)
+    assert after._deliveries.attempts[-1] == refused
+    assert after.cycles_today == 3
+
+
+async def test_an_operator_hold_is_a_suppressed_attempt(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory, pump: list[str]
+) -> None:
+    """Irrigation disarmed refuses a scheduled shot, and the refusal is recorded."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+    safety = IrrigationSafetyStore(hass, ENTRY_ID)
+    await safety.async_load()
+    coordinator._main_coordinator.irrigation_safety = safety
+
+    await _shot(hass, coordinator, time="08:00:00")
+
+    assert pump == []
+    (attempt,) = coordinator._deliveries.attempts
+    assert attempt.outcome is AttemptOutcome.SUPPRESSED
+    assert attempt.reason == "irrigation_disarmed"
+    assert attempt.trigger is AttemptTrigger.SCHEDULE
+    assert attempt.trigger_evidence.slot == "08:00:00"
+
+
+async def test_a_drain_refusal_is_not_an_attempt_yet(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory
+) -> None:
+    """Drains get their attempts in the next slice of ADR-0055."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+    safety = IrrigationSafetyStore(hass, ENTRY_ID)
+    await safety.async_load()
+    coordinator._main_coordinator.irrigation_safety = safety
+
+    await coordinator._run_pump_cycle("drain", PUMP, SHOT_S, {"time": "08:00:00"})
+
+    assert coordinator._deliveries.attempts == []
+
+
+@pytest.mark.parametrize(
+    ("event_data", "trigger", "evidence"),
+    [
+        ({"time": "08:00:00"}, "schedule", {"slot": "08:00:00"}),
+        (
+            {
+                "phase": "p2",
+                "vwc": 42.5,
+                "base_seconds": 25,
+                "vwc_factor": 1.2,
+                "ec_factor": 0.8,
+            },
+            "steering",
+            {
+                "phase": "p2",
+                "vwc": 42.5,
+                "base_s": 25.0,
+                "vwc_factor": 1.2,
+                "ec_factor": 0.8,
+            },
+        ),
+        ({"manual": True, "user_id": "user-1"}, "manual", {"user_id": "user-1"}),
+    ],
+    ids=["schedule", "steering", "manual"],
+)
+async def test_each_trigger_leaves_its_evidence_on_the_stored_attempt(
+    hass: HomeAssistant,
+    clock: FrozenDateTimeFactory,
+    hass_storage: dict[str, Any],
+    event_data: dict[str, Any],
+    trigger: str,
+    evidence: dict[str, Any],
+) -> None:
+    """The slot, the steering decision, or the person, as written to disk."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+
+    await _shot(hass, coordinator, **event_data)
+
+    (stored,) = hass_storage[KEY]["data"]["attempts"]
+    assert stored["trigger"] == trigger
+    assert stored["trigger_evidence"] == evidence
+
+
+async def test_a_manual_run_records_who_asked(
+    hass: HomeAssistant, clock: FrozenDateTimeFactory
+) -> None:
+    """run_irrigation_cycle's caller reaches the attempt through async_manual_run."""
+    clock.move_to(_at("08:00"))
+    coordinator = await _start(hass)
+    coordinator._config_entry.async_create_background_task = lambda hass, target, name: (
+        hass.async_create_task(target)
+    )
+
+    await coordinator.async_manual_run(SHOT_S, user_id="user-1")
+    await hass.async_block_till_done()
+
+    (attempt,) = coordinator._deliveries.attempts
+    assert attempt.trigger is AttemptTrigger.MANUAL
+    assert attempt.trigger_evidence.user_id == "user-1"
 
 
 async def test_a_file_that_exists_but_loads_nothing_fails_closed(

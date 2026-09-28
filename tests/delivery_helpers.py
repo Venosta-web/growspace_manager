@@ -33,6 +33,7 @@ def charged_attempt(
         trigger=AttemptTrigger.SCHEDULE,
         planned_s=0.0,
         flow_rate_ml_per_sec=0.0,
+        requested_at=confirmed - timedelta(seconds=1),
         on_commanded_at=confirmed - timedelta(seconds=1),
         on_confirmed_at=confirmed,
         charge_date=day or dt_util.now().date(),

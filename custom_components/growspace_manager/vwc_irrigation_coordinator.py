@@ -226,7 +226,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             verdict = self._machine.tick(
                 self._tick_inputs(current_vwc, strategy, growspace)
             )
-            self._apply_verdict(verdict, strategy)
+            self._apply_verdict(verdict, strategy, vwc=current_vwc)
 
             if verdict.phase_changed:
                 self._main_coordinator.async_set_updated_data(
@@ -261,7 +261,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         )
 
     def _apply_verdict(
-        self, verdict: SteeringTickVerdict, strategy: IrrigationStrategy
+        self,
+        verdict: SteeringTickVerdict,
+        strategy: IrrigationStrategy,
+        *,
+        vwc: float | None = None,
     ) -> None:
         """Execute the effects a Steering Tick Verdict names.
 
@@ -306,10 +310,20 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             self._fire_logbook_event(verdict.infiltration_note, category="irrigation")
 
         if verdict.fire is not None:
-            self._fire_shot(strategy, verdict.fire)
+            self._fire_shot(strategy, verdict.fire, vwc=vwc)
 
-    def _fire_shot(self, strategy: IrrigationStrategy, request: ShotRequest) -> None:
-        """Compose and fire a steering shot the tick verdict requested."""
+    def _fire_shot(
+        self,
+        strategy: IrrigationStrategy,
+        request: ShotRequest,
+        *,
+        vwc: float | None = None,
+    ) -> None:
+        """Compose and fire a steering shot the tick verdict requested.
+
+        ``vwc`` is the reading that triggered it, recorded with the shot's
+        composition as its Delivery Attempt's trigger evidence (ADR-0055).
+        """
         pump_entity = self._get_pump_entity()
         if not pump_entity:
             return
@@ -360,7 +374,16 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         task = self._config_entry.async_create_background_task(
             self.hass,
             self._run_pump_cycle(
-                "irrigation", pump_entity, scaled_duration, {"phase": request.phase}
+                "irrigation",
+                pump_entity,
+                scaled_duration,
+                {
+                    "phase": request.phase,
+                    "vwc": vwc,
+                    "base_seconds": request.base_seconds,
+                    "vwc_factor": composition.vwc_factor,
+                    "ec_factor": composition.ec_factor,
+                },
             ),
             f"irrigation_pump_{self._growspace_id}_irrigation",
         )

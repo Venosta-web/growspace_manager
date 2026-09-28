@@ -21,7 +21,7 @@ from custom_components.growspace_manager.services.irrigation import (
     handle_set_irrigation_strategy,
     handle_set_steering_phase,
 )
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 
 
@@ -667,11 +667,13 @@ class TestHandleRunIrrigationCycle:
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "duration": 45}
+        call.context = Context(user_id="user-1")
 
         await handle_run_irrigation_cycle(mock_hass, mock_coordinator, call)
 
+        # The caller is recorded on the run's Delivery Attempt (ADR-0055).
         mock_irrigation_coordinator.async_manual_run.assert_awaited_once_with(
-            duration=45
+            duration=45, user_id="user-1"
         )
 
     @pytest.mark.asyncio
@@ -689,11 +691,12 @@ class TestHandleRunIrrigationCycle:
 
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1"}
+        call.context = Context()
 
         await handle_run_irrigation_cycle(mock_hass, mock_coordinator, call)
 
         mock_irrigation_coordinator.async_manual_run.assert_awaited_once_with(
-            duration=None
+            duration=None, user_id=None
         )
 
     @pytest.mark.asyncio

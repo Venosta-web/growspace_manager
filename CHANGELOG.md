@@ -50,6 +50,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Plant store moves to version 2 when first loaded. The untouched version 1
   document is retained as `growspace_manager.plants.v1`; older builds refuse the
   version 2 document rather than silently discarding pending movement facts.
+- Every irrigation request that reaches the Pump Cycle Gate is now a Delivery
+  Attempt, the refused ones included: a request the gate or an operator hold
+  refuses is recorded as `suppressed` with its reason, and a run of refusals
+  with one reason is one row with a count and its first and last times. Each
+  attempt now records what triggered it (the schedule slot; the steering phase,
+  triggering VWC, base seconds and VWC and EC factors; or the Home Assistant
+  user of a manual run) and when it was requested. Dispensed Volume and the
+  daily caps are unchanged.
+- An irrigation shot's attempt is written to disk before the pump is switched
+  on. If that write fails, the pump is no longer switched on at all: the
+  growspace is held under `delivery_record_unreadable` straight away, where
+  before the pump ran until the write at confirm-ON failed.
 
 ### Deprecated
 

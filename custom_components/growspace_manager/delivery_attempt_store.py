@@ -1,11 +1,14 @@
 """Durable Delivery Attempts, one store per growspace (ADR-0055).
 
 The daily cycle limit and volume cap are enforced on Dispensed Volume, the sum
-of today's charges across a growspace's attempts (ADR-0054). An attempt is
-charged the moment its pump confirms ON, and that write reaches disk before the
-cycle proceeds, so a restart mid-shot keeps the shot counted and no restart
-hands out a fresh daily allowance (#787). Its close only tops the charge up, so
-it goes through a batched save: a lost close costs at most a top-up.
+of today's charges across a growspace's attempts (ADR-0054). Two writes reach
+disk before the cycle proceeds. The first is before the ON command, once the
+gate has passed, so a crash between command and confirmation still leaves an
+open attempt behind. The second is at confirm-ON, which charges it, so a restart
+mid-shot keeps the shot counted and no restart hands out a fresh daily
+allowance (#787). Its close only tops the charge up, and a suppressed request
+charges nothing, so both go through a batched save: a lost one costs at most a
+top-up or a row of history.
 
 Each growspace has a file of its own, so a shot rewrites one growspace's week
 and not everyone's. A file that exists but cannot be read is never written
@@ -29,13 +32,15 @@ from .domain.delivery_attempt import (
     DispensedVolume,
     dispensed_volume,
     retained,
+    with_suppression,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
 
-# Coalesces a close into the next write, as Reliability Evidence does.
+# Coalesces a close or a suppression into the next write, as Reliability
+# Evidence does.
 CLOSE_SAVE_DELAY_SECONDS = 60
 
 
@@ -120,6 +125,17 @@ class GrowspaceDeliveries:
             self.attempts, now=dt_util.utcnow(), today=dt_util.now().date()
         )
 
+    async def async_request(self, attempt: DeliveryAttempt) -> None:
+        """Record an attempt the gate passed, on disk before its ON command.
+
+        A failed write, or a file that was never readable, raises and leaves
+        the growspace held, and the pump is never commanded.
+        """
+        self._put(attempt)
+        await self._async_write_through(
+            f"Could not record the request of growspace {self.growspace_id}"
+        )
+
     async def async_charge(self, attempt: DeliveryAttempt) -> None:
         """Charge an actuated attempt, and have it on disk before returning.
 
@@ -127,7 +143,30 @@ class GrowspaceDeliveries:
         confirm ON. A failed write, or a file that was never readable, raises
         and leaves the growspace held.
         """
+        self._put(attempt)
+        await self._async_write_through(
+            f"Could not record the charge of growspace {self.growspace_id}"
+        )
+
+    def suppress(self, attempt: DeliveryAttempt) -> None:
+        """Record a refused request, merged into its run, saved in the next batch."""
+        self.attempts = with_suppression(self.attempts, attempt)
+        self._delay_save()
+
+    def close(self, closed: DeliveryAttempt) -> None:
+        """Replace an open attempt with its close, saved in the next batch."""
+        self._put(closed)
+        self._delay_save()
+
+    def _put(self, attempt: DeliveryAttempt) -> None:
+        """Replace the attempt of the same id, or add it as a new row."""
+        for index, current in enumerate(self.attempts):
+            if current.attempt_id == attempt.attempt_id:
+                self.attempts[index] = attempt
+                return
         self.attempts.append(attempt)
+
+    async def _async_write_through(self, failure: str) -> None:
         if self._store is None:
             return
         if self.unreadable:
@@ -139,16 +178,9 @@ class GrowspaceDeliveries:
             await self._store.async_save(self._document())
         except Exception as err:
             self._fail_closed()
-            raise DeliveryRecordUnreadable(
-                f"Could not record the charge of growspace {self.growspace_id}"
-            ) from err
+            raise DeliveryRecordUnreadable(failure) from err
 
-    def close(self, closed: DeliveryAttempt) -> None:
-        """Replace an open attempt with its close, saved in the next batch."""
-        self.attempts = [
-            closed if attempt.attempt_id == closed.attempt_id else attempt
-            for attempt in self.attempts
-        ]
+    def _delay_save(self) -> None:
         if self._store is None or self.unreadable:
             return
         self._prune()
