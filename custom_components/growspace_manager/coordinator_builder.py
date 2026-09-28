@@ -199,6 +199,7 @@ class CoordinatorBuilder:
             save_layout_callback=coordinator.async_save_plant_layout_snapshot,
             publish_callback=coordinator.async_publish_committed_state,
             hand_watering_callback=coordinator.abandon_pending_irrigation_observation,
+            active_run_callback=coordinator.grow_runs.active_run,
         )
 
         growspace_manager = GrowspaceManager(

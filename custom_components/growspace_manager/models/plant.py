@@ -156,6 +156,12 @@ class Plant(BaseModel):
     stage_history: list[Any] = field(default_factory=list)
     phenotype_score: PhenotypeScore = field(default_factory=PhenotypeScore)
     harvest_metrics: HarvestMetrics = field(default_factory=HarvestMetrics)
+    # Fixed on the first transition to dry. A None run with a source growspace
+    # is an explicit unattributed harvest, not a lookup to perform later.
+    harvest_source_growspace_id: str | None = None
+    harvest_source_run_id: str | None = None
+    harvest_outcome_state: str = "pending"
+    harvest_outcome_reason: str | None = None
     drying_data: DryingData = field(default_factory=DryingData)
 
     @classmethod

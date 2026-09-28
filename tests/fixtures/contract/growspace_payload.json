@@ -288,6 +288,10 @@
           "trim_weight": 45.0,
           "wet_weight": 850.0
         },
+        "harvest_outcome_reason": null,
+        "harvest_outcome_state": "pending",
+        "harvest_source_growspace_id": null,
+        "harvest_source_run_id": null,
         "last_ipm": "2026-07-01",
         "last_ipm_type": "beneficial_insects",
         "last_trained": "2026-03-15",
@@ -353,6 +357,10 @@
           "trim_weight": null,
           "wet_weight": null
         },
+        "harvest_outcome_reason": null,
+        "harvest_outcome_state": "pending",
+        "harvest_source_growspace_id": null,
+        "harvest_source_run_id": null,
         "last_ipm": null,
         "last_ipm_type": null,
         "last_trained": null,
