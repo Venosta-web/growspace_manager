@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import date
 import logging
 from typing import TYPE_CHECKING, Any
@@ -107,16 +108,81 @@ class PlantFacade:
         _LOGGER.info("Updated plant %s", plant_id)
         return plant
 
-    async def remove_plant(self, plant_id: str) -> bool:
+    async def remove_plant(
+        self,
+        plant_id: str,
+        *,
+        harvest_outcome_choice: str | None = None,
+        harvest_outcome_reason: str | None = None,
+    ) -> bool:
         """Remove a plant and its associated HA entities."""
+        plant = self._coordinator.plants.get(plant_id)
+        if (
+            plant
+            and isinstance(plant.harvest_source_run_id, str)
+            and plant.harvest_source_run_id
+            and plant.harvest_source_growspace_id is not None
+        ):
+            if harvest_outcome_choice not in {"no_usable_yield", "incomplete"}:
+                raise ServiceValidationError(
+                    "Choose No Usable Yield or incomplete outcome before deleting "
+                    "a Harvest Source Plant"
+                )
+            await self.set_harvest_outcome(
+                plant_id,
+                harvest_outcome_choice,
+                harvest_outcome_reason,
+            )
+            source = self._coordinator.grow_runs.ledger(
+                plant.harvest_source_growspace_id
+            )
+            snapshot = next(
+                (
+                    outcome
+                    for run in source.runs
+                    if run.run_id == plant.harvest_source_run_id
+                    for outcome in run.harvest_outcomes
+                    if outcome.plant_id == plant_id
+                ),
+                None,
+            )
+            if (
+                snapshot is None
+                or snapshot.state != harvest_outcome_choice
+                or snapshot.reason != plant.harvest_outcome_reason
+                or snapshot.metrics != plant.harvest_metrics.to_dict()
+            ):
+                raise ServiceValidationError(
+                    "Harvest source snapshot was not saved; Plant was not deleted"
+                )
         removed = await self._coordinator._plant_manager.remove_plant(plant_id)
         if removed:
             await self.remove_plant_entities(plant_id)
         return removed
 
+    async def set_harvest_outcome(
+        self, plant_id: str, state: str, reason: str | None = None
+    ) -> None:
+        """Record an explicit zero or incomplete outcome before source deletion."""
+        plant = self._coordinator.plants.get(plant_id)
+        if plant is None or plant.harvest_source_growspace_id is None:
+            raise ServiceValidationError("Plant has no harvest source")
+        if state not in {"no_usable_yield", "incomplete"}:
+            raise ServiceValidationError("Unknown harvest outcome choice")
+        if state == "no_usable_yield" and not (reason and reason.strip()):
+            raise ServiceValidationError("No Usable Yield requires a reason")
+        metrics = deepcopy(plant.harvest_metrics)
+        metrics.dry_weight = 0 if state == "no_usable_yield" else None
+        await self._coordinator._plant_manager.update_plant(
+            plant_id,
+            harvest_metrics=metrics,
+            harvest_outcome_state=state,
+            harvest_outcome_reason=reason.strip() if reason else None,
+        )
+
     async def async_remove_plant(self, plant_id: str, **kwargs: Any) -> bool:
         """Alias for remove_plant."""
-        return await self.remove_plant(plant_id)
+        return await self.remove_plant(plant_id, **kwargs)
 
     async def remove_plant_entities(self, plant_id: str) -> None:
         """Remove all HA entities associated with a plant."""
@@ -444,7 +510,16 @@ class PlantFacade:
         plant = self._coordinator.plants.get(plant_id)
         if not plant:
             raise ServiceValidationError(f"Plant {plant_id} not found")
+        if (
+            plant.harvest_source_growspace_id is not None
+            and dry_weight == 0
+            and plant.harvest_outcome_state != "no_usable_yield"
+        ):
+            raise ServiceValidationError(
+                "Record No Usable Yield with a reason to set dry weight to zero"
+            )
         metrics = plant.harvest_metrics
+        previous_metrics = deepcopy(metrics)
         updated = False
         if wet_weight is not None:
             metrics.wet_weight = wet_weight
@@ -465,9 +540,25 @@ class PlantFacade:
             metrics.terpene_profile = terpene_profile
             updated = True
         if updated:
-            await self._coordinator._plant_manager.update_plant(
-                plant_id, harvest_metrics=metrics
-            )
+            state = plant.harvest_outcome_state
+            if dry_weight is not None and dry_weight > 0:
+                state = "pending"
+            updates: dict[str, Any] = {"harvest_metrics": metrics}
+            if plant.harvest_source_growspace_id is not None:
+                updates.update(
+                    harvest_outcome_state=state,
+                    harvest_outcome_reason=(
+                        plant.harvest_outcome_reason
+                        if state == "no_usable_yield"
+                        else None
+                    ),
+                )
+            try:
+                await self._coordinator._plant_manager.update_plant(plant_id, **updates)
+            except BaseException:
+                for key, value in previous_metrics.to_dict().items():
+                    setattr(metrics, key, value)
+                raise
             _LOGGER.info("Plant %s harvest metrics updated", plant_id)
 
     # -------------------------------------------------------------------------
@@ -788,7 +879,12 @@ class PlantFacade:
 
         try:
             plant_info = self._coordinator.plants[plant_id]
-            await self.remove_plant(plant_id)
+            outcome_options = {
+                key: call.data[key]
+                for key in ("harvest_outcome_choice", "harvest_outcome_reason")
+                if key in call.data
+            }
+            await self.remove_plant(plant_id, **outcome_options)
             _LOGGER.info(
                 "Plant %s removed successfully from growspace %s",
                 plant_id,

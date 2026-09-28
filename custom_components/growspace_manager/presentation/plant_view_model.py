@@ -154,6 +154,10 @@ class PlantViewModelBuilder:
             **_phi_fields(plant),
             # Harvest & phenotype data — model-complete via to_dict
             "harvest_metrics": plant.harvest_metrics.to_dict(),
+            "harvest_source_growspace_id": plant.harvest_source_growspace_id,
+            "harvest_source_run_id": plant.harvest_source_run_id,
+            "harvest_outcome_state": plant.harvest_outcome_state,
+            "harvest_outcome_reason": plant.harvest_outcome_reason,
             "phenotype_score": _phenotype_score_dict(plant),
         }
 
@@ -177,6 +181,10 @@ class PlantViewModelBuilder:
             "position": format_plant_position(plant),
             "phenotype_score": _phenotype_score_dict(plant),
             "harvest_metrics": plant.harvest_metrics.to_dict(),
+            "harvest_source_growspace_id": plant.harvest_source_growspace_id,
+            "harvest_source_run_id": plant.harvest_source_run_id,
+            "harvest_outcome_state": plant.harvest_outcome_state,
+            "harvest_outcome_reason": plant.harvest_outcome_reason,
         }
 
         attributes.update(_stage_day_fields(plant))
