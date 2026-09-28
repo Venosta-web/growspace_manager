@@ -60,7 +60,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
-from ._common import WSCommand
+from ._common import WS_MSG_USER, WSCommand
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,6 +74,8 @@ SCHEMA_WS_WATER_PLANT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Required(ATTR_AMOUNT): vol.Any(float, int),
         vol.Optional(ATTR_NUTRIENTS): dict,
         vol.Optional(ATTR_PRESET_ID): str,
+        vol.Optional("watered_at"): str,
+        vol.Optional("from_monitored_tank"): bool,
     }
 )
 
@@ -336,6 +338,9 @@ async def websocket_water_plant(
         amount=msg[ATTR_AMOUNT],
         nutrients=msg.get(ATTR_NUTRIENTS),
         preset_id=msg.get(ATTR_PRESET_ID),
+        watered_at=msg.get("watered_at"),
+        from_monitored_tank=msg.get("from_monitored_tank", False),
+        user_id=msg[WS_MSG_USER].id if msg.get(WS_MSG_USER) else None,
     )
 
 
@@ -738,7 +743,9 @@ async def websocket_print_label(
 
 
 COMMANDS: list[WSCommand] = [
-    WSCommand(WS_TYPE_WATER_PLANT, websocket_water_plant, SCHEMA_WS_WATER_PLANT),
+    WSCommand(
+        WS_TYPE_WATER_PLANT, websocket_water_plant, SCHEMA_WS_WATER_PLANT, actor=True
+    ),
     WSCommand(WS_TYPE_ADD_PLANT, websocket_add_plant, SCHEMA_WS_ADD_PLANT),
     WSCommand(WS_TYPE_ADD_PLANTS, websocket_add_plants, SCHEMA_WS_ADD_PLANTS),
     WSCommand(WS_TYPE_UPDATE_PLANT, websocket_update_plant, SCHEMA_WS_UPDATE_PLANT),

@@ -1006,6 +1006,8 @@ WATER_PLANT_SCHEMA = vol.Schema(
         vol.Required("amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
         vol.Optional(ATTR_PRESET_ID): str,
+        vol.Optional("watered_at"): str,
+        vol.Optional("from_monitored_tank", default=False): bool,
     }
 )
 
@@ -1024,6 +1026,8 @@ WATER_GROWSPACE_SCHEMA = vol.Schema(
         vol.Optional("amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
         vol.Optional(ATTR_PRESET_ID): str,
+        vol.Optional("watered_at"): str,
+        vol.Optional("from_monitored_tank", default=False): bool,
     }
 )
 

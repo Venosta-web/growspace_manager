@@ -398,7 +398,18 @@ def _maximal_growspace() -> Growspace:
         water_usage=WaterUsageData(
             total_liters=88.5,
             cycle_start_date="2026-08-01",
-            daily_readings=[{"date": "2026-08-11", "liters": 6.25, "source": "manual"}],
+            daily_readings=[
+                {
+                    "date": "2026-08-11",
+                    "liters": 6.25,
+                    "source": "manual",
+                    "watering_id": "contract-watering",
+                    "user_id": "contract-user",
+                    "plant_id": "contract-plant",
+                    "watered_at": "2026-08-11T08:30:00+00:00",
+                    "from_monitored_tank": False,
+                }
+            ],
             max_daily_readings=400,
         ),
         vision_checkup_history=[

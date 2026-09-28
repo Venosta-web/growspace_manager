@@ -699,6 +699,9 @@ class GrowspaceEvent(BaseModel):
     severity: float
     reasons: list[str] = field(default_factory=list)
     category: str = "alert"
+    watering_id: str | None = None
+    user_id: str | None = None
+    from_monitored_tank: bool | None = None
 
 
 @dataclass(slots=True)
@@ -715,6 +718,7 @@ class WaterUsageData(BaseModel):
     """Tracks cumulative water usage per growspace."""
 
     total_liters: float = 0.0
+    monitored_tank_liters: float = 0.0
     cycle_start_date: str = ""
     daily_readings: list[dict[str, Any]] = field(default_factory=list)
     max_daily_readings: int = 365

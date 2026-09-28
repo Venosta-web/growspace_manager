@@ -606,6 +606,7 @@
       'daily_readings': list([
       ]),
       'max_daily_readings': 365,
+      'monitored_tank_liters': 0.0,
       'total_liters': 0.0,
     }),
   })

@@ -382,10 +382,21 @@ class PlantFacade:
         amount: float,
         nutrients: dict[str, float] | None = None,
         preset_id: str | None = None,
+        *,
+        watered_at: str | None = None,
+        from_monitored_tank: bool = False,
+        user_id: str | None = None,
     ) -> Plant:
         """Record a watering event for a plant."""
+        report_options: dict[str, Any] = {}
+        if watered_at is not None:
+            report_options["watered_at"] = watered_at
+        if from_monitored_tank:
+            report_options["from_monitored_tank"] = True
+        if user_id is not None:
+            report_options["user_id"] = user_id
         return await self._coordinator.watering_service.async_water_plant(
-            plant_id, amount, nutrients, preset_id
+            plant_id, amount, nutrients, preset_id, **report_options
         )
 
     async def reset_last_watered(self, plant_id: str) -> None:

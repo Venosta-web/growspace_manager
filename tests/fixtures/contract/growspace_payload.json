@@ -701,12 +701,18 @@
       "daily_readings": [
         {
           "date": "2026-08-11",
+          "from_monitored_tank": false,
           "liters": 6.25,
-          "source": "manual"
+          "plant_id": "contract-plant",
+          "source": "manual",
+          "user_id": "contract-user",
+          "watered_at": "2026-08-11T08:30:00+00:00",
+          "watering_id": "contract-watering"
         }
       ],
       "liters_today": 6.25,
       "max_daily_readings": 400,
+      "monitored_tank_liters": 0.0,
       "total_liters": 88.5
     }
   },
