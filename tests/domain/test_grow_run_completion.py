@@ -16,6 +16,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     WARNING_PLANTS_PRESENT,
     CompletionPreview,
     GrowRun,
+    HarvestOutcome,
     OpeningBaseline,
     PlantMovementFact,
     PresentPlant,
@@ -89,7 +90,6 @@ def _preview(
     *,
     now: datetime = ENDED,
     present: tuple[str, ...] = (),
-    dry_weights: dict[str, float | None] | None = None,
     pending: tuple[PlantMovementFact, ...] = (),
     delivering: tuple[str, ...] = (),
     note: str | None = None,
@@ -98,7 +98,6 @@ def _preview(
         ledger,
         now=now,
         plants_present=_present(*present),
-        dry_weights=dry_weights or {},
         pending_facts=pending,
         delivering_outputs=delivering,
         retrospective_note=note,
@@ -158,32 +157,55 @@ def test_plants_still_present_warn_and_their_intervals_are_listed() -> None:
     }
 
 
-def test_harvested_plants_without_dry_weight_are_missing_outcomes() -> None:
-    ledger, _ = _active(plants=("p1", "p2", "p3"))
-    for index, plant_id in enumerate(("p1", "p2", "p3")):
-        ledger = ledger.project_movement(
-            _fact(f"f{index}", plant_id, STARTED + timedelta(days=60), kind="harvest")
-        )
-    ledger = ledger.project_movement(
-        _fact("f-moved", "p4", STARTED + timedelta(days=1), source_run=None)
+def _outcome(plant_id: str, state: str, dry_weight: float | None) -> HarvestOutcome:
+    return HarvestOutcome(
+        plant_id=plant_id,
+        strain="OG Kush",
+        phenotype="#1",
+        source_growspace_id="tent",
+        state=state,
+        reason="Hermie" if state == "no_usable_yield" else None,
+        metrics={"dry_weight": dry_weight},
+        quality_score=None,
     )
-    preview = _preview(ledger, dry_weights={"p1": 55.0, "p2": None})
-    assert [(row.plant_id, row.reason) for row in preview.missing_outcomes] == [
-        ("p2", "no_dry_weight"),
-        ("p3", "plant_removed"),
+
+
+def test_pending_and_incomplete_harvest_outcomes_are_missing() -> None:
+    """Recorded and No Usable Yield outcomes are complete; the rest are at risk."""
+    ledger, _ = _active(plants=("p1", "p2", "p3", "p4"))
+    for outcome in (
+        _outcome("p3", "incomplete", None),
+        _outcome("p1", "recorded", 55.0),
+        _outcome("p2", "pending", None),
+        _outcome("p4", "no_usable_yield", 0),
+    ):
+        ledger = ledger.project_harvest_outcome("run-1", outcome)
+    preview = _preview(ledger)
+    assert [(row.plant_id, row.state) for row in preview.missing_outcomes] == [
+        ("p2", "pending"),
+        ("p3", "incomplete"),
     ]
     assert preview.warnings == (WARNING_MISSING_OUTCOMES,)
     assert preview.as_dict()["missing_outcomes"][0] == {
         "plant_id": "p2",
-        "harvested_at": (STARTED + timedelta(days=60)).isoformat(),
-        "reason": "no_dry_weight",
+        "strain": "OG Kush",
+        "phenotype": "#1",
+        "state": "pending",
     }
 
 
-def test_a_plant_moved_out_but_not_harvested_is_no_missing_outcome() -> None:
+def test_a_run_without_harvest_outcomes_misses_none() -> None:
     ledger, _ = _active(plants=("p1",))
     ledger = ledger.project_movement(_fact("f1", "p1", STARTED + timedelta(days=3)))
     assert _preview(ledger).missing_outcomes == ()
+
+
+def test_a_completed_run_still_receives_its_outcomes() -> None:
+    """Completion does not close the Run to late harvest outcomes (#672)."""
+    ledger, _ = _active(plants=())
+    ledger, _ = _complete(ledger, _preview(ledger))
+    ledger = ledger.project_harvest_outcome("run-1", _outcome("p1", "recorded", 40.0))
+    assert ledger.runs[0].harvest_outcomes[0].state == "recorded"
 
 
 def test_attribution_gaps_name_pending_facts_and_unrecorded_presence() -> None:
@@ -292,7 +314,7 @@ def test_a_completed_ledger_clears_the_sensor_and_starts_the_next_run() -> None:
 
 def test_an_unacknowledged_warning_refuses_and_names_it() -> None:
     ledger, run = _active()
-    preview = _preview(ledger, present=("p1",), dry_weights={})
+    preview = _preview(ledger, present=("p1",))
     with pytest.raises(RunAcknowledgementRequired) as refused:
         _complete(ledger, preview, [WARNING_MISSING_OUTCOMES])
     assert refused.value.code == CODE_ACKNOWLEDGEMENT_REQUIRED

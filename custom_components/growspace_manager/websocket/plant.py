@@ -144,6 +144,10 @@ SCHEMA_WS_REMOVE_PLANT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_REMOVE_PLANT,
         vol.Required(ATTR_PLANT_ID): str,
+        vol.Optional("harvest_outcome_choice"): vol.In(
+            ["no_usable_yield", "incomplete"]
+        ),
+        vol.Optional("harvest_outcome_reason"): str,
     }
 )
 
@@ -282,6 +286,16 @@ SCHEMA_WS_UPDATE_HARVEST_METRICS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.ext
         vol.Optional(ATTR_THC_PERCENTAGE): vol.Any(float, int, None),
         vol.Optional(ATTR_CBD_PERCENTAGE): vol.Any(float, int, None),
         vol.Optional(ATTR_TERPENE_PROFILE): vol.Any(str, None),
+    }
+)
+
+WS_TYPE_SET_HARVEST_OUTCOME = f"{DOMAIN}/set_harvest_outcome"
+SCHEMA_WS_SET_HARVEST_OUTCOME = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SET_HARVEST_OUTCOME,
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Required("state"): vol.In(["no_usable_yield", "incomplete"]),
+        vol.Optional("reason"): str,
     }
 )
 
@@ -463,7 +477,12 @@ async def websocket_remove_plant(
     if plant_id not in coordinator.plants:
         raise PlantNotFoundError(f"Plant '{plant_id}' not found")
 
-    await coordinator.services.plants.remove_plant(plant_id)
+    outcome_options = {
+        key: msg[key]
+        for key in ("harvest_outcome_choice", "harvest_outcome_reason")
+        if key in msg
+    }
+    await coordinator.services.plants.remove_plant(plant_id, **outcome_options)
 
 
 async def websocket_harvest_plant(
@@ -696,6 +715,17 @@ async def websocket_update_harvest_metrics(
     )
 
 
+async def websocket_set_harvest_outcome(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> Any:
+    """Record explicit No Usable Yield or an incomplete outcome."""
+    await coordinator.services.plants.set_harvest_outcome(
+        msg[ATTR_PLANT_ID], msg["state"], msg.get("reason")
+    )
+
+
 async def websocket_print_label(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -741,6 +771,11 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_UPDATE_HARVEST_METRICS,
         websocket_update_harvest_metrics,
         SCHEMA_WS_UPDATE_HARVEST_METRICS,
+    ),
+    WSCommand(
+        WS_TYPE_SET_HARVEST_OUTCOME,
+        websocket_set_harvest_outcome,
+        SCHEMA_WS_SET_HARVEST_OUTCOME,
     ),
     WSCommand(
         WS_TYPE_PRINT_LABEL, websocket_print_label, SCHEMA_WS_PRINT_LABEL, resolve="any"

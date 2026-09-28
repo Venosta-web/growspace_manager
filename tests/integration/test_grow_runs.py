@@ -10,7 +10,11 @@ import pytest
 from pytest_homeassistant_custom_component.common import CLIENT_ID, MockUser
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
-from custom_components.growspace_manager.const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
+from custom_components.growspace_manager.const import (
+    DOMAIN,
+    EVENT_GROWSPACE_LOG_ENTRY,
+    PlantStage,
+)
 from custom_components.growspace_manager.domain.grow_run import (
     PlantMovementFact,
     RunMetadata,
@@ -18,10 +22,12 @@ from custom_components.growspace_manager.domain.grow_run import (
     RunStatus,
     RunStoreUnreadable,
 )
+from custom_components.growspace_manager.exceptions import ValidationChangeError
 from custom_components.growspace_manager.grow_run_store import (
     EVENT_GROW_RUN_LIFECYCLE,
     GrowRunStore,
 )
+from custom_components.growspace_manager.models import Plant
 from custom_components.growspace_manager.services.grow_runs import (
     active_run_unique_id,
     async_complete_grow_run,
@@ -38,7 +44,9 @@ from custom_components.growspace_manager.websocket.grow_runs import (
 from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
 from homeassistant.const import Platform
 from homeassistant.core import Event, HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+import homeassistant.util.dt as dt_util
 from tests.common import MockConfigEntry, async_capture_events
 
 
@@ -367,6 +375,255 @@ async def test_failed_plant_write_does_not_announce_a_move_or_emit_a_fact(
     assert coordinator.plants[plant_id].growspace_id == growspace_id
     assert len(coordinator.storage_manager.activity_facts) == before
     assert coordinator.grow_runs.active_run(growspace_id).movement_history == ()
+
+
+async def test_staged_harvest_keeps_late_outcomes_on_source_run(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    coordinator, growspace_id, _ = await _tent(init_integration, plants=0)
+    plant = await coordinator.services.plants.add_plant(
+        growspace_id=growspace_id,
+        strain="OG Kush",
+        row=1,
+        col=1,
+        stage=PlantStage.FLOWER,
+        flower_start=dt_util.utcnow(),
+    )
+    run, _ = await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(hass),
+    )
+    await coordinator.services.plants.transition_plant_stage(
+        plant.plant_id, PlantStage.DRY
+    )
+    harvested = coordinator.plants[plant.plant_id]
+    assert harvested.harvest_source_growspace_id == growspace_id
+    assert harvested.harvest_source_run_id == run.run_id
+    source = coordinator.grow_runs.ledger(growspace_id).runs[0]
+    assert source.harvest_outcomes[0].state == "pending"
+    assert source.harvest_outcomes[0].metrics["dry_weight"] is None
+
+    # Completing the Run with the outcome still pending warns about it; late
+    # outcomes then keep flowing into the Completed source Run (#671).
+    preview = preview_grow_run_completion(hass, coordinator, growspace_id=growspace_id)
+    assert [row.plant_id for row in preview.missing_outcomes] == [plant.plant_id]
+    completed, _ = await _complete_as_admin(hass, coordinator, growspace_id, run.run_id)
+    assert completed.status is RunStatus.COMPLETED
+    assert coordinator.grow_runs.active_run(growspace_id) is None
+
+    await coordinator.services.plants.update_harvest_metrics(
+        plant.plant_id,
+        wet_weight=120,
+        dry_weight=30,
+        trim_weight=5,
+        thc_percentage=21,
+        terpene_profile="myrcene",
+    )
+    source = coordinator.grow_runs.ledger(growspace_id).runs[0]
+    assert source.harvest_outcomes[0].state == "recorded"
+    assert source.harvest_outcomes[0].metrics["dry_weight"] == 30
+    assert source.harvest_outcomes[0].metrics["terpene_profile"] == "myrcene"
+
+    with pytest.raises(ServiceValidationError, match="Choose No Usable Yield"):
+        await coordinator.services.plants.remove_plant(plant.plant_id)
+    with patch.object(
+        coordinator.grow_runs,
+        "async_project_harvest_outcomes",
+        side_effect=OSError("disk full"),
+    ):
+        with pytest.raises(ServiceValidationError, match="snapshot was not saved"):
+            await coordinator.services.plants.remove_plant(
+                plant.plant_id, harvest_outcome_choice="incomplete"
+            )
+    assert plant.plant_id in coordinator.plants
+    await coordinator.services.plants.async_remove_plant(
+        plant.plant_id, harvest_outcome_choice="incomplete"
+    )
+    source = coordinator.grow_runs.ledger(growspace_id).runs[0]
+    assert source.harvest_outcomes[0].state == "incomplete"
+    assert source.harvest_outcomes[0].metrics["dry_weight"] is None
+    assert source.harvest_outcomes[0].strain == "OG Kush"
+    reloaded = GrowRunStore(hass, init_integration.entry_id)
+    await reloaded.async_load()
+    assert (
+        reloaded.ledger(growspace_id).runs[0].harvest_outcomes
+        == source.harvest_outcomes
+    )
+
+
+async def test_no_active_run_is_explicitly_unattributed(
+    init_integration: MockConfigEntry,
+) -> None:
+    coordinator, growspace_id, _ = await _tent(init_integration, plants=0)
+    plant = await coordinator.services.plants.add_plant(
+        growspace_id=growspace_id,
+        strain="OG Kush",
+        row=1,
+        col=1,
+        stage=PlantStage.FLOWER,
+        flower_start=dt_util.utcnow(),
+    )
+    await coordinator.services.plants.transition_plant_stage(
+        plant.plant_id, PlantStage.DRY
+    )
+    assert plant.harvest_source_growspace_id == growspace_id
+    assert plant.harvest_source_run_id is None
+    run, _ = await async_start_grow_run(
+        coordinator.hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(coordinator.hass),
+    )
+    await coordinator.services.plants.update_harvest_metrics(
+        plant.plant_id, dry_weight=20
+    )
+    assert plant.harvest_source_run_id is None
+    assert run.harvest_outcomes == ()
+
+
+async def test_lifecycle_editor_captures_source_and_raw_deletion_is_refused(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    coordinator, growspace_id, _ = await _tent(init_integration, plants=0)
+    plant = await coordinator.services.plants.add_plant(
+        growspace_id=growspace_id,
+        strain="OG Kush",
+        row=1,
+        col=1,
+        stage=PlantStage.FLOWER,
+        flower_start=dt_util.utcnow(),
+    )
+    run, _ = await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(hass),
+    )
+    await coordinator.services.plants.update_plant(plant.plant_id, stage="dry")
+    assert plant.harvest_source_run_id == run.run_id
+    assert (
+        coordinator.grow_runs.ledger(growspace_id).runs[0].harvest_outcomes[0].plant_id
+        == plant.plant_id
+    )
+    with pytest.raises(ValidationChangeError, match="explicit outcome"):
+        await coordinator._plant_manager.remove_plant(plant.plant_id)
+    assert plant.plant_id in coordinator.plants
+
+
+async def test_zero_weight_at_dry_entry_and_invalid_outcome_are_refused(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    coordinator, growspace_id, _ = await _tent(init_integration, plants=0)
+    plant = await coordinator.services.plants.add_plant(
+        growspace_id=growspace_id,
+        strain="OG Kush",
+        row=1,
+        col=1,
+        stage=PlantStage.FLOWER,
+        flower_start=dt_util.utcnow(),
+    )
+    with pytest.raises(ServiceValidationError, match="no harvest source"):
+        await coordinator.services.plants.set_harvest_outcome(
+            plant.plant_id, "incomplete"
+        )
+    await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(hass),
+    )
+    with pytest.raises(ValidationChangeError, match="No Usable Yield"):
+        await coordinator.services.plants.transition_plant(plant.plant_id, dry_weight=0)
+    assert plant.harvest_source_run_id is None
+    await coordinator.services.plants.transition_plant_stage(
+        plant.plant_id, PlantStage.DRY
+    )
+    with pytest.raises(ServiceValidationError, match="Unknown harvest outcome"):
+        await coordinator.services.plants.set_harvest_outcome(
+            plant.plant_id, "recorded"
+        )
+
+
+async def test_failed_metric_save_restores_in_memory_values(
+    init_integration: MockConfigEntry,
+) -> None:
+    coordinator, _, (plant_id,) = await _tent(init_integration, plants=1)
+    plant = coordinator.plants[plant_id]
+    original = plant.harvest_metrics.to_dict()
+    with patch.object(
+        coordinator._plant_manager, "update_plant", side_effect=OSError("disk full")
+    ):
+        with pytest.raises(OSError, match="disk full"):
+            await coordinator.services.plants.update_harvest_metrics(
+                plant_id, wet_weight=42, dry_weight=12
+            )
+    assert plant.harvest_metrics.to_dict() == original
+
+
+async def test_missing_harvest_source_run_is_refused(
+    init_integration: MockConfigEntry,
+) -> None:
+    coordinator, growspace_id, _ = await _tent(init_integration, plants=0)
+    orphaned = Plant(
+        plant_id="orphan",
+        growspace_id="dry",
+        harvest_source_growspace_id=growspace_id,
+        harvest_source_run_id="missing",
+    )
+    with pytest.raises(ValueError, match="source Run missing is missing"):
+        await coordinator.grow_runs.async_project_harvest_outcomes([orphaned])
+
+
+async def test_no_usable_yield_requires_reason_and_records_zero(
+    hass: HomeAssistant, init_integration: MockConfigEntry
+) -> None:
+    coordinator, growspace_id, _ = await _tent(init_integration, plants=0)
+    plant = await coordinator.services.plants.add_plant(
+        growspace_id=growspace_id,
+        strain="OG Kush",
+        row=1,
+        col=1,
+        stage=PlantStage.FLOWER,
+        flower_start=dt_util.utcnow(),
+    )
+    await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=0,
+        metadata=RunMetadata(),
+        user=await _admin(hass),
+    )
+    await coordinator.services.plants.transition_plant_stage(
+        plant.plant_id, PlantStage.DRY
+    )
+    with pytest.raises(ServiceValidationError, match="with a reason"):
+        await coordinator.services.plants.update_harvest_metrics(
+            plant.plant_id, dry_weight=0
+        )
+    with pytest.raises(ServiceValidationError, match="requires a reason"):
+        await coordinator.services.plants.set_harvest_outcome(
+            plant.plant_id, "no_usable_yield"
+        )
+    await coordinator.services.plants.set_harvest_outcome(
+        plant.plant_id, "no_usable_yield", "  mold  "
+    )
+    outcome = coordinator.grow_runs.ledger(growspace_id).runs[0].harvest_outcomes[0]
+    assert (outcome.state, outcome.reason, outcome.metrics["dry_weight"]) == (
+        "no_usable_yield",
+        "mold",
+        0,
+    )
 
 
 async def test_unreadable_run_history_does_not_block_plant_and_reconciles_later(

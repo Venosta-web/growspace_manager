@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   safely after a failed projection.
 - A Grow Run can be completed. `growspace_manager/preview_grow_run_completion`
   shows the completion moment, duration, the participation that will close,
-  Plants still present, harvested Plants without a dry weight, coverage,
+  Plants still present, harvest outcomes still pending or incomplete, coverage,
   attribution gaps and the retrospective note; `growspace_manager/complete_grow_run`
   commits it once every warning is acknowledged. Completion is refused while
   Growspace Manager's own irrigation is delivering water, clears the Active Run

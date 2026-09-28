@@ -2,6 +2,20 @@
   "outcome": "found",
   "run": {
     "completed_at": null,
+    "harvest_outcomes": [
+      {
+        "metrics": {
+          "dry_weight": null
+        },
+        "phenotype": "A",
+        "plant_id": "p1",
+        "quality_score": null,
+        "reason": null,
+        "source_growspace_id": "tent",
+        "state": "pending",
+        "strain": "OG Kush"
+      }
+    ],
     "label": "Autumn",
     "metrics_state": "live",
     "movement_history": [

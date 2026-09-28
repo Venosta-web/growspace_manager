@@ -16,6 +16,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     WARNING_PLANTS_PRESENT,
     BaselineState,
     GrowRun,
+    HarvestOutcome,
     OpeningBaseline,
     PlantMovementFact,
     PresentPlant,
@@ -164,6 +165,74 @@ def test_a_ledger_survives_its_durable_form() -> None:
     assert RunLedger.from_dict(json.loads(json.dumps(ledger.as_dict()))) == ledger
 
 
+def test_harvest_outcome_updates_the_source_until_finalized() -> None:
+    ledger, run = _start(RunLedger("tent"))
+    pending = HarvestOutcome(
+        "p1", "OG Kush", "A", "tent", "pending", None, {"dry_weight": None}, None
+    )
+    ledger = ledger.project_harvest_outcome(run.run_id, pending)
+    assert ledger.runs[0].harvest_outcomes == (pending,)
+    assert RunLedger.from_dict(json.loads(json.dumps(ledger.as_dict()))) == ledger
+
+    measured = replace(
+        pending, state="recorded", metrics={"dry_weight": 42}, quality_score=8.0
+    )
+    ledger = ledger.project_harvest_outcome(run.run_id, measured)
+    assert ledger.runs[0].harvest_outcomes == (measured,)
+    finalized = replace(
+        ledger, runs=(replace(ledger.runs[0], status=RunStatus.FINALIZED),)
+    )
+    assert finalized.project_harvest_outcome(run.run_id, pending) == finalized
+
+
+@pytest.mark.parametrize(
+    ("state", "reason", "metrics"),
+    [
+        ("no_usable_yield", None, {"dry_weight": 0}),
+        ("no_usable_yield", "mold", {"dry_weight": None}),
+        ("bogus", None, {"dry_weight": None}),
+        ("incomplete", None, []),
+        ("incomplete", None, {"dry_weight": 1}),
+        ("recorded", None, {"dry_weight": -1}),
+        ("recorded", None, {"dry_weight": True}),
+    ],
+)
+def test_invalid_harvest_outcome_is_refused(
+    state: str, reason: str | None, metrics: Any
+) -> None:
+    outcome = HarvestOutcome(
+        "p1", "OG Kush", "A", "tent", "pending", None, {}, None
+    ).as_dict()
+    outcome.update(state=state, reason=reason, metrics=metrics)
+    with pytest.raises((TypeError, ValueError)):
+        HarvestOutcome.from_dict(outcome)
+
+
+def test_bad_quality_and_duplicate_harvest_outcomes_are_refused() -> None:
+    outcome = HarvestOutcome(
+        "p1", "OG Kush", "A", "tent", "recorded", None, {"dry_weight": 20}, None
+    ).as_dict()
+    with pytest.raises(TypeError, match="quality_score"):
+        HarvestOutcome.from_dict({**outcome, "quality_score": True})
+    document = _stored()
+    document["runs"][0]["harvest_outcomes"] = [outcome, outcome]
+    with pytest.raises(ValueError, match="more than one harvest outcome"):
+        RunLedger.from_dict(document)
+
+
+def test_projecting_into_one_of_two_runs_leaves_the_other_unchanged() -> None:
+    ledger, first = _start(RunLedger("tent"))
+    completed = replace(first, status=RunStatus.COMPLETED)
+    ledger = replace(ledger, runs=(completed,))
+    ledger, second = _start(ledger, run_id="run-2")
+    outcome = HarvestOutcome(
+        "p1", "OG Kush", "A", "tent", "pending", None, {"dry_weight": None}, None
+    )
+    projected = ledger.project_harvest_outcome(second.run_id, outcome)
+    assert projected.runs[0] == completed
+    assert projected.runs[1].harvest_outcomes == (outcome,)
+
+
 def test_participation_and_fact_reject_corrupt_intervals_and_flags() -> None:
     """Corruption cannot silently change half-open intervals or outbox state."""
     with pytest.raises(ValueError, match="closes before"):
@@ -301,30 +370,50 @@ def _wire_forms() -> dict[str, Any]:
             target_run_id=None,
         )
     )
+    outcome = HarvestOutcome(
+        "p1", "OG Kush", "A", "tent", "pending", None, {"dry_weight": None}, None
+    )
+    moved = moved.project_harvest_outcome("run-1", outcome)
     projected_run = moved.active_run
     assert projected_run is not None
     ended = STARTED + timedelta(days=70)
-    harvested = moved.project_movement(
-        PlantMovementFact(
-            fact_id="fact-2",
-            plant_id="p2",
-            at=STARTED + timedelta(days=63),
-            kind="harvest",
-            source_growspace_id="tent",
-            target_growspace_id="dry",
-            source_run_id="run-1",
-            target_run_id=None,
+    harvested = (
+        moved.project_movement(
+            PlantMovementFact(
+                fact_id="fact-2",
+                plant_id="p2",
+                at=STARTED + timedelta(days=63),
+                kind="harvest",
+                source_growspace_id="tent",
+                target_growspace_id="dry",
+                source_run_id="run-1",
+                target_run_id=None,
+            )
         )
-    ).project_movement(
-        PlantMovementFact(
-            fact_id="fact-3",
-            plant_id="p3",
-            at=STARTED + timedelta(days=64),
-            kind="entry",
-            source_growspace_id=None,
-            target_growspace_id="tent",
-            source_run_id=None,
-            target_run_id="run-1",
+        .project_harvest_outcome(
+            "run-1",
+            HarvestOutcome(
+                plant_id="p2",
+                strain="OG Kush",
+                phenotype="Pheno #1",
+                source_growspace_id="tent",
+                state="pending",
+                reason=None,
+                metrics={"dry_weight": None},
+                quality_score=None,
+            ),
+        )
+        .project_movement(
+            PlantMovementFact(
+                fact_id="fact-3",
+                plant_id="p3",
+                at=STARTED + timedelta(days=64),
+                kind="entry",
+                source_growspace_id=None,
+                target_growspace_id="tent",
+                source_run_id=None,
+                target_run_id="run-1",
+            )
         )
     )
     preview = preview_completion(
@@ -334,7 +423,6 @@ def _wire_forms() -> dict[str, Any]:
             PresentPlant("p3", "OG Kush", "Pheno #1", "flower"),
             PresentPlant("p4", "Amnesia", "", "veg"),
         ],
-        dry_weights={"p2": None, "p3": None, "p4": None},
         pending_facts=(),
         delivering_outputs=("switch.tent_pump",),
         retrospective_note="Dense buds, slow dry",

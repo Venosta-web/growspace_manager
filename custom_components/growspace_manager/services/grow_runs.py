@@ -192,10 +192,6 @@ def _completion_preview(
             for plant in coordinator.plants.values()
             if plant.growspace_id == growspace_id
         ],
-        dry_weights={
-            plant_id: plant.harvest_metrics.dry_weight
-            for plant_id, plant in coordinator.plants.items()
-        },
         pending_facts=coordinator.storage_manager.activity_facts,
         delivering_outputs=coordinator.irrigation_delivering_outputs(growspace_id),
         retrospective_note=(
@@ -250,9 +246,11 @@ async def async_complete_grow_run(
         raise
     # The plant lock first, so no Plant can move across the boundary between
     # the preview being read and the Run being committed. Movements already
-    # committed are projected first, so the boundary closes what they opened.
+    # committed are projected first, so the boundary closes what they opened,
+    # and harvest outcomes are copied in so the preview judges the latest ones.
     async with coordinator.lock:
         await coordinator.async_project_pending_activity()
+        await coordinator.async_project_harvest_outcomes()
         async with store.lock:
             # A stale command is answered as stale, whatever the preview says.
             store.ledger(growspace_id).require_revision(expected_revision)

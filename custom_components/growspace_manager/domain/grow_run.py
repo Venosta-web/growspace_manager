@@ -383,6 +383,73 @@ class PlantMovementFact:
 
 
 @dataclass(frozen=True, slots=True)
+class HarvestOutcome:
+    """Last committed harvest facts for a source Run, independent of the Plant."""
+
+    plant_id: str
+    strain: str
+    phenotype: str
+    source_growspace_id: str
+    state: str
+    reason: str | None
+    metrics: dict[str, Any]
+    quality_score: float | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire snapshot."""
+        return {
+            "plant_id": self.plant_id,
+            "strain": self.strain,
+            "phenotype": self.phenotype,
+            "source_growspace_id": self.source_growspace_id,
+            "state": self.state,
+            "reason": self.reason,
+            "metrics": dict(self.metrics),
+            "quality_score": self.quality_score,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> HarvestOutcome:
+        """Read a stored snapshot without inventing a missing outcome."""
+        value = _dict(value, "harvest outcome")
+        state = _str(value.get("state"), "outcome.state")
+        if state not in {"pending", "recorded", "no_usable_yield", "incomplete"}:
+            raise ValueError("unknown harvest outcome state")
+        reason = _opt_str(value.get("reason"), "outcome.reason")
+        if state == "no_usable_yield" and not (reason and reason.strip()):
+            raise ValueError("No Usable Yield needs a reason")
+        metrics = _dict(value.get("metrics"), "outcome.metrics")
+        dry_weight = metrics.get("dry_weight")
+        if dry_weight is not None and (
+            isinstance(dry_weight, bool)
+            or not isinstance(dry_weight, (int, float))
+            or dry_weight < 0
+        ):
+            raise ValueError("outcome.dry_weight is invalid")
+        if state == "no_usable_yield" and dry_weight != 0:
+            raise ValueError("No Usable Yield must record zero dry weight")
+        if state == "incomplete" and dry_weight is not None:
+            raise ValueError("an incomplete outcome cannot have a dry weight")
+        quality = value.get("quality_score")
+        if quality is not None and (
+            isinstance(quality, bool) or not isinstance(quality, (int, float))
+        ):
+            raise TypeError("outcome.quality_score is not numeric")
+        return cls(
+            plant_id=_str(value.get("plant_id"), "outcome.plant_id"),
+            strain=_opt_str(value.get("strain"), "outcome.strain") or "",
+            phenotype=_opt_str(value.get("phenotype"), "outcome.phenotype") or "",
+            source_growspace_id=_str(
+                value.get("source_growspace_id"), "outcome.source"
+            ),
+            state=state,
+            reason=reason,
+            metrics=metrics,
+            quality_score=quality,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class RunAuditEntry:
     """The immutable record of one lifecycle command."""
 
@@ -434,6 +501,7 @@ class GrowRun:
     baseline: OpeningBaseline = field(default_factory=OpeningBaseline)
     participations: tuple[RunParticipation, ...] = ()
     movement_history: tuple[PlantMovementFact, ...] = ()
+    harvest_outcomes: tuple[HarvestOutcome, ...] = ()
     audit: tuple[RunAuditEntry, ...] = ()
     #: The end of the half-open operating interval; absent while Active.
     completed_at: datetime | None = None
@@ -472,6 +540,7 @@ class GrowRun:
             "baseline": self.baseline.as_dict(),
             "participations": [row.as_dict() for row in self.participations],
             "movement_history": [row.as_dict() for row in self.movement_history],
+            "harvest_outcomes": [row.as_dict() for row in self.harvest_outcomes],
             "audit": [row.as_dict() for row in self.audit],
         }
 
@@ -499,6 +568,12 @@ class GrowRun:
                     value.get("movement_history", []), "run.movement_history"
                 )
             ),
+            harvest_outcomes=tuple(
+                HarvestOutcome.from_dict(row)
+                for row in _list(
+                    value.get("harvest_outcomes", []), "run.harvest_outcomes"
+                )
+            ),
             audit=tuple(
                 RunAuditEntry.from_dict(row)
                 for row in _list(value.get("audit"), "run.audit")
@@ -512,6 +587,9 @@ class GrowRun:
         fact_ids = [row.fact_id for row in run.movement_history]
         if len(fact_ids) != len(set(fact_ids)):
             raise ValueError("a movement fact appears twice in one Run")
+        outcome_ids = [row.plant_id for row in run.harvest_outcomes]
+        if len(outcome_ids) != len(set(outcome_ids)):
+            raise ValueError("a Plant has more than one harvest outcome in one Run")
         if run.status is RunStatus.ACTIVE and run.completed_at is not None:
             raise ValueError("an Active Run has a completion boundary")
         if run.status is RunStatus.COMPLETED:
@@ -546,25 +624,10 @@ class PresentPlant:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class MissingOutcome:
-    """A Plant harvested out of the Run whose dry weight is not known.
-
-    ``plant_removed`` is the one that can no longer be recorded against the
-    live Plant; ``no_dry_weight`` may still arrive while the Run is Completed.
-    """
-
-    plant_id: str
-    harvested_at: datetime
-    reason: str
-
-    def as_dict(self) -> dict[str, Any]:
-        """Return the wire form."""
-        return {
-            "plant_id": self.plant_id,
-            "harvested_at": self.harvested_at.isoformat(),
-            "reason": self.reason,
-        }
+#: Harvest outcome states that leave the Run's Yield incomplete: ``pending``
+#: may still receive a dry weight while the Run is Completed; ``incomplete``
+#: was chosen when its Plant was deleted and never will.
+MISSING_OUTCOME_STATES = ("pending", "incomplete")
 
 
 @dataclass(frozen=True, slots=True)
@@ -605,7 +668,7 @@ class CompletionPreview:
     revision: int
     completed_at: datetime
     plants_present: tuple[PresentPlant, ...] = ()
-    missing_outcomes: tuple[MissingOutcome, ...] = ()
+    missing_outcomes: tuple[HarvestOutcome, ...] = ()
     attribution_gaps: tuple[AttributionGap, ...] = ()
     delivering_outputs: tuple[str, ...] = ()
     retrospective_note: str | None = None
@@ -641,7 +704,15 @@ class CompletionPreview:
             "duration_days": self.run.local_days(self.completed_at),
             "closing_participations": [row.as_dict() for row in self.closing],
             "plants_present": [row.as_dict() for row in self.plants_present],
-            "missing_outcomes": [row.as_dict() for row in self.missing_outcomes],
+            "missing_outcomes": [
+                {
+                    "plant_id": row.plant_id,
+                    "strain": row.strain,
+                    "phenotype": row.phenotype,
+                    "state": row.state,
+                }
+                for row in self.missing_outcomes
+            ],
             # Metric Coverage, one ``{"metric", "coverage_percent"}`` row per Run
             # metric. No Run metric is measured yet (#676-#679 add them), so
             # nothing's coverage can fall short; the key is here so those
@@ -660,15 +731,14 @@ def preview_completion(
     *,
     now: datetime,
     plants_present: list[PresentPlant] | tuple[PresentPlant, ...],
-    dry_weights: dict[str, float | None],
     pending_facts: list[PlantMovementFact] | tuple[PlantMovementFact, ...],
     delivering_outputs: list[str] | tuple[str, ...],
     retrospective_note: str | None,
 ) -> CompletionPreview:
     """Preview completing the ledger's Active Run at ``now``.
 
-    ``dry_weights`` holds every Plant that still exists, by ID; a harvested
-    Plant missing from it has been removed. ``pending_facts`` are the Plant
+    Missing outcomes are the Run's own Harvest Outcome snapshots still pending
+    a dry weight or recorded as incomplete. ``pending_facts`` are the Plant
     outbox's unprojected facts, of any Growspace.
     """
     run = ledger.active_run
@@ -677,18 +747,15 @@ def preview_completion(
             "This growspace has no Active Run to complete",
             current_revision=ledger.revision,
         )
-    harvested: dict[str, datetime] = {}
-    for fact in run.movement_history:
-        if fact.kind == "harvest" and fact.source_run_id == run.run_id:
-            harvested.setdefault(fact.plant_id, fact.at)
     missing = tuple(
-        MissingOutcome(
-            plant_id,
-            at,
-            "plant_removed" if plant_id not in dry_weights else "no_dry_weight",
+        sorted(
+            (
+                row
+                for row in run.harvest_outcomes
+                if row.state in MISSING_OUTCOME_STATES
+            ),
+            key=lambda row: row.plant_id,
         )
-        for plant_id, at in harvested.items()
-        if dry_weights.get(plant_id) is None
     )
     open_plants = {row.plant_id for row in run.participations if row.closed_at is None}
     gaps = [
@@ -810,6 +877,23 @@ class RunLedger:
             )
             changed = True
         return replace(self, runs=tuple(runs)) if changed else self
+
+    def project_harvest_outcome(
+        self, run_id: str, outcome: HarvestOutcome
+    ) -> RunLedger:
+        """Refresh a source snapshot while the Run is still editable."""
+        runs: list[GrowRun] = []
+        for run in self.runs:
+            if run.run_id != run_id:
+                runs.append(run)
+                continue
+            if run.status in {RunStatus.FINALIZED, RunStatus.VOIDED}:
+                return self
+            existing = tuple(
+                row for row in run.harvest_outcomes if row.plant_id != outcome.plant_id
+            )
+            runs.append(replace(run, harvest_outcomes=(*existing, outcome)))
+        return replace(self, runs=tuple(runs)) if tuple(runs) != self.runs else self
 
     def start(
         self,
@@ -1012,6 +1096,7 @@ def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
             "notes": run.metadata.notes,
             "participations": [row.as_dict() for row in run.participations],
             "movement_history": [row.as_dict() for row in run.movement_history],
+            "harvest_outcomes": [row.as_dict() for row in run.harvest_outcomes],
         },
     }
 

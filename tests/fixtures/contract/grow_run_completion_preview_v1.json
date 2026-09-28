@@ -23,9 +23,16 @@
     "duration_days": 70,
     "missing_outcomes": [
       {
-        "harvested_at": "2026-09-25T20:30:00+00:00",
+        "phenotype": "A",
+        "plant_id": "p1",
+        "state": "pending",
+        "strain": "OG Kush"
+      },
+      {
+        "phenotype": "Pheno #1",
         "plant_id": "p2",
-        "reason": "no_dry_weight"
+        "state": "pending",
+        "strain": "OG Kush"
       }
     ],
     "plants_present": [
