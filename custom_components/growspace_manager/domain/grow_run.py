@@ -14,7 +14,7 @@ and authorization belong to the shells around it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -30,6 +30,8 @@ CODE_REVISION_CONFLICT = "grow_run.revision_conflict"
 CODE_ALREADY_ACTIVE = "grow_run.already_active"
 CODE_NOT_AUTHORIZED = "grow_run.not_authorized"
 CODE_STORE_UNREADABLE = "grow_run.store_unreadable"
+CODE_BEYOND_RETENTION = "grow_run.beyond_retention"
+CODE_BOUNDARY_CONFLICT = "grow_run.boundary_conflict"
 
 
 class RunStatus(StrEnum):
@@ -58,11 +60,13 @@ class GrowRunRefused(Exception):
         *,
         current_revision: int | None,
         active_run: GrowRun | None = None,
+        boundary: datetime | None = None,
     ) -> None:
         """Keep the ledger's position beside the refusal."""
         super().__init__(message)
         self.current_revision = current_revision
         self.active_run = active_run
+        self.boundary = boundary
 
 
 class RunRevisionConflict(GrowRunRefused):
@@ -87,6 +91,25 @@ class RunStoreUnreadable(GrowRunRefused):
     """The stored Run history could not be read; nothing may be written over it."""
 
     code = CODE_STORE_UNREADABLE
+
+
+class RunBeyondRetention(GrowRunRefused):
+    """A backdated start older than the Unattributed Activity Ledger keeps.
+
+    Nothing is inferred for it; ``boundary`` is the retention horizon, and the
+    only honest record of such history is an Imported Run.
+    """
+
+    code = CODE_BEYOND_RETENTION
+
+
+class RunBoundaryConflict(GrowRunRefused):
+    """A backdated start that would overlap another Run or lie in the future.
+
+    ``boundary`` is the moment the requested start may not reach.
+    """
+
+    code = CODE_BOUNDARY_CONFLICT
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +144,10 @@ def _moment(value: Any, name: str) -> datetime:
 
 def _opt_moment(value: Any, name: str) -> datetime | None:
     return None if value is None else _moment(value, name)
+
+
+def _date(value: Any, name: str) -> date:
+    return date.fromisoformat(_str(value, name))
 
 
 def _zone(value: Any, name: str) -> str:
@@ -355,6 +382,119 @@ class PlantMovementFact:
 
 
 @dataclass(frozen=True, slots=True)
+class DailySummary:
+    """One local day of a Growspace's activity: who stood in it, who came and went.
+
+    Kept by the Unattributed Activity Ledger while no Run is active, and handed
+    whole to the Run that claims that day. A day with no summary is a day Home
+    Assistant never observed the Growspace.
+    """
+
+    day: date
+    plant_ids: tuple[str, ...] = ()
+    entries: int = 0
+    exits: int = 0
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "date": self.day.isoformat(),
+            "plant_ids": list(self.plant_ids),
+            "entries": self.entries,
+            "exits": self.exits,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> DailySummary:
+        """Read the durable form back."""
+        value = _dict(value, "daily summary")
+        plant_ids = _list(value.get("plant_ids"), "day.plant_ids")
+        return cls(
+            day=_date(value.get("date"), "day.date"),
+            plant_ids=tuple(_str(plant, "day.plant_ids[]") for plant in plant_ids),
+            entries=_int(value.get("entries"), "day.entries", 0),
+            exits=_int(value.get("exits"), "day.exits", 0),
+        )
+
+
+class GapReason(StrEnum):
+    """Why part of a backdated Run's interval has no activity to claim."""
+
+    #: Before the Unattributed Activity Ledger began covering the Growspace.
+    BEFORE_RECORDING = "before_recording"
+    #: A whole local day on which Home Assistant never observed the Growspace.
+    NOT_OBSERVED = "not_observed"
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageGap:
+    """A half-open interval of a backdated Run with nothing recorded for it."""
+
+    start: datetime
+    end: datetime
+    reason: GapReason
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "reason": self.reason.value,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> CoverageGap:
+        """Read the durable form back."""
+        value = _dict(value, "coverage gap")
+        gap = cls(
+            start=_moment(value.get("start"), "gap.start"),
+            end=_moment(value.get("end"), "gap.end"),
+            reason=GapReason(value.get("reason")),
+        )
+        if gap.end <= gap.start:
+            raise ValueError("a coverage gap ends before it starts")
+        return gap
+
+
+@dataclass(frozen=True, slots=True)
+class RunBackdate:
+    """How a Run started in the past: the day asked for and what it could not see.
+
+    ``covered_from`` is where claimed activity begins; anything between the
+    start and it, and every day listed in ``gaps``, is uncovered rather than
+    inferred.
+    """
+
+    started_on: date
+    covered_from: datetime
+    claimed_facts: int
+    gaps: tuple[CoverageGap, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable form."""
+        return {
+            "started_on": self.started_on.isoformat(),
+            "covered_from": self.covered_from.isoformat(),
+            "claimed_facts": self.claimed_facts,
+            "gaps": [gap.as_dict() for gap in self.gaps],
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> RunBackdate:
+        """Read the durable form back."""
+        value = _dict(value, "backdate")
+        return cls(
+            started_on=_date(value.get("started_on"), "backdate.started_on"),
+            covered_from=_moment(value.get("covered_from"), "backdate.covered_from"),
+            claimed_facts=_int(value.get("claimed_facts"), "backdate.claimed", 0),
+            gaps=tuple(
+                CoverageGap.from_dict(row)
+                for row in _list(value.get("gaps"), "backdate.gaps")
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class HarvestOutcome:
     """Last committed harvest facts for a source Run, independent of the Plant."""
 
@@ -422,6 +562,21 @@ class HarvestOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimedHistory:
+    """Everything a backdated start takes from the Unattributed Activity Ledger.
+
+    Built by `domain.unattributed_activity.plan_claim`; the facts are still
+    unattributed here and become the Run's when the start commits.
+    """
+
+    started_at: datetime
+    backdate: RunBackdate
+    participations: tuple[RunParticipation, ...]
+    facts: tuple[PlantMovementFact, ...]
+    days: tuple[DailySummary, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class RunAuditEntry:
     """The immutable record of one lifecycle command."""
 
@@ -475,6 +630,8 @@ class GrowRun:
     movement_history: tuple[PlantMovementFact, ...] = ()
     harvest_outcomes: tuple[HarvestOutcome, ...] = ()
     audit: tuple[RunAuditEntry, ...] = ()
+    daily_summaries: tuple[DailySummary, ...] = ()
+    backdate: RunBackdate | None = None
 
     @property
     def participant_count(self) -> int:
@@ -503,6 +660,8 @@ class GrowRun:
             "movement_history": [row.as_dict() for row in self.movement_history],
             "harvest_outcomes": [row.as_dict() for row in self.harvest_outcomes],
             "audit": [row.as_dict() for row in self.audit],
+            "daily_summaries": [row.as_dict() for row in self.daily_summaries],
+            "backdate": self.backdate.as_dict() if self.backdate else None,
         }
 
     @classmethod
@@ -537,6 +696,15 @@ class GrowRun:
             audit=tuple(
                 RunAuditEntry.from_dict(row)
                 for row in _list(value.get("audit"), "run.audit")
+            ),
+            daily_summaries=tuple(
+                DailySummary.from_dict(row)
+                for row in _list(value.get("daily_summaries", []), "run.days")
+            ),
+            backdate=(
+                None
+                if value.get("backdate") is None
+                else RunBackdate.from_dict(value.get("backdate"))
             ),
         )
         open_plants = [
@@ -651,11 +819,17 @@ class RunLedger:
         baseline: OpeningBaseline,
         plant_ids: list[str] | tuple[str, ...],
         actor_user_id: str | None,
+        claim: ClaimedHistory | None = None,
     ) -> tuple[RunLedger, GrowRun]:
         """Start a Run; return the advanced ledger and the Run it holds.
 
         The Plants present become Participants from this boundary. None is a
         valid answer: an empty Growspace can start a Run.
+
+        With a ``claim`` the Run starts in the past instead: its boundary,
+        Participants and movement history are the claimed Unattributed
+        Activity, now attributed to it, and ``plant_ids`` is unused. The
+        audit entry still records when the start was committed.
         """
         self.require_revision(expected_revision)
         if (active := self.active_run) is not None:
@@ -666,18 +840,33 @@ class RunLedger:
             )
         _zone(timezone, "timezone")
         resulting = self.revision + 1
+        if claim is None:
+            started_at = now
+            participations = tuple(
+                RunParticipation(plant_id, now) for plant_id in dict.fromkeys(plant_ids)
+            )
+        else:
+            started_at = claim.started_at
+            participations = claim.participations
         run = GrowRun(
             run_id=run_id,
             growspace_id=self.growspace_id,
             sequence_number=self.next_sequence,
             status=RunStatus.ACTIVE,
             timezone=timezone,
-            started_at=now,
+            started_at=started_at,
             metadata=metadata,
             baseline=baseline,
-            participations=tuple(
-                RunParticipation(plant_id, now) for plant_id in dict.fromkeys(plant_ids)
+            participations=participations,
+            movement_history=(
+                ()
+                if claim is None
+                else tuple(
+                    _attribute(fact, self.growspace_id, run_id) for fact in claim.facts
+                )
             ),
+            daily_summaries=() if claim is None else claim.days,
+            backdate=None if claim is None else claim.backdate,
             audit=(
                 RunAuditEntry(
                     at=now,
@@ -729,6 +918,22 @@ class RunLedger:
         if sum(run.status is RunStatus.ACTIVE for run in ledger.runs) > 1:
             raise ValueError("more than one Active Run")
         return ledger
+
+
+def _attribute(
+    fact: PlantMovementFact, growspace_id: str, run_id: str
+) -> PlantMovementFact:
+    """Name the claiming Run on whichever side of the fact is this Growspace."""
+    return replace(
+        fact,
+        source_run_id=(
+            run_id if fact.source_growspace_id == growspace_id else fact.source_run_id
+        ),
+        target_run_id=(
+            run_id if fact.target_growspace_id == growspace_id else fact.target_run_id
+        ),
+        projected=True,
+    )
 
 
 def run_summary(run: GrowRun, revision: int) -> dict[str, Any]:

@@ -8,6 +8,8 @@ from .domain.stage import PLANT_STAGES, PlantStage  # noqa: F401
 DOMAIN: Final = "growspace_manager"
 STORAGE_VERSION: Final = 1
 STORAGE_VERSION_PLANTS: Final = 2
+#: How long a Run-free Growspace keeps Unattributed Activity for backdating.
+CONF_UNATTRIBUTED_RETENTION_DAYS: Final = "unattributed_activity_retention_days"
 VERSION: Final = "0.3.5"
 STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
 STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"

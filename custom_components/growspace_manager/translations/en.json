@@ -53,7 +53,11 @@
         "title": "General Settings",
         "description": "Configure general integration behavior",
         "data": {
-          "show_sidebar": "Show Growspace Manager in sidebar"
+          "show_sidebar": "Show Growspace Manager in sidebar",
+          "unattributed_activity_retention_days": "Keep activity outside Grow Runs for"
+        },
+        "data_description": {
+          "unattributed_activity_retention_days": "How far back a Grow Run can be started. Plant movement in a growspace with no active run is kept this many days so a later run can claim it; older history can only be recorded as an imported run."
         }
       },
       "configure_environment": {

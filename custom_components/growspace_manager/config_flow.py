@@ -34,8 +34,13 @@ from .config_handlers import (
     PlantConfigHandler,
     StrainConfigHandler,
 )
-from .const import DEFAULT_NAME, DOMAIN
+from .const import CONF_UNATTRIBUTED_RETENTION_DAYS, DEFAULT_NAME, DOMAIN
 from .domain.setup_preset import SETUP_PRESETS
+from .domain.unattributed_activity import (
+    DEFAULT_RETENTION_DAYS,
+    MAX_RETENTION_DAYS,
+    MIN_RETENTION_DAYS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -485,6 +490,23 @@ class OptionsFlowHandler(OptionsFlow):
                         "show_sidebar",
                         default=self.current_options.get("show_sidebar", True),
                     ): cv.boolean,
+                    vol.Optional(
+                        CONF_UNATTRIBUTED_RETENTION_DAYS,
+                        default=self.current_options.get(
+                            CONF_UNATTRIBUTED_RETENTION_DAYS, DEFAULT_RETENTION_DAYS
+                        ),
+                    ): vol.All(
+                        selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=MIN_RETENTION_DAYS,
+                                max=MAX_RETENTION_DAYS,
+                                step=1,
+                                mode=selector.NumberSelectorMode.BOX,
+                                unit_of_measurement="days",
+                            )
+                        ),
+                        vol.Coerce(int),
+                    ),
                 }
             ),
         )
