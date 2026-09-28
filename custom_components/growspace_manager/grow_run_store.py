@@ -30,9 +30,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
+from .domain.date_logic import parse_date_field
 from .domain.grow_run import (
     GrowRun,
     HarvestOutcome,
+    ParticipantIdentity,
     PlantMovementFact,
     RunCommand,
     RunLedger,
@@ -51,7 +53,12 @@ EVENT_GROW_RUN_LIFECYCLE = f"{DOMAIN}_grow_run_lifecycle"
 #: The logbook category a lifecycle command is written under.
 CATEGORY_GROW_RUN = "grow_run"
 
-_PAST_TENSE = {RunCommand.START: "started", RunCommand.COMPLETE: "completed"}
+_PAST_TENSE = {
+    RunCommand.START: "started",
+    RunCommand.COMPLETE: "completed",
+    RunCommand.FINALIZE: "finalized",
+    RunCommand.EDIT_METADATA: "described",
+}
 
 
 class GrowRunStore:
@@ -280,9 +287,26 @@ class GrowRunStore:
                     reason=plant.harvest_outcome_reason,
                     metrics=metrics,
                     quality_score=plant.phenotype_score.total_score,
+                    entered_dry_at=parse_date_field(plant.dry_start),
                 )
                 updated = ledger.project_harvest_outcome(run_id, outcome)
                 if updated != ledger:
+                    await self.async_commit(updated)
+
+    async def async_project_identities(
+        self, identities: dict[str, ParticipantIdentity]
+    ) -> None:
+        """Refresh every mutable Run's Participant Identity Snapshots.
+
+        ``identities`` holds the live Plants only. A Participant whose Plant
+        is gone keeps the identity last copied here, and a Finalized Run is
+        never touched: its Participants are in its snapshot.
+        """
+        async with self.lock:
+            for growspace_id in sorted(self._ledgers):
+                ledger = self.ledger(growspace_id)
+                updated = ledger.refresh_identities(identities)
+                if updated is not ledger:
                     await self.async_commit(updated)
 
     def announce(self, run: GrowRun) -> None:

@@ -167,11 +167,11 @@ An image explicitly attached to a Grow Run as cover, progress, problem, or harve
 _Avoid_: camera history, automatic snapshot archive
 
 **Participant Identity Snapshot**
-The Plant name, Strain identity and name, and Phenotype identity and name retained with a Run Participant. Corrections before finalization update it; later source renames do not rewrite a Finalized Grow Run.
+The Plant name, Strain identity and name, and Phenotype identity and name retained with a Run Participant. Corrections before finalization update it; later source renames do not rewrite a Finalized Grow Run. The Plant name is the one its Home Assistant sensor carries, a grower's rename included. Every Plant commit copies the live Plants' identities into each Active and Completed Run (`RunLedger.refresh_identities`, from `coordinator.participant_identities`), so a Plant deleted before finalization keeps the identity it last had; one never captured is a missing `participant_identity` fact in the snapshot, not a guess (#673).
 _Avoid_: current plant name, live strain lookup
 
 **Run Metadata**
-The editable descriptive label, tags, goals, and retrospective notes of a Grow Run. Audited metadata edits do not require Run Reopening because they do not change identity, boundaries, attribution, or comparison facts.
+The editable descriptive label, tags, goals, and retrospective notes of a Grow Run. Audited metadata edits do not require Run Reopening because they do not change identity, boundaries, attribution, or comparison facts. `growspace_manager/update_grow_run_metadata` edits it in any status and keeps the fields it does not name; each edit advances the Run Revision and its Run Audit Entry lists `changed_fields`, and an edit that changes nothing is not a command (#673).
 _Avoid_: run facts, metric annotations
 
 **Run Lifecycle Suggestion**
@@ -192,6 +192,7 @@ _Avoid_: completion summary, automatic close
 
 **Run Finalization Snapshot**
 The exact values, canonical units, coverage, Metric Definition Versions, missing prerequisites, Participant Identity Snapshots, and configuration boundary frozen when a Grow Run is finalized. Incomplete finalization requires explicit acknowledgement and later factual changes require Run Reopening.
+It holds the Run's identity and Growspace name, boundaries, Run Timezone, duration in local days, Harvest Window, Participants, counts (`participants`, `harvest_source_plants`, `recorded`, `no_usable_yield`, `missing_outcomes`), Strains as named then, the `yield` and `yield_per_harvest_source_plant` metrics in grams at Metric Definition Version 1, Metric Coverage rows (none measured yet) and a backdated Run's Uncovered Gaps. `missing` lists every fact it lacked — `dry_weight`, `outcome_incomplete`, `entered_dry_at`, `participant_identity`, `harvest_source_plants` — and a metric or Harvest Window fed by one has no value at all rather than a partial one. `growspace_manager/preview_grow_run_finalization` shows it; `growspace_manager/finalize_grow_run` rebuilds it under the Plant and Run locks and freezes it, refusing a Run that is not Completed (`grow_run.not_completed`) and an incomplete snapshot not acknowledged as `incomplete_snapshot` (`grow_run.acknowledgement_required`). It is read from the Run alone, so `get_grow_run` serves it after the Plants and Growspace are gone, and nothing that feeds a mutable Run — outcomes, identities, movement — reaches a Finalized one. `domain/grow_run.py` owns it (`build_snapshot`) (#673). Configuration is not yet part of it (#680).
 _Avoid_: current report, cached metrics
 
 **Run Export**

@@ -31,6 +31,7 @@ from custom_components.growspace_manager.const import (
     GrowspaceService,
     PlantStage,
 )
+from custom_components.growspace_manager.domain.grow_run import RunStatus
 from custom_components.growspace_manager.exceptions import GrowspaceError
 from custom_components.growspace_manager.models import (
     MoistureEntry,
@@ -115,10 +116,17 @@ class PlantFacade:
         harvest_outcome_choice: str | None = None,
         harvest_outcome_reason: str | None = None,
     ) -> bool:
-        """Remove a plant and its associated HA entities."""
+        """Remove a plant and its associated HA entities.
+
+        A Harvest Source Plant needs an explicit outcome first, so its Run's
+        Yield is never left waiting on a Plant that is gone -- unless that Run
+        is already Finalized, whose outcomes are frozen and need nothing more.
+        """
         plant = self._coordinator.plants.get(plant_id)
+        frozen = plant is not None and self._harvest_source_frozen(plant)
         if (
             plant
+            and not frozen
             and isinstance(plant.harvest_source_run_id, str)
             and plant.harvest_source_run_id
             and plant.harvest_source_growspace_id is not None
@@ -155,10 +163,24 @@ class PlantFacade:
                 raise ServiceValidationError(
                     "Harvest source snapshot was not saved; Plant was not deleted"
                 )
-        removed = await self._coordinator._plant_manager.remove_plant(plant_id)
+        removed = await self._coordinator._plant_manager.remove_plant(
+            plant_id, source_frozen=frozen
+        )
         if removed:
             await self.remove_plant_entities(plant_id)
         return removed
+
+    def _harvest_source_frozen(self, plant: Plant) -> bool:
+        """Whether the Plant's Harvest Source Run is Finalized."""
+        run_id = plant.harvest_source_run_id
+        source = plant.harvest_source_growspace_id
+        store = self._coordinator.grow_runs
+        if not run_id or source is None or store.unreadable:
+            return False
+        return any(
+            run.run_id == run_id and run.status is RunStatus.FINALIZED
+            for run in store.ledger(source).runs
+        )
 
     async def set_harvest_outcome(
         self, plant_id: str, state: str, reason: str | None = None
