@@ -1418,6 +1418,38 @@ def test_manual_run_and_hand_watering_abandon_feedback(
     assert vwc_coordinator._pending_observation is None
 
 
+def test_manual_run_never_trains_adaptive_shot_control(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """A settled manual pump cycle cannot change either feedback factor."""
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator.growspace.irrigation_strategy.dynamic_shot_enabled = True
+
+    # A person starts a run while feedback from a steering shot is pending.
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end - timedelta(minutes=5), moisture_before=40.0, manual=False
+    )
+    assert vwc_coordinator._pending_observation is not None
+    vwc_coordinator._irrigation_cycle_started(manual=True)
+    assert vwc_coordinator._pending_observation is None
+
+    # This rise would count as an overshoot if the composer had chosen the shot.
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=True
+    )
+    vwc_coordinator._infiltration.record(55.0, end + timedelta(minutes=1))
+    vwc_coordinator._infiltration.record(55.02, end + timedelta(minutes=2))
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=end + timedelta(minutes=3),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+
+    assert vwc_coordinator._pending_observation is None
+    assert vwc_coordinator._composer.size_factor == 1.0
+    assert vwc_coordinator._composer.interval_factor == 1.0
+
+
 def test_dropout_requires_two_new_post_cycle_samples(
     vwc_coordinator: VWCIrrigationCoordinator,
 ) -> None:

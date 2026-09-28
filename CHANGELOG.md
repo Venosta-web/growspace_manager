@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Manual irrigation runs leave Adaptive Shot Control's size and interval
+  factors untouched while still abandoning feedback pending from an earlier
+  steering shot.
 - The Plant store moves to version 2 when first loaded. The untouched version 1
   document is retained as `growspace_manager.plants.v1`; older builds refuse the
   version 2 document rather than silently discarding pending movement facts.
