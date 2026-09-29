@@ -1740,10 +1740,9 @@ class CompletionPreview:
                 }
                 for row in self.missing_outcomes
             ],
-            # Metric Coverage, one ``{"metric", "coverage_percent"}`` row per Run
-            # metric. No Run metric is measured yet (#676-#679 add them), so
-            # nothing's coverage can fall short; the key is here so those
-            # metrics add rows, not shape.
+            # Metric Coverage, one ``{"metric", "coverage_percent"}`` row per
+            # water metric. A zero-volume Run has complete Water Applied
+            # coverage but no Water Productivity denominator.
             "coverage": [row.as_dict() for row in water_coverage(self.run)],
             "attribution_gaps": [row.as_dict() for row in self.attribution_gaps],
             "retrospective_note": self.retrospective_note,
