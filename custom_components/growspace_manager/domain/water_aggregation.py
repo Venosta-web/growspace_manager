@@ -30,6 +30,19 @@ WATER_SOURCE_MANUAL = "manual"
 WATER_SOURCE_PUMP_ESTIMATE = "pump_estimate"
 
 
+def _trim_daily_readings(growspace: Growspace) -> None:
+    """Keep the newest local days while preserving every report on each day."""
+    usage = growspace.water_usage
+    daily = usage.daily_readings
+    daily.sort(key=lambda reading: reading.get("date", ""))
+    dates = sorted({reading.get("date", "") for reading in daily})
+    if len(dates) > usage.max_daily_readings:
+        keep = set(dates[-usage.max_daily_readings :])
+        usage.daily_readings = [
+            reading for reading in daily if reading.get("date") in keep
+        ]
+
+
 class _TankTracker(Protocol):
     """The slice of TankWaterTracker this helper reads."""
 
@@ -77,7 +90,11 @@ def record_daily_water(
 
     daily = usage.daily_readings
     for reading in daily:
-        if reading.get("date") == reference_date and reading.get("source") == source:
+        if (
+            reading.get("date") == reference_date
+            and reading.get("source") == source
+            and "watering_id" not in reading
+        ):
             reading["liters"] = round(reading.get("liters", 0.0) + liters, 3)
             break
     else:
@@ -85,29 +102,66 @@ def record_daily_water(
             {"date": reference_date, "liters": round(liters, 3), "source": source}
         )
 
-    if len(daily) > usage.max_daily_readings:
-        usage.daily_readings = daily[-usage.max_daily_readings :]
+    _trim_daily_readings(growspace)
+
+
+def record_hand_watering(
+    growspace: Growspace,
+    liters: float,
+    *,
+    watering_id: str,
+    user_id: str | None,
+    plant_id: str,
+    watered_at: str,
+    from_monitored_tank: bool,
+    reference_date: str,
+) -> None:
+    """Preserve each hand-watering report in the existing manual water store."""
+    if liters <= 0:
+        return
+    usage = growspace.water_usage
+    usage.total_liters = round(usage.total_liters + liters, 3)
+    if from_monitored_tank:
+        usage.monitored_tank_liters = round(usage.monitored_tank_liters + liters, 3)
+    usage.daily_readings.append(
+        {
+            "date": reference_date,
+            "liters": round(liters, 3),
+            "source": WATER_SOURCE_MANUAL,
+            "watering_id": watering_id,
+            "user_id": user_id,
+            "plant_id": plant_id,
+            "watered_at": watered_at,
+            "from_monitored_tank": from_monitored_tank,
+        }
+    )
+    _trim_daily_readings(growspace)
 
 
 def is_tank_derived_mode(growspace: Growspace) -> bool:
     """Return True when reservoir-level inference is the measurement source.
 
-    Active when at least one tank has ``volume_liters`` configured and no
-    flow or drain-volume sensors are set (which would measure directly).
+    Active when at least one tank has ``volume_liters`` configured.
+    ``irrigation_flow_sensors`` and ``drain_volume_sensors`` play no part: no
+    reading of either is converted to litres, so letting them switch this off
+    traded the tank figure for the Pump-Cycle Water Estimate (#853).
     """
-    env = growspace.environment_config
-    if env.irrigation_flow_sensors or env.drain_volume_sensors:
-        return False
-    return any(tank.volume_liters is not None for tank in env.irrigation_tanks)
+    return any(
+        tank.volume_liters is not None
+        for tank in growspace.environment_config.irrigation_tanks
+    )
 
 
-def _water_usage_today(growspace: Growspace, reference_date: str) -> float:
+def _water_usage_today(
+    growspace: Growspace, reference_date: str, *, exclude_monitored_tank: bool = False
+) -> float:
     """Sum today's liters across all sources in WaterUsageData.daily_readings."""
     return round(
         sum(
             float(reading.get("liters", 0.0))
             for reading in growspace.water_usage.daily_readings
             if reading.get("date") == reference_date
+            and not (exclude_monitored_tank and reading.get("from_monitored_tank"))
         ),
         2,
     )
@@ -129,11 +183,12 @@ def compute_growspace_water(
         reference_date = dt_util.now().date().isoformat()
 
     usage = growspace.water_usage
-    usage_today = _water_usage_today(growspace, reference_date)
-    usage_cycle = round(usage.total_liters, 2)
-
     tracker_list = list(trackers)
     if is_tank_derived_mode(growspace) and tracker_list:
+        usage_today = _water_usage_today(
+            growspace, reference_date, exclude_monitored_tank=True
+        )
+        usage_cycle = round(usage.total_liters - usage.monitored_tank_liters, 2)
         cycle_start = usage.cycle_start_date or None
         tank_today = sum(t.get_total_liters_today() for t in tracker_list)
         tank_cycle = sum(t.get_total_liters_since(cycle_start) for t in tracker_list)
@@ -145,4 +200,13 @@ def compute_growspace_water(
             source="tank_derived",
         )
 
-    return WaterUseFigures(today=usage_today, cycle=usage_cycle, source="measured")
+    tank_mode = is_tank_derived_mode(growspace)
+    return WaterUseFigures(
+        today=_water_usage_today(
+            growspace, reference_date, exclude_monitored_tank=tank_mode
+        ),
+        cycle=round(
+            usage.total_liters - (usage.monitored_tank_liters if tank_mode else 0), 2
+        ),
+        source="measured",
+    )

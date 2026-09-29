@@ -20,6 +20,7 @@ from custom_components.growspace_manager.const import (
     SubstrateMediaType,
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.domain.setup_preset import stamp_modules
 from custom_components.growspace_manager.models import (
     ACInfinityDevice,
     ACInfinityGrowLight,
@@ -188,6 +189,7 @@ def _maximal_environment_config(prefix: str) -> EnvironmentConfig:
                 enable_lights_bias=True,
                 enable_vpd_weighting=True,
                 volume_liters=120.0,
+                stale_after_minutes=0,
                 last_recorded_level=72.0,
                 peak_level=95.0,
                 water_history=TankWaterHistory(
@@ -285,6 +287,9 @@ def _maximal_growspace() -> Growspace:
         rows=2,
         plants_per_row=2,
         notification_target="notify.mobile_app_grower",
+        setup_preset="coco_crop_steering",
+        # Stamped, then hand-edited: the wire carries the edit, not the table.
+        setup_modules={**stamp_modules("coco_crop_steering"), "substrate": False},
         created_at="2026-01-01T00:00:00+00:00",
         device_id="contract-growspace-device",
         environment_config=environment_config,
@@ -393,7 +398,18 @@ def _maximal_growspace() -> Growspace:
         water_usage=WaterUsageData(
             total_liters=88.5,
             cycle_start_date="2026-08-01",
-            daily_readings=[{"date": "2026-08-11", "liters": 6.25, "source": "manual"}],
+            daily_readings=[
+                {
+                    "date": "2026-08-11",
+                    "liters": 6.25,
+                    "source": "manual",
+                    "watering_id": "contract-watering",
+                    "user_id": "contract-user",
+                    "plant_id": "contract-plant",
+                    "watered_at": "2026-08-11T08:30:00+00:00",
+                    "from_monitored_tank": False,
+                }
+            ],
             max_daily_readings=400,
         ),
         vision_checkup_history=[

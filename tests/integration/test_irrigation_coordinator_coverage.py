@@ -5,6 +5,7 @@ import contextlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
@@ -21,6 +22,8 @@ from custom_components.growspace_manager.models import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.util.dt import utcnow
+from tests.delivery_helpers import charge_today
 
 GROWSPACE_ID = "test_growspace"
 ENTRY_ID = "test_entry_id"
@@ -61,12 +64,23 @@ def mock_hass(mock_main_coordinator) -> MagicMock:
     hass.async_create_task = asyncio.create_task
     type(hass).loop = property(lambda self: asyncio.get_running_loop())
     hass.data = {DOMAIN: {}}
-    # Default switch state to "on" so _async_wait_for_switch_state returns
-    # immediately; tests that need a different state override states.get locally.
+    # The switch starts OFF and follows its commands, so the ON wait confirms at
+    # once; one already ON is a person's (#793). Tests that need a different
+    # state override states.get locally.
     mock_state = MagicMock()
-    mock_state.state = "on"
+    mock_state.state = "off"
     hass.states = MagicMock()
     hass.states.get.return_value = mock_state
+
+    async def command_switch(
+        _domain: str, service: str, *_args: Any, **_kwargs: Any
+    ) -> None:
+        if service == "turn_off":
+            mock_state.state = "off"
+        elif service == "turn_on":
+            mock_state.state = "on"
+
+    hass.services.async_call.side_effect = command_switch
     hass.bus = MagicMock()
     return hass
 
@@ -288,6 +302,137 @@ async def test_run_pump_cycle_event_logging_exception(
         )
 
 
+async def test_watchdog_turns_off_pump_while_turn_on_service_hangs(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+) -> None:
+    """The timer's OFF task runs even when the cycle coroutine cannot advance."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    blocked = asyncio.Event()
+    off_calls = 0
+
+    async def service_call(_domain, service, *_args, **_kwargs):
+        nonlocal off_calls
+        if service == "turn_on":
+            await blocked.wait()
+        elif service == "turn_off":
+            off_calls += 1
+            mock_hass.states.get.return_value.state = "off"
+
+    mock_hass.services.async_call.side_effect = service_call
+    callbacks = []
+    watchdog_tasks = []
+
+    def create_task(coro, **kwargs):
+        task = asyncio.create_task(coro, **kwargs)
+        watchdog_tasks.append(task)
+        return task
+
+    mock_hass.async_create_task = create_task
+    with patch(
+        "custom_components.growspace_manager.irrigation_coordinator.async_call_later",
+        side_effect=lambda _hass, _delay, callback: (
+            callbacks.append(callback) or (lambda: None)
+        ),
+    ):
+        cycle = asyncio.create_task(
+            coordinator._run_pump_cycle(
+                "irrigation", "switch.irrigation_pump", 30, {"manual": True}
+            )
+        )
+        await asyncio.sleep(0)
+        assert callbacks and not cycle.done()
+        callbacks[0](None)
+        await asyncio.gather(cycle, *watchdog_tasks)
+
+    assert off_calls >= 1
+    assert mock_hass.states.get.return_value.state == "off"
+    assert cycle.done()
+
+
+async def test_watchdog_latches_fault_when_off_command_fails(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+) -> None:
+    """An unverified watchdog OFF is visible and blocks later pump cycles."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    async def refuse_off(_domain: str, service: str, *_args: Any, **_kw: Any) -> None:
+        if service == "turn_off":
+            raise RuntimeError("switch unavailable")
+
+    mock_hass.services.async_call.side_effect = refuse_off
+    mock_hass.states.get.return_value.state = "on"
+    coordinator._latch_fault = AsyncMock()
+    coordinator._record_safety_transition = AsyncMock()
+
+    await coordinator._async_watchdog_off("irrigation", "switch.irrigation_pump", None)
+
+    coordinator._latch_fault.assert_awaited_once()
+    assert (
+        "fault_watchdog_off_unconfirmed" in coordinator._latch_fault.call_args.args[0]
+    )
+    coordinator._record_safety_transition.assert_awaited_once_with("watchdog_off")
+    # The pump still reads ON, so OFF keeps being re-sent until it does not.
+    assert "switch.irrigation_pump" in coordinator._off_retries
+    coordinator.async_cancel_listeners()
+
+
+async def test_manual_duration_above_configured_cycle_limit_is_refused(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+) -> None:
+    """A manual run cannot silently exceed the per-pump safety setting."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    coordinator.growspace.irrigation_config.max_cycle_seconds = 20
+    with pytest.raises(ServiceValidationError, match=r"max_cycle_seconds \(20s\)"):
+        await coordinator.async_manual_run(21)
+    mock_config_entry.async_create_background_task.assert_not_called()
+
+
+async def test_pump_cycle_clamps_a_stored_schedule_duration(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+) -> None:
+    """A legacy schedule over the configured limit cannot run the pump longer."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    coordinator.growspace.irrigation_config.max_cycle_seconds = 20
+    with patch("asyncio.sleep", new_callable=AsyncMock) as sleep:
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"time": "10:00:00"}
+        )
+    sleep.assert_any_await(20)
+
+
+async def test_base_schedule_respects_minimum_interval(
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+) -> None:
+    """A second scheduled event cannot replace one that just started."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    coordinator.growspace.irrigation_config.min_interval_minutes = 5
+    coordinator._last_cycle_timestamp = utcnow().isoformat()
+    await coordinator._handle_event(
+        utcnow(), event_type="irrigation", event_data={"duration": 10}
+    )
+    mock_config_entry.async_create_background_task.assert_not_called()
+
+
 async def test_base_coordinator_properties(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
@@ -351,7 +496,7 @@ async def test_check_safety_guards_max_cycles_reached(
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
     ].irrigation_config.max_cycles_per_day = 2
-    coordinator._cycles_today = 2
+    charge_today(coordinator, cycles=2)
 
     reason = coordinator._check_safety_guards(30)
     assert reason is SkipReason.CYCLE_LIMIT
@@ -372,7 +517,6 @@ async def test_check_safety_guards_volume_cap_exceeded(
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
     ].irrigation_config.pump_flow_rate_ml_per_sec = 100.0
-    coordinator._volume_dispensed_today = 0.0
 
     reason = coordinator._check_safety_guards(30)
     assert reason is SkipReason.VOLUME_CAP
@@ -389,7 +533,7 @@ async def test_run_pump_cycle_safety_guard_blocks(
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
     ].irrigation_config.max_cycles_per_day = 2
-    coordinator._cycles_today = 2
+    charge_today(coordinator, cycles=2)
 
     with patch(
         "custom_components.growspace_manager.irrigation_coordinator._LOGGER"
@@ -423,19 +567,25 @@ async def test_run_pump_cycle_safety_guard_blocks(
 
 
 async def test_async_reset_daily_counters(
-    mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
+    mock_hass: MagicMock,
+    mock_config_entry: MagicMock,
+    mock_main_coordinator: MagicMock,
+    freezer: FrozenDateTimeFactory,
 ) -> None:
-    """Test that _async_reset_daily_counters resets daily counters."""
+    """The caps start the day at zero without the reset clearing anything."""
+    freezer.move_to("2026-09-25 23:59:00+00:00")
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    coordinator._cycles_today = 5
-    coordinator._volume_dispensed_today = 4.2
+    charge_today(coordinator, cycles=5, liters=4.2)
 
+    freezer.move_to("2026-09-26 00:00:00+00:00")
     await coordinator._async_reset_daily_counters()
 
-    assert coordinator._cycles_today == 0
-    assert coordinator._volume_dispensed_today == 0.0
+    assert coordinator.cycles_today == 0
+    assert coordinator.volume_dispensed_today == 0.0
+    # Yesterday's charges are still the record of yesterday.
+    assert len(coordinator._deliveries.attempts) == 5
 
 
 async def test_next_scheduled_cycle_no_times(

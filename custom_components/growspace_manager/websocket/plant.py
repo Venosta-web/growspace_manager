@@ -53,13 +53,14 @@ from custom_components.growspace_manager.exceptions import (
     GrowspaceNotFoundError,
     PlantNotFoundError,
 )
+from custom_components.growspace_manager.schemas import UPDATE_PLANT_EDITABLE_FIELDS
 from custom_components.growspace_manager.utils import parse_date_field
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.util import dt as dt_util
 
-from ._common import WSCommand
+from ._common import WS_MSG_USER, WSCommand
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +74,8 @@ SCHEMA_WS_WATER_PLANT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
         vol.Required(ATTR_AMOUNT): vol.Any(float, int),
         vol.Optional(ATTR_NUTRIENTS): dict,
         vol.Optional(ATTR_PRESET_ID): str,
+        vol.Optional("watered_at"): str,
+        vol.Optional("from_monitored_tank"): bool,
     }
 )
 
@@ -117,12 +120,25 @@ SCHEMA_WS_ADD_PLANTS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
 )
 
 WS_TYPE_UPDATE_PLANT = f"{DOMAIN}/update_plant"
+# Only the fields a grower edits; any other key is refused by name before the
+# handler runs. ``None`` stays accepted everywhere: it clears a date and is
+# dropped for every other field, as the handler has always done.
+_OPT_POSITION = vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=1)))
+_UPDATE_PLANT_VALIDATORS: dict[str, Any] = {
+    ATTR_ROW: _OPT_POSITION,
+    ATTR_COL: _OPT_POSITION,
+    **dict.fromkeys(DATE_FIELDS, _OPT_DATE),
+}
+_UPDATE_PLANT_FIELDS: dict[Any, Any] = {
+    vol.Optional(field): _UPDATE_PLANT_VALIDATORS.get(field, vol.Any(str, None))
+    for field in UPDATE_PLANT_EDITABLE_FIELDS
+}
 SCHEMA_WS_UPDATE_PLANT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_UPDATE_PLANT,
         vol.Required(ATTR_PLANT_ID): str,
-    },
-    extra=vol.ALLOW_EXTRA,
+        **_UPDATE_PLANT_FIELDS,
+    }
 )
 
 WS_TYPE_REMOVE_PLANT = f"{DOMAIN}/remove_plant"
@@ -130,6 +146,10 @@ SCHEMA_WS_REMOVE_PLANT = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_REMOVE_PLANT,
         vol.Required(ATTR_PLANT_ID): str,
+        vol.Optional("harvest_outcome_choice"): vol.In(
+            ["no_usable_yield", "incomplete"]
+        ),
+        vol.Optional("harvest_outcome_reason"): str,
     }
 )
 
@@ -271,6 +291,16 @@ SCHEMA_WS_UPDATE_HARVEST_METRICS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.ext
     }
 )
 
+WS_TYPE_SET_HARVEST_OUTCOME = f"{DOMAIN}/set_harvest_outcome"
+SCHEMA_WS_SET_HARVEST_OUTCOME = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_SET_HARVEST_OUTCOME,
+        vol.Required(ATTR_PLANT_ID): str,
+        vol.Required("state"): vol.In(["no_usable_yield", "incomplete"]),
+        vol.Optional("reason"): str,
+    }
+)
+
 WS_TYPE_PRINT_LABEL = f"{DOMAIN}/print_label"
 SCHEMA_WS_PRINT_LABEL = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
@@ -308,6 +338,9 @@ async def websocket_water_plant(
         amount=msg[ATTR_AMOUNT],
         nutrients=msg.get(ATTR_NUTRIENTS),
         preset_id=msg.get(ATTR_PRESET_ID),
+        watered_at=msg.get("watered_at"),
+        from_monitored_tank=msg.get("from_monitored_tank", False),
+        user_id=msg[WS_MSG_USER].id if msg.get(WS_MSG_USER) else None,
     )
 
 
@@ -449,7 +482,12 @@ async def websocket_remove_plant(
     if plant_id not in coordinator.plants:
         raise PlantNotFoundError(f"Plant '{plant_id}' not found")
 
-    await coordinator.services.plants.remove_plant(plant_id)
+    outcome_options = {
+        key: msg[key]
+        for key in ("harvest_outcome_choice", "harvest_outcome_reason")
+        if key in msg
+    }
+    await coordinator.services.plants.remove_plant(plant_id, **outcome_options)
 
 
 async def websocket_harvest_plant(
@@ -682,6 +720,17 @@ async def websocket_update_harvest_metrics(
     )
 
 
+async def websocket_set_harvest_outcome(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> Any:
+    """Record explicit No Usable Yield or an incomplete outcome."""
+    await coordinator.services.plants.set_harvest_outcome(
+        msg[ATTR_PLANT_ID], msg["state"], msg.get("reason")
+    )
+
+
 async def websocket_print_label(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -694,7 +743,9 @@ async def websocket_print_label(
 
 
 COMMANDS: list[WSCommand] = [
-    WSCommand(WS_TYPE_WATER_PLANT, websocket_water_plant, SCHEMA_WS_WATER_PLANT),
+    WSCommand(
+        WS_TYPE_WATER_PLANT, websocket_water_plant, SCHEMA_WS_WATER_PLANT, actor=True
+    ),
     WSCommand(WS_TYPE_ADD_PLANT, websocket_add_plant, SCHEMA_WS_ADD_PLANT),
     WSCommand(WS_TYPE_ADD_PLANTS, websocket_add_plants, SCHEMA_WS_ADD_PLANTS),
     WSCommand(WS_TYPE_UPDATE_PLANT, websocket_update_plant, SCHEMA_WS_UPDATE_PLANT),
@@ -727,6 +778,11 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_UPDATE_HARVEST_METRICS,
         websocket_update_harvest_metrics,
         SCHEMA_WS_UPDATE_HARVEST_METRICS,
+    ),
+    WSCommand(
+        WS_TYPE_SET_HARVEST_OUTCOME,
+        websocket_set_harvest_outcome,
+        SCHEMA_WS_SET_HARVEST_OUTCOME,
     ),
     WSCommand(
         WS_TYPE_PRINT_LABEL, websocket_print_label, SCHEMA_WS_PRINT_LABEL, resolve="any"

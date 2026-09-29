@@ -1,0 +1,67 @@
+{
+  "outcome": "preview",
+  "preview": {
+    "attribution_gaps": [
+      {
+        "at": null,
+        "fact_id": null,
+        "kind": "unrecorded_presence",
+        "plant_id": "p4"
+      }
+    ],
+    "blockers": ["grow_run.irrigation_delivering"],
+    "closing_participations": [
+      {
+        "closed_at": null,
+        "opened_at": "2026-09-26T20:30:00+00:00",
+        "plant_id": "p3"
+      }
+    ],
+    "completed_at": "2026-10-02T20:30:00+00:00",
+    "coverage": [],
+    "delivering_outputs": ["switch.tent_pump"],
+    "duration_days": 70,
+    "missing_outcomes": [
+      {
+        "phenotype": "A",
+        "plant_id": "p1",
+        "state": "pending",
+        "strain": "OG Kush"
+      },
+      {
+        "phenotype": "Pheno #1",
+        "plant_id": "p2",
+        "state": "pending",
+        "strain": "OG Kush"
+      }
+    ],
+    "plants_present": [
+      {
+        "phenotype_name": "Pheno #1",
+        "plant_id": "p3",
+        "stage": "flower",
+        "strain_name": "OG Kush"
+      },
+      {
+        "phenotype_name": "",
+        "plant_id": "p4",
+        "stage": "veg",
+        "strain_name": "Amnesia"
+      }
+    ],
+    "retrospective_note": "Dense buds, slow dry",
+    "run": {
+      "completed_at": null,
+      "label": "Autumn",
+      "metrics_state": "live",
+      "participant_count": 3,
+      "run_id": "run-1",
+      "run_revision": 4,
+      "sequence_number": 4,
+      "started_at": "2026-07-24T20:30:00+00:00",
+      "status": "active",
+      "timezone": "Europe/Berlin"
+    },
+    "warnings": ["plants_present", "missing_outcomes", "attribution_gaps"]
+  }
+}

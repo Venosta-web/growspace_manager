@@ -10,7 +10,7 @@ through the full VWC-coordinator fixture in
 """
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -28,7 +28,9 @@ from custom_components.growspace_manager.domain.steering_phase import (
     SUPPRESSED_BY_COOLDOWN,
     SUPPRESSED_BY_INFILTRATING,
     SUPPRESSED_BY_NO_PUMP,
+    SUPPRESSED_BY_STARTUP,
     SUPPRESSED_BY_ZERO_VOLUME,
+    ShotRequest,
     SteeringPhaseMachine,
     SteeringTickInputs,
     SteeringTickVerdict,
@@ -1006,3 +1008,142 @@ def test_tomorrows_window_spans_p0_end_to_p2_stop() -> None:
         "start": _at(7, 0, day=16).isoformat(),
         "end": _at(16, 0, day=16).isoformat(),
     }
+
+
+# ── restart restore and the Startup Inhibit (#786) ────────────────────────────
+#
+# Defaults: lights-on 06:00, P0 until 07:00, target 55 %, dryback 2 % (P2
+# trigger 53 %). P2's interval is set to 30 min, twice P1's 15, so a cooldown
+# measured with the wrong phase's interval shows up as a shot 15 minutes early.
+
+TODAY = date(2023, 6, 15)
+
+
+def _p2_strategy(**overrides) -> IrrigationStrategy:
+    overrides.setdefault("p2_shot_interval_minutes", 30)
+    return _strategy(**overrides)
+
+
+def test_a_fresh_machine_mid_p2_re_enters_the_p1_ramp() -> None:
+    """The defect restore exists for: nothing says P1 already completed today."""
+    machine = SteeringPhaseMachine()
+    verdict = machine.tick(_inputs(_at(14), 54.0, _p2_strategy()))
+    assert verdict.phase == PHASE_P1
+    assert verdict.fire is not None
+
+
+def test_restore_after_p1_completed_today_resumes_in_p2() -> None:
+    machine = SteeringPhaseMachine()
+    machine.restore(TODAY, TODAY)
+
+    # Below target by design but above the P2 trigger: nothing to do.
+    verdict = machine.tick(_inputs(_at(14), 54.0, _p2_strategy(), last_shot=_at(9, 30)))
+
+    assert verdict.phase == PHASE_P2
+    assert verdict.fire is None
+    assert verdict.suppressed_by is None
+    # The resumed day does not re-announce a completion it merely restored.
+    assert verdict.p1_completed_on is None
+
+
+def test_restored_p2_cooldown_is_measured_from_the_persisted_last_shot() -> None:
+    strategy = _p2_strategy()
+    machine = SteeringPhaseMachine()
+    machine.restore(TODAY, TODAY)
+
+    # 15 minutes after the last shot: P1's interval would allow it, P2's not.
+    held = machine.tick(_inputs(_at(14), 50.0, strategy, last_shot=_at(13, 45)))
+    fired = machine.tick(_inputs(_at(14, 15), 50.0, strategy, last_shot=_at(13, 45)))
+
+    assert held.phase == PHASE_P2
+    assert held.fire is None
+    assert held.suppressed_by == SUPPRESSED_BY_COOLDOWN
+    assert fired.fire == ShotRequest(
+        phase="P2", base_seconds=strategy.p2_shot_duration_seconds
+    )
+
+
+def test_restore_before_p1_completes_resumes_p1_with_the_persisted_cooldown() -> None:
+    strategy = _p2_strategy()
+    machine = SteeringPhaseMachine()
+    machine.restore(None, TODAY)
+
+    held = machine.tick(_inputs(_at(10), 50.0, strategy, last_shot=_at(9, 50)))
+    fired = machine.tick(_inputs(_at(10, 5), 50.0, strategy, last_shot=_at(9, 50)))
+
+    assert held.phase == PHASE_P1
+    assert held.suppressed_by == SUPPRESSED_BY_COOLDOWN
+    assert fired.fire == ShotRequest(
+        phase="P1", base_seconds=strategy.p1_shot_duration_seconds
+    )
+
+
+def test_restore_ignores_a_completion_from_another_day() -> None:
+    machine = SteeringPhaseMachine()
+    machine.restore(date(2023, 6, 14), TODAY)
+
+    verdict = machine.tick(_inputs(_at(10), 50.0, _p2_strategy()))
+
+    assert verdict.phase == PHASE_P1
+
+
+def test_restored_completion_survives_the_lights_on_date_guard() -> None:
+    """A restart during P0 must not lose the flag to the first lights-on reset."""
+    machine = SteeringPhaseMachine()
+    machine.restore(TODAY, TODAY)
+
+    assert machine.tick(_inputs(_at(6, 30), 50.0)).phase == PHASE_P0
+    assert machine.tick(_inputs(_at(8), 54.0)).phase == PHASE_P2
+
+
+def test_midnight_reset_after_restore_starts_the_next_day_in_p1() -> None:
+    machine = SteeringPhaseMachine()
+    machine.restore(TODAY, TODAY)
+    machine.reset()
+
+    verdict = machine.tick(_inputs(_at(8, day=16), 54.0))
+
+    assert verdict.phase == PHASE_P1
+
+
+def test_the_completion_tick_carries_its_local_date_and_no_other_does() -> None:
+    machine = SteeringPhaseMachine()
+
+    ramping = machine.tick(_inputs(_at(9), 50.0))
+    completing = machine.tick(_inputs(_at(9, 30), 56.0))
+    after = machine.tick(_inputs(_at(9, 31), 56.0))
+
+    assert ramping.p1_completed_on is None
+    assert completing.p1_completed_on == TODAY
+    assert after.p1_completed_on is None
+
+
+def test_a_completion_that_skips_p2_still_carries_its_date() -> None:
+    machine = SteeringPhaseMachine()
+
+    verdict = machine.tick(_inputs(_at(9, 30), 56.0, _strategy(skip_p2_after_p1=True)))
+
+    assert verdict.phase == PHASE_P3
+    assert verdict.p1_completed_on == TODAY
+
+
+def test_the_startup_inhibit_withholds_the_shot_but_the_phase_still_moves() -> None:
+    machine = SteeringPhaseMachine()
+
+    held = machine.tick(_inputs(_at(10), 50.0, startup_inhibited=True))
+    completing = machine.tick(_inputs(_at(10, 1), 56.0, startup_inhibited=True))
+
+    assert held.phase == PHASE_P1
+    assert held.fire is None
+    assert held.suppressed_by == SUPPRESSED_BY_STARTUP
+    assert completing.p1_completed_on == TODAY
+
+
+def test_the_startup_inhibit_is_reported_ahead_of_the_cooldown() -> None:
+    machine = SteeringPhaseMachine()
+
+    verdict = machine.tick(
+        _inputs(_at(10), 50.0, last_shot=_at(9, 59), startup_inhibited=True)
+    )
+
+    assert verdict.suppressed_by == SUPPRESSED_BY_STARTUP

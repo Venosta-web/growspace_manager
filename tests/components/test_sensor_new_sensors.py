@@ -557,6 +557,7 @@ def _make_water_sensor():
         cycle_start_date="2026-01-01",
         daily_readings=[{"date": "2026-01-12", "liters": 5.0}],
     )
+    growspace.environment_config.irrigation_tanks = []
     coordinator.growspaces = {"gs1": growspace}
     coordinator.services.growspaces.get_growspace_plants = MagicMock(
         return_value=[Mock(), Mock()]
@@ -697,28 +698,26 @@ def test_water_sensor_extra_state_attributes_tank_derived() -> None:
     assert attrs["liters_per_plant_per_day"] == expected
 
 
-def test_water_sensor_tank_derived_mode_disabled_when_flow_sensors_configured() -> None:
-    """native_value falls back to WaterUsageData when flow sensors are configured."""
+def test_water_sensor_stays_tank_derived_when_flow_sensors_configured() -> None:
+    """A configured flow sensor is never read, so it keeps tank mode (#853)."""
     sensor, coordinator, growspace, _ = _make_water_sensor_tank_derived(
         tracker_liters_since=99.0
     )
     growspace.environment_config.irrigation_flow_sensors = ["sensor.flow_1"]
     growspace.water_usage.total_liters = 25.0
 
-    assert sensor.native_value == 25.0
+    assert sensor.native_value == 99.0 + 25.0
 
 
-def test_water_sensor_tank_derived_mode_disabled_when_drain_sensors_configured() -> (
-    None
-):
-    """native_value falls back to WaterUsageData when drain sensors are configured."""
+def test_water_sensor_stays_tank_derived_when_drain_sensors_configured() -> None:
+    """A configured drain volume sensor is never read, so it keeps tank mode (#853)."""
     sensor, coordinator, growspace, _ = _make_water_sensor_tank_derived(
         tracker_liters_since=99.0
     )
     growspace.environment_config.drain_volume_sensors = ["sensor.drain_1"]
     growspace.water_usage.total_liters = 18.0
 
-    assert sensor.native_value == 18.0
+    assert sensor.native_value == 99.0 + 18.0
 
 
 def test_water_sensor_tank_derived_no_trackers_falls_back_to_usage_data() -> None:

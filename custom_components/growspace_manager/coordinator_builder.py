@@ -15,6 +15,7 @@ from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
 from .capture_continuity_monitor import CaptureContinuityMonitor
 from .const import DOMAIN
+from .continuity_notifier import ContinuityNotifier
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
@@ -111,6 +112,9 @@ class CoordinatorBuilder:
         continuity_store: Store[dict[str, Any]] = Store(
             self.hass, 1, "growspace_manager.capture_continuity"
         )
+        continuity_delivery_store: Store[dict[str, Any]] = Store(
+            self.hass, 1, "growspace_manager.continuity_notifications"
+        )
         conversation_store = ConversationStore(
             Store(self.hass, 1, "growspace_manager.ai_conversations")
         )
@@ -183,6 +187,8 @@ class CoordinatorBuilder:
             notification_state,
             recipe_library=recipe_library,
             program_library=program_library,
+            quarantined_plants=coordinator._quarantined_plants,  # noqa: SLF001
+            active_run=coordinator.grow_runs.active_run,
         )
 
         svc_ctx = ServiceContext(
@@ -192,6 +198,8 @@ class CoordinatorBuilder:
             invalidate_cache=cache.invalidate,
             save_layout_callback=coordinator.async_save_plant_layout_snapshot,
             publish_callback=coordinator.async_publish_committed_state,
+            hand_watering_callback=coordinator.abandon_pending_irrigation_observation,
+            active_run_callback=coordinator.grow_runs.active_run,
         )
 
         growspace_manager = GrowspaceManager(
@@ -236,10 +244,11 @@ class CoordinatorBuilder:
         # Reads the coordinator's live options, so a connection change made in
         # the options flow takes effect without rebuilding the coordinator.
         vision_connection = VisionConnection(self.hass, lambda: coordinator.options)
+        evidence_store = self.hass.data.get(DOMAIN, {}).get("vision_evidence_store")
         vision_scheduler = VisionCheckupScheduler(
             self.hass,
             coordinator,
-            evidence_store=self.hass.data.get(DOMAIN, {}).get("vision_evidence_store"),
+            evidence_store=evidence_store,
         )
         briefing_scheduler = BriefingScheduler(self.hass, coordinator)
         photoperiod_checker = PhotoperiodFlipChecker(self.hass, coordinator)
@@ -255,7 +264,12 @@ class CoordinatorBuilder:
             store=alert_store,
             ai_assistant_factory=_make_ai_assistant,
         )
-        capture_continuity = CaptureContinuityMonitor(continuity_store, alert_monitor)
+        continuity_notifier = ContinuityNotifier(
+            self.hass, coordinator, continuity_delivery_store
+        )
+        capture_continuity = CaptureContinuityMonitor(
+            continuity_store, alert_monitor, evidence_store, continuity_notifier
+        )
 
         # ------------------------------------------------------------------
         # Phase 4 – attach all services to the coordinator
@@ -285,6 +299,7 @@ class CoordinatorBuilder:
             photoperiod_checker=photoperiod_checker,
             alert_monitor=alert_monitor,
             capture_continuity=capture_continuity,
+            continuity_notifier=continuity_notifier,
             conversation_store=conversation_store,
             tank_monitor=tank_monitor,
         )

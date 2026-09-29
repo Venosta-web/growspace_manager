@@ -32,6 +32,8 @@ from .data_access.vision_evidence_store import (
 from .ec_ramp_migration import evaluate_ec_ramp_migration_issues
 from .exhaust_migration import evaluate_exhaust_migration_issues
 from .intent import async_setup_intents
+from .irrigation_cap_migration import evaluate_irrigation_cap_issues
+from .irrigation_safety_store import IrrigationSafetyStore
 from .services.seedfinder_scraper import SeedfinderScraper
 from .strain_library import StrainLibrary
 from .views import StrainLibraryImageView, StrainLibraryUploadView
@@ -123,6 +125,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
         seedfinder_scraper=scraper_instance,
     )
     await coordinator.async_load()  # Load data into the coordinator
+    if isinstance(coordinator.irrigation_safety, IrrigationSafetyStore):
+        await coordinator.irrigation_safety.async_initialize_controls(
+            coordinator.growspaces
+        )
+        coordinator.irrigation_safety.add_override_listener(
+            lambda *_: coordinator.async_update_listeners()
+        )
+        await coordinator.irrigation_safety.async_start_overrides()
 
     entry.runtime_data = coordinator
 
@@ -160,6 +170,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
                 rows=pending["rows"],
                 plants_per_row=pending["plants_per_row"],
                 notification_target=pending.get("notification_target"),
+                **{
+                    key: pending[key]
+                    for key in ("growspace_type", "setup_preset", "environment_config")
+                    if key in pending
+                },
             )
             _LOGGER.info(
                 "Created pending growspace: %s", pending.get("name", "unknown")
@@ -170,7 +185,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
             new_data.pop("pending_growspace")
             hass.config_entries.async_update_entry(entry, data=new_data)
 
-        except KeyError, RuntimeError:
+        except Exception:
             _LOGGER.exception(
                 "Failed to create pending growspace %s",
                 pending.get("name", "unknown"),
@@ -197,9 +212,52 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
 
     # Raise/clear the exhaust-fan sole-ownership migration repair (ADR-0019)
     evaluate_exhaust_migration_issues(hass, coordinator)
+    evaluate_irrigation_cap_issues(hass, coordinator)
+    if isinstance(coordinator.irrigation_safety, IrrigationSafetyStore):
+        for growspace_id in coordinator.growspaces:
+            if not coordinator.irrigation_safety.irrigation_review_pending(
+                growspace_id
+            ):
+                continue
+            async_create_issue(
+                hass,
+                DOMAIN,
+                f"irrigation_arm_review_{growspace_id}",
+                is_fixable=False,
+                severity=IssueSeverity.WARNING,
+                translation_key="irrigation_arm_review",
+                translation_placeholders={
+                    "growspace": coordinator.growspaces[growspace_id].name
+                },
+            )
 
     # Raise/clear the unmigrated EC ramp curve repair (ADR-0046)
     evaluate_ec_ramp_migration_issues(hass, coordinator)
+
+    # Repairs are reconstructed from the write-through safety store at startup.
+    for growspace_id, growspace in coordinator.growspaces.items():
+        outputs = tuple(
+            entity
+            for entity in (
+                growspace.irrigation_config.irrigation_pump_entity,
+                growspace.irrigation_config.drain_pump_entity,
+            )
+            if entity
+        )
+        fault = coordinator.irrigation_safety.fault_for(growspace_id, outputs)
+        if fault is not None:
+            async_create_issue(
+                hass,
+                DOMAIN,
+                f"irrigation_fault_{growspace_id}",
+                is_fixable=False,
+                severity=IssueSeverity.ERROR,
+                translation_key="irrigation_fault",
+                translation_placeholders={
+                    "growspace": growspace.name,
+                    "detail": fault.reason.detail,
+                },
+            )
 
     entry.async_on_unload(lambda: _async_cancel_coordinators(entry.runtime_data))
 

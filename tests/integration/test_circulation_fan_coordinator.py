@@ -16,6 +16,7 @@ from custom_components.growspace_manager.models import (
 from custom_components.growspace_manager.models.growspace import CirculationFanConfig
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 
 @pytest.fixture
@@ -221,7 +222,7 @@ async def test_humidity_mode_below_band_sets_min_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 10},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -246,7 +247,7 @@ async def test_humidity_mode_above_band_sets_max_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -271,7 +272,7 @@ async def test_humidity_mode_in_band_interpolates_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -301,7 +302,7 @@ async def test_temperature_mode_below_band_sets_min_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 20},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -326,7 +327,22 @@ async def test_temperature_mode_above_band_sets_max_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 80},
-        blocking=False,
+        blocking=True,
+    )
+
+
+async def test_a_failed_circulation_command_is_counted(mock_hass: MagicMock) -> None:
+    """The fan's refusal is counted against circulation, not swallowed (#792)."""
+    env = _make_env_config(mode=FanRegulationMode.HUMIDITY)
+    mock_hass.states.get.return_value = MagicMock(state="65.0")
+    mock_hass.services.async_call.side_effect = HomeAssistantError("no answer")
+    main_coord = _make_coordinator("gs1", env)
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    await coord._async_regulate()
+
+    main_coord.reliability.record.assert_called_once_with(
+        "gs1", "climate.command_failure.circulation"
     )
 
 
@@ -357,7 +373,34 @@ async def test_all_fan_entities_receive_set_percentage(
     for call in mock_hass.services.async_call.await_args_list:
         assert call[0][0] == "fan"
         assert call[0][1] == "set_percentage"
-        assert call[1]["blocking"] is False
+        assert call[1]["blocking"] is True
+
+
+async def test_fans_after_a_withdrawn_command_gate_are_left_alone(
+    mock_hass: MagicMock,
+) -> None:
+    """A stop that lands between two fans is honoured before the second one."""
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        humidity_target=60.0,
+        humidity_tolerance=5.0,
+        min_speed=0,
+        max_speed=100,
+        circulation_fan_entities=["fan.circ_1", "fan.circ_2"],
+    )
+    mock_hass.states.get.return_value = MagicMock(state="65.0")
+    main_coord = _make_coordinator("gs1", env)
+    # Allowed on entry and for the first fan, withdrawn before the second.
+    main_coord.irrigation_safety.commands_allowed.side_effect = [True, True, False]
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    await coord._async_regulate()
+
+    commanded = [
+        call[0][2]["entity_id"]
+        for call in mock_hass.services.async_call.await_args_list
+    ]
+    assert commanded == ["fan.circ_1"]
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +514,7 @@ async def test_vpd_mode_at_midpoint_interpolates_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -496,7 +539,7 @@ async def test_vpd_mode_below_band_sets_max_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -521,7 +564,7 @@ async def test_vpd_mode_above_band_sets_min_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 10},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -575,7 +618,7 @@ async def test_vpd_mode_uses_lowest_valid_sensor_reading(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -630,7 +673,7 @@ async def test_vpd_mode_null_thresholds_no_override(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -663,7 +706,7 @@ async def test_vpd_mode_high_temp_breach_overrides_to_max_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -696,7 +739,7 @@ async def test_vpd_mode_low_temp_breach_overrides_to_min_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 10},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -729,7 +772,7 @@ async def test_vpd_mode_override_active_ignores_vpd_sensor(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -772,7 +815,7 @@ async def test_vpd_mode_override_deactivates_after_hysteresis(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 100},
-        blocking=False,
+        blocking=True,
     )
     assert coord._temp_override_active is True
 
@@ -789,7 +832,7 @@ async def test_vpd_mode_override_deactivates_after_hysteresis(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},  # back to VPD speed
-        blocking=False,
+        blocking=True,
     )
     assert coord._temp_override_active is False
 
@@ -831,7 +874,7 @@ async def test_wind_enabled_applies_offset_at_quarter_period(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 60},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -867,7 +910,7 @@ async def test_wind_output_clamped_to_max_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -903,7 +946,7 @@ async def test_wind_output_clamped_to_min_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 10},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -935,7 +978,7 @@ async def test_wind_disabled_produces_stable_speed(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -975,7 +1018,7 @@ async def test_wind_is_suspended_during_high_temp_override(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -1015,7 +1058,7 @@ async def test_wind_is_suspended_during_low_temp_override(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 10},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -1048,7 +1091,7 @@ async def test_negative_wind_cannot_reduce_low_vpd_maximum(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -1074,6 +1117,9 @@ async def test_on_tick_creates_background_task(
     call_args = config_entry.async_create_background_task.call_args
     assert call_args[0][0] is mock_hass
     assert call_args[0][2] == "circulation_fan_regulate"
+    # The mock never runs the coroutine; close it, or whichever test is running
+    # when it is collected fails on "coroutine was never awaited".
+    call_args[0][1].close()
 
 
 # ---------------------------------------------------------------------------
@@ -1312,7 +1358,7 @@ async def test_stage_vpd_enabled_regulate_uses_stage_target(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 0},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -1338,7 +1384,7 @@ async def test_stage_vpd_disabled_uses_static_target(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -1365,7 +1411,7 @@ async def test_stage_vpd_no_plants_falls_back_to_static_target(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.circ", "percentage": 50},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -1583,13 +1629,13 @@ async def test_ac_infinity_circulation_driven_by_mode_and_intensity(
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.tent_port2_mode", "option": "On"},
-        blocking=False,
+        blocking=True,
     )
     mock_hass.services.async_call.assert_any_await(
         "number",
         "set_value",
         {ATTR_ENTITY_ID: "number.tent_port2_on_speed", "value": 1},
-        blocking=False,
+        blocking=True,
     )
     assert mock_hass.services.async_call.await_count == 2
 

@@ -272,6 +272,9 @@ async def test_zero_plants_reports_idle_phase_no_pump(
         # The Infiltration Monitor orders sensor timestamps; a bare MagicMock
         # attribute is not orderable, and an absent one is simply not a sample.
         state.last_updated = None
+        # The validity check (#789) needs to know when it last reported, on its
+        # own clock rather than the patched steering one.
+        state.last_changed = state.last_reported = dt_util.utcnow()
         mock_hass.states.get.return_value = state
         await coord._update_loop(now)
 

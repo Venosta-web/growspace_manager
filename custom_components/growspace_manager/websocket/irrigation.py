@@ -174,12 +174,7 @@ async def websocket_get_tank_water_history(
     range_key: str = msg["range"]
     empty = {"growspace_id": growspace_id, "range": range_key, "buckets": []}
 
-    growspace = coordinator.growspaces.get(growspace_id)
-    if growspace is None:
-        return empty
-
-    env = growspace.environment_config
-    if env.irrigation_flow_sensors or env.drain_volume_sensors:
+    if coordinator.growspaces.get(growspace_id) is None:
         return empty
 
     trackers = coordinator.services.growspaces.get_all_trackers_for_growspace(

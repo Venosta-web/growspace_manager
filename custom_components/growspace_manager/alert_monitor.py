@@ -25,12 +25,15 @@ Storage layout (``growspace_manager.ai_alerts``)::
     }
 
 The list is capped at :attr:`AlertMonitor.MAX_ALERTS` entries; oldest entries
-are evicted when the cap is exceeded.
+are evicted when the cap is exceeded — except a Capture Continuity Break whose
+condition is still active, which is current rather than old. The Inbox is never
+the authority for streak state: the Capture Continuity Monitor rebuilds that
+from the Vision Evidence Store and reconciles the Inbox to it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 import logging
 from typing import TYPE_CHECKING, Any
 import uuid
@@ -72,7 +75,14 @@ def _serialize_alert(alert: dict[str, Any]) -> dict[str, Any]:
         **{
             k: v
             for k, v in alert.items()
-            if k not in {"alert_id", "alert_type", "timestamp", "resolution_notes"}
+            if k
+            not in {
+                "alert_id",
+                "alert_type",
+                "timestamp",
+                "resolution_notes",
+                "activation_id",
+            }
         },
         "id": alert["alert_id"],
         "type": alert["alert_type"],
@@ -192,10 +202,7 @@ class AlertMonitor:
         }
 
         self._alerts.append(alert)
-
-        # Enforce cap — evict oldest
-        if len(self._alerts) > self.MAX_ALERTS:
-            self._alerts = self._alerts[-self.MAX_ALERTS :]
+        self._trim()
 
         await self._async_save()
 
@@ -209,31 +216,81 @@ class AlertMonitor:
         self,
         state: CaptureContinuityState,
     ) -> dict[str, Any]:
-        """Create one equipment Triage Alert per active continuity streak."""
+        """Create one equipment Triage Alert per active continuity streak.
+
+        A streak activates once, so its alert is found by the Camera Assignment
+        and the activation it records. An active alert of the same assignment
+        that records an *earlier* activation is a condition whose clear never
+        arrived; it is closed rather than made to answer for the new streak.
+        """
+        activation_id = state.streak_started_capture_id
         for active_alert in reversed(self._alerts):
-            if _is_active_condition(active_alert, state.growspace_id, state.camera_id):
+            if not _is_active_condition(
+                active_alert, state.growspace_id, state.camera_id
+            ):
+                continue
+            if active_alert.get("activation_id", activation_id) == activation_id:
                 active_alert.update(_continuity_evidence(state))
                 await self._async_save()
                 return active_alert
+            active_alert["condition_active"] = False
+            active_alert["cleared_at"] = state.streak_started_at.isoformat()
+            break
 
-        alert: dict[str, Any] = {
-            "alert_id": str(uuid.uuid4()),
-            "growspace_id": state.growspace_id,
-            "alert_type": "capture_continuity_break",
-            "title": "Capture continuity break",
-            "description": CAPTURE_CONTINUITY_MESSAGE,
-            **_continuity_evidence(state),
-            "condition_active": True,
-            "cleared_at": None,
-            "timestamp": state.latest_captured_at.isoformat(),
-            "resolved": False,
-            "resolution_notes": None,
-        }
+        alert = _continuity_alert(state, raised_at=state.latest_captured_at)
         self._alerts.append(alert)
-        if len(self._alerts) > self.MAX_ALERTS:
-            self._alerts = self._alerts[-self.MAX_ALERTS :]
+        self._trim()
         await self._async_save()
         return alert
+
+    async def async_reconcile_capture_continuity(
+        self,
+        active: Iterable[tuple[CaptureContinuityState, datetime]],
+        *,
+        cleared_at: datetime,
+    ) -> None:
+        """Make the Inbox agree with the conditions recovered from evidence.
+
+        ``active`` holds every currently active streak with the moment it
+        activated. Each one's alert has its derived evidence corrected in place
+        — identity, raise time, grower resolution and notes are kept — and an
+        alert recorded before activations had identity adopts the current one.
+        An active condition with no alert gets exactly one, raised at its
+        activation. Every other active condition, including one whose Camera
+        Assignment no longer exists, is cleared. Nothing is created for a
+        condition that has already cleared.
+        """
+        current = {
+            (state.growspace_id, state.camera_id): (state, activated_at)
+            for state, activated_at in active
+        }
+        reconciled: set[tuple[str, str]] = set()
+        changed = False
+        for alert in reversed(self._alerts):
+            if not _is_continuity_condition(alert):
+                continue
+            key = (alert["growspace_id"], alert["camera_id"])
+            recovered = current.get(key)
+            if (
+                recovered is not None
+                and key not in reconciled
+                and alert.get("activation_id", recovered[0].streak_started_capture_id)
+                == recovered[0].streak_started_capture_id
+            ):
+                alert.update(_continuity_evidence(recovered[0]))
+                reconciled.add(key)
+            else:
+                alert["condition_active"] = False
+                alert["cleared_at"] = cleared_at.isoformat()
+            changed = True
+        for key, (state, activated_at) in current.items():
+            if key in reconciled:
+                continue
+            self._alerts.append(_continuity_alert(state, raised_at=activated_at))
+            changed = True
+        if changed:
+            self._trim()
+            await self._async_save()
 
     async def async_clear_capture_continuity_break(
         self,
@@ -340,9 +397,34 @@ class AlertMonitor:
     # Persistence
     # ------------------------------------------------------------------
 
+    def _trim(self) -> None:
+        """Evict the oldest alerts beyond the cap, never a live condition.
+
+        A Capture Continuity Break whose condition is still active is current,
+        not old: evicting it would leave the condition invisible and let its
+        next capture raise the same activation as a new alert.
+        """
+        excess = len(self._alerts) - self.MAX_ALERTS
+        if excess <= 0:
+            return
+        kept: list[dict[str, Any]] = []
+        for alert in self._alerts:
+            if excess > 0 and not _is_continuity_condition(alert):
+                excess -= 1
+                continue
+            kept.append(alert)
+        self._alerts = kept
+
     async def _async_save(self) -> None:
         """Persist the current alerts list to the Store."""
         await self._store.async_save({"alerts": self._alerts})
+
+
+def _is_continuity_condition(alert: dict[str, Any]) -> bool:
+    """Match any Capture Continuity Break whose condition is still active."""
+    return bool(
+        alert["alert_type"] == "capture_continuity_break" and alert["condition_active"]
+    )
 
 
 def _is_active_condition(
@@ -355,17 +437,40 @@ def _is_active_condition(
     Streak ownership is the pair, not the camera alone: one camera assigned to
     two growspaces keeps two conditions, and neither may answer for the other.
     """
-    return bool(
-        alert["alert_type"] == "capture_continuity_break"
+    return (
+        _is_continuity_condition(alert)
         and alert["growspace_id"] == growspace_id
         and alert["camera_id"] == camera_id
-        and alert["condition_active"]
     )
 
 
-def _continuity_evidence(state: CaptureContinuityState) -> dict[str, Any]:
-    """Serialize only equipment evidence, never Bayesian or AI fields."""
+def _continuity_alert(
+    state: CaptureContinuityState, *, raised_at: datetime
+) -> dict[str, Any]:
+    """Build a new equipment Triage Alert for one activated streak."""
     return {
+        "alert_id": str(uuid.uuid4()),
+        "growspace_id": state.growspace_id,
+        "alert_type": "capture_continuity_break",
+        "title": "Capture continuity break",
+        "description": CAPTURE_CONTINUITY_MESSAGE,
+        **_continuity_evidence(state),
+        "condition_active": True,
+        "cleared_at": None,
+        "timestamp": raised_at.isoformat(),
+        "resolved": False,
+        "resolution_notes": None,
+    }
+
+
+def _continuity_evidence(state: CaptureContinuityState) -> dict[str, Any]:
+    """Serialize only equipment evidence, never Bayesian or AI fields.
+
+    ``activation_id`` is internal: it lets recovery and a notifier recognise
+    one activation, and never reaches the wire.
+    """
+    return {
+        "activation_id": state.streak_started_capture_id,
         "camera_id": state.camera_id,
         "streak_started_at": state.streak_started_at.isoformat(),
         "consecutive_count": state.consecutive_count,

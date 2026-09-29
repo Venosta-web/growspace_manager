@@ -43,6 +43,7 @@ from .irrigation import (
 __all__ = [
     "ENVIRONMENT_FIELD_OWNERSHIP",
     "CirculationFanConfig",
+    "ClimateFailSafeConfig",
     "DLIState",
     "EnergyTracking",
     "EnvironmentConfig",
@@ -54,6 +55,7 @@ __all__ = [
     "Growspace",
     "GrowspaceEvent",
     "GrowspaceType",
+    "LightLeakConfig",
     "SensorGroup",
     "Subarea",
     "VisionCheckupConfig",
@@ -213,6 +215,55 @@ class GrowLightConfig(BaseModel):
 
 
 @dataclass(slots=True)
+class LightLeakConfig(BaseModel):
+    """Configuration for the Light Leak Guard (#794).
+
+    During the computed dark period of a flowering growspace the guard alerts
+    when a managed grow light reports on, or when ``illuminance_sensor`` reads
+    above ``threshold_lux``, for longer than ``debounce_seconds``. It is its own
+    sub-config rather than part of ``GrowLightConfig`` because it also guards
+    rooms whose lights run on a hardware timer, with only a lux sensor to go on.
+
+    ``switch_off_lights`` is opt-in: it switches the managed grow lights off for
+    the rest of the dark period. ``all_stages`` extends the watch beyond flower.
+    """
+
+    enabled: bool = True
+    illuminance_sensor: str | None = None
+    threshold_lux: float = 1.0
+    debounce_seconds: int = 120
+    switch_off_lights: bool = False
+    all_stages: bool = False
+
+
+@dataclass(slots=True)
+class ClimateFailSafeConfig(BaseModel):
+    """Configuration for the Climate Fail-Safe (#792).
+
+    When a climate controller's control sensor has had no usable reading for
+    longer than ``sensor_timeout_minutes``, the humidifier and dehumidifier go
+    to their safe state and the exhaust to ``exhaust_fallback_speed``; control
+    resumes when the sensor reads again. A sensor is stale once it has not
+    reported for three of its learned intervals, capped by
+    ``sensor_stale_after_minutes`` (0: never stale).
+
+    A safe state is ``off``, ``on`` or ``hold`` (leave the device as it is);
+    the humidifier and dehumidifier may not both be ``on``. A
+    ``*_max_runtime_minutes`` above 0 switches that device off after running
+    that long without a break. It is its own sub-config so no card tab that
+    replaces a device's config whole can drop it.
+    """
+
+    sensor_timeout_minutes: int = 10
+    sensor_stale_after_minutes: int = 30
+    humidifier_safe_state: str = "off"
+    dehumidifier_safe_state: str = "off"
+    exhaust_fallback_speed: int = 50
+    humidifier_max_runtime_minutes: int = 0
+    dehumidifier_max_runtime_minutes: int = 0
+
+
+@dataclass(slots=True)
 class EnvironmentConfig(BaseModel):
     """Configuration for environment sensors and devices."""
 
@@ -294,6 +345,10 @@ class EnvironmentConfig(BaseModel):
     )
     exhaust_fan_config: ExhaustFanConfig = field(default_factory=ExhaustFanConfig)
     growlight_config: GrowLightConfig = field(default_factory=GrowLightConfig)
+    light_leak_config: LightLeakConfig = field(default_factory=LightLeakConfig)
+    climate_fail_safe_config: ClimateFailSafeConfig = field(
+        default_factory=ClimateFailSafeConfig
+    )
     vpd_optimal_overrides: dict[str, dict[str, dict[str, float]]] = field(
         default_factory=dict
     )
@@ -391,6 +446,12 @@ class EnvironmentConfig(BaseModel):
 
         if data.get("growlight_config") is None:
             data["growlight_config"] = {}
+
+        if data.get("light_leak_config") is None:
+            data["light_leak_config"] = {}
+
+        if data.get("climate_fail_safe_config") is None:
+            data["climate_fail_safe_config"] = {}
 
         # Migration: singular -> plural list
         migrations = {
@@ -564,6 +625,8 @@ ENVIRONMENT_FIELD_OWNERSHIP: dict[str, FieldOwnership] = {
     "circulation_fan_config": _SUB_CONFIG,
     "exhaust_fan_config": _SUB_CONFIG,
     "growlight_config": _SUB_CONFIG,
+    "light_leak_config": _SUB_CONFIG,
+    "climate_fail_safe_config": _SUB_CONFIG,
     "vpd_optimal_overrides": _GROWER,
 }
 
@@ -636,6 +699,9 @@ class GrowspaceEvent(BaseModel):
     severity: float
     reasons: list[str] = field(default_factory=list)
     category: str = "alert"
+    watering_id: str | None = None
+    user_id: str | None = None
+    from_monitored_tank: bool | None = None
 
 
 @dataclass(slots=True)
@@ -652,6 +718,7 @@ class WaterUsageData(BaseModel):
     """Tracks cumulative water usage per growspace."""
 
     total_liters: float = 0.0
+    monitored_tank_liters: float = 0.0
     cycle_start_date: str = ""
     daily_readings: list[dict[str, Any]] = field(default_factory=list)
     max_daily_readings: int = 365
@@ -683,6 +750,10 @@ class Growspace(BaseModel):
     humidifier_config: dict[str, Any] = field(default_factory=dict)
     irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
+    setup_preset: str | None = None
+    # Offered Setup Modules, stamped by a Setup Preset (domain/setup_preset.py).
+    # None means never stamped; the card then offers every module.
+    setup_modules: dict[str, bool] | None = None
     drain_config: DrainConfig = field(default_factory=lambda: DrainConfig())
     energy_tracking: EnergyTracking = field(default_factory=lambda: EnergyTracking())
     water_usage: WaterUsageData = field(default_factory=lambda: WaterUsageData())
@@ -708,8 +779,17 @@ class Growspace(BaseModel):
             data["environment_config"] = {}
 
         # Migration: Fix legacy irrigation schedule format
-        if "irrigation_config" in data and isinstance(data["irrigation_config"], dict):
+        if data.get("irrigation_config") is None:
+            data["irrigation_config"] = {
+                "daily_volume_cap_liters": None,
+                "max_cycles_per_day": None,
+            }
+        if isinstance(data["irrigation_config"], dict):
             irr_config = data["irrigation_config"].copy()
+            # Old installations had no daily caps. Preserve that choice on load;
+            # the dataclass defaults above apply only to newly created spaces.
+            irr_config.setdefault("daily_volume_cap_liters", None)
+            irr_config.setdefault("max_cycles_per_day", None)
 
             # Sanitize veg_day_hours
             if "veg_day_hours" in irr_config:

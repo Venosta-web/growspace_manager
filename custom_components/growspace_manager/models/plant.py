@@ -152,9 +152,16 @@ class Plant(BaseModel):
     last_ipm: str | None = None
     last_ipm_type: str | None = None
     phi_clearance_date: str | None = None
-    stage_history: list[StageHistoryItem] = field(default_factory=list)
+    # Stored history is untrusted; Plant Lifecycle validates it and reports repairs.
+    stage_history: list[Any] = field(default_factory=list)
     phenotype_score: PhenotypeScore = field(default_factory=PhenotypeScore)
     harvest_metrics: HarvestMetrics = field(default_factory=HarvestMetrics)
+    # Fixed on the first transition to dry. A None run with a source growspace
+    # is an explicit unattributed harvest, not a lookup to perform later.
+    harvest_source_growspace_id: str | None = None
+    harvest_source_run_id: str | None = None
+    harvest_outcome_state: str = "pending"
+    harvest_outcome_reason: str | None = None
     drying_data: DryingData = field(default_factory=DryingData)
 
     @classmethod

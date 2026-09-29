@@ -8,25 +8,40 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+import homeassistant.util.dt as dt_util
 
 from .alert_monitor import AlertMonitor
 from .briefing_scheduler import BriefingScheduler
 from .cache import CacheManager
 from .capture_continuity_monitor import CaptureContinuityMonitor
-from .const import COORDINATOR_UPDATE_INTERVAL_MINUTES, DOMAIN, VERSION
+from .const import (
+    CONF_UNATTRIBUTED_RETENTION_DAYS,
+    COORDINATOR_UPDATE_INTERVAL_MINUTES,
+    DOMAIN,
+    VERSION,
+)
+from .continuity_notifier import ContinuityNotifier
 from .conversation_store import ConversationStore
 from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
+from .delivery_attempt_store import DeliveryAttemptStore
+from .domain.grow_run import ParticipantIdentity
+from .domain.unattributed_activity import (
+    DEFAULT_RETENTION_DAYS as DEFAULT_UNATTRIBUTED_RETENTION_DAYS,
+)
 from .environment_analyzer import EnvironmentAnalyzer
 from .event_bus_pkg import GrowspaceEventBus
+from .grow_run_store import GrowRunStore
 from .growspace_validator import GrowspaceValidator
 from .import_export_manager import ImportExportManager
 from .integration_types import DateInput
 from .irrigation_program_progression import IrrigationProgramProgression
+from .irrigation_safety_store import IrrigationSafetyStore
 from .managers.genetics import GeneticsManager
 from .managers.growspace import GrowspaceManager
 from .managers.irrigation_program import IrrigationProgramLibrary
@@ -38,7 +53,9 @@ from .models import Growspace, GrowspaceEvent, NutrientInventory, Plant
 from .notification_manager import NotificationManager
 from .notifications import NotificationSettingsManager
 from .photoperiod_flip_checker import PhotoperiodFlipChecker
+from .plant_record_loader import load_plant_records
 from .presentation import PlantViewModelBuilder
+from .reliability_store import ReliabilityStore
 from .service_coordinator_locator import ServiceCoordinatorLocator
 from .services.environment_reporter import EnvironmentReporter
 from .services.facade import ServiceFacade
@@ -181,6 +198,20 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.import_export_manager = import_export_manager
         self.validator = validator
         self.options = options or {}
+        self._quarantined_plants: dict[str, Any] = {}
+        self.irrigation_safety = IrrigationSafetyStore(hass, entry.entry_id)
+        self.reliability = ReliabilityStore(hass, entry.entry_id)
+        self.deliveries = DeliveryAttemptStore(hass, entry.entry_id)
+        self.grow_runs = GrowRunStore(
+            hass,
+            entry.entry_id,
+            retention_days=int(
+                entry.options.get(
+                    CONF_UNATTRIBUTED_RETENTION_DAYS,
+                    DEFAULT_UNATTRIBUTED_RETENTION_DAYS,
+                )
+            ),
+        )
         self.created_entity_ids: list[tuple[str, str, str]] = []
 
     def _attach_services(
@@ -210,6 +241,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         photoperiod_checker: PhotoperiodFlipChecker,
         alert_monitor: AlertMonitor,
         capture_continuity: CaptureContinuityMonitor,
+        continuity_notifier: ContinuityNotifier,
         conversation_store: ConversationStore,
         tank_monitor: TankLevelMonitor,
     ) -> None:
@@ -238,6 +270,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.photoperiod_checker = photoperiod_checker
         self.alert_monitor = alert_monitor
         self.capture_continuity = capture_continuity
+        self.continuity_notifier = continuity_notifier
         self.conversation_store = conversation_store
         self.tank_monitor = tank_monitor
         _LOGGER.info("--- COORDINATOR INITIALIZED WITH OPTIONS: %s ---", self.options)
@@ -354,6 +387,8 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Keeps the Vision status cache warm so `get_vision_status` never has to
         # probe. It is a no-op while the cache is fresh (ADR 0043).
         await self.vision_connection.async_refresh_if_stale()
+        # A day passes without anything moving; this is what notices it.
+        await self._async_observe_unattributed_activity()
 
         return self.data
 
@@ -408,23 +443,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
 
         # Deserialize plants using mashumaro
-        raw_plants = data.get("plants", {})
-        plants = {}
-        for pid, pdata in raw_plants.items():
-            if isinstance(pdata, Plant):
-                plants[pid] = pdata
-            elif isinstance(pdata, dict):
-                try:
-                    plants[pid] = Plant.from_dict(pdata)
-                except ValueError, KeyError, TypeError, Exception:
-                    _LOGGER.exception(
-                        "Failed to load plant %s due to data structure mismatch",
-                        pid,
-                    )
-            else:
-                _LOGGER.error(
-                    "Failed to load plant %s (invalid type: %s)", pid, type(pdata)
-                )
+        plants = load_plant_records(self.hass, data, self._quarantined_plants)
 
         # Update the repository with deserialized objects
         self._data_repository.load_growspaces(growspaces)
@@ -451,14 +470,98 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.cache.invalidate()
         candidate_data = self.view_model_builder.build_data_property()
         await self.storage_manager.async_force_save()
+        await self.async_project_activity()
+        await self.async_project_harvest_outcomes()
         self.data = candidate_data
         await self._publish_current_data()
 
+    async def async_project_activity(self) -> None:
+        """Drain durable Plant facts after commit and at restart.
+
+        Then let each Run-free Growspace's Unattributed Activity Ledger note
+        who stands in it today. That is evidence, never a reason to fail the
+        cultivation change that got us here.
+        """
+        for fact in tuple(self.storage_manager.activity_facts):
+            if fact.projected:
+                continue
+            try:
+                await self.grow_runs.async_project_movement(fact)
+                await self.storage_manager.async_mark_fact_projected(fact.fact_id)
+            except Exception:
+                _LOGGER.exception(
+                    "Plant activity fact %s remains pending for projection",
+                    fact.fact_id,
+                )
+                break
+        await self._async_observe_unattributed_activity()
+
+    async def _async_observe_unattributed_activity(self) -> None:
+        """Extend each Growspace's Unattributed Activity coverage to now."""
+        occupancy: dict[str, list[str]] = {gid: [] for gid in self.growspaces}
+        for plant in self.plants.values():
+            if plant.growspace_id in occupancy:
+                occupancy[plant.growspace_id].append(plant.plant_id)
+        try:
+            await self.grow_runs.async_observe(dt_util.utcnow(), occupancy)
+        except Exception:
+            _LOGGER.exception("Unattributed Activity coverage was not recorded")
+
+    async def async_project_harvest_outcomes(self) -> None:
+        """Retry source snapshots from the committed Plant image.
+
+        The same image names each Run Participant, so the identity a Run is
+        finalized with is the last one its Plant had.
+        """
+        try:
+            await self.grow_runs.async_project_harvest_outcomes(
+                list(self.plants.values())
+            )
+        except Exception:
+            _LOGGER.exception("Harvest outcomes remain pending for Run projection")
+        try:
+            await self.grow_runs.async_project_identities(self.participant_identities())
+        except Exception:
+            _LOGGER.exception("Run Participant identities were not refreshed")
+
+    def participant_identities(self) -> dict[str, ParticipantIdentity]:
+        """Each live Plant's identity, named as its Home Assistant entity is."""
+        registry = er.async_get(self.hass)
+        identities: dict[str, ParticipantIdentity] = {}
+        for plant in self.plants.values():
+            entity_id = registry.async_get_entity_id(
+                Platform.SENSOR, DOMAIN, f"{DOMAIN}_{plant.plant_id}"
+            )
+            entry = registry.async_get(entity_id) if entity_id else None
+            name = (entry.name or entry.original_name) if entry else None
+            genetics = plant.genetics
+            identities[plant.plant_id] = ParticipantIdentity(
+                plant_id=plant.plant_id,
+                plant_name=name or f"{plant.strain} ({plant.row},{plant.col})",
+                strain_id=genetics.strain_id,
+                strain_name=genetics.strain_name,
+                phenotype_id=genetics.phenotype_id,
+                phenotype_name=genetics.phenotype_name,
+            )
+        return identities
+
     async def async_publish_committed_state(self) -> None:
         """Publish domain state that was persisted through a staged transaction."""
+        await self.async_project_activity()
         self.cache.invalidate()
         self.data = self.view_model_builder.build_data_property()
         await self._publish_current_data()
+
+    def irrigation_delivering_outputs(self, growspace_id: str) -> tuple[str, ...]:
+        """The outputs a growspace's irrigation holds ON now; none without one."""
+        irrigation = self._subsystem_manager.irrigation_coordinators.get(growspace_id)
+        return irrigation.delivering_outputs() if irrigation is not None else ()
+
+    def abandon_pending_irrigation_observation(self, growspace_id: str) -> None:
+        """Discard feedback when hand watering changes a growspace's VWC."""
+        irrigation = self._subsystem_manager.irrigation_coordinators.get(growspace_id)
+        if irrigation is not None:
+            irrigation.abandon_pending_observation()
 
     async def _publish_current_data(self) -> None:
         """Notify projections and dependent coordinators of committed data."""
@@ -474,6 +577,17 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     ].async_request_refresh(),
                     f"irrigation_refresh_{gs_id}",
                 )
+
+    @callback
+    def async_schedule_save(self) -> None:
+        """Schedule a debounced write of runtime state, with no publish.
+
+        For runtime state that must survive a restart whether or not anything
+        commits after it — the steering facts a sub-coordinator restores at
+        setup (#786). ``async_commit`` would rebuild and republish every
+        projection on each pump confirmation just to get the write.
+        """
+        self.storage_manager.async_schedule_save()
 
     async def async_save(self) -> None:
         """Save current data to storage.
@@ -503,6 +617,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         # Cancel all sub-coordinator listeners
         self.async_cancel_subsystems()
+        self.irrigation_safety.async_stop_overrides()
 
         # Unsubscribe all tank water trackers
         await self.services.growspaces.async_unsubscribe_all_trackers()
@@ -510,6 +625,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if hasattr(self, "environment_reporter"):
             self.environment_reporter.unload()
         self._notification_manager.shutdown()
+        self.continuity_notifier.async_stop()
         self.tank_monitor.async_stop()
         self.vision_scheduler.async_stop()
         await self.vision_connection.async_shutdown()
@@ -530,6 +646,11 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         This should be called once during integration setup.
         """
         await self.storage_manager.async_load(self.options)
+        await self.irrigation_safety.async_load()
+        await self.reliability.async_load()
+        await self.grow_runs.async_load()
+        await self.async_project_activity()
+        await self.async_project_harvest_outcomes()
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.
@@ -541,6 +662,19 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Ensure default special growspaces exist
         await self._growspace_manager.ensure_default_growspaces()
         await self.async_commit()
+        self.reliability.record_start(self.growspaces)
+
+        # Continuity streaks are recovered from durable evidence before any
+        # checkup can run, so a scheduled capture never lands on a streak that
+        # has not been rebuilt yet and which activations are historical is
+        # settled before anything could announce one.
+        await self.alert_monitor.async_start()
+        await self.capture_continuity.async_start(
+            {
+                growspace_id: growspace.environment_config.camera_entities
+                for growspace_id, growspace in self.growspaces.items()
+            }
+        )
 
         # Probe Growspace Vision once at setup so the status the card reads is
         # populated before the first coordinator tick.
@@ -552,8 +686,6 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.briefing_scheduler.start()
         self.photoperiod_checker.schedule_all_growspaces()
         await self.tank_monitor.async_start()
-        await self.alert_monitor.async_start()
-        await self.capture_continuity.async_start()
         await self.conversation_store.async_load()
 
         # Initialize environment reporter after data load

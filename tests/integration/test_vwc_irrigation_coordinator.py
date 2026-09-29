@@ -1,12 +1,16 @@
 """Tests for the VWC Irrigation Coordinator."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.growspace_manager.const import EVENT_GROWSPACE_LOG_ENTRY
+from custom_components.growspace_manager.domain.delivery_attempt import (
+    AttemptTrigger,
+    TriggerEvidence,
+)
 from custom_components.growspace_manager.domain.ec_state import (
     ec_modulation_factor_for_reading,
 )
@@ -30,6 +34,11 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
 from homeassistant.util import dt as dt_util
+from tests.delivery_helpers import charge_today
+
+# This suite shares one `hass.states` mock across every sensor, so it
+# cannot model the pump's own state; its OFF readback is answered for them.
+pytestmark = pytest.mark.usefixtures("pump_reads_back_off")
 
 
 def _drive_watering(
@@ -73,6 +82,9 @@ def mock_hass():
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
     hass.states = MagicMock()
+    # Every sensor reads a fresh 40 % unless a test says otherwise: a bare
+    # MagicMock state carries no report time for the validity check (#789).
+    hass.states.get.return_value = _state("40.0")
     # Schedule the coroutine on the loop to avoid "never awaited" warning and actually run it
     hass.async_create_task = MagicMock(side_effect=asyncio.create_task)
     hass.async_create_background_task = MagicMock(
@@ -177,14 +189,23 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
             # _set_phase also fires a logbook event (via _fire_logbook_event) when
             # the phase changes, adding one utcnow() call before the pump cycle.
             "custom_components.growspace_manager.irrigation_coordinator.utcnow",
+            # Every validated moisture read (#789) also reads the clock.
             side_effect=[
-                t0,  # 1. _set_phase("P1 - Ramp Up") logbook event
-                t0,  # 2. _active_events["start"]
-                t0,  # 3. _fire_logbook_event("Irrigation started…")
-                t0,  # 4. command_dt = utcnow() (before switch.turn_on)
-                t0,  # 5. start_dt = utcnow() (switch confirmed 'on')
-                t10,  # 6. end_dt = utcnow()
-                t10,  # 7. _fire_logbook_event("Irrigation completed…")
+                t0,  # 1. the loop's validated VWC read
+                t0,  # 2. _set_phase("P1 - Ramp Up") logbook event
+                t0,  # 3. the shot's validated VWC read (substrate tracker)
+                t0,  # 4. requested_at, as the request reaches the gate
+                t0,  # 5. controller_snapshot's moisture check
+                t0,  # 6. _active_events["start"]
+                t0,  # 7. moisture_before
+                t0,  # 8. _fire_logbook_event("Irrigation started…")
+                t0,  # 9. command_dt = utcnow() (before switch.turn_on)
+                t0,  # 10. start_dt = utcnow() (switch confirmed 'on')
+                t10,  # 11. end_dt = utcnow()
+                t10,  # 12. controller_snapshot's moisture check
+                t10,  # 13. the composer's moisture_after
+                t10,  # 14. _fire_logbook_event("Irrigation completed…")
+                t10,  # 15. the completion report's moisture_after
             ],
         ),
     ):
@@ -208,6 +229,18 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
         assert event.duration_sec == 10
         assert event.start_time is not None
         assert event.end_time is not None
+
+        # The shot's Delivery Attempt carries the decision behind it (ADR-0055).
+        (attempt,) = vwc_coordinator._deliveries.attempts
+        assert attempt.trigger is AttemptTrigger.STEERING
+        assert attempt.trigger_evidence == TriggerEvidence(
+            phase=attempt.trigger_evidence.phase,
+            vwc=40.0,
+            base_s=10.0,
+            vwc_factor=1.0,
+            ec_factor=1.0,
+        )
+        assert attempt.trigger_evidence.phase
 
 
 async def test_p1_target_reached(vwc_coordinator, mock_hass) -> None:
@@ -245,16 +278,26 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
         ),
         patch(
             "custom_components.growspace_manager.irrigation_coordinator.utcnow",
+            # Every validated moisture read (#789) also reads the clock.
             side_effect=[
                 # Case A: phase transition P3→P2 fires a logbook event
-                t0,  # 1. _set_phase("P2 - Maintenance") logbook event
+                t0,  # 1. the loop's validated VWC read
+                t0,  # 2. _set_phase("P2 - Maintenance") logbook event
                 # Case B: pump fires (phase stays P2, no extra logbook from _set_phase)
-                t0,  # 2. _active_events["start"]
-                t0,  # 3. _fire_logbook_event("Irrigation started…")
-                t0,  # 4. command_dt = utcnow() (before switch.turn_on)
-                t0,  # 5. start_dt = utcnow() (switch confirmed 'on')
-                t10,  # 6. end_dt = utcnow()
-                t10,  # 7. _fire_logbook_event("Irrigation completed…")
+                t0,  # 3. the loop's validated VWC read
+                t0,  # 4. the shot's validated VWC read (substrate tracker)
+                t0,  # 5. requested_at, as the request reaches the gate
+                t0,  # 6. controller_snapshot's moisture check
+                t0,  # 7. _active_events["start"]
+                t0,  # 8. moisture_before
+                t0,  # 9. _fire_logbook_event("Irrigation started…")
+                t0,  # 10. command_dt = utcnow() (before switch.turn_on)
+                t0,  # 11. start_dt = utcnow() (switch confirmed 'on')
+                t10,  # 12. end_dt = utcnow()
+                t10,  # 13. controller_snapshot's moisture check
+                t10,  # 14. the composer's moisture_after
+                t10,  # 15. _fire_logbook_event("Irrigation completed…")
+                t10,  # 16. the completion report's moisture_after
             ],
         ),
     ):
@@ -347,18 +390,30 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
 
 async def test_setup_unload(vwc_coordinator, mock_hass) -> None:
     """Test async_setup and async_unload."""
-    with patch(
-        "custom_components.growspace_manager.vwc_irrigation_coordinator.async_track_time_interval"
-    ) as mock_track:
+    mock_hass.states.get.return_value = None
+    with (
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.async_track_time_interval"
+        ) as mock_track,
+        patch(
+            "custom_components.growspace_manager.irrigation_coordinator.async_track_time_interval"
+        ) as mock_startup_poll,
+    ):
         mock_remove = MagicMock()
         mock_track.return_value = mock_remove
+        mock_remove_poll = MagicMock()
+        mock_remove_probe = MagicMock()
+        mock_startup_poll.side_effect = [mock_remove_poll, mock_remove_probe]
 
         await vwc_coordinator.async_setup()
         mock_track.assert_called_once()
+        assert mock_startup_poll.call_count == 2
         assert vwc_coordinator._remove_update_listener is not None
 
         await vwc_coordinator.async_unload()
         mock_remove.assert_called_once()
+        mock_remove_poll.assert_called_once()
+        mock_remove_probe.assert_called_once()
         assert vwc_coordinator._remove_update_listener is None
 
 
@@ -532,9 +587,7 @@ async def test_vwc_skips_watering_when_tank_is_low(
         if entity_id == "sensor.tank_level":
             return _state("20.0")  # Below 30% warning
         if entity_id == "sensor.moisture":
-            return MagicMock(
-                state="40.0"
-            )  # VWC below target → would normally trigger P1 shot
+            return _state("40.0")  # VWC below target → would normally trigger P1 shot
         return None
 
     mock_hass.states.get.side_effect = states_side_effect
@@ -550,6 +603,7 @@ async def test_vwc_skips_watering_when_tank_is_low(
     # Pump switch must not have fired — only a low-tank persistent_notification may appear
     all_calls = [str(c) for c in mock_hass.services.async_call.call_args_list]
     assert not any("switch" in c and "turn_on" in c for c in all_calls)
+    assert any("Low Tank" in c for c in all_calls)
 
 
 async def test_vwc_skips_watering_when_max_cycles_reached(
@@ -559,7 +613,7 @@ async def test_vwc_skips_watering_when_max_cycles_reached(
 ) -> None:
     """When max_cycles_per_day is reached, VWC does not water even if VWC is low."""
     mock_growspace.irrigation_config.max_cycles_per_day = 3
-    vwc_coordinator._cycles_today = 3  # Already at the limit
+    charge_today(vwc_coordinator, cycles=3)  # Already at the limit
 
     now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
     with patch(
@@ -726,12 +780,20 @@ async def test_vwc_soil_trigger_percent_fires_watering_when_below(
         ),
         patch(
             "custom_components.growspace_manager.irrigation_coordinator.utcnow",
+            # Every validated moisture read (#789) also reads the clock.
             side_effect=[
+                t0,  # the loop's validated VWC read
+                t0,  # the shot's validated VWC read (substrate tracker)
+                t0,  # controller_snapshot's moisture check
                 t0,  # _set_phase P3→P2 (no logbook since log_to_logbook=False but
                 # _active_events still calls utcnow)
+                t0,  # moisture_before
                 t0,  # command_dt (before switch.turn_on)
                 t0,  # start_dt (switch confirmed 'on')
                 t10,  # end_dt
+                t10,  # controller_snapshot's moisture check
+                t10,  # the composer's moisture_after
+                t10,  # the completion report's moisture_after
             ],
         ),
     ):
@@ -1232,6 +1294,11 @@ async def test_phase_transition_resets_composer_factors(
     """A verdict flagging the P1->P2 transition resets both composer factors."""
     vwc_coordinator._composer.size_factor = 0.6
     vwc_coordinator._composer.interval_factor = 1.4
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC),
+        moisture_before=40.0,
+        manual=False,
+    )
 
     verdict = SteeringTickVerdict(
         phase="P2 - Maintenance",
@@ -1246,6 +1313,7 @@ async def test_phase_transition_resets_composer_factors(
 
     assert vwc_coordinator._composer.size_factor == 1.0
     assert vwc_coordinator._composer.interval_factor == 1.0
+    assert vwc_coordinator._pending_observation is None
 
 
 async def test_daily_reset_resets_composer_factors(
@@ -1254,21 +1322,23 @@ async def test_daily_reset_resets_composer_factors(
     """The midnight daily-state reset returns both composer factors to 1.0."""
     vwc_coordinator._composer.size_factor = 0.6
     vwc_coordinator._composer.interval_factor = 1.4
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC),
+        moisture_before=40.0,
+        manual=False,
+    )
 
     vwc_coordinator._reset_extra_daily_state()
 
     assert vwc_coordinator._composer.size_factor == 1.0
     assert vwc_coordinator._composer.interval_factor == 1.0
+    assert vwc_coordinator._pending_observation is None
 
 
-async def test_cycle_completion_feeds_composer(
+async def test_fixed_delay_completion_does_not_feed_composer(
     vwc_coordinator: VWCIrrigationCoordinator,
 ) -> None:
-    """A settled irrigation cycle feeds the moisture delta to the ShotComposer.
-
-    Target 50.0, before 40.0, settled after 55.0 -> ratio 1.5 -> size factor 0.5.
-    The base completion behaviour is stubbed so only the wiring is exercised.
-    """
+    """The 15-second logbook reading never updates feedback."""
     now_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
     with (
         patch.object(
@@ -1276,7 +1346,7 @@ async def test_cycle_completion_feeds_composer(
             "_async_report_cycle_completion",
             new_callable=AsyncMock,
         ),
-        patch.object(vwc_coordinator, "_get_sensor_value", return_value=55.0),
+        patch.object(vwc_coordinator, "_moisture_value", return_value=55.0),
     ):
         await vwc_coordinator._async_report_cycle_completion(
             event_type="irrigation",
@@ -1288,8 +1358,136 @@ async def test_cycle_completion_feeds_composer(
             wait_seconds=0.0,
         )
 
+    assert vwc_coordinator._composer.size_factor == 1.0
+    assert vwc_coordinator._composer.interval_factor == 1.0
+
+
+def test_settled_observation_updates_composer_once(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator._infiltration.record(45.0, end)
+    vwc_coordinator._infiltration.record(55.0, end.replace(minute=1))
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=end.replace(minute=2),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+        assert vwc_coordinator._composer.size_factor == 1.0
+        vwc_coordinator._infiltration.record(55.02, end.replace(minute=2))
+        vwc_coordinator._resolve_pending_observation()
+        assert vwc_coordinator._composer.size_factor == 0.5
+        assert vwc_coordinator._composer.interval_factor == 1.5
+        vwc_coordinator._resolve_pending_observation()
+        assert vwc_coordinator._pending_observation is None
+
+
+def test_pending_observation_abandons_on_timeout_or_followup(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator._composer.interval_factor = 1.5
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    deadline = vwc_coordinator._pending_observation.deadline
+    assert deadline == end + timedelta(minutes=3 * 15 * 1.5)
+    vwc_coordinator._composer.interval_factor = 1.0
+    assert vwc_coordinator._pending_observation.deadline == deadline
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=deadline + timedelta(seconds=1),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+    assert vwc_coordinator._pending_observation is None
+
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator._last_cycle_timestamp = (end + timedelta(minutes=1)).isoformat()
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=end + timedelta(minutes=2),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+    assert vwc_coordinator._pending_observation is None
+
+
+def test_manual_run_and_hand_watering_abandon_feedback(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator._irrigation_cycle_started(manual=True)
+    assert vwc_coordinator._pending_observation is None
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=True
+    )
+    assert vwc_coordinator._pending_observation is None
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator.abandon_pending_observation()
+    assert vwc_coordinator._pending_observation is None
+
+
+def test_manual_run_never_trains_adaptive_shot_control(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    """A settled manual pump cycle cannot change either feedback factor."""
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator.growspace.irrigation_strategy.dynamic_shot_enabled = True
+
+    # A person starts a run while feedback from a steering shot is pending.
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end - timedelta(minutes=5), moisture_before=40.0, manual=False
+    )
+    assert vwc_coordinator._pending_observation is not None
+    vwc_coordinator._irrigation_cycle_started(manual=True)
+    assert vwc_coordinator._pending_observation is None
+
+    # This rise would count as an overshoot if the composer had chosen the shot.
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=True
+    )
+    vwc_coordinator._infiltration.record(55.0, end + timedelta(minutes=1))
+    vwc_coordinator._infiltration.record(55.02, end + timedelta(minutes=2))
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=end + timedelta(minutes=3),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+
+    assert vwc_coordinator._pending_observation is None
+    assert vwc_coordinator._composer.size_factor == 1.0
+    assert vwc_coordinator._composer.interval_factor == 1.0
+
+
+def test_dropout_requires_two_new_post_cycle_samples(
+    vwc_coordinator: VWCIrrigationCoordinator,
+) -> None:
+    end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator._irrigation_cycle_ended(
+        end_dt=end, moisture_before=40.0, manual=False
+    )
+    vwc_coordinator._infiltration.record(55.0, end + timedelta(minutes=1))
+    vwc_coordinator._infiltration.reset()
+    vwc_coordinator._infiltration.record(55.01, end + timedelta(minutes=2))
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=end + timedelta(minutes=3),
+    ):
+        vwc_coordinator._resolve_pending_observation()
+        assert vwc_coordinator._pending_observation is not None
+        vwc_coordinator._infiltration.record(55.02, end + timedelta(minutes=3))
+        vwc_coordinator._resolve_pending_observation()
+    assert vwc_coordinator._pending_observation is None
     assert vwc_coordinator._composer.size_factor == 0.5
-    assert vwc_coordinator._composer.interval_factor == 1.5
 
 
 @pytest.mark.parametrize(
@@ -1431,6 +1629,8 @@ def _state(value: str, last_updated: datetime | None = None) -> MagicMock:
     state = MagicMock()
     state.state = value
     state.last_updated = last_updated
+    # A tank reading is validated for freshness (ADR-0050): reported just now.
+    state.last_changed = state.last_reported = dt_util.utcnow()
     return state
 
 

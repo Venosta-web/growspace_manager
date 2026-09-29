@@ -80,7 +80,12 @@ def test_growspace_event_model() -> None:
     assert event.duration_sec == 300
     assert event.severity == 0.95
     assert event.category == "alert"
-    assert event.to_dict() == data
+    assert event.to_dict() == {
+        **data,
+        "watering_id": None,
+        "user_id": None,
+        "from_monitored_tank": None,
+    }
 
 
 # --- 3. Test Sensor Event Capture ---
@@ -331,6 +336,32 @@ async def test_sensor_event_capture(hass: HomeAssistant, mock_coordinator) -> No
             {"sensor_type": "mold_risk"},
             "Mold Risk Alert",
             "Mold Risk detected",
+        ),
+        # The Light Leak Guard's entries carry their own sentence (#794)
+        (
+            "alert",
+            {
+                "sensor_type": "light_leak",
+                "reasons": ["Managed grow lights read back off"],
+            },
+            "Light Leak Alert",
+            "Managed grow lights read back off",
+        ),
+        (
+            "alert",
+            {
+                "sensor_type": "light_leak",
+                "reasons": ["Light leak ended"],
+                "duration_sec": 180,
+            },
+            "Light Leak Alert",
+            "Light leak ended after 3 minutes",
+        ),
+        (
+            "alert",
+            {"sensor_type": "light_leak", "duration_sec": 45},
+            "Light Leak Alert",
+            "Light leak after 45 seconds",
         ),
         # Environment cases ("environment")
         (

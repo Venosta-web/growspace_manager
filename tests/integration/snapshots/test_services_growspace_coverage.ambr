@@ -59,6 +59,15 @@
       }),
       'circulation_fan_entities': list([
       ]),
+      'climate_fail_safe_config': dict({
+        'dehumidifier_max_runtime_minutes': 0,
+        'dehumidifier_safe_state': 'off',
+        'exhaust_fallback_speed': 50,
+        'humidifier_max_runtime_minutes': 0,
+        'humidifier_safe_state': 'off',
+        'sensor_stale_after_minutes': 30,
+        'sensor_timeout_minutes': 10,
+      }),
       'co2_sensor': None,
       'control_dehumidifier': False,
       'control_humidifier': False,
@@ -122,6 +131,14 @@
       ]),
       'irrigation_tanks': list([
       ]),
+      'light_leak_config': dict({
+        'all_stages': False,
+        'debounce_seconds': 120,
+        'enabled': True,
+        'illuminance_sensor': None,
+        'switch_off_lights': False,
+        'threshold_lux': 1.0,
+      }),
       'light_sensors': list([
       ]),
       'lst_offset': -2.0,
@@ -173,7 +190,7 @@
       'active_steering_phase': 'p2',
       'auto_advance_p1_to_p2': False,
       'auto_advance_p2_to_p3': False,
-      'daily_volume_cap_liters': None,
+      'daily_volume_cap_liters': 20.0,
       'drain_duration': None,
       'drain_pump_entity': None,
       'drain_times': list([
@@ -186,13 +203,21 @@
       'irrigation_times': list([
       ]),
       'log_to_logbook': True,
-      'max_cycles_per_day': None,
+      'max_cycle_seconds': 600,
+      'max_cycles_per_day': 24,
+      'min_interval_minutes': 5,
+      'moisture_zero_is_implausible': False,
       'pause_on_low_tank': True,
       'phase_changed_at': None,
       'program_auto_advance': False,
       'pump_flow_rate_ml_per_sec': 0.0,
+      'sensor_alert_delay_minutes': 15,
+      'sensor_stale_after_minutes': 30,
       'skip_during_dark': False,
       'soil_trigger_percent': None,
+      'startup_grace_minutes': 5,
+      'tank_unknown_grace_minutes': 10,
+      'unexpected_on_policy': 'alert',
       'veg_day_hours': 18,
     }),
     'irrigation_strategy': dict({
@@ -236,6 +261,8 @@
     'notification_target': None,
     'plants_per_row': 4,
     'rows': 4,
+    'setup_modules': None,
+    'setup_preset': None,
     'subareas': list([
     ]),
     'substrate_history': dict({
@@ -247,8 +274,10 @@
       'ec_trend_day': None,
       'events': list([
       ]),
+      'last_confirmed_shot_at': None,
       'lit_period_max': None,
       'lit_period_max_ts': None,
+      'p1_completed_on': None,
       'pending_incycle_peak': None,
       'pending_incycle_peak_ts': None,
       'pending_incycle_trough': None,
@@ -266,6 +295,7 @@
       'daily_readings': list([
       ]),
       'max_daily_readings': 365,
+      'monitored_tank_liters': 0.0,
       'total_liters': 0.0,
     }),
   })

@@ -85,7 +85,9 @@ async def test_async_add_growspace_coverage(
 
     # Verify device registration
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, "new_gs_id")})
+    device = device_registry.async_get_device_by_identifier(
+        (DOMAIN, "new_gs_id"), coordinator.config_entry.entry_id
+    )
     assert device is not None
     assert device.name == "New GS"
 

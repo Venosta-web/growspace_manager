@@ -13,9 +13,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.util import dt as dt_util
 
 from .actuator_driver import resolve_actuator_drivers
 from .const import FanRegulationMode
+from .domain.climate_fail_safe import ClimateRole
 from .domain.day_night import DayNightTracker
 from .domain.fan_control import (
     FAN_VPD_STAGE_DEFAULTS,
@@ -25,6 +27,8 @@ from .domain.fan_control import (
     evaluate_temp_override,
     resolve_stage_vpd_target,
 )
+from .domain.manual_override import Subsystem
+from .reliability_store import climate_command_failure
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -64,6 +68,8 @@ class CirculationFanCoordinator:
         self._temp_override_direction: str | None = None
         self._start_time: float = 0.0
         self._day_night = DayNightTracker(growspace_id)
+        self._last_command: int | None = None
+        self._last_command_at: str | None = None
 
     @property
     def _env_config(self) -> EnvironmentConfig | None:
@@ -113,7 +119,11 @@ class CirculationFanCoordinator:
         )
 
     async def _async_regulate(self) -> None:
-        """Read sensor, compute speed, and call fan.set_percentage on each entity."""
+        """Read sensors and regulate only while this growspace permits commands."""
+        if not self.main_coordinator.irrigation_safety.commands_allowed(
+            self.growspace_id, Subsystem.CIRCULATION
+        ):
+            return
         if self._env_config is None:
             return
 
@@ -201,7 +211,43 @@ class CirculationFanCoordinator:
             switch_off_threshold=cfg.min_speed,
         )
         for driver in drivers:
-            await driver.set_speed(speed)
+            if not self.main_coordinator.irrigation_safety.commands_allowed(
+                self.growspace_id, Subsystem.CIRCULATION
+            ):
+                return
+            if not await driver.set_speed(speed):
+                self.main_coordinator.reliability.record(
+                    self.growspace_id, climate_command_failure(ClimateRole.CIRCULATION)
+                )
+            self._last_command = speed
+            self._last_command_at = dt_util.now().isoformat()
+
+    def diagnostics_snapshot(self) -> dict[str, object]:
+        """Describe the configured circulation controller and its last output."""
+        env = self._env_config
+        if env is None:
+            return {}
+        cfg = env.circulation_fan_config
+        vpd_target = cfg.vpd_target
+        if cfg.stage_vpd_enabled:
+            is_day = self._day_night.determine(self.hass, env.light_sensors)
+            vpd_target = self._get_stage_vpd_target(cfg, is_day)
+        return {
+            "enabled": cfg.enabled,
+            "entities": list(env.circulation_fan_entities),
+            "ac_infinity_ports": [
+                {"mode_entity": device.mode_entity, "speed_entity": device.speed_entity}
+                for device in env.circulation_fan_ac_infinity_devices
+            ],
+            "regulation_mode": cfg.regulation_mode.value,
+            "thresholds": {
+                "temperature": cfg.temperature_target,
+                "humidity": cfg.humidity_target,
+                "vpd": vpd_target,
+            },
+            "last_command": self._last_command,
+            "last_command_at": self._last_command_at,
+        }
 
     def _get_stage_vpd_target(self, cfg: CirculationFanConfig, is_day: bool) -> float:
         """Resolve the effective VPD target from stage defaults.

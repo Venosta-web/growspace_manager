@@ -29,6 +29,7 @@ from custom_components.growspace_manager.models.vision_evidence import (
     BaselineMember,
     BaselineState,
     CaptureFileVariant,
+    CaptureMarker,
     CaptureTrigger,
     CheckupStatus,
     ComparisonOutcome,
@@ -50,6 +51,7 @@ from custom_components.growspace_manager.models.vision_evidence import (
 )
 
 from .vision_evidence_schema import (
+    VISION_BASELINE_MEMBERS_REQUIRED,
     VISION_EVIDENCE_MIGRATIONS,
     VISION_EVIDENCE_SCHEMA_VERSION,
 )
@@ -146,6 +148,108 @@ class VisionEvidenceStore:
             return
         await self._db.close()
         self._db = None
+
+    async def async_restart_visual_baseline(
+        self, growspace_id: str, camera_id: str
+    ) -> dict[str, str]:
+        """Atomically start a camera-wide epoch in the active Grow Run.
+
+        Capture creation uses the same lock, so an overlapping capture gets
+        either the old epoch or this one. Historical buckets remain intact.
+        """
+        async with self._write_lock:
+            db = self._require_db()
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                started_at = datetime.now(UTC).isoformat()
+                grow_run_id = await self._async_get_or_create_grow_run(
+                    growspace_id, started_at
+                )
+                epoch_id = str(uuid.uuid7())
+                await db.execute(
+                    "INSERT INTO vision_framing_epoch"
+                    " (epoch_id, growspace_id, camera_id, started_at, reason)"
+                    " VALUES (?, ?, ?, ?, 'manual_restart')",
+                    (epoch_id, growspace_id, camera_id, started_at),
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return {
+            "epoch_id": epoch_id,
+            "grow_run_id": grow_run_id,
+            "started_at": started_at,
+            "reason": "manual_restart",
+        }
+
+    async def async_get_camera_baseline(
+        self, growspace_id: str, camera_id: str
+    ) -> dict[str, object]:
+        """Read the current epoch and readiness of each scheduled light window."""
+        async with self._write_lock:
+            return await self._async_get_camera_baseline_unlocked(
+                growspace_id, camera_id
+            )
+
+    async def _async_get_camera_baseline_unlocked(
+        self, growspace_id: str, camera_id: str
+    ) -> dict[str, object]:
+        """Read one consistent camera state under the store lock."""
+        db = self._require_db()
+        cursor = await db.execute(
+            "SELECT epoch_id, started_at, reason FROM vision_framing_epoch"
+            " WHERE growspace_id = ? AND camera_id = ?"
+            " ORDER BY rowid DESC LIMIT 1",
+            (growspace_id, camera_id),
+        )
+        epoch = await cursor.fetchone()
+        cursor = await db.execute(
+            "SELECT grow_run_id FROM vision_grow_run_ref WHERE growspace_id = ?",
+            (growspace_id,),
+        )
+        run = await cursor.fetchone()
+        windows: dict[str, dict[str, object]] = {
+            window: {
+                "state": "collecting",
+                "samples_collected": 0,
+                "samples_required": VISION_BASELINE_MEMBERS_REQUIRED,
+            }
+            for window in ("early", "mid", "late")
+        }
+        if epoch is not None and run is not None:
+            cursor = await db.execute(
+                "SELECT light_window, state, member_count, members_required"
+                " FROM vision_baseline_bucket"
+                " WHERE growspace_id = ? AND camera_id = ?"
+                " AND grow_run_id = ? AND framing_epoch_id = ?"
+                " ORDER BY created_at DESC, rowid DESC",
+                (growspace_id, camera_id, run[0], epoch["epoch_id"]),
+            )
+            seen_windows: set[str] = set()
+            for bucket in await cursor.fetchall():
+                window = bucket["light_window"]
+                if window not in seen_windows:
+                    windows[window] = {
+                        "state": bucket["state"],
+                        "samples_collected": bucket["member_count"],
+                        "samples_required": bucket["members_required"],
+                    }
+                    seen_windows.add(window)
+        return {
+            "camera_id": camera_id,
+            "grow_run_id": run[0] if run is not None else None,
+            "epoch": (
+                {
+                    "epoch_id": epoch["epoch_id"],
+                    "started_at": epoch["started_at"],
+                    "reason": epoch["reason"],
+                }
+                if epoch is not None
+                else None
+            ),
+            "windows": windows,
+        }
 
     async def async_start_capture(
         self,
@@ -413,6 +517,69 @@ class VisionEvidenceStore:
         captures.reverse()
         return captures
 
+    async def async_get_latest_capture_marker(
+        self, growspace_id: str, camera_id: str
+    ) -> CaptureMarker | None:
+        """Return where one camera's evidence in one growspace currently ends."""
+        cursor = await self._require_db().execute(
+            "SELECT captured_at, capture_id FROM vision_capture"
+            " WHERE growspace_id = ? AND camera_id = ?"
+            " ORDER BY captured_at DESC, capture_id DESC LIMIT 1",
+            (growspace_id, camera_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return CaptureMarker(captured_at=row[0], capture_id=row[1])
+
+    async def async_get_capture_evidence(
+        self,
+        growspace_id: str,
+        camera_id: str,
+        *,
+        after: CaptureMarker | None = None,
+    ) -> list[tuple[VisionCapture, VisualComparisonResult | None]]:
+        """Return every capture of one camera in one growspace, oldest first.
+
+        Each capture is paired with the first comparison recorded for it — the
+        one a live checkup produced — because later additive results under
+        another scoring policy are history, not what the checkup acted on.
+        ``after`` excludes everything at or before one marker.  Nothing here
+        reads image files, and nothing caps the row count: a consumer that
+        replays evidence must see all of it.
+        """
+        # The empty marker sorts before every stored capture.
+        bound = after or CaptureMarker(captured_at="", capture_id="")
+        params = (
+            growspace_id,
+            camera_id,
+            bound.captured_at,
+            bound.captured_at,
+            bound.capture_id,
+        )
+        db = self._require_db()
+        cursor = await db.execute(
+            "SELECT c.* FROM vision_capture AS c"
+            " WHERE c.growspace_id = ? AND c.camera_id = ?"
+            " AND (c.captured_at > ? OR (c.captured_at = ? AND c.capture_id > ?))"
+            " ORDER BY c.captured_at, c.capture_id",
+            params,
+        )
+        captures = [_capture_from_row(row) for row in await cursor.fetchall()]
+        cursor = await db.execute(
+            "SELECT r.* FROM vision_comparison_result AS r"
+            " JOIN vision_capture AS c ON c.capture_id = r.capture_id"
+            " WHERE c.growspace_id = ? AND c.camera_id = ?"
+            " AND (c.captured_at > ? OR (c.captured_at = ? AND c.capture_id > ?))"
+            " ORDER BY r.evaluated_at DESC, r.result_id DESC",
+            params,
+        )
+        # Newest first, so the last write for each capture is its earliest result.
+        first: dict[str, VisualComparisonResult] = {}
+        for row in await cursor.fetchall():
+            first[row["capture_id"]] = _comparison_from_row(row)
+        return [(capture, first.get(capture.capture_id)) for capture in captures]
+
     async def async_get_quality_history(self, camera_id: str) -> QualityHistory:
         """Reconstruct one camera's durable relative-rail state."""
         db = self._require_db()
@@ -594,6 +761,26 @@ class VisionEvidenceStore:
                 )
                 if cursor.rowcount != 1:
                     raise KeyError(f"Capture {capture_id} does not exist")
+                if bucket is not None:
+                    cursor = await db.execute(
+                        "SELECT growspace_id, camera_id, grow_run_id,"
+                        " framing_epoch_id, light_window FROM vision_capture"
+                        " WHERE capture_id = ?",
+                        (capture_id,),
+                    )
+                    provenance = await cursor.fetchone()
+                    if provenance is None:  # pragma: no cover - updated above
+                        raise RuntimeError("Capture disappeared during analysis")
+                    if (
+                        provenance["growspace_id"] != bucket.growspace_id
+                        or provenance["camera_id"] != bucket.camera_id
+                        or provenance["grow_run_id"] != bucket.grow_run_id
+                        or provenance["framing_epoch_id"] != bucket.framing_epoch_id
+                        or provenance["light_window"] != bucket.light_window.value
+                    ):
+                        raise ValueError(
+                            "Baseline Bucket provenance must match capture"
+                        )
                 if embedding is not None:
                     await self._async_insert_embedding(embedding)
                 if bucket is not None:
@@ -1273,7 +1460,7 @@ class VisionEvidenceStore:
         cursor = await db.execute(
             "SELECT epoch_id FROM vision_framing_epoch"
             " WHERE growspace_id = ? AND camera_id = ?"
-            " ORDER BY started_at DESC LIMIT 1",
+            " ORDER BY rowid DESC LIMIT 1",
             (growspace_id, camera_id),
         )
         row = await cursor.fetchone()

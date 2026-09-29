@@ -124,6 +124,16 @@ V1 acceptance tests and corpus replay may assert only that:
   breaks; and
 - UI copy and notifications make no plant-health sensitivity claim.
 
+Each new break has one durable delivery outcome for Home Assistant's persistent
+notification and, when the growspace has a notification target, one for the
+configured mobile notify action. The growspace notification switch mutes both
+channels without hiding the Triage Alert. A missing target is suppressed for
+that streak; adding a phone or unmuting sends no backlog. Failed actions retry
+independently after restart under a stable per-streak notification id and mobile
+tag. Delivery is at least once: if Home Assistant stops after a mobile action
+completes but before its success is stored, the retry can repeat the phone alert
+or sound. The mobile app does not acknowledge end-device receipt.
+
 Synthetic symptom perturbations may guard implementation behavior but cannot satisfy
 an acceptance claim about detection sensitivity.
 

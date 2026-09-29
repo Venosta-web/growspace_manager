@@ -12,7 +12,9 @@ from datetime import date, datetime
 from typing import Protocol
 
 
-class _HasFlowerStart(Protocol):
+class HasFlowerStart(Protocol):
+    """Anything that carries a Lifecycle Timestamp for entering flower."""
+
     flower_start: str | None
 
 
@@ -32,7 +34,7 @@ def flower_start_date(flower_start: str | None) -> date | None:
 
 
 def resolve_photoperiod_hours(
-    plants: Iterable[_HasFlowerStart],
+    plants: Iterable[HasFlowerStart],
     veg_hours: float,
     flower_hours: float,
     today: date,
@@ -43,11 +45,16 @@ def resolve_photoperiod_hours(
     before ``today`` — distinct from "flipped today". A missing or malformed
     ``flower_start`` counts as not-yet-flowering.
     """
+    return flower_hours if has_entered_flower(plants, today) else veg_hours
+
+
+def has_entered_flower(plants: Iterable[HasFlowerStart], today: date) -> bool:
+    """Return whether any plant's ``flower_start`` is on or before ``today``."""
     for plant in plants:
         started = flower_start_date(plant.flower_start)
         if started is not None and started <= today:
-            return flower_hours
-    return veg_hours
+            return True
+    return False
 
 
 def _minutes_since_midnight(value: str) -> int:
@@ -71,6 +78,13 @@ def desired_grow_light_power(
     if offset < window_minutes:
         return power
     return 0
+
+
+def is_dark_period(
+    now: datetime, lights_on_time: str, photoperiod_hours: float
+) -> bool:
+    """Return whether ``now`` falls outside the photoperiod that starts at lights-on."""
+    return desired_grow_light_power(now, lights_on_time, photoperiod_hours, 1) == 0
 
 
 def resolve_cycle_end_time(lights_on_time: str, photoperiod_hours: float) -> str:

@@ -21,8 +21,10 @@ from custom_components.growspace_manager import (
     async_setup_entry,
     async_unload_entry,
 )
+from custom_components.growspace_manager.config_flow import ConfigFlow
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.schemas import (
+    ACKNOWLEDGE_FAULT_SCHEMA,
     ADD_DRAIN_TIME_SCHEMA,
     ADD_GROWSPACE_SCHEMA,
     ADD_IRRIGATION_TIME_SCHEMA,
@@ -50,6 +52,7 @@ from custom_components.growspace_manager.schemas import (
     DEBUG_RESET_SPECIAL_GROWSPACES_SCHEMA,
     DELETE_POLLINATION_SCHEMA,
     EXPORT_GROW_REPORT_SCHEMA,
+    EXPORT_RELIABILITY_EVIDENCE_SCHEMA,
     EXPORT_STRAIN_LIBRARY_SCHEMA,
     HARVEST_PLANT_SCHEMA,
     HARVEST_SEEDS_SCHEMA,
@@ -84,6 +87,7 @@ from custom_components.growspace_manager.schemas import (
     SAVE_NUTRIENT_PRESET_SCHEMA,
     SCORE_PHENOTYPE_SCHEMA,
     SCORE_PLANT_SCHEMA,
+    SERVICE_RESTART_VISUAL_BASELINE_SCHEMA,
     SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
     SET_DEHUMIDIFIER_CONTROL_SCHEMA,
     SET_EC_TARGET_RANGE_SCHEMA,
@@ -110,6 +114,11 @@ from custom_components.growspace_manager.schemas import (
     WATER_PLANT_SCHEMA,
 )
 from custom_components.growspace_manager.service_registration import register_services
+from custom_components.growspace_manager.services.safety import (
+    CLEAR_OVERRIDE_SCHEMA,
+    SAFETY_SCHEMA,
+    SET_OVERRIDE_SCHEMA,
+)
 from custom_components.growspace_manager.views import StrainLibraryUploadView
 from custom_components.growspace_manager.websocket import (
     async_register_websocket_api,
@@ -351,6 +360,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "move_clone": MOVE_CLONE_SCHEMA,
         "harvest_plant": HARVEST_PLANT_SCHEMA,
         "export_grow_report": EXPORT_GROW_REPORT_SCHEMA,
+        "export_reliability_evidence": EXPORT_RELIABILITY_EVIDENCE_SCHEMA,
         "export_strain_library": EXPORT_STRAIN_LIBRARY_SCHEMA,
         "import_strain_library": IMPORT_STRAIN_LIBRARY_SCHEMA,
         "clear_strain_library": CLEAR_STRAIN_LIBRARY_SCHEMA,
@@ -377,6 +387,11 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "add_drain_time": ADD_DRAIN_TIME_SCHEMA,
         "remove_drain_time": REMOVE_DRAIN_TIME_SCHEMA,
         "run_irrigation_cycle": RUN_IRRIGATION_CYCLE_SCHEMA,
+        "acknowledge_fault": ACKNOWLEDGE_FAULT_SCHEMA,
+        "emergency_stop": SAFETY_SCHEMA,
+        "reset_safety": SAFETY_SCHEMA,
+        "set_override": SET_OVERRIDE_SCHEMA,
+        "clear_override": CLEAR_OVERRIDE_SCHEMA,
         "get_strain_library": None,
         "ask_grow_advice": ASK_GROW_ADVICE_SCHEMA,
         "analyze_all_growspaces": ANALYZE_ALL_GROWSPACES_SCHEMA,
@@ -410,6 +425,7 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "remove_ec_ramp_curve": REMOVE_EC_RAMP_CURVE_SCHEMA,
         "set_ec_target_range": SET_EC_TARGET_RANGE_SCHEMA,
         "trigger_vision_checkup": SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA,
+        "restart_visual_baseline": SERVICE_RESTART_VISUAL_BASELINE_SCHEMA,
         "configure_tank": CONFIGURE_TANK_SCHEMA,
         "add_seed_batch": ADD_SEED_BATCH_SCHEMA,
         "update_seed_batch": UPDATE_SEED_BATCH_SCHEMA,
@@ -805,16 +821,18 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
     # Mock async_forward_entry_setups to avoid integration loading implementation
     hass.config_entries.async_forward_entry_setups = AsyncMock()
 
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={
-            "pending_growspace": {
-                "name": "Pending",
-                "rows": 4,
-                "plants_per_row": 4,
-            }
-        },
+    flow = ConfigFlow()
+    flow.hass = hass
+    await flow.async_step_user({"name": "My Integration"})
+    flow_result = await flow.async_step_add_growspace(
+        {
+            "name": "Pending",
+            "setup_preset": "simple_soil_tent",
+            "rows": 4,
+            "plants_per_row": 4,
+        }
     )
+    entry = MockConfigEntry(domain=DOMAIN, data=flow_result["data"])
     entry.add_to_hass(hass)
 
     with (
@@ -868,7 +886,10 @@ async def test_pending_growspace_error(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pending_growspace_success(hass: HomeAssistant) -> None:
+@pytest.mark.parametrize("temperature_sensor", [None, "sensor.dry_temperature"])
+async def test_pending_growspace_success(
+    hass: HomeAssistant, temperature_sensor: str | None
+) -> None:
     """Test successful pending growspace creation."""
     hass.data.setdefault(DOMAIN, {})
     hass.http = MagicMock()
@@ -876,16 +897,19 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
     hass.config_entries.async_forward_entry_setups = AsyncMock()
     hass.config_entries.async_update_entry = MagicMock()
 
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={
-            "pending_growspace": {
-                "name": "Pending",
-                "rows": 4,
-                "plants_per_row": 4,
-            }
-        },
-    )
+    flow = ConfigFlow()
+    flow.hass = hass
+    await flow.async_step_user({"name": "My Integration"})
+    growspace_input = {
+        "name": "Pending",
+        "setup_preset": "drying_room",
+        "rows": 4,
+        "plants_per_row": 4,
+    }
+    if temperature_sensor:
+        growspace_input["temperature_sensor"] = temperature_sensor
+    flow_result = await flow.async_step_add_growspace(growspace_input)
+    entry = MockConfigEntry(domain=DOMAIN, data=flow_result["data"])
     entry.add_to_hass(hass)
 
     with (
@@ -926,7 +950,17 @@ async def test_pending_growspace_success(hass: HomeAssistant) -> None:
 
             # Verify successful creation logging and data update
             coordinator_mock.services.growspaces.add_growspace.assert_called_once_with(
-                name="Pending", rows=4, plants_per_row=4, notification_target=None
+                name="Pending",
+                rows=4,
+                plants_per_row=4,
+                notification_target=None,
+                growspace_type="dry",
+                setup_preset="drying_room",
+                environment_config=(
+                    {"temperature_sensor": temperature_sensor}
+                    if temperature_sensor
+                    else {}
+                ),
             )
             hass.config_entries.async_update_entry.assert_called_once()
             call_args = hass.config_entries.async_update_entry.call_args
@@ -1017,7 +1051,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 99
+        assert mock_reg.call_count == 109
 
 
 @pytest.mark.asyncio

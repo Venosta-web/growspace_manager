@@ -116,6 +116,10 @@ async def test_growspace_lifecycle_services(mock_coordinator) -> None:
     mock_coordinator._growspace_manager.remove_growspace.assert_called_once_with(
         "gs1", delete_plants=True
     )
+    # A removed growspace holds no camera, so its assignments are retired.
+    mock_coordinator.capture_continuity.async_apply_camera_assignment.assert_awaited_once_with(
+        "gs1", ()
+    )
 
     await facade.growspaces.update_options({"opt": "val"})
     mock_coordinator.async_commit.assert_called()

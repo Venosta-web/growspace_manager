@@ -6,6 +6,7 @@
     "local_calibration_stale",
     "no_raster",
     "preflight_not_current",
+    "printer_model_not_covered",
     "profile_not_product_verified",
     "result_not_current",
     "revision_not_published",

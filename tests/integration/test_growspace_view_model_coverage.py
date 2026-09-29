@@ -209,6 +209,7 @@ def test_get_environment_attributes(hass: HomeAssistant, builder):
         assert attrs["irrigation_pump_state"] == "off"
         assert len(attrs["irrigation_tanks"]) == 1
         assert attrs["irrigation_tanks"][0]["is_warning"] is True
+        assert attrs["irrigation_tanks"][0]["stale_after_minutes"] == 120
         assert attrs["sensor_groups"][0]["id"] == "g1"
 
 
@@ -831,7 +832,7 @@ def test_view_model_builder_liters_today_additive_tank_plus_manual(
 def test_view_model_builder_liters_today_measured_with_flow_sensors(
     hass: HomeAssistant,
 ) -> None:
-    """Flow sensors no longer gate liters_today; it reports the measured figure (ADR-0017)."""
+    """With no tank tracker yet, liters_today is the measured figure, flow sensor or not."""
     env = EnvironmentConfig(
         irrigation_flow_sensors=["sensor.flow1"],
         irrigation_tanks=[
@@ -854,7 +855,7 @@ def test_view_model_builder_liters_today_measured_with_flow_sensors(
 def test_view_model_builder_liters_today_measured_with_drain_volume_sensors(
     hass: HomeAssistant,
 ) -> None:
-    """Drain volume sensors no longer gate liters_today; it reports the measured figure (ADR-0017)."""
+    """With no tank tracker yet, liters_today is the measured figure, drain sensor or not."""
     today = dt_util.now().date().isoformat()
     env = EnvironmentConfig(
         drain_volume_sensors=["sensor.drain1"],

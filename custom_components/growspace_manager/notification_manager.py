@@ -109,6 +109,10 @@ class NotificationManager:
         NotificationTier.PHOTOPERIOD_FLIP: timedelta(
             minutes=PHOTOPERIOD_FLIP_COOLDOWN_MINUTES
         ),
+        NotificationTier.LIGHT_LEAK: timedelta(0),
+        NotificationTier.TANK_OFFLINE: timedelta(0),
+        NotificationTier.SENSOR_INVALID: timedelta(0),
+        NotificationTier.UNEXPECTED_ON: timedelta(0),
     }
 
     _TIER_OPTION_KEYS: ClassVar[dict[str, tuple[str, int]]] = {

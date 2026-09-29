@@ -7,6 +7,9 @@ from .domain.stage import PLANT_STAGES, PlantStage  # noqa: F401
 
 DOMAIN: Final = "growspace_manager"
 STORAGE_VERSION: Final = 1
+STORAGE_VERSION_PLANTS: Final = 2
+#: How long a Run-free Growspace keeps Unattributed Activity for backdating.
+CONF_UNATTRIBUTED_RETENTION_DAYS: Final = "unattributed_activity_retention_days"
 VERSION: Final = "0.3.5"
 STORAGE_KEY: Final = f"{DOMAIN}_storage"  # Legacy Key
 STORAGE_KEY_CONFIG: Final = f"{DOMAIN}.config"
@@ -16,6 +19,7 @@ STORAGE_KEY_AI_BRIEFING: Final = f"{DOMAIN}.ai_briefing"
 STORAGE_KEY_AI_CONVERSATIONS: Final = f"{DOMAIN}.ai_conversations"
 PLATFORMS: Final[list[str]] = [
     "binary_sensor",
+    "button",
     "calendar",
     "sensor",
     "switch",
@@ -613,6 +617,19 @@ class NotificationTier(StrEnum):
     WARNING = "warning"
     INFO = "info"
     PHOTOPERIOD_FLIP = "photoperiod_flip"
+    # Critical severity with a cooldown of its own: the Light Leak Guard already
+    # alerts once per episode, and must never be muted because a Bayesian
+    # critical alert happened to go out in the last half hour.
+    LIGHT_LEAK = "light_leak"
+    # The Tank Offline Alert (ADR-0050): once per episode, rate-limited by the
+    # tank watch itself, and likewise never muted by a Bayesian alert.
+    TANK_OFFLINE = "tank_offline"
+    # The invalid control sensor alert (#789): once per episode, rate-limited by
+    # the sensor watch itself, and likewise never muted by a Bayesian alert.
+    SENSOR_INVALID = "sensor_invalid"
+    # An Unexpected On (#793): a managed pump running outside any cycle of ours.
+    # Once per episode — it lasts until the pump reads OFF — and never muted.
+    UNEXPECTED_ON = "unexpected_on"
 
 
 class GrowspaceSensorType(StrEnum):
@@ -654,6 +671,7 @@ class GrowspaceService(StrEnum):
     IMPORT_STRAIN_LIBRARY = "import_strain_library"
     EXPORT_STRAIN_LIBRARY = "export_strain_library"
     EXPORT_GROW_REPORT = "export_grow_report"
+    EXPORT_RELIABILITY_EVIDENCE = "export_reliability_evidence"
     CLEAR_STRAIN_LIBRARY = "clear_strain_library"
     STRAIN_RECOMMENDATION = "strain_recommendation"
     ASK_GROW_ADVICE = "ask_grow_advice"
@@ -676,6 +694,7 @@ class GrowspaceService(StrEnum):
     ADD_DRAIN_TIME = "add_drain_time"
     REMOVE_DRAIN_TIME = "remove_drain_time"
     RUN_IRRIGATION_CYCLE = "run_irrigation_cycle"
+    ACKNOWLEDGE_FAULT = "acknowledge_fault"
     DEBUG_LIST_GROWSPACES = "debug_list_growspaces"
     DEBUG_RESET_SPECIAL_GROWSPACES = "debug_reset_special_growspaces"
     DEBUG_CONSOLIDATE_DUPLICATE_SPECIAL = "debug_consolidate_duplicate_special"
@@ -718,6 +737,7 @@ class GrowspaceService(StrEnum):
     SET_EC_TARGET_RANGE = "set_ec_target_range"
     # Vision Checkup Services
     TRIGGER_VISION_CHECKUP = "trigger_vision_checkup"
+    RESTART_VISUAL_BASELINE = "restart_visual_baseline"
     # Tank Configuration Services
     CONFIGURE_TANK = "configure_tank"
     # Drying & Curing Services
@@ -844,6 +864,8 @@ CATEGORY_HUMIDIFIER = "humidifier"
 CATEGORY_MILESTONE = "milestone"
 CATEGORY_ALERT = "alert"
 CATEGORY_IRRIGATION_ERROR = "irrigation_error"
+# The sensor_type the Light Leak Guard logs its alert-category entries under.
+LIGHT_LEAK_SENSOR_TYPE = "light_leak"
 
 
 # Plant stages

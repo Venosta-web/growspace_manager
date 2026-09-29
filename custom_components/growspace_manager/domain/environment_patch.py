@@ -34,11 +34,13 @@ from custom_components.growspace_manager.models import (
     ACInfinityGrowLight,
     BaseModel,
     CirculationFanConfig,
+    ClimateFailSafeConfig,
     EnvironmentConfig,
     ExhaustFanConfig,
     FieldClass,
     GrowLightConfig,
     IrrigationTank,
+    LightLeakConfig,
     SensorGroup,
     VisionCheckupConfig,
 )
@@ -96,6 +98,8 @@ _SUB_CONFIG_TYPES: dict[str, type[BaseModel]] = {
     "circulation_fan_config": CirculationFanConfig,
     "exhaust_fan_config": ExhaustFanConfig,
     "growlight_config": GrowLightConfig,
+    "light_leak_config": LightLeakConfig,
+    "climate_fail_safe_config": ClimateFailSafeConfig,
 }
 
 # With PEP 649 lazy annotations, dataclass field types are strings — good
@@ -153,6 +157,8 @@ _CONTROLLER_RELEVANT_FIELDS: dict[str, frozenset[str]] = {
             "growlight_ac_infinity_devices",
             "veg_day_hours",
             "flower_day_hours",
+            # The Light Leak Guard runs inside the grow light controller.
+            "light_leak_config",
         }
     ),
 }
@@ -584,6 +590,10 @@ def _parse_sub_config(key: str, val: Any) -> Any:
         return _parse_circulation_fan_config(val)
     if key == "exhaust_fan_config":
         return _parse_exhaust_fan_config(val)
+    if key == "light_leak_config":
+        return _parse_light_leak_config(val)
+    if key == "climate_fail_safe_config":
+        return _parse_climate_fail_safe_config(val)
     valid = {f.name for f in fields(sub_type)}
     filtered = {k: v for k, v in val.items() if k in valid}
     try:
@@ -654,6 +664,67 @@ def _parse_exhaust_fan_config(raw: Mapping[str, Any]) -> ExhaustFanConfig:
         raise EnvironmentPatchError(
             f"Invalid exhaust_fan_config payload: {err}"
         ) from err
+
+
+def _parse_light_leak_config(raw: Mapping[str, Any]) -> LightLeakConfig:
+    """Build a LightLeakConfig from a raw payload (whole replace)."""
+    valid = {f.name for f in fields(LightLeakConfig)}
+    filtered = {k: v for k, v in raw.items() if k in valid}
+    sensor = filtered.get("illuminance_sensor")
+    if sensor == "":
+        filtered["illuminance_sensor"] = None
+    elif sensor is not None and (not isinstance(sensor, str) or "." not in sensor):
+        raise EnvironmentPatchError(
+            "light_leak_config.illuminance_sensor must be an entity ID"
+        )
+    try:
+        config = LightLeakConfig.from_dict(filtered)
+    except (TypeError, ValueError, LookupError) as err:
+        raise EnvironmentPatchError(
+            f"Invalid light_leak_config payload: {err}"
+        ) from err
+    if config.threshold_lux < 0:
+        raise EnvironmentPatchError("light_leak_config.threshold_lux must be >= 0")
+    if config.debounce_seconds < 0:
+        raise EnvironmentPatchError("light_leak_config.debounce_seconds must be >= 0")
+    return config
+
+
+_SAFE_STATES = frozenset({"off", "on", "hold"})
+
+
+def _parse_climate_fail_safe_config(raw: Mapping[str, Any]) -> ClimateFailSafeConfig:
+    """Build a ClimateFailSafeConfig from a raw payload (whole replace)."""
+    valid = {f.name for f in fields(ClimateFailSafeConfig)}
+    filtered = {k: v for k, v in raw.items() if k in valid}
+    try:
+        config = ClimateFailSafeConfig.from_dict(filtered)
+    except (TypeError, ValueError, LookupError) as err:
+        raise EnvironmentPatchError(
+            f"Invalid climate_fail_safe_config payload: {err}"
+        ) from err
+    prefix = "climate_fail_safe_config."
+    if config.sensor_timeout_minutes < 1:
+        raise EnvironmentPatchError(f"{prefix}sensor_timeout_minutes must be >= 1")
+    for name in (
+        "sensor_stale_after_minutes",
+        "humidifier_max_runtime_minutes",
+        "dehumidifier_max_runtime_minutes",
+    ):
+        if getattr(config, name) < 0:
+            raise EnvironmentPatchError(f"{prefix}{name} must be >= 0")
+    if not 0 <= config.exhaust_fallback_speed <= 100:
+        raise EnvironmentPatchError(
+            f"{prefix}exhaust_fallback_speed must be between 0 and 100"
+        )
+    for name in ("humidifier_safe_state", "dehumidifier_safe_state"):
+        if getattr(config, name) not in _SAFE_STATES:
+            raise EnvironmentPatchError(f"{prefix}{name} must be one of: hold, off, on")
+    if config.humidifier_safe_state == config.dehumidifier_safe_state == "on":
+        raise EnvironmentPatchError(
+            f"{prefix}the humidifier and dehumidifier cannot both be on"
+        )
+    return config
 
 
 def _parse_item_list(key: str, val: Any) -> tuple[list[Any], list[PatchWarning]]:

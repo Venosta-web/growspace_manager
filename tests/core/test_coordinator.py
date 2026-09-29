@@ -650,6 +650,50 @@ async def test_async_load(coordinator: GrowspaceCoordinator) -> None:
 
 
 @pytest.mark.asyncio
+async def test_async_load_recovers_continuity_before_any_checkup(
+    coordinator: GrowspaceCoordinator,
+) -> None:
+    """Streaks are rebuilt, with each growspace's cameras, before scheduling."""
+    coordinator.storage_manager.config_store.async_load = AsyncMock(
+        return_value={
+            "growspaces": {
+                "gs1": {
+                    "id": "gs1",
+                    "name": "Growspace1",
+                    "rows": 1,
+                    "plants_per_row": 1,
+                    "environment_config": {"camera_entities": ["camera.canopy"]},
+                }
+            }
+        }
+    )
+    coordinator.storage_manager.plants_store.async_load = AsyncMock(return_value={})
+    coordinator.storage_manager.legacy_store.async_load = AsyncMock(return_value=None)
+    coordinator.storage_manager.async_save = AsyncMock()  # type: ignore[method-assign]
+    order = MagicMock()
+    coordinator.alert_monitor.async_start = order.alerts  # type: ignore[method-assign]
+    order.alerts.side_effect = AsyncMock()
+    coordinator.capture_continuity.async_start = order.continuity  # type: ignore[method-assign]
+    order.continuity.side_effect = AsyncMock()
+    coordinator.vision_scheduler.async_load_latest_checkups = AsyncMock()  # type: ignore[method-assign]
+    coordinator.vision_scheduler.schedule_all_growspaces = order.schedule  # type: ignore[method-assign]
+
+    with patch.object(
+        coordinator._growspace_manager,
+        "ensure_default_growspaces",
+        new_callable=AsyncMock,
+    ):
+        await coordinator.async_load()
+
+    assert [name for name, _args, _kwargs in order.mock_calls] == [
+        "alerts",
+        "continuity",
+        "schedule",
+    ]
+    order.continuity.assert_called_once_with({"gs1": ["camera.canopy"]})
+
+
+@pytest.mark.asyncio
 async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None:
     """Test the complete removal of a growspace and its contents.
 
@@ -716,7 +760,7 @@ async def test_async_remove_growspace(coordinator: GrowspaceCoordinator) -> None
     assert gs.id not in coordinator.notification_state.enabled
 
     # Verify device removed
-    assert dev_reg.async_get_device(identifiers={(DOMAIN, gs.id)}) is None
+    assert not dev_reg.async_get_devices(identifiers={(DOMAIN, gs.id)})
     assert entity_reg.async_get(active_entity.entity_id) is None
     assert entity_reg.async_get(disabled_entity.entity_id) is None
 
@@ -865,11 +909,14 @@ async def test_set_notifications_enabled(coordinator: GrowspaceCoordinator) -> N
 
     # Initialize self.data so set_notifications_enabled doesn't fail
     coordinator.view_model_builder.build_data_property()
+    mute = AsyncMock()
+    coordinator.continuity_notifier.async_mute = mute  # type: ignore[method-assign]
 
-    # Disable notifications
+    # Disable notifications: continuity delivery still being retried stops too
     await coordinator.services.notifications.set_notifications_enabled(gs.id, False)
     assert coordinator.services.notifications.is_notifications_enabled(gs.id) is False
     coordinator.async_commit.assert_awaited_once()
+    mute.assert_awaited_once_with(gs.id)
 
     # Enable notifications
     coordinator.async_commit.reset_mock()
@@ -877,6 +924,7 @@ async def test_set_notifications_enabled(coordinator: GrowspaceCoordinator) -> N
     await coordinator.services.notifications.set_notifications_enabled(gs.id, True)
     assert coordinator.services.notifications.is_notifications_enabled(gs.id) is True
     coordinator.async_commit.assert_awaited_once()
+    mute.assert_awaited_once()
 
     # Non-existent growspace
     coordinator.async_commit.reset_mock()
@@ -1553,6 +1601,65 @@ async def test_async_load_ensures_notifications_enabled(hass: HomeAssistant) -> 
 
 
 @pytest.mark.asyncio
+async def test_async_load_continues_with_unreadable_reliability_evidence(
+    hass: HomeAssistant,
+) -> None:
+    """Corrupt optional evidence cannot prevent the integration from loading."""
+    coordinator = create_test_coordinator(hass, data={})
+    coordinator.reliability._store.async_load = AsyncMock(return_value=[])
+    coordinator.reliability._store.async_save = AsyncMock()
+
+    await coordinator.async_load()
+
+    assert coordinator.reliability.unreadable
+    assert coordinator.growspaces
+    coordinator.reliability._store.async_save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_async_load_does_not_wait_on_reliability_writes(
+    hass: HomeAssistant,
+) -> None:
+    """Startup counts in memory; a full evidence disk cannot hold it up."""
+    coordinator = create_test_coordinator(hass, data={})
+    coordinator.reliability._store.async_save = AsyncMock(side_effect=OSError("full"))
+
+    await coordinator.async_load()
+
+    assert coordinator.growspaces
+    coordinator.reliability._store.async_save.assert_not_awaited()
+    assert (
+        coordinator.reliability.snapshot("clone")["lifetime"]["runtime.ha_start"] == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_load_counts_inflight_output_once_per_ha_process(
+    hass: HomeAssistant, hass_storage: dict[str, Any]
+) -> None:
+    """A persisted ON marker is one restart observation, and stays to be closed."""
+    coordinator = create_test_coordinator(hass, data={})
+    key = f"growspace_manager.reliability_{coordinator.config_entry.entry_id}"
+    hass_storage[key] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": key,
+        "data": {"clone": {"active": {"switch.pump": "2026-09-24T12:00:00+00:00"}}},
+    }
+
+    await coordinator.async_load()
+    counters = coordinator.reliability.snapshot("clone")["lifetime"]
+    assert counters["runtime.ha_start"] == 1
+    assert counters["runtime.ha_start_inflight"] == 1
+    assert coordinator.reliability.active_outputs("clone") == ("switch.pump",)
+
+    await coordinator.async_load()
+    counters = coordinator.reliability.snapshot("clone")["lifetime"]
+    assert counters["runtime.ha_start"] == 1
+    assert counters["runtime.ha_start_inflight"] == 1
+
+
+@pytest.mark.asyncio
 async def test_ensure_special_growspace_updates_name(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -2087,7 +2194,7 @@ async def test_async_remove_growspace_device_removal_error(
     # Mock device registry
     mock_dr = MagicMock()
     # Raise exception when getting device
-    mock_dr.async_get_device.side_effect = Exception("Registry Error")
+    mock_dr.async_get_devices.side_effect = Exception("Registry Error")
 
     with (
         patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr),
@@ -2880,3 +2987,17 @@ def test_coordinator_get_subareas_delegates(coordinator) -> None:
     result = coordinator.services.growspaces.get_subareas("gs1")
     assert result == expected
     coordinator._growspace_manager.get_subareas.assert_called_once_with("gs1")
+
+
+async def test_schedule_save_hands_off_to_storage_without_publishing(
+    coordinator: GrowspaceCoordinator,
+) -> None:
+    """Runtime steering facts are saved without rebuilding any projection (#786)."""
+    with (
+        patch.object(coordinator.storage_manager, "async_schedule_save") as save,
+        patch.object(coordinator, "async_set_updated_data") as publish,
+    ):
+        coordinator.async_schedule_save()
+
+    save.assert_called_once_with()
+    publish.assert_not_called()

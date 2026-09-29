@@ -73,6 +73,10 @@ async def test_add_growspace_registers_device(mock_coordinator) -> None:
     mock_coordinator._subsystem_manager.async_setup_growspace_sub_coordinators.assert_awaited_once_with(
         "gs1", gs
     )
+    # A growspace created with cameras holds its Camera Assignments from the start.
+    mock_coordinator.capture_continuity.async_apply_camera_assignment.assert_awaited_once_with(
+        "gs1", gs.environment_config.camera_entities
+    )
 
 
 @pytest.mark.asyncio
@@ -128,7 +132,7 @@ async def test_update_growspace_with_name_change(mock_coordinator) -> None:
     mock_dr = MagicMock()
     mock_device = MagicMock()
     mock_device.id = "dev_id"
-    mock_dr.async_get_device.return_value = mock_device
+    mock_dr.async_get_device_by_identifier.return_value = mock_device
     with patch("homeassistant.helpers.device_registry.async_get", return_value=mock_dr):
         await facade.growspaces.update_growspace("gs1", name="New Name")
 

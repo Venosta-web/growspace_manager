@@ -49,11 +49,18 @@ class CaptureContinuityEvent:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CaptureContinuityState:
-    """The current non-comparable streak for one camera."""
+    """The current non-comparable streak for one camera.
+
+    ``streak_started_capture_id`` names the capture that began the streak. A
+    streak activates at most once, so it is also the stable identity of that
+    activation — the same whether the streak was evaluated live or replayed
+    from evidence after a restart.
+    """
 
     growspace_id: str
     camera_id: str
     streak_started_at: datetime
+    streak_started_capture_id: str
     consecutive_count: int
     reason_counts: tuple[tuple[ContinuityReason, int], ...]
     latest_capture_id: str
@@ -108,6 +115,9 @@ def evaluate_capture_continuity(
         camera_id=event.camera_id,
         streak_started_at=(
             state.streak_started_at if state is not None else event.captured_at
+        ),
+        streak_started_capture_id=(
+            state.streak_started_capture_id if state is not None else event.capture_id
         ),
         consecutive_count=consecutive_count,
         reason_counts=tuple(

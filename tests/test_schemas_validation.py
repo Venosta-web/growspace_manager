@@ -4,12 +4,35 @@ import pytest
 import voluptuous as vol
 
 from custom_components.growspace_manager.schemas import (
+    ADD_IRRIGATION_TIME_SCHEMA,
     ADD_STRAIN_SCHEMA,
+    RUN_IRRIGATION_CYCLE_SCHEMA,
     SET_IRRIGATION_SETTINGS_SCHEMA,
     SET_IRRIGATION_STRATEGY_SCHEMA,
     SET_STEERING_PHASE_SCHEMA,
     UPDATE_STRAIN_META_SCHEMA,
 )
+
+
+@pytest.mark.parametrize(
+    ("schema", "field"),
+    [
+        (SET_IRRIGATION_SETTINGS_SCHEMA, "irrigation_duration"),
+        (SET_IRRIGATION_SETTINGS_SCHEMA, "drain_duration"),
+        (SET_IRRIGATION_SETTINGS_SCHEMA, "max_cycle_seconds"),
+        (ADD_IRRIGATION_TIME_SCHEMA, "duration"),
+        (RUN_IRRIGATION_CYCLE_SCHEMA, "duration"),
+        (SET_IRRIGATION_STRATEGY_SCHEMA, "p1_shot_duration_seconds"),
+        (SET_IRRIGATION_STRATEGY_SCHEMA, "p2_shot_duration_seconds"),
+    ],
+)
+def test_pump_duration_schema_refuses_above_hard_maximum(schema, field) -> None:
+    """No submitted pump duration or configured cycle cap can exceed one hour."""
+    payload = {"growspace_id": "gs1", field: 3601}
+    if schema is ADD_IRRIGATION_TIME_SCHEMA:
+        payload["time"] = "10:00:00"
+    with pytest.raises(vol.Invalid, match="3600"):
+        schema(payload)
 
 
 def test_set_irrigation_settings_schema_valid() -> None:

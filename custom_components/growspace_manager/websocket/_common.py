@@ -88,7 +88,7 @@ def _send_ws_error(
     for exc_types, code, should_log, message in error_map:
         if isinstance(err, exc_types):
             if should_log:
-                _LOGGER.exception("Error handling %s", func_name)
+                _LOGGER.error("Error handling %s", func_name, exc_info=err)
             connection.send_error(
                 msg["id"], code, message if message is not None else str(err)
             )

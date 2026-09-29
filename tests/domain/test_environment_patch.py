@@ -30,12 +30,14 @@ from custom_components.growspace_manager.domain.environment_patch import (
 from custom_components.growspace_manager.models import (
     ENVIRONMENT_FIELD_OWNERSHIP,
     CirculationFanConfig,
+    ClimateFailSafeConfig,
     EnvironmentConfig,
     ExhaustFanConfig,
     FieldClass,
     FieldOwnership,
     GrowLightConfig,
     IrrigationTank,
+    LightLeakConfig,
     TankWaterHistory,
     VisionCheckupConfig,
 )
@@ -60,6 +62,9 @@ def _lived_in_config() -> EnvironmentConfig:
         circulation_fan_config=CirculationFanConfig(enabled=True, min_speed=20),
         growlight_config=GrowLightConfig(enabled=True, power=75),
         growlight_entities=["light.panel"],
+        light_leak_config=LightLeakConfig(
+            illuminance_sensor="sensor.tent_lux", switch_off_lights=True
+        ),
         vpd_optimal_overrides={
             "veg": {
                 "day": {"low": 0.8, "high": 1.2},
@@ -112,6 +117,12 @@ def test_empty_patch_is_identity() -> None:
         ("snapshot_interval_hours", 6),
         ("growlight_config", GrowLightConfig(enabled=True, power=75)),
         ("growlight_entities", ["light.panel"]),
+        (
+            "light_leak_config",
+            LightLeakConfig(
+                illuminance_sensor="sensor.tent_lux", switch_off_lights=True
+            ),
+        ),
         (
             "vpd_optimal_overrides",
             {
@@ -266,6 +277,26 @@ def test_tank_runtime_carried_over_for_matched_tank() -> None:
     ]
 
 
+def test_tank_staleness_window_is_a_grower_field() -> None:
+    """A re-sent tank sets its staleness window, and 0 survives as 0."""
+    current = _lived_in_config()
+    patch = patch_from_service_call(
+        {
+            "irrigation_tanks": [
+                {
+                    "sensor_entity": "sensor.tank_a",
+                    "name": "Tank A",
+                    "warning_level": 25.0,
+                    "stale_after_minutes": 0,
+                }
+            ]
+        }
+    )
+    verdict = apply_environment_patch(current, patch)
+    assert verdict.config.irrigation_tanks[0].stale_after_minutes == 0
+    assert "irrigation_tanks" in verdict.changed_fields
+
+
 def test_restated_tank_without_runtime_is_not_a_change() -> None:
     """Runtime carry-over happens before diffing, so runtime never reads as change."""
     current = _lived_in_config()
@@ -406,6 +437,124 @@ def test_growlight_sub_config_parsed_from_dict() -> None:
     assert patch.values["growlight_config"] == GrowLightConfig(enabled=True, power=60)
 
 
+def test_growlight_config_save_keeps_light_leak_config() -> None:
+    """The card's Growlights tab replaces growlight_config whole; the guard's
+    settings live beside it, so that save cannot reset them (#794)."""
+    current = _lived_in_config()
+    patch = patch_from_service_call(
+        {
+            "growlight_config": {
+                "enabled": True,
+                "power": 90,
+                "sunrise_enabled": False,
+                "sunrise_minutes": 0,
+            }
+        }
+    )
+    verdict = apply_environment_patch(current, patch)
+    assert verdict.config.light_leak_config == current.light_leak_config
+
+
+def test_light_leak_config_parsed_from_dict() -> None:
+    """The guard's config parses with key filtering; a blank sensor clears it."""
+    patch = patch_from_service_call(
+        {
+            "light_leak_config": {
+                "illuminance_sensor": "",
+                "threshold_lux": 0.5,
+                "debounce_seconds": 0,
+                "switch_off_lights": True,
+                "all_stages": True,
+                "bogus": 1,
+            }
+        }
+    )
+    assert patch.values["light_leak_config"] == LightLeakConfig(
+        illuminance_sensor=None,
+        threshold_lux=0.5,
+        debounce_seconds=0,
+        switch_off_lights=True,
+        all_stages=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("payload", "match"),
+    [
+        ({"illuminance_sensor": "lux"}, "must be an entity ID"),
+        ({"illuminance_sensor": 5}, "must be an entity ID"),
+        ({"threshold_lux": -1}, "threshold_lux must be >= 0"),
+        ({"debounce_seconds": -5}, "debounce_seconds must be >= 0"),
+        ({"threshold_lux": "bright"}, "Invalid light_leak_config payload"),
+    ],
+)
+def test_light_leak_config_refusals(payload: dict[str, Any], match: str) -> None:
+    """Each malformed guard setting is refused with its own message."""
+    with pytest.raises(EnvironmentPatchError, match=match):
+        patch_from_service_call({"light_leak_config": payload})
+
+
+def test_light_leak_config_null_deserializes_to_defaults() -> None:
+    """A stored null light_leak_config loads as the defaults."""
+    config = EnvironmentConfig.from_dict({"light_leak_config": None})
+    assert config.light_leak_config == LightLeakConfig()
+
+
+def test_climate_fail_safe_config_parsed_from_dict() -> None:
+    """The Climate Fail-Safe config parses whole, with key filtering (#792)."""
+    patch = patch_from_service_call(
+        {
+            "climate_fail_safe_config": {
+                "sensor_timeout_minutes": 5,
+                "sensor_stale_after_minutes": 0,
+                "humidifier_safe_state": "hold",
+                "dehumidifier_safe_state": "on",
+                "exhaust_fallback_speed": 0,
+                "humidifier_max_runtime_minutes": 90,
+                "bogus": 1,
+            }
+        }
+    )
+    assert patch.values["climate_fail_safe_config"] == ClimateFailSafeConfig(
+        sensor_timeout_minutes=5,
+        sensor_stale_after_minutes=0,
+        humidifier_safe_state="hold",
+        dehumidifier_safe_state="on",
+        exhaust_fallback_speed=0,
+        humidifier_max_runtime_minutes=90,
+    )
+
+
+@pytest.mark.parametrize(
+    ("payload", "match"),
+    [
+        ({"sensor_timeout_minutes": 0}, "sensor_timeout_minutes must be >= 1"),
+        ({"sensor_stale_after_minutes": -1}, "sensor_stale_after_minutes must be"),
+        ({"humidifier_max_runtime_minutes": -1}, "humidifier_max_runtime_minutes"),
+        ({"dehumidifier_max_runtime_minutes": -1}, "dehumidifier_max_runtime"),
+        ({"exhaust_fallback_speed": 101}, "exhaust_fallback_speed must be between"),
+        ({"exhaust_fallback_speed": -1}, "exhaust_fallback_speed must be between"),
+        ({"humidifier_safe_state": "auto"}, "humidifier_safe_state must be one of"),
+        ({"dehumidifier_safe_state": "OFF"}, "dehumidifier_safe_state must be one"),
+        (
+            {"humidifier_safe_state": "on", "dehumidifier_safe_state": "on"},
+            "cannot both be on",
+        ),
+        ({"sensor_timeout_minutes": [1]}, "Invalid climate_fail_safe_config"),
+    ],
+)
+def test_climate_fail_safe_config_refusals(payload: dict[str, Any], match: str) -> None:
+    """Each malformed fail-safe setting is refused with its own message."""
+    with pytest.raises(EnvironmentPatchError, match=match):
+        patch_from_service_call({"climate_fail_safe_config": payload})
+
+
+def test_climate_fail_safe_config_null_deserializes_to_defaults() -> None:
+    """A stored null climate_fail_safe_config loads as the defaults."""
+    config = EnvironmentConfig.from_dict({"climate_fail_safe_config": None})
+    assert config.climate_fail_safe_config == ClimateFailSafeConfig()
+
+
 # ---------------------------------------------------------------------------
 # Validation error modes
 # ---------------------------------------------------------------------------
@@ -507,6 +656,7 @@ def test_hand_built_patch_rejects_runtime_field(
         ({"exhaust_fan_entities": ["fan.exhaust"]}, {"exhaust_fan"}),
         ({"growlight_entities": ["light.new"]}, {"growlight"}),
         ({"veg_day_hours": 20}, {"growlight"}),
+        ({"light_leak_config": {"threshold_lux": 2.0}}, {"growlight"}),
         ({"camera_entities": ["camera.tent"]}, set()),
     ],
 )

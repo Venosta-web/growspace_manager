@@ -56,6 +56,8 @@ def test_third_scheduled_non_comparable_capture_activates_once_per_streak() -> N
     assert fourth.state is not None
     assert fourth.state.consecutive_count == 4
     assert fourth.state.latest_capture_id == "capture-4"
+    # The capture that began the streak identifies its one activation.
+    assert fourth.state.streak_started_capture_id == "capture-1"
 
 
 def test_quality_rejections_and_material_changes_share_one_camera_streak() -> None:

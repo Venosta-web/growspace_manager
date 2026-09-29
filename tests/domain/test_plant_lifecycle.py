@@ -432,13 +432,21 @@ def test_snapshot_before_first_interval_is_unknown() -> None:
         ),
     ],
 )
+@pytest.mark.parametrize("current_stage", [None, "veg"])
 def test_malformed_history_produces_unknown_with_repair_warning(
-    items: list[tuple[str, str, str | None]], expected: RepairWarningCode
+    items: list[tuple[str, str, str | None]],
+    expected: RepairWarningCode,
+    current_stage: str | None,
 ) -> None:
-    """Every specified corruption class fails closed as Unknown Stage."""
+    """Every specified corruption class fails closed as Unknown Stage.
+
+    A known shadow stage must not change that: when the very first item is
+    rejected there are no parsed intervals to compare it against.
+    """
     lifecycle = PlantLifecycle.from_data(
         history(*items),
         observed_on=TODAY,
+        current_stage=current_stage,
         legacy_dates={"veg_start": "2026-08-01"},
     )
 

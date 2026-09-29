@@ -25,7 +25,7 @@ silently removed nothing.
 ## Decision
 
 `domain/irrigation_schedule.py` (the EC State / Pump Cycle Gate mould: pure,
-no `hass`) is the one owner of what a schedule time *is* and how the
+no `hass`) is the one owner of what a schedule time _is_ and how the
 schedule lists change:
 
 - `normalize_schedule_time` — strict, for writes; raises `ValueError`.
@@ -33,7 +33,7 @@ schedule lists change:
 - `parse_stored_time` — lenient, for reads; `None` on malformed entries.
 - `upsert_item` / `remove_items` — pure list operations returning a
   `ScheduleChange` (new list + updated flag / removed count).
-- `schedulable_events` — dedup (keyed on the *parsed* time, so a legacy
+- `schedulable_events` — dedup (keyed on the _parsed_ time, so a legacy
   `"08:00"` and a normalized `"08:00:00"` cannot register twice) plus the
   valid/malformed split the shell logs.
 - `next_occurrence` — soonest future occurrence, rolling past times to

@@ -36,6 +36,8 @@ All services provided by the Growspace Manager integration can be invoked from H
    - [growspace_manager.remove_environment](#growspace_managerremove_environment)
    - [growspace_manager.set_dehumidifier_control](#growspace_managerset_dehumidifier_control)
 5. [Smart Irrigation & Steering](#smart-irrigation--steering)
+   - [growspace_manager.set_override](#growspace_managerset_override)
+   - [growspace_manager.clear_override](#growspace_managerclear_override)
    - [growspace_manager.set_irrigation_settings](#growspace_managerset_irrigation_settings)
    - [growspace_manager.set_irrigation_strategy](#growspace_managerset_irrigation_strategy)
    - [growspace_manager.add_irrigation_time](#growspace_manageradd_irrigation_time)
@@ -58,6 +60,7 @@ All services provided by the Growspace Manager integration can be invoked from H
    - [growspace_manager.ask_grow_advice](#growspace_managerask_grow_advice)
    - [growspace_manager.strain_recommendation](#growspace_managerstrain_recommendation)
    - [growspace_manager.trigger_vision_checkup](#growspace_managertrigger_vision_checkup)
+   - [growspace_manager.export_reliability_evidence](#growspace_managerexport_reliability_evidence)
 9. [Genetics & Breeding Registry](#genetics--breeding-registry)
    - [growspace_manager.add_seed_batch](#growspace_manageradd_seed_batch)
    - [growspace_manager.update_seed_batch](#growspace_managerupdate_seed_batch)
@@ -298,7 +301,10 @@ Edits attributes, stages, or coordinate locations of a plant.
 | `dry_start`      | `date`    | No       | -       | Drying stage start date (YYYY-MM-DD).                                               |
 | `cure_start`     | `date`    | No       | -       | Curing stage start date (YYYY-MM-DD).                                               |
 | `stage`          | `string`  | No       | -       | Directly set stage (`seedling`, `mother`, `clone`, `veg`, `flower`, `dry`, `cure`). |
-| `notes`          | `string`  | No       | -       | Update notes.                                                                       |
+
+Any other key is refused with a validation error naming it, and the plant is
+left untouched. A plant's stage history, scores and harvest metrics are written
+by the lifecycle and by their own services, never through `update_plant`.
 
 ### `growspace_manager.remove_plant`
 
@@ -422,25 +428,77 @@ data:
 
 Binds physical environmental monitors, light schedules, and active climate controls to a growspace zone.
 
-| Parameter              | Type      | Required | Default | Description                                                  |
-| :--------------------- | :-------- | :------- | :------ | :----------------------------------------------------------- |
-| `growspace_id`         | `string`  | Yes      | -       | Growspace zone ID.                                           |
-| `temperature_sensor`   | `string`  | Yes      | -       | Ambient temperature sensor entity.                           |
-| `humidity_sensor`      | `string`  | Yes      | -       | Ambient relative humidity sensor entity.                     |
-| `vpd_sensor`           | `string`  | Yes      | -       | Vapor Pressure Deficit sensor entity (kPa).                  |
-| `co2_sensor`           | `string`  | No       | -       | Carbon Dioxide sensor entity (ppm).                          |
-| `circulation_fan`      | `string`  | No       | -       | Circulation fan switch/fan entity.                           |
-| `exhaust_entity`       | `string`  | No       | -       | Exhaust fan/damper switch/fan entity.                        |
-| `humidifier_entity`    | `string`  | No       | -       | Humidifier controller or switch.                             |
-| `dehumidifier_entity`  | `string`  | No       | -       | Dehumidifier controller or switch.                           |
-| `light_sensor`         | `string`  | No       | -       | Light level sensor or light switch status entity.            |
-| `soil_moisture_sensor` | `string`  | No       | -       | Substrate VWC soil moisture sensor entity.                   |
-| `stress_threshold`     | `float`   | No       | `0.70`  | Bayesian stress alert confidence threshold (0.50-0.95).      |
-| `mold_threshold`       | `float`   | No       | `0.75`  | Bayesian mold alert confidence threshold (0.50-0.95).        |
-| `control_dehumidifier` | `boolean` | No       | `false` | Enable active automated target steering of the dehumidifier. |
-| `sensor_groups`        | `object`  | No       | -       | Configuration mapping for multidimensional heatmaps.         |
-| `sensor_coordinates`   | `object`  | No       | -       | Coordinates map for multi-sensor configurations.             |
-| `irrigation_tanks`     | `object`  | No       | -       | Irrigation nutrient tank volume & EC configurations.         |
+| Parameter                  | Type      | Required | Default | Description                                                                                                                                                                                                                                                            |
+| :------------------------- | :-------- | :------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `growspace_id`             | `string`  | Yes      | -       | Growspace zone ID.                                                                                                                                                                                                                                                     |
+| `temperature_sensor`       | `string`  | Yes      | -       | Ambient temperature sensor entity.                                                                                                                                                                                                                                     |
+| `humidity_sensor`          | `string`  | Yes      | -       | Ambient relative humidity sensor entity.                                                                                                                                                                                                                               |
+| `vpd_sensor`               | `string`  | Yes      | -       | Vapor Pressure Deficit sensor entity (kPa).                                                                                                                                                                                                                            |
+| `co2_sensor`               | `string`  | No       | -       | Carbon Dioxide sensor entity (ppm).                                                                                                                                                                                                                                    |
+| `circulation_fan`          | `string`  | No       | -       | Circulation fan switch/fan entity.                                                                                                                                                                                                                                     |
+| `exhaust_entity`           | `string`  | No       | -       | Exhaust fan/damper switch/fan entity.                                                                                                                                                                                                                                  |
+| `humidifier_entity`        | `string`  | No       | -       | Humidifier controller or switch.                                                                                                                                                                                                                                       |
+| `dehumidifier_entity`      | `string`  | No       | -       | Dehumidifier controller or switch.                                                                                                                                                                                                                                     |
+| `light_sensor`             | `string`  | No       | -       | Light level sensor or light switch status entity.                                                                                                                                                                                                                      |
+| `soil_moisture_sensor`     | `string`  | No       | -       | Substrate VWC soil moisture sensor entity.                                                                                                                                                                                                                             |
+| `stress_threshold`         | `float`   | No       | `0.70`  | Bayesian stress alert confidence threshold (0.50-0.95).                                                                                                                                                                                                                |
+| `mold_threshold`           | `float`   | No       | `0.75`  | Bayesian mold alert confidence threshold (0.50-0.95).                                                                                                                                                                                                                  |
+| `control_dehumidifier`     | `boolean` | No       | `false` | Enable active automated target steering of the dehumidifier.                                                                                                                                                                                                           |
+| `sensor_groups`            | `object`  | No       | -       | Configuration mapping for multidimensional heatmaps.                                                                                                                                                                                                                   |
+| `sensor_coordinates`       | `object`  | No       | -       | Coordinates map for multi-sensor configurations.                                                                                                                                                                                                                       |
+| `irrigation_tanks`         | `object`  | No       | -       | Irrigation nutrient tank volume & EC configurations. Each tank may set `stale_after_minutes` (default 120): how long its sensor may go without reporting before its level counts as unknown; `0` turns this off for a sensor that reports only when the level changes. |
+| `light_leak_config`        | `object`  | No       | -       | Light Leak Guard settings — see below.                                                                                                                                                                                                                                 |
+| `climate_fail_safe_config` | `object`  | No       | -       | Climate Fail-Safe settings — see below.                                                                                                                                                                                                                                |
+
+#### Light Leak Guard (`light_leak_config`)
+
+During the computed dark period of a flowering growspace (lights-on time plus the
+veg/flower day hours — the same window the Grow Light Controller drives), the guard
+checks every minute and at start-up for light. It looks at a managed grow light that
+reports on (only when the Grow Light Controller is enabled), and at an optional
+illuminance sensor above a threshold. Evidence that lasts longer than the debounce
+raises **one** critical notification and a logbook entry per episode. The episode
+ends when the light goes away or the lit period begins.
+
+| Key                  | Type      | Default | Description                                                                                                                                                                                                  |
+| :------------------- | :-------- | :------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`            | `boolean` | `true`  | Whether the guard runs. It only runs when it has something to watch: an illuminance sensor, or grow lights the controller drives.                                                                            |
+| `illuminance_sensor` | `string`  | -       | A lux sensor in the room. On its own it is enough, so rooms on a hardware timer are covered too.                                                                                                             |
+| `threshold_lux`      | `float`   | `1.0`   | A reading **above** this is light.                                                                                                                                                                           |
+| `debounce_seconds`   | `int`     | `120`   | How long evidence must last before it alerts.                                                                                                                                                                |
+| `switch_off_lights`  | `boolean` | `false` | Opt-in. Switch the managed grow lights off for the rest of the dark period and read them back. Lights still on 2 minutes later raise a second alert. AC Infinity ports get their schedule back at lights-on. |
+| `all_stages`         | `boolean` | `false` | Also watch the veg dark period.                                                                                                                                                                              |
+
+The object is replaced whole: send every key you want to keep.
+
+#### Climate Fail-Safe (`climate_fail_safe_config`)
+
+The humidifier, dehumidifier and exhaust controllers hold their last command
+while a control sensor cannot be read. They read it for freshness as well as
+availability and plausibility, and re-check it every minute, so a sensor that has
+frozen is noticed too. Once every sensor a controller depends on has had no usable
+reading for the timeout, the controller goes to its safe state until one reads
+again. The humidifier and dehumidifier depend on the VPD sensor. The exhaust
+depends on the first temperature, humidity and VPD sensor, and falls back only
+when all of them have failed. Circulation holds.
+
+A dead sensor raises **one** push and one persistent notification for the
+growspace, naming every controller in its safe state, and one message when control
+resumes. Independently, the humidifier and dehumidifier never run together: when
+both want to, the one whose demand began later switches the other off, and a
+logbook note says so.
+
+| Key                                | Type     | Default | Description                                                                                                                         |
+| :--------------------------------- | :------- | :------ | :---------------------------------------------------------------------------------------------------------------------------------- |
+| `sensor_timeout_minutes`           | `int`    | `10`    | How long every input must be unusable before the safe state (at least 1).                                                           |
+| `sensor_stale_after_minutes`       | `int`    | `30`    | The longest a sensor may go without reporting before it is stale; it is stale sooner if it has been reporting faster. `0` is never. |
+| `humidifier_safe_state`            | `string` | `off`   | `off`, `on` or `hold` (leave it as it is).                                                                                          |
+| `dehumidifier_safe_state`          | `string` | `off`   | `off`, `on` or `hold`. The two may not both be `on`.                                                                                |
+| `exhaust_fallback_speed`           | `int`    | `50`    | The exhaust's speed in its safe state, 0–100 %, clamped into its `min_speed`–`max_speed`.                                           |
+| `humidifier_max_runtime_minutes`   | `int`    | `0`     | Switch the humidifier off after running this long without a break; its minimum off time is the break. `0` is no limit.              |
+| `dehumidifier_max_runtime_minutes` | `int`    | `0`     | The same for the dehumidifier.                                                                                                      |
+
+The object is replaced whole: send every key you want to keep.
 
 ### `growspace_manager.remove_environment`
 
@@ -463,17 +521,164 @@ Toggles active dynamic climate steering on/off.
 
 ## Smart Irrigation & Steering
 
+### Irrigation controller safety
+
+Each growspace with an irrigation or drain output exposes an enum sensor named
+`sensor.<growspace>_irrigation_controller`. It reports `idle` (no automation),
+`ready`, `running`, `inhibited` (a transient gate such as a low tank, daily cap,
+or dark period), `fault` (a latched hardware disagreement), or
+`emergency_stop` (a durable state for the operator stop control in #791). Its attributes are `reasons`, a list
+of `{code, detail, since}` objects, `fault_id`, `requires_ack`, `since`, and
+`overrides`, every [manual override](#growspace_managerset_override) the
+growspace has, whatever it holds, as `{subsystem, started_at, expires_at,
+user_id, reason}`. Reason codes are stable machine identifiers; current
+hardware codes are `fault_off_unconfirmed:<entity>`,
+`fault_watchdog_off_unconfirmed:<entity>`, `fault_on_unconfirmed:<entity>`,
+`fault_on_command_failed:<entity>` and `fault_unexpected_on:<entity>`.
+
+Growspace Manager watches every pump it manages. A pump that reads `on` while
+no cycle of its own is running — someone at the relay, another automation, or a
+relay glitching — is an **unexpected ON**. What follows depends on
+`unexpected_on_policy`:
+
+- `alert` (the default) treats it as a person watering by hand. A notification
+  and a persistent notification go out, the controller reads `inhibited` with
+  reason `override_detected`, and no cycle runs — scheduled, crop-steering or
+  manual — until the pump reads `off` again. Growspace Manager does not switch
+  it off, and it does not book that water as its own.
+- `enforce_off` switches the pump off, reads it back and latches
+  `fault_unexpected_on:<entity>` (or `fault_off_unconfirmed:<entity>`, with the
+  OFF retries, if it will not read off), which an administrator must
+  acknowledge. With growspace automation off or an emergency stop latched it
+  only alerts, because then Growspace Manager sends no commands at all.
+
+A pump that is already on when a start begins is treated the same way. Every
+unexpected ON is written to the safety ledger, with the policy and what was
+done. While a [manual override](#growspace_managerset_override) holds
+irrigation, a pump reading `on` is expected and nothing is raised.
+
+Every pump is read back after it is told OFF: first after one second, then
+every half second, for up to six seconds. A pump that has not reported `off` by
+then latches `fault_off_unconfirmed`. Growspace Manager sends OFF again at once,
+raises a persistent notification, and keeps sending OFF every minute — also
+after a restart — until the pump reads `off`. The fault stays latched until it
+is acknowledged.
+
+A cycle whose `turn_on` is refused, or whose pump does not report `on` within
+ten seconds, is stopped, read back, and recorded in the safety store as not
+delivered: it does not count towards the daily cycle and volume limits, adds no
+water, and does not restart a crop-steering cooldown. Three such cycles in a row
+on the same pump latch `fault_on_command_failed` or `fault_on_unconfirmed`; a
+cycle that confirms in between starts the count again.
+
+After Home Assistant starts or the integration reloads, the controller reads
+`inhibited` with reason `startup_inhibit` until `startup_grace_minutes` (default 5) have passed **and** the soil moisture sensor (while crop steering is on) and
+every configured tank sensor have each reported since the start. Its `detail`
+names whichever of the two is still outstanding. No automatic cycle runs inside
+it, and a missed one is not replayed; a manual run is still allowed and still
+passes every other gate. Crop steering also resumes the day it was in: a
+restart after P1 completed resumes in P2, and the next shot's cooldown is
+measured from the last shot the pump confirmed before the restart.
+
+With `pause_on_low_tank` on (the default), a configured tank whose level is
+**unknown** also holds irrigation — scheduled, crop-steering and manual cycles
+alike — and the controller reads `inhibited` with reason `tank_unknown`. A level
+is unknown when the sensor is unavailable, when it has not reported for the
+tank's `stale_after_minutes` (default 120; `0` turns that check off for a
+sensor that reports only on change), or when it reads outside 0–100 %.
+For `tank_unknown_grace_minutes` (default 10) the last valid reading is used
+instead, so a short dropout does not stop anything; a tank with no valid reading
+since the start is unknown at once. Whether or not a cycle is due, and whatever
+`pause_on_low_tank` says, a tank unknown for longer than the grace period sends
+one **Tank Offline** notification to the growspace's notification target and
+raises a persistent notification; both are followed by a "back online" message
+when the tank reports again. A probe that keeps dropping out is announced at
+most once an hour. Set `pause_on_low_tank: false` to keep irrigating on an
+unknown tank; the notifications still go out.
+
+While crop steering is on, the soil moisture sensor is validated before every
+steering decision. It is **invalid** when it is unavailable, when it reads
+outside 0–100 % (or exactly 0, with `moisture_zero_is_implausible`), or NaN, or
+when it has stopped reporting: a sensor is stale after three of the intervals
+it has been seen to report at (never under 5 minutes), and at most after
+`sensor_stale_after_minutes` (default 30; `0` turns that check off). A sensor
+that repeats the same value still counts as reporting. An invalid reading is
+never read as 0: no automatic shot fires, and the controller reads `inhibited`
+with reason `sensor_unavailable`, `sensor_stale` or `sensor_implausible`. After
+`sensor_alert_delay_minutes` (default 15) one notification goes out, with a
+persistent notification, and a second when the sensor reads again; a sensor
+that keeps dropping out is announced at most once an hour. Manual runs are not
+held. Pore EC sensors are validated the same way (0–20 mS/cm, and a sensor in
+µS/cm is converted); an invalid one is left out of the pore EC average rather
+than holding irrigation.
+
+A fault blocks scheduled and manual cycles and survives a Home Assistant restart.
+The last 500 safety events are kept in the integration's safety store and included
+in diagnostics, independent of Recorder retention. A repair appears in Settings
+until an administrator acknowledges the fault.
+
+### `growspace_manager.set_override`
+
+Hand one subsystem of a growspace to a person for a while. Until the override
+expires or is cleared, Growspace Manager sends that subsystem no commands at
+all: no cycle, no regulation tick, no fail-safe, no OFF. A cycle already
+running when irrigation is taken over is closed first — its own OFF is the last
+command the pump gets. The override is written to the safety store before the
+call returns, survives a restart, and is listed in the controller sensor's
+`overrides`; an irrigation override also reads `inhibited` with reason
+`manual_override`. The caller's HA user ID and the reason go into the safety
+ledger. Any user may set one: it only ever takes commands away. The emergency
+stop still commands everything to its safe state.
+
+When an irrigation override ends, a pump the person left running is an
+unexpected ON like any other.
+
+| Parameter      | Type       | Required | Description                                                                                                    |
+| :------------- | :--------- | :------- | :------------------------------------------------------------------------------------------------------------- |
+| `growspace_id` | `string`   | Yes      | Growspace whose subsystem a person is taking over.                                                             |
+| `subsystem`    | `string`   | Yes      | `irrigation` (irrigation and drain pumps), `exhaust`, `circulation`, `humidifier`, `dehumidifier` or `lights`. |
+| `duration`     | `duration` | Yes      | How long it lasts, more than zero and at most 24 hours. Setting it again replaces the override.                |
+| `reason`       | `string`   | No       | Why, up to 200 characters; shown in the controller state and the ledger.                                       |
+
+### `growspace_manager.clear_override`
+
+End a manual override early. Growspace Manager resumes control of the subsystem
+on its next decision. Refused when no override of that subsystem is set.
+
+| Parameter      | Type     | Required | Description                               |
+| :------------- | :------- | :------- | :---------------------------------------- |
+| `growspace_id` | `string` | Yes      | Growspace whose override to clear.        |
+| `subsystem`    | `string` | Yes      | The subsystem to hand back to automation. |
+
+### `growspace_manager.acknowledge_fault`
+
+Re-arm a latched fault after every affected output has been verified OFF. The
+service refuses unknown, unavailable, or ON outputs and names each one; it also
+refuses callers who are not Home Assistant administrators. Successful calls
+record the administrator's HA user ID in the safety ledger. Re-arming does not
+start a cycle.
+
+| Parameter      | Type     | Required | Description                            |
+| :------------- | :------- | :------- | :------------------------------------- |
+| `growspace_id` | `string` | Yes      | Growspace whose fault is acknowledged. |
+
 ### `growspace_manager.set_irrigation_settings`
 
 Sets the basic plumbing hardware profiles and default cycle times for simple timer waterings.
 
-| Parameter                | Type      | Required | Default | Description                                    |
-| :----------------------- | :-------- | :------- | :------ | :--------------------------------------------- |
-| `growspace_id`           | `string`  | Yes      | -       | Target growspace zone ID.                      |
-| `irrigation_pump_entity` | `string`  | No       | -       | Feed pump switch entity ID.                    |
-| `drain_pump_entity`      | `string`  | No       | -       | Drainage pump switch entity ID.                |
-| `irrigation_duration`    | `integer` | No       | -       | Standard duration to run feed pump (seconds).  |
-| `drain_duration`         | `integer` | No       | -       | Standard duration to run drain pump (seconds). |
+| Parameter                      | Type      | Required | Default | Description                                                                                                                                              |
+| :----------------------------- | :-------- | :------- | :------ | :------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `growspace_id`                 | `string`  | Yes      | -       | Target growspace zone ID.                                                                                                                                |
+| `irrigation_pump_entity`       | `string`  | No       | -       | Feed pump switch entity ID.                                                                                                                              |
+| `drain_pump_entity`            | `string`  | No       | -       | Drainage pump switch entity ID.                                                                                                                          |
+| `irrigation_duration`          | `integer` | No       | -       | Standard duration to run feed pump (seconds).                                                                                                            |
+| `drain_duration`               | `integer` | No       | -       | Standard duration to run drain pump (seconds).                                                                                                           |
+| `startup_grace_minutes`        | `integer` | No       | `5`     | Minimum startup hold on automatic cycles (0–120 minutes).                                                                                                |
+| `tank_unknown_grace_minutes`   | `integer` | No       | `10`    | How long a tank's level may be unknown before irrigation pauses on it and the offline notification is sent (0–120 minutes).                              |
+| `sensor_stale_after_minutes`   | `integer` | No       | `30`    | The longest the moisture and pore EC sensors may go without reporting before they are stale (0–1440 minutes; `0` is off).                                |
+| `sensor_alert_delay_minutes`   | `integer` | No       | `15`    | How long the moisture sensor may be invalid before its notification is sent (0–1440 minutes).                                                            |
+| `moisture_zero_is_implausible` | `boolean` | No       | `false` | Treat a moisture reading of exactly 0 as implausible.                                                                                                    |
+| `unexpected_on_policy`         | `string`  | No       | `alert` | What a pump switched on outside Growspace Manager leads to: `alert` or `enforce_off`. See [Irrigation controller safety](#irrigation-controller-safety). |
 
 ### `growspace_manager.set_irrigation_strategy`
 
@@ -700,6 +905,16 @@ Instructs your camera system to snap a photo and run deep visual diagnosis on th
 | Parameter      | Type     | Required | Default | Description               |
 | :------------- | :------- | :------- | :------ | :------------------------ |
 | `growspace_id` | `string` | Yes      | -       | Target growspace zone ID. |
+
+### `growspace_manager.export_reliability_evidence`
+
+Returns the growspace's [reliability evidence](reliability-evidence.md) as a
+versioned JSON document to the calling client (`return_response: true`). Nothing
+is sent anywhere else; the grower decides whether to share it.
+
+| Parameter      | Type     | Required | Default | Description                         |
+| :------------- | :------- | :------- | :------ | :---------------------------------- |
+| `growspace_id` | `string` | Yes      | -       | Growspace whose evidence to return. |
 
 ---
 

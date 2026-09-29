@@ -18,6 +18,8 @@ def _continuity_state(
     latest_capture_id: str = "capture-3",
     camera_id: str = "camera.canopy",
     growspace_id: str = GROWSPACE_ID,
+    started_by: str = "capture-1",
+    consecutive_count: int = 3,
 ):
     from custom_components.growspace_manager.domain.capture_continuity import (
         CaptureContinuityState,
@@ -28,8 +30,9 @@ def _continuity_state(
         growspace_id=growspace_id,
         camera_id=camera_id,
         streak_started_at=datetime(2026, 9, 1, 6, tzinfo=UTC),
-        consecutive_count=3,
-        reason_counts=((ContinuityReason.FRAME_REJECTED, 3),),
+        streak_started_capture_id=started_by,
+        consecutive_count=consecutive_count,
+        reason_counts=((ContinuityReason.FRAME_REJECTED, consecutive_count),),
         latest_capture_id=latest_capture_id,
         latest_captured_at=datetime(2026, 9, 1, 8, tzinfo=UTC),
         condition_active=True,
@@ -138,6 +141,9 @@ async def test_capture_continuity_alert_is_equipment_evidence_only(monitor) -> N
     assert "bayesian_reasons" not in alert
     assert "bayesian_probability" not in alert
     assert "ai_reasoning" not in alert
+    # Activation identity is internal bookkeeping, not part of the card contract.
+    assert "activation_id" not in alert
+    assert monitor._alerts[0]["activation_id"] == "capture-1"
 
 
 async def test_cleared_continuity_condition_rearms_without_resolving_alert(
@@ -177,9 +183,12 @@ async def test_active_continuity_alert_updates_without_duplication(monitor) -> N
 
 
 async def test_continuity_alerts_honor_the_retention_cap(monitor) -> None:
-    """Equipment alerts use the same bounded durable inbox as other alert types."""
+    """A cleared equipment alert is evicted from the bounded Inbox like any other."""
     monitor.MAX_ALERTS = 1
     first = await monitor.async_record_capture_continuity_break(_continuity_state())
+    await monitor.async_clear_capture_continuity_break(
+        GROWSPACE_ID, "camera.canopy", cleared_at=datetime(2026, 9, 1, 9, tzinfo=UTC)
+    )
 
     second = await monitor.async_record_capture_continuity_break(
         _continuity_state(camera_id="camera.side", latest_capture_id="capture-side-3")
@@ -187,6 +196,139 @@ async def test_continuity_alerts_honor_the_retention_cap(monitor) -> None:
 
     assert monitor._alerts == [second]
     assert first not in monitor._alerts
+
+
+async def test_trimming_never_evicts_a_live_condition(monitor) -> None:
+    """An active condition is current, however old; older history goes first."""
+    monitor.MAX_ALERTS = 2
+    live = await monitor.async_record_capture_continuity_break(_continuity_state())
+    await monitor.async_record_alert(GROWSPACE_ID, "stress", STRESS_REASONS, 0.9)
+    await monitor.async_record_alert(GROWSPACE_ID, "mold", MOLD_REASONS, 0.8)
+    await monitor.async_record_alert(GROWSPACE_ID, "stress", STRESS_REASONS, 0.7)
+
+    assert len(monitor._alerts) == 2
+    assert monitor._alerts[0] is live
+    assert monitor._alerts[1]["bayesian_probability"] == 0.7
+
+
+async def test_a_new_activation_closes_a_stale_active_alert(monitor) -> None:
+    """An alert still active for an earlier streak cannot answer for a new one."""
+    stale = await monitor.async_record_capture_continuity_break(_continuity_state())
+
+    fresh = await monitor.async_record_capture_continuity_break(
+        _continuity_state(started_by="capture-9", latest_capture_id="capture-11")
+    )
+
+    assert fresh is not stale
+    assert stale["condition_active"] is False
+    assert stale["cleared_at"] == datetime(2026, 9, 1, 6, tzinfo=UTC).isoformat()
+    assert fresh["activation_id"] == "capture-9"
+    assert fresh["condition_active"] is True
+
+
+async def test_reconcile_corrects_the_active_alert_in_place(monitor) -> None:
+    """Recovered evidence replaces derived fields; identity and notes stay."""
+    alert = await monitor.async_record_capture_continuity_break(_continuity_state())
+    await monitor.resolve_alert(alert["alert_id"], "checked")
+    timestamp = alert["timestamp"]
+
+    await monitor.async_reconcile_capture_continuity(
+        [
+            (
+                _continuity_state(consecutive_count=7, latest_capture_id="capture-7"),
+                datetime(2026, 9, 1, 8, tzinfo=UTC),
+            )
+        ],
+        cleared_at=datetime(2026, 9, 2, tzinfo=UTC),
+    )
+
+    assert monitor._alerts == [alert]
+    assert alert["consecutive_count"] == 7
+    assert alert["latest_capture_id"] == "capture-7"
+    assert alert["timestamp"] == timestamp
+    assert alert["resolved"] is True
+    assert alert["resolution_notes"] == "checked"
+
+
+async def test_reconcile_adopts_an_alert_recorded_before_activation_identity(
+    monitor,
+) -> None:
+    """An upgraded alert has no activation yet; it takes the recovered one."""
+    alert = await monitor.async_record_capture_continuity_break(_continuity_state())
+    del alert["activation_id"]
+
+    await monitor.async_reconcile_capture_continuity(
+        [
+            (
+                _continuity_state(started_by="capture-0", consecutive_count=5),
+                datetime(2026, 9, 1, 8, tzinfo=UTC),
+            )
+        ],
+        cleared_at=datetime(2026, 9, 2, tzinfo=UTC),
+    )
+
+    assert monitor._alerts == [alert]
+    assert alert["activation_id"] == "capture-0"
+    assert alert["consecutive_count"] == 5
+
+
+async def test_reconcile_clears_what_evidence_no_longer_supports(monitor) -> None:
+    """Stale, superseded and duplicate active alerts all clear; none is deleted."""
+    cleared_at = datetime(2026, 9, 2, tzinfo=UTC)
+    gone = await monitor.async_record_capture_continuity_break(
+        _continuity_state(camera_id="camera.gone")
+    )
+    superseded = await monitor.async_record_capture_continuity_break(
+        _continuity_state()
+    )
+    duplicate = dict(superseded, alert_id="duplicate", activation_id="capture-5")
+    current = dict(superseded, alert_id="current", activation_id="capture-5")
+    monitor._alerts.extend([duplicate, current])
+
+    await monitor.async_reconcile_capture_continuity(
+        [(_continuity_state(started_by="capture-5"), cleared_at)],
+        cleared_at=cleared_at,
+    )
+
+    assert len(monitor._alerts) == 4
+    assert [alert["condition_active"] for alert in monitor._alerts] == [
+        False,
+        False,
+        False,
+        True,
+    ]
+    assert monitor._alerts[3] is current
+    for alert in (gone, superseded, duplicate):
+        assert alert["cleared_at"] == cleared_at.isoformat()
+
+
+async def test_reconcile_raises_a_missing_alert_at_its_activation(
+    monitor, store
+) -> None:
+    """An active condition with no alert gets exactly one, dated when it began."""
+    activated_at = datetime(2026, 9, 1, 8, tzinfo=UTC)
+
+    await monitor.async_reconcile_capture_continuity(
+        [(_continuity_state(), activated_at)],
+        cleared_at=datetime(2026, 9, 2, tzinfo=UTC),
+    )
+
+    (alert,) = monitor.get_alerts(alert_type="capture_continuity_break")
+    assert alert["condition_active"] is True
+    assert alert["timestamp"] == int(activated_at.timestamp())
+    store.async_save.assert_awaited_once()
+
+
+async def test_reconcile_with_nothing_to_do_writes_nothing(monitor, store) -> None:
+    """No continuity alerts and no recovered conditions: the Inbox is untouched."""
+    await monitor.async_record_alert(GROWSPACE_ID, "stress", STRESS_REASONS, 0.9)
+    store.async_save.reset_mock()
+
+    await monitor.async_reconcile_capture_continuity(
+        [], cleared_at=datetime(2026, 9, 2, tzinfo=UTC)
+    )
+
+    store.async_save.assert_not_awaited()
 
 
 async def test_clear_continuity_break_returns_false_without_active_alert(

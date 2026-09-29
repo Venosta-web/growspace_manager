@@ -125,6 +125,8 @@ from .const import (
     SteeringMode,
     SubstrateMediaType,
 )
+from .domain.manual_override import UnexpectedOnPolicy
+from .domain.setup_preset import SETUP_MODULES, SETUP_PRESETS
 from .validation import valid_date_or_none, valid_growspace_id
 
 
@@ -158,6 +160,22 @@ _PLANT_DAYS_FIELDS: dict[Any, Any] = {
     vol.Optional(f"{stage}_days"): vol.All(vol.Coerce(int)) for stage in PLANT_STAGES
 }
 
+# The Plant fields a grower edits through ``update_plant``, and nothing more.
+# Everything else on a Plant belongs to the domain: ``stage_history`` is the
+# Plant Lifecycle's, scores and harvest metrics have services of their own. The
+# manager copies every key a Plant has an attribute for straight onto it, so a
+# key that got past the boundary could be saved in a shape the next load
+# refuses, and that refusal drops the Plant (#804, #805).
+UPDATE_PLANT_EDITABLE_FIELDS: tuple[str, ...] = (
+    ATTR_GROWSPACE_ID,
+    ATTR_STRAIN,
+    ATTR_PHENOTYPE,
+    ATTR_ROW,
+    ATTR_COL,
+    ATTR_STAGE,
+    *DATE_FIELDS,
+)
+
 
 # Add Growspace
 ADD_GROWSPACE_SCHEMA = vol.Schema(
@@ -166,6 +184,7 @@ ADD_GROWSPACE_SCHEMA = vol.Schema(
         vol.Required("rows"): vol.All(int, vol.Range(min=1)),
         vol.Required("plants_per_row"): vol.All(int, vol.Range(min=1)),
         vol.Optional("notification_target"): str,
+        vol.Optional("setup_preset"): vol.In(list(SETUP_PRESETS)),
     }
 )
 
@@ -184,6 +203,12 @@ UPDATE_GROWSPACE_SCHEMA = vol.Schema(
         vol.Optional("rows"): vol.All(int, vol.Range(min=1)),
         vol.Optional("plants_per_row"): vol.All(int, vol.Range(min=1)),
         vol.Optional("notification_target"): str,
+        # Stamps the preset's Setup Modules, even when it is the one declared.
+        vol.Optional("setup_preset"): vol.In(list(SETUP_PRESETS)),
+        # A partial edit of the offered modules, merged over the stamp.
+        vol.Optional("setup_modules"): vol.Schema(
+            {vol.Optional(module): cv.boolean for module in SETUP_MODULES}
+        ),
     }
 )
 
@@ -232,11 +257,10 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
         vol.Optional("position"): str,
         vol.Optional(ATTR_ROW): vol.All(int, vol.Range(min=1)),
         vol.Optional(ATTR_COL): vol.All(int, vol.Range(min=1)),
-        vol.Optional(ATTR_STAGE): str,  # Assuming stage can be updated
+        vol.Optional(ATTR_STAGE): str,
         **_PLANT_DATE_FIELDS,
         **_PLANT_DAYS_FIELDS,
-    },
-    extra=vol.ALLOW_EXTRA,
+    }
 )
 
 
@@ -244,6 +268,10 @@ UPDATE_PLANT_SCHEMA = vol.Schema(
 REMOVE_PLANT_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_PLANT_ID): str,
+        vol.Optional("harvest_outcome_choice"): vol.In(
+            ["no_usable_yield", "incomplete"]
+        ),
+        vol.Optional("harvest_outcome_reason"): str,
     }
 )
 
@@ -366,6 +394,8 @@ EXPORT_STRAIN_LIBRARY_SCHEMA = vol.Schema(
         # Optionally, could specify which strains to export, but current logic exports all
     }
 )
+
+EXPORT_RELIABILITY_EVIDENCE_SCHEMA = vol.Schema({vol.Required("growspace_id"): str})
 
 EXPORT_GROW_REPORT_SCHEMA = vol.Schema(
     {
@@ -639,6 +669,8 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional("growlight_entities"): cv.ensure_list,
         vol.Optional("growlight_config"): dict,
         vol.Optional("growlight_ac_infinity_devices"): [AC_INFINITY_GROWLIGHT_SCHEMA],
+        vol.Optional("light_leak_config"): dict,
+        vol.Optional("climate_fail_safe_config"): dict,
         vol.Optional(CONF_LST_OFFSET): vol.All(
             vol.Coerce(float), vol.Range(min=-10.0, max=10.0)
         ),
@@ -698,20 +730,20 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
             vol.Coerce(float), vol.Range(min=0.0, max=100.0)
         ),
         vol.Optional("p1_shot_duration_seconds"): vol.All(
-            vol.Coerce(int), vol.Range(min=0)
+            vol.Coerce(int), vol.Range(min=0, max=3600)
         ),
         vol.Optional("p1_shot_interval_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
         ),
         vol.Optional("p2_shot_duration_seconds"): vol.All(
-            vol.Coerce(int), vol.Range(min=0)
+            vol.Coerce(int), vol.Range(min=0, max=3600)
         ),
         vol.Optional("p2_shot_interval_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
         ),
         # Deprecated shared shot fields: still accepted, write both phases
         vol.Optional("shot_duration_seconds"): vol.All(
-            vol.Coerce(int), vol.Range(min=0)
+            vol.Coerce(int), vol.Range(min=0, max=3600)
         ),
         vol.Optional("shot_interval_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
@@ -780,9 +812,17 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             vol.Optional("emitter_count"): vol.All(vol.Coerce(int), vol.Range(min=0)),
             vol.Optional("drain_pump_entity"): str,
             vol.Optional("irrigation_duration"): vol.All(
-                vol.Coerce(int), vol.Range(min=1)
+                vol.Coerce(int), vol.Range(min=1, max=3600)
             ),
-            vol.Optional("drain_duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+            vol.Optional("drain_duration"): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=3600)
+            ),
+            vol.Optional("max_cycle_seconds"): vol.All(
+                vol.Coerce(int), vol.Range(min=1, max=3600)
+            ),
+            vol.Optional("min_interval_minutes"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=1440)
+            ),
             vol.Optional("soil_trigger_percent"): vol.Any(
                 None, vol.All(vol.Coerce(float), vol.Range(min=0.0, max=100.0))
             ),
@@ -791,6 +831,22 @@ SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
             ),
             vol.Optional("max_cycles_per_day"): vol.Any(
                 None, vol.All(vol.Coerce(int), vol.Range(min=0))
+            ),
+            vol.Optional("startup_grace_minutes"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=120)
+            ),
+            vol.Optional("tank_unknown_grace_minutes"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=120)
+            ),
+            vol.Optional("sensor_stale_after_minutes"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=1440)
+            ),
+            vol.Optional("sensor_alert_delay_minutes"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=1440)
+            ),
+            vol.Optional("moisture_zero_is_implausible"): bool,
+            vol.Optional("unexpected_on_policy"): vol.In(
+                [policy.value for policy in UnexpectedOnPolicy]
             ),
             vol.Optional("skip_during_dark"): bool,
             vol.Optional("pause_on_low_tank"): bool,
@@ -821,7 +877,7 @@ SET_STEERING_PHASE_SCHEMA = vol.Schema(
 _ADD_SCHEDULE_TIME_BASE = {
     vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
     vol.Required("time"): str,  # Use string for HH:MM:SS format
-    vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1, max=3600)),
 }
 
 ADD_IRRIGATION_TIME_SCHEMA = vol.Schema(_ADD_SCHEDULE_TIME_BASE)
@@ -838,8 +894,12 @@ REMOVE_DRAIN_TIME_SCHEMA = vol.Schema(REMOVE_TIME_BASE)
 RUN_IRRIGATION_CYCLE_SCHEMA = vol.Schema(
     {
         vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
-        vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional("duration"): vol.All(vol.Coerce(int), vol.Range(min=1, max=3600)),
     }
+)
+
+ACKNOWLEDGE_FAULT_SCHEMA = vol.Schema(
+    {vol.Required("growspace_id"): vol.All(str, valid_growspace_id)}
 )
 
 SET_DEHUMIDIFIER_CONTROL_SCHEMA = vol.Schema(
@@ -946,6 +1006,8 @@ WATER_PLANT_SCHEMA = vol.Schema(
         vol.Required("amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
         vol.Optional(ATTR_PRESET_ID): str,
+        vol.Optional("watered_at"): str,
+        vol.Optional("from_monitored_tank", default=False): bool,
     }
 )
 
@@ -964,6 +1026,8 @@ WATER_GROWSPACE_SCHEMA = vol.Schema(
         vol.Optional("amount"): vol.All(vol.Coerce(float), vol.Range(min=0.0)),
         vol.Optional("nutrients"): vol.Schema({str: vol.Coerce(float)}),
         vol.Optional(ATTR_PRESET_ID): str,
+        vol.Optional("watered_at"): str,
+        vol.Optional("from_monitored_tank", default=False): bool,
     }
 )
 
@@ -1019,9 +1083,13 @@ SAVE_IRRIGATION_RECIPE_SCHEMA = vol.Schema(
 _RECIPE_SCHEDULE_ITEM_SCHEMA = vol.Schema(
     {
         vol.Optional("time"): str,
-        vol.Optional("duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("duration"): vol.Any(
+            None, vol.All(vol.Coerce(int), vol.Range(min=1, max=3600))
+        ),
         vol.Optional("start_time"): str,
-        vol.Optional("duration_seconds"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("duration_seconds"): vol.Any(
+            None, vol.All(vol.Coerce(float), vol.Range(min=1, max=3600))
+        ),
     }
 )
 
@@ -1076,8 +1144,12 @@ SCHEDULE_RECIPE_VALUES_SCHEMA = vol.Schema(
     {
         vol.Optional("irrigation_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
         vol.Optional("drain_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
-        vol.Optional("irrigation_duration"): vol.Any(None, vol.Coerce(int)),
-        vol.Optional("drain_duration"): vol.Any(None, vol.Coerce(int)),
+        vol.Optional("irrigation_duration"): vol.Any(
+            None, vol.All(vol.Coerce(int), vol.Range(min=1, max=3600))
+        ),
+        vol.Optional("drain_duration"): vol.Any(
+            None, vol.All(vol.Coerce(int), vol.Range(min=1, max=3600))
+        ),
         vol.Optional("daily_volume_cap_liters"): vol.Any(None, vol.Coerce(float)),
         vol.Optional("max_cycles_per_day"): vol.Any(None, vol.Coerce(int)),
         vol.Optional("skip_during_dark"): bool,
@@ -1311,6 +1383,13 @@ APPLY_STEERING_MODE_SCHEMA = vol.Schema(
 SERVICE_TRIGGER_VISION_CHECKUP_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_GROWSPACE_ID): cv.string,
+    }
+)
+
+SERVICE_RESTART_VISUAL_BASELINE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_GROWSPACE_ID): cv.string,
+        vol.Required("camera_id"): cv.entity_id,
     }
 )
 

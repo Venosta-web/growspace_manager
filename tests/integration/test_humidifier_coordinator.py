@@ -160,7 +160,7 @@ async def test_check_and_control_turn_on(coordinator, mock_hass) -> None:
         "switch",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "switch.humidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -179,7 +179,7 @@ async def test_check_and_control_turn_off(coordinator, mock_hass) -> None:
         "switch",
         SERVICE_TURN_OFF,
         {ATTR_ENTITY_ID: "switch.humidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -212,7 +212,7 @@ async def test_check_and_control_night_mode(coordinator, mock_hass) -> None:
         "switch",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "switch.humidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -325,7 +325,7 @@ async def test_user_threshold_override(coordinator, mock_hass) -> None:
         "switch",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "switch.humidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -418,7 +418,7 @@ async def test_generic_domain_control(
         "homeassistant",
         SERVICE_TURN_ON,
         {ATTR_ENTITY_ID: "light.humidifier"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -495,13 +495,13 @@ async def test_ac_infinity_humidifier_turn_on(
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.hum_mode", "option": "On"},
-        blocking=False,
+        blocking=True,
     )
     mock_hass.services.async_call.assert_any_await(
         "number",
         "set_value",
         {ATTR_ENTITY_ID: "number.hum_speed", "value": 8},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -524,13 +524,13 @@ async def test_ac_infinity_only_humidifier_reacts_to_vpd(
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.hum_mode", "option": "On"},
-        blocking=False,
+        blocking=True,
     )
     mock_hass.services.async_call.assert_any_await(
         "number",
         "set_value",
         {ATTR_ENTITY_ID: "number.hum_speed", "value": 8},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -547,7 +547,7 @@ async def test_ac_infinity_humidifier_turn_off(
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.hum_mode", "option": "Off"},
-        blocking=False,
+        blocking=True,
     )
 
 

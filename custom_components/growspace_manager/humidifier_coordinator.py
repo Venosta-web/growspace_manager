@@ -10,6 +10,7 @@ from .const import (
     DEFAULT_HUMIDIFIER_MIN_RUNTIME,
     PlantStage,
 )
+from .domain.climate_fail_safe import ClimateRole
 from .vpd_on_off_controller import VpdOnOffController
 
 if TYPE_CHECKING:
@@ -61,6 +62,7 @@ class HumidifierCoordinator(VpdOnOffController):
     Turns OFF when VPD falls below the off threshold (sufficient humidity).
     """
 
+    _ROLE = ClimateRole.HUMIDIFIER
     _CONTROL_FLAG_ATTR = "control_humidifier"
     _THRESHOLDS_ATTR = "humidifier_thresholds"
     _DEVICE_CONFIG_ATTR = "humidifier_config"

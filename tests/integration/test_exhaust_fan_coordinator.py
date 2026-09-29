@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.const import FanRegulationMode
 from custom_components.growspace_manager.exhaust_fan_coordinator import (
     ExhaustFanCoordinator,
 )
@@ -218,7 +219,7 @@ async def test_fan_entity_driven_by_percentage(mock_hass: MagicMock) -> None:
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.exhaust", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -240,7 +241,7 @@ async def test_switch_entity_turned_on_above_min_speed(mock_hass: MagicMock) -> 
         "switch",
         "turn_on",
         {ATTR_ENTITY_ID: "switch.exhaust"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -262,7 +263,7 @@ async def test_switch_entity_turned_off_at_min_speed(mock_hass: MagicMock) -> No
         "switch",
         "turn_off",
         {ATTR_ENTITY_ID: "switch.exhaust"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -286,7 +287,7 @@ async def test_input_boolean_entity_turned_on_above_min_speed(
         "input_boolean",
         "turn_on",
         {ATTR_ENTITY_ID: "input_boolean.exhaust"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -305,6 +306,37 @@ async def test_no_sensor_readings_skips_dispatch(mock_hass: MagicMock) -> None:
     )
     await coord._async_regulate()
     mock_hass.services.async_call.assert_not_called()
+
+
+async def test_implausible_sensor_readings_skip_dispatch(mock_hass: MagicMock) -> None:
+    """Out-of-range readings are unavailable, never demand (#789)."""
+    env = _make_env_config()
+    mock_hass.states.get.side_effect = _states_from(
+        {
+            "sensor.temperature": "250",
+            "sensor.humidity": "150",
+            "sensor.vpd": "nan",
+        }
+    )
+    coord = ExhaustFanCoordinator(
+        mock_hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    for mode in FanRegulationMode:
+        assert coord._read_sensor(env, mode) is None
+    await coord._async_regulate()
+    mock_hass.services.async_call.assert_not_called()
+
+
+async def test_a_fahrenheit_temperature_is_plausible(hass: HomeAssistant) -> None:
+    """The range follows the sensor's unit; the value is never converted."""
+    env = _make_env_config()
+    hass.states.async_set("sensor.temperature", "77", {"unit_of_measurement": "°F"})
+    coord = ExhaustFanCoordinator(
+        hass, MagicMock(), "gs1", _make_coordinator("gs1", env)
+    )
+    assert coord._read_sensor(env, FanRegulationMode.TEMPERATURE) == 77.0
+    hass.states.async_set("sensor.temperature", "77", {"unit_of_measurement": "°C"})
+    assert coord._read_sensor(env, FanRegulationMode.TEMPERATURE) is None
 
 
 async def test_disabled_config_skips_dispatch(mock_hass: MagicMock) -> None:
@@ -377,7 +409,7 @@ async def test_stage_vpd_enabled_uses_stage_target(mock_hass: MagicMock) -> None
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.exhaust", "percentage": 50},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -422,7 +454,7 @@ async def test_source_air_gate_suppresses_cooling_when_source_air_too_warm(
         "switch",
         "turn_off",
         {ATTR_ENTITY_ID: "switch.exhaust"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -449,7 +481,7 @@ async def test_source_air_gate_inert_with_no_lung_room_sensor(
         "switch",
         "turn_on",
         {ATTR_ENTITY_ID: "switch.exhaust"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -486,7 +518,7 @@ async def test_source_air_gate_suppresses_dehumidify_when_source_air_not_drier(
         "switch",
         "turn_off",
         {ATTR_ENTITY_ID: "switch.exhaust"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -530,7 +562,7 @@ async def test_high_temp_breach_forces_max_speed_bypassing_gate(
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.exhaust", "percentage": 90},  # max_speed
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -562,7 +594,7 @@ async def test_low_temp_breach_forces_min_speed_over_humidity_demand(
         "switch",
         "turn_off",  # forced to min_speed → off
         {ATTR_ENTITY_ID: "switch.exhaust"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -637,7 +669,7 @@ async def test_no_breach_passes_gated_demand_through(mock_hass: MagicMock) -> No
         "fan",
         "set_percentage",
         {ATTR_ENTITY_ID: "fan.exhaust", "percentage": 90},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -666,7 +698,7 @@ async def test_override_inert_when_temp_unavailable(mock_hass: MagicMock) -> Non
         "switch",
         "turn_on",
         {ATTR_ENTITY_ID: "switch.exhaust"},
-        blocking=False,
+        blocking=True,
     )
 
 
@@ -703,13 +735,13 @@ async def test_ac_infinity_device_driven_by_mode_and_intensity(
         "select",
         "select_option",
         {ATTR_ENTITY_ID: "select.tent_port1_mode", "option": "On"},
-        blocking=False,
+        blocking=True,
     )
     mock_hass.services.async_call.assert_any_await(
         "number",
         "set_value",
         {ATTR_ENTITY_ID: "number.tent_port1_on_speed", "value": 9},
-        blocking=False,
+        blocking=True,
     )
     assert mock_hass.services.async_call.await_count == 2
 

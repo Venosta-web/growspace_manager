@@ -18,6 +18,11 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
+from custom_components.growspace_manager.domain.setup_preset import (
+    inferred_modules,
+    patch_modules,
+    stamp_modules,
+)
 from custom_components.growspace_manager.events import (
     EVENT_GROWSPACE_ADDED,
     EVENT_GROWSPACE_REMOVED,
@@ -33,6 +38,7 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
     GrowspaceType,
+    IrrigationConfig,
     Subarea,
     WaterUsageData,
 )
@@ -107,6 +113,7 @@ class GrowspaceManager(BaseService):
         notification_target: str | None = None,
         device_id: str | None = None,
         growspace_type: GrowspaceType = GrowspaceType.FLOWER,
+        setup_preset: str | None = None,
         dimensions: dict[str, Any] | None = None,
         environment_config: dict[str, Any] | None = None,
         irrigation_config: dict[str, Any] | None = None,
@@ -131,14 +138,24 @@ class GrowspaceManager(BaseService):
                 "notification_target": notification_target,
                 "device_id": device_id,
                 "growspace_type": growspace_type,
+                "setup_preset": setup_preset,
+                "setup_modules": (
+                    stamp_modules(setup_preset) if setup_preset is not None else None
+                ),
             }
 
             if dimensions is not None:
                 growspace_kwargs["dimensions"] = dimensions
             if environment_config is not None:
                 growspace_kwargs["environment_config"] = environment_config
-            if irrigation_config is not None:
-                growspace_kwargs["irrigation_config"] = irrigation_config
+            # New spaces pass explicit cap defaults through from_dict; that
+            # reader preserves absent caps as None for legacy stored spaces.
+            defaults = IrrigationConfig()
+            growspace_kwargs["irrigation_config"] = {
+                "daily_volume_cap_liters": defaults.daily_volume_cap_liters,
+                "max_cycles_per_day": defaults.max_cycles_per_day,
+                **(irrigation_config or {}),
+            }
 
             growspace = Growspace.from_dict(growspace_kwargs)
             self.repository.add_growspace(growspace)
@@ -196,8 +213,11 @@ class GrowspaceManager(BaseService):
             # it, even after the growspace has disappeared from domain storage.
             try:
                 dev_reg = dr.async_get(self.hass)
-                device = dev_reg.async_get_device(identifiers={(DOMAIN, growspace_id)})
-                if device:
+                devices = dev_reg.async_get_devices(
+                    identifiers={(DOMAIN, growspace_id)}
+                )
+                if devices:
+                    device = devices[0]
                     entity_reg = er.async_get(self.hass)
                     for entry in er.async_entries_for_device(
                         entity_reg, device.id, include_disabled_entities=True
@@ -361,6 +381,25 @@ class GrowspaceManager(BaseService):
             if nt != current:
                 changes.append(f"notification_target: {current} -> {nt}")
                 growspace.notification_target = nt
+                updated = True
+
+        # A preset is a stamp (ADR-0012): choosing one — even the one already
+        # declared — rewrites the modules, discarding hand edits.
+        if _is_given(kwargs, "setup_preset"):
+            preset = kwargs["setup_preset"]
+            growspace.setup_preset = preset
+            growspace.setup_modules = stamp_modules(preset)
+            changes.append(f"setup_preset stamped: {preset}")
+            updated = True
+
+        if "setup_modules" in kwargs:
+            modules = patch_modules(
+                growspace.setup_modules or inferred_modules(growspace.id),
+                kwargs["setup_modules"],
+            )
+            if modules != growspace.setup_modules:
+                growspace.setup_modules = modules
+                changes.append("setup_modules updated")
                 updated = True
 
         if "environment_config" in kwargs:

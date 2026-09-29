@@ -15,7 +15,7 @@ cd /home/maxi/core/core/vendor/growspace_manager
 .venv/bin/pytest tests/ -q
 ```
 
-From a `.worktrees/<branch>` worktree, reach the same venv the pre-commit hooks use:
+From a `.worktrees/<branch>` worktree without its own `.venv`, reach the main checkout's venv, which is the one the pre-commit hooks fall back to:
 
 ```bash
 ../../.venv/bin/pytest tests/ -q

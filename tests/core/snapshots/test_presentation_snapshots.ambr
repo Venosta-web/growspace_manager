@@ -39,6 +39,15 @@
       }),
       'circulation_fan_entities': list([
       ]),
+      'climate_fail_safe_config': dict({
+        'dehumidifier_max_runtime_minutes': 0,
+        'dehumidifier_safe_state': 'off',
+        'exhaust_fallback_speed': 50,
+        'humidifier_max_runtime_minutes': 0,
+        'humidifier_safe_state': 'off',
+        'sensor_stale_after_minutes': 30,
+        'sensor_timeout_minutes': 10,
+      }),
       'dehumidifier_ac_infinity_devices': list([
       ]),
       'dehumidifier_entities': list([
@@ -99,6 +108,14 @@
       'irrigation_pump_state': None,
       'irrigation_tanks': list([
       ]),
+      'light_leak_config': dict({
+        'all_stages': False,
+        'debounce_seconds': 120,
+        'enabled': True,
+        'illuminance_sensor': None,
+        'switch_off_lights': False,
+        'threshold_lux': 1.0,
+      }),
       'light_sensors': list([
       ]),
       'lst_offset': -2.0,
@@ -179,6 +196,10 @@
             'trim_weight': None,
             'wet_weight': None,
           }),
+          'harvest_outcome_reason': None,
+          'harvest_outcome_state': 'pending',
+          'harvest_source_growspace_id': None,
+          'harvest_source_run_id': None,
           'last_ipm': None,
           'last_ipm_type': None,
           'last_trained': None,
@@ -227,6 +248,8 @@
       'name': 'Test Room',
       'notification_target': None,
       'overview_entity_id': 'sensor.gs_test_overview',
+      'setup_modules': None,
+      'setup_preset': None,
       'type': 'normal',
     }),
     'irrigation': dict({
@@ -242,7 +265,7 @@
         'active_steering_phase': 'p2',
         'auto_advance_p1_to_p2': False,
         'auto_advance_p2_to_p3': False,
-        'daily_volume_cap_liters': None,
+        'daily_volume_cap_liters': 20.0,
         'drain_duration': None,
         'drain_pump_entity': 'switch.drain',
         'drain_times': list([
@@ -255,14 +278,22 @@
         'irrigation_times': list([
         ]),
         'log_to_logbook': True,
-        'max_cycles_per_day': None,
+        'max_cycle_seconds': 600,
+        'max_cycles_per_day': 24,
+        'min_interval_minutes': 5,
+        'moisture_zero_is_implausible': False,
         'pause_on_low_tank': True,
         'phase_changed_at': None,
         'program_auto_advance': False,
         'pump_flow_rate_ml_per_sec': 0.0,
         'resolved_day_hours': 12,
+        'sensor_alert_delay_minutes': 15,
+        'sensor_stale_after_minutes': 30,
         'skip_during_dark': False,
         'soil_trigger_percent': None,
+        'startup_grace_minutes': 5,
+        'tank_unknown_grace_minutes': 10,
+        'unexpected_on_policy': 'alert',
         'veg_day_hours': 18,
       }),
       'irrigation_strategy': dict({
@@ -316,6 +347,7 @@
         'daily_readings': list([
         ]),
         'max_daily_readings': 365,
+        'monitored_tank_liters': 0.0,
         'total_liters': 0.0,
       }),
     }),
@@ -388,6 +420,10 @@
       'trim_weight': None,
       'wet_weight': None,
     }),
+    'harvest_outcome_reason': None,
+    'harvest_outcome_state': 'pending',
+    'harvest_source_growspace_id': None,
+    'harvest_source_run_id': None,
     'last_ipm': None,
     'last_ipm_type': None,
     'last_trained': None,

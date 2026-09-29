@@ -18,12 +18,15 @@ from custom_components.growspace_manager.exceptions import (
     PlantNotFoundError,
 )
 from custom_components.growspace_manager.models import Plant
-from custom_components.growspace_manager.schemas import EXPORT_GROW_REPORT_SCHEMA
+from custom_components.growspace_manager.schemas import (
+    EXPORT_GROW_REPORT_SCHEMA,
+    EXPORT_RELIABILITY_EVIDENCE_SCHEMA,
+)
 from homeassistant.components.persistent_notification import (
     async_create as create_notification,
 )
 from homeassistant.components.recorder import get_instance
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.util import dt as dt_util
 
@@ -35,6 +38,16 @@ if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def handle_export_reliability_evidence(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, call: ServiceCall
+) -> dict[str, Any]:
+    """Return a user-requested JSON document without sending it anywhere."""
+    growspace_id = call.data["growspace_id"]
+    if growspace_id not in coordinator.growspaces:
+        raise ServiceValidationError(f"Unknown growspace: {growspace_id}")
+    return coordinator.reliability.snapshot(growspace_id)
 
 
 async def handle_export_grow_report(
@@ -576,6 +589,12 @@ def _export_as_pdf(data: dict[str, Any], file_path: str) -> None:
 
 
 SERVICES = [
+    ServiceDefinition(
+        GrowspaceService.EXPORT_RELIABILITY_EVIDENCE,
+        handle_export_reliability_evidence,
+        EXPORT_RELIABILITY_EVIDENCE_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    ),
     ServiceDefinition(
         GrowspaceService.EXPORT_GROW_REPORT,
         handle_export_grow_report,

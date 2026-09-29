@@ -71,7 +71,7 @@ def storage(
 
 @pytest.mark.asyncio
 async def test_storage_async_save(storage) -> None:
-    """Test async_save debounced."""
+    """Only runtime config is debounced; Plants require synchronous facts."""
     with (
         patch.object(storage, "_get_config_data", return_value={}),
         patch.object(storage, "_get_plants_data", return_value={}),
@@ -80,7 +80,7 @@ async def test_storage_async_save(storage) -> None:
     ):
         await storage.async_save()
         mock_config_save.assert_called_once()
-        mock_plants_save.assert_called_once()
+        mock_plants_save.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -88,7 +88,7 @@ async def test_storage_async_force_save(storage) -> None:
     """Test async_force_save immediate."""
     with (
         patch.object(storage, "_get_config_data", return_value={}),
-        patch.object(storage, "_get_plants_data", return_value={}),
+        patch.object(storage, "_get_plants_data", return_value={"plants": {}}),
         patch.object(
             storage.config_store, "async_save", new_callable=AsyncMock
         ) as mock_config_save,
@@ -133,7 +133,10 @@ async def test_save_plant_layout_snapshot_uses_staged_documents(storage) -> None
         }
     )
     storage.plants_store.async_save.assert_awaited_once_with(
-        {"plants": {"p1": {"row": 2, "col": 2, "updated_at": "after"}}}
+        {
+            "plants": {"p1": {"row": 2, "col": 2, "updated_at": "after"}},
+            "activity_facts": [],
+        }
     )
 
 
@@ -384,7 +387,7 @@ def test_storage_load_plants(storage, repository_mock) -> None:
             return_value=plant_obj,
         ),
         patch(
-            "custom_components.growspace_manager.storage_manager._LOGGER.error"
+            "custom_components.growspace_manager.plant_record_loader._LOGGER.error"
         ) as mock_log_error,
     ):
         storage._load_plants(data)
@@ -404,7 +407,7 @@ def test_storage_load_plants_inner_exception(storage, repository_mock) -> None:
             side_effect=Exception("Inner"),
         ),
         patch(
-            "custom_components.growspace_manager.storage_manager._LOGGER.exception"
+            "custom_components.growspace_manager.plant_record_loader._LOGGER.exception"
         ) as mock_log_exc,
     ):
         storage._load_plants(data)

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import asdict
 import json
 import logging
+import os
 from pathlib import Path
+import tempfile
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -18,12 +23,14 @@ from .const import (
     STORAGE_KEY_GENETICS,
     STORAGE_KEY_PLANTS,
     STORAGE_VERSION,
+    STORAGE_VERSION_PLANTS,
 )
 from .domain.environment_patch import (
     EnvironmentPatchError,
     apply_environment_patch,
     patch_from_flow_options,
 )
+from .domain.grow_run import GrowRun, PlantMovementFact
 from .models import (
     ECRampCurve,
     EnvironmentConfig,
@@ -33,10 +40,10 @@ from .models import (
     IrrigationRecipe,
     NutrientInventory,
     NutrientPreset,
-    Plant,
     PollinationEvent,
     SeedBatch,
 )
+from .plant_record_loader import load_plant_records
 
 if TYPE_CHECKING:
     from .data_access.growspace_repository import GrowspaceRepository
@@ -47,6 +54,42 @@ if TYPE_CHECKING:
     from .managers.nutrient import NutrientManager
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _copy_plant_store_before_migration(path: str, old_version: int) -> None:
+    """Keep the exact old document before a major-version rewrite."""
+    backup = Path(f"{path}.v{old_version}")
+    if backup.exists():
+        return
+    with tempfile.NamedTemporaryFile(
+        dir=backup.parent, prefix=f".{backup.name}.", delete=False
+    ) as destination:
+        temporary = Path(destination.name)
+        try:
+            with Path(path).open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    destination.write(chunk)
+            destination.flush()
+            os.fsync(destination.fileno())
+            with suppress(FileExistsError):
+                os.link(temporary, backup)
+        finally:
+            temporary.unlink()
+
+
+class PlantActivityStore(Store[dict[str, Any]]):
+    """Version the Plant snapshot and its activity outbox as one document."""
+
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Upgrade a v1 Plant document without making rollback erase facts."""
+        if old_major_version != 1:
+            raise ValueError(f"Unsupported Plant store version: {old_major_version}")
+        await self.hass.async_add_executor_job(
+            _copy_plant_store_before_migration, self.path, old_major_version
+        )
+        return {**old_data, "activity_facts": []}
 
 
 def _migrate_preset_items(
@@ -92,6 +135,8 @@ class StorageManager:
         notification_state: NotificationState | None = None,
         recipe_library: IrrigationRecipeLibrary | None = None,
         program_library: IrrigationProgramLibrary | None = None,
+        quarantined_plants: dict[str, Any] | None = None,
+        active_run: Callable[[str], GrowRun | None] | None = None,
     ) -> None:
         """Initialize the StorageManager."""
         self.hass = hass
@@ -101,13 +146,20 @@ class StorageManager:
         self.notification_state = notification_state
         self.recipe_library = recipe_library
         self.program_library = program_library
+        self.quarantined_plants = (
+            quarantined_plants if quarantined_plants is not None else {}
+        )
+        self._active_run = active_run or (lambda _growspace_id: None)
+        self._committed_plants: dict[str, dict[str, Any]] = {}
+        self.activity_facts: list[PlantMovementFact] = []
+        self.activity_unreadable = False
 
         # Segmented stores
         self.config_store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, STORAGE_KEY_CONFIG
         )
-        self.plants_store: Store[dict[str, Any]] = Store(
-            hass, STORAGE_VERSION, STORAGE_KEY_PLANTS
+        self.plants_store: Store[dict[str, Any]] = PlantActivityStore(
+            hass, STORAGE_VERSION_PLANTS, STORAGE_KEY_PLANTS
         )
         self.genetics_store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, STORAGE_KEY_GENETICS
@@ -120,18 +172,102 @@ class StorageManager:
 
     async def async_save(self) -> None:
         """Save the current state to persistent storage (debounced)."""
-        # debounce delay of 10 seconds as requested
+        self.async_schedule_save()
+
+    @callback
+    def async_schedule_save(self) -> None:
+        """Schedule the debounced write without waiting for it.
+
+        Home Assistant flushes a pending delayed save on shutdown, so state
+        scheduled here survives a restart without an unload having to run.
+        """
+        if self.activity_unreadable:
+            return
+        # Runtime steering state lives in the config document. A delayed Plant
+        # write could race a movement commit and persist it without its fact.
         self.config_store.async_delay_save(self._get_config_data, 10)
-        self.plants_store.async_delay_save(self._get_plants_data, 10)
-        if self.genetics_manager is not None:
-            self.genetics_store.async_delay_save(self._get_genetics_data, 10)
 
     async def async_force_save(self) -> None:
         """Force save immediately (ignoring delay) to ensure data integrity."""
+        if self.activity_unreadable:
+            raise ValueError("Plant activity outbox is unreadable")
+        plants_data = self._get_plants_data()
+        staged_facts = self._stage_movement_facts(plants_data["plants"])
+        plants_data["activity_facts"] = [
+            fact.as_dict() for fact in (*self.activity_facts, *staged_facts)
+        ]
         await self.config_store.async_save(self._get_config_data())
-        await self.plants_store.async_save(self._get_plants_data())
+        await self.plants_store.async_save(plants_data)
+        self._committed_plants = plants_data["plants"]
+        self.activity_facts.extend(staged_facts)
         if self.genetics_manager is not None:
             await self.genetics_store.async_save(self._get_genetics_data())
+
+    def _stage_movement_facts(
+        self, plants: dict[str, dict[str, Any]]
+    ) -> list[PlantMovementFact]:
+        """Describe each location change relative to the last durable Plant image."""
+        facts: list[PlantMovementFact] = []
+        for plant_id in sorted(self._committed_plants.keys() | plants.keys()):
+            before = self._committed_plants.get(plant_id)
+            after = plants.get(plant_id)
+            source = before.get("growspace_id") if before else None
+            target = after.get("growspace_id") if after else None
+            if source is None and target is None:
+                continue
+            if (
+                before
+                and after
+                and (source, before.get("row"), before.get("col"))
+                == (target, after.get("row"), after.get("col"))
+            ):
+                continue
+            source_run = self._active_run(source) if source else None
+            target_run = self._active_run(target) if target else None
+            if before is None:
+                kind = "entry"
+            elif after is None:
+                kind = "removal"
+            elif source == target:
+                kind = "move"
+            elif target_run and any(
+                row.plant_id == plant_id and row.closed_at is not None
+                for row in target_run.participations
+            ):
+                kind = "re_entry"
+            elif after.get("stage") in ("dry", "cure"):
+                kind = "harvest"
+            else:
+                kind = "transplant"
+            facts.append(
+                PlantMovementFact(
+                    fact_id=uuid4().hex,
+                    plant_id=plant_id,
+                    at=dt_util.utcnow(),
+                    kind=kind,
+                    source_growspace_id=source,
+                    target_growspace_id=target,
+                    source_run_id=source_run.run_id if source_run else None,
+                    target_run_id=target_run.run_id if target_run else None,
+                )
+            )
+        return facts
+
+    async def async_mark_fact_projected(self, fact_id: str) -> None:
+        """Acknowledge a projection; retaining the fact permits later attribution."""
+        from dataclasses import replace  # noqa: PLC0415
+
+        if self.activity_unreadable:
+            raise ValueError("Plant activity outbox is unreadable")
+
+        updated = [
+            replace(fact, projected=True) if fact.fact_id == fact_id else fact
+            for fact in self.activity_facts
+        ]
+        data = self._get_plants_data()
+        data["activity_facts"] = [fact.as_dict() for fact in updated]
+        await self.plants_store.async_save(data)
+        self.activity_facts = updated
 
     async def async_save_plant_layout_snapshot(
         self,
@@ -143,6 +279,8 @@ class StorageManager:
         plants_per_row: int,
     ) -> None:
         """Persist a complete staged Plant Layout without publishing it in memory."""
+        if self.activity_unreadable:
+            raise ValueError("Plant activity outbox is unreadable")
         config_data = self._get_config_data()
         plants_data = self._get_plants_data()
         growspace_data = config_data["growspaces"][growspace_id]
@@ -155,9 +293,16 @@ class StorageManager:
             plant_data["col"] = placement["col"]
             plant_data["updated_at"] = updated_at
 
+        staged_facts = self._stage_movement_facts(plants_data["plants"])
+        plants_data["activity_facts"] = [
+            fact.as_dict() for fact in (*self.activity_facts, *staged_facts)
+        ]
+
         try:
             await self.config_store.async_save(config_data)
             await self.plants_store.async_save(plants_data)
+            self._committed_plants = plants_data["plants"]
+            self.activity_facts.extend(staged_facts)
         except Exception:
             # A segmented store can fail after its sibling succeeded. Restore both
             # persisted documents from the still-unpublished repository snapshot.
@@ -199,6 +344,8 @@ class StorageManager:
         """Gather plant data for storage."""
         return {
             "plants": {p.plant_id: asdict(p) for p in self.repository.get_all_plants()},
+            "quarantined_plants": self.quarantined_plants.copy(),
+            "activity_facts": [fact.as_dict() for fact in self.activity_facts],
         }
 
     def _get_genetics_data(self) -> dict[str, Any]:
@@ -311,6 +458,17 @@ class StorageManager:
         except OSError, TypeError, ValueError:
             _LOGGER.exception("Failed to backup corrupt %s data", key)
 
+    @staticmethod
+    def _parse_activity_facts(data: dict[str, Any]) -> list[PlantMovementFact]:
+        """Validate the outbox before any Plant document can be rewritten."""
+        raw_facts = data.get("activity_facts", [])
+        if not isinstance(raw_facts, list):
+            raise TypeError("Plant activity outbox is not a list")
+        facts = [PlantMovementFact.from_dict(row) for row in raw_facts]
+        if len({fact.fact_id for fact in facts}) != len(facts):
+            raise ValueError("Plant activity outbox contains duplicate fact IDs")
+        return facts
+
     def _load_plants(self, data: dict[str, Any]) -> None:
         """Load plants from storage data.
 
@@ -318,37 +476,20 @@ class StorageManager:
         migrations (strain→genetics, row/col sanitization, stage_history building).
         """
         try:
-            raw_plants = data.get("plants", {})
-            plants: dict[str, Plant] = {}
-
-            for pid, pdata in raw_plants.items():
-                try:
-                    if isinstance(pdata, dict):
-                        # Mashumaro handles all migrations via __pre_deserialize__
-                        plants[pid] = Plant.from_dict(pdata)
-                    elif isinstance(pdata, Plant):
-                        # Already a Plant instance
-                        plants[pid] = pdata
-                    else:
-                        _LOGGER.error(
-                            "Failed to load plant %s (invalid type: %s)",
-                            pid,
-                            type(pdata),
-                        )
-                except ValueError, KeyError, TypeError:
-                    _LOGGER.exception(
-                        "Failed to load plant %s due to data structure mismatch", pid
-                    )
-                except Exception:
-                    _LOGGER.exception("Unexpected error loading plant %s", pid)
-
+            # Plant and outbox share a document. A bad outbox holds all writes
+            # until repair, even when the older Plant recovery path runs.
+            self.activity_facts = self._parse_activity_facts(data)
+            plants = load_plant_records(self.hass, data, self.quarantined_plants)
             self.repository.load_plants(plants)
+            self._committed_plants = self._get_plants_data()["plants"]
             _LOGGER.info("Loaded %d plants", len(plants))
         except ValueError, KeyError, TypeError:
+            self.activity_unreadable = True
             _LOGGER.exception("Critical data structure error loading plants")
             self._backup_corrupt_data("plants", data)
             self.repository.load_plants({})
         except Exception:
+            self.activity_unreadable = True
             _LOGGER.exception("Unexpected error loading plants")
             self._backup_corrupt_data("plants", data)
             self.repository.load_plants({})

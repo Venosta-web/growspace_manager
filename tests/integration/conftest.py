@@ -113,6 +113,8 @@ def mock_coordinator():
     coordinator.async_start_curing = AsyncMock()
 
     # 5. Mock other subsystem services
+    coordinator.capture_continuity = MagicMock()
+    coordinator.capture_continuity.async_apply_camera_assignment = AsyncMock()
     coordinator._subsystem_manager = MagicMock()
     coordinator._subsystem_manager.async_setup_growspace_sub_coordinators = AsyncMock()
     _fan_coord_mock = MagicMock()

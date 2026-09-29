@@ -46,6 +46,20 @@ async def test_a_printer_nobody_registered_has_no_model(hass: HomeAssistant) -> 
     assert device_model(hass, "no-such-device") is None
 
 
+async def test_a_child_device_has_no_printer_model(hass: HomeAssistant) -> None:
+    """A child registry entry cannot authorize a printer model."""
+    parent_id = _printer(hass, "B1")
+    registry = dr.async_get(hass)
+    parent = registry.async_get(parent_id)
+    assert isinstance(parent, dr.DeviceEntry)
+    child = registry.async_get_or_create_child(
+        config_entry_id=next(iter(parent.config_entries)),
+        identifiers={("niimbot", "child-address")},
+        parent_device_id=parent_id,
+    )
+    assert device_model(hass, child.id) is None
+
+
 async def test_the_tested_model_is_covered_and_its_neighbours_are_not(
     hass: HomeAssistant,
 ) -> None:

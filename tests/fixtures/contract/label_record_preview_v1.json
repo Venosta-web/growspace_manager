@@ -73,6 +73,7 @@
     "operation": "single_print"
   },
   "outcome": "ok",
+  "override_available": false,
   "recovery": "none",
   "render": {
     "cache_identity": "sha256:f977dbb0072afcdf5e45768a534bb428b95d8048bf36241f880d5704dfb86fcd",

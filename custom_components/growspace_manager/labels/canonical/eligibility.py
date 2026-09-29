@@ -71,6 +71,10 @@ class Blocker(StrEnum):
     NO_RASTER = "no_raster"
     #: The profile's physical evidence matrix has not been recorded.
     PROFILE_NOT_PRODUCT_VERIFIED = "profile_not_product_verified"
+    #: The profile is proven, but not on the model this printer is registered
+    #: as -- including a printer Home Assistant has no model for yet, which is
+    #: what the niimbot integration registers until the printer has answered.
+    PRINTER_MODEL_NOT_COVERED = "printer_model_not_covered"
     #: This installation has not measured where its printer puts ink.
     LOCAL_CALIBRATION_MISSING = "local_calibration_missing"
     #: It measured, and something the measurement depended on has changed.
@@ -92,16 +96,19 @@ class Blocker(StrEnum):
 
 #: The refusals an operator may choose to print past.
 #:
-#: Each says how far this printer has been *proven*, not that the label is
-#: wrong: the raster exists, no diagnostic is an error, and it is a published
-#: revision of a real record's content. What is missing is the evidence that
-#: ink lands where the preview says -- which the operator can judge for
-#: themselves by looking at the label that comes out. Everything else stays
-#: a hard refusal, because no amount of consent makes a missing raster, a
-#: draft or a stale result the label that was reviewed.
+#: Every one of them is a judgement about a raster that exists and that the
+#: operator has seen: how far this printer has been proven, or that a
+#: diagnostic found something wrong with the layout. Whether that label is
+#: good enough to stick on a pot is the operator's call to make -- they have
+#: the preview in front of them and the label that comes out in their hand.
+#: What stays a hard refusal is whatever would put something *other* than the
+#: reviewed preview on paper: no raster at all, a draft, fixture content, or
+#: a result that no longer matches the one approved.
 OVERRIDABLE_BLOCKERS = frozenset(
     {
+        str(Blocker.BLOCKING_DIAGNOSTICS),
         str(Blocker.PROFILE_NOT_PRODUCT_VERIFIED),
+        str(Blocker.PRINTER_MODEL_NOT_COVERED),
         str(Blocker.LOCAL_CALIBRATION_MISSING),
         str(Blocker.LOCAL_CALIBRATION_STALE),
     }
@@ -226,9 +233,11 @@ def decide_eligibility(
     """Decide every operation for one result, with the reasons for each.
 
     `printer_covered` is false when the render names a printer whose model
-    the profile's evidence was not taken on. The profile is then not product
-    verified *for that printer*, which is the same correction -- choose a
-    profile, or a printer, that was proven -- so it is the same blocker.
+    the profile's evidence was not taken on. That is its own blocker rather
+    than the profile's: the commonest cause is a printer the evidence *was*
+    taken on that Home Assistant registered before it had learned the model,
+    and telling that operator their profile "has not passed physical testing"
+    names the wrong thing entirely.
 
     Reasons accumulate rather than short-circuit: an operation refused for
     three independent reasons says all three, because fixing one of them and
@@ -236,7 +245,8 @@ def decide_eligibility(
     """
     blocking = has_blocking(diagnostics)
     missing_raster = not has_raster
-    provisional = not profile.authorizes_production or not printer_covered
+    provisional = not profile.authorizes_production
+    uncovered = not printer_covered
     # A stale calibration contributes no identity, so it would otherwise read
     # as a missing one as well -- and the two are mutually exclusive accounts
     # of the same printer. Telling an administrator that they never measured
@@ -256,6 +266,7 @@ def decide_eligibility(
     production = (
         *printable,
         (provisional, Blocker.PROFILE_NOT_PRODUCT_VERIFIED),
+        (uncovered, Blocker.PRINTER_MODEL_NOT_COVERED),
         (uncalibrated, Blocker.LOCAL_CALIBRATION_MISSING),
         (stale, Blocker.LOCAL_CALIBRATION_STALE),
     )

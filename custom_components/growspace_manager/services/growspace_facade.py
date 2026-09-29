@@ -22,7 +22,11 @@ from custom_components.growspace_manager.const import (
     GrowspaceService,
     SteeringMode,
 )
+from custom_components.growspace_manager.delivery_attempt_store import (
+    DeliveryAttemptStore,
+)
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
+from custom_components.growspace_manager.domain.setup_preset import SETUP_PRESETS
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
     determine_coordinator_stage,
@@ -123,6 +127,9 @@ class GrowspaceFacade:
                 growspace.id, growspace
             )
         )
+        await self._coordinator.capture_continuity.async_apply_camera_assignment(
+            growspace.id, growspace.environment_config.camera_entities
+        )
         _LOGGER.info("Added growspace %s (%s)", growspace.name, growspace.id)
         return growspace
 
@@ -133,8 +140,8 @@ class GrowspaceFacade:
         )
         if "name" in kwargs:
             device_registry = dr.async_get(self._coordinator.hass)
-            if device := device_registry.async_get_device(
-                identifiers={(DOMAIN, growspace_id)}
+            if device := device_registry.async_get_device_by_identifier(
+                (DOMAIN, growspace_id), self._coordinator.config_entry.entry_id
             ):
                 device_registry.async_update_device(device.id, name=kwargs["name"])
         _LOGGER.info("Updated growspace %s", growspace_id)
@@ -150,6 +157,14 @@ class GrowspaceFacade:
         # Mirrors add_growspace, which sets these up.
         self._coordinator._subsystem_manager.teardown_growspace_sub_coordinators(
             growspace_id
+        )
+        # Its Delivery Attempts go with it rather than wait, unread, forever.
+        if isinstance(self._coordinator.deliveries, DeliveryAttemptStore):
+            await self._coordinator.deliveries.async_remove(growspace_id)
+        # A removed growspace holds no camera; its conditions clear and its
+        # durable Triage Alerts stay.
+        await self._coordinator.capture_continuity.async_apply_camera_assignment(
+            growspace_id, ()
         )
 
     async def setup_sub_coordinators(self, growspace_id: str) -> None:
@@ -525,10 +540,26 @@ class GrowspaceFacade:
         nutrients: dict[str, float] | None = None,
         preset_id: str | None = None,
         amount: float | None = None,
+        *,
+        watered_at: str | None = None,
+        from_monitored_tank: bool = False,
+        user_id: str | None = None,
     ) -> int:
         """Record a watering event for all plants in a growspace."""
+        report_options: dict[str, Any] = {}
+        if watered_at is not None:
+            report_options["watered_at"] = watered_at
+        if from_monitored_tank:
+            report_options["from_monitored_tank"] = True
+        if user_id is not None:
+            report_options["user_id"] = user_id
         return await self._coordinator.watering_service.async_water_growspace(
-            growspace_id, amount_per_plant, nutrients, preset_id, amount
+            growspace_id,
+            amount_per_plant,
+            nutrients,
+            preset_id,
+            amount,
+            **report_options,
         )
 
     # -------------------------------------------------------------------------
@@ -784,6 +815,24 @@ class GrowspaceFacade:
             growspace_id
         )
 
+    def get_humidifier_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the humidifier coordinator for a growspace, or None."""
+        return self._coordinator._subsystem_manager.get_humidifier_controller(
+            growspace_id
+        )
+
+    def get_circulation_fan_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the circulation fan coordinator for a growspace, or None."""
+        return self._coordinator._subsystem_manager.get_circulation_fan_controller(
+            growspace_id
+        )
+
+    def get_exhaust_fan_coordinator(self, growspace_id: str) -> Any | None:
+        """Return the exhaust fan coordinator for a growspace, or None."""
+        return self._coordinator._subsystem_manager.get_exhaust_fan_controller(
+            growspace_id
+        )
+
     def calculate_biological_metrics(
         self, growspace_id: str, growspace: Growspace, days: StageDays
     ) -> dict[str, Any]:
@@ -866,25 +915,33 @@ class GrowspaceFacade:
         call: ServiceCall,
     ) -> None:
         """Unpack an add_growspace ServiceCall and delegate to add_growspace."""
-        device_registry = dr.async_get(hass)
-        mobile_devices = [
-            d.name
-            for d in device_registry.devices.values()
-            if any("mobile_app" in entry_id for entry_id in d.config_entries)
-        ]
+        # A notification target is a notify service name (`mobile_app_<device>`,
+        # optionally `notify.`-prefixed), the value the card and options flow
+        # offer and the notifiers call. It is stored as given, as
+        # update_growspace does: a service that is not registered yet (the
+        # companion app not connected) is still the one the user chose.
         notification_target = call.data.get(ATTR_NOTIFICATION_TARGET)
-        if notification_target and notification_target not in mobile_devices:
-            notification_target = None
 
         name = call.data[ATTR_NAME]
         rows = call.data[ATTR_ROWS]
         plants_per_row = call.data[ATTR_PLANTS_PER_ROW]
 
+        preset = call.data.get("setup_preset")
         growspace_id = await self.add_growspace(
             name=name,
             rows=rows,
             plants_per_row=plants_per_row,
             notification_target=notification_target,
+            # A preset names the kind of room, so it also decides the type a
+            # new growspace is created with; it never retypes an existing one.
+            **(
+                {
+                    "setup_preset": preset,
+                    "growspace_type": SETUP_PRESETS[preset].growspace_type,
+                }
+                if preset
+                else {}
+            ),
         )
 
         _LOGGER.info("Growspace %s added successfully via service call", growspace_id)
@@ -910,6 +967,8 @@ class GrowspaceFacade:
                 ATTR_ROWS,
                 ATTR_PLANTS_PER_ROW,
                 ATTR_NOTIFICATION_TARGET,
+                "setup_preset",
+                "setup_modules",
             )
             if attr in call.data
         }

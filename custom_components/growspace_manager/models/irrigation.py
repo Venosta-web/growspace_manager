@@ -297,6 +297,16 @@ class SubstrateHistory(BaseModel):
     ec_latest_value: float | None = None
     ec_latest_ts: str | None = None
 
+    # ── Steering state a restart must not forget (#786) ─────────────────────
+    # When the pump last confirmed ON for an irrigation cycle — the anchor of
+    # every steering cooldown. The coordinator's ``last_cycle_timestamp`` reads
+    # and writes this field rather than a copy of it, so the value the cooldown
+    # uses and the value a restart restores are one and the same.
+    last_confirmed_shot_at: str | None = None
+    # The local ISO date P1 reached its target. A restart on that date resumes
+    # in P2 instead of re-entering the ramp; on any other date it means nothing.
+    p1_completed_on: str | None = None
+
 
 @dataclass(slots=True)
 class IrrigationTank(BaseModel):
@@ -309,6 +319,10 @@ class IrrigationTank(BaseModel):
     enable_lights_bias: bool = False  # Segregate rates by lights on/off
     enable_vpd_weighting: bool = False  # Apply VPD-based multiplier
     volume_liters: float | None = None
+    # How long the sensor may go without reporting before its level is
+    # stale — an Unknown Tank Level (ADR-0050). Long by default, because some
+    # tank sensors only report when the level changes; 0 switches it off.
+    stale_after_minutes: int = 120
     last_recorded_level: float | None = None
     peak_level: float | None = None
     water_history: TankWaterHistory = field(default_factory=TankWaterHistory)
@@ -339,8 +353,10 @@ class IrrigationConfig(BaseModel):
     veg_day_hours: int = 18
     pump_flow_rate_ml_per_sec: float = 0.0
     soil_trigger_percent: float | None = None
-    daily_volume_cap_liters: float | None = None
-    max_cycles_per_day: int | None = None
+    daily_volume_cap_liters: float | None = 20.0
+    max_cycles_per_day: int | None = 24
+    max_cycle_seconds: int = 600
+    min_interval_minutes: int = 5
     skip_during_dark: bool = False
     pause_on_low_tank: bool = True
     log_to_logbook: bool = True
@@ -355,6 +371,29 @@ class IrrigationConfig(BaseModel):
     # available and waits (ADR-0045).
     program_auto_advance: bool = False
     halt_on_runoff_ec_threshold: float | None = None
+    # How long every automatic cycle is held after a start or reload, at
+    # minimum; the Startup Inhibit also waits for each control sensor to
+    # report (#786).
+    startup_grace_minutes: int = 5
+    # How long a tank may be at an Unknown Tank Level before the Pump Cycle
+    # Gate refuses on it and its Tank Offline Alert goes out; the last valid
+    # reading stands in meanwhile (ADR-0050).
+    tank_unknown_grace_minutes: int = 10
+    # The longest a control sensor (substrate moisture, pore EC) may go without
+    # reporting before its reading is stale: the cap on its Observation
+    # Validity Window, which is shorter for a sensor seen to report more often.
+    # 0 switches staleness off (#789).
+    sensor_stale_after_minutes: int = 30
+    # How long the moisture sensor may be invalid — shots are withheld from the
+    # first minute — before its one alert per episode goes out (#789).
+    sensor_alert_delay_minutes: int = 15
+    # Whether a moisture reading of exactly 0 is implausible, for probes that
+    # read 0 in air when pulled out of the substrate (#789).
+    moisture_zero_is_implausible: bool = False
+    # What a managed pump reading ON outside any cycle of ours leads to (#793):
+    # "alert" treats it as a person's and holds automatic irrigation while it
+    # lasts; "enforce_off" switches it off and latches a Fault.
+    unexpected_on_policy: str = "alert"
     active_steering_phase: str = "p2"
     phase_changed_at: str | None = None
 

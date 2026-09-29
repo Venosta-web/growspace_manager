@@ -1,0 +1,28 @@
+{
+  "clearable_with_null": [
+    "clone_start",
+    "cure_start",
+    "dry_start",
+    "flower_start",
+    "mother_start",
+    "seedling_start",
+    "veg_start"
+  ],
+  "command": "growspace_manager/update_plant",
+  "editable": [
+    "clone_start",
+    "col",
+    "cure_start",
+    "dry_start",
+    "flower_start",
+    "growspace_id",
+    "mother_start",
+    "phenotype",
+    "row",
+    "seedling_start",
+    "stage",
+    "strain",
+    "veg_start"
+  ],
+  "required": ["plant_id"]
+}

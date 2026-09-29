@@ -418,6 +418,7 @@ async def async_print_record(
     density: str = "normal",
     firmware: str | None = None,
     fonts: FontLibrary | None = None,
+    override: bool = False,
 ) -> PrintOutcome:
     """Put one real record on paper, from a published revision.
 
@@ -438,6 +439,11 @@ async def async_print_record(
     is *in* the Render Context rather than compared against it afterwards --
     which is what makes a raster cached under that context unable to outlive
     the measurement it was authorized by.
+
+    `override` is the operator's consent to print past the overridable
+    refusals among those -- an unproven profile or printer, a missing or
+    stale calibration, a blocking diagnostic. The first three never yield to
+    it: they are what make the label on paper the one that was approved.
     """
     actor.authenticated()
     library = fonts or font_library_for(hass)
@@ -465,6 +471,7 @@ async def async_print_record(
         ),
         expected_raster_identity=expected_raster_identity,
         calibration=status,
+        override=override,
     )
 
 

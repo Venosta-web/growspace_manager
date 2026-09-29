@@ -10,6 +10,19 @@ from typing import Any
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import ShotSizingMode, SubstrateMediaType
+from custom_components.growspace_manager.domain.irrigation_safety import (
+    DEFAULT_STARTUP_GRACE_MINUTES,
+)
+from custom_components.growspace_manager.domain.manual_override import (
+    UnexpectedOnPolicy,
+)
+from custom_components.growspace_manager.domain.sensor_validity import (
+    DEFAULT_SENSOR_ALERT_DELAY_MINUTES,
+    DEFAULT_SENSOR_STALE_AFTER_MINUTES,
+)
+from custom_components.growspace_manager.domain.unknown_tank_level import (
+    DEFAULT_TANK_UNKNOWN_GRACE_MINUTES,
+)
 from custom_components.growspace_manager.services.irrigation_change import (
     IrrigationChangeError,
 )
@@ -180,7 +193,7 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 default=irrigation_options.get("irrigation_duration", 30),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, mode=selector.NumberSelectorMode.BOX
+                    min=1, max=3600, mode=selector.NumberSelectorMode.BOX
                 )
             ),
             vol.Optional(
@@ -188,7 +201,23 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 default=irrigation_options.get("drain_duration", 30),
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=1, mode=selector.NumberSelectorMode.BOX
+                    min=1, max=3600, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                "max_cycle_seconds",
+                default=irrigation_options.get("max_cycle_seconds", 600),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1, max=3600, mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+            vol.Optional(
+                "min_interval_minutes",
+                default=irrigation_options.get("min_interval_minutes", 5),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, max=1440, mode=selector.NumberSelectorMode.BOX
                 )
             ),
             vol.Optional(
@@ -231,6 +260,20 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 )
             ),
             vol.Optional(
+                "startup_grace_minutes",
+                default=irrigation_options.get(
+                    "startup_grace_minutes", DEFAULT_STARTUP_GRACE_MINUTES
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=120,
+                    step=1,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
                 "skip_during_dark",
                 default=irrigation_options.get("skip_during_dark", False),
             ): selector.BooleanSelector(),
@@ -238,6 +281,64 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
                 "pause_on_low_tank",
                 default=irrigation_options.get("pause_on_low_tank", True),
             ): selector.BooleanSelector(),
+            vol.Optional(
+                "tank_unknown_grace_minutes",
+                default=irrigation_options.get(
+                    "tank_unknown_grace_minutes", DEFAULT_TANK_UNKNOWN_GRACE_MINUTES
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=120,
+                    step=1,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "sensor_stale_after_minutes",
+                default=irrigation_options.get(
+                    "sensor_stale_after_minutes", DEFAULT_SENSOR_STALE_AFTER_MINUTES
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=1440,
+                    step=1,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "sensor_alert_delay_minutes",
+                default=irrigation_options.get(
+                    "sensor_alert_delay_minutes", DEFAULT_SENSOR_ALERT_DELAY_MINUTES
+                ),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=1440,
+                    step=1,
+                    unit_of_measurement="min",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                "moisture_zero_is_implausible",
+                default=irrigation_options.get("moisture_zero_is_implausible", False),
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                "unexpected_on_policy",
+                default=irrigation_options.get(
+                    "unexpected_on_policy", UnexpectedOnPolicy.ALERT.value
+                ),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[policy.value for policy in UnexpectedOnPolicy],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    translation_key="unexpected_on_policy",
+                )
+            ),
             vol.Optional(
                 "log_to_logbook",
                 default=irrigation_options.get("log_to_logbook", True),

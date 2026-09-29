@@ -1,0 +1,2044 @@
+"""Grow Runs: one Growspace's bounded operating episodes (#668, ADR-0033…0038).
+
+A Growspace owns a **Run Ledger**: its Runs, the next Run Sequence Number and
+the Run Revision. The ledger is the unit every lifecycle command is checked and
+committed against, because the rule it guards -- zero or one Active Run -- is a
+rule about the collection, not about any one Run. A command names the revision
+it was decided on; a ledger that has moved since refuses it and says where it
+is now, so a second tab or a stale automation can never start a second Run.
+
+A Completed Run is **finalized** into a Run Finalization Snapshot (#673): the
+identity, boundaries, Participant Identity Snapshots, counts, Strains, Harvest
+Window and versioned metrics it will be compared and exported on, copied out
+of everything they were derived from so that no later change to a Plant, a
+Strain or the Growspace can reach them. A missing fact stays missing in it.
+
+This module is pure. It decides and records; persistence, Home Assistant state
+and authorization belong to the shells around it.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime
+from enum import StrEnum
+from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+MAX_LABEL_LENGTH = 80
+MAX_TAGS = 20
+MAX_TAG_LENGTH = 40
+MAX_TEXT_LENGTH = 2000
+
+# Refusal codes. Every refusal travels with the ledger's current revision, so
+# the caller can re-decide on what is really there.
+CODE_REVISION_CONFLICT = "grow_run.revision_conflict"
+CODE_ALREADY_ACTIVE = "grow_run.already_active"
+CODE_NOT_AUTHORIZED = "grow_run.not_authorized"
+CODE_STORE_UNREADABLE = "grow_run.store_unreadable"
+CODE_BEYOND_RETENTION = "grow_run.beyond_retention"
+CODE_BOUNDARY_CONFLICT = "grow_run.boundary_conflict"
+
+CODE_NOT_ACTIVE = "grow_run.not_active"
+CODE_IRRIGATION_DELIVERING = "grow_run.irrigation_delivering"
+CODE_ACKNOWLEDGEMENT_REQUIRED = "grow_run.acknowledgement_required"
+CODE_NOT_FOUND = "grow_run.not_found"
+CODE_NOT_COMPLETED = "grow_run.not_completed"
+
+# Run Completion Preview warnings. Each one names a Plant or outcome at risk; a
+# completion must acknowledge every warning the preview holds when it commits.
+WARNING_PLANTS_PRESENT = "plants_present"
+WARNING_MISSING_OUTCOMES = "missing_outcomes"
+WARNING_ATTRIBUTION_GAPS = "attribution_gaps"
+
+#: The one finalization warning: the snapshot would freeze with facts missing.
+WARNING_INCOMPLETE_SNAPSHOT = "incomplete_snapshot"
+
+#: The Run Finalization Snapshot's own layout, apart from any metric's rules.
+SNAPSHOT_FORMAT = 1
+
+#: Metric Definition Versions. A change to how a metric is calculated takes a
+#: new version, so values frozen under different rules are never compared.
+METRIC_DEFINITIONS = {"yield": 1, "yield_per_harvest_source_plant": 1}
+
+
+class RunStatus(StrEnum):
+    """The Grow Run State Graph's states; all but ``voided`` are reachable."""
+
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FINALIZED = "finalized"
+    VOIDED = "voided"
+
+
+class RunCommand(StrEnum):
+    """The lifecycle commands a Run Audit Entry can record."""
+
+    START = "start"
+    COMPLETE = "complete"
+    FINALIZE = "finalize"
+    EDIT_METADATA = "edit_metadata"
+
+
+class GrowRunRefused(Exception):
+    """A lifecycle command the ledger would not take, and where it stands."""
+
+    code: str = "grow_run.refused"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        current_revision: int | None,
+        active_run: GrowRun | None = None,
+        boundary: datetime | None = None,
+    ) -> None:
+        """Keep the ledger's position beside the refusal."""
+        super().__init__(message)
+        self.current_revision = current_revision
+        self.active_run = active_run
+        self.boundary = boundary
+
+
+class RunRevisionConflict(GrowRunRefused):
+    """The command was decided on a revision the ledger has moved past."""
+
+    code = CODE_REVISION_CONFLICT
+
+
+class RunAlreadyActive(GrowRunRefused):
+    """The Growspace already has its one Active Run."""
+
+    code = CODE_ALREADY_ACTIVE
+
+
+class RunNotAuthorized(GrowRunRefused):
+    """The acting user may not run this command on this Growspace."""
+
+    code = CODE_NOT_AUTHORIZED
+
+
+class RunStoreUnreadable(GrowRunRefused):
+    """The stored Run history could not be read; nothing may be written over it."""
+
+    code = CODE_STORE_UNREADABLE
+
+
+class RunBeyondRetention(GrowRunRefused):
+    """A backdated start older than the Unattributed Activity Ledger keeps.
+
+    Nothing is inferred for it; ``boundary`` is the retention horizon, and the
+    only honest record of such history is an Imported Run.
+    """
+
+    code = CODE_BEYOND_RETENTION
+
+
+class RunBoundaryConflict(GrowRunRefused):
+    """A backdated start that would overlap another Run or lie in the future.
+
+    ``boundary`` is the moment the requested start may not reach.
+    """
+
+    code = CODE_BOUNDARY_CONFLICT
+
+
+class RunNotActive(GrowRunRefused):
+    """The command names a Run that is not the Growspace's Active Run."""
+
+    code = CODE_NOT_ACTIVE
+
+
+class RunIrrigationDelivering(GrowRunRefused):
+    """Integration-controlled irrigation is delivering water at the boundary."""
+
+    code = CODE_IRRIGATION_DELIVERING
+
+
+class RunAcknowledgementRequired(GrowRunRefused):
+    """The command did not acknowledge every warning its preview holds now."""
+
+    code = CODE_ACKNOWLEDGEMENT_REQUIRED
+
+
+class RunNotFound(GrowRunRefused):
+    """The command names a Run this Growspace's ledger does not hold."""
+
+    code = CODE_NOT_FOUND
+
+
+class RunNotCompleted(GrowRunRefused):
+    """Only a Completed Run can be finalized."""
+
+    code = CODE_NOT_COMPLETED
+
+
+# ---------------------------------------------------------------------------
+# Readers for stored documents. A malformed record is refused whole.
+# ---------------------------------------------------------------------------
+
+
+def _str(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise TypeError(f"{name} is not a non-empty string")
+    return value
+
+
+def _opt_str(value: Any, name: str) -> str | None:
+    if value is not None and not isinstance(value, str):
+        raise TypeError(f"{name} is not a string")
+    return value
+
+
+def _int(value: Any, name: str, minimum: int) -> int:
+    if type(value) is not int or value < minimum:
+        raise ValueError(f"{name} is not an integer of at least {minimum}")
+    return value
+
+
+def _opt_int(value: Any, name: str) -> int | None:
+    return None if value is None else _int(value, name, 0)
+
+
+def _moment(value: Any, name: str) -> datetime:
+    moment = datetime.fromisoformat(_str(value, name))
+    if moment.tzinfo is None:
+        raise ValueError(f"{name} has no timezone")
+    return moment
+
+
+def _opt_moment(value: Any, name: str) -> datetime | None:
+    return None if value is None else _moment(value, name)
+
+
+def _date(value: Any, name: str) -> date:
+    return date.fromisoformat(_str(value, name))
+
+
+def _zone(value: Any, name: str) -> str:
+    """Accept only an IANA timezone this interpreter can resolve."""
+    zone = _str(value, name)
+    try:
+        ZoneInfo(zone)
+    except (ZoneInfoNotFoundError, ValueError) as err:
+        raise ValueError(f"{name} is not a known timezone") from err
+    return zone
+
+
+def _list(value: Any, name: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise TypeError(f"{name} is not a list")
+    return value
+
+
+def _dict(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise TypeError(f"{name} is not an object")
+    return value
+
+
+def _text(value: str | None, limit: int) -> str | None:
+    """Normalise a grower's free text: trimmed, and absent rather than blank."""
+    if value is None:
+        return None
+    value = value.strip()
+    if len(value) > limit:
+        raise ValueError(f"text longer than {limit} characters")
+    return value or None
+
+
+# ---------------------------------------------------------------------------
+# The records
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class RunMetadata:
+    """The editable description of a Run: label, tags, goals, notes."""
+
+    label: str | None = None
+    tags: tuple[str, ...] = ()
+    goals: str | None = None
+    notes: str | None = None
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        label: str | None = None,
+        tags: list[str] | tuple[str, ...] = (),
+        goals: str | None = None,
+        notes: str | None = None,
+    ) -> RunMetadata:
+        """Normalise a grower's input; refuse what exceeds the bounds."""
+        cleaned: list[str] = []
+        for tag in tags:
+            text = _text(tag, MAX_TAG_LENGTH)
+            if text and text not in cleaned:
+                cleaned.append(text)
+        if len(cleaned) > MAX_TAGS:
+            raise ValueError(f"a Run has at most {MAX_TAGS} tags")
+        return cls(
+            label=_text(label, MAX_LABEL_LENGTH),
+            tags=tuple(cleaned),
+            goals=_text(goals, MAX_TEXT_LENGTH),
+            notes=_text(notes, MAX_TEXT_LENGTH),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable form."""
+        return {
+            "label": self.label,
+            "tags": list(self.tags),
+            "goals": self.goals,
+            "notes": self.notes,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> RunMetadata:
+        """Read the durable form back."""
+        value = _dict(value, "metadata")
+        tags = _list(value.get("tags"), "metadata.tags")
+        return cls(
+            label=_opt_str(value.get("label"), "metadata.label"),
+            tags=tuple(_str(tag, "metadata.tags[]") for tag in tags),
+            goals=_opt_str(value.get("goals"), "metadata.goals"),
+            notes=_opt_str(value.get("notes"), "metadata.notes"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class BaselineState:
+    """One condition or output as it stood when the Run started."""
+
+    entity_id: str
+    key: str
+    state: str
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable form."""
+        return {"entity_id": self.entity_id, "key": self.key, "state": self.state}
+
+    @classmethod
+    def from_dict(cls, value: Any) -> BaselineState:
+        """Read the durable form back."""
+        value = _dict(value, "baseline state")
+        return cls(
+            entity_id=_str(value.get("entity_id"), "baseline.entity_id"),
+            key=_str(value.get("key"), "baseline.key"),
+            state=_str(value.get("state"), "baseline.state"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class OpeningBaseline:
+    """The Run Opening Baseline: conditions and equipment at the start boundary.
+
+    A condition already active here is carried-in context; only a later
+    clear-to-active transition is an episode of this Run.
+    """
+
+    conditions: tuple[BaselineState, ...] = ()
+    equipment: tuple[BaselineState, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable form."""
+        return {
+            "conditions": [state.as_dict() for state in self.conditions],
+            "equipment": [state.as_dict() for state in self.equipment],
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> OpeningBaseline:
+        """Read the durable form back."""
+        value = _dict(value, "baseline")
+        return cls(
+            conditions=tuple(
+                BaselineState.from_dict(row)
+                for row in _list(value.get("conditions"), "baseline.conditions")
+            ),
+            equipment=tuple(
+                BaselineState.from_dict(row)
+                for row in _list(value.get("equipment"), "baseline.equipment")
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RunParticipation:
+    """One half-open interval of a Plant in the Run's Growspace."""
+
+    plant_id: str
+    opened_at: datetime
+    closed_at: datetime | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable form."""
+        return {
+            "plant_id": self.plant_id,
+            "opened_at": self.opened_at.isoformat(),
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> RunParticipation:
+        """Read the durable form back."""
+        value = _dict(value, "participation")
+        interval = cls(
+            plant_id=_str(value.get("plant_id"), "participation.plant_id"),
+            opened_at=_moment(value.get("opened_at"), "participation.opened_at"),
+            closed_at=_opt_moment(value.get("closed_at"), "participation.closed_at"),
+        )
+        if interval.closed_at is not None and interval.closed_at < interval.opened_at:
+            raise ValueError("Participation closes before it opens")
+        return interval
+
+
+@dataclass(frozen=True, slots=True)
+class PlantMovementFact:
+    """A durable observation of a successful Plant location mutation."""
+
+    fact_id: str
+    plant_id: str
+    at: datetime
+    kind: str
+    source_growspace_id: str | None
+    target_growspace_id: str | None
+    source_run_id: str | None
+    target_run_id: str | None
+    projected: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form of the fact."""
+        return {
+            "fact_id": self.fact_id,
+            "plant_id": self.plant_id,
+            "at": self.at.isoformat(),
+            "kind": self.kind,
+            "source_growspace_id": self.source_growspace_id,
+            "target_growspace_id": self.target_growspace_id,
+            "source_run_id": self.source_run_id,
+            "target_run_id": self.target_run_id,
+            "projected": self.projected,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> PlantMovementFact:
+        """Validate one fact read from the Plant outbox."""
+        value = _dict(value, "activity fact")
+        projected = value.get("projected", False)
+        if not isinstance(projected, bool):
+            raise TypeError("fact.projected is not boolean")
+        return cls(
+            fact_id=_str(value.get("fact_id"), "fact.id"),
+            plant_id=_str(value.get("plant_id"), "fact.plant_id"),
+            at=_moment(value.get("at"), "fact.at"),
+            kind=_str(value.get("kind"), "fact.kind"),
+            source_growspace_id=_opt_str(
+                value.get("source_growspace_id"), "fact.source"
+            ),
+            target_growspace_id=_opt_str(
+                value.get("target_growspace_id"), "fact.target"
+            ),
+            source_run_id=_opt_str(value.get("source_run_id"), "fact.source_run"),
+            target_run_id=_opt_str(value.get("target_run_id"), "fact.target_run"),
+            projected=projected,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DailySummary:
+    """One local day of a Growspace's activity: who stood in it, who came and went.
+
+    Kept by the Unattributed Activity Ledger while no Run is active, and handed
+    whole to the Run that claims that day. A day with no summary is a day Home
+    Assistant never observed the Growspace.
+    """
+
+    day: date
+    plant_ids: tuple[str, ...] = ()
+    entries: int = 0
+    exits: int = 0
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "date": self.day.isoformat(),
+            "plant_ids": list(self.plant_ids),
+            "entries": self.entries,
+            "exits": self.exits,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> DailySummary:
+        """Read the durable form back."""
+        value = _dict(value, "daily summary")
+        plant_ids = _list(value.get("plant_ids"), "day.plant_ids")
+        return cls(
+            day=_date(value.get("date"), "day.date"),
+            plant_ids=tuple(_str(plant, "day.plant_ids[]") for plant in plant_ids),
+            entries=_int(value.get("entries"), "day.entries", 0),
+            exits=_int(value.get("exits"), "day.exits", 0),
+        )
+
+
+class GapReason(StrEnum):
+    """Why part of a backdated Run's interval has no activity to claim."""
+
+    #: Before the Unattributed Activity Ledger began covering the Growspace.
+    BEFORE_RECORDING = "before_recording"
+    #: A whole local day on which Home Assistant never observed the Growspace.
+    NOT_OBSERVED = "not_observed"
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageGap:
+    """A half-open interval of a backdated Run with nothing recorded for it."""
+
+    start: datetime
+    end: datetime
+    reason: GapReason
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "reason": self.reason.value,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> CoverageGap:
+        """Read the durable form back."""
+        value = _dict(value, "coverage gap")
+        gap = cls(
+            start=_moment(value.get("start"), "gap.start"),
+            end=_moment(value.get("end"), "gap.end"),
+            reason=GapReason(value.get("reason")),
+        )
+        if gap.end <= gap.start:
+            raise ValueError("a coverage gap ends before it starts")
+        return gap
+
+
+@dataclass(frozen=True, slots=True)
+class RunBackdate:
+    """How a Run started in the past: the day asked for and what it could not see.
+
+    ``covered_from`` is where claimed activity begins; anything between the
+    start and it, and every day listed in ``gaps``, is uncovered rather than
+    inferred.
+    """
+
+    started_on: date
+    covered_from: datetime
+    claimed_facts: int
+    gaps: tuple[CoverageGap, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable form."""
+        return {
+            "started_on": self.started_on.isoformat(),
+            "covered_from": self.covered_from.isoformat(),
+            "claimed_facts": self.claimed_facts,
+            "gaps": [gap.as_dict() for gap in self.gaps],
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> RunBackdate:
+        """Read the durable form back."""
+        value = _dict(value, "backdate")
+        return cls(
+            started_on=_date(value.get("started_on"), "backdate.started_on"),
+            covered_from=_moment(value.get("covered_from"), "backdate.covered_from"),
+            claimed_facts=_int(value.get("claimed_facts"), "backdate.claimed", 0),
+            gaps=tuple(
+                CoverageGap.from_dict(row)
+                for row in _list(value.get("gaps"), "backdate.gaps")
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class HarvestOutcome:
+    """Last committed harvest facts for a source Run, independent of the Plant."""
+
+    plant_id: str
+    strain: str
+    phenotype: str
+    source_growspace_id: str
+    state: str
+    reason: str | None
+    metrics: dict[str, Any]
+    quality_score: float | None
+    #: When the Plant entered dry: what the Harvest Window is drawn from.
+    #: Absent on a snapshot taken before #673, and then unknown, not guessed.
+    entered_dry_at: datetime | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire snapshot."""
+        return {
+            "plant_id": self.plant_id,
+            "strain": self.strain,
+            "phenotype": self.phenotype,
+            "source_growspace_id": self.source_growspace_id,
+            "state": self.state,
+            "reason": self.reason,
+            "metrics": dict(self.metrics),
+            "quality_score": self.quality_score,
+            "entered_dry_at": (
+                self.entered_dry_at.isoformat() if self.entered_dry_at else None
+            ),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> HarvestOutcome:
+        """Read a stored snapshot without inventing a missing outcome."""
+        value = _dict(value, "harvest outcome")
+        state = _str(value.get("state"), "outcome.state")
+        if state not in {"pending", "recorded", "no_usable_yield", "incomplete"}:
+            raise ValueError("unknown harvest outcome state")
+        reason = _opt_str(value.get("reason"), "outcome.reason")
+        if state == "no_usable_yield" and not (reason and reason.strip()):
+            raise ValueError("No Usable Yield needs a reason")
+        metrics = _dict(value.get("metrics"), "outcome.metrics")
+        dry_weight = metrics.get("dry_weight")
+        if dry_weight is not None and (
+            isinstance(dry_weight, bool)
+            or not isinstance(dry_weight, (int, float))
+            or dry_weight < 0
+        ):
+            raise ValueError("outcome.dry_weight is invalid")
+        if state == "no_usable_yield" and dry_weight != 0:
+            raise ValueError("No Usable Yield must record zero dry weight")
+        if state == "incomplete" and dry_weight is not None:
+            raise ValueError("an incomplete outcome cannot have a dry weight")
+        quality = value.get("quality_score")
+        if quality is not None and (
+            isinstance(quality, bool) or not isinstance(quality, (int, float))
+        ):
+            raise TypeError("outcome.quality_score is not numeric")
+        return cls(
+            plant_id=_str(value.get("plant_id"), "outcome.plant_id"),
+            strain=_opt_str(value.get("strain"), "outcome.strain") or "",
+            phenotype=_opt_str(value.get("phenotype"), "outcome.phenotype") or "",
+            source_growspace_id=_str(
+                value.get("source_growspace_id"), "outcome.source"
+            ),
+            state=state,
+            reason=reason,
+            metrics=metrics,
+            quality_score=quality,
+            entered_dry_at=_opt_moment(value.get("entered_dry_at"), "outcome.dry"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantIdentity:
+    """A Participant Identity Snapshot: who a Run Participant was.
+
+    Refreshed from the live Plant while the Run is Active or Completed, so a
+    correction before finalization reaches it, and kept when the Plant is
+    deleted, so a Participant never becomes a bare ID.
+    """
+
+    plant_id: str
+    plant_name: str
+    strain_id: int | None
+    strain_name: str
+    phenotype_id: int | None
+    phenotype_name: str
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "plant_id": self.plant_id,
+            "plant_name": self.plant_name,
+            "strain_id": self.strain_id,
+            "strain_name": self.strain_name,
+            "phenotype_id": self.phenotype_id,
+            "phenotype_name": self.phenotype_name,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> ParticipantIdentity:
+        """Read the durable form back."""
+        value = _dict(value, "participant identity")
+        return cls(
+            plant_id=_str(value.get("plant_id"), "identity.plant_id"),
+            plant_name=_opt_str(value.get("plant_name"), "identity.plant_name") or "",
+            strain_id=_opt_int(value.get("strain_id"), "identity.strain_id"),
+            strain_name=_opt_str(value.get("strain_name"), "identity.strain") or "",
+            phenotype_id=_opt_int(value.get("phenotype_id"), "identity.phenotype_id"),
+            phenotype_name=(
+                _opt_str(value.get("phenotype_name"), "identity.phenotype") or ""
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimedHistory:
+    """Everything a backdated start takes from the Unattributed Activity Ledger.
+
+    Built by `domain.unattributed_activity.plan_claim`; the facts are still
+    unattributed here and become the Run's when the start commits.
+    """
+
+    started_at: datetime
+    backdate: RunBackdate
+    participations: tuple[RunParticipation, ...]
+    facts: tuple[PlantMovementFact, ...]
+    days: tuple[DailySummary, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RunAuditEntry:
+    """The immutable record of one lifecycle command."""
+
+    at: datetime
+    command: RunCommand
+    command_id: str
+    actor_user_id: str | None
+    prior_revision: int
+    resulting_revision: int
+    #: The Run Metadata fields an ``edit_metadata`` command changed.
+    changed_fields: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "at": self.at.isoformat(),
+            "command": self.command.value,
+            "command_id": self.command_id,
+            "actor_user_id": self.actor_user_id,
+            "prior_revision": self.prior_revision,
+            "resulting_revision": self.resulting_revision,
+            "changed_fields": list(self.changed_fields),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> RunAuditEntry:
+        """Read the durable form back."""
+        value = _dict(value, "audit entry")
+        return cls(
+            at=_moment(value.get("at"), "audit.at"),
+            command=RunCommand(value.get("command")),
+            command_id=_str(value.get("command_id"), "audit.command_id"),
+            actor_user_id=_opt_str(value.get("actor_user_id"), "audit.actor_user_id"),
+            prior_revision=_int(value.get("prior_revision"), "audit.prior", 0),
+            resulting_revision=_int(
+                value.get("resulting_revision"), "audit.resulting", 1
+            ),
+            changed_fields=tuple(
+                _str(name, "audit.changed_fields[]")
+                for name in _list(value.get("changed_fields", []), "audit.fields")
+            ),
+        )
+
+
+# ---------------------------------------------------------------------------
+# The Run Finalization Snapshot
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class MissingFact:
+    """A fact a snapshot needed and did not have, and whose it was.
+
+    ``dry_weight``: a Harvest Source Plant still waiting for one.
+    ``outcome_incomplete``: one recorded as never going to have one.
+    ``entered_dry_at``: an outcome that does not say when its Plant entered dry.
+    ``participant_identity``: a Participant no identity was ever captured for.
+    ``harvest_source_plants``: a Run nothing was harvested from.
+    ``yield``: a metric derived from a Yield that is itself incomplete.
+    """
+
+    kind: str
+    plant_id: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {"kind": self.kind, "plant_id": self.plant_id}
+
+    @classmethod
+    def from_dict(cls, value: Any) -> MissingFact:
+        """Read the durable form back."""
+        value = _dict(value, "missing fact")
+        return cls(
+            kind=_str(value.get("kind"), "missing.kind"),
+            plant_id=_opt_str(value.get("plant_id"), "missing.plant_id"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FrozenMetric:
+    """One comparison metric as finalization froze it.
+
+    ``value`` is absent whenever ``missing`` is not empty: an incomplete metric
+    has no number, never a partial one standing in for the whole.
+    """
+
+    metric: str
+    unit: str
+    definition_version: int
+    value: float | None
+    missing: tuple[MissingFact, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "metric": self.metric,
+            "unit": self.unit,
+            "definition_version": self.definition_version,
+            "value": self.value,
+            "complete": self.value is not None,
+            "missing": [row.as_dict() for row in self.missing],
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> FrozenMetric:
+        """Read the durable form back; a value beside a missing fact is refused."""
+        value = _dict(value, "frozen metric")
+        number = value.get("value")
+        if number is not None and (
+            isinstance(number, bool) or not isinstance(number, (int, float))
+        ):
+            raise TypeError("metric.value is not numeric")
+        metric = cls(
+            metric=_str(value.get("metric"), "metric.metric"),
+            unit=_str(value.get("unit"), "metric.unit"),
+            definition_version=_int(
+                value.get("definition_version"), "metric.definition_version", 1
+            ),
+            value=number,
+            missing=tuple(
+                MissingFact.from_dict(row)
+                for row in _list(value.get("missing"), "metric.missing")
+            ),
+        )
+        if (metric.value is None) == (not metric.missing):
+            raise ValueError("a metric is either valued or missing a fact")
+        return metric
+
+
+@dataclass(frozen=True, slots=True)
+class MetricCoverage:
+    """How much of one metric's required interval valid data supported."""
+
+    metric: str
+    coverage_percent: float
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {"metric": self.metric, "coverage_percent": self.coverage_percent}
+
+    @classmethod
+    def from_dict(cls, value: Any) -> MetricCoverage:
+        """Read the durable form back."""
+        value = _dict(value, "coverage")
+        percent = value.get("coverage_percent")
+        if (
+            isinstance(percent, bool)
+            or not isinstance(percent, (int, float))
+            or not 0 <= percent <= 100
+        ):
+            raise ValueError("coverage.coverage_percent is not a percentage")
+        return cls(_str(value.get("metric"), "coverage.metric"), percent)
+
+
+@dataclass(frozen=True, slots=True)
+class StrainCount:
+    """One Strain among a Run's Participants, as it was named then."""
+
+    strain_id: int | None
+    strain_name: str
+    participants: int
+    harvest_source_plants: int
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "strain_id": self.strain_id,
+            "strain_name": self.strain_name,
+            "participants": self.participants,
+            "harvest_source_plants": self.harvest_source_plants,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> StrainCount:
+        """Read the durable form back."""
+        value = _dict(value, "strain count")
+        return cls(
+            strain_id=_opt_int(value.get("strain_id"), "strain.strain_id"),
+            strain_name=_opt_str(value.get("strain_name"), "strain.name") or "",
+            participants=_int(value.get("participants"), "strain.participants", 0),
+            harvest_source_plants=_int(
+                value.get("harvest_source_plants"), "strain.harvest_sources", 0
+            ),
+        )
+
+
+#: The counts a snapshot freezes, in the order the wire form lists them.
+SNAPSHOT_COUNTS = (
+    "participants",
+    "harvest_source_plants",
+    "recorded",
+    "no_usable_yield",
+    "missing_outcomes",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class RunSnapshot:
+    """The Run Finalization Snapshot: a Run's facts, frozen and self-contained.
+
+    Everything a comparison or an export reads of a Finalized Run is here or on
+    the Run's own frozen records, so neither ever looks at a live Plant, Strain
+    or Growspace again. ``missing`` is every fact the snapshot lacked, which is
+    what made its finalization need acknowledging.
+    """
+
+    finalized_at: datetime
+    run_id: str
+    growspace_id: str
+    growspace_name: str
+    sequence_number: int
+    timezone: str
+    started_at: datetime
+    completed_at: datetime
+    duration_days: int
+    harvest_window: tuple[date, date] | None
+    participants: tuple[ParticipantIdentity, ...]
+    counts: dict[str, int]
+    strains: tuple[StrainCount, ...]
+    metrics: tuple[FrozenMetric, ...]
+    coverage: tuple[MetricCoverage, ...] = ()
+    uncovered_gaps: tuple[CoverageGap, ...] = ()
+    missing: tuple[MissingFact, ...] = ()
+    format: int = SNAPSHOT_FORMAT
+
+    @property
+    def complete(self) -> bool:
+        """Whether nothing the snapshot needed was missing."""
+        return not self.missing
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        window = self.harvest_window
+        return {
+            "format": self.format,
+            "finalized_at": self.finalized_at.isoformat(),
+            "run_id": self.run_id,
+            "growspace_id": self.growspace_id,
+            "growspace_name": self.growspace_name,
+            "sequence_number": self.sequence_number,
+            "timezone": self.timezone,
+            "started_at": self.started_at.isoformat(),
+            "completed_at": self.completed_at.isoformat(),
+            "duration_days": self.duration_days,
+            "harvest_window": (
+                None
+                if window is None
+                else {"first": window[0].isoformat(), "last": window[1].isoformat()}
+            ),
+            "participants": [row.as_dict() for row in self.participants],
+            "counts": {name: self.counts[name] for name in SNAPSHOT_COUNTS},
+            "strains": [row.as_dict() for row in self.strains],
+            "metrics": [row.as_dict() for row in self.metrics],
+            "coverage": [row.as_dict() for row in self.coverage],
+            "uncovered_gaps": [row.as_dict() for row in self.uncovered_gaps],
+            "missing": [row.as_dict() for row in self.missing],
+            "complete": self.complete,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> RunSnapshot:
+        """Read the durable form back, refusing a snapshot of a later format."""
+        value = _dict(value, "snapshot")
+        if _int(value.get("format"), "snapshot.format", 1) != SNAPSHOT_FORMAT:
+            raise ValueError("the snapshot was written by a later format")
+        raw_window = value.get("harvest_window")
+        window = None
+        if raw_window is not None:
+            raw_window = _dict(raw_window, "snapshot.harvest_window")
+            window = (
+                _date(raw_window.get("first"), "harvest_window.first"),
+                _date(raw_window.get("last"), "harvest_window.last"),
+            )
+            if window[1] < window[0]:
+                raise ValueError("the Harvest Window ends before it begins")
+        counts = _dict(value.get("counts"), "snapshot.counts")
+        snapshot = cls(
+            finalized_at=_moment(value.get("finalized_at"), "snapshot.finalized_at"),
+            run_id=_str(value.get("run_id"), "snapshot.run_id"),
+            growspace_id=_str(value.get("growspace_id"), "snapshot.growspace_id"),
+            growspace_name=_str(value.get("growspace_name"), "snapshot.growspace"),
+            sequence_number=_int(value.get("sequence_number"), "snapshot.seq", 1),
+            timezone=_zone(value.get("timezone"), "snapshot.timezone"),
+            started_at=_moment(value.get("started_at"), "snapshot.started_at"),
+            completed_at=_moment(value.get("completed_at"), "snapshot.completed_at"),
+            duration_days=_int(value.get("duration_days"), "snapshot.duration", 0),
+            harvest_window=window,
+            participants=tuple(
+                ParticipantIdentity.from_dict(row)
+                for row in _list(value.get("participants"), "snapshot.participants")
+            ),
+            counts={
+                name: _int(counts.get(name), f"snapshot.counts.{name}", 0)
+                for name in SNAPSHOT_COUNTS
+            },
+            strains=tuple(
+                StrainCount.from_dict(row)
+                for row in _list(value.get("strains"), "snapshot.strains")
+            ),
+            metrics=tuple(
+                FrozenMetric.from_dict(row)
+                for row in _list(value.get("metrics"), "snapshot.metrics")
+            ),
+            coverage=tuple(
+                MetricCoverage.from_dict(row)
+                for row in _list(value.get("coverage"), "snapshot.coverage")
+            ),
+            uncovered_gaps=tuple(
+                CoverageGap.from_dict(row)
+                for row in _list(value.get("uncovered_gaps"), "snapshot.gaps")
+            ),
+            missing=tuple(
+                MissingFact.from_dict(row)
+                for row in _list(value.get("missing"), "snapshot.missing")
+            ),
+        )
+        if snapshot.completed_at < snapshot.started_at:
+            raise ValueError("the snapshot ends before it starts")
+        return snapshot
+
+
+def _yield_gap(outcome: HarvestOutcome) -> str | None:
+    """Why an outcome leaves Yield unknown, or None when its dry weight counts."""
+    if outcome.state == "incomplete":
+        return "outcome_incomplete"
+    if outcome.state == "pending" or outcome.metrics.get("dry_weight") is None:
+        return "dry_weight"
+    return None
+
+
+def build_snapshot(
+    run: GrowRun, *, finalized_at: datetime, growspace_name: str
+) -> RunSnapshot:
+    """Freeze a Completed Run's facts as they stand at ``finalized_at``.
+
+    Only the Run's own records are read, never a live Plant: its Participant
+    Identity Snapshots, its Harvest Outcomes and its participation. Whatever
+    those lack is listed in ``missing`` and left out of every value it would
+    have fed, rather than counted as zero.
+    """
+    if run.completed_at is None:
+        raise ValueError("only a Completed Run has a snapshot")
+    zone = ZoneInfo(run.timezone)
+    outcomes = tuple(sorted(run.harvest_outcomes, key=lambda row: row.plant_id))
+    sources = {row.plant_id: row for row in outcomes}
+    identities = {row.plant_id: row for row in run.participant_identities}
+    missing: list[MissingFact] = []
+
+    participants: list[ParticipantIdentity] = []
+    for plant_id in dict.fromkeys(row.plant_id for row in run.participations):
+        identity = identities.get(plant_id)
+        if identity is None:
+            # Nothing ever named this Plant: keep what its outcome, if any,
+            # recorded of its genetics, and say the rest is unknown.
+            outcome = sources.get(plant_id)
+            identity = ParticipantIdentity(
+                plant_id,
+                "",
+                None,
+                outcome.strain if outcome else "",
+                None,
+                outcome.phenotype if outcome else "",
+            )
+            missing.append(MissingFact("participant_identity", plant_id))
+        participants.append(identity)
+
+    days = [
+        row.entered_dry_at.astimezone(zone).date()
+        for row in outcomes
+        if row.entered_dry_at is not None
+    ]
+    undated = [row.plant_id for row in outcomes if row.entered_dry_at is None]
+    missing.extend(MissingFact("entered_dry_at", plant_id) for plant_id in undated)
+    window = (min(days), max(days)) if days and not undated else None
+
+    yield_missing = [
+        MissingFact(gap, row.plant_id)
+        for row in outcomes
+        if (gap := _yield_gap(row)) is not None
+    ]
+    if not outcomes:
+        yield_missing.append(MissingFact("harvest_source_plants"))
+    missing.extend(yield_missing)
+    total = (
+        None
+        if yield_missing
+        else round(sum(float(row.metrics["dry_weight"]) for row in outcomes), 3)
+    )
+    metrics = (
+        FrozenMetric(
+            "yield", "g", METRIC_DEFINITIONS["yield"], total, tuple(yield_missing)
+        ),
+        FrozenMetric(
+            "yield_per_harvest_source_plant",
+            "g",
+            METRIC_DEFINITIONS["yield_per_harvest_source_plant"],
+            None if total is None else round(total / len(outcomes), 3),
+            () if total is not None else (MissingFact("yield"),),
+        ),
+    )
+
+    strains: dict[tuple[int | None, str], list[int]] = {}
+    for identity in participants:
+        tally = strains.setdefault((identity.strain_id, identity.strain_name), [0, 0])
+        tally[0] += 1
+        tally[1] += identity.plant_id in sources
+    states = [row.state for row in outcomes]
+    return RunSnapshot(
+        finalized_at=finalized_at,
+        run_id=run.run_id,
+        growspace_id=run.growspace_id,
+        growspace_name=growspace_name,
+        sequence_number=run.sequence_number,
+        timezone=run.timezone,
+        started_at=run.started_at,
+        completed_at=run.completed_at,
+        duration_days=run.local_days(run.completed_at),
+        harvest_window=window,
+        participants=tuple(participants),
+        counts={
+            "participants": len(participants),
+            "harvest_source_plants": len(outcomes),
+            "recorded": states.count("recorded"),
+            "no_usable_yield": states.count("no_usable_yield"),
+            "missing_outcomes": sum(
+                state in MISSING_OUTCOME_STATES for state in states
+            ),
+        },
+        strains=tuple(
+            StrainCount(strain_id, name, tally[0], tally[1])
+            for (strain_id, name), tally in sorted(
+                strains.items(), key=lambda item: (item[0][1], item[0][0] or 0)
+            )
+        ),
+        metrics=metrics,
+        uncovered_gaps=run.backdate.gaps if run.backdate else (),
+        missing=tuple(dict.fromkeys(missing)),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class GrowRun:
+    """One Grow Run of one Growspace."""
+
+    run_id: str
+    growspace_id: str
+    sequence_number: int
+    status: RunStatus
+    timezone: str
+    started_at: datetime
+    metadata: RunMetadata = field(default_factory=RunMetadata)
+    baseline: OpeningBaseline = field(default_factory=OpeningBaseline)
+    participations: tuple[RunParticipation, ...] = ()
+    movement_history: tuple[PlantMovementFact, ...] = ()
+    harvest_outcomes: tuple[HarvestOutcome, ...] = ()
+    audit: tuple[RunAuditEntry, ...] = ()
+    daily_summaries: tuple[DailySummary, ...] = ()
+    backdate: RunBackdate | None = None
+    #: The end of the half-open operating interval; absent while Active.
+    completed_at: datetime | None = None
+    #: Who each Participant is, kept current until finalization freezes it.
+    participant_identities: tuple[ParticipantIdentity, ...] = ()
+    #: The Run Finalization Snapshot; present exactly when Finalized.
+    snapshot: RunSnapshot | None = None
+
+    @property
+    def participant_count(self) -> int:
+        """Each Plant counts once, however many intervals it has."""
+        return len({row.plant_id for row in self.participations})
+
+    def local_days(self, now: datetime) -> int:
+        """Whole local days since the start, in the Run Timezone."""
+        zone = ZoneInfo(self.timezone)
+        return (
+            now.astimezone(zone).date() - self.started_at.astimezone(zone).date()
+        ).days
+
+    def covers(self, moment: datetime) -> bool:
+        """Whether ``moment`` falls inside the half-open operating interval."""
+        return self.started_at <= moment and (
+            self.completed_at is None or moment < self.completed_at
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable form."""
+        return {
+            "run_id": self.run_id,
+            "growspace_id": self.growspace_id,
+            "sequence_number": self.sequence_number,
+            "status": self.status.value,
+            "timezone": self.timezone,
+            "started_at": self.started_at.isoformat(),
+            "completed_at": (
+                self.completed_at.isoformat() if self.completed_at else None
+            ),
+            "metadata": self.metadata.as_dict(),
+            "baseline": self.baseline.as_dict(),
+            "participations": [row.as_dict() for row in self.participations],
+            "movement_history": [row.as_dict() for row in self.movement_history],
+            "harvest_outcomes": [row.as_dict() for row in self.harvest_outcomes],
+            "audit": [row.as_dict() for row in self.audit],
+            "daily_summaries": [row.as_dict() for row in self.daily_summaries],
+            "backdate": self.backdate.as_dict() if self.backdate else None,
+            "participant_identities": [
+                row.as_dict() for row in self.participant_identities
+            ],
+            "snapshot": self.snapshot.as_dict() if self.snapshot else None,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> GrowRun:
+        """Read the durable form back, refusing anything incomplete."""
+        value = _dict(value, "run")
+        run = cls(
+            run_id=_str(value.get("run_id"), "run.run_id"),
+            growspace_id=_str(value.get("growspace_id"), "run.growspace_id"),
+            sequence_number=_int(value.get("sequence_number"), "run.sequence", 1),
+            status=RunStatus(value.get("status")),
+            timezone=_zone(value.get("timezone"), "run.timezone"),
+            started_at=_moment(value.get("started_at"), "run.started_at"),
+            completed_at=_opt_moment(value.get("completed_at"), "run.completed_at"),
+            metadata=RunMetadata.from_dict(value.get("metadata")),
+            baseline=OpeningBaseline.from_dict(value.get("baseline")),
+            participations=tuple(
+                RunParticipation.from_dict(row)
+                for row in _list(value.get("participations"), "run.participations")
+            ),
+            movement_history=tuple(
+                PlantMovementFact.from_dict(row)
+                for row in _list(
+                    value.get("movement_history", []), "run.movement_history"
+                )
+            ),
+            harvest_outcomes=tuple(
+                HarvestOutcome.from_dict(row)
+                for row in _list(
+                    value.get("harvest_outcomes", []), "run.harvest_outcomes"
+                )
+            ),
+            audit=tuple(
+                RunAuditEntry.from_dict(row)
+                for row in _list(value.get("audit"), "run.audit")
+            ),
+            daily_summaries=tuple(
+                DailySummary.from_dict(row)
+                for row in _list(value.get("daily_summaries", []), "run.days")
+            ),
+            backdate=(
+                None
+                if value.get("backdate") is None
+                else RunBackdate.from_dict(value.get("backdate"))
+            ),
+            participant_identities=tuple(
+                ParticipantIdentity.from_dict(row)
+                for row in _list(
+                    value.get("participant_identities", []), "run.identities"
+                )
+            ),
+            snapshot=(
+                None
+                if value.get("snapshot") is None
+                else RunSnapshot.from_dict(value.get("snapshot"))
+            ),
+        )
+        open_plants = [
+            row.plant_id for row in run.participations if row.closed_at is None
+        ]
+        if len(open_plants) != len(set(open_plants)):
+            raise ValueError("a Plant has more than one open Run Participation")
+        fact_ids = [row.fact_id for row in run.movement_history]
+        if len(fact_ids) != len(set(fact_ids)):
+            raise ValueError("a movement fact appears twice in one Run")
+        outcome_ids = [row.plant_id for row in run.harvest_outcomes]
+        if len(outcome_ids) != len(set(outcome_ids)):
+            raise ValueError("a Plant has more than one harvest outcome in one Run")
+        if run.status is RunStatus.ACTIVE and run.completed_at is not None:
+            raise ValueError("an Active Run has a completion boundary")
+        if run.status in (RunStatus.COMPLETED, RunStatus.FINALIZED):
+            if run.completed_at is None or run.completed_at < run.started_at:
+                raise ValueError("a Completed Run has no valid completion boundary")
+            if open_plants:
+                raise ValueError("a Completed Run still has open participation")
+        if (run.status is RunStatus.FINALIZED) != (run.snapshot is not None):
+            raise ValueError("a snapshot belongs to a Finalized Run, and only there")
+        if run.snapshot is not None and run.snapshot.run_id != run.run_id:
+            raise ValueError("a Run holds another Run's snapshot")
+        identity_ids = [row.plant_id for row in run.participant_identities]
+        if len(identity_ids) != len(set(identity_ids)):
+            raise ValueError("a Participant has two identities in one Run")
+        return run
+
+
+# ---------------------------------------------------------------------------
+# The Run Completion Preview
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class PresentPlant:
+    """A Plant standing in the Growspace as the Run would complete."""
+
+    plant_id: str
+    strain_name: str
+    phenotype_name: str
+    stage: str
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the wire form."""
+        return {
+            "plant_id": self.plant_id,
+            "strain_name": self.strain_name,
+            "phenotype_name": self.phenotype_name,
+            "stage": self.stage,
+        }
+
+
+#: Harvest outcome states that leave the Run's Yield incomplete: ``pending``
+#: may still receive a dry weight while the Run is Completed; ``incomplete``
+#: was chosen when its Plant was deleted and never will.
+MISSING_OUTCOME_STATES = ("pending", "incomplete")
+
+
+@dataclass(frozen=True, slots=True)
+class AttributionGap:
+    """Something the Run's participation history cannot yet account for.
+
+    ``pending_fact``: a movement recorded in this Growspace inside the Run that
+    has not been projected. ``unrecorded_presence``: a Plant standing here with
+    no open participation. Both mean the Run would complete on an incomplete
+    history of who was in it.
+    """
+
+    kind: str
+    plant_id: str
+    fact_id: str | None = None
+    at: datetime | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the wire form."""
+        return {
+            "kind": self.kind,
+            "plant_id": self.plant_id,
+            "fact_id": self.fact_id,
+            "at": self.at.isoformat() if self.at else None,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CompletionPreview:
+    """What completing the Active Run at ``completed_at`` would do and risk.
+
+    It is computed afresh at commit as well as for the grower, so the warnings
+    a completion must acknowledge are the ones true when it lands, not the ones
+    true when the dialog opened.
+    """
+
+    run: GrowRun
+    revision: int
+    completed_at: datetime
+    plants_present: tuple[PresentPlant, ...] = ()
+    missing_outcomes: tuple[HarvestOutcome, ...] = ()
+    attribution_gaps: tuple[AttributionGap, ...] = ()
+    delivering_outputs: tuple[str, ...] = ()
+    retrospective_note: str | None = None
+
+    @property
+    def closing(self) -> tuple[RunParticipation, ...]:
+        """The participation intervals the boundary will close."""
+        return tuple(row for row in self.run.participations if row.closed_at is None)
+
+    @property
+    def warnings(self) -> tuple[str, ...]:
+        """The risks a completion must acknowledge, in a stable order."""
+        return tuple(
+            code
+            for code, present in (
+                (WARNING_PLANTS_PRESENT, self.plants_present),
+                (WARNING_MISSING_OUTCOMES, self.missing_outcomes),
+                (WARNING_ATTRIBUTION_GAPS, self.attribution_gaps),
+            )
+            if present
+        )
+
+    @property
+    def blockers(self) -> tuple[str, ...]:
+        """What refuses the completion outright rather than asking."""
+        return (CODE_IRRIGATION_DELIVERING,) if self.delivering_outputs else ()
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the wire form the Run Completion Preview is drawn from."""
+        return {
+            "run": run_summary(self.run, self.revision),
+            "completed_at": self.completed_at.isoformat(),
+            "duration_days": self.run.local_days(self.completed_at),
+            "closing_participations": [row.as_dict() for row in self.closing],
+            "plants_present": [row.as_dict() for row in self.plants_present],
+            "missing_outcomes": [
+                {
+                    "plant_id": row.plant_id,
+                    "strain": row.strain,
+                    "phenotype": row.phenotype,
+                    "state": row.state,
+                }
+                for row in self.missing_outcomes
+            ],
+            # Metric Coverage, one ``{"metric", "coverage_percent"}`` row per Run
+            # metric. No Run metric is measured yet (#676-#679 add them), so
+            # nothing's coverage can fall short; the key is here so those
+            # metrics add rows, not shape.
+            "coverage": [],
+            "attribution_gaps": [row.as_dict() for row in self.attribution_gaps],
+            "retrospective_note": self.retrospective_note,
+            "delivering_outputs": list(self.delivering_outputs),
+            "warnings": list(self.warnings),
+            "blockers": list(self.blockers),
+        }
+
+
+def preview_completion(
+    ledger: RunLedger,
+    *,
+    now: datetime,
+    plants_present: list[PresentPlant] | tuple[PresentPlant, ...],
+    pending_facts: list[PlantMovementFact] | tuple[PlantMovementFact, ...],
+    delivering_outputs: list[str] | tuple[str, ...],
+    retrospective_note: str | None,
+) -> CompletionPreview:
+    """Preview completing the ledger's Active Run at ``now``.
+
+    Missing outcomes are the Run's own Harvest Outcome snapshots still pending
+    a dry weight or recorded as incomplete. ``pending_facts`` are the Plant
+    outbox's unprojected facts, of any Growspace.
+    """
+    run = ledger.active_run
+    if run is None:
+        raise RunNotActive(
+            "This growspace has no Active Run to complete",
+            current_revision=ledger.revision,
+        )
+    missing = tuple(
+        sorted(
+            (
+                row
+                for row in run.harvest_outcomes
+                if row.state in MISSING_OUTCOME_STATES
+            ),
+            key=lambda row: row.plant_id,
+        )
+    )
+    open_plants = {row.plant_id for row in run.participations if row.closed_at is None}
+    gaps = [
+        AttributionGap("pending_fact", fact.plant_id, fact.fact_id, fact.at)
+        for fact in pending_facts
+        if not fact.projected
+        and run.covers(fact.at)
+        and run.growspace_id in (fact.source_growspace_id, fact.target_growspace_id)
+    ]
+    pending_plants = {gap.plant_id for gap in gaps}
+    gaps.extend(
+        AttributionGap("unrecorded_presence", plant.plant_id)
+        for plant in plants_present
+        if plant.plant_id not in open_plants and plant.plant_id not in pending_plants
+    )
+    return CompletionPreview(
+        run=run,
+        revision=ledger.revision,
+        completed_at=now,
+        plants_present=tuple(sorted(plants_present, key=lambda row: row.plant_id)),
+        missing_outcomes=missing,
+        attribution_gaps=tuple(gaps),
+        delivering_outputs=tuple(sorted(set(delivering_outputs))),
+        retrospective_note=_text(retrospective_note, MAX_TEXT_LENGTH),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class FinalizationPreview:
+    """What finalizing a Completed Run now would freeze, and what it lacks.
+
+    Like the Run Completion Preview it is built again at commit, so the
+    acknowledgement a finalization carries answers the snapshot that lands.
+    """
+
+    run: GrowRun
+    revision: int
+    snapshot: RunSnapshot
+
+    @property
+    def warnings(self) -> tuple[str, ...]:
+        """The one warning an incomplete snapshot needs acknowledged."""
+        return () if self.snapshot.complete else (WARNING_INCOMPLETE_SNAPSHOT,)
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the wire form the finalization dialog is drawn from."""
+        return {
+            "run": run_summary(self.run, self.revision),
+            "snapshot": self.snapshot.as_dict(),
+            "warnings": list(self.warnings),
+        }
+
+
+def preview_finalization(
+    ledger: RunLedger, run_id: str, *, now: datetime, growspace_name: str
+) -> FinalizationPreview:
+    """Preview freezing the named Completed Run at ``now``."""
+    run = ledger.find(run_id)
+    if run.status is not RunStatus.COMPLETED:
+        raise RunNotCompleted(
+            f"Run #{run.sequence_number} is {run.status.value}; only a Completed "
+            "Run can be finalized",
+            current_revision=ledger.revision,
+            active_run=ledger.active_run,
+        )
+    return FinalizationPreview(
+        run=run,
+        revision=ledger.revision,
+        snapshot=build_snapshot(run, finalized_at=now, growspace_name=growspace_name),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class RunLedger:
+    """One Growspace's Runs, its next Sequence Number, and its Run Revision."""
+
+    growspace_id: str
+    revision: int = 0
+    next_sequence: int = 1
+    runs: tuple[GrowRun, ...] = ()
+
+    @property
+    def active_run(self) -> GrowRun | None:
+        """The one Active Run, if there is one."""
+        return next((r for r in self.runs if r.status is RunStatus.ACTIVE), None)
+
+    def run_at(self, moment: datetime) -> GrowRun | None:
+        """The Active or Completed Run whose operating interval holds ``moment``."""
+        return next(
+            (
+                run
+                for run in self.runs
+                if run.status in (RunStatus.ACTIVE, RunStatus.COMPLETED)
+                and run.covers(moment)
+            ),
+            None,
+        )
+
+    def find(self, run_id: str) -> GrowRun:
+        """The named Run, or a refusal saying this Growspace holds no such Run."""
+        run = next((row for row in self.runs if row.run_id == run_id), None)
+        if run is None:
+            raise RunNotFound(
+                "This growspace holds no such Run",
+                current_revision=self.revision,
+                active_run=self.active_run,
+            )
+        return run
+
+    def require_revision(self, expected: int) -> None:
+        """Refuse a command decided on any revision but this one."""
+        if expected != self.revision:
+            raise RunRevisionConflict(
+                f"The Run Revision is {self.revision}, not {expected}; "
+                "reload and decide again",
+                current_revision=self.revision,
+                active_run=self.active_run,
+            )
+
+    def project_movement(self, fact: PlantMovementFact) -> RunLedger:
+        """Apply one fact once, closing and opening half-open intervals.
+
+        A fact can reach a Run after it completed: it was recorded before the
+        boundary but projected after it. Inside the operating interval it still
+        counts, against the boundary -- an interval completion closed is the
+        one it re-closes earlier, and an entry opens one that ends there. A
+        fact at or after the boundary is outside the Run and changes nothing.
+        """
+        run_ids = {fact.source_run_id, fact.target_run_id} - {None}
+        changed = False
+        runs: list[GrowRun] = []
+        for run in self.runs:
+            if (
+                run.run_id not in run_ids
+                or run.status not in (RunStatus.ACTIVE, RunStatus.COMPLETED)
+                or not run.covers(fact.at)
+                or any(row.fact_id == fact.fact_id for row in run.movement_history)
+            ):
+                runs.append(run)
+                continue
+            # Still open: unclosed while Active, closed only by the boundary once
+            # Completed. For an Active Run both read ``closed_at is None``.
+            boundary = run.completed_at
+            intervals = list(run.participations)
+            exits = fact.source_run_id == run.run_id and (
+                fact.target_run_id != run.run_id or fact.target_growspace_id is None
+            )
+            enters = fact.target_run_id == run.run_id and (
+                fact.source_run_id != run.run_id or fact.source_growspace_id is None
+            )
+            if exits:
+                for index in range(len(intervals) - 1, -1, -1):
+                    interval = intervals[index]
+                    if (
+                        interval.plant_id == fact.plant_id
+                        and interval.closed_at == boundary
+                        and interval.opened_at <= fact.at
+                    ):
+                        intervals[index] = replace(interval, closed_at=fact.at)
+                        break
+            if enters and not any(
+                row.plant_id == fact.plant_id and row.closed_at == boundary
+                for row in intervals
+            ):
+                intervals.append(RunParticipation(fact.plant_id, fact.at, boundary))
+            runs.append(
+                replace(
+                    run,
+                    participations=tuple(intervals),
+                    movement_history=(
+                        *run.movement_history,
+                        replace(fact, projected=True),
+                    ),
+                )
+            )
+            changed = True
+        return replace(self, runs=tuple(runs)) if changed else self
+
+    def project_harvest_outcome(
+        self, run_id: str, outcome: HarvestOutcome
+    ) -> RunLedger:
+        """Refresh a source snapshot while the Run is still editable."""
+        runs: list[GrowRun] = []
+        for run in self.runs:
+            if run.run_id != run_id:
+                runs.append(run)
+                continue
+            if run.status in {RunStatus.FINALIZED, RunStatus.VOIDED}:
+                return self
+            existing = tuple(
+                row for row in run.harvest_outcomes if row.plant_id != outcome.plant_id
+            )
+            runs.append(replace(run, harvest_outcomes=(*existing, outcome)))
+        return replace(self, runs=tuple(runs)) if tuple(runs) != self.runs else self
+
+    def refresh_identities(
+        self, identities: dict[str, ParticipantIdentity]
+    ) -> RunLedger:
+        """Bring each still-mutable Run's Participant identities up to date.
+
+        A Plant with no live identity keeps the last one captured, which is how
+        a Participant deleted before finalization is still named in it.
+        """
+        runs: list[GrowRun] = []
+        for run in self.runs:
+            if run.status not in (RunStatus.ACTIVE, RunStatus.COMPLETED):
+                runs.append(run)
+                continue
+            kept = {row.plant_id: row for row in run.participant_identities}
+            for plant_id in dict.fromkeys(row.plant_id for row in run.participations):
+                if plant_id in identities:
+                    kept[plant_id] = identities[plant_id]
+            refreshed = tuple(kept.values())
+            runs.append(
+                run
+                if refreshed == run.participant_identities
+                else replace(run, participant_identities=refreshed)
+            )
+        return replace(self, runs=tuple(runs)) if tuple(runs) != self.runs else self
+
+    def start(
+        self,
+        *,
+        expected_revision: int,
+        run_id: str,
+        command_id: str,
+        now: datetime,
+        timezone: str,
+        metadata: RunMetadata,
+        baseline: OpeningBaseline,
+        plant_ids: list[str] | tuple[str, ...],
+        actor_user_id: str | None,
+        claim: ClaimedHistory | None = None,
+    ) -> tuple[RunLedger, GrowRun]:
+        """Start a Run; return the advanced ledger and the Run it holds.
+
+        The Plants present become Participants from this boundary. None is a
+        valid answer: an empty Growspace can start a Run.
+
+        With a ``claim`` the Run starts in the past instead: its boundary,
+        Participants and movement history are the claimed Unattributed
+        Activity, now attributed to it, and ``plant_ids`` is unused. The
+        audit entry still records when the start was committed.
+        """
+        self.require_revision(expected_revision)
+        if (active := self.active_run) is not None:
+            raise RunAlreadyActive(
+                f"Run #{active.sequence_number} is already active",
+                current_revision=self.revision,
+                active_run=active,
+            )
+        _zone(timezone, "timezone")
+        resulting = self.revision + 1
+        if claim is None:
+            started_at = now
+            participations = tuple(
+                RunParticipation(plant_id, now) for plant_id in dict.fromkeys(plant_ids)
+            )
+        else:
+            started_at = claim.started_at
+            participations = claim.participations
+        run = GrowRun(
+            run_id=run_id,
+            growspace_id=self.growspace_id,
+            sequence_number=self.next_sequence,
+            status=RunStatus.ACTIVE,
+            timezone=timezone,
+            started_at=started_at,
+            metadata=metadata,
+            baseline=baseline,
+            participations=participations,
+            movement_history=(
+                ()
+                if claim is None
+                else tuple(
+                    _attribute(fact, self.growspace_id, run_id) for fact in claim.facts
+                )
+            ),
+            daily_summaries=() if claim is None else claim.days,
+            backdate=None if claim is None else claim.backdate,
+            audit=(
+                RunAuditEntry(
+                    at=now,
+                    command=RunCommand.START,
+                    command_id=command_id,
+                    actor_user_id=actor_user_id,
+                    prior_revision=self.revision,
+                    resulting_revision=resulting,
+                ),
+            ),
+        )
+        ledger = replace(
+            self,
+            revision=resulting,
+            next_sequence=self.next_sequence + 1,
+            runs=(*self.runs, run),
+        )
+        return ledger, run
+
+    def complete(
+        self,
+        *,
+        expected_revision: int,
+        run_id: str,
+        preview: CompletionPreview,
+        acknowledged: list[str] | tuple[str, ...] | set[str],
+        command_id: str,
+        actor_user_id: str | None,
+    ) -> tuple[RunLedger, GrowRun]:
+        """End the Active Run at the preview's boundary; return the new ledger.
+
+        Every open participation closes at the boundary, the Run becomes
+        Completed, and the retrospective note becomes its notes. Irrigation
+        delivering water refuses outright; any warning the grower did not
+        acknowledge refuses and asks again.
+        """
+        self.require_revision(expected_revision)
+        run = self.active_run
+        if run is None or run.run_id != run_id or preview.run.run_id != run_id:
+            raise RunNotActive(
+                "That Run is not this growspace's Active Run",
+                current_revision=self.revision,
+                active_run=run,
+            )
+        if preview.delivering_outputs:
+            raise RunIrrigationDelivering(
+                "Irrigation is delivering water through "
+                f"{', '.join(preview.delivering_outputs)}; complete the run "
+                "once it has finished",
+                current_revision=self.revision,
+                active_run=run,
+            )
+        if unacknowledged := [
+            code for code in preview.warnings if code not in set(acknowledged)
+        ]:
+            raise RunAcknowledgementRequired(
+                f"Completing Run #{run.sequence_number} needs acknowledgement "
+                f"of: {', '.join(unacknowledged)}",
+                current_revision=self.revision,
+                active_run=run,
+            )
+        boundary = preview.completed_at
+        if boundary < run.started_at:
+            raise ValueError("a Run cannot complete before it started")
+        resulting = self.revision + 1
+        completed = replace(
+            run,
+            status=RunStatus.COMPLETED,
+            completed_at=boundary,
+            metadata=replace(run.metadata, notes=preview.retrospective_note),
+            participations=tuple(
+                replace(row, closed_at=boundary) if row.closed_at is None else row
+                for row in run.participations
+            ),
+            audit=(
+                *run.audit,
+                RunAuditEntry(
+                    at=boundary,
+                    command=RunCommand.COMPLETE,
+                    command_id=command_id,
+                    actor_user_id=actor_user_id,
+                    prior_revision=self.revision,
+                    resulting_revision=resulting,
+                ),
+            ),
+        )
+        ledger = replace(
+            self,
+            revision=resulting,
+            runs=tuple(completed if row is run else row for row in self.runs),
+        )
+        return ledger, completed
+
+    def finalize(
+        self,
+        *,
+        expected_revision: int,
+        run_id: str,
+        preview: FinalizationPreview,
+        acknowledged: list[str] | tuple[str, ...] | set[str],
+        command_id: str,
+        actor_user_id: str | None,
+    ) -> tuple[RunLedger, GrowRun]:
+        """Freeze a Completed Run into its snapshot; return the new ledger.
+
+        An incomplete snapshot finalizes only when the grower acknowledged it,
+        and what it lacks stays listed in it rather than being filled in.
+        """
+        self.require_revision(expected_revision)
+        run = self.find(run_id)
+        if run.status is not RunStatus.COMPLETED or preview.run.run_id != run_id:
+            raise RunNotCompleted(
+                f"Run #{run.sequence_number} is {run.status.value}; only a "
+                "Completed Run can be finalized",
+                current_revision=self.revision,
+                active_run=self.active_run,
+            )
+        if unacknowledged := [
+            code for code in preview.warnings if code not in set(acknowledged)
+        ]:
+            raise RunAcknowledgementRequired(
+                f"Finalizing Run #{run.sequence_number} needs acknowledgement "
+                f"of: {', '.join(unacknowledged)}",
+                current_revision=self.revision,
+                active_run=self.active_run,
+            )
+        resulting = self.revision + 1
+        finalized = replace(
+            run,
+            status=RunStatus.FINALIZED,
+            snapshot=preview.snapshot,
+            audit=(
+                *run.audit,
+                RunAuditEntry(
+                    at=preview.snapshot.finalized_at,
+                    command=RunCommand.FINALIZE,
+                    command_id=command_id,
+                    actor_user_id=actor_user_id,
+                    prior_revision=self.revision,
+                    resulting_revision=resulting,
+                ),
+            ),
+        )
+        ledger = replace(
+            self,
+            revision=resulting,
+            runs=tuple(finalized if row is run else row for row in self.runs),
+        )
+        return ledger, finalized
+
+    def update_metadata(
+        self,
+        *,
+        expected_revision: int,
+        run_id: str,
+        metadata: RunMetadata,
+        command_id: str,
+        actor_user_id: str | None,
+        now: datetime,
+    ) -> tuple[RunLedger, GrowRun]:
+        """Replace a Run's descriptive metadata, audited, in any status.
+
+        Run Metadata is not a fact of the Run, so a Finalized Run takes the
+        edit without Reopening and its snapshot does not move. An edit that
+        changes nothing is not a command: nothing is audited or advanced.
+        """
+        self.require_revision(expected_revision)
+        run = self.find(run_id)
+        changed = tuple(
+            name
+            for name in ("label", "tags", "goals", "notes")
+            if getattr(run.metadata, name) != getattr(metadata, name)
+        )
+        if not changed:
+            return self, run
+        resulting = self.revision + 1
+        edited = replace(
+            run,
+            metadata=metadata,
+            audit=(
+                *run.audit,
+                RunAuditEntry(
+                    at=now,
+                    command=RunCommand.EDIT_METADATA,
+                    command_id=command_id,
+                    actor_user_id=actor_user_id,
+                    prior_revision=self.revision,
+                    resulting_revision=resulting,
+                    changed_fields=changed,
+                ),
+            ),
+        )
+        ledger = replace(
+            self,
+            revision=resulting,
+            runs=tuple(edited if row is run else row for row in self.runs),
+        )
+        return ledger, edited
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable form."""
+        return {
+            "growspace_id": self.growspace_id,
+            "revision": self.revision,
+            "next_sequence": self.next_sequence,
+            "runs": [run.as_dict() for run in self.runs],
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> RunLedger:
+        """Read the durable form back and hold it to the ledger's invariants."""
+        value = _dict(value, "ledger")
+        ledger = cls(
+            growspace_id=_str(value.get("growspace_id"), "ledger.growspace_id"),
+            revision=_int(value.get("revision"), "ledger.revision", 0),
+            next_sequence=_int(value.get("next_sequence"), "ledger.next_sequence", 1),
+            runs=tuple(
+                GrowRun.from_dict(row)
+                for row in _list(value.get("runs"), "ledger.runs")
+            ),
+        )
+        sequences = [run.sequence_number for run in ledger.runs]
+        if len(set(sequences)) != len(sequences) or any(
+            number >= ledger.next_sequence for number in sequences
+        ):
+            raise ValueError("Run Sequence Numbers are reused or ahead of the ledger")
+        if any(run.growspace_id != ledger.growspace_id for run in ledger.runs):
+            raise ValueError("a Run is filed under another Growspace")
+        if sum(run.status is RunStatus.ACTIVE for run in ledger.runs) > 1:
+            raise ValueError("more than one Active Run")
+        return ledger
+
+
+def _attribute(
+    fact: PlantMovementFact, growspace_id: str, run_id: str
+) -> PlantMovementFact:
+    """Name the claiming Run on whichever side of the fact is this Growspace."""
+    return replace(
+        fact,
+        source_run_id=(
+            run_id if fact.source_growspace_id == growspace_id else fact.source_run_id
+        ),
+        target_run_id=(
+            run_id if fact.target_growspace_id == growspace_id else fact.target_run_id
+        ),
+        projected=True,
+    )
+
+
+#: Which metrics a Run's status gives it: Live Run Metrics while Active,
+#: Pending Run Metrics once Completed, a frozen Finalization Snapshot after.
+METRICS_STATE = {
+    RunStatus.ACTIVE: "live",
+    RunStatus.COMPLETED: "pending",
+    RunStatus.FINALIZED: "frozen",
+    RunStatus.VOIDED: "excluded",
+}
+
+
+def run_summary(run: GrowRun, revision: int) -> dict[str, Any]:
+    """The compact wire form of one Run at one Run Revision."""
+    return {
+        "run_id": run.run_id,
+        "sequence_number": run.sequence_number,
+        "label": run.metadata.label,
+        "status": run.status.value,
+        "started_at": run.started_at.isoformat(),
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "timezone": run.timezone,
+        "participant_count": run.participant_count,
+        "metrics_state": METRICS_STATE[run.status],
+        "run_revision": revision,
+    }
+
+
+def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
+    """The selected Run's Participants, movement history and frozen snapshot.
+
+    A Finalized Run's snapshot is read from the Run alone, so it is served the
+    same after its Plants or its Growspace are gone.
+    """
+    return {
+        "outcome": "found",
+        "run": {
+            **run_summary(run, revision),
+            "notes": run.metadata.notes,
+            "participations": [row.as_dict() for row in run.participations],
+            "movement_history": [row.as_dict() for row in run.movement_history],
+            "harvest_outcomes": [row.as_dict() for row in run.harvest_outcomes],
+            "tags": list(run.metadata.tags),
+            "goals": run.metadata.goals,
+            "audit": [row.as_dict() for row in run.audit],
+            "snapshot": run.snapshot.as_dict() if run.snapshot else None,
+        },
+    }
+
+
+def sensor_state(ledger: RunLedger, now: datetime) -> tuple[int | str, dict[str, Any]]:
+    """The Active Run Sensor: sequence number or ``none``, and compact attributes.
+
+    The key set is fixed so the sensor reads the same shape whether a Run is
+    active or not; only the Run Revision is meaningful without one, and it is
+    the one value a Start needs.
+    """
+    run = ledger.active_run
+    if run is None:
+        return "none", {
+            "run_id": None,
+            "label": None,
+            "started_at": None,
+            "duration_days": None,
+            "participant_count": None,
+            "run_revision": ledger.revision,
+        }
+    return run.sequence_number, {
+        "run_id": run.run_id,
+        "label": run.metadata.label,
+        "started_at": run.started_at.isoformat(),
+        "duration_days": run.local_days(now),
+        "participant_count": run.participant_count,
+        "run_revision": ledger.revision,
+    }

@@ -158,7 +158,7 @@ def _printer_covered(
 def device_model(hass: HomeAssistant, device_id: str) -> str | None:
     """The model the printer integration registered one device under."""
     device = dr.async_get(hass).async_get(device_id)
-    return device.model if device else None
+    return device.model if isinstance(device, dr.DeviceEntry) else None
 
 
 def font_library_for(hass: HomeAssistant) -> FontLibrary:

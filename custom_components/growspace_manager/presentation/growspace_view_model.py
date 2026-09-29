@@ -32,6 +32,7 @@ from custom_components.growspace_manager.domain.moisture_band import (
     effective_moisture_band,
     is_percentage_unit,
 )
+from custom_components.growspace_manager.domain.setup_preset import inferred_modules
 from custom_components.growspace_manager.domain.steering_phase import resolve_day_hours
 from custom_components.growspace_manager.tank_water_tracker import (
     consumption_buckets_24h,
@@ -249,6 +250,14 @@ class GrowspaceViewModelBuilder:
                 "name": growspace.name,
                 "type": gs_type,
                 "notification_target": growspace.notification_target,
+                "setup_preset": growspace.setup_preset,
+                # The stamped Setup Modules; a never-stamped canonical growspace
+                # reports the modules its kind of room implies. None: unstamped.
+                "setup_modules": (
+                    growspace.setup_modules
+                    if growspace.setup_modules is not None
+                    else inferred_modules(growspace.id)
+                ),
             },
             "grid": {
                 "rows": growspace.rows,
@@ -466,6 +475,13 @@ class GrowspaceViewModelBuilder:
         # and so the grow-light chip can render (parallels the fan handling).
         attributes["growlight_entities"] = env_config.growlight_entities
         attributes["growlight_config"] = env_config.growlight_config.to_dict()
+        # Light Leak Guard settings (#794), surfaced so the card can read and
+        # round-trip them; a sibling of growlight_config, never nested in it.
+        attributes["light_leak_config"] = env_config.light_leak_config.to_dict()
+        # Climate Fail-Safe settings (#792), surfaced for the same round trip.
+        attributes["climate_fail_safe_config"] = (
+            env_config.climate_fail_safe_config.to_dict()
+        )
 
         # Dehumidifier
         dehumidifier_entity = env_config.dehumidifier_entity
@@ -667,6 +683,10 @@ class GrowspaceViewModelBuilder:
                         "name": tank.name,
                         "warning_level": tank.warning_level,
                         "volume_liters": tank.volume_liters,
+                        # Read back so the card can show it and send it
+                        # again: every tank save restates the whole item, and
+                        # a field it cannot see resets to the default.
+                        "stale_after_minutes": tank.stale_after_minutes,
                         "fill_level": fill_level,
                         "is_warning": fill_level is not None
                         and fill_level <= tank.warning_level,

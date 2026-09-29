@@ -94,6 +94,7 @@ async def _async_serialize_capture(
     payload: dict[str, Any] = {
         "capture_id": capture.capture_id,
         "camera_id": capture.camera_id,
+        "framing_epoch_id": capture.framing_epoch_id,
         "captured_at": capture.captured_at,
         "analysis_state": capture.analysis_state.value,
         "image": await _async_image(store, capture, media_source),

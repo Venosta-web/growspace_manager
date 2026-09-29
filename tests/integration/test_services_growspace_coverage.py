@@ -6,6 +6,7 @@ from freezegun import freeze_time
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
+from custom_components.growspace_manager.domain.setup_preset import stamp_modules
 from custom_components.growspace_manager.exceptions import (
     GrowspaceNotFoundError,
     ValidationChangeError,
@@ -137,7 +138,122 @@ async def test_add_growspace_no_notification_target(
         await service.add_growspace("Test", notification_target="")
     gs = repository_mock.add_growspace.call_args[0][0]
     assert gs.notification_target is None
+    assert gs.irrigation_config.max_cycles_per_day == 24
+    assert gs.irrigation_config.daily_volume_cap_liters == 20.0
     assert gs.to_dict() == snapshot
+
+
+@pytest.mark.asyncio
+async def test_add_growspace_keeps_onboarding_preset_and_climate(
+    service, repository_mock
+) -> None:
+    """The pending growspace fields survive the manager's model conversion."""
+    await service.add_growspace(
+        "Dry Room",
+        growspace_type="dry",
+        setup_preset="drying_room",
+        environment_config={"temperature_sensor": "sensor.dry_temperature"},
+    )
+
+    growspace = repository_mock.add_growspace.call_args.args[0]
+    assert growspace.growspace_type == GrowspaceType.DRY
+    assert growspace.setup_preset == "drying_room"
+    assert growspace.setup_modules == stamp_modules("drying_room")
+    assert growspace.environment_config.temperature_sensor == "sensor.dry_temperature"
+    assert growspace.to_dict()["setup_preset"] == "drying_room"
+
+
+@pytest.mark.asyncio
+async def test_update_growspace_setup_preset(
+    service, repository_mock, save_callback_mock
+) -> None:
+    """Choosing a preset stamps its modules and writes no cultivation target."""
+    growspace = Growspace(id="gs1", name="Test", setup_preset="simple_soil_tent")
+    _setup_growspaces(repository_mock, {"gs1": growspace})
+    before = growspace.to_dict()
+
+    await service.update_growspace("gs1", setup_preset="living_soil")
+
+    assert growspace.setup_preset == "living_soil"
+    assert growspace.setup_modules == stamp_modules("living_soil")
+    after = growspace.to_dict()
+    changed = {key for key in after if after[key] != before[key]}
+    assert changed == {"setup_preset", "setup_modules"}
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_growspace_restamps_the_declared_preset(
+    service, repository_mock, save_callback_mock
+) -> None:
+    """Re-choosing the declared preset resets hand edits (ADR-0012 stamp)."""
+    growspace = Growspace(
+        id="gs1",
+        name="Test",
+        setup_preset="drying_room",
+        setup_modules={**stamp_modules("drying_room"), "lights": True},
+    )
+    _setup_growspaces(repository_mock, {"gs1": growspace})
+
+    await service.update_growspace("gs1", setup_preset="drying_room")
+
+    assert growspace.setup_modules == stamp_modules("drying_room")
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_growspace_patches_setup_modules(
+    service, repository_mock, save_callback_mock
+) -> None:
+    """A module edit changes that module and keeps the preset label."""
+    growspace = Growspace(
+        id="gs1",
+        name="Test",
+        setup_preset="simple_soil_tent",
+        setup_modules=stamp_modules("simple_soil_tent"),
+    )
+    _setup_growspaces(repository_mock, {"gs1": growspace})
+
+    await service.update_growspace("gs1", setup_modules={"lights": False})
+
+    assert growspace.setup_modules == {
+        **stamp_modules("simple_soil_tent"),
+        "lights": False,
+    }
+    assert growspace.setup_preset == "simple_soil_tent"
+    save_callback_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_growspace_unchanged_setup_modules_is_not_saved(
+    service, repository_mock, save_callback_mock
+) -> None:
+    """Re-sending the modules a growspace already has is not a change."""
+    growspace = Growspace(
+        id="gs1", name="Test", setup_modules=stamp_modules("curing_room")
+    )
+    _setup_growspaces(repository_mock, {"gs1": growspace})
+
+    await service.update_growspace("gs1", setup_modules={"lights": False})
+
+    save_callback_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_canonical_growspace_patches_over_its_inferred_room(
+    service, repository_mock, save_callback_mock
+) -> None:
+    """An unstamped canonical growspace is edited from the room it implies."""
+    growspace = Growspace(id="dry", name="Dry")
+    _setup_growspaces(repository_mock, {"dry": growspace})
+
+    await service.update_growspace("dry", setup_modules={"climate": False})
+
+    assert growspace.setup_modules == {
+        **stamp_modules("drying_room"),
+        "climate": False,
+    }
+    save_callback_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio

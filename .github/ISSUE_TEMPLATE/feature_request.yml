@@ -1,0 +1,57 @@
+---
+name: Feature request
+description: Suggest something the integration should do that it does not do today.
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for a concrete change you would like to see. To think an
+        idea through with other growers first, post it under
+        [Ideas](https://github.com/Venosta-web/growspace_manager/discussions/categories/ideas).
+        The [roadmap](https://github.com/Venosta-web/growspace_manager_workspace/issues/245)
+        lists what is already planned.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: >-
+        Describe what you are trying to do in your grow and where Growspace
+        Manager gets in the way. Describe the need, not a solution.
+      placeholder: When I flip a tent to flower, I have to …
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      description: How you picture it working. Include services, entities or card screens if you have them in mind.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead?
+      description: Workarounds, automations or other integrations you use for this now.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Growspace Manager is this about?
+      multiple: true
+      options:
+        - Plants and strains
+        - Irrigation and crop steering
+        - Climate control (VPD, dehumidifier, lights)
+        - Label printing
+        - Growspace Vision
+        - Tissue culture
+        - Dashboard card
+        - Something else
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Screenshots, sketches or links to similar features elsewhere.

@@ -2,8 +2,8 @@
 
 This module holds the skip/fire decision for an irrigation or drain pump cycle
 (ADR-0021). It is deliberately free of Home Assistant and coordinator
-dependencies: the coordinator resolves sensors into ``TankReading``s and a
-``lights_dark`` bool, computes the cycle volume, then asks ``decide_cycle`` for
+dependencies: the coordinator resolves sensors into ``TankReading``s, the tanks
+at an Unknown Tank Level (ADR-0050) and a ``lights_dark`` bool, computes the cycle volume, then asks ``decide_cycle`` for
 a :class:`CycleVerdict`. The coordinator owns every resulting effect — the
 warning log, the low-tank persistent notification, the logbook entry, the pump
 control and the daily counters.
@@ -15,23 +15,36 @@ this is the pre-cycle tank/limit/dark gate on the base pump.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
+
+from .unknown_tank_level import UnknownTankLevel, unknown_tank_skip_text
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.models import IrrigationConfig
 
 EVENT_TYPE_IRRIGATION = "irrigation"
+MAX_CYCLE_SECONDS = 3600
+
+
+def cycle_runtime_limit(config: IrrigationConfig) -> int:
+    """Keep even an old or malformed stored limit within the hard safety bound."""
+    return max(1, min(config.max_cycle_seconds or 600, MAX_CYCLE_SECONDS))
 
 
 class SkipReason(Enum):
     """Why a pump cycle was not fired. The shell maps these onto effects."""
 
     LOW_TANK = "low_tank"
+    TANK_UNKNOWN = "tank_unknown"
     CYCLE_LIMIT = "cycle_limit"
     VOLUME_CAP = "volume_cap"
     DARK = "dark"
+    FAULT = "fault"
+    EMERGENCY_STOP = "emergency_stop"
+    STARTUP = "startup_inhibit"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,13 +62,15 @@ class CycleVerdict:
 
     ``message`` is the pre-formatted logbook text; ``low_tank`` carries the
     offending reading for the persistent notification (set only for
-    ``LOW_TANK``). A ``fire=True`` verdict carries ``reason=None``.
+    ``LOW_TANK``), ``unknown_tank`` the tank whose level is unknown (set only
+    for ``TANK_UNKNOWN``). A ``fire=True`` verdict carries ``reason=None``.
     """
 
     fire: bool
     reason: SkipReason | None = None
     message: str = ""
     low_tank: TankReading | None = None
+    unknown_tank: UnknownTankLevel | None = None
 
 
 def cycle_volume_liters(config: IrrigationConfig, duration: float) -> float:
@@ -117,14 +132,36 @@ def decide_cycle(
     cycles_today: int,
     volume_today: float,
     cycle_volume_l: float,
+    fault: bool = False,
+    emergency_stop: bool = False,
+    startup_inhibit: str | None = None,
+    unknown_tanks: Sequence[UnknownTankLevel] = (),
 ) -> CycleVerdict:
     """Decide whether a pump cycle may fire, in precedence order.
 
-    Low tank applies to all cycles (when ``pause_on_low_tank``); the cycle
-    limit, volume cap and dark-period checks apply to irrigation cycles only,
-    and a manual run bypasses the dark check.
+    ``startup_inhibit`` is the Startup Inhibit's detail while it holds; it
+    blocks every automatic cycle, irrigation and drain alike, and never a
+    manual one. Low tank, then an Unknown Tank Level, apply to all cycles,
+    manual included (when ``pause_on_low_tank``);
+    the cycle limit, volume cap and dark-period checks apply to irrigation
+    cycles only, and a manual run bypasses the dark check.
     """
     prefix = event_type.capitalize()
+
+    if emergency_stop:
+        return CycleVerdict(
+            False,
+            SkipReason.EMERGENCY_STOP,
+            f"{prefix} skipped — emergency stop latched",
+        )
+    if fault:
+        return CycleVerdict(
+            False, SkipReason.FAULT, f"{prefix} skipped — hardware fault latched"
+        )
+    if startup_inhibit is not None and not is_manual:
+        return CycleVerdict(
+            False, SkipReason.STARTUP, f"{prefix} skipped — {startup_inhibit}"
+        )
 
     if config.pause_on_low_tank:
         low = first_low_tank(tank_readings)
@@ -138,6 +175,14 @@ def decide_cycle(
                 reason=SkipReason.LOW_TANK,
                 message=f"{prefix} skipped — {reason_text}",
                 low_tank=low,
+            )
+        if unknown_tanks:
+            unknown = unknown_tanks[0]
+            return CycleVerdict(
+                fire=False,
+                reason=SkipReason.TANK_UNKNOWN,
+                message=f"{prefix} skipped — {unknown_tank_skip_text(unknown)}",
+                unknown_tank=unknown,
             )
 
     if event_type != EVENT_TYPE_IRRIGATION:

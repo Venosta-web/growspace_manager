@@ -108,6 +108,49 @@ def classic_deprecation_needs_a_real_hass():
 
 
 @pytest.fixture(autouse=True)
+def immediate_pump_readback():
+    """Read a pump back once, immediately, instead of over six real seconds.
+
+    The irrigation shell reads every OFF back over a patient window (#785),
+    which would add real seconds to every suite that runs a pump cycle. This
+    keeps the read itself real — a switch that is not OFF still faults — and
+    drops only the waiting. `tests/services/test_irrigation_unconfirmed_pump.py`
+    restores the real window and drives it on a fake clock.
+    """
+    from functools import partial
+
+    from custom_components.growspace_manager import (
+        actuator_driver,
+        irrigation_coordinator,
+    )
+
+    with patch.object(
+        irrigation_coordinator,
+        "async_confirm_state",
+        partial(actuator_driver.async_confirm_state, first_read=0, poll=0, timeout=0),
+    ):
+        yield
+
+
+@pytest.fixture
+def pump_reads_back_off():
+    """Answer every pump readback with OFF confirmed.
+
+    For suites whose `hass.states` is one shared mock standing in for every
+    sensor, and which therefore cannot model a pump's own state. They assert
+    what a completed cycle does, not what an unconfirmed OFF does.
+    """
+    from custom_components.growspace_manager import irrigation_coordinator
+
+    with patch.object(
+        irrigation_coordinator,
+        "async_confirm_state",
+        AsyncMock(return_value=True),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def enforce_utc_timezone():
     """Ensure timezone is UTC before and after each test.
 

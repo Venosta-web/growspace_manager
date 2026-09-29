@@ -62,7 +62,7 @@ synthesize an `ExhaustFanConfig`.
    `configure_environment` rebuilds the whole `EnvironmentConfig` and previously
    did **not** carry `exhaust_fan_config`, so an environment edit silently reset
    the exhaust controller to `enabled=False` — disabling a grower's controller
-   *and* re-arming this repair. That handler now preserves the existing
+   _and_ re-arming this repair. That handler now preserves the existing
    `exhaust_fan_config` (mirroring how `circulation_fan_config` already falls back
    to the stored config), so the two concerns no longer collide.
 

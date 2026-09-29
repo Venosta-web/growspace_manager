@@ -4,7 +4,7 @@ The AC Infinity grow-light configurator (ADR-0023) needs to write ~6 entities on
 
 ## Considered Options
 
-- **One picker + device-registry resolution** (keyed on `ac_infinity`'s `translation_key`/`unique_id` suffixes). Rejected: it would couple GSM to `ac_infinity`'s internal entity keys, and — decisively — it contradicts the just-established convention. The merged fan/humidifier config surface deliberately stores explicit entity IDs and takes *no* dependency on the upstream integration's internals; a resolution-based grow-light path would be the odd one out and reintroduce exactly the coupling the convention avoids. Ergonomics (fewer pickers) does not justify diverging from the settled pattern for a single actuator role.
+- **One picker + device-registry resolution** (keyed on `ac_infinity`'s `translation_key`/`unique_id` suffixes). Rejected: it would couple GSM to `ac_infinity`'s internal entity keys, and — decisively — it contradicts the just-established convention. The merged fan/humidifier config surface deliberately stores explicit entity IDs and takes _no_ dependency on the upstream integration's internals; a resolution-based grow-light path would be the odd one out and reintroduce exactly the coupling the convention avoids. Ergonomics (fewer pickers) does not justify diverging from the settled pattern for a single actuator role.
 
 ## Consequences
 
@@ -21,4 +21,4 @@ pre-filling (and on re-pick, overwriting) the existing entity pickers. This is U
 the **stored config remains the explicit entity bundle decided here**, no backend or runtime
 resolution was introduced, and an upstream key rename degrades the pre-fill back to the manual
 flow without breaking anything stored. The rejection above stands for storage and backend; it
-no longer implies the *pickers themselves* must be filled by hand.
+no longer implies the _pickers themselves_ must be filled by hand.

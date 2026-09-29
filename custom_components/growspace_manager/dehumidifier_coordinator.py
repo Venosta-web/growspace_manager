@@ -10,6 +10,7 @@ from .const import (
     DEFAULT_DEHUMIDIFIER_MIN_RUNTIME,
     PlantStage,
 )
+from .domain.climate_fail_safe import ClimateRole
 from .vpd_on_off_controller import VpdOnOffController
 
 if TYPE_CHECKING:
@@ -64,6 +65,7 @@ class DehumidifierCoordinator(VpdOnOffController):
     this coordinator controls only ``dehumidifier_entities``.
     """
 
+    _ROLE = ClimateRole.DEHUMIDIFIER
     _CONTROL_FLAG_ATTR = "control_dehumidifier"
     _THRESHOLDS_ATTR = "dehumidifier_thresholds"
     _DEVICE_CONFIG_ATTR = "dehumidifier_config"

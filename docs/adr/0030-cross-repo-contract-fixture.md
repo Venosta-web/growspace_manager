@@ -30,14 +30,14 @@ the maintainer's memory (the #522/#439 episode).
    `tests/fixtures/contract/growspace_payload.json`. Any payload-shape change
    fails the test until the fixture is deliberately regenerated. Maximal
    population is the load-bearing property: every past drop-bug involved an
-   *optional* field, so a sparse fixture would catch nothing.
+   _optional_ field, so a sparse fixture would catch nothing.
 2. **Card CI strict-parses the fixture** (unknown and missing keys both fail),
    fetched from **two refs**: GSM `prerelease` (leading edge) and the latest GSM
    release (what users actually run). See card ADR 0029.
 3. **GSM-first landing order.** For any cross-repo feature, the GSM side merges
    to `prerelease` and ships in a GSM release **before** the card PR merges to
    `dev`. Sole exception: a card PR may land first if it is backward-safe against
-   the released GSM — and the release-fixture parse passing *is* that proof,
+   the released GSM — and the release-fixture parse passing _is_ that proof,
    replacing the judgment call.
 
 ## Consequences
@@ -50,6 +50,6 @@ the maintainer's memory (the #522/#439 episode).
 - Card PRs that move with an unreleased GSM change will fail the release-fixture
   check until GSM ships — that is the intended signal to hold the card merge, not
   a flake to bypass.
-- The env-draft-seeder bug class (fields dropped on dialog reopen) is *not*
+- The env-draft-seeder bug class (fields dropped on dialog reopen) is _not_
   covered here — a parse test cannot see dialog lifecycle. That net is the
   config-dialog round-trip e2e spec (card ADR 0025 amendment).

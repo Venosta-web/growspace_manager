@@ -9,18 +9,43 @@ manual-bypasses-dark rule, and the exact logbook message text.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from custom_components.growspace_manager.domain.pump_cycle import (
     CycleVerdict,
     SkipReason,
     TankReading,
+    cycle_runtime_limit,
     cycle_volume_liters,
     decide_cycle,
     first_low_tank,
     safety_cap_blocks,
 )
+from custom_components.growspace_manager.domain.sensor_validity import Invalidity
+from custom_components.growspace_manager.domain.unknown_tank_level import (
+    UnknownTankLevel,
+)
 from custom_components.growspace_manager.models import IrrigationConfig
+
+_UNKNOWN = UnknownTankLevel(
+    "Res", "sensor.res", Invalidity.STALE, datetime(2026, 9, 24, 21, 48, tzinfo=UTC)
+)
+
+
+@pytest.mark.parametrize(
+    ("stored_limit", "effective"),
+    [(600, 600), (7200, 3600), (0, 600)],
+)
+def test_runtime_limit_bounds_stored_configuration(
+    stored_limit: int, effective: int
+) -> None:
+    """A malformed stored limit cannot bypass the absolute runtime ceiling."""
+    assert (
+        cycle_runtime_limit(IrrigationConfig(max_cycle_seconds=stored_limit))
+        == effective
+    )
 
 
 def _config(**overrides: object) -> IrrigationConfig:
@@ -212,3 +237,129 @@ def test_decide_dark_ignored_when_skip_disabled() -> None:
     """skip_during_dark False -> darkness does not block."""
     verdict = _decide(_config(skip_during_dark=False), lights_dark=True)
     assert verdict.fire is True
+
+
+# ── Startup Inhibit (#786) ───────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("event_type", ["irrigation", "drain"])
+def test_decide_startup_inhibit_blocks_every_automatic_cycle(event_type: str) -> None:
+    verdict = _decide(
+        _config(),
+        event_type=event_type,
+        startup_inhibit="starting up: grace period until 10:05",
+    )
+    assert verdict == CycleVerdict(
+        fire=False,
+        reason=SkipReason.STARTUP,
+        message=(
+            f"{event_type.capitalize()} skipped — starting up: grace period until 10:05"
+        ),
+    )
+
+
+def test_decide_startup_inhibit_lets_a_manual_run_through() -> None:
+    verdict = _decide(_config(), is_manual=True, startup_inhibit="starting up")
+    assert verdict.fire is True
+
+
+def test_decide_manual_run_during_startup_still_meets_every_other_gate() -> None:
+    verdict = _decide(
+        _config(max_cycles_per_day=1),
+        is_manual=True,
+        cycles_today=1,
+        startup_inhibit="starting up",
+    )
+    assert verdict.reason is SkipReason.CYCLE_LIMIT
+
+
+def test_decide_a_latched_fault_outranks_the_startup_inhibit() -> None:
+    verdict = _decide(_config(), fault=True, startup_inhibit="starting up")
+    assert verdict.reason is SkipReason.FAULT
+
+
+@pytest.mark.parametrize(
+    ("event_type", "is_manual"), [("irrigation", True), ("drain", False)]
+)
+def test_decide_an_emergency_stop_outranks_every_other_gate(
+    event_type: str, is_manual: bool
+) -> None:
+    """A latched stop refuses manual runs and drains too, ahead of a fault."""
+    verdict = _decide(
+        _config(),
+        event_type=event_type,
+        is_manual=is_manual,
+        emergency_stop=True,
+        fault=True,
+        startup_inhibit="starting up",
+    )
+    assert verdict == CycleVerdict(
+        False,
+        SkipReason.EMERGENCY_STOP,
+        f"{event_type.capitalize()} skipped — emergency stop latched",
+    )
+
+
+# --- Unknown Tank Level (#790) ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("event_type", "is_manual", "prefix"),
+    [
+        ("irrigation", False, "Irrigation"),
+        ("irrigation", True, "Irrigation"),
+        ("drain", False, "Drain"),
+    ],
+)
+def test_decide_unknown_tank_refuses_every_cycle(
+    event_type: str, is_manual: bool, prefix: str
+) -> None:
+    """Scheduled, steering and manual cycles alike: no level, no water."""
+    verdict = _decide(
+        _config(), event_type=event_type, is_manual=is_manual, unknown_tanks=[_UNKNOWN]
+    )
+    assert verdict == CycleVerdict(
+        fire=False,
+        reason=SkipReason.TANK_UNKNOWN,
+        message=f"{prefix} skipped — tank 'Res' level is unknown (stale)",
+        unknown_tank=_UNKNOWN,
+    )
+
+
+def test_decide_unknown_tank_ignored_when_pause_disabled() -> None:
+    """pause_on_low_tank False is the explicit opt-out: today's behaviour."""
+    verdict = _decide(_config(pause_on_low_tank=False), unknown_tanks=[_UNKNOWN])
+    assert verdict.fire is True
+
+
+def test_decide_a_low_tank_outranks_an_unknown_one() -> None:
+    """A real low reading is the more actionable reason."""
+    verdict = _decide(
+        _config(),
+        tank_readings=[TankReading("Other", 5.0, 30.0)],
+        unknown_tanks=[_UNKNOWN],
+    )
+    assert verdict.reason is SkipReason.LOW_TANK
+
+
+def test_decide_unknown_tank_outranks_caps_and_dark() -> None:
+    verdict = _decide(
+        _config(max_cycles_per_day=1, skip_during_dark=True),
+        cycles_today=5,
+        lights_dark=True,
+        unknown_tanks=[_UNKNOWN],
+    )
+    assert verdict.reason is SkipReason.TANK_UNKNOWN
+
+
+def test_decide_a_latched_fault_outranks_an_unknown_tank() -> None:
+    verdict = _decide(_config(), fault=True, unknown_tanks=[_UNKNOWN])
+    assert verdict.reason is SkipReason.FAULT
+
+
+def test_decide_a_recovered_tank_fires() -> None:
+    """Recovered (or within grace): the tank is a reading again, not unknown."""
+    verdict = _decide(
+        _config(), tank_readings=[TankReading("Res", 60.0, 30.0)], unknown_tanks=[]
+    )
+    assert verdict == CycleVerdict(fire=True)

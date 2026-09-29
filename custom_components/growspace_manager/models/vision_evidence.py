@@ -240,6 +240,26 @@ class VisionCapture:
     quality_history_reanchored: bool = False
 
 
+@dataclass(frozen=True, slots=True, order=True)
+class CaptureMarker:
+    """A capture's place in the evidence order of one camera.
+
+    Captures are ordered by capture time and then by identity — the same order
+    the store's queries use — so two markers compare exactly as their rows sort.
+    A marker is how a consumer remembers *where* it is in the evidence without
+    holding the evidence: the boundary of a Camera Assignment, or how far a
+    consumer has already processed.
+    """
+
+    captured_at: str
+    capture_id: str
+
+    @classmethod
+    def of(cls, capture: VisionCapture) -> CaptureMarker:
+        """Return the marker of one capture."""
+        return cls(captured_at=capture.captured_at, capture_id=capture.capture_id)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class VisionCaptureFile:
     """One image file belonging to a capture.

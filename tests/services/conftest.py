@@ -42,6 +42,8 @@ def mock_coordinator(mock_plant, mock_growspace):
     coordinator.training_service = MagicMock()
     coordinator._notification_manager = MagicMock()
     coordinator._strain_library = MagicMock()
+    coordinator.capture_continuity = MagicMock()
+    coordinator.capture_continuity.async_apply_camera_assignment = AsyncMock()
     coordinator._subsystem_manager = MagicMock()
     _fan_coord_mock = MagicMock()
     _fan_coord_mock.async_restart = AsyncMock()

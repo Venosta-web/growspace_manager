@@ -750,8 +750,77 @@ async def test_a_printer_the_evidence_was_not_taken_on_routes_to_profile_selecti
     payload = await _record_preview(hass, user=VIEWER_USER)
 
     assert payload["decision"]["allowed"] is False
-    assert payload["decision"]["blocked_by"][0] == "profile_not_product_verified"
+    assert payload["decision"]["blocked_by"][0] == "printer_model_not_covered"
     assert payload["recovery"] == "select_profile"
+
+
+async def test_a_printer_registered_before_its_model_was_known_prints_anyway(
+    hass: HomeAssistant, printer: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """niimbot registers `model=""` until the printer has answered over BLE.
+
+    That B1 is the model the evidence was taken on; Home Assistant just does
+    not know it yet. The preview says so by name, and the operator may print.
+    """
+    monkeypatch.setattr(preview, "device_model", lambda _hass, _device_id: "")
+    await _calibrated(hass)
+
+    payload = await _record_preview(hass, user=VIEWER_USER)
+
+    assert payload["decision"]["blocked_by"] == ["printer_model_not_covered"]
+    assert payload["override_available"] is True
+    printer.clear()
+
+    printed = await _print(
+        hass,
+        user=VIEWER_USER,
+        approval_id=payload["approval_id"],
+        expected_raster_identity=payload["render"]["raster_identity"],
+        override=True,
+    )
+
+    assert printed["outcome"] == "ok"
+    assert printed["print"]["raster_identity"] == payload["render"]["raster_identity"]
+    assert len(_committed(printer)) == 1
+
+
+@pytest.mark.usefixtures("unproven")
+async def test_an_unproven_printer_prints_anyway_with_consent(
+    hass: HomeAssistant, printer: list[dict[str, Any]]
+) -> None:
+    payload = await _record_preview(hass, user=VIEWER_USER)
+    assert payload["override_available"] is True
+    printer.clear()
+
+    printed = await _print(
+        hass,
+        user=VIEWER_USER,
+        approval_id=payload["approval_id"],
+        expected_raster_identity=payload["render"]["raster_identity"],
+        override=True,
+    )
+
+    assert printed["outcome"] == "ok"
+    assert len(_committed(printer)) == 1
+
+
+@pytest.mark.usefixtures("unproven")
+async def test_consent_never_prints_a_result_other_than_the_one_approved(
+    hass: HomeAssistant, printer: list[dict[str, Any]]
+) -> None:
+    payload = await _record_preview(hass, user=VIEWER_USER)
+    printer.clear()
+
+    printed = await _print(
+        hass,
+        user=VIEWER_USER,
+        approval_id=payload["approval_id"],
+        expected_raster_identity="sha256:something-else",
+        override=True,
+    )
+
+    assert printed["refusal"]["blocked_by"] == ["result_not_current"]
+    assert _committed(printer) == []
 
 
 @pytest.mark.usefixtures("unproven")
@@ -770,6 +839,7 @@ async def test_a_provisional_profile_previews_but_routes_to_profile_selection(
         "local_calibration_missing",
     ]
     assert payload["recovery"] == "select_profile"
+    assert payload["override_available"] is True
 
     printed = await _print(
         hass,

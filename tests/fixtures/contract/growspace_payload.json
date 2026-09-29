@@ -43,6 +43,15 @@
     "circulation_fan_entities": ["fan.contract_circulation"],
     "circulation_fan_entity": "fan.contract_circulation",
     "circulation_fan_state": "on",
+    "climate_fail_safe_config": {
+      "dehumidifier_max_runtime_minutes": 0,
+      "dehumidifier_safe_state": "off",
+      "exhaust_fallback_speed": 50,
+      "humidifier_max_runtime_minutes": 0,
+      "humidifier_safe_state": "off",
+      "sensor_stale_after_minutes": 30,
+      "sensor_timeout_minutes": 10
+    },
     "co2_sensor": "sensor.contract_co2",
     "dehumidifier_ac_infinity_devices": [
       {
@@ -150,6 +159,7 @@
         "is_warning": false,
         "name": "nutrient_tank",
         "sensor_entity": "sensor.contract_tank",
+        "stale_after_minutes": 0,
         "volume_liters": 120.0,
         "warning_level": 25.0,
         "water_history": {
@@ -182,6 +192,14 @@
         }
       }
     ],
+    "light_leak_config": {
+      "all_stages": false,
+      "debounce_seconds": 120,
+      "enabled": true,
+      "illuminance_sensor": null,
+      "switch_off_lights": false,
+      "threshold_lux": 1.0
+    },
     "light_sensor": "sensor.contract_light",
     "light_sensors": ["sensor.contract_light"],
     "lst_offset": -2.5,
@@ -270,6 +288,10 @@
           "trim_weight": 45.0,
           "wet_weight": 850.0
         },
+        "harvest_outcome_reason": null,
+        "harvest_outcome_state": "pending",
+        "harvest_source_growspace_id": null,
+        "harvest_source_run_id": null,
         "last_ipm": "2026-07-01",
         "last_ipm_type": "beneficial_insects",
         "last_trained": "2026-03-15",
@@ -335,6 +357,10 @@
           "trim_weight": null,
           "wet_weight": null
         },
+        "harvest_outcome_reason": null,
+        "harvest_outcome_state": "pending",
+        "harvest_source_growspace_id": null,
+        "harvest_source_run_id": null,
         "last_ipm": null,
         "last_ipm_type": null,
         "last_trained": null,
@@ -382,6 +408,14 @@
     "name": "Contract Growspace",
     "notification_target": "notify.mobile_app_grower",
     "overview_entity_id": null,
+    "setup_modules": {
+      "air": true,
+      "climate": true,
+      "irrigation": true,
+      "lights": true,
+      "substrate": false
+    },
+    "setup_preset": "coco_crop_steering",
     "type": "normal"
   },
   "irrigation": {
@@ -433,14 +467,22 @@
         }
       ],
       "log_to_logbook": true,
+      "max_cycle_seconds": 600,
       "max_cycles_per_day": 12,
+      "min_interval_minutes": 5,
+      "moisture_zero_is_implausible": false,
       "pause_on_low_tank": true,
       "phase_changed_at": "2026-08-11T06:00:00+00:00",
       "program_auto_advance": true,
       "pump_flow_rate_ml_per_sec": 25.0,
       "resolved_day_hours": 11,
+      "sensor_alert_delay_minutes": 15,
+      "sensor_stale_after_minutes": 30,
       "skip_during_dark": true,
       "soil_trigger_percent": 42.0,
+      "startup_grace_minutes": 5,
+      "tank_unknown_grace_minutes": 10,
+      "unexpected_on_policy": "alert",
       "veg_day_hours": 18
     },
     "irrigation_strategy": {
@@ -659,12 +701,18 @@
       "daily_readings": [
         {
           "date": "2026-08-11",
+          "from_monitored_tank": false,
           "liters": 6.25,
-          "source": "manual"
+          "plant_id": "contract-plant",
+          "source": "manual",
+          "user_id": "contract-user",
+          "watered_at": "2026-08-11T08:30:00+00:00",
+          "watering_id": "contract-watering"
         }
       ],
       "liters_today": 6.25,
       "max_daily_readings": 400,
+      "monitored_tank_liters": 0.0,
       "total_liters": 88.5
     }
   },
@@ -797,6 +845,15 @@
           "wind_period_seconds": 90
         },
         "circulation_fan_entities": ["fan.subarea_circulation"],
+        "climate_fail_safe_config": {
+          "dehumidifier_max_runtime_minutes": 0,
+          "dehumidifier_safe_state": "off",
+          "exhaust_fallback_speed": 50,
+          "humidifier_max_runtime_minutes": 0,
+          "humidifier_safe_state": "off",
+          "sensor_stale_after_minutes": 30,
+          "sensor_timeout_minutes": 10
+        },
         "co2_sensor": "sensor.subarea_co2",
         "control_dehumidifier": true,
         "control_humidifier": true,
@@ -896,6 +953,7 @@
             "name": "nutrient_tank",
             "peak_level": 95.0,
             "sensor_entity": "sensor.subarea_tank",
+            "stale_after_minutes": 0,
             "volume_liters": 120.0,
             "warning_level": 25.0,
             "water_history": {
@@ -922,6 +980,14 @@
             }
           }
         ],
+        "light_leak_config": {
+          "all_stages": false,
+          "debounce_seconds": 120,
+          "enabled": true,
+          "illuminance_sensor": null,
+          "switch_off_lights": false,
+          "threshold_lux": 1.0
+        },
         "light_sensors": ["sensor.subarea_light"],
         "lst_offset": -2.5,
         "lung_room_temp_sensors": ["sensor.subarea_lung_temperature"],

@@ -34,6 +34,9 @@ from custom_components.growspace_manager.domain.plant_lifecycle import (
     PlantLifecycle,
     Rejected,
 )
+from custom_components.growspace_manager.domain.plant_lifecycle_adapter import (
+    plant_lifecycle_from_plant,
+)
 from custom_components.growspace_manager.domain.stage import STAGE_REGISTRY
 from custom_components.growspace_manager.events import (
     EVENT_PLANT_ADDED,
@@ -143,6 +146,37 @@ class PlantManager(BaseService):
         payload = {"event_type": event_type, "data": data}
         self.hass.bus.async_fire("growspace_manager_updated", payload)
 
+    def _harvest_source_updates(
+        self,
+        plant: Plant,
+        source_growspace_id: str,
+        target: LifecycleStage,
+        harvest_metrics: dict[str, Any] | None = None,
+    ) -> dict[str, str | None]:
+        """Fix the source at dry entry, including an explicit no-Run case."""
+        if (
+            target is LifecycleStage.DRY
+            and harvest_metrics is not None
+            and harvest_metrics.get("dry_weight") == 0
+        ):
+            raise ValidationChangeError(
+                "Record No Usable Yield with a reason to set dry weight to zero"
+            )
+        if (
+            target is not LifecycleStage.DRY
+            or plant.harvest_source_growspace_id is not None
+        ):
+            return {}
+        active_run = (
+            self._ctx.active_run_callback(source_growspace_id)
+            if self._ctx.active_run_callback is not None
+            else None
+        )
+        return {
+            "harvest_source_growspace_id": source_growspace_id,
+            "harvest_source_run_id": active_run.run_id if active_run else None,
+        }
+
     def _advance_layout_revision(self, growspace_id: str) -> None:
         """Advance a growspace Layout Revision while the manager lock is held."""
         growspace = self.repository.get_growspace(growspace_id)
@@ -176,40 +210,9 @@ class PlantManager(BaseService):
         if current_stage is LifecycleStage.UNKNOWN:
             current_stage = LifecycleStage.SEEDLING
 
-        legacy_dates = {
-            field: value if isinstance(value, (date, str)) else None
-            for field in DATE_FIELDS
-            if (value := getattr(plant, field, None)) is not None
-        }
-        stored_history = getattr(plant, "stage_history", None)
-        raw_history: list[object] | None = (
-            [dict(item) for item in stored_history]
-            if isinstance(stored_history, list) and stored_history
-            else None
-        )
-
-        # Older in-memory Plant objects cannot distinguish an absent Stage History
-        # key from the dataclass's empty default. Seed those once from their explicit
-        # stage and creation timestamp; all newly created plants are seeded eagerly.
-        if raw_history is None and not any(legacy_dates.values()):
-            created_at = getattr(plant, "created_at", None)
-            started_on = (
-                created_at
-                if isinstance(created_at, (date, str))
-                else observed_on.isoformat()
-            )
-            raw_history = [
-                {
-                    "stage": current_stage.value,
-                    "start": started_on,
-                    "end": None,
-                }
-            ]
-
-        lifecycle = PlantLifecycle.from_data(
-            raw_history,
+        lifecycle = plant_lifecycle_from_plant(
+            plant,
             observed_on=observed_on,
-            legacy_dates=legacy_dates,
             current_stage=current_stage,
         )
         if lifecycle.warnings and not allow_repair:
@@ -626,6 +629,12 @@ class PlantManager(BaseService):
                 if isinstance(decision, Applied):
                     updates[f"{canonical_target.value}_start"] = transition_timestamp
 
+                updates.update(
+                    self._harvest_source_updates(
+                        plant, source_growspace_id, canonical_target, harvest_metrics
+                    )
+                )
+
                 # The legacy calculator ranks fields by lifecycle order rather than
                 # timestamp. Clear higher-ranked fields on backward branches (most
                 # importantly flower -> veg) so stale stages cannot resurface.
@@ -775,13 +784,22 @@ class PlantManager(BaseService):
                 key in regular_updates and regular_updates[key] != getattr(plant, key)
                 for key in ("row", "col")
             )
-
             plant_snapshot = deepcopy(plant)
             growspace_snapshots = {
                 growspace_id: deepcopy(self.repository.get_growspace(growspace_id))
                 for growspace_id in {old_growspace_id, new_growspace_id}
             }
             event_updates = {**regular_updates, **lifecycle_updates}
+            if (
+                lifecycle.current_stage is not LifecycleStage.DRY
+                and lifecycle_updates.get("stage") == LifecycleStage.DRY.value
+            ):
+                lifecycle_updates.update(
+                    self._harvest_source_updates(
+                        plant, old_growspace_id, LifecycleStage.DRY
+                    )
+                )
+                event_updates.update(lifecycle_updates)
             try:
                 if "strain" in regular_updates:
                     plant.genetics.strain_name = regular_updates.pop("strain")
@@ -1014,6 +1032,11 @@ class PlantManager(BaseService):
                 key in updates and updates[key] != getattr(plant, key)
                 for key in ("row", "col")
             )
+            plant_snapshot = deepcopy(plant)
+            growspace_snapshots = {
+                growspace_id: deepcopy(self.repository.get_growspace(growspace_id))
+                for growspace_id in {old_growspace_id, new_growspace_id}
+            }
 
             for key in DATE_FIELDS:
                 if key in updates:
@@ -1038,7 +1061,16 @@ class PlantManager(BaseService):
                 self._advance_layout_revision(new_growspace_id)
             elif position_changed:
                 self._advance_layout_revision(old_growspace_id)
-            await self._save()
+            try:
+                await self._save()
+            except BaseException:
+                self._restore_plant(plant, plant_snapshot)
+                self.repository.add_plant(plant)
+                for growspace_id, snapshot in growspace_snapshots.items():
+                    if snapshot is not None:
+                        self.repository.add_growspace(snapshot)
+                    self._invalidate(growspace_id)
+                raise
 
         self._fire_event(
             "plant_updated",
@@ -1051,16 +1083,46 @@ class PlantManager(BaseService):
         """Compatibility wrapper for update_plant."""
         return await self.update_plant(plant_id, **updates)
 
-    async def remove_plant(self, plant_id: str) -> bool:
-        """Remove a plant."""
+    async def remove_plant(self, plant_id: str, *, source_frozen: bool = False) -> bool:
+        """Remove a plant.
+
+        ``source_frozen`` says the Plant's Harvest Source Run is Finalized, so
+        its outcome is already history and no explicit one is asked for.
+        """
         async with self._lock:
             plant = self.repository.get_plant(plant_id)
             if not plant:
                 return False
+            if (
+                plant.harvest_source_run_id
+                and not source_frozen
+                and plant.harvest_outcome_state
+                not in {
+                    "no_usable_yield",
+                    "incomplete",
+                }
+            ):
+                raise ValidationChangeError(
+                    "A Harvest Source Plant needs an explicit outcome before deletion"
+                )
+            sent_snapshot = self.notification_state.sent.get(plant_id)
+            previous_revision = self.repository.require_growspace(
+                plant.growspace_id
+            ).layout_revision
             self.repository.remove_plant(plant_id)
             self.notification_state.sent.pop(plant_id, None)
             self._advance_layout_revision(plant.growspace_id)
-            await self._save()
+            try:
+                await self._save()
+            except BaseException:
+                self.repository.add_plant(plant)
+                if sent_snapshot is not None:
+                    self.notification_state.sent[plant_id] = sent_snapshot
+                self.repository.require_growspace(
+                    plant.growspace_id
+                ).layout_revision = previous_revision
+                self._invalidate(plant.growspace_id)
+                raise
 
         self._fire_event(
             "plant_removed",
@@ -1098,6 +1160,11 @@ class PlantManager(BaseService):
 
             p1_row, p1_col = plant1.row, plant1.col
             p2_row, p2_col = plant2.row, plant2.col
+            plant1_snapshot = deepcopy(plant1)
+            plant2_snapshot = deepcopy(plant2)
+            previous_revision = self.repository.require_growspace(
+                plant1.growspace_id
+            ).layout_revision
 
             plant1.row, plant1.col = p2_row, p2_col
             plant2.row, plant2.col = p1_row, p1_col
@@ -1107,7 +1174,16 @@ class PlantManager(BaseService):
             plant2.updated_at = now
 
             self._advance_layout_revision(plant1.growspace_id)
-            await self._save()
+            try:
+                await self._save()
+            except BaseException:
+                self._restore_plant(plant1, plant1_snapshot)
+                self._restore_plant(plant2, plant2_snapshot)
+                self.repository.require_growspace(
+                    plant1.growspace_id
+                ).layout_revision = previous_revision
+                self._invalidate(plant1.growspace_id)
+                raise
 
         # Fire events
         if p1 := self.repository.get_plant(plant1_id):
@@ -1311,6 +1387,8 @@ class PlantManager(BaseService):
             )
 
             relocated: list[str] = []
+            plant_snapshots: dict[str, Plant] = {}
+            growspace_snapshots: dict[str, Any] = {}
             updated_at = plant_updated_date()
             for plant_id in plant_ids:
                 plant = self.repository.get_plant(plant_id)
@@ -1343,6 +1421,12 @@ class PlantManager(BaseService):
                 occupied.add(cell)
 
                 source_growspace_id = plant.growspace_id
+                plant_snapshots[plant_id] = deepcopy(plant)
+                for growspace_key in (source_growspace_id, target_growspace_id):
+                    if growspace_key not in growspace_snapshots:
+                        growspace_snapshots[growspace_key] = deepcopy(
+                            self.repository.get_growspace(growspace_key)
+                        )
                 plant.growspace_id = target_growspace_id
                 plant.row = new_row
                 plant.col = new_col
@@ -1370,7 +1454,18 @@ class PlantManager(BaseService):
                 self._invalidate(growspace_id)
 
             if relocated:
-                await self._save()
+                try:
+                    await self._save()
+                except BaseException:
+                    for plant_id, snapshot in plant_snapshots.items():
+                        self._restore_plant(
+                            self.repository.require_plant(plant_id), snapshot
+                        )
+                    for growspace_id, snapshot in growspace_snapshots.items():
+                        if snapshot is not None:
+                            self.repository.add_growspace(snapshot)
+                        self._invalidate(growspace_id)
+                    raise
 
         for growspace_id, layout_revision in affected.items():
             if layout_revision:

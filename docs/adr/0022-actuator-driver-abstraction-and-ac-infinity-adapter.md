@@ -12,7 +12,7 @@ GSM controls four kinds of actuator — exhaust fan, circulation fan, humidifier
 dehumidifier — and historically modelled each as a single HA `entity_id` string
 stored on `EnvironmentConfig` (`exhaust_fan_entities`, `circulation_fan_entities`,
 `humidifier_entities`, `dehumidifier_entities`). Three separate dispatch sites each
-decided *how* to command a device by sniffing the entity domain inline:
+decided _how_ to command a device by sniffing the entity domain inline:
 
 - `exhaust_fan_coordinator._dispatch` — `fan.set_percentage` for `fan.*`,
   `turn_on`/`turn_off` for `switch.*`/`input_boolean.*`.
@@ -22,14 +22,14 @@ decided *how* to command a device by sniffing the entity domain inline:
 
 Users increasingly run AC Infinity controllers via the `ac_infinity` HACS
 integration. That integration exposes **no `fan` platform**. Each port is a
-*bundle* of entities:
+_bundle_ of entities:
 
 - a mode `select` (Active Mode: `Off`, `On`, `Auto`, `Timer to On`,
   `Timer to Off`, `Cycle`, `Schedule`, `VPD` — hardcoded English option strings),
 - a speed `number` (On Speed, integer **0–10**, step 1 — not a 0–100 percentage),
 - sensors for status/current power, temperature, humidity, VPD.
 
-To run a port at 60 %, you must set the mode `select` to `On` *and* write `6` to
+To run a port at 60 %, you must set the mode `select` to `On` _and_ write `6` to
 the speed `number`. To turn it off, set the mode to `Off`. There is no single
 `entity_id` whose `STATE_ON`/percentage GSM can read or write, so AC Infinity
 devices simply do not work with the domain-sniffing dispatch. We want them to
@@ -58,7 +58,7 @@ and speed `number` — with these semantics:
 
 - `set_speed(pct)`: `pct <= 0` → mode `select` → `Off`; otherwise mode → `On`
   and number → `clamp(round(pct / 10), 1, 10)`. (Off threshold is `0`, matching
-  the `fan` driver — *not* the switch driver's `min_speed` — so an AC Infinity
+  the `fan` driver — _not_ the switch driver's `min_speed` — so an AC Infinity
   exhaust keeps running at low intensity where a switch exhaust would already be
   off.)
 - `turn_on()`: mode → `On` and number → a per-device configured **on-speed**

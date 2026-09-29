@@ -142,8 +142,10 @@ class BatchPreflight:
     def override_available(self) -> bool:
         """Whether an operator may print past every refusal this batch has.
 
-        True only when the batch is refused and *every* reason is about how
-        far the printer has been proven, never about the labels themselves.
+        True only when the batch is refused and *every* reason is a judgement
+        about rasters that exist -- how far the printer has been proven, or a
+        layout diagnostic the operator can see in the preview -- never one
+        that would put something other than the reviewed labels on paper.
         """
         return overridable(self.blocked_by)
 

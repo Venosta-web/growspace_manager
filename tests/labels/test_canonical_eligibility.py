@@ -58,6 +58,7 @@ def _decide(
     profile=VERIFIED,
     calibration="cal-1",
     stale=(),
+    printer_covered=True,
 ):
     return decide_eligibility(
         diagnostics,
@@ -65,6 +66,7 @@ def _decide(
         profile=profile,
         local_calibration=calibration,
         calibration_stale_reasons=stale,
+        printer_covered=printer_covered,
     )
 
 
@@ -353,14 +355,35 @@ def test_provenance_serializes_for_the_wire() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_a_printer_of_an_unproven_model_is_named_as_such() -> None:
+    """A proven profile on a printer registered under another model -- or none.
+
+    The profile itself is verified, so saying it "has not passed physical
+    testing" would send the operator after the wrong thing.
+    """
+    decisions = _decide(printer_covered=False)
+
+    assert _blocked(decisions, Operation.SINGLE_PRINT) == (
+        str(Blocker.PRINTER_MODEL_NOT_COVERED),
+    )
+    assert _blocked(decisions, Operation.BATCH_PREFLIGHT) == (
+        str(Blocker.PRINTER_MODEL_NOT_COVERED),
+    )
+    assert _blocked(decisions, Operation.TEST_PRINT) == ()
+
+
 @pytest.mark.parametrize(
     "decisions",
     [
         _decide(profile=PROVISIONAL, calibration=None),
         _decide(calibration=None, stale=("firmware",)),
+        _decide(printer_covered=False),
+        _decide([ERROR]),
+        _decide([ERROR], profile=PROVISIONAL, calibration=None, printer_covered=False),
     ],
+    ids=["unproven", "stale", "uncovered", "blocking", "everything-at-once"],
 )
-def test_an_override_prints_past_an_unproven_printer(decisions) -> None:
+def test_an_override_prints_any_label_that_has_a_raster(decisions) -> None:
     decision = decide_print_request(
         decisions, Operation.SINGLE_PRINT, provenance=COMPLETE, override=True
     )
@@ -368,24 +391,32 @@ def test_an_override_prints_past_an_unproven_printer(decisions) -> None:
     assert decision.blocked_by == ()
 
 
-def test_an_override_waives_nothing_about_the_label_itself() -> None:
+def test_an_override_never_prints_something_other_than_the_approved_preview() -> None:
     decision = decide_print_request(
-        _decide([ERROR], profile=PROVISIONAL, calibration=None),
+        _decide([ERROR], has_raster=False, profile=PROVISIONAL, calibration=None),
         Operation.BATCH_PREFLIGHT,
         provenance=PrintProvenance(
-            published_revision=False, actual_content=True, result_current=True
+            published_revision=False, actual_content=False, result_current=False
         ),
         override=True,
     )
     assert decision.blocked_by == (
-        str(Blocker.BLOCKING_DIAGNOSTICS),
+        str(Blocker.NO_RASTER),
         str(Blocker.REVISION_NOT_PUBLISHED),
+        str(Blocker.CONTENT_NOT_ACTUAL),
+        str(Blocker.RESULT_NOT_CURRENT),
     )
 
 
-def test_only_a_refusal_about_the_printer_alone_is_overridable() -> None:
+def test_only_refusals_about_an_existing_raster_are_overridable() -> None:
     assert overridable((str(Blocker.LOCAL_CALIBRATION_STALE),))
+    assert overridable(
+        (str(Blocker.BLOCKING_DIAGNOSTICS), str(Blocker.PRINTER_MODEL_NOT_COVERED))
+    )
     assert not overridable(())
     assert not overridable(
         (str(Blocker.LOCAL_CALIBRATION_MISSING), str(Blocker.NO_RASTER))
+    )
+    assert not overridable(
+        (str(Blocker.BLOCKING_DIAGNOSTICS), str(Blocker.RESULT_NOT_CURRENT))
     )

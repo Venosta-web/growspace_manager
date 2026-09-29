@@ -20,7 +20,7 @@
 # Home Assistant Core (Minimal)
 # Kept in lockstep with pytest-homeassistant-custom-component, which pins this exact
 # homeassistant version; bumping one requires bumping the other.
-homeassistant==2026.8.1
+homeassistant==2026.9.3
 aiosqlite==0.22.1
 Pillow
 python-dateutil==2.9.0.post0
@@ -29,33 +29,35 @@ voluptuous
 # Integration dependencies
 # manifest.json ships these as ranges (mashumaro>=3.10, beautifulsoup4>=4.12.0);
 # the pins here fix what CI tests against, they do not narrow what users get.
-fpdf2==2.8.7
+fpdf2==2.8.8
 mashumaro==3.22
 beautifulsoup4==4.15.0
 
 # Test Dependencies
+# HA 2026.9's conversation import needs this intent integration dependency.
+# Its version comes from HA's package_constraints.txt.
+gazetteer-matcher
 aiodhcpwatcher
 pycares==5.0.1
 coverage
 pydantic
 pipdeptree
 pytest-asyncio
-pytest-homeassistant-custom-component==0.13.355
+pytest-homeassistant-custom-component==0.13.366
 pytest-cov
 pytest
 PyTurboJPEG
 pytest-xdist
 freezegun
 requests-mock
-hassil==3.11.0
-home-assistant-intents==2026.7.30
+hassil==3.12.1
+home-assistant-intents
 syrupy>=5.0.0
 
-# Local dev tooling — CI installs separate copies using matching pins in
-# lint.yaml. Keep versions synchronized so local checks agree with the gate.
-# Move the corresponding pre-commit rev with any Ruff or yamllint version bump.
-ruff==0.15.12
-mypy==1.20.2
+# Local dev and CI lint tooling. The lint workflow reads these pins directly;
+# its check_lint_tool_pins step verifies the pre-commit Ruff/yamllint revisions.
+ruff==0.16.8
+mypy==2.3.1
 pre-commit==4.6.2
-yamllint==1.37.1
-codespell
+yamllint==1.38.0
+codespell==2.4.3

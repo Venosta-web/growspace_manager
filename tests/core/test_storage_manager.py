@@ -1,11 +1,13 @@
 """Tests for the StorageManager."""
 
+from datetime import UTC, datetime
 import glob
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from custom_components.growspace_manager.domain.grow_run import PlantMovementFact
 from custom_components.growspace_manager.storage_manager import StorageManager
 from homeassistant.core import HomeAssistant
 
@@ -112,3 +114,64 @@ async def test_backup_logic_with_corrupt_data(
         # Cleanup
         for f in files:
             Path(f).unlink()
+
+
+async def test_schedule_save_only_debounces_runtime_config(storage) -> None:
+    """A delayed save cannot persist a Plant without its Activity Fact."""
+    with (
+        patch.object(storage.config_store, "async_delay_save") as config,
+        patch.object(storage.plants_store, "async_delay_save") as plants,
+        patch.object(storage.genetics_store, "async_delay_save") as genetics,
+    ):
+        storage.async_schedule_save()
+
+    config.assert_called_once_with(storage._get_config_data, 10)
+    plants.assert_not_called()
+    genetics.assert_not_called()
+
+
+def test_harvest_movement_is_a_durable_activity_fact(storage) -> None:
+    """Moving a flowering Plant to drying is classified at the save boundary."""
+    storage._committed_plants = {
+        "plant-1": {"growspace_id": "flower", "row": 1, "col": 1, "stage": "flower"}
+    }
+    facts = storage._stage_movement_facts(
+        {"plant-1": {"growspace_id": "dry", "row": 1, "col": 1, "stage": "dry"}}
+    )
+    assert len(facts) == 1
+    assert facts[0].kind == "harvest"
+    assert facts[0].source_growspace_id == "flower"
+    assert facts[0].target_growspace_id == "dry"
+    assert facts[0].fact_id
+
+
+@pytest.mark.parametrize("bad_facts", [None, "duplicate"])
+async def test_corrupt_activity_outbox_holds_every_plant_write(
+    storage, bad_facts
+) -> None:
+    """A damaged outbox is backed up and never replaced by an empty one."""
+    if bad_facts == "duplicate":
+        fact = PlantMovementFact(
+            fact_id="f1",
+            plant_id="p1",
+            at=datetime.now(UTC),
+            kind="entry",
+            source_growspace_id=None,
+            target_growspace_id="tent",
+            source_run_id=None,
+            target_run_id=None,
+        ).as_dict()
+        bad_facts = [fact, fact]
+    with patch.object(storage, "_backup_corrupt_data") as backup:
+        storage._load_plants({"plants": {}, "activity_facts": bad_facts})
+    backup.assert_called_once()
+    assert storage.activity_unreadable
+    with patch.object(storage.config_store, "async_delay_save") as delayed:
+        storage.async_schedule_save()
+    delayed.assert_not_called()
+    with pytest.raises(ValueError, match="outbox is unreadable"):
+        await storage.async_force_save()
+    with pytest.raises(ValueError, match="outbox is unreadable"):
+        await storage.async_mark_fact_projected("f1")
+    with pytest.raises(ValueError, match="outbox is unreadable"):
+        await storage.async_save_plant_layout_snapshot("tent", 1, [], "now", 1, 1)

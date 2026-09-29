@@ -9,6 +9,7 @@ from custom_components.growspace_manager.domain.water_aggregation import (
     compute_growspace_water,
     is_tank_derived_mode,
     record_daily_water,
+    record_hand_watering,
 )
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
@@ -71,14 +72,32 @@ def test_tank_mode_inactive_without_volume():
     assert is_tank_derived_mode(gs) is False
 
 
-def test_tank_mode_inactive_when_flow_sensor_present():
+def test_tank_mode_stays_active_when_flow_sensor_configured():
+    """No reading of a flow sensor is ever converted to litres (#853).
+
+    Configuring one must not trade the tank-derived figure for the pump
+    estimate, which is the less accurate of the two.
+    """
     gs = _growspace(tank_volume=200.0, flow_sensors=["sensor.flow"])
-    assert is_tank_derived_mode(gs) is False
+    assert is_tank_derived_mode(gs) is True
 
 
-def test_tank_mode_inactive_when_drain_sensor_present():
+def test_tank_mode_stays_active_when_drain_sensor_configured():
+    """Drain volume is runoff, not delivery, and is not read as either (#853)."""
     gs = _growspace(tank_volume=200.0, drain_sensors=["sensor.drain"])
-    assert is_tank_derived_mode(gs) is False
+    assert is_tank_derived_mode(gs) is True
+
+
+def test_flow_sensor_keeps_the_tank_derived_figure():
+    """The water figure's source does not move when a flow sensor is added (#853)."""
+    gs = _growspace(
+        tank_volume=200.0,
+        flow_sensors=["sensor.flow"],
+        drain_sensors=["sensor.drain"],
+    )
+    trackers = [_FakeTracker(today=8.0, since=50.0)]
+    figures = compute_growspace_water(gs, trackers, reference_date="2026-06-15")
+    assert figures == WaterUseFigures(today=8.0, cycle=50.0, source="tank_derived")
 
 
 # ── non-tank path: WaterUsageData holds manual + pump (both written through) ──
@@ -133,6 +152,80 @@ def test_tank_mode_with_no_trackers_falls_back_to_water_usage():
     figures = compute_growspace_water(gs, [], reference_date="2026-06-15")
     assert figures.cycle == 7.0
     assert figures.source == "measured"
+
+
+def test_tank_exclusion_survives_daily_history_trimming():
+    gs = _growspace(tank_volume=200.0)
+    gs.water_usage.max_daily_readings = 1
+    for day in ("2026-06-14", "2026-06-15"):
+        record_hand_watering(
+            gs,
+            2.0,
+            watering_id=f"watering-{day}",
+            user_id="user-1",
+            plant_id="plant-1",
+            watered_at=f"{day}T12:00:00+00:00",
+            from_monitored_tank=True,
+            reference_date=day,
+        )
+    assert len(gs.water_usage.daily_readings) == 1
+    assert gs.water_usage.monitored_tank_liters == 4.0
+    figures = compute_growspace_water(
+        gs, [_FakeTracker(today=1.0, since=3.0)], reference_date="2026-06-15"
+    )
+    assert figures == WaterUseFigures(today=1.0, cycle=3.0, source="tank_derived")
+    assert compute_growspace_water(
+        gs, [], reference_date="2026-06-15"
+    ) == WaterUseFigures(today=0.0, cycle=0.0, source="measured")
+
+
+def test_daily_history_limit_counts_days_not_reports():
+    gs = _growspace()
+    gs.water_usage.max_daily_readings = 1
+    for index in range(3):
+        record_hand_watering(
+            gs,
+            1.0,
+            watering_id=f"watering-{index}",
+            user_id=None,
+            plant_id="plant-1",
+            watered_at="2026-06-15T12:00:00+00:00",
+            from_monitored_tank=False,
+            reference_date="2026-06-15",
+        )
+    assert len(gs.water_usage.daily_readings) == 3
+
+
+def test_zero_liter_hand_report_does_not_add_water_usage():
+    gs = _growspace()
+    record_hand_watering(
+        gs,
+        0.0,
+        watering_id="watering-zero",
+        user_id=None,
+        plant_id="plant-1",
+        watered_at="2026-06-15T12:00:00+00:00",
+        from_monitored_tank=True,
+        reference_date="2026-06-15",
+    )
+    assert gs.water_usage.total_liters == 0.0
+    assert gs.water_usage.daily_readings == []
+
+
+def test_legacy_manual_write_does_not_change_identified_report():
+    gs = _growspace()
+    record_hand_watering(
+        gs,
+        2.0,
+        watering_id="watering-1",
+        user_id="user-1",
+        plant_id="plant-1",
+        watered_at="2026-06-15T12:00:00+00:00",
+        from_monitored_tank=False,
+        reference_date="2026-06-15",
+    )
+    record_daily_water(gs, 1.0, source=WATER_SOURCE_MANUAL, reference_date="2026-06-15")
+    assert [item["liters"] for item in gs.water_usage.daily_readings] == [2.0, 1.0]
 
 
 # ── write path: record_daily_water ──────────────────────────────────────────

@@ -46,10 +46,10 @@ composer never reaches into the coordinator or Home Assistant. This keeps it
 unit-testable with plain values and preserves the "one EC actuator" rule —
 EC modulation is still computed once, by the existing code, and only for P2.
 
-### 4. The module owns the reset *rule*; the coordinator owns the *trigger*
+### 4. The module owns the reset _rule_; the coordinator owns the _trigger_
 
 `reset()` (both factors → 1.0) lives on the composer, so the lifecycle rule is in
-one place. *When* to reset stays with the coordinator's phase machine
+one place. _When_ to reset stays with the coordinator's phase machine
 (lights-on daily reset, P1→P2 transition) — detecting those events is
 inherently coordination, not composition.
 
