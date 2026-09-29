@@ -14,6 +14,7 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.domain.grow_run import (
+    RunMetadata,
     RunRevisionConflict,
     RunStatus,
 )
@@ -23,8 +24,10 @@ from custom_components.growspace_manager.grow_run_store import (
 )
 from custom_components.growspace_manager.services.grow_runs import (
     async_finalize_grow_run,
+    async_start_grow_run,
 )
 from custom_components.growspace_manager.websocket.grow_runs import (
+    WS_TYPE_COMPARE_GROW_RUNS,
     WS_TYPE_FINALIZE_GROW_RUN,
     WS_TYPE_GET_GROW_RUN,
     WS_TYPE_LIST_GROW_RUNS,
@@ -446,3 +449,106 @@ async def test_a_failed_identity_refresh_never_fails_the_cultivation_change(
             growspace_id=growspace_id, strain="OG Kush", row=1, col=1
         )
     assert "Run Participant identities were not refreshed" in caplog.text
+
+
+async def test_a_grower_compares_the_two_newest_finalized_runs(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    """Run #1 weighed in, Run #2 did not: the Yield row is missing, not zero (#675)."""
+    coordinator, growspace_id, plant_ids, first = await _harvested_and_completed(
+        hass, init_integration
+    )
+    await coordinator.services.plants.update_harvest_metrics(
+        plant_ids[0], dry_weight=42.5
+    )
+    client = await hass_ws_client(hass)
+    compare = {"type": WS_TYPE_COMPARE_GROW_RUNS, "growspace_id": growspace_id}
+
+    # One Run, and not yet Finalized: nothing to compare, and the details
+    # already show its Pending Yield.
+    details = await _ws(
+        client,
+        {
+            "type": WS_TYPE_GET_GROW_RUN,
+            "growspace_id": growspace_id,
+            "run_id": first.run_id,
+        },
+    )
+    assert details["run"]["metrics_state"] == "pending"
+    assert details["run"]["metrics"][0]["value"] == 42.5
+    assert {row["plant_id"] for row in details["run"]["participant_identities"]} == (
+        set(plant_ids)
+    )
+    refused = await _ws(client, compare)
+    assert refused["refusal"]["code"] == "grow_run.insufficient_history"
+
+    await _ws(client, _finalize_message(growspace_id, first.run_id, 2, []))
+    second, revision = await async_start_grow_run(
+        hass,
+        coordinator,
+        growspace_id=growspace_id,
+        expected_revision=3,
+        metadata=RunMetadata.create(label="Winter"),
+        user=await _admin(hass),
+    )
+    await _complete_as_admin(
+        hass, coordinator, growspace_id, second.run_id, revision=revision
+    )
+    await _ws(
+        client,
+        _finalize_message(
+            growspace_id, second.run_id, revision + 1, ["incomplete_snapshot"]
+        ),
+    )
+
+    result = await _ws(client, compare)
+    assert result["outcome"] == "compared"
+    assert [row["sequence_number"] for row in result["finalized"]] == [2, 1]
+    comparison = result["comparison"]
+    assert comparison["earlier"]["run"]["run_id"] == first.run_id
+    assert comparison["later"]["run"]["run_id"] == second.run_id
+    assert comparison["later"]["snapshot"]["counts"]["harvest_source_plants"] == 0
+    yield_row = comparison["metrics"][0]
+    assert yield_row["metric"] == "yield"
+    assert yield_row["state"] == "missing"
+    assert yield_row["direction"] is None
+    assert yield_row["earlier"]["value"] == 42.5
+
+    # Named explicitly, in either order, it is the same comparison.
+    named = await _ws(client, {**compare, "run_ids": [second.run_id, first.run_id]})
+    assert named["comparison"] == comparison
+    same = await _ws(client, {**compare, "run_ids": [first.run_id, first.run_id]})
+    assert same["refusal"]["code"] == "grow_run.same_run"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [{"run_ids": ["only-one"]}, {"run_ids": ["a", "b", "c"]}, {"run_ids": ["", "b"]}],
+)
+async def test_a_comparison_names_exactly_two_runs(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+    extra: dict[str, Any],
+) -> None:
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {"type": WS_TYPE_COMPARE_GROW_RUNS, "growspace_id": "tent", **extra}
+    )
+    assert not (await client.receive_json())["success"]
+
+
+async def test_an_unreadable_history_compares_nothing_and_says_why(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    coordinator, growspace_id, _ = await _tent(init_integration, plants=0)
+    coordinator.grow_runs.unreadable = True
+    client = await hass_ws_client(hass)
+    result = await _ws(
+        client, {"type": WS_TYPE_COMPARE_GROW_RUNS, "growspace_id": growspace_id}
+    )
+    assert result["refusal"]["code"] == "grow_run.store_unreadable"
