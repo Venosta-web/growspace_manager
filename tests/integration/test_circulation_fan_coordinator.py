@@ -376,6 +376,33 @@ async def test_all_fan_entities_receive_set_percentage(
         assert call[1]["blocking"] is True
 
 
+async def test_fans_after_a_withdrawn_command_gate_are_left_alone(
+    mock_hass: MagicMock,
+) -> None:
+    """A stop that lands between two fans is honoured before the second one."""
+    env = _make_env_config(
+        mode=FanRegulationMode.HUMIDITY,
+        humidity_target=60.0,
+        humidity_tolerance=5.0,
+        min_speed=0,
+        max_speed=100,
+        circulation_fan_entities=["fan.circ_1", "fan.circ_2"],
+    )
+    mock_hass.states.get.return_value = MagicMock(state="65.0")
+    main_coord = _make_coordinator("gs1", env)
+    # Allowed on entry and for the first fan, withdrawn before the second.
+    main_coord.irrigation_safety.commands_allowed.side_effect = [True, True, False]
+    coord = CirculationFanCoordinator(mock_hass, MagicMock(), "gs1", main_coord)
+
+    await coord._async_regulate()
+
+    commanded = [
+        call[0][2]["entity_id"]
+        for call in mock_hass.services.async_call.await_args_list
+    ]
+    assert commanded == ["fan.circ_1"]
+
+
 # ---------------------------------------------------------------------------
 # Missing / unavailable sensor
 # ---------------------------------------------------------------------------
