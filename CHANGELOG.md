@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The **Tank–Pump Disagreement**: after each local midnight, a growspace
+  whose tank has `volume_liters` compares the day's tank drop, less Hand
+  Watering reported as drawn from that tank, with the water its pump cycles
+  delivered. A day disagrees when the two are more than 25% and more than
+  1 L apart. Two disagreeing days raise the signal and two agreeing ones clear
+  it, each with a logbook line naming the likely causes: a wrong pump flow
+  rate, a leak, or water drawn from the tank. Days with no pump cycle, or on
+  which the tank level was unknown, count neither way. The growspace payload
+  carries it as `calibration.tank_pump_disagreement` with its last six days.
+  It never blocks irrigation.
+
 ## [1.3.0] - 2026-09-29
 
 1.3.0 is the safety and accounting release: irrigation and climate now fail

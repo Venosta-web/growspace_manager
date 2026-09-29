@@ -864,6 +864,7 @@ CATEGORY_HUMIDIFIER = "humidifier"
 CATEGORY_MILESTONE = "milestone"
 CATEGORY_ALERT = "alert"
 CATEGORY_IRRIGATION_ERROR = "irrigation_error"
+CATEGORY_CALIBRATION = "calibration"
 # The sensor_type the Light Leak Guard logs its alert-category entries under.
 LIGHT_LEAK_SENSOR_TYPE = "light_leak"
 

@@ -1019,7 +1019,19 @@ async def test_an_admin_acknowledgement_starts_the_record_again(
     await coordinator._async_acknowledge_deliveries("admin")
 
     assert coordinator.controller_snapshot().fault_id is None
-    assert hass_storage[KEY]["data"] == {"growspace_id": GROWSPACE_ID, "attempts": []}
+    assert hass_storage[KEY]["data"] == {
+        "growspace_id": GROWSPACE_ID,
+        "attempts": [],
+        "calibration": {
+            "tanks": [],
+            "first_day": None,
+            "unknown_days": [],
+            "evaluated_through": None,
+            "raised_on": None,
+            "streak": 0,
+            "days": [],
+        },
+    }
     assert safety.ledger[-1]["action"] == "acknowledge"
     assert safety.ledger[-1]["fault_id"] == DELIVERY_RECORD_UNREADABLE
     assert safety.ledger[-1]["user_id"] == "admin"

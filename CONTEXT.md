@@ -466,7 +466,7 @@ A fixable Repairs issue that offers one [[Irrigation Zone]] a corrected `pump_fl
 See ADR-0064.
 
 **Tank–Pump Disagreement**
-The calibration signal ADR-0054 required. It compares one local day's tank drop, minus Hand Watering marked `from_monitored_tank`, with that day's attempts summed, metered where they can be. A day disagrees when the gap is more than 25% of the larger figure and more than 1 L. The signal is raised after 2 consecutive disagreeing days and clears after 2 agreeing ones. Days without an actuated attempt, or with an [[Unknown Tank Level]], count neither way. It appears in the growspace view model's `calibration` block and the logbook, and is never enforced. See ADR-0064.
+The calibration signal ADR-0054 required. It compares one local day's tank drop, minus Hand Watering marked `from_monitored_tank`, with that day's attempts summed, metered where they can be. A day disagrees when the gap is more than 25% of the larger figure and more than 1 L. The signal is raised after 2 consecutive disagreeing days and clears after 2 agreeing ones. Days without an actuated attempt, or with an [[Unknown Tank Level]], count neither way: they neither advance a run nor break one. Only tanks with `volume_liters` qualify, and a change to that set starts the comparison again from the next whole day. It appears in the growspace view model's `calibration.tank_pump_disagreement` and the logbook, and is never enforced. See ADR-0064.
 _Avoid_: leak alert (a leak is one of three causes it names).
 
 **Unattributed Flow**

@@ -20,6 +20,11 @@ and not everyone's. A file that exists but cannot be read is never written
 over. It holds that growspace's cycles as a fault until it is repaired or an
 admin acknowledges it, because a cap whose history is unknown has to assume it
 is spent.
+
+The same file carries the growspace's calibration evidence, the Tank–Pump
+Disagreement (ADR-0064 item 9). It is never enforced, so it never holds
+anything either: a malformed record is started afresh rather than failed
+closed, and it is saved in the batch like a close.
 """
 
 from __future__ import annotations
@@ -40,6 +45,7 @@ from .domain.delivery_attempt import (
     retained,
     with_suppression,
 )
+from .domain.tank_pump_disagreement import TankPumpDisagreement
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,6 +73,7 @@ class GrowspaceDeliveries:
         """Persist under the entry and growspace, or keep memory only without hass."""
         self.growspace_id = growspace_id
         self.attempts: list[DeliveryAttempt] = []
+        self.calibration = TankPumpDisagreement()
         self.unreadable = False
         self.unreadable_since: str | None = None
         self.loaded = False
@@ -91,6 +98,7 @@ class GrowspaceDeliveries:
                     self._fail_closed()
                 return
             self.attempts = self._decode(data)
+            self.calibration = self._decode_calibration(data.get("calibration"))
             self._left_open = {
                 attempt.attempt_id for attempt in self.attempts if attempt.is_open
             }
@@ -117,6 +125,19 @@ class GrowspaceDeliveries:
             raise ValueError("an attempt is recorded twice")
         return attempts
 
+    def _decode_calibration(self, data: Any) -> TankPumpDisagreement:
+        """Read the calibration evidence, or start it afresh; it holds nothing."""
+        if data is None:
+            return TankPumpDisagreement()
+        try:
+            return TankPumpDisagreement.from_dict(data)
+        except TypeError, ValueError:
+            _LOGGER.warning(
+                "Calibration evidence of growspace %s is unreadable; it starts again",
+                self.growspace_id,
+            )
+            return TankPumpDisagreement()
+
     def _fail_closed(self) -> None:
         self.unreadable = True
         self.unreadable_since = self.unreadable_since or dt_util.utcnow().isoformat()
@@ -129,6 +150,7 @@ class GrowspaceDeliveries:
         return {
             "growspace_id": self.growspace_id,
             "attempts": [attempt.as_dict() for attempt in self.attempts],
+            "calibration": self.calibration.as_dict(),
         }
 
     def _prune(self) -> None:
@@ -167,6 +189,13 @@ class GrowspaceDeliveries:
     def close(self, closed: DeliveryAttempt) -> None:
         """Replace an open attempt with its close, saved in the next batch."""
         self._put(closed)
+        self._delay_save()
+
+    def set_calibration(self, calibration: TankPumpDisagreement) -> None:
+        """Keep the calibration evidence, saved in the next batch when it moved."""
+        if calibration == self.calibration:
+            return
+        self.calibration = calibration
         self._delay_save()
 
     def left_open(self, output: str | None = None) -> list[DeliveryAttempt]:

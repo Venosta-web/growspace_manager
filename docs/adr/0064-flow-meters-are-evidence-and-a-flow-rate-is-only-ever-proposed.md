@@ -1,6 +1,6 @@
 # Flow Meters Are Evidence, and a Flow Rate Is Only Ever Proposed
 
-**Status:** Accepted — not yet implemented
+**Status:** Accepted — partly implemented. #889 implements the Tank–Pump Disagreement of item 9 and its part of item 13's `calibration` block, `calibration.tank_pump_disagreement` on the growspace payload. Four choices the text left open: "consecutive" is counted among the days that count, so a skipped day neither advances a run nor breaks one; a qualifying tank is one with `volume_liters`, as for Tank-Derived Water Mode, and when that set changes the comparison starts again from the next whole day; a day is set aside as Unknown Tank Level when the Pump Cycle Gate's own view of a qualifying tank was unknown on any minute's tick; and the evidence is kept in the growspace's delivery store beside its attempts, where a malformed record is started afresh rather than failed closed, because it enforces nothing. A restart that slept through midnight judges every missed day still within the attempts' retention. Everything that reads a meter is not yet implemented.
 
 Earlier decisions already fixed how a flow meter's reading is used. They did not say how a grower configures a meter, or how its readings become trust in a zone's numbers (#861).
 

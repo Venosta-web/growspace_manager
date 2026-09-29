@@ -1,6 +1,50 @@
 {
   "_ts": 1786449600000,
   "ai_auto_alerts": false,
+  "calibration": {
+    "tank_pump_disagreement": {
+      "days": [
+        {
+          "date": "2026-08-06",
+          "hand_watering_l": 0.0,
+          "pump_l": 9.5,
+          "tank_drop_l": 9.8,
+          "verdict": "agrees"
+        },
+        {
+          "date": "2026-08-07",
+          "hand_watering_l": 0.0,
+          "pump_l": 0.0,
+          "tank_drop_l": 1.2,
+          "verdict": "no_attempt"
+        },
+        {
+          "date": "2026-08-08",
+          "hand_watering_l": 0.0,
+          "pump_l": 8.0,
+          "tank_drop_l": 3.4,
+          "verdict": "tank_unknown"
+        },
+        {
+          "date": "2026-08-09",
+          "hand_watering_l": 2.0,
+          "pump_l": 8.1,
+          "tank_drop_l": 14.4,
+          "verdict": "disagrees"
+        },
+        {
+          "date": "2026-08-10",
+          "hand_watering_l": 0.0,
+          "pump_l": 8.1,
+          "tank_drop_l": 12.4,
+          "verdict": "disagrees"
+        }
+      ],
+      "message": "The tank dropped 12.4 L yesterday; the pump delivered 8.1 L (35% less). A flow rate set too low, a leak, or water drawn from the tank can cause this.",
+      "raised_on": "2026-08-10",
+      "state": "raised"
+    }
+  },
   "capabilities": {
     "atomic_plant_layout": true
   },
@@ -522,7 +566,7 @@
       "target_vwc_percent": 58.0
     },
     "last_cycle_timestamp": null,
-    "next_scheduled_cycle": null,
+    "next_scheduled_cycle": "2026-08-12T06:30:00+00:00",
     "program": {
       "auto_advance": true,
       "name": "Full run \u2014 coco",
@@ -679,7 +723,7 @@
       },
       "incycle_dryback_avg": 4.0,
       "incycle_dryback_count": 1,
-      "intent_deviation": null,
+      "intent_deviation": "more_vegetative",
       "latest_overnight_event": {
         "dryback": 9.0,
         "event_type": "overnight",
@@ -691,10 +735,10 @@
       "measured_classification": "balanced",
       "overnight_dryback": 9.0,
       "runoff_score": 0.0,
-      "score": 0.0,
+      "score": 0.2,
       "shot_composition": null
     },
-    "volume_dispensed_today": 0.0,
+    "volume_dispensed_today": 0,
     "volume_mode_capable": true,
     "water_usage": {
       "cycle_start_date": "2026-08-01",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -21,6 +21,14 @@ from custom_components.growspace_manager.const import (
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.domain.setup_preset import stamp_modules
+from custom_components.growspace_manager.domain.tank_pump_disagreement import (
+    DayComparison,
+    DayVerdict,
+    TankPumpDisagreement,
+)
+from custom_components.growspace_manager.irrigation_coordinator import (
+    IrrigationCoordinator,
+)
 from custom_components.growspace_manager.models import (
     ACInfinityDevice,
     ACInfinityGrowLight,
@@ -726,6 +734,27 @@ def _live_plant() -> Plant:
     )
 
 
+def _raised_disagreement() -> TankPumpDisagreement:
+    """Return a raised Tank–Pump Disagreement with every kind of judged day.
+
+    It is about the growspace's one measured tank, so the coordinator keeps it
+    rather than starting the comparison afresh.
+    """
+    return TankPumpDisagreement(
+        tanks=("sensor.contract_tank",),
+        first_day=date(2026, 8, 5),
+        evaluated_through=date(2026, 8, 10),
+        raised_on=date(2026, 8, 10),
+        days=(
+            DayComparison(date(2026, 8, 6), DayVerdict.AGREES, 9.8, 0.0, 9.5),
+            DayComparison(date(2026, 8, 7), DayVerdict.NO_ATTEMPT, 1.2, 0.0, 0.0),
+            DayComparison(date(2026, 8, 8), DayVerdict.TANK_UNKNOWN, 3.4, 0.0, 8.0),
+            DayComparison(date(2026, 8, 9), DayVerdict.DISAGREES, 14.4, 2.0, 8.1),
+            DayComparison(date(2026, 8, 10), DayVerdict.DISAGREES, 12.4, 0.0, 8.1),
+        ),
+    )
+
+
 async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     """Build the fixture payload through the real ``get_data`` path."""
     entry = MockConfigEntry(
@@ -760,6 +789,9 @@ async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     coordinator._recipe_library.load_data(_maximal_recipe_library())
     coordinator._program_library.load_data(_maximal_program_library())
     _set_runtime_states(hass)
+    irrigation = IrrigationCoordinator(hass, entry, GROWSPACE_ID, coordinator)
+    irrigation._deliveries.calibration = _raised_disagreement()
+    coordinator._subsystem_manager.irrigation_coordinators[GROWSPACE_ID] = irrigation
 
     frozen_now = datetime(2026, 8, 11, 12, tzinfo=UTC)
     with (
