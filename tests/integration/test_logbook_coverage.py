@@ -226,3 +226,22 @@ async def test_log_entry_default(hass: HomeAssistant) -> None:
     result = callback(event)
     assert result["name"] == "Growspace Unknown"
     assert result["message"] == "Event recorded"
+
+
+async def test_log_entry_calibration(hass: HomeAssistant) -> None:
+    """A calibration line reads as the signal's own sentence."""
+    mock_async_describe_event = Mock()
+    async_describe_events(hass, mock_async_describe_event)
+    callback = mock_async_describe_event.call_args[0][2]
+
+    event = Mock()
+    event.data = {
+        "category": "calibration",
+        "message": "Tank–Pump Disagreement cleared: the tank drop and the pump agreed.",
+    }
+    result = callback(event)
+    assert result["name"] == "Irrigation Calibration"
+    assert result["message"] == event.data["message"]
+
+    event.data = {"category": "calibration"}
+    assert callback(event)["message"] == "Calibration changed"

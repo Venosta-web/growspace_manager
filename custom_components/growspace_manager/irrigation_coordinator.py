@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from functools import partial
 import logging
 import time as monotonic_time
@@ -22,7 +22,7 @@ from homeassistant.helpers.event import (
     async_track_time_change,
     async_track_time_interval,
 )
-from homeassistant.util.dt import as_local, utcnow
+from homeassistant.util.dt import as_local, get_default_time_zone, utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -30,6 +30,7 @@ from .actuator_driver import async_confirm_state
 from .const import (
     ATTR_GROWSPACE_ID,
     CATEGORY_ALERT,
+    CATEGORY_CALIBRATION,
     CATEGORY_IRRIGATION_ERROR,
     DOMAIN,
     EVENT_GROWSPACE_LOG_ENTRY,
@@ -97,6 +98,15 @@ from .domain.sensor_validity import (
     substrate_moisture_range,
     validate_reading,
 )
+from .domain.tank_pump_disagreement import (
+    TankPumpDisagreement,
+    Transition,
+    compare_day,
+    hand_watered_from_tank_l,
+    pump_delivered_l,
+    qualifying_tanks,
+    tank_consumed_l,
+)
 from .domain.unknown_tank_level import UnknownTankLevel
 from .domain.water_aggregation import (
     WATER_SOURCE_PUMP_ESTIMATE,
@@ -105,7 +115,7 @@ from .domain.water_aggregation import (
 )
 from .exceptions import GrowspaceError
 from .irrigation_safety_store import IrrigationSafetyStore
-from .models import Growspace, GrowspaceEvent, IrrigationConfig
+from .models import Growspace, GrowspaceEvent, IrrigationConfig, IrrigationTank
 from .reliability_store import (
     AbortCause,
     ReliabilityCounter,
@@ -1053,6 +1063,7 @@ class BaseIrrigationCoordinator:
         """Probe the control sensors, then follow the moisture sensor's episode."""
         self._ensure_pump_watch()
         self._async_probe_control_sensors()
+        self._watch_calibration()
         await self._async_watch_moisture_sensor()
 
     async def _async_watch_moisture_sensor(self) -> None:
@@ -1505,6 +1516,62 @@ class BaseIrrigationCoordinator:
                     )
                 )
         return readings, unknown
+
+    def _calibration_now(
+        self, today: date
+    ) -> tuple[list[IrrigationTank], TankPumpDisagreement, Transition | None]:
+        """Return the measured tanks and the Tank–Pump Disagreement about them."""
+        tanks = qualifying_tanks(self.growspace.environment_config.irrigation_tanks)
+        record, transition = self._deliveries.calibration.watching(
+            (tank.sensor_entity for tank in tanks), today
+        )
+        return tanks, record, transition
+
+    @callback
+    def _watch_calibration(self) -> None:
+        """Follow the Tank–Pump Disagreement on the sensor tick (ADR-0064 item 9).
+
+        Every minute, a qualifying tank at an Unknown Tank Level marks today as
+        one that cannot be judged. On the first tick after local midnight, the
+        day just ended is judged, with any a stopped process slept through.
+        """
+        now = utcnow()
+        today = as_local(now).date()
+        growspace = self.growspace
+        tanks, record, transition = self._calibration_now(today)
+        messages = [record.message(transition, today)] if transition else []
+        if any(
+            self._tank_watches.status(growspace, tank, now).unknown is not None
+            for tank in tanks
+        ):
+            record = record.tank_unknown_on(today)
+        events = [event for tank in tanks for event in tank.water_history.events]
+        for day in record.due_days(today):
+            pump_l, actuated = pump_delivered_l(self._deliveries.attempts, day)
+            record, transition = record.judged(
+                compare_day(
+                    day,
+                    tank_drop_l=tank_consumed_l(events, day, get_default_time_zone()),
+                    hand_watering_l=hand_watered_from_tank_l(
+                        growspace.water_usage.daily_readings, day
+                    ),
+                    pump_l=pump_l,
+                    actuated=actuated,
+                    tank_unknown=day in record.unknown_days,
+                )
+            )
+            if transition is not None:
+                messages.append(record.message(transition, today))
+        for message in messages:
+            _LOGGER.info("Growspace %s: %s", self._growspace_id, message)
+            self._fire_logbook_event(message, CATEGORY_CALIBRATION)
+        self._deliveries.set_calibration(record)
+
+    def calibration_payload(self) -> dict[str, Any]:
+        """Return the view model's ``calibration`` block."""
+        today = as_local(utcnow()).date()
+        _, record, _ = self._calibration_now(today)
+        return {"tank_pump_disagreement": record.view(today)}
 
     def tank_diagnostics(self) -> list[dict[str, Any]]:
         """Report every configured tank, including sensors without a valid reading."""

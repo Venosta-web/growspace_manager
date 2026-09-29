@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import (
     CATEGORY_ALERT,
+    CATEGORY_CALIBRATION,
     CATEGORY_DEHUMIDIFIER,
     CATEGORY_HUMIDIFIER,
     CATEGORY_IRRIGATION_ERROR,
@@ -60,6 +61,11 @@ def async_describe_events(
                 return _describe_alert_event(data)
             case category if category == CATEGORY_IRRIGATION_ERROR:
                 return _describe_irrigation_error_event(data)
+            case category if category == CATEGORY_CALIBRATION:
+                return {
+                    LOGBOOK_ENTRY_NAME: "Irrigation Calibration",
+                    LOGBOOK_ENTRY_MESSAGE: data.get("message") or "Calibration changed",
+                }
             case "environment":
                 return _describe_environment_event(data)
             case "grow_run":

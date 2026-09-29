@@ -15,6 +15,7 @@ from .crop_steering import get_crop_steering_state
 from .domain.irrigation_recipe import recipe_has_drifted
 from .domain.plant_metrics import count_live_plants
 from .domain.stage import StageDays
+from .domain.tank_pump_disagreement import TankPumpDisagreement
 from .domain.water_aggregation import compute_growspace_water
 from .irrigation_program_progression import resolve_program_position
 from .models import Plant
@@ -193,6 +194,19 @@ class ViewModelBuilder:
         serialized["irrigation"]["projected_shot_window"] = projected_shot_window
         serialized["irrigation"]["cycles_today"] = cycles_today
         serialized["irrigation"]["volume_dispensed_today"] = volume_dispensed_today
+
+        # Calibration evidence (ADR-0064 item 13): today the Tank–Pump
+        # Disagreement. A growspace without an irrigation coordinator has no
+        # attempts, so nothing to compare.
+        serialized["calibration"] = (
+            irr_coord.calibration_payload()
+            if irr_coord is not None and hasattr(irr_coord, "calibration_payload")
+            else {
+                "tank_pump_disagreement": TankPumpDisagreement().view(
+                    dt_util.now().date()
+                )
+            }
+        )
 
         # Surface the measured steering readout alongside the tracker-derived
         # substrate metrics. The score, its Measured Classification, and the
