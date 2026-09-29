@@ -208,7 +208,7 @@ async def _tent(
             unexpected_on_policy=policy.value,
         ),
     )
-    growspace.irrigation_config.irrigation_times = [{"time": "10:00:00", "duration": 5}]
+    growspace.default_zone.irrigation_times = [{"time": "10:00:00", "duration": 5}]
     store = IrrigationSafetyStore(hass, key)
     await store.async_load()
     await store.async_initialize_controls({"tent": growspace})

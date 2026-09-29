@@ -41,7 +41,6 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     )
 
     TRACKABLE_ENVIRONMENT_ATTRS: tuple[str, ...] = (
-        "soil_moisture_sensor",
         "temperature_sensor",
         "humidity_sensor",
         "vpd_sensor",
@@ -87,6 +86,10 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
 
         env_config = growspace.environment_config
         sensors: list[str] = []
+        # The moisture probe is the Irrigation Zone's (ADR-0057), not the
+        # environment's, and is tracked first as it always was.
+        if moisture := growspace.default_zone.soil_moisture_sensor:
+            sensors.append(moisture)
 
         for attr in self.TRACKABLE_ENVIRONMENT_ATTRS:
             if val := getattr(env_config, attr, None):

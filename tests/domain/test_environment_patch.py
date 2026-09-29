@@ -37,6 +37,7 @@ from custom_components.growspace_manager.models import (
     FieldOwnership,
     GrowLightConfig,
     IrrigationTank,
+    IrrigationZone,
     LightLeakConfig,
     TankWaterHistory,
     VisionCheckupConfig,
@@ -239,13 +240,19 @@ def test_cleared_plural_is_not_resurrected_by_stale_singular() -> None:
         ("dehumidifier_entity", "dehumidifier_entities"),
         ("light_sensor", "light_sensors"),
         ("growlight_entity", "growlight_entities"),
-        ("substrate_ec_sensor", "bulk_ec_sensors"),
     ],
 )
 def test_wire_aliases_rewrite_to_canonical(alias: str, canonical: str) -> None:
     """Historic wire spellings land on the canonical plural field."""
     patch = patch_from_service_call({alias: "sensor.x"})
     assert patch.values[canonical] == ["sensor.x"]
+
+
+@pytest.mark.parametrize("alias", ["substrate_ec_sensor", "substrate_ec_sensors"])
+def test_bulk_ec_wire_aliases_land_on_the_zone(alias: str) -> None:
+    """The bulk EC probes are the zone's, so their old spellings go there too."""
+    patch = patch_from_service_call({alias: "sensor.x"})
+    assert patch.zone_values["bulk_ec_sensors"] == ["sensor.x"]
 
 
 # ---------------------------------------------------------------------------
@@ -973,21 +980,25 @@ def test_moisture_band_untouched_payload_preserves_a_stored_pair() -> None:
 
 def test_moisture_band_survives_replacing_and_removing_the_sensor() -> None:
     """The override outlives the sensor it was configured against."""
-    stored = EnvironmentConfig(
-        soil_moisture_sensor="sensor.old",
-        soil_moisture_min=32.5,
-        soil_moisture_max=54.0,
-    )
+    stored = EnvironmentConfig(soil_moisture_min=32.5, soil_moisture_max=54.0)
+    zone = IrrigationZone(id="default", soil_moisture_sensor="sensor.old")
     replaced = apply_environment_patch(
-        stored, patch_from_service_call({"soil_moisture_sensor": "sensor.new"})
-    ).config
-    assert (replaced.soil_moisture_min, replaced.soil_moisture_max) == (32.5, 54.0)
+        stored, patch_from_service_call({"soil_moisture_sensor": "sensor.new"}), zone
+    )
+    assert replaced.zone_values == {"soil_moisture_sensor": "sensor.new"}
+    assert (
+        replaced.config.soil_moisture_min,
+        replaced.config.soil_moisture_max,
+    ) == (32.5, 54.0)
 
     removed = apply_environment_patch(
-        replaced, patch_from_service_call({"soil_moisture_sensor": None})
-    ).config
-    assert removed.soil_moisture_sensor is None
-    assert (removed.soil_moisture_min, removed.soil_moisture_max) == (32.5, 54.0)
+        replaced.config, patch_from_service_call({"soil_moisture_sensor": None}), zone
+    )
+    assert removed.zone_values == {"soil_moisture_sensor": None}
+    assert (
+        removed.config.soil_moisture_min,
+        removed.config.soil_moisture_max,
+    ) == (32.5, 54.0)
 
 
 @pytest.mark.parametrize(
@@ -1036,3 +1047,61 @@ def test_moisture_band_round_trips_through_serialization() -> None:
     restored = EnvironmentConfig.from_dict(stored.to_dict())
     assert restored.soil_moisture_min == 32.5
     assert restored.soil_moisture_max == 54.0
+
+
+# ── Substrate probes belong to the zone (ADR-0057) ─────────────────────────
+
+
+def test_zone_probes_route_to_the_zone_not_bayesian_options() -> None:
+    """The catch-all must never swallow a probe that left EnvironmentConfig."""
+    patch = patch_from_service_call(
+        {
+            "growspace_id": "tent",
+            "soil_moisture_sensor": "sensor.vwc",
+            "pore_ec_sensors": "sensor.pore",
+            "substrate_ec_sensor": "sensor.bulk",
+            "substrate_temperature_sensors": None,
+        }
+    )
+
+    assert patch.zone_values == {
+        "soil_moisture_sensor": "sensor.vwc",
+        "pore_ec_sensors": ["sensor.pore"],
+        "bulk_ec_sensors": ["sensor.bulk"],
+        "substrate_temperature_sensors": [],
+    }
+    assert patch.values == {}
+    assert patch.bayesian_updates == {}
+
+
+def test_zone_probe_changes_are_reported_against_the_zone() -> None:
+    """A restated probe is no change; a new one is, and rides the verdict."""
+    zone = IrrigationZone(id="default", soil_moisture_sensor="sensor.vwc")
+    patch = patch_from_flow_options(
+        {"soil_moisture_sensor": "sensor.vwc", "bulk_ec_sensors": ["sensor.bulk"]}
+    )
+
+    verdict = apply_environment_patch(EnvironmentConfig(), patch, zone)
+
+    assert verdict.changed_fields == frozenset({"bulk_ec_sensors"})
+    assert verdict.zone_values == {
+        "soil_moisture_sensor": "sensor.vwc",
+        "bulk_ec_sensors": ["sensor.bulk"],
+    }
+    assert verdict.config == EnvironmentConfig()
+    # With no zone to compare against every probe value counts as a change.
+    assert apply_environment_patch(None, patch).changed_fields == frozenset(
+        {"soil_moisture_sensor", "bulk_ec_sensors"}
+    )
+
+
+def test_a_zone_probe_list_must_be_a_list() -> None:
+    """A structural error in a probe list is refused, like any list field."""
+    with pytest.raises(EnvironmentPatchError, match="pore_ec_sensors"):
+        patch_from_service_call({"pore_ec_sensors": {"not": "a list"}})
+
+
+def test_only_zone_probes_may_be_zone_values() -> None:
+    """A programmer error is caught where the patch is built."""
+    with pytest.raises(EnvironmentPatchError, match="not a zone probe"):
+        EnvironmentPatch(values={}, zone_values={"temperature_sensors": []})

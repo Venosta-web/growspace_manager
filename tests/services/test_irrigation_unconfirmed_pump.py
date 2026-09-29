@@ -846,12 +846,11 @@ def test_controller_snapshot_tracks_idle_ready_inhibited_and_running(
 ) -> None:
     """Transient state and reason codes come from the same cycle gate."""
     assert coordinator.controller_snapshot().state.value == "idle"
-    config = coordinator.growspace.irrigation_config
-    config.irrigation_times = [{"time": "10:00:00"}]
+    coordinator.growspace.default_zone.irrigation_times = [{"time": "10:00:00"}]
     ready = coordinator.controller_snapshot()
     assert ready.state.value == "ready"
     assert ready.since is None
-    config.max_cycles_per_day = 0
+    coordinator.growspace.irrigation_config.max_cycles_per_day = 0
     inhibited = coordinator.controller_snapshot()
     assert inhibited.state.value == "inhibited"
     assert inhibited.reasons[0].code == "cap_cycles"

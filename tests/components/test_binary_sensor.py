@@ -53,6 +53,7 @@ from custom_components.growspace_manager.utils import calculate_days_since
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import Event, HomeAssistant, State
 from homeassistant.util.dt import utcnow
+from tests.zones import set_probes
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -71,7 +72,6 @@ def mock_growspace():
         co2_sensor="sensor.co2",
         circulation_fan_entities=["switch.fan"],
         light_sensors=["light.grow_light"],
-        soil_moisture_sensor="sensor.soil_moisture",
         bayesian_options={
             "threshold_stress": 0.7,
             "threshold_mold": 0.75,
@@ -85,6 +85,7 @@ def mock_growspace():
             "prior_curing": 0.50,
         },
     )
+    set_probes(growspace, soil_moisture_sensor="sensor.soil_moisture")
     return growspace
 
 
@@ -2042,7 +2043,9 @@ class TestBayesianEnvironmentSensor:
         mock_env_config.dehumidifier_entities = []
         mock_env_config.exhaust_fan_entities = []
         mock_env_config.humidifier_entities = []
-        mock_env_config.soil_moisture_sensor = None
+        base_sensor.coordinator.growspaces[
+            "gs1"
+        ].default_zone.soil_moisture_sensor = None
         base_sensor.env_config = mock_env_config
         await base_sensor.async_added_to_hass()
         base_sensor.coordinator.async_add_listener.assert_called_once_with(
@@ -2079,7 +2082,9 @@ class TestBayesianEnvironmentSensor:
         mock_env_config2.dehumidifier_entities = []
         mock_env_config2.exhaust_fan_entities = []
         mock_env_config2.humidifier_entities = []
-        mock_env_config2.soil_moisture_sensor = None
+        base_sensor.coordinator.growspaces[
+            "gs1"
+        ].default_zone.soil_moisture_sensor = None
         base_sensor.env_config = mock_env_config2
         await base_sensor.async_added_to_hass()
         mock_track_state_change.assert_called_once_with(
@@ -2104,7 +2109,9 @@ class TestBayesianEnvironmentSensor:
         mock_env_config3.dehumidifier_entity = None
         mock_env_config3.exhaust_fan_entity = None
         mock_env_config3.humidifier_entity = None
-        mock_env_config3.soil_moisture_sensor = None
+        base_sensor.coordinator.growspaces[
+            "gs1"
+        ].default_zone.soil_moisture_sensor = None
         base_sensor.env_config = mock_env_config3
         await base_sensor.async_added_to_hass()
         mock_track_state_change.assert_called_once_with(

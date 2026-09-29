@@ -21,6 +21,7 @@ from custom_components.growspace_manager.models import (
     SubstrateProfile,
 )
 from homeassistant.core import HomeAssistant
+from tests.zones import zoned
 
 
 def _suggested_value(schema: vol.Schema, key: str):
@@ -63,11 +64,13 @@ def _add_growspace(
     strategy: IrrigationStrategy | None = None,
     config: IrrigationConfig | None = None,
 ) -> Growspace:
-    gs = Growspace(
-        id="gs1",
-        name="GS1",
-        irrigation_config=config or IrrigationConfig(),
-        irrigation_strategy=strategy or IrrigationStrategy(),
+    gs = zoned(
+        Growspace(
+            id="gs1",
+            name="GS1",
+            irrigation_config=config or IrrigationConfig(),
+        ),
+        strategy=strategy or IrrigationStrategy(),
     )
     coordinator.growspaces = {"gs1": gs}
     return gs
@@ -139,13 +142,13 @@ async def test_volume_mode_round_trips_through_real_facade(
     result = await handler.async_step_irrigation_overview(user_input)
 
     assert result["type"] == "create_entry"
-    assert gs.irrigation_strategy.shot_sizing_mode == ShotSizingMode.VOLUME
-    assert gs.irrigation_strategy.substrate_profile == SubstrateProfile(
+    assert gs.default_zone.strategy.shot_sizing_mode == ShotSizingMode.VOLUME
+    assert gs.default_zone.strategy.substrate_profile == SubstrateProfile(
         media_type=SubstrateMediaType.ROCKWOOL, liters_per_pot=6.0
     )
-    assert gs.irrigation_strategy.p1_shot_volume_percent == 3.0
-    assert gs.irrigation_strategy.p2_shot_volume_percent == 5.0
-    assert gs.irrigation_config.pump_flow_rate_ml_per_sec == 15.0
+    assert gs.default_zone.strategy.p1_shot_volume_percent == 3.0
+    assert gs.default_zone.strategy.p2_shot_volume_percent == 5.0
+    assert gs.default_zone.pump_flow_rate_ml_per_sec == 15.0
 
 
 async def test_volume_mode_rejected_without_prerequisites_in_flow(
@@ -162,7 +165,7 @@ async def test_volume_mode_rejected_without_prerequisites_in_flow(
     assert result["type"] == "form"
     assert result["errors"] == {"base": "invalid_irrigation_change"}
     assert "Volume Mode requires" in result["description_placeholders"]["error"]
-    assert gs.irrigation_strategy.shot_sizing_mode == ShotSizingMode.SECONDS
+    assert gs.default_zone.strategy.shot_sizing_mode == ShotSizingMode.SECONDS
 
 
 async def test_seconds_mode_submission_unaffected(
@@ -177,5 +180,5 @@ async def test_seconds_mode_submission_unaffected(
     )
 
     assert result["type"] == "create_entry"
-    assert gs.irrigation_strategy.shot_sizing_mode == ShotSizingMode.SECONDS
-    assert gs.irrigation_config.irrigation_duration == 45
+    assert gs.default_zone.strategy.shot_sizing_mode == ShotSizingMode.SECONDS
+    assert gs.default_zone.irrigation_duration == 45

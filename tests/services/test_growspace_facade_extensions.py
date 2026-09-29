@@ -136,7 +136,7 @@ def test_get_substrate_tracker_returns_none_for_unknown_growspace() -> None:
 def test_get_substrate_tracker_caches_one_instance_per_growspace() -> None:
     """One tracker per growspace, because they share mutable state.
 
-    The tracker reads and writes ``growspace.substrate_history`` in place, so
+    The tracker reads and writes ``growspace.default_zone.substrate_history`` in place, so
     a second instance over the same growspace would be a second view of one
     history — and the steering loop and the sensor would disagree about what
     the substrate has done.

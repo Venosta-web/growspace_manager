@@ -63,7 +63,7 @@ def _irrigation_diagnostics(coord: Any) -> dict[str, Any]:
     }
     if steering:
         result.update(
-            phase=coord.growspace.irrigation_strategy.active_steering_phase,
+            phase=coord.growspace.default_zone.active_steering_phase,
             projected_shot_window=coord.projected_shot_window,
             shot_composition=coord.shot_composition_payload(),
             ec_state=coord.ec_state_payload(),

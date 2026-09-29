@@ -259,7 +259,7 @@ async def test_automation_off_blocks_pump_service_calls(hass: HomeAssistant) -> 
     coordinator = IrrigationCoordinator(
         service_hass, MagicMock(runtime_data=runtime), "tent", runtime
     )
-    runtime.growspaces["tent"].irrigation_config.irrigation_times = [
+    runtime.growspaces["tent"].default_zone.irrigation_times = [
         {"time": "10:00:00", "duration": 5}
     ]
     snapshot = coordinator.controller_snapshot()

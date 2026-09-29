@@ -59,9 +59,12 @@ def build_assembler(
     states: dict[str, FakeState] | None = None,
     growspace: Growspace | None = None,
     plants: list[Plant] | None = None,
+    moisture_sensor: str | None = None,
 ) -> EnvironmentStateAssembler:
     """Construct an assembler wired with in-memory lambdas."""
     gs = growspace if growspace is not None else make_growspace(env_config=env_config)
+    if moisture_sensor is not None:
+        gs.default_zone.soil_moisture_sensor = moisture_sensor
     return EnvironmentStateAssembler(
         growspace_id="gs1",
         env_config=env_config,
@@ -441,7 +444,6 @@ def test_state_and_observations_share_one_read() -> None:
         temperature_sensor="sensor.t",
         humidity_sensor="sensor.h",
         co2_sensor="sensor.co2",
-        soil_moisture_sensor="sensor.soil",
     )
     states = {
         "sensor.t": FakeState("22"),
@@ -449,7 +451,7 @@ def test_state_and_observations_share_one_read() -> None:
         "sensor.co2": FakeState("800"),
         "sensor.soil": FakeState("40"),
     }
-    result = build_assembler(config, states).assemble()
+    result = build_assembler(config, states, moisture_sensor="sensor.soil").assemble()
     assert result.observations["temperature"] == result.state.temp
     assert result.observations["humidity"] == result.state.humidity
     assert result.observations["co2"] == result.state.co2
@@ -472,13 +474,15 @@ def test_soil_moisture_excluded_for_non_percentage_units(
     unit: str | None, expected: float | None
 ) -> None:
     """Only percentage and unit-less sensors reach moisture classification."""
-    config = EnvironmentConfig(soil_moisture_sensor="sensor.moisture")
+    config = EnvironmentConfig()
     attributes: dict[str, object] = (
         {} if unit is None else {"unit_of_measurement": unit}
     )
     states = {"sensor.moisture": FakeState("42.0", attributes=attributes)}
 
-    result = build_assembler(config, states).assemble()
+    result = build_assembler(
+        config, states, moisture_sensor="sensor.moisture"
+    ).assemble()
 
     assert result.state.soil_moisture == expected
     assert result.observations["soil_moisture"] == expected
@@ -486,10 +490,11 @@ def test_soil_moisture_excluded_for_non_percentage_units(
 
 def test_soil_moisture_unavailable_reading_yields_none() -> None:
     """An unavailable sensor produces no reading to classify."""
-    config = EnvironmentConfig(soil_moisture_sensor="sensor.moisture")
+    config = EnvironmentConfig()
     states = {
         "sensor.moisture": FakeState(
             STATE_UNAVAILABLE, attributes={"unit_of_measurement": "%"}
         )
     }
-    assert build_assembler(config, states).assemble().state.soil_moisture is None
+    assembler = build_assembler(config, states, moisture_sensor="sensor.moisture")
+    assert assembler.assemble().state.soil_moisture is None

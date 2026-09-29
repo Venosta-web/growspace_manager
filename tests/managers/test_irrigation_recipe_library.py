@@ -35,11 +35,11 @@ from custom_components.growspace_manager.models import (
 def _growspace(growspace_id: str, **overrides) -> Growspace:
     """Return a growspace whose irrigation is configured for Volume Mode."""
     growspace = Growspace(id=growspace_id, name=growspace_id.title())
-    growspace.irrigation_strategy.substrate_profile = SubstrateProfile(
+    growspace.default_zone.strategy.substrate_profile = SubstrateProfile(
         media_type=SubstrateMediaType.COCO, liters_per_pot=6.0
     )
-    growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.VOLUME
-    growspace.irrigation_config.pump_flow_rate_ml_per_sec = 50.0
+    growspace.default_zone.strategy.shot_sizing_mode = ShotSizingMode.VOLUME
+    growspace.default_zone.pump_flow_rate_ml_per_sec = 50.0
     for key, value in overrides.items():
         setattr(growspace, key, value)
     return growspace
@@ -152,8 +152,8 @@ async def test_a_refused_save_stores_nothing(
 ) -> None:
     """A Seconds Mode growspace missing its flow rate leaves no partial recipe."""
     growspace = repository.get_growspace("tent_a")
-    growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.SECONDS
-    growspace.irrigation_config.pump_flow_rate_ml_per_sec = 0.0
+    growspace.default_zone.strategy.shot_sizing_mode = ShotSizingMode.SECONDS
+    growspace.default_zone.pump_flow_rate_ml_per_sec = 0.0
 
     with pytest.raises(RecipeCaptureError) as err:
         await library.async_save_from_growspace(
@@ -171,8 +171,8 @@ async def test_a_seconds_mode_growspace_without_pot_volume_is_refused(
 ) -> None:
     """The other missing prerequisite is named just as specifically."""
     growspace = repository.get_growspace("tent_a")
-    growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.SECONDS
-    growspace.irrigation_strategy.substrate_profile = SubstrateProfile(
+    growspace.default_zone.strategy.shot_sizing_mode = ShotSizingMode.SECONDS
+    growspace.default_zone.strategy.substrate_profile = SubstrateProfile(
         liters_per_pot=0.0
     )
 

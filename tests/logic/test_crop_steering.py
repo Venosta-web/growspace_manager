@@ -217,11 +217,11 @@ def _make_coordinator(
 
     # Growspace
     growspace = MagicMock()
-    growspace.irrigation_strategy.enabled = irrigation_enabled
-    growspace.irrigation_strategy.target_vwc_percent = target_vwc
-    growspace.irrigation_strategy.maintenance_dryback_percent = maintenance_dryback
-    growspace.irrigation_strategy.declared_steering_mode = declared_intent
-    growspace.environment_config.soil_moisture_sensor = soil_moisture_sensor
+    growspace.default_zone.strategy.enabled = irrigation_enabled
+    growspace.default_zone.strategy.target_vwc_percent = target_vwc
+    growspace.default_zone.strategy.maintenance_dryback_percent = maintenance_dryback
+    growspace.default_zone.strategy.declared_steering_mode = declared_intent
+    growspace.default_zone.soil_moisture_sensor = soil_moisture_sensor
     # Real drain values so the runoff fill (ADR-0016) reads cleanly; default to
     # no readings → runoff contributes 0.0 unless a test sets them.
     growspace.drain_config.readings = []

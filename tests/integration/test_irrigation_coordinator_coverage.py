@@ -257,7 +257,7 @@ async def test_async_set_settings_unknown_key(
 
         # Verify valid setting was applied
         growspace = coordinator._main_coordinator.growspaces[GROWSPACE_ID]
-        assert growspace.irrigation_config.irrigation_duration == 45
+        assert growspace.default_zone.irrigation_duration == 45
 
 
 async def test_async_add_schedule_item_invalid_key(
@@ -426,7 +426,7 @@ async def test_base_schedule_respects_minimum_interval(
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    coordinator.growspace.irrigation_config.min_interval_minutes = 5
+    coordinator.growspace.default_zone.min_interval_minutes = 5
     coordinator._last_cycle_timestamp = utcnow().isoformat()
     await coordinator._handle_event(
         utcnow(), event_type="irrigation", event_data={"duration": 10}
@@ -469,7 +469,7 @@ async def test_compute_cycle_volume_liters_non_zero(
     # Set pump flow rate
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
-    ].irrigation_config.pump_flow_rate_ml_per_sec = 10.0
+    ].default_zone.pump_flow_rate_ml_per_sec = 10.0
     volume = coordinator._compute_cycle_volume_liters(30)
     assert volume == 0.3
 
@@ -517,7 +517,7 @@ async def test_check_safety_guards_volume_cap_exceeded(
     # flow rate = 100 ml/s -> 30s cycle is 3.0 Litres
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
-    ].irrigation_config.pump_flow_rate_ml_per_sec = 100.0
+    ].default_zone.pump_flow_rate_ml_per_sec = 100.0
 
     reason = coordinator._check_safety_guards(30)
     assert reason is SkipReason.VOLUME_CAP
@@ -596,9 +596,7 @@ async def test_next_scheduled_cycle_no_times(
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    mock_main_coordinator.growspaces[
-        GROWSPACE_ID
-    ].irrigation_config.irrigation_times = []
+    mock_main_coordinator.growspaces[GROWSPACE_ID].default_zone.irrigation_times = []
     assert coordinator.next_scheduled_cycle is None
 
 
@@ -610,9 +608,7 @@ async def test_next_scheduled_cycle_parsing_and_skipping(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
     # Configure mix of valid/invalid times
-    mock_main_coordinator.growspaces[
-        GROWSPACE_ID
-    ].irrigation_config.irrigation_times = [
+    mock_main_coordinator.growspaces[GROWSPACE_ID].default_zone.irrigation_times = [
         {"time": 123},  # non-string -> skip
         {"time": "invalid_format"},  # invalid string -> raise ValueError -> skip
         {"time": "12:00"},  # 5-character string -> format to 12:00:00 -> parse
@@ -631,9 +627,7 @@ async def test_async_manual_run_no_duration(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
     # Set both configured duration and passed duration to None/0
-    mock_main_coordinator.growspaces[
-        GROWSPACE_ID
-    ].irrigation_config.irrigation_duration = 0
+    mock_main_coordinator.growspaces[GROWSPACE_ID].default_zone.irrigation_duration = 0
 
     with pytest.raises(ServiceValidationError) as excinfo:
         await coordinator.async_manual_run(None)
@@ -669,9 +663,7 @@ async def test_async_manual_run_cancels_running_irrigation(
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
     ].irrigation_config.irrigation_pump_entity = "switch.pump"
-    mock_main_coordinator.growspaces[
-        GROWSPACE_ID
-    ].irrigation_config.irrigation_duration = 30
+    mock_main_coordinator.growspaces[GROWSPACE_ID].default_zone.irrigation_duration = 30
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await coordinator.async_manual_run(15)

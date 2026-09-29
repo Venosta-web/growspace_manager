@@ -418,10 +418,23 @@ class TankWaterTracker:
             if on_change is not None:
                 on_change()
 
-        self._unsub = async_track_state_change_event(
+        remove_listener = async_track_state_change_event(
             hass, self.tank.sensor_entity, _handle_state_change
         )
-        return self._unsub
+
+        def _unsubscribe() -> None:
+            """Remove the listener once, whoever asks first.
+
+            The sensor entity removes it on its own removal and the coordinator
+            again at shutdown; Home Assistant refuses a second removal, and the
+            refusal used to abort the unload before its final save.
+            """
+            if self._unsub is _unsubscribe:
+                self._unsub = None
+                remove_listener()
+
+        self._unsub = _unsubscribe
+        return _unsubscribe
 
     async def async_unsubscribe(self) -> None:
         """Unsubscribe from state change events."""

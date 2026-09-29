@@ -115,7 +115,7 @@ def _make_guard(
     gs = MagicMock()
     gs.name = "Test Tent"
     gs.environment_config = env
-    gs.irrigation_strategy.lights_on_time = "06:00:00"
+    gs.light_cycle.lights_on_time = "06:00:00"
     main = MagicMock()
     main.growspaces = {"gs1": gs}
     main.services.growspaces.get_growspace_plants.return_value = (

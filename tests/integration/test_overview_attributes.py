@@ -7,6 +7,7 @@ import pytest
 from custom_components.growspace_manager.models import (
     CirculationFanConfig,
     ExhaustFanConfig,
+    IrrigationZone,
     VisionCheckupConfig,
 )
 from custom_components.growspace_manager.presentation.growspace_view_model import (
@@ -63,6 +64,11 @@ async def test_growspace_view_model_includes_temp_hum(hass) -> None:
 
     mock_growspace = MagicMock()
     mock_growspace.environment_config = mock_env
+    mock_growspace.default_zone = IrrigationZone(
+        id="default",
+        bulk_ec_sensors=mock_env.bulk_ec_sensors,
+        pore_ec_sensors=mock_env.pore_ec_sensors,
+    )
     mock_growspace.irrigation_config = None
 
     # Set states in hass
@@ -95,6 +101,11 @@ async def test_growspace_view_model_includes_lung_room_temp_sensors(hass) -> Non
 
     mock_growspace = MagicMock()
     mock_growspace.environment_config = mock_env
+    mock_growspace.default_zone = IrrigationZone(
+        id="default",
+        bulk_ec_sensors=mock_env.bulk_ec_sensors,
+        pore_ec_sensors=mock_env.pore_ec_sensors,
+    )
     mock_growspace.irrigation_config = None
 
     attributes = builder._get_environment_attributes(mock_growspace)
@@ -191,6 +202,11 @@ async def test_environment_attributes_includes_circulation_fan_config(hass) -> N
 
     mock_growspace = MagicMock()
     mock_growspace.environment_config = mock_env
+    mock_growspace.default_zone = IrrigationZone(
+        id="default",
+        bulk_ec_sensors=mock_env.bulk_ec_sensors,
+        pore_ec_sensors=mock_env.pore_ec_sensors,
+    )
     mock_growspace.irrigation_config = None
 
     attributes = builder._get_environment_attributes(mock_growspace)
@@ -263,6 +279,11 @@ async def test_substrate_ec_delta_present_when_both_configured(hass) -> None:
 
     mock_growspace = MagicMock()
     mock_growspace.environment_config = mock_env
+    mock_growspace.default_zone = IrrigationZone(
+        id="default",
+        bulk_ec_sensors=mock_env.bulk_ec_sensors,
+        pore_ec_sensors=mock_env.pore_ec_sensors,
+    )
     mock_growspace.irrigation_config = None
 
     attributes = builder._get_environment_attributes(mock_growspace)
@@ -284,6 +305,11 @@ async def test_substrate_ec_delta_absent_when_only_bulk_configured(hass) -> None
 
     mock_growspace = MagicMock()
     mock_growspace.environment_config = mock_env
+    mock_growspace.default_zone = IrrigationZone(
+        id="default",
+        bulk_ec_sensors=mock_env.bulk_ec_sensors,
+        pore_ec_sensors=mock_env.pore_ec_sensors,
+    )
     mock_growspace.irrigation_config = None
 
     attributes = builder._get_environment_attributes(mock_growspace)
@@ -304,6 +330,11 @@ async def test_substrate_ec_delta_absent_when_only_pore_configured(hass) -> None
 
     mock_growspace = MagicMock()
     mock_growspace.environment_config = mock_env
+    mock_growspace.default_zone = IrrigationZone(
+        id="default",
+        bulk_ec_sensors=mock_env.bulk_ec_sensors,
+        pore_ec_sensors=mock_env.pore_ec_sensors,
+    )
     mock_growspace.irrigation_config = None
 
     attributes = builder._get_environment_attributes(mock_growspace)

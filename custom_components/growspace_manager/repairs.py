@@ -141,7 +141,7 @@ class CalibrationProposalRepairFlow(RepairsFlow):
         if coordinator is None or growspace is None:
             ir.async_delete_issue(self.hass, DOMAIN, self.issue_id)
             return self.async_abort(reason="growspace_missing")
-        if growspace.irrigation_config.pump_flow_rate_ml_per_sec != self._configured:
+        if growspace.default_zone.pump_flow_rate_ml_per_sec != self._configured:
             return self.async_abort(reason="proposal_stale")
         await async_apply_irrigation_change(
             coordinator,

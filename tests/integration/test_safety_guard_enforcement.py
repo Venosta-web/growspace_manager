@@ -306,7 +306,7 @@ async def test_volume_cap_not_applied_when_flow_rate_is_zero(
     """When pump_flow_rate_ml_per_sec == 0, volume cap check is skipped (unknown flow)."""
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
-    ].irrigation_config.pump_flow_rate_ml_per_sec = 0.0
+    ].default_zone.pump_flow_rate_ml_per_sec = 0.0
     charge_today(irrigation_coordinator, cycles=1, liters=0.99)  # Near the cap
 
     with patch("asyncio.sleep", new_callable=AsyncMock):

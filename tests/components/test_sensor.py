@@ -19,6 +19,7 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     HarvestMetrics,
     IrrigationTank,
+    IrrigationZone,
 )
 from custom_components.growspace_manager.models.plant import PhenotypeScore
 from custom_components.growspace_manager.sensor import (
@@ -1295,7 +1296,6 @@ def test_growspace_overview_sensor_get_trackable_sensors(
     env_config = EnvironmentConfig(
         temperature_sensor="sensor.temp",
         humidity_sensor="sensor.humidity",
-        soil_moisture_sensor="sensor.moisture",
         vpd_sensor="sensor.vpd",
         dehumidifier_entities=["switch.dehumidifier"],
         exhaust_fan_entities=["fan.exhaust"],
@@ -1303,6 +1303,9 @@ def test_growspace_overview_sensor_get_trackable_sensors(
         circulation_fan_entities=["fan.circulation"],
     )
     gs_mock.environment_config = env_config
+    gs_mock.default_zone = IrrigationZone(
+        id="default", soil_moisture_sensor="sensor.moisture"
+    )
 
     sensors = sensor._get_trackable_sensors()
 
@@ -1320,9 +1323,9 @@ def test_growspace_overview_sensor_get_trackable_sensors(
 
 def test_growspace_overview_sensor_trackable_attrs_constant() -> None:
     """Test that TRACKABLE_ENVIRONMENT_ATTRS is defined as a class constant."""
-    # Verify the constant exists and contains expected attributes
+    # Verify the constant exists and contains expected attributes. The moisture
+    # probe is tracked too, but it is the Irrigation Zone's, not the environment's.
     expected_attrs = (
-        "soil_moisture_sensor",
         "temperature_sensor",
         "humidity_sensor",
         "vpd_sensor",

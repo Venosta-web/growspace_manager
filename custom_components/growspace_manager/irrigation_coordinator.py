@@ -66,6 +66,12 @@ from .domain.irrigation_schedule import (
     schedulable_events,
     upsert_item,
 )
+from .domain.irrigation_zone import (
+    ZONE_CONFIG_FIELDS,
+    ZONE_MIGRATION_INVALID,
+    effective_config,
+    effective_strategy,
+)
 from .domain.manual_override import (
     FAULT_UNEXPECTED_ON,
     MANUAL_OVERRIDE,
@@ -116,7 +122,14 @@ from .domain.water_aggregation import (
 )
 from .exceptions import GrowspaceError
 from .irrigation_safety_store import IrrigationSafetyStore
-from .models import Growspace, GrowspaceEvent, IrrigationConfig, IrrigationTank
+from .models import (
+    Growspace,
+    GrowspaceEvent,
+    IrrigationConfig,
+    IrrigationStrategy,
+    IrrigationTank,
+    IrrigationZone,
+)
 from .reliability_store import (
     AbortCause,
     ReliabilityCounter,
@@ -180,6 +193,7 @@ class BaseIrrigationCoordinator:
         # fixtures without a DeliveryAttemptStore keep it that way.
         self._deliveries = GrowspaceDeliveries(growspace_id)
         self._inhibit_since: dict[str, str] = {}
+        self._zone_fault_since: str | None = None
         # The Startup Inhibit (#786): None until setup begins it, so a
         # coordinator that was never set up is never held by it.
         self._startup_began_at: datetime | None = None
@@ -227,11 +241,24 @@ class BaseIrrigationCoordinator:
         so a restart restores the anchor every steering cooldown measures from
         (#786); there is no second, in-memory copy to drift from it.
         """
-        return self.growspace.substrate_history.last_confirmed_shot_at
+        return self._zone.substrate_history.last_confirmed_shot_at
 
     @_last_cycle_timestamp.setter
     def _last_cycle_timestamp(self, value: str | None) -> None:
-        self.growspace.substrate_history.last_confirmed_shot_at = value
+        self._zone.substrate_history.last_confirmed_shot_at = value
+
+    @property
+    def _zone(self) -> IrrigationZone:
+        """The zone this coordinator waters: the implicit one, until #895."""
+        return self.growspace.default_zone
+
+    def _config(self) -> IrrigationConfig:
+        """Return the growspace's and its zone's settings as one detached view."""
+        return effective_config(self.growspace, self._zone)
+
+    def _strategy(self) -> IrrigationStrategy:
+        """Return the zone's strategy with the growspace's lights, detached."""
+        return effective_strategy(self.growspace, self._zone)
 
     @property
     def active_events(self) -> dict[str, dict[str, Any]]:
@@ -304,22 +331,21 @@ class BaseIrrigationCoordinator:
 
     def controller_snapshot(self) -> ControllerSnapshot:
         """Resolve the current growspace state for the sensor and cycle gate."""
-        config = self.growspace.irrigation_config
+        config = self._config()
         store = self._safety_store
         fault = (
-            store.fault_for(self._growspace_id, self._configured_outputs())
-            if store
-            else None
-        ) or self._delivery_fault()
+            (
+                store.fault_for(self._growspace_id, self._configured_outputs())
+                if store
+                else None
+            )
+            or self._delivery_fault()
+            or self.zone_migration_fault()
+        )
         emergency_stop = store.emergency_stop_for(self._growspace_id) if store else None
         running = bool(self._active_events)
         automation_enabled = bool(
-            config.irrigation_times
-            or config.drain_times
-            or (
-                self.growspace.irrigation_strategy
-                and self.growspace.irrigation_strategy.enabled
-            )
+            config.irrigation_times or config.drain_times or self._zone.strategy.enabled
         )
         inhibits: tuple[SafetyReason, ...] = ()
         if not running and fault is None and automation_enabled:
@@ -399,6 +425,31 @@ class BaseIrrigationCoordinator:
                 DELIVERY_RECORD_UNREADABLE,
                 "Stored irrigation delivery record could not be read or written",
                 self._deliveries.unreadable_since or utcnow().isoformat(),
+            ),
+            self._configured_outputs(),
+        )
+
+    def zone_migration_fault(self) -> FaultRecord | None:
+        """Hold every cycle while this growspace's stored zones are invalid.
+
+        Latched for as long as the stored data is wrong and on this
+        growspace's irrigation only (ADR-0063 item 6). Nothing acknowledges
+        it: it clears on the first load that finds the zones valid again.
+        """
+        storage = getattr(self._main_coordinator, "storage_manager", None)
+        found = getattr(storage, "zone_problems", None)
+        problems = found.get(self._growspace_id) if isinstance(found, dict) else None
+        if not problems:
+            self._zone_fault_since = None
+            return None
+        if self._zone_fault_since is None:
+            self._zone_fault_since = utcnow().isoformat()
+        return FaultRecord(
+            ZONE_MIGRATION_INVALID,
+            SafetyReason(
+                ZONE_MIGRATION_INVALID,
+                "Stored irrigation zones are invalid: " + "; ".join(problems),
+                self._zone_fault_since,
             ),
             self._configured_outputs(),
         )
@@ -849,9 +900,9 @@ class BaseIrrigationCoordinator:
 
     def _moisture_sensor(self) -> str | None:
         """Return the substrate moisture sensor while crop steering decides from it."""
-        strategy = self.growspace.irrigation_strategy
-        moisture = self.growspace.environment_config.soil_moisture_sensor
-        return moisture if strategy and strategy.enabled and moisture else None
+        zone = self._zone
+        moisture = zone.soil_moisture_sensor
+        return moisture if zone.strategy.enabled and moisture else None
 
     def _control_sensors(self) -> tuple[str, ...]:
         """Return the sensors automatic irrigation decides from.
@@ -941,7 +992,7 @@ class BaseIrrigationCoordinator:
 
     def _moisture_value(self) -> float | None:
         """Return the moisture sensor's value, or None when it cannot be trusted."""
-        moisture = self.growspace.environment_config.soil_moisture_sensor
+        moisture = self._zone.soil_moisture_sensor
         return self._read_moisture(moisture).value if moisture else None
 
     def _control_sensor_inhibit(self) -> SafetyReason | None:
@@ -1288,9 +1339,7 @@ class BaseIrrigationCoordinator:
     def get_default_duration(self, event_type: str) -> int | None:
         """Get the default duration for a given event type."""
         try:
-            return getattr(
-                self.growspace.irrigation_config, f"{event_type}_duration", None
-            )
+            return getattr(self._config(), f"{event_type}_duration", None)
         except KeyError, AttributeError:
             return None
 
@@ -1302,6 +1351,18 @@ class BaseIrrigationCoordinator:
         if reload_listeners:
             await self.async_request_refresh()
 
+    def _schedule_owner(self, schedule_key: str) -> Any:
+        """Return whichever of the zone and the growspace keeps a schedule.
+
+        The irrigation schedule is the zone's; the drain schedule stays with
+        the growspace, whose drain pump it runs (ADR-0057).
+        """
+        if schedule_key == "irrigation_times":
+            return self._zone
+        if schedule_key == "drain_times":
+            return self.growspace.irrigation_config
+        return None
+
     async def async_add_schedule_item(
         self, schedule_key: str, time_str: str, duration: int | None
     ) -> None:
@@ -1310,15 +1371,14 @@ class BaseIrrigationCoordinator:
         The list mutation is the Irrigation Schedule's `upsert_item`
         (ADR-0029); this method owns the assign + persist effects.
         """
-        if not hasattr(self.growspace.irrigation_config, schedule_key):
+        owner = self._schedule_owner(schedule_key)
+        if owner is None:
             _LOGGER.error("Invalid schedule key %s", schedule_key)
             return
 
-        current_schedule: list[dict[str, Any]] = getattr(
-            self.growspace.irrigation_config, schedule_key
-        )
+        current_schedule: list[dict[str, Any]] = getattr(owner, schedule_key)
         change = upsert_item(current_schedule, time_str, duration)
-        setattr(self.growspace.irrigation_config, schedule_key, change.items)
+        setattr(owner, schedule_key, change.items)
 
         if change.updated:
             _LOGGER.info(
@@ -1348,7 +1408,8 @@ class BaseIrrigationCoordinator:
         (ADR-0029), so removing "08:00" also matches the stored "08:00:00"
         — the raw-string comparison this replaces silently removed nothing.
         """
-        if not hasattr(self.growspace.irrigation_config, schedule_key):
+        owner = self._schedule_owner(schedule_key)
+        if owner is None:
             _LOGGER.warning(
                 "Cannot remove item: schedule '%s' not found for growspace %s",
                 schedule_key,
@@ -1356,7 +1417,7 @@ class BaseIrrigationCoordinator:
             )
             return
 
-        schedule = getattr(self.growspace.irrigation_config, schedule_key)
+        schedule = getattr(owner, schedule_key)
         change = remove_items(schedule, time_str)
 
         if not change.removed:
@@ -1368,7 +1429,7 @@ class BaseIrrigationCoordinator:
             )
             return
 
-        setattr(self.growspace.irrigation_config, schedule_key, change.items)
+        setattr(owner, schedule_key, change.items)
         _LOGGER.info(
             "Removed %d item(s) with time %s from %s for growspace %s",
             change.removed,
@@ -1460,7 +1521,7 @@ class BaseIrrigationCoordinator:
 
     def _compute_cycle_volume_liters(self, duration: float) -> float:
         """Return the estimated water volume for a cycle in litres."""
-        return cycle_volume_liters(self.growspace.irrigation_config, duration)
+        return cycle_volume_liters(self._config(), duration)
 
     async def _async_record_pump_water(self, liters: float) -> None:
         """Persist an estimated pump-cycle volume into WaterUsageData (ADR-0017).
@@ -1528,7 +1589,7 @@ class BaseIrrigationCoordinator:
         record, transition = self._deliveries.calibration.watching(
             (tank.sensor_entity for tank in tanks),
             today,
-            flow_rate_ml_per_sec=growspace.irrigation_config.pump_flow_rate_ml_per_sec,
+            flow_rate_ml_per_sec=self._zone.pump_flow_rate_ml_per_sec,
         )
         return tanks, record, transition
 
@@ -1578,9 +1639,7 @@ class BaseIrrigationCoordinator:
             growspace,
             tank_sourced_proposal(
                 record,
-                configured_ml_per_sec=(
-                    growspace.irrigation_config.pump_flow_rate_ml_per_sec
-                ),
+                configured_ml_per_sec=self._zone.pump_flow_rate_ml_per_sec,
                 # Until zones (ADR-0057) a growspace is its own one zone, and
                 # until metering (ADR-0064 item 12) no zone has a meter.
                 zones=1,
@@ -1653,7 +1712,7 @@ class BaseIrrigationCoordinator:
         the Adaptive Shot Control loop probes this to set its capped diagnostic.
         """
         return safety_cap_blocks(
-            self.growspace.irrigation_config,
+            self._config(),
             self.cycles_today,
             self.volume_dispensed_today,
             self._compute_cycle_volume_liters(duration),
@@ -1888,7 +1947,7 @@ class BaseIrrigationCoordinator:
             trigger_evidence=trigger_evidence(event_data, event_type=event_type),
             planned_s=duration,
             flow_rate_ml_per_sec=(
-                self.growspace.irrigation_config.pump_flow_rate_ml_per_sec
+                self._zone.pump_flow_rate_ml_per_sec
                 if event_type == "irrigation"
                 else None
             ),
@@ -1941,7 +2000,7 @@ class BaseIrrigationCoordinator:
             return
         # Ask the Pump Cycle Gate whether this cycle may fire (ADR-0021). The
         # gate is a pure decision; this method owns the resulting effects.
-        config = self.growspace.irrigation_config
+        config = self._config()
         limit = cycle_runtime_limit(config)
         if duration > limit:
             _LOGGER.warning(
@@ -2406,7 +2465,7 @@ class BaseIrrigationCoordinator:
             ServiceValidationError: When no irrigation pump entity is configured or
                 no duration can be determined.
         """
-        options = self.growspace.irrigation_config
+        options = self._config()
         snapshot = self.controller_snapshot()
         if snapshot.requires_ack:
             raise ServiceValidationError(
@@ -2481,7 +2540,9 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         """Update the irrigation settings for the growspace."""
         # Update settings in growspace irrigation_config dataclass
         for key, value in new_settings.items():
-            if hasattr(self.growspace.irrigation_config, key):
+            if key in ZONE_CONFIG_FIELDS:
+                setattr(self._zone, key, value)
+            elif hasattr(self.growspace.irrigation_config, key):
                 setattr(self.growspace.irrigation_config, key, value)
             else:
                 _LOGGER.warning("Unknown irrigation setting: %s", key)
@@ -2511,7 +2572,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         self.async_cancel_listeners(cancel_tasks=False)
 
         # Get irrigation options from growspace object
-        options = self.growspace.irrigation_config
+        options = self._config()
 
         # Make defensive copies to avoid reference issues
         irrigation_times = list(options.irrigation_times)
@@ -2574,14 +2635,12 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         """Handle a scheduled event."""
         if event_type == "irrigation" and self._last_cycle_timestamp:
             last = datetime.fromisoformat(self._last_cycle_timestamp)
-            minimum = timedelta(
-                minutes=self.growspace.irrigation_config.min_interval_minutes
-            )
+            minimum = timedelta(minutes=self._zone.min_interval_minutes)
             if now - last < minimum:
                 _LOGGER.info(
                     "Skipping irrigation event for %s: minimum interval is %s minutes",
                     self._growspace_id,
-                    self.growspace.irrigation_config.min_interval_minutes,
+                    self._zone.min_interval_minutes,
                 )
                 return
         if (
@@ -2596,7 +2655,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             )
             self._running_tasks[event_type].cancel()
 
-        options = self.growspace.irrigation_config
+        options = self._config()
 
         # Use getattr to fetch config entities dynamically
         pump_entity = getattr(options, f"{event_type}_pump_entity", None)
@@ -2627,7 +2686,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         Returns None when no times are configured.
         """
         soonest = next_occurrence(
-            [dict(item) for item in self.growspace.irrigation_config.irrigation_times],
+            [dict(item) for item in self._zone.irrigation_times],
             utcnow(),
         )
         return soonest.isoformat() if soonest else None

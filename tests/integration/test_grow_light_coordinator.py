@@ -72,7 +72,7 @@ def _make_coordinator(
     gs = MagicMock()
     gs.name = "Test Tent"
     gs.environment_config = env
-    gs.irrigation_strategy.lights_on_time = lights_on_time
+    gs.light_cycle.lights_on_time = lights_on_time
     coord = MagicMock()
     coord.growspaces = {"gs1": gs}
     coord.services.growspaces.get_growspace_plants.return_value = plants or []

@@ -45,7 +45,7 @@ async def async_commit_environment_patch(
 ) -> EnvironmentPatchVerdict:
     """Apply an Environment Patch to the growspace and perform every effect.
 
-    Order: assign the merged config → save → retire the Capture Continuity
+    Order: assign the merged config and the zone's probes → save → retire the Capture Continuity
     streaks of any camera this growspace no longer holds → request refresh →
     restart each sub-controller named in the verdict (only controllers whose
     fields actually changed) → re-evaluate the exhaust-migration repair
@@ -56,7 +56,8 @@ async def async_commit_environment_patch(
     refuses never reaches here, so a rejected configuration change cannot
     reset a streak.
     """
-    verdict = apply_environment_patch(growspace.environment_config, patch)
+    zone = growspace.default_zone
+    verdict = apply_environment_patch(growspace.environment_config, patch, zone)
     for warning in verdict.warnings:
         _LOGGER.warning(
             "Environment patch for '%s' dropped %s: %s",
@@ -66,6 +67,8 @@ async def async_commit_environment_patch(
         )
 
     growspace.environment_config = verdict.config
+    for name, value in verdict.zone_values.items():
+        setattr(zone, name, value)
     await coordinator.services.save()
 
     if verdict.changed("camera_entities"):

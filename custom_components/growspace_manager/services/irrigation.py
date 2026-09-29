@@ -310,6 +310,12 @@ async def handle_acknowledge_fault(
         store.fault_for(growspace_id, irrigation._configured_outputs())
         or irrigation._delivery_fault()
     )
+    if fault is None and irrigation.zone_migration_fault() is not None:
+        raise ServiceValidationError(
+            f"Irrigation in growspace '{growspace_id}' is held because its stored "
+            "irrigation zones are invalid. It cannot be acknowledged; it clears "
+            "itself once they are valid. See its Repairs issue."
+        )
     if fault is None:
         raise ServiceValidationError(f"Growspace '{growspace_id}' has no latched fault")
 

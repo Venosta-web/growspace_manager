@@ -22,6 +22,9 @@ from custom_components.growspace_manager.domain.current_stage import (
     resolve_current_stage,
 )
 from custom_components.growspace_manager.domain.date_logic import plant_updated_date
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    sync_implicit_zone_cells,
+)
 from custom_components.growspace_manager.domain.lifetime_stage_days import (
     resolve_lifetime_stage_days,
 )
@@ -1317,6 +1320,7 @@ class PlantManager(BaseService):
                     plant.updated_at = updated_at
                 growspace.rows = target_rows
                 growspace.plants_per_row = target_plants_per_row
+                sync_implicit_zone_cells(growspace)
                 growspace.layout_revision = new_revision
             else:
                 for plant in plants:
@@ -1324,6 +1328,7 @@ class PlantManager(BaseService):
                     plant.updated_at = updated_at
                 growspace.rows = target_rows
                 growspace.plants_per_row = target_plants_per_row
+                sync_implicit_zone_cells(growspace)
                 growspace.layout_revision = new_revision
                 try:
                     await self._save()
@@ -1333,6 +1338,7 @@ class PlantManager(BaseService):
                             plant.plant_id
                         ]
                     growspace.rows, growspace.plants_per_row = previous_dimensions
+                    sync_implicit_zone_cells(growspace)
                     growspace.layout_revision = previous_revision
                     self._invalidate(growspace_id)
                     raise

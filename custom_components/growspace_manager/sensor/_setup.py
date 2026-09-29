@@ -305,7 +305,7 @@ async def _create_initial_entities(
                 DLISensor(coordinator, growspace_id, growspace.name)
             )
 
-        if growspace.irrigation_strategy and growspace.irrigation_strategy.enabled:
+        if growspace.default_zone.strategy.enabled:
             initial_entities.append(
                 CropSteeringSensor(coordinator, growspace_id, growspace.name)
             )

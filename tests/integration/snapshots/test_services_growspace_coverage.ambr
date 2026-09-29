@@ -30,8 +30,6 @@
     'environment_config': dict({
       'bayesian_options': dict({
       }),
-      'bulk_ec_sensors': list([
-      ]),
       'camera_entities': list([
       ]),
       'circulation_fan_ac_infinity_devices': list([
@@ -148,8 +146,6 @@
       'mold_threshold': 0.75,
       'ph_sensors': list([
       ]),
-      'pore_ec_sensors': list([
-      ]),
       'power_sensors': list([
       ]),
       'runoff_ec_sensors': list([
@@ -161,10 +157,7 @@
       'snapshot_interval_hours': 24,
       'soil_moisture_max': None,
       'soil_moisture_min': None,
-      'soil_moisture_sensor': None,
       'stress_threshold': 0.7,
-      'substrate_temperature_sensors': list([
-      ]),
       'temperature_sensor': None,
       'temperature_sensors': list([
       ]),
@@ -187,7 +180,6 @@
     }),
     'id': 'test-uuid',
     'irrigation_config': dict({
-      'active_steering_phase': 'p2',
       'auto_advance_p1_to_p2': False,
       'auto_advance_p2_to_p3': False,
       'daily_volume_cap_liters': 20.0,
@@ -198,65 +190,172 @@
       'ec_target_ranges': list([
       ]),
       'halt_on_runoff_ec_threshold': None,
-      'irrigation_duration': None,
       'irrigation_pump_entity': None,
-      'irrigation_times': list([
-      ]),
       'log_to_logbook': True,
       'max_cycle_seconds': 600,
       'max_cycles_per_day': 24,
-      'min_interval_minutes': 5,
       'moisture_zero_is_implausible': False,
       'pause_on_low_tank': True,
-      'phase_changed_at': None,
       'program_auto_advance': False,
-      'pump_flow_rate_ml_per_sec': 0.0,
       'sensor_alert_delay_minutes': 15,
       'sensor_stale_after_minutes': 30,
       'skip_during_dark': False,
-      'soil_trigger_percent': None,
       'startup_grace_minutes': 5,
       'tank_unknown_grace_minutes': 10,
       'unexpected_on_policy': 'alert',
       'veg_day_hours': 18,
     }),
-    'irrigation_strategy': dict({
-      'applied_recipe_id': None,
-      'auto_light_tracking': False,
-      'declared_steering_mode': None,
-      'detected_lights_on_time': None,
-      'dynamic_aggressiveness': 1.0,
-      'dynamic_interval_ceiling': 1.5,
-      'dynamic_recovery': 0.1,
-      'dynamic_shot_enabled': True,
-      'dynamic_shot_size_floor': 0.5,
-      'ec_modulation_enabled': False,
-      'enabled': False,
-      'irrigation_program_id': None,
-      'lights_on_time': '06:00:00',
-      'maintenance_dryback_percent': 2.0,
-      'p0_duration_minutes': 60,
-      'p1_shot_duration_seconds': 10,
-      'p1_shot_interval_minutes': 15,
-      'p1_shot_volume_percent': 4.0,
-      'p2_shot_duration_seconds': 10,
-      'p2_shot_interval_minutes': 15,
-      'p2_shot_volume_percent': 4.0,
-      'p2_stop_before_lights_off_minutes': 120,
-      'pore_ec_target_max': None,
-      'pore_ec_target_min': None,
-      'recipe_applied_at': None,
-      'shot_duration_seconds': 10,
-      'shot_interval_minutes': 15,
-      'shot_sizing_mode': 'seconds',
-      'skip_p2_after_p1': False,
-      'substrate_profile': dict({
-        'liters_per_pot': 0.0,
-        'media_type': 'coco',
+    'irrigation_zones': list([
+      dict({
+        'active_steering_phase': 'p2',
+        'bulk_ec_sensors': list([
+        ]),
+        'cells': list([
+          list([
+            1,
+            1,
+          ]),
+          list([
+            1,
+            2,
+          ]),
+          list([
+            1,
+            3,
+          ]),
+          list([
+            1,
+            4,
+          ]),
+          list([
+            2,
+            1,
+          ]),
+          list([
+            2,
+            2,
+          ]),
+          list([
+            2,
+            3,
+          ]),
+          list([
+            2,
+            4,
+          ]),
+          list([
+            3,
+            1,
+          ]),
+          list([
+            3,
+            2,
+          ]),
+          list([
+            3,
+            3,
+          ]),
+          list([
+            3,
+            4,
+          ]),
+          list([
+            4,
+            1,
+          ]),
+          list([
+            4,
+            2,
+          ]),
+          list([
+            4,
+            3,
+          ]),
+          list([
+            4,
+            4,
+          ]),
+        ]),
+        'id': 'default',
+        'irrigation_duration': None,
+        'irrigation_times': list([
+        ]),
+        'min_interval_minutes': 5,
+        'name': '',
+        'phase_changed_at': None,
+        'pore_ec_sensors': list([
+        ]),
+        'pump_flow_rate_ml_per_sec': 0.0,
+        'soil_moisture_sensor': None,
+        'soil_trigger_percent': None,
+        'strategy': dict({
+          'applied_recipe_id': None,
+          'declared_steering_mode': None,
+          'dynamic_aggressiveness': 1.0,
+          'dynamic_interval_ceiling': 1.5,
+          'dynamic_recovery': 0.1,
+          'dynamic_shot_enabled': True,
+          'dynamic_shot_size_floor': 0.5,
+          'ec_modulation_enabled': False,
+          'enabled': False,
+          'irrigation_program_id': None,
+          'maintenance_dryback_percent': 2.0,
+          'p0_duration_minutes': 60,
+          'p1_shot_duration_seconds': 10,
+          'p1_shot_interval_minutes': 15,
+          'p1_shot_volume_percent': 4.0,
+          'p2_shot_duration_seconds': 10,
+          'p2_shot_interval_minutes': 15,
+          'p2_shot_volume_percent': 4.0,
+          'p2_stop_before_lights_off_minutes': 120,
+          'pore_ec_target_max': None,
+          'pore_ec_target_min': None,
+          'recipe_applied_at': None,
+          'shot_duration_seconds': 10,
+          'shot_interval_minutes': 15,
+          'shot_sizing_mode': 'seconds',
+          'skip_p2_after_p1': False,
+          'substrate_profile': dict({
+            'liters_per_pot': 0.0,
+            'media_type': 'coco',
+          }),
+          'target_vwc_percent': 55.0,
+        }),
+        'substrate_history': dict({
+          'current_day': None,
+          'ec_day_start_ts': None,
+          'ec_day_start_value': None,
+          'ec_latest_ts': None,
+          'ec_latest_value': None,
+          'ec_trend_day': None,
+          'events': list([
+          ]),
+          'last_confirmed_shot_at': None,
+          'lit_period_max': None,
+          'lit_period_max_ts': None,
+          'p1_completed_on': None,
+          'pending_incycle_peak': None,
+          'pending_incycle_peak_ts': None,
+          'pending_incycle_trough': None,
+          'pending_incycle_trough_ts': None,
+          'pending_overnight_peak': None,
+          'pending_overnight_peak_ts': None,
+          'pending_overnight_trough': None,
+          'pending_overnight_trough_ts': None,
+          'shots_today': 0,
+        }),
+        'substrate_temperature_sensors': list([
+        ]),
+        'valves': list([
+        ]),
       }),
-      'target_vwc_percent': 55.0,
-    }),
+    ]),
     'layout_revision': 0,
+    'light_cycle': dict({
+      'auto_light_tracking': False,
+      'detected_lights_on_time': None,
+      'lights_on_time': '06:00:00',
+    }),
     'name': 'Test',
     'notification_target': None,
     'plants_per_row': 4,
@@ -265,29 +364,6 @@
     'setup_preset': None,
     'subareas': list([
     ]),
-    'substrate_history': dict({
-      'current_day': None,
-      'ec_day_start_ts': None,
-      'ec_day_start_value': None,
-      'ec_latest_ts': None,
-      'ec_latest_value': None,
-      'ec_trend_day': None,
-      'events': list([
-      ]),
-      'last_confirmed_shot_at': None,
-      'lit_period_max': None,
-      'lit_period_max_ts': None,
-      'p1_completed_on': None,
-      'pending_incycle_peak': None,
-      'pending_incycle_peak_ts': None,
-      'pending_incycle_trough': None,
-      'pending_incycle_trough_ts': None,
-      'pending_overnight_peak': None,
-      'pending_overnight_peak_ts': None,
-      'pending_overnight_trough': None,
-      'pending_overnight_trough_ts': None,
-      'shots_today': 0,
-    }),
     'vision_checkup_history': list([
     ]),
     'water_usage': dict({

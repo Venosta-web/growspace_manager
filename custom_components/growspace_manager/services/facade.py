@@ -119,7 +119,9 @@ class ServiceFacade:
                     "temperature": _get_state(env_config.temperature_sensor),
                     "humidity": _get_state(env_config.humidity_sensor),
                     "vpd": _get_state(env_config.vpd_sensor),
-                    "soil_moisture": _get_state(env_config.soil_moisture_sensor),
+                    "soil_moisture": _get_state(
+                        growspace.default_zone.soil_moisture_sensor
+                    ),
                     "light_intensity": _get_state(env_config.light_sensor),
                 }
             )

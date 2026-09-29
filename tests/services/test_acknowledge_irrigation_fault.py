@@ -40,6 +40,7 @@ def context() -> tuple[HomeAssistant, MagicMock, MagicMock, IrrigationSafetyStor
     irrigation = MagicMock()
     irrigation._configured_outputs.return_value = ("switch.pump",)
     irrigation._delivery_fault.return_value = None
+    irrigation.zone_migration_fault.return_value = None
     coordinator.services.growspaces.get_irrigation_coordinator.return_value = irrigation
     store = IrrigationSafetyStore.__new__(IrrigationSafetyStore)
     store.overrides = {}
@@ -200,3 +201,20 @@ async def test_an_unreadable_delivery_record_is_acknowledged_by_the_coordinator(
     irrigation._async_acknowledge_deliveries.assert_awaited_once_with("admin")
     store._store.async_save.assert_not_awaited()
     delete.assert_called_once_with(hass, "growspace_manager", "irrigation_fault_tent")
+
+
+async def test_ack_refuses_a_hold_on_invalid_zones(
+    context: tuple[HomeAssistant, MagicMock, MagicMock, IrrigationSafetyStore],
+) -> None:
+    """Invalid stored zones clear on a valid load, never by acknowledging."""
+    hass, coordinator, call, store = context
+    store.faults = {}
+    irrigation = coordinator.services.growspaces.get_irrigation_coordinator.return_value
+    irrigation.zone_migration_fault.return_value = FaultRecord(
+        "zone_migration_invalid",
+        SafetyReason("zone_migration_invalid", "invalid", "now"),
+        ("switch.pump",),
+    )
+    with pytest.raises(ServiceValidationError, match="cannot be acknowledged"):
+        await handle_acknowledge_fault(hass, coordinator, call)
+    store._store.async_save.assert_not_awaited()

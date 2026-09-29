@@ -3,6 +3,10 @@
 import pytest
 
 from custom_components.growspace_manager.const import FanRegulationMode
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_strategy,
+    migrate_growspace_document,
+)
 from custom_components.growspace_manager.models import (
     ACInfinityDevice,
     CirculationFanConfig,
@@ -330,10 +334,10 @@ def test_growspace_nested_handlers() -> None:
         "name": "GS",
         "irrigation_strategy": {"enabled": True, "target_vwc_percent": 60.0},
     }
-    gs = Growspace.from_dict(data)
-    assert isinstance(gs.irrigation_strategy, IrrigationStrategy)
-    assert gs.irrigation_strategy.enabled is True
-    assert gs.irrigation_strategy.target_vwc_percent == 60.0
+    gs = Growspace.from_dict(migrate_growspace_document(data))
+    assert isinstance(effective_strategy(gs), IrrigationStrategy)
+    assert gs.default_zone.strategy.enabled is True
+    assert gs.default_zone.strategy.target_vwc_percent == 60.0
 
 
 def test_environment_config_migration() -> None:
@@ -397,13 +401,13 @@ async def test_growspace_migration_redundant_irrigation_fields() -> None:
             ]
         },
     }
-    gs = Growspace.from_dict(data)
+    gs = Growspace.from_dict(migrate_growspace_document(data))
     # The migration should delete 'start_time' and 'duration_seconds'
     # because 'time' and 'duration' already exist.
-    assert gs.irrigation_config.irrigation_times[0]["time"] == "10:00"
-    assert "start_time" not in gs.irrigation_config.irrigation_times[0]
-    assert gs.irrigation_config.irrigation_times[0]["duration"] == 60
-    assert "duration_seconds" not in gs.irrigation_config.irrigation_times[0]
+    assert gs.default_zone.irrigation_times[0]["time"] == "10:00"
+    assert "start_time" not in gs.default_zone.irrigation_times[0]
+    assert gs.default_zone.irrigation_times[0]["duration"] == 60
+    assert "duration_seconds" not in gs.default_zone.irrigation_times[0]
 
 
 # --------------------
@@ -726,9 +730,9 @@ def test_growspace_irrigation_strategy_legacy_nested_load() -> None:
         "name": "Old Tent",
         "irrigation_strategy": {"enabled": True, "target_vwc_percent": 60.0},
     }
-    gs = Growspace.from_dict(data)
-    assert gs.irrigation_strategy.auto_light_tracking is False
-    assert gs.irrigation_strategy.detected_lights_on_time is None
+    gs = Growspace.from_dict(migrate_growspace_document(data))
+    assert gs.light_cycle.auto_light_tracking is False
+    assert gs.light_cycle.detected_lights_on_time is None
 
 
 # ---------------------------------------------------------------------------
@@ -835,11 +839,11 @@ def test_growspace_legacy_shot_fields_migrate_through_nested_load() -> None:
             "shot_interval_minutes": 20,
         },
     }
-    gs = Growspace.from_dict(data)
-    assert gs.irrigation_strategy.p1_shot_duration_seconds == 12
-    assert gs.irrigation_strategy.p2_shot_duration_seconds == 12
-    assert gs.irrigation_strategy.p1_shot_interval_minutes == 20
-    assert gs.irrigation_strategy.p2_shot_interval_minutes == 20
+    gs = Growspace.from_dict(migrate_growspace_document(data))
+    assert gs.default_zone.strategy.p1_shot_duration_seconds == 12
+    assert gs.default_zone.strategy.p2_shot_duration_seconds == 12
+    assert gs.default_zone.strategy.p1_shot_interval_minutes == 20
+    assert gs.default_zone.strategy.p2_shot_interval_minutes == 20
 
 
 # --------------------

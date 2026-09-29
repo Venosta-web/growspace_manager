@@ -41,9 +41,12 @@ from .irrigation import (
     ECRampCurve,
     ECRampPoint,
     ECTargetRange,
+    GrowspaceIrrigationConfig,
     IrrigationConfig,
     IrrigationStrategy,
     IrrigationTank,
+    LightCycle,
+    SteeringStrategy,
     SubstrateEvent,
     SubstrateHistory,
     SubstrateProfile,
@@ -57,6 +60,7 @@ from .irrigation_recipe import (
     RecipeProvenance,
     ScheduleRecipe,
 )
+from .irrigation_zone import IMPLICIT_ZONE_ID, IrrigationZone, grid_cells
 from .nutrient import NutrientInventory, NutrientPreset, NutrientStock
 from .plant import (
     DryingData,
@@ -109,6 +113,7 @@ from .vision_evidence import (
 # Explicit __all__ list for documentation and IDE support
 __all__ = [
     "ENVIRONMENT_FIELD_OWNERSHIP",
+    "IMPLICIT_ZONE_ID",
     "ACInfinityDevice",
     "ACInfinityGrowLight",
     "AdmissionPhase",
@@ -152,6 +157,7 @@ __all__ = [
     # contract
     "GrowspaceCoordinatorData",
     "GrowspaceEvent",
+    "GrowspaceIrrigationConfig",
     # growspace
     "GrowspaceType",
     "HarvestMetrics",
@@ -168,7 +174,9 @@ __all__ = [
     "IrrigationScheduleItem",
     "IrrigationStrategy",
     "IrrigationTank",
+    "IrrigationZone",
     "LabelKind",
+    "LightCycle",
     "LightLeakConfig",
     "LightState",
     "LightWindow",
@@ -195,6 +203,7 @@ __all__ = [
     "SeedBatch",
     "SensorGroup",
     "StageHistoryItem",
+    "SteeringStrategy",
     "Subarea",
     "SubstrateEvent",
     "SubstrateHistory",
@@ -213,4 +222,5 @@ __all__ = [
     "WaterUsageData",
     "WeightEntry",
     "_sanitize_numeric_fields",
+    "grid_cells",
 ]

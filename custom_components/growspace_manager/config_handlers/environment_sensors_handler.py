@@ -52,6 +52,9 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.domain.environment_patch import (
     patch_from_flow_options,
 )
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_environment_probes,
+)
 from custom_components.growspace_manager.services.environment_patch_commit import (
     async_commit_environment_patch,
 )
@@ -118,7 +121,12 @@ class EnvironmentSensorsHandler(BaseConfigHandler[dict[str, Any]]):
             return self.flow.async_abort(reason="growspace_not_found")
 
         if growspace.environment_config:
-            growspace_options = asdict(growspace.environment_config)
+            # The substrate probes are the zone's now; the form still edits
+            # them beside the rest of the environment (ADR-0057).
+            growspace_options = {
+                **asdict(growspace.environment_config),
+                **effective_environment_probes(growspace),
+            }
 
             if growspace_options.get("irrigation_tanks"):
                 tank_sensors = [

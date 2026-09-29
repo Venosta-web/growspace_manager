@@ -49,13 +49,13 @@ from tests.common import MockConfigEntry, async_capture_events, async_mock_servi
 def _growspace(growspace_id: str) -> Growspace:
     """Return a Volume Mode growspace with usable plumbing."""
     growspace = Growspace(id=growspace_id, name=growspace_id.title())
-    growspace.irrigation_strategy.enabled = True
-    growspace.irrigation_strategy.substrate_profile = SubstrateProfile(
+    growspace.default_zone.strategy.enabled = True
+    growspace.default_zone.strategy.substrate_profile = SubstrateProfile(
         media_type=SubstrateMediaType.COCO, liters_per_pot=6.0
     )
-    growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.VOLUME
-    growspace.irrigation_strategy.p1_shot_volume_percent = 3.0
-    growspace.irrigation_config.pump_flow_rate_ml_per_sec = 50.0
+    growspace.default_zone.strategy.shot_sizing_mode = ShotSizingMode.VOLUME
+    growspace.default_zone.strategy.p1_shot_volume_percent = 3.0
+    growspace.default_zone.pump_flow_rate_ml_per_sec = 50.0
     return growspace
 
 
@@ -279,7 +279,7 @@ async def test_editing_a_recipe_is_visible_through_every_program(
 async def test_a_growspace_starts_bound_to_nothing(coordinator) -> None:
     """Unbound is the starting state, not an implicit first program."""
     assert (
-        coordinator.growspaces["tent_a"].irrigation_strategy.irrigation_program_id
+        coordinator.growspaces["tent_a"].default_zone.strategy.irrigation_program_id
         is None
     )
 
@@ -290,7 +290,7 @@ async def test_assign_service_binds_and_unbinds(hass, coordinator) -> None:
     program = await coordinator.services.config.save_irrigation_program(
         "Full run", _slots(("flower", 3, "r1"))
     )
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = coordinator.growspaces["tent_a"].default_zone.strategy
 
     await handle_assign_irrigation_program(
         hass,
@@ -356,8 +356,8 @@ async def test_assigning_writes_no_setpoint_and_fires_no_pump(
         "Full run", _slots(("flower", 3, recipe_id))
     )
     growspace = coordinator.growspaces["tent_b"]
-    growspace.irrigation_strategy.p1_shot_volume_percent = 9.0
-    before_strategy = growspace.irrigation_strategy.to_dict()
+    growspace.default_zone.strategy.p1_shot_volume_percent = 9.0
+    before_strategy = growspace.default_zone.strategy.to_dict()
     before_config = growspace.irrigation_config.to_dict()
 
     logbook = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
@@ -367,12 +367,12 @@ async def test_assigning_writes_no_setpoint_and_fires_no_pump(
         "tent_b", program.id
     )
 
-    after_strategy = growspace.irrigation_strategy.to_dict()
+    after_strategy = growspace.default_zone.strategy.to_dict()
     assert after_strategy.pop("irrigation_program_id") == program.id
     before_strategy.pop("irrigation_program_id")
     assert after_strategy == before_strategy
     assert growspace.irrigation_config.to_dict() == before_config
-    assert growspace.irrigation_strategy.applied_recipe_id is None
+    assert growspace.default_zone.strategy.applied_recipe_id is None
     assert logbook == []
     assert pump_calls == []
 
@@ -386,7 +386,7 @@ async def test_assigning_an_unknown_program_is_refused(hass, coordinator) -> Non
         )
 
     assert (
-        coordinator.growspaces["tent_a"].irrigation_strategy.irrigation_program_id
+        coordinator.growspaces["tent_a"].default_zone.strategy.irrigation_program_id
         is None
     )
 

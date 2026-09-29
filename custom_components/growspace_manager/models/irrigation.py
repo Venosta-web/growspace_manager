@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any
 
 from custom_components.growspace_manager.const import (
@@ -16,20 +16,25 @@ from .base import BaseModel, _sanitize_numeric_fields
 from .types import IrrigationScheduleItem
 
 __all__ = [
+    "ZONE_CONFIG_FIELDS",
     "CropSteeringState",
     "DrainConfig",
     "DrainReading",
     "ECRampCurve",
     "ECRampPoint",
     "ECTargetRange",
+    "GrowspaceIrrigationConfig",
     "IrrigationConfig",
     "IrrigationStrategy",
     "IrrigationTank",
+    "LightCycle",
+    "SteeringStrategy",
     "SubstrateEvent",
     "SubstrateHistory",
     "SubstrateProfile",
     "TankWaterEvent",
     "TankWaterHistory",
+    "normalize_schedule_items",
 ]
 
 
@@ -53,6 +58,19 @@ class SubstrateProfile(BaseModel):
 
 
 # Legacy shared shot fields and the per-phase fields they seed on migration.
+# Integer strategy fields an old store may hold as floats or strings.
+_INTEGER_STRATEGY_FIELDS = (
+    "p0_duration_minutes",
+    "p2_stop_before_lights_off_minutes",
+    "p1_shot_duration_seconds",
+    "p1_shot_interval_minutes",
+    "p2_shot_duration_seconds",
+    "p2_shot_interval_minutes",
+    # Legacy shared shot fields, before they are seeded into both phases.
+    "shot_duration_seconds",
+    "shot_interval_minutes",
+)
+
 _LEGACY_SHOT_FIELD_MAP: dict[str, tuple[str, str]] = {
     "shot_duration_seconds": (
         "p1_shot_duration_seconds",
@@ -66,8 +84,13 @@ _LEGACY_SHOT_FIELD_MAP: dict[str, tuple[str, str]] = {
 
 
 @dataclass(slots=True)
-class IrrigationStrategy(BaseModel):
-    """Configuration for VWC-based crop steering strategy.
+class SteeringStrategy(BaseModel):
+    """The crop-steering strategy an [[Irrigation Zone]] owns (ADR-0057).
+
+    Every field of the strategy except the lights: those stay with the
+    growspace as its [[LightCycle]], because the steering *day* is one per
+    growspace just as the lights are. :class:`IrrigationStrategy` is the two
+    put back together, which is what the steering code reads.
 
     Shot duration and interval are configured per steering phase: P1 (ramp-up)
     and P2 (maintenance) each carry their own pair — the P1:P2 difference is a
@@ -75,7 +98,6 @@ class IrrigationStrategy(BaseModel):
     """
 
     enabled: bool = False
-    lights_on_time: str = "06:00:00"
     p0_duration_minutes: int = 60
     p2_stop_before_lights_off_minutes: int = 120
     target_vwc_percent: float = 55.0
@@ -84,8 +106,6 @@ class IrrigationStrategy(BaseModel):
     p1_shot_interval_minutes: int = 15
     p2_shot_duration_seconds: int = 10
     p2_shot_interval_minutes: int = 15
-    auto_light_tracking: bool = False
-    detected_lights_on_time: str | None = None
 
     # ── Skip P2 (workspace#131) ─────────────────────────────────────────────
     # A phase-transition rule, not a timing value: when True the [[Steering
@@ -166,7 +186,8 @@ class IrrigationStrategy(BaseModel):
         Stored configs predating the per-phase split carry only
         ``shot_duration_seconds`` / ``shot_interval_minutes``; those values seed
         both phases' fields so behavior is unchanged until a user edits one.
-        Explicit per-phase values always win over the legacy keys.
+        Explicit per-phase values always win over the legacy keys. An integer
+        field stored as an unparsable string falls back to its default.
         """
         data = data.copy()
         for legacy_key, phase_keys in _LEGACY_SHOT_FIELD_MAP.items():
@@ -174,6 +195,12 @@ class IrrigationStrategy(BaseModel):
                 legacy_value = data.pop(legacy_key)
                 for phase_key in phase_keys:
                     data.setdefault(phase_key, legacy_value)
+        for key in _INTEGER_STRATEGY_FIELDS:
+            if key in data:
+                try:
+                    data[key] = int(float(data[key]))
+                except ValueError, TypeError:
+                    del data[key]
         return _sanitize_numeric_fields(cls, data)
 
     @classmethod
@@ -210,6 +237,37 @@ class IrrigationStrategy(BaseModel):
         """Preserve legacy shared semantics by writing both phases."""
         self.p1_shot_interval_minutes = value
         self.p2_shot_interval_minutes = value
+
+
+@dataclass(slots=True)
+class LightCycle(BaseModel):
+    """When a growspace's lights come on, which its zones all steer by.
+
+    Kept by the growspace rather than by any [[Irrigation Zone]] (ADR-0057):
+    the lights are one per growspace, so the steering day is too. See
+    **Light Cycle Tracking** for ``detected_lights_on_time``, which is observed
+    rather than configured and wins over ``lights_on_time`` when present.
+    """
+
+    lights_on_time: str = "06:00:00"
+    auto_light_tracking: bool = False
+    detected_lights_on_time: str | None = None
+
+
+@dataclass(slots=True)
+class IrrigationStrategy(SteeringStrategy):
+    """One zone's steering strategy with its growspace's lights put back in.
+
+    Not stored anywhere: it is composed by
+    ``domain.irrigation_zone.effective_strategy`` for the code that steers and
+    the payload that shows it, and split back by ``apply_effective_irrigation``
+    after an edit. Its shape is the pre-zones ``irrigation_strategy``, so the
+    wire, recipes and every steering computation read exactly what they did.
+    """
+
+    lights_on_time: str = "06:00:00"
+    auto_light_tracking: bool = False
+    detected_lights_on_time: str | None = None
 
 
 @dataclass(slots=True)
@@ -338,25 +396,26 @@ class ECTargetRange(BaseModel):
 
 
 @dataclass(slots=True)
-class IrrigationConfig(BaseModel):
-    """Configuration for irrigation and drain pumps and schedules."""
+class GrowspaceIrrigationConfig(BaseModel):
+    """The irrigation settings a growspace keeps for all of its zones (ADR-0057).
+
+    The supply and the drain, the daily caps, the safety windows and policies:
+    everything shared by the zones one pump feeds. What each zone owns — its
+    flow rate, schedule, trigger and phase — is on :class:`IrrigationZone`;
+    :class:`IrrigationConfig` is the two put back together.
+    """
 
     irrigation_pump_entity: str | None = None
     drain_pump_entity: str | None = None
-    irrigation_duration: int | None = None
     drain_duration: int | None = None
-    irrigation_times: list[IrrigationScheduleItem] = field(default_factory=list)
     drain_times: list[IrrigationScheduleItem] = field(default_factory=list)
     # Legacy irrigation copy of the vegetative photoperiod. Boundary math uses
     # EnvironmentConfig via resolve_day_hours(), but keeping this default aligned
     # avoids two backend models assigning different meanings to an omitted value.
     veg_day_hours: int = 18
-    pump_flow_rate_ml_per_sec: float = 0.0
-    soil_trigger_percent: float | None = None
     daily_volume_cap_liters: float | None = 20.0
     max_cycles_per_day: int | None = 24
     max_cycle_seconds: int = 600
-    min_interval_minutes: int = 5
     skip_during_dark: bool = False
     pause_on_low_tank: bool = True
     log_to_logbook: bool = True
@@ -394,8 +453,83 @@ class IrrigationConfig(BaseModel):
     # "alert" treats it as a person's and holds automatic irrigation while it
     # lasts; "enforce_off" switches it off and latches a Fault.
     unexpected_on_policy: str = "alert"
+
+    @classmethod
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize the drain schedule's legacy item spellings."""
+        data = _sanitize_numeric_fields(cls, data)
+        if isinstance(data.get("drain_times"), list):
+            data["drain_times"] = normalize_schedule_items(data["drain_times"])
+        return data
+
+
+@dataclass(slots=True)
+class IrrigationConfig(GrowspaceIrrigationConfig):
+    """One zone's irrigation settings with its growspace's put back in.
+
+    Not stored anywhere: composed by ``domain.irrigation_zone.effective_config``
+    and split back by ``apply_effective_irrigation``. Its shape is the
+    pre-zones ``irrigation_config``, so the wire and the gates read exactly
+    what they did before zones existed.
+    """
+
+    irrigation_duration: int | None = None
+    irrigation_times: list[IrrigationScheduleItem] = field(default_factory=list)
+    pump_flow_rate_ml_per_sec: float = 0.0
+    soil_trigger_percent: float | None = None
+    min_interval_minutes: int = 5
     active_steering_phase: str = "p2"
     phase_changed_at: str | None = None
+
+    @classmethod
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize both schedules' legacy item spellings."""
+        data = _sanitize_numeric_fields(cls, data)
+        for key in ("irrigation_times", "drain_times"):
+            if isinstance(data.get(key), list):
+                data[key] = normalize_schedule_items(data[key])
+        return data
+
+
+# The fields IrrigationConfig carries that the growspace does not: the zone's
+# (ADR-0057). Read off the two classes, so a new field lands on the right side.
+ZONE_CONFIG_FIELDS: tuple[str, ...] = tuple(
+    f.name
+    for f in fields(IrrigationConfig)
+    if f.name not in {g.name for g in fields(GrowspaceIrrigationConfig)}
+)
+
+
+def normalize_schedule_items(items: list[Any]) -> list[Any]:
+    """Return schedule items in the ``time``/``duration`` form the coordinator reads.
+
+    Old stores wrote ``start_time`` and ``duration_seconds``; where both
+    spellings are present the canonical one wins and the stale one is dropped.
+    """
+    normalized: list[Any] = []
+    for item in items:
+        if isinstance(item, dict):
+            item = item.copy()
+            if "start_time" in item and "time" not in item:
+                item["time"] = item.pop("start_time")
+            elif "start_time" in item and "time" in item:
+                del item["start_time"]
+
+            if "duration_seconds" in item and "duration" not in item:
+                try:
+                    item["duration"] = int(float(item.pop("duration_seconds")))
+                except ValueError, TypeError:
+                    item["duration"] = 60
+            elif "duration_seconds" in item and "duration" in item:
+                del item["duration_seconds"]
+
+            if "duration" in item:
+                try:
+                    item["duration"] = int(float(item["duration"]))
+                except ValueError, TypeError:
+                    item["duration"] = 60
+        normalized.append(item)
+    return normalized
 
 
 @dataclass(slots=True)

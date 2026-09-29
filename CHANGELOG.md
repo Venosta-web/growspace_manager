@@ -46,6 +46,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   litres/m³/mL mix-up offers no Apply and names the tank sensor whose unit to
   check instead.
 
+### Changed
+
+- **Every growspace moves into an Irrigation Zone.** On first start the
+  growspace store (`.storage/growspace_manager.config`) moves to version 2:
+  each growspace's flow rate, schedule, soil trigger, minimum interval,
+  steering strategy, phase, substrate history and substrate probes move into
+  its implicit zone `default`, which owns every cell of the grid. Nothing
+  about how an existing growspace waters, steers or reports changes, and every
+  entity keeps its unique_id. The untouched version 1 document is kept once as
+  `.storage/growspace_manager.config.v1`. **An older build now refuses setup
+  with `UnsupportedStorageVersionError`** instead of loading the new store and
+  saving over it; to roll back, stop Home Assistant, copy the `.v1` file over
+  `growspace_manager.config`, install the older version and start. A
+  growspace whose migrated zones fail their check has its irrigation held
+  under `zone_migration_invalid`, with a Repairs issue naming it and the copy;
+  everything else keeps running, and the hold clears itself once the stored
+  zones are valid.
+
+### Fixed
+
+- Unloading the integration with a monitored tank no longer fails before its
+  final save, and no longer leaves the tank monitor's timer running.
+
 ## [1.3.0] - 2026-09-29
 
 1.3.0 is the safety and accounting release: irrigation and climate now fail

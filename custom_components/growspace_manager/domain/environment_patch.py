@@ -12,7 +12,11 @@ Merge behaviour derives entirely from ``ENVIRONMENT_FIELD_OWNERSHIP`` (declared
 beside the model): grower-config fields are set when present, runtime-
 accumulated state is always carried over from the existing config (including
 the tank runtime fields, matched per item by ``sensor_entity``), and
-sub-configs are replaced whole. Unknown keys mirror
+sub-configs are replaced whole. The substrate probes left EnvironmentConfig
+for the growspace's [[Irrigation Zone]] (ADR-0057) but are still edited
+through this seam under their old names, so the builders route them into
+``zone_values`` rather than letting the catch-all below swallow them; the
+commit shell writes those onto the implicit zone. Unknown keys mirror
 ``EnvironmentConfig.__pre_deserialize__``'s catch-all and merge into
 ``bayesian_options`` — that is how the advanced Bayesian/trend settings have
 always been stored, so the builders must not reject them.
@@ -40,12 +44,14 @@ from custom_components.growspace_manager.models import (
     FieldClass,
     GrowLightConfig,
     IrrigationTank,
+    IrrigationZone,
     LightLeakConfig,
     SensorGroup,
     VisionCheckupConfig,
 )
 
 from .fan_control import FAN_VPD_STAGE_DEFAULTS
+from .irrigation_zone import ZONE_ENVIRONMENT_FIELDS
 from .moisture_band import MOISTURE_BAND_CEILING, MOISTURE_BAND_FLOOR, is_valid_band
 
 _VALID_STAGE_KEYS = {stage.value for stage in FAN_VPD_STAGE_DEFAULTS}
@@ -107,6 +113,11 @@ _SUB_CONFIG_TYPES: dict[str, type[BaseModel]] = {
 _NULLABLE_FIELDS = {f.name for f in fields(EnvironmentConfig) if "None" in str(f.type)}
 _LIST_FIELDS = {
     f.name for f in fields(EnvironmentConfig) if str(f.type).startswith("list[")
+}
+_ZONE_LIST_FIELDS = {
+    f.name
+    for f in fields(IrrigationZone)
+    if f.name in ZONE_ENVIRONMENT_FIELDS and str(f.type).startswith("list[")
 }
 # DehumidifierThresholds / BayesianOptions are dict type aliases.
 _DICT_FIELDS = {
@@ -197,14 +208,21 @@ class EnvironmentPatch:
     ``bayesian_updates`` carries catch-all keys that merge *into*
     ``bayesian_options`` on apply; an explicit ``bayesian_options`` entry in
     ``values`` replaces the whole dict first.
+
+    ``zone_values`` carries the substrate probes, which the implicit
+    [[Irrigation Zone]] owns (ADR-0057), under the same patch semantics.
     """
 
     values: Mapping[str, Any]
     bayesian_updates: Mapping[str, Any] = dc_field(default_factory=dict)
     warnings: tuple[PatchWarning, ...] = ()
+    zone_values: Mapping[str, Any] = dc_field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Reject keys the merge could not honour (programmer error)."""
+        for name in self.zone_values:
+            if name not in ZONE_ENVIRONMENT_FIELDS:
+                raise EnvironmentPatchError(f"Field '{name}' is not a zone probe")
         for name in self.values:
             ownership = ENVIRONMENT_FIELD_OWNERSHIP.get(name)
             if ownership is None:
@@ -226,8 +244,9 @@ class EnvironmentPatchVerdict:
 
     ``config`` is a fresh EnvironmentConfig — inputs are never mutated.
     ``changed_fields`` is computed by value comparison, so a patch restating
-    current values changes nothing and restarts nothing. The verdict records
-    the decision; the commit shell performs the effects.
+    current values changes nothing and restarts nothing. ``zone_values`` are
+    the probe values the implicit zone is to hold afterwards. The verdict
+    records the decision; the commit shell performs the effects.
     """
 
     config: EnvironmentConfig
@@ -236,6 +255,7 @@ class EnvironmentPatchVerdict:
     exhaust_repair_relevant: bool
     summary: str
     warnings: tuple[PatchWarning, ...] = ()
+    zone_values: Mapping[str, Any] = dc_field(default_factory=dict)
 
     def changed(self, *field_names: str) -> bool:
         """Return True when any named field changed."""
@@ -370,12 +390,14 @@ def exhaust_fan_patch(data: Mapping[str, Any]) -> EnvironmentPatch:
 def apply_environment_patch(
     current: EnvironmentConfig | None,
     patch: EnvironmentPatch,
+    zone: IrrigationZone | None = None,
 ) -> EnvironmentPatchVerdict:
     """Merge an Environment Patch onto the current config. Pure and total.
 
     ``current=None`` applies the patch onto dataclass defaults — this is the
     one-time options-blob migration path, where the patch items' own runtime
-    values are adopted because there is nothing to carry over.
+    values are adopted because there is nothing to carry over. ``zone`` is
+    the zone the probe values land on, read only to say what changed.
 
     Never raises on a built patch. Neither input is mutated; unpatched values
     are carried into the new config by reference, so callers should treat
@@ -436,6 +458,10 @@ def apply_environment_patch(
         f.name
         for f in fields(EnvironmentConfig)
         if getattr(config, f.name) != getattr(base, f.name)
+    ) | frozenset(
+        name
+        for name, value in patch.zone_values.items()
+        if zone is None or getattr(zone, name) != value
     )
     controllers = frozenset(
         controller
@@ -450,6 +476,7 @@ def apply_environment_patch(
         exhaust_repair_relevant=bool(changed & _EXHAUST_REPAIR_FIELDS),
         summary=summary,
         warnings=patch.warnings,
+        zone_values=dict(patch.zone_values),
     )
 
 
@@ -459,6 +486,7 @@ def _build_patch(
     """Shared builder core: normalise, parse, validate a raw payload."""
     data = {k: v for k, v in raw.items() if k not in ignore_keys}
     values: dict[str, Any] = {}
+    zone_values: dict[str, Any] = {}
     bayesian_updates: dict[str, Any] = {}
     warnings: list[PatchWarning] = []
 
@@ -476,6 +504,9 @@ def _build_patch(
             data[canonical] = [val]
 
     for key, val in data.items():
+        if key in ZONE_ENVIRONMENT_FIELDS:
+            _parse_zone_field(key, val, zone_values)
+            continue
         ownership = ENVIRONMENT_FIELD_OWNERSHIP.get(key)
         if ownership is None:
             # Catch-all mirror of EnvironmentConfig.__pre_deserialize__: the
@@ -507,6 +538,7 @@ def _build_patch(
         values=values,
         bayesian_updates=bayesian_updates,
         warnings=tuple(warnings),
+        zone_values=zone_values,
     )
 
 
@@ -577,6 +609,20 @@ def _parse_plain_field(
             return
         raise EnvironmentPatchError(f"Field '{key}' must be a list")
     values[key] = val
+
+
+def _parse_zone_field(key: str, val: Any, zone_values: dict[str, Any]) -> None:
+    """Place one substrate probe field into ``zone_values``, as a plain field is."""
+    if key not in _ZONE_LIST_FIELDS:
+        zone_values[key] = val
+    elif val is None:
+        zone_values[key] = []
+    elif isinstance(val, str):
+        zone_values[key] = [val]
+    elif isinstance(val, list):
+        zone_values[key] = val
+    else:
+        raise EnvironmentPatchError(f"Field '{key}' must be a list")
 
 
 def _parse_sub_config(key: str, val: Any) -> Any:

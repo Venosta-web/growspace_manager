@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import suppress
+import copy
 from dataclasses import asdict
 import json
 import logging
@@ -23,6 +24,7 @@ from .const import (
     STORAGE_KEY_GENETICS,
     STORAGE_KEY_PLANTS,
     STORAGE_VERSION,
+    STORAGE_VERSION_CONFIG,
     STORAGE_VERSION_PLANTS,
 )
 from .domain.environment_patch import (
@@ -31,6 +33,12 @@ from .domain.environment_patch import (
     patch_from_flow_options,
 )
 from .domain.grow_run import GrowRun, PlantMovementFact
+from .domain.irrigation_zone import (
+    ZONE_CONFIG_FIELDS,
+    ZONE_ENVIRONMENT_FIELDS,
+    migrate_growspace_document,
+    zone_integrity_problems,
+)
 from .models import (
     ECRampCurve,
     EnvironmentConfig,
@@ -42,6 +50,7 @@ from .models import (
     NutrientPreset,
     PollinationEvent,
     SeedBatch,
+    grid_cells,
 )
 from .plant_record_loader import load_plant_records
 
@@ -90,6 +99,67 @@ class PlantActivityStore(Store[dict[str, Any]]):
             _copy_plant_store_before_migration, self.path, old_major_version
         )
         return {**old_data, "activity_facts": []}
+
+
+def _migrate_growspaces(data: dict[str, Any]) -> dict[str, Any]:
+    """Return a config document with every growspace in its zoned shape."""
+    growspaces = data.get("growspaces")
+    if not isinstance(growspaces, dict):
+        return data
+    return {
+        **data,
+        "growspaces": {
+            growspace_id: migrate_growspace_document(document)
+            if isinstance(document, dict)
+            else document
+            for growspace_id, document in growspaces.items()
+        },
+    }
+
+
+class GrowspaceConfigStore(Store[dict[str, Any]]):
+    """Version the growspace document, whose v2 put irrigation into zones.
+
+    The major bump is the point (ADR-0063): an older build refuses a version 2
+    document with ``UnsupportedStorageVersionError`` rather than loading it,
+    dropping every zone it does not know and saving over them.
+    """
+
+    async def _async_migrate_func(
+        self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Move every growspace into its implicit zone, keeping the v1 document."""
+        if old_major_version == STORAGE_VERSION_CONFIG:
+            # A newer minor version of the same major is read as it is.
+            return old_data
+        if old_major_version != 1:
+            raise ValueError(f"Unsupported config store version: {old_major_version}")
+        await self._async_write_pre_migration_copy(
+            old_major_version, old_minor_version, old_data
+        )
+        return _migrate_growspaces(old_data)
+
+    async def _async_write_pre_migration_copy(
+        self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
+    ) -> None:
+        """Write the untouched old document once, as ``<key>.v<old major>``.
+
+        The [[Pre-Migration Copy]]: never updated and never read by the
+        integration. A rollback is to stop Home Assistant, copy it over the live
+        document, install the older version and start. Written through a
+        ``Store`` of the old version, so a rollback copy loads as exactly that
+        version; a failure raises, which leaves the old document in place for
+        the next start to try again.
+        """
+        copy: Store[dict[str, Any]] = Store(
+            self.hass,
+            old_major_version,
+            f"{self.key}.v{old_major_version}",
+            minor_version=old_minor_version,
+        )
+        if await copy.async_load() is not None:
+            return
+        await copy.async_save(old_data)
 
 
 def _migrate_preset_items(
@@ -153,10 +223,14 @@ class StorageManager:
         self._committed_plants: dict[str, dict[str, Any]] = {}
         self.activity_facts: list[PlantMovementFact] = []
         self.activity_unreadable = False
+        # What the last load found wrong with each growspace's stored zones.
+        # A growspace listed here has its irrigation held (ADR-0063 item 6).
+        self.zone_problems: dict[str, list[str]] = {}
+        self._invalid_zone_documents: dict[str, dict[str, Any]] = {}
 
         # Segmented stores
-        self.config_store: Store[dict[str, Any]] = Store(
-            hass, STORAGE_VERSION, STORAGE_KEY_CONFIG
+        self.config_store: Store[dict[str, Any]] = GrowspaceConfigStore(
+            hass, STORAGE_VERSION_CONFIG, STORAGE_KEY_CONFIG
         )
         self.plants_store: Store[dict[str, Any]] = PlantActivityStore(
             hass, STORAGE_VERSION_PLANTS, STORAGE_KEY_PLANTS
@@ -287,6 +361,9 @@ class StorageManager:
         growspace_data["layout_revision"] = layout_revision
         growspace_data["rows"] = rows
         growspace_data["plants_per_row"] = plants_per_row
+        zones = growspace_data.get("irrigation_zones") or []
+        if growspace_id not in self.zone_problems and len(zones) == 1:
+            zones[0]["cells"] = grid_cells(rows, plants_per_row)
         for placement in placements:
             plant_data = plants_data["plants"][placement["plant_id"]]
             plant_data["row"] = placement["row"]
@@ -319,10 +396,11 @@ class StorageManager:
         nutrient_data = self.nutrient_manager.get_serialization_data()
         genetics_data = self._get_genetics_data()
 
+        stored_growspaces: dict[str, dict[str, Any]] = {
+            gs.id: asdict(gs) for gs in self.repository.get_all_growspaces()
+        }
         config = {
-            "growspaces": {
-                gs.id: asdict(gs) for gs in self.repository.get_all_growspaces()
-            },
+            "growspaces": stored_growspaces,
             "notifications_sent": self.notification_state.sent
             if self.notification_state
             else {},
@@ -330,6 +408,35 @@ class StorageManager:
             if self.notification_state
             else {},
         }
+        # Keep invalid irrigation data intact while the rest of a growspace
+        # (plants, climate, layout) continues to save. A safe in-memory zone
+        # must never silently replace the evidence needed to repair the store.
+        for gid, original in self._invalid_zone_documents.items():
+            current = stored_growspaces.get(gid)
+            if current is None:
+                continue
+            current["irrigation_zones"] = copy.deepcopy(
+                original.get("irrigation_zones")
+            )
+            for key in ("irrigation_strategy", "substrate_history"):
+                if key in original:
+                    current[key] = copy.deepcopy(original[key])
+            for parent, names in (
+                ("irrigation_config", ZONE_CONFIG_FIELDS),
+                (
+                    "environment_config",
+                    (
+                        *ZONE_ENVIRONMENT_FIELDS,
+                        "substrate_ec_sensor",
+                        "substrate_ec_sensors",
+                    ),
+                ),
+            ):
+                source = original.get(parent)
+                if isinstance(source, dict):
+                    for name in names:
+                        if name in source:
+                            current[parent][name] = copy.deepcopy(source[name])
         # Merge nutrient data (presets and inventory)
         config.update(nutrient_data)
         if self.recipe_library is not None:
@@ -372,7 +479,7 @@ class StorageManager:
             legacy_data = await self.legacy_store.async_load()
             if legacy_data:
                 _LOGGER.info("Migrating from legacy storage found")
-                self._load_legacy(legacy_data, options)
+                self._load_legacy(_migrate_growspaces(legacy_data), options)
 
                 # Perform immediate save to migrate to new structure
                 await self.config_store.async_save(self._get_config_data())
@@ -506,11 +613,35 @@ class StorageManager:
             raw_growspaces = data.get("growspaces", {})
             growspaces: dict[str, Growspace] = {}
 
+            self.zone_problems = {
+                gid: problems
+                for gid, gdata in raw_growspaces.items()
+                if isinstance(gdata, dict)
+                and (problems := zone_integrity_problems(gdata))
+            }
+            self._invalid_zone_documents = {
+                gid: copy.deepcopy(raw_growspaces[gid]) for gid in self.zone_problems
+            }
+            for gid, problems in self.zone_problems.items():
+                _LOGGER.error(
+                    "Irrigation of growspace %s is held; its stored zones are "
+                    "invalid: %s",
+                    gid,
+                    "; ".join(problems),
+                )
+
             for gid, gdata in raw_growspaces.items():
                 try:
                     if isinstance(gdata, dict):
                         # Mashumaro handles all migrations via __pre_deserialize__
-                        growspaces[gid] = Growspace.from_dict(gdata)
+                        try:
+                            growspaces[gid] = Growspace.from_dict(gdata)
+                        except ValueError, KeyError, TypeError:
+                            if gid not in self.zone_problems:
+                                raise
+                            safe = copy.deepcopy(gdata)
+                            safe["irrigation_zones"] = []
+                            growspaces[gid] = Growspace.from_dict(safe)
                     elif isinstance(gdata, Growspace):
                         # Already a Growspace instance
                         growspaces[gid] = gdata
@@ -562,9 +693,7 @@ class StorageManager:
             if growspace.environment_config != default_config:
                 continue
             try:
-                growspace.environment_config = apply_environment_patch(
-                    None, patch_from_flow_options(opts)
-                ).config
+                verdict = apply_environment_patch(None, patch_from_flow_options(opts))
             except EnvironmentPatchError as err:
                 # A malformed legacy blob must not brick startup.
                 _LOGGER.warning(
@@ -573,6 +702,9 @@ class StorageManager:
                     err,
                 )
             else:
+                growspace.environment_config = verdict.config
+                for name, value in verdict.zone_values.items():
+                    setattr(growspace.default_zone, name, value)
                 _LOGGER.info(
                     "Adopted legacy options environment config for %s", growspace.id
                 )

@@ -113,8 +113,13 @@ class EnvironmentStateAssembler:
             )
 
         co2 = self._sensor_value(config.co2_sensor)
-        soil_moisture = self._moisture_value(config.soil_moisture_sensor)
-        substrate_temp = self._aggregated_value(config.substrate_temperature_sensors)
+        zone = growspace.default_zone if growspace else None
+        soil_moisture = (
+            self._moisture_value(zone.soil_moisture_sensor) if zone else None
+        )
+        substrate_temp = (
+            self._aggregated_value(zone.substrate_temperature_sensors) if zone else None
+        )
 
         # ``.get(..., 0)`` mirrors the historical default and tolerates the
         # partial dicts that white-box tests patch ``_growth_stage_info`` with.

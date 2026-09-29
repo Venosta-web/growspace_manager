@@ -16,6 +16,7 @@ import pytest
 
 from custom_components.growspace_manager.const import DOMAIN, PLANT_STAGES, PlantStage
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.domain.irrigation_zone import effective_config
 from custom_components.growspace_manager.exceptions import (
     GrowspaceNotFoundError,
     PlantNotFoundError,
@@ -2098,11 +2099,11 @@ async def test_async_initialize_sub_coordinators(
 
     # 1. Add growspace with irrigation enabled
     gs1 = await coordinator._growspace_manager.add_growspace("GS1")
-    gs1.irrigation_strategy.enabled = True
+    gs1.default_zone.strategy.enabled = True
 
     # 2. Add growspace with irrigation disabled
     gs2 = await coordinator._growspace_manager.add_growspace("GS2")
-    gs2.irrigation_strategy.enabled = False
+    gs2.default_zone.strategy.enabled = False
 
     entry = MagicMock()
 
@@ -2379,7 +2380,7 @@ async def test_async_update_growspace_full(
     await coordinator._growspace_manager.update_growspace(
         gs.id, irrigation_config=irr_config_obj
     )
-    assert gs.irrigation_config == irr_config_obj
+    assert effective_config(gs) == irr_config_obj
 
     # 7. No changes
     with patch(
@@ -2501,7 +2502,7 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
     """Test _setup_growspace_sub_coordinators with different configurations."""
     gs_normal = Growspace(id="gs1", name="Normal")
     gs_vwc = Growspace(id="gs2", name="VWC")
-    gs_vwc.irrigation_strategy.enabled = True
+    gs_vwc.default_zone.strategy.enabled = True
 
     with (
         patch(
@@ -2932,7 +2933,7 @@ async def test_update_irrigation_settings_missing_entities(
     new_settings = {"irrigation_duration": 60}
     await coordinator.services.growspaces.update_irrigation_config(gs.id, new_settings)
 
-    assert gs.irrigation_config.irrigation_duration == 60
+    assert gs.default_zone.irrigation_duration == 60
     assert gs.irrigation_config.irrigation_pump_entity == "switch.pump1"
     assert gs.irrigation_config.drain_pump_entity == "switch.limit_switch"
 

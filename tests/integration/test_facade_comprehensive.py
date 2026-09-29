@@ -972,7 +972,7 @@ async def test_add_timeline_note_with_metadata(mock_coordinator) -> None:
     gs.environment_config.temperature_sensor = "sensor.temp"
     gs.environment_config.humidity_sensor = None
     gs.environment_config.vpd_sensor = None
-    gs.environment_config.soil_moisture_sensor = None
+    gs.default_zone.soil_moisture_sensor = None
     gs.environment_config.light_sensor = None
     mock_coordinator.growspaces = {"gs1": gs}
 
@@ -1378,7 +1378,7 @@ async def test_update_irrigation_config_sets_strategy_field(mock_coordinator) ->
 
     # 'enabled' exists on irrigation_strategy but not irrigation_config
     await facade.growspaces.update_irrigation_config("gs1", {"enabled": True})
-    assert gs.irrigation_strategy.enabled is True
+    assert gs.default_zone.strategy.enabled is True
 
 
 @pytest.mark.asyncio
@@ -1427,7 +1427,7 @@ async def test_add_timeline_note_state_parse_error(mock_coordinator) -> None:
     gs.environment_config.temperature_sensor = "sensor.temp"
     gs.environment_config.humidity_sensor = None
     gs.environment_config.vpd_sensor = None
-    gs.environment_config.soil_moisture_sensor = None
+    gs.default_zone.soil_moisture_sensor = None
     gs.environment_config.light_sensor = None
     mock_coordinator.growspaces = {"gs1": gs}
 

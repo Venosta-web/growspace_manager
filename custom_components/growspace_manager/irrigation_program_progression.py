@@ -52,6 +52,7 @@ from .domain.irrigation_recipe import (
     RecipeApplyError,
     recipe_has_drifted,
 )
+from .domain.irrigation_zone import effective_config, effective_strategy
 from .domain.plant_metrics import count_live_plants
 from .services.irrigation_change import (
     IrrigationChange,
@@ -124,8 +125,8 @@ def resolve_program_position(
     [[Active Feed EC Target]] uses, reused unchanged so one card never shows
     two different weeks for one tent ([[Recipe Week Resolution]]).
     """
-    strategy = growspace.irrigation_strategy
-    config = growspace.irrigation_config
+    strategy = effective_strategy(growspace)
+    config = effective_config(growspace)
 
     program_id = strategy.irrigation_program_id
     if program_id is None:
@@ -196,7 +197,7 @@ def _applied_recipe_drifted(
     with auto-advance on and nothing yet stamped is exactly the case that
     should progress.
     """
-    recipe_id = growspace.irrigation_strategy.applied_recipe_id
+    recipe_id = growspace.default_zone.strategy.applied_recipe_id
     if recipe_id is None:
         return False
     recipe = coordinator.services.config.find_irrigation_recipe(recipe_id)
@@ -204,8 +205,8 @@ def _applied_recipe_drifted(
         return False
     return recipe_has_drifted(
         recipe,
-        strategy=growspace.irrigation_strategy,
-        config=growspace.irrigation_config,
+        strategy=effective_strategy(growspace),
+        config=effective_config(growspace),
         live_plant_count=live_plant_count,
     )
 
