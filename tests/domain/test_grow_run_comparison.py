@@ -269,7 +269,7 @@ def test_a_metric_only_one_snapshot_froze_is_unavailable() -> None:
     first = _run(1, RunStatus.FINALIZED)
     second = _run(2, RunStatus.FINALIZED)
     assert second.snapshot is not None
-    newer = FrozenMetric("water_productivity", "g/L", 1, 1.4)
+    newer = FrozenMetric("energy_productivity", "g/kWh", 1, 1.4)
     second = replace(
         second,
         snapshot=replace(second.snapshot, metrics=(*second.snapshot.metrics, newer)),
@@ -277,7 +277,7 @@ def test_a_metric_only_one_snapshot_froze_is_unavailable() -> None:
 
     comparison = compare_runs(_ledger(first, second))
 
-    row = _row(comparison, "water_productivity")
+    row = _row(comparison, "energy_productivity")
     assert row.state == COMPARISON_UNAVAILABLE
     assert row.earlier is None
     assert row.as_dict()["earlier"] is None
@@ -285,7 +285,9 @@ def test_a_metric_only_one_snapshot_froze_is_unavailable() -> None:
     assert [row.metric for row in comparison.metrics] == [
         "yield",
         "yield_per_harvest_source_plant",
+        "water_applied",
         "water_productivity",
+        "energy_productivity",
     ]
 
 
@@ -342,7 +344,12 @@ def test_each_status_shows_the_metrics_it_has() -> None:
     live = provisional_metrics(active)
     assert live[0].value is None
     assert live[0].missing == (MissingFact("dry_weight", "r1p1"),)
-    assert [row.value for row in provisional_metrics(completed)] == [150.0, 75.0]
+    assert [row.value for row in provisional_metrics(completed)] == [
+        150.0,
+        75.0,
+        None,
+        None,
+    ]
     assert finalized.snapshot is not None
     assert provisional_metrics(finalized) == finalized.snapshot.metrics
     assert provisional_metrics(voided) == ()

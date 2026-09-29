@@ -30,7 +30,7 @@ from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
 from .delivery_attempt_store import DeliveryAttemptStore
-from .domain.grow_run import ParticipantIdentity
+from .domain.grow_run import ParticipantIdentity, RunStatus, WaterApplication
 from .domain.unattributed_activity import (
     DEFAULT_RETENTION_DAYS as DEFAULT_UNATTRIBUTED_RETENTION_DAYS,
 )
@@ -472,6 +472,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.storage_manager.async_force_save()
         await self.async_project_activity()
         await self.async_project_harvest_outcomes()
+        await self.async_project_water()
         self.data = candidate_data
         await self._publish_current_data()
 
@@ -495,6 +496,79 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 break
         await self._async_observe_unattributed_activity()
+
+    async def async_project_water(self) -> None:
+        """Retry durable hand reports and delivery attempts into Run history."""
+        if self.grow_runs.unreadable:
+            return
+        for growspace_id, growspace in self.growspaces.items():
+            mutable_runs = [
+                run
+                for run in self.grow_runs.ledger(growspace_id).runs
+                if run.status in (RunStatus.ACTIVE, RunStatus.COMPLETED)
+            ]
+            if not mutable_runs:
+                continue
+            projected_ids = {
+                application.application_id
+                for run in mutable_runs
+                for application in run.water_applications
+            }
+            for reading in growspace.water_usage.daily_readings:
+                if reading.get("source") != "manual" or not reading.get("watering_id"):
+                    continue
+                if reading["watering_id"] in projected_ids:
+                    continue
+                try:
+                    at = dt_util.parse_datetime(reading["watered_at"])
+                    if at is None:
+                        _LOGGER.warning("Hand watering has no valid timestamp")
+                        continue
+                    await self.grow_runs.async_project_water(
+                        growspace_id,
+                        WaterApplication(
+                            reading["watering_id"],
+                            at,
+                            "manual",
+                            float(reading["liters"]),
+                        ),
+                    )
+                    projected_ids.add(reading["watering_id"])
+                except Exception:
+                    _LOGGER.exception(
+                        "Hand watering remains pending for Run projection"
+                    )
+            try:
+                deliveries = await self.deliveries.async_load(growspace_id)
+                if deliveries.unreadable:
+                    await self.grow_runs.async_mark_water_incomplete(growspace_id)
+                    continue
+                for attempt in deliveries.attempts:
+                    if not attempt.charges or attempt.outcome is None:
+                        continue
+                    if attempt.attempt_id in projected_ids:
+                        continue
+                    at = attempt.on_confirmed_at or attempt.on_commanded_at
+                    if at is None:
+                        continue
+                    measured = (
+                        attempt.on_confirmed_at is not None
+                        and attempt.off_confirmed_at is not None
+                        and attempt.flow_rate_ml_per_sec > 0
+                        and attempt.estimated_l is not None
+                    )
+                    await self.grow_runs.async_project_water(
+                        growspace_id,
+                        WaterApplication(
+                            attempt.attempt_id,
+                            at,
+                            "pump_estimate" if measured else "unknown",
+                            attempt.estimated_l if measured else None,
+                        ),
+                    )
+                    projected_ids.add(attempt.attempt_id)
+            except Exception:
+                _LOGGER.exception("Delivery attempts remain pending for Run projection")
 
     async def _async_observe_unattributed_activity(self) -> None:
         """Extend each Growspace's Unattributed Activity coverage to now."""
@@ -651,6 +725,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.grow_runs.async_load()
         await self.async_project_activity()
         await self.async_project_harvest_outcomes()
+        await self.async_project_water()
         # storage_manager.load_data() replaces nutrient_manager.ipm_presets with a new
         # dict loaded from storage. Sync ipm_service to point at that same dict so saves
         # go to the right place and the WebSocket handler returns up-to-date presets.

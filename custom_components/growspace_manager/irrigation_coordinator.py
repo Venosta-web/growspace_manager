@@ -2256,6 +2256,7 @@ class BaseIrrigationCoordinator:
                     if off_confirmed and closed.off_commanded_at is not None
                     else closed
                 )
+                await self._main_coordinator.async_project_water()
             if start_dt is not None:
                 if cycle_finished:
                     self._record(

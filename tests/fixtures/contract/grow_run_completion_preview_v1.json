@@ -18,7 +18,16 @@
       }
     ],
     "completed_at": "2026-10-02T20:30:00+00:00",
-    "coverage": [],
+    "coverage": [
+      {
+        "coverage_percent": 100.0,
+        "metric": "water_applied"
+      },
+      {
+        "coverage_percent": 0.0,
+        "metric": "water_productivity"
+      }
+    ],
     "delivering_outputs": ["switch.tent_pump"],
     "duration_days": 70,
     "missing_outcomes": [

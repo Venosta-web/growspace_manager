@@ -412,6 +412,7 @@ async def async_preview_grow_run_finalization(
     async with coordinator.lock:
         await coordinator.async_project_activity()
         await coordinator.async_project_harvest_outcomes()
+        await coordinator.async_project_water()
         return preview_finalization(
             coordinator.grow_runs.ledger(growspace_id),
             run_id,
@@ -439,6 +440,7 @@ async def async_finalize_grow_run(
     async with coordinator.lock:
         await coordinator.async_project_activity()
         await coordinator.async_project_harvest_outcomes()
+        await coordinator.async_project_water()
         async with store.lock:
             ledger = store.ledger(growspace_id)
             ledger.require_revision(expected_revision)

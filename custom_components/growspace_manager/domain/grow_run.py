@@ -34,6 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import StrEnum
+import math
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -85,7 +86,12 @@ SNAPSHOT_FORMAT = 1
 
 #: Metric Definition Versions. A change to how a metric is calculated takes a
 #: new version, so values frozen under different rules are never compared.
-METRIC_DEFINITIONS = {"yield": 1, "yield_per_harvest_source_plant": 1}
+METRIC_DEFINITIONS = {
+    "yield": 1,
+    "yield_per_harvest_source_plant": 1,
+    "water_applied": 1,
+    "water_productivity": 1,
+}
 
 #: The goal a Run Comparison judges each metric against. A Comparison
 #: Direction receives an improvement judgment only for an agreed monotonic
@@ -94,6 +100,8 @@ METRIC_DEFINITIONS = {"yield": 1, "yield_per_harvest_source_plant": 1}
 METRIC_GOALS: dict[str, str] = {
     "yield": "neutral",
     "yield_per_harvest_source_plant": "neutral",
+    "water_applied": "neutral",
+    "water_productivity": "higher",
 }
 
 
@@ -989,6 +997,7 @@ class RunSnapshot:
     counts: dict[str, int]
     strains: tuple[StrainCount, ...]
     metrics: tuple[FrozenMetric, ...]
+    water_applications: tuple[WaterApplication, ...] = ()
     coverage: tuple[MetricCoverage, ...] = ()
     uncovered_gaps: tuple[CoverageGap, ...] = ()
     missing: tuple[MissingFact, ...] = ()
@@ -1022,6 +1031,7 @@ class RunSnapshot:
             "counts": {name: self.counts[name] for name in SNAPSHOT_COUNTS},
             "strains": [row.as_dict() for row in self.strains],
             "metrics": [row.as_dict() for row in self.metrics],
+            "water_applications": [row.as_dict() for row in self.water_applications],
             "coverage": [row.as_dict() for row in self.coverage],
             "uncovered_gaps": [row.as_dict() for row in self.uncovered_gaps],
             "missing": [row.as_dict() for row in self.missing],
@@ -1071,6 +1081,12 @@ class RunSnapshot:
             metrics=tuple(
                 FrozenMetric.from_dict(row)
                 for row in _list(value.get("metrics"), "snapshot.metrics")
+            ),
+            water_applications=tuple(
+                WaterApplication.from_dict(row)
+                for row in _list(
+                    value.get("water_applications", []), "snapshot.water_applications"
+                )
             ),
             coverage=tuple(
                 MetricCoverage.from_dict(row)
@@ -1134,6 +1150,80 @@ def _yield_metrics(
     )
 
 
+def _water_metrics(
+    run: GrowRun, yield_metric: FrozenMetric
+) -> tuple[FrozenMetric, FrozenMetric]:
+    """Compute complete water use and dry yield per liter from run facts."""
+    missing: list[MissingFact] = []
+    if (
+        run.backdate is not None
+        or run.water_coverage_started_at is None
+        or (run.water_coverage_started_at > run.started_at)
+    ):
+        missing.append(MissingFact("water_coverage"))
+    missing.extend(
+        MissingFact("water_volume", row.application_id)
+        for row in run.water_applications
+        if row.liters is None
+    )
+    applied = FrozenMetric(
+        "water_applied",
+        "L",
+        METRIC_DEFINITIONS["water_applied"],
+        None
+        if missing
+        else round(sum(row.liters or 0 for row in run.water_applications), 3),
+        tuple(missing),
+    )
+    productivity_missing = list(missing)
+    if yield_metric.value is None:
+        productivity_missing.append(MissingFact("yield"))
+    if applied.value == 0:
+        productivity_missing.append(MissingFact("positive_water_applied"))
+    productivity_value = None
+    if not productivity_missing and yield_metric.value is not None and applied.value:
+        productivity_value = round(yield_metric.value / applied.value, 3)
+    productivity = FrozenMetric(
+        "water_productivity",
+        "g/L",
+        METRIC_DEFINITIONS["water_productivity"],
+        productivity_value,
+        tuple(productivity_missing),
+    )
+    return applied, productivity
+
+
+def water_coverage(run: GrowRun) -> tuple[MetricCoverage, MetricCoverage]:
+    """Report application coverage, with unobserved run history at zero."""
+    if (
+        run.backdate is not None
+        or run.water_coverage_started_at is None
+        or run.water_coverage_started_at > run.started_at
+    ):
+        applied = 0.0
+    elif not run.water_applications:
+        applied = 100.0
+    else:
+        applied = round(
+            100
+            * sum(row.liters is not None for row in run.water_applications)
+            / len(run.water_applications),
+            1,
+        )
+    productivity = (
+        applied
+        if applied == 100
+        and (metrics := provisional_metrics(run))[0].value is not None
+        and metrics[2].value is not None
+        and metrics[2].value > 0
+        else 0.0
+    )
+    return (
+        MetricCoverage("water_applied", applied),
+        MetricCoverage("water_productivity", productivity),
+    )
+
+
 def provisional_metrics(run: GrowRun) -> tuple[FrozenMetric, ...]:
     """The metrics a Run's status gives it, as its records stand now.
 
@@ -1145,7 +1235,10 @@ def provisional_metrics(run: GrowRun) -> tuple[FrozenMetric, ...]:
         return run.snapshot.metrics
     if run.status is RunStatus.VOIDED:
         return ()
-    return _yield_metrics(tuple(sorted(run.harvest_outcomes, key=lambda r: r.plant_id)))
+    yield_metrics = _yield_metrics(
+        tuple(sorted(run.harvest_outcomes, key=lambda r: r.plant_id))
+    )
+    return (*yield_metrics, *_water_metrics(run, yield_metrics[0]))
 
 
 def build_snapshot(
@@ -1193,8 +1286,10 @@ def build_snapshot(
     missing.extend(MissingFact("entered_dry_at", plant_id) for plant_id in undated)
     window = (min(days), max(days)) if days and not undated else None
 
-    metrics = _yield_metrics(outcomes)
+    yield_metrics = _yield_metrics(outcomes)
+    metrics = (*yield_metrics, *_water_metrics(run, yield_metrics[0]))
     missing.extend(metrics[0].missing)
+    missing.extend(metrics[2].missing)
 
     strains: dict[tuple[int | None, str], list[int]] = {}
     for identity in participants:
@@ -1230,6 +1325,8 @@ def build_snapshot(
             )
         ),
         metrics=metrics,
+        water_applications=run.water_applications,
+        coverage=water_coverage(run),
         uncovered_gaps=run.backdate.gaps if run.backdate else (),
         missing=tuple(dict.fromkeys(missing)),
     )
@@ -1275,6 +1372,63 @@ class SupersededSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class WaterApplication:
+    """One reported or controlled irrigation, with one measurement source.
+
+    A missing volume remains a fact: omitting it would make a partial total look
+    complete. ``application_id`` is the durable watering or delivery attempt ID.
+    """
+
+    application_id: str
+    at: datetime
+    source: str
+    liters: float | None
+
+    def __post_init__(self) -> None:
+        """Refuse a contradictory or unbounded measurement."""
+        if not self.application_id:
+            raise ValueError("water application has no id")
+        if self.source not in {"manual", "pump_estimate", "metered", "unknown"}:
+            raise ValueError("water application has an unknown source")
+        if (self.source == "unknown") != (self.liters is None):
+            raise ValueError("water application has inconsistent volume evidence")
+        if self.liters is not None and (
+            isinstance(self.liters, bool)
+            or not isinstance(self.liters, (int, float))
+            or self.liters < 0
+            or not math.isfinite(self.liters)
+        ):
+            raise ValueError("water application has an invalid volume")
+        if self.at.tzinfo is None:
+            raise ValueError("water application has no timezone")
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "application_id": self.application_id,
+            "at": self.at.isoformat(),
+            "source": self.source,
+            "liters": self.liters,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> WaterApplication:
+        """Read one application without coercing a malformed volume."""
+        value = _dict(value, "water application")
+        liters = value.get("liters")
+        if liters is not None and (
+            isinstance(liters, bool) or not isinstance(liters, (int, float))
+        ):
+            raise TypeError("water application volume is not numeric")
+        return cls(
+            _str(value.get("application_id"), "water.application_id"),
+            _moment(value.get("at"), "water.at"),
+            _str(value.get("source"), "water.source"),
+            liters,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class GrowRun:
     """One Grow Run of one Growspace."""
 
@@ -1288,6 +1442,8 @@ class GrowRun:
     baseline: OpeningBaseline = field(default_factory=OpeningBaseline)
     participations: tuple[RunParticipation, ...] = ()
     movement_history: tuple[PlantMovementFact, ...] = ()
+    water_applications: tuple[WaterApplication, ...] = ()
+    water_coverage_started_at: datetime | None = None
     harvest_outcomes: tuple[HarvestOutcome, ...] = ()
     audit: tuple[RunAuditEntry, ...] = ()
     daily_summaries: tuple[DailySummary, ...] = ()
@@ -1339,6 +1495,12 @@ class GrowRun:
             "baseline": self.baseline.as_dict(),
             "participations": [row.as_dict() for row in self.participations],
             "movement_history": [row.as_dict() for row in self.movement_history],
+            "water_applications": [row.as_dict() for row in self.water_applications],
+            "water_coverage_started_at": (
+                self.water_coverage_started_at.isoformat()
+                if self.water_coverage_started_at
+                else None
+            ),
             "harvest_outcomes": [row.as_dict() for row in self.harvest_outcomes],
             "audit": [row.as_dict() for row in self.audit],
             "daily_summaries": [row.as_dict() for row in self.daily_summaries],
@@ -1378,6 +1540,15 @@ class GrowRun:
                 for row in _list(
                     value.get("movement_history", []), "run.movement_history"
                 )
+            ),
+            water_applications=tuple(
+                WaterApplication.from_dict(row)
+                for row in _list(
+                    value.get("water_applications", []), "run.water_applications"
+                )
+            ),
+            water_coverage_started_at=_opt_moment(
+                value.get("water_coverage_started_at"), "run.water_coverage_started_at"
             ),
             harvest_outcomes=tuple(
                 HarvestOutcome.from_dict(row)
@@ -1427,6 +1598,9 @@ class GrowRun:
         fact_ids = [row.fact_id for row in run.movement_history]
         if len(fact_ids) != len(set(fact_ids)):
             raise ValueError("a movement fact appears twice in one Run")
+        water_ids = [row.application_id for row in run.water_applications]
+        if len(water_ids) != len(set(water_ids)):
+            raise ValueError("a water application appears twice in one Run")
         outcome_ids = [row.plant_id for row in run.harvest_outcomes]
         if len(outcome_ids) != len(set(outcome_ids)):
             raise ValueError("a Plant has more than one harvest outcome in one Run")
@@ -1570,7 +1744,7 @@ class CompletionPreview:
             # metric. No Run metric is measured yet (#676-#679 add them), so
             # nothing's coverage can fall short; the key is here so those
             # metrics add rows, not shape.
-            "coverage": [],
+            "coverage": [row.as_dict() for row in water_coverage(self.run)],
             "attribution_gaps": [row.as_dict() for row in self.attribution_gaps],
             "retrospective_note": self.retrospective_note,
             "delivering_outputs": list(self.delivering_outputs),
@@ -1697,8 +1871,13 @@ def discard_blockers(
     """
     opening = run.backdate.covered_from if run.backdate else run.started_at
     blockers: list[str] = []
-    if run.movement_history or any(
-        run.run_id in (fact.source_run_id, fact.target_run_id) for fact in pending_facts
+    if (
+        run.movement_history
+        or run.water_applications
+        or any(
+            run.run_id in (fact.source_run_id, fact.target_run_id)
+            for fact in pending_facts
+        )
     ):
         blockers.append(ACTIVITY_FACTS)
     if any(
@@ -1859,6 +2038,32 @@ class RunLedger:
             changed = True
         return replace(self, runs=tuple(runs)) if changed else self
 
+    def project_water(self, application: WaterApplication) -> RunLedger:
+        """Place one irrigation in its operating interval, once by durable ID."""
+        runs = tuple(
+            replace(run, water_applications=(*run.water_applications, application))
+            if run.status in (RunStatus.ACTIVE, RunStatus.COMPLETED)
+            and run.covers(application.at)
+            and not any(
+                row.application_id == application.application_id
+                for row in run.water_applications
+            )
+            else run
+            for run in self.runs
+        )
+        return replace(self, runs=runs) if runs != self.runs else self
+
+    def mark_water_incomplete(self) -> RunLedger:
+        """Keep an unreadable delivery interval from becoming a complete total."""
+        runs = tuple(
+            replace(run, water_coverage_started_at=None)
+            if run.status in (RunStatus.ACTIVE, RunStatus.COMPLETED)
+            and run.water_coverage_started_at is not None
+            else run
+            for run in self.runs
+        )
+        return replace(self, runs=runs) if runs != self.runs else self
+
     def project_harvest_outcome(
         self, run_id: str, outcome: HarvestOutcome
     ) -> RunLedger:
@@ -1954,6 +2159,7 @@ class RunLedger:
             status=RunStatus.ACTIVE,
             timezone=timezone,
             started_at=started_at,
+            water_coverage_started_at=now if claim is None else None,
             metadata=metadata,
             baseline=baseline,
             participations=participations,
@@ -2398,6 +2604,7 @@ def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
             "notes": run.metadata.notes,
             "participations": [row.as_dict() for row in run.participations],
             "movement_history": [row.as_dict() for row in run.movement_history],
+            "water_applications": [row.as_dict() for row in run.water_applications],
             "harvest_outcomes": [row.as_dict() for row in run.harvest_outcomes],
             "tags": list(run.metadata.tags),
             "goals": run.metadata.goals,
@@ -2409,6 +2616,7 @@ def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
                 row.as_dict() for row in run.participant_identities
             ],
             "metrics": [row.as_dict() for row in provisional_metrics(run)],
+            "coverage": [row.as_dict() for row in water_coverage(run)],
             "superseded_snapshots": [row.as_dict() for row in run.superseded_snapshots],
         },
     }
