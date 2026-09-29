@@ -214,6 +214,7 @@ async def _tent(
     await store.async_initialize_controls({"tent": growspace})
     await store.async_set_control("tent", "irrigation_armed", True, "operator")
     runtime = MagicMock()
+    runtime.async_project_water = AsyncMock()
     runtime.irrigation_safety = store
     runtime.reliability = ReliabilityStore(hass, key)
     runtime.deliveries = DeliveryAttemptStore(hass, key)

@@ -119,6 +119,7 @@ def mock_growspace():
 @pytest.fixture
 def mock_main_coordinator(mock_growspace):
     coordinator = MagicMock()
+    coordinator.async_project_water = AsyncMock()
     coordinator.growspaces = {"gs1": mock_growspace}
     # Allow add_event to be called
     coordinator.add_event = MagicMock()
