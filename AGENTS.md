@@ -43,10 +43,15 @@ checkout has one, otherwise `../../.venv/bin/pytest` from a
 `pytest-homeassistant-custom-component` pins, so every test import dies at
 collection. Building or refreshing a venv is documented in `CLAUDE.md`.
 
-## Home Assistant test stack updates
+## Dependency updates
 
-Dependabot reads `.github/dependabot.yml` from `main` and targets `prerelease`.
-Its `home-assistant-test-stack` group updates `homeassistant`,
+Dependabot reads `.github/dependabot.yml` from the default branch (`main`) every
+Monday and opens GitHub Actions and pip version-update PRs against `prerelease`.
+The pip allowlist limits independent updates to the integration's CI pins and
+the `dev-tooling` group (ruff, mypy, pre-commit, yamllint, codespell). Keep its
+allowlist and the reasoned ignore entries in sync with `requirements.txt`.
+
+The `home-assistant-test-stack` group updates `homeassistant`,
 `pytest-homeassistant-custom-component`, `hassil` and `home-assistant-intents`
 in one PR. The plugin pins HA exactly and can lag a new HA release. Leave that
 grouped PR open until a plugin release pins the proposed HA version; do not
@@ -61,7 +66,11 @@ new `package_constraints.txt` resolves with the four proposed pins. Run the
 full test suite and inspect all required checks, including `codecov/patch`.
 The remaining pytest stack is pinned by the plugin; HA's constraints govern
 other dependencies such as Pillow and pydantic. Do not bump those through an
-independent Dependabot PR.
+independent Dependabot PR. On `prerelease`, local pre-commit lint hooks run
+the versions pinned in `requirements.txt`, so tooling pin updates do not need
+a separate hook revision edit.
+Check the required workflows and `codecov/patch` on the first Dependabot PR.
+Codecov uses OIDC in `tests.yaml`, so no Dependabot secret is needed for upload.
 
 ## Base branches
 
