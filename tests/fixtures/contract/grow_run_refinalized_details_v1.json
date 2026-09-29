@@ -1,0 +1,287 @@
+{
+  "outcome": "found",
+  "run": {
+    "audit": [
+      {
+        "actor_user_id": "user-1",
+        "at": "2026-07-24T20:30:00+00:00",
+        "changed_fields": [],
+        "command": "start",
+        "command_id": "cmd-start",
+        "prior_revision": 0,
+        "reason": null,
+        "resulting_revision": 1
+      },
+      {
+        "actor_user_id": "user-1",
+        "at": "2026-10-23T20:30:00+00:00",
+        "changed_fields": [],
+        "command": "finalize",
+        "command_id": "cmd-finalize-2",
+        "prior_revision": 2,
+        "reason": null,
+        "resulting_revision": 3
+      },
+      {
+        "actor_user_id": "admin-1",
+        "at": "2026-10-25T20:30:00+00:00",
+        "changed_fields": [],
+        "command": "reopen",
+        "command_id": "cmd-reopen-3",
+        "prior_revision": 3,
+        "reason": "p1 was weighed wet",
+        "resulting_revision": 4
+      },
+      {
+        "actor_user_id": "user-1",
+        "at": "2026-10-25T21:30:00+00:00",
+        "changed_fields": [],
+        "command": "finalize",
+        "command_id": "cmd-finalize-4",
+        "prior_revision": 4,
+        "reason": null,
+        "resulting_revision": 5
+      }
+    ],
+    "completed_at": "2026-10-02T20:30:00+00:00",
+    "goals": null,
+    "harvest_outcomes": [
+      {
+        "entered_dry_at": "2026-09-25T20:30:00+00:00",
+        "metrics": {
+          "dry_weight": 88.0
+        },
+        "phenotype": "A",
+        "plant_id": "p1",
+        "quality_score": null,
+        "reason": null,
+        "source_growspace_id": "tent",
+        "state": "recorded",
+        "strain": "OG Kush"
+      }
+    ],
+    "label": "Autumn",
+    "metrics": [
+      {
+        "complete": true,
+        "definition_version": 1,
+        "metric": "yield",
+        "missing": [],
+        "unit": "g",
+        "value": 88.0
+      },
+      {
+        "complete": true,
+        "definition_version": 1,
+        "metric": "yield_per_harvest_source_plant",
+        "missing": [],
+        "unit": "g",
+        "value": 88.0
+      }
+    ],
+    "metrics_state": "frozen",
+    "movement_history": [],
+    "notes": null,
+    "participant_count": 2,
+    "participant_identities": [
+      {
+        "phenotype_id": 1,
+        "phenotype_name": "A",
+        "plant_id": "p1",
+        "plant_name": "Plant p1",
+        "strain_id": 7,
+        "strain_name": "OG Kush"
+      },
+      {
+        "phenotype_id": 1,
+        "phenotype_name": "A",
+        "plant_id": "p2",
+        "plant_name": "Plant p2",
+        "strain_id": 7,
+        "strain_name": "OG Kush"
+      }
+    ],
+    "participations": [
+      {
+        "closed_at": "2026-10-02T20:30:00+00:00",
+        "opened_at": "2026-07-24T20:30:00+00:00",
+        "plant_id": "p1"
+      },
+      {
+        "closed_at": "2026-10-02T20:30:00+00:00",
+        "opened_at": "2026-07-24T20:30:00+00:00",
+        "plant_id": "p2"
+      }
+    ],
+    "run_id": "run-1",
+    "run_revision": 5,
+    "sequence_number": 1,
+    "snapshot": {
+      "complete": true,
+      "completed_at": "2026-10-02T20:30:00+00:00",
+      "counts": {
+        "harvest_source_plants": 1,
+        "missing_outcomes": 0,
+        "no_usable_yield": 0,
+        "participants": 2,
+        "recorded": 1
+      },
+      "coverage": [],
+      "duration_days": 70,
+      "finalized_at": "2026-10-25T21:30:00+00:00",
+      "format": 1,
+      "growspace_id": "tent",
+      "growspace_name": "Tent",
+      "harvest_window": {
+        "first": "2026-09-25",
+        "last": "2026-09-25"
+      },
+      "metrics": [
+        {
+          "complete": true,
+          "definition_version": 1,
+          "metric": "yield",
+          "missing": [],
+          "unit": "g",
+          "value": 88.0
+        },
+        {
+          "complete": true,
+          "definition_version": 1,
+          "metric": "yield_per_harvest_source_plant",
+          "missing": [],
+          "unit": "g",
+          "value": 88.0
+        }
+      ],
+      "missing": [],
+      "participants": [
+        {
+          "phenotype_id": 1,
+          "phenotype_name": "A",
+          "plant_id": "p1",
+          "plant_name": "Plant p1",
+          "strain_id": 7,
+          "strain_name": "OG Kush"
+        },
+        {
+          "phenotype_id": 1,
+          "phenotype_name": "A",
+          "plant_id": "p2",
+          "plant_name": "Plant p2",
+          "strain_id": 7,
+          "strain_name": "OG Kush"
+        }
+      ],
+      "run_id": "run-1",
+      "sequence_number": 1,
+      "started_at": "2026-07-24T20:30:00+00:00",
+      "strains": [
+        {
+          "harvest_source_plants": 1,
+          "participants": 2,
+          "strain_id": 7,
+          "strain_name": "OG Kush"
+        }
+      ],
+      "timezone": "Europe/Berlin",
+      "uncovered_gaps": []
+    },
+    "started_at": "2026-07-24T20:30:00+00:00",
+    "status": "finalized",
+    "superseded_snapshots": [
+      {
+        "finalized_revision": 3,
+        "snapshot": {
+          "complete": false,
+          "completed_at": "2026-10-02T20:30:00+00:00",
+          "counts": {
+            "harvest_source_plants": 1,
+            "missing_outcomes": 1,
+            "no_usable_yield": 0,
+            "participants": 2,
+            "recorded": 0
+          },
+          "coverage": [],
+          "duration_days": 70,
+          "finalized_at": "2026-10-23T20:30:00+00:00",
+          "format": 1,
+          "growspace_id": "tent",
+          "growspace_name": "Tent",
+          "harvest_window": {
+            "first": "2026-09-25",
+            "last": "2026-09-25"
+          },
+          "metrics": [
+            {
+              "complete": false,
+              "definition_version": 1,
+              "metric": "yield",
+              "missing": [
+                {
+                  "kind": "dry_weight",
+                  "plant_id": "p1"
+                }
+              ],
+              "unit": "g",
+              "value": null
+            },
+            {
+              "complete": false,
+              "definition_version": 1,
+              "metric": "yield_per_harvest_source_plant",
+              "missing": [
+                {
+                  "kind": "yield",
+                  "plant_id": null
+                }
+              ],
+              "unit": "g",
+              "value": null
+            }
+          ],
+          "missing": [
+            {
+              "kind": "dry_weight",
+              "plant_id": "p1"
+            }
+          ],
+          "participants": [
+            {
+              "phenotype_id": 1,
+              "phenotype_name": "A",
+              "plant_id": "p1",
+              "plant_name": "Plant p1",
+              "strain_id": 7,
+              "strain_name": "OG Kush"
+            },
+            {
+              "phenotype_id": 1,
+              "phenotype_name": "A",
+              "plant_id": "p2",
+              "plant_name": "Plant p2",
+              "strain_id": 7,
+              "strain_name": "OG Kush"
+            }
+          ],
+          "run_id": "run-1",
+          "sequence_number": 1,
+          "started_at": "2026-07-24T20:30:00+00:00",
+          "strains": [
+            {
+              "harvest_source_plants": 1,
+              "participants": 2,
+              "strain_id": 7,
+              "strain_name": "OG Kush"
+            }
+          ],
+          "timezone": "Europe/Berlin",
+          "uncovered_gaps": []
+        },
+        "superseded_revision": 4
+      }
+    ],
+    "tags": [],
+    "timezone": "Europe/Berlin"
+  }
+}

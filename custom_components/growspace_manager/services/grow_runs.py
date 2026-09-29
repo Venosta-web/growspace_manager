@@ -30,6 +30,15 @@ outcome and Participant identity is copied into the Runs first, under the
 Plant lock, so the snapshot is drawn from the Plants' last state; from then on
 it is read from the Run alone. Neither finalizing nor describing a Run needs
 its Growspace to still exist: that is what makes the history outlive it.
+
+**Correcting and backing out** (#917). Reopening a Finalized Run is an
+administrator's command, never a controller's: it is the one lifecycle command
+that makes frozen history editable again, so Home Assistant's own
+administrator flag is asked, not entity control. Discarding an Active Run that
+recorded nothing is a controller's, because it is only the undo of a start.
+It projects every committed movement and harvest outcome first, under the
+Plant lock, so a fact still on its way to the Run counts as activity rather
+than being orphaned by the discard.
 """
 
 from __future__ import annotations
@@ -48,6 +57,7 @@ from ..const import DOMAIN
 from ..domain.grow_run import (
     BaselineState,
     CompletionPreview,
+    DiscardedRun,
     FinalizationPreview,
     GrowRun,
     OpeningBaseline,
@@ -100,6 +110,16 @@ def require_controller(
     if not allowed:
         raise RunNotAuthorized(
             f"{action} a Grow Run requires permission to control this growspace",
+            current_revision=None,
+        )
+    return user.id
+
+
+def require_admin(user: User | None, action: str) -> str:
+    """Return the acting user's ID if they are a Home Assistant administrator."""
+    if user is None or not user.is_admin:
+        raise RunNotAuthorized(
+            f"{action} a Grow Run requires a Home Assistant administrator",
             current_revision=None,
         )
     return user.id
@@ -238,6 +258,7 @@ async def async_start_grow_run(
                 plant_ids=_plants_in(coordinator, growspace_id),
                 actor_user_id=user_id,
                 claim=None if plan is None else plan.history,
+                prior_coverage=activity.covered_since,
             )
             remaining = activity.close() if plan is None else plan.remaining(activity)
             await store.async_commit(ledger, activities=(remaining,))
@@ -359,9 +380,13 @@ def _authorize(
     growspace_id: str,
     user: User | None,
     action: str,
+    *,
+    admin: bool = False,
 ) -> str:
     """Return the acting user's ID, or refuse with where the ledger stands."""
     try:
+        if admin:
+            return require_admin(user, action)
         return require_controller(hass, growspace_id, user, action)
     except RunNotAuthorized as refused:
         ledger = store.ledger(growspace_id)
@@ -477,3 +502,93 @@ async def async_update_grow_run_metadata(
     store.announce(run)
     coordinator.async_update_listeners()
     return run, updated.revision
+
+
+async def async_reopen_grow_run(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    *,
+    growspace_id: str,
+    run_id: str,
+    expected_revision: int,
+    reason: str,
+    user: User | None,
+) -> tuple[GrowRun, int]:
+    """Return a Finalized Run to Completed; return it and the new Run Revision.
+
+    Nothing about the Run's boundaries moves. From here on its outcomes and
+    Participant identities follow the Plants again, exactly as before its
+    first finalization, until it is finalized once more.
+
+    Raises a `GrowRunRefused` for every refusal the caller can act on.
+    """
+    store = coordinator.grow_runs
+    user_id = _authorize(hass, store, growspace_id, user, "Reopening", admin=True)
+    async with store.lock:
+        ledger, run = store.ledger(growspace_id).reopen(
+            expected_revision=expected_revision,
+            run_id=run_id,
+            reason=reason,
+            command_id=uuid4().hex,
+            actor_user_id=user_id,
+            now=dt_util.utcnow(),
+        )
+        await store.async_commit(ledger)
+    store.announce(run)
+    coordinator.async_update_listeners()
+    return run, ledger.revision
+
+
+async def async_discard_grow_run(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    *,
+    growspace_id: str,
+    run_id: str,
+    expected_revision: int,
+    reason: str | None,
+    user: User | None,
+) -> tuple[DiscardedRun, int]:
+    """Remove an activity-free Active Run; return its record and the new revision.
+
+    The Growspace's Unattributed Activity coverage resumes in the same write,
+    from where the start ended it. Raises a `GrowRunRefused` for every refusal
+    the caller can act on, including `RunHasActivity` with its reasons.
+    """
+    store = coordinator.grow_runs
+    user_id = _authorize(hass, store, growspace_id, user, "Discarding")
+    now = dt_util.utcnow()
+    # The plant lock first, as for a completion: no Plant may move into the
+    # Run between its activity being judged and the Run being removed.
+    async with coordinator.lock:
+        await coordinator.async_project_activity()
+        await coordinator.async_project_harvest_outcomes()
+        async with store.lock:
+            ledger = store.ledger(growspace_id)
+            ledger.require_revision(expected_revision)
+            run = ledger.find(run_id)
+            updated, discarded = ledger.discard(
+                expected_revision=expected_revision,
+                run_id=run_id,
+                reason=reason,
+                command_id=uuid4().hex,
+                actor_user_id=user_id,
+                now=now,
+                pending_facts=coordinator.storage_manager.activity_facts,
+                harvest_source_plant_ids=[
+                    plant.plant_id
+                    for plant in coordinator.plants.values()
+                    if plant.harvest_source_run_id == run_id
+                ],
+            )
+            coverage = (
+                store.unattributed(growspace_id)
+                .restore(run)
+                .observe(
+                    now, hass.config.time_zone, _plants_in(coordinator, growspace_id)
+                )
+            )
+            await store.async_commit(updated, activities=(coverage,))
+    store.announce_discard(growspace_id, discarded)
+    coordinator.async_update_listeners()
+    return discarded, updated.revision

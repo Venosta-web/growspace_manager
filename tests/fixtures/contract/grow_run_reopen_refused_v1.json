@@ -1,0 +1,10 @@
+{
+  "outcome": "refused",
+  "refusal": {
+    "active_run": null,
+    "code": "grow_run.reason_required",
+    "current_revision": 5,
+    "message": "Say why Run #1 is being reopened",
+    "reasons": []
+  }
+}

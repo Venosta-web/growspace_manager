@@ -7,15 +7,15 @@
       "metrics_state": "live",
       "participant_count": 3,
       "run_id": "run-1",
-      "run_revision": 4,
-      "sequence_number": 4,
+      "run_revision": 1,
+      "sequence_number": 1,
       "started_at": "2026-07-24T20:30:00+00:00",
       "status": "active",
       "timezone": "Europe/Berlin"
     },
-    "code": "grow_run.acknowledgement_required",
-    "current_revision": 4,
-    "message": "Completing Run #4 needs acknowledgement of: missing_outcomes, attribution_gaps",
-    "reasons": []
+    "code": "grow_run.has_activity",
+    "current_revision": 1,
+    "message": "Run #1 has recorded activity (activity_facts, participants_changed); complete it instead",
+    "reasons": ["activity_facts", "participants_changed"]
   }
 }

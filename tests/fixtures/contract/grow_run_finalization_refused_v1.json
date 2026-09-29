@@ -4,6 +4,7 @@
     "active_run": null,
     "code": "grow_run.acknowledgement_required",
     "current_revision": 5,
-    "message": "Finalizing Run #4 needs acknowledgement of: incomplete_snapshot"
+    "message": "Finalizing Run #4 needs acknowledgement of: incomplete_snapshot",
+    "reasons": []
   }
 }

@@ -15,6 +15,7 @@
     },
     "code": "grow_run.revision_conflict",
     "current_revision": 4,
-    "message": "The Run Revision is 4, not 3; reload and decide again"
+    "message": "The Run Revision is 4, not 3; reload and decide again",
+    "reasons": []
   }
 }
