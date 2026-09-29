@@ -18,9 +18,11 @@ cleared after 2 agreeing ones. A day with no actuated attempt, or on which a
 qualifying tank was at an Unknown Tank Level, counts neither way: it neither
 advances a run nor breaks one.
 
-The evidence is about one set of tanks. When that set changes, the comparison
-starts again from the next whole day, because a tank added at noon has only half
-a day's drop.
+The evidence is about one set of tanks and one configured flow rate. When
+either changes, the comparison starts again from the next whole day: a tank
+added at noon has only half a day's drop, and a day judged at the old rate says
+nothing about the new one. That is also what lets an applied Calibration
+Proposal close: the rate it wrote starts the comparison afresh.
 
 Everything here is arithmetic over records the shell hands in. It reads no
 sensor and touches no ``hass``.
@@ -73,6 +75,7 @@ class Transition(StrEnum):
     RAISED = "raised"
     CLEARED = "cleared"
     RESTARTED = "restarted"
+    RATE_CHANGED = "rate_changed"
 
 
 def disagrees(tank_l: float, pump_l: float) -> bool:
@@ -240,13 +243,15 @@ class TankPumpDisagreement:
     """The signal, and the evidence it stands on, for one growspace.
 
     ``tanks`` are the qualifying tanks the evidence is about; empty means there
-    is nothing to compare. ``first_day`` is the first whole day watched for that
-    set. ``unknown_days`` are the days a qualifying tank was at an Unknown Tank
-    Level. ``streak`` counts the counted days in a row pointing away from the
+    is nothing to compare. ``flow_rate_ml_per_sec`` is the configured rate the
+    pump figures were estimated at. ``first_day`` is the first whole day watched
+    for that set and rate. ``unknown_days`` are the days a qualifying tank was
+    at an Unknown Tank Level. ``streak`` counts the counted days in a row pointing away from the
     current state: disagreeing ones while clear, agreeing ones while raised.
     """
 
     tanks: tuple[str, ...] = ()
+    flow_rate_ml_per_sec: float | None = None
     first_day: date | None = None
     unknown_days: frozenset[date] = frozenset()
     evaluated_through: date | None = None
@@ -264,21 +269,30 @@ class TankPumpDisagreement:
         return DisagreementState.CLEAR
 
     def watching(
-        self, tanks: Iterable[str], today: date
+        self, tanks: Iterable[str], today: date, *, flow_rate_ml_per_sec: float
     ) -> tuple[TankPumpDisagreement, Transition | None]:
-        """Follow the qualifying tanks, starting afresh when they change.
+        """Follow the qualifying tanks and the rate, starting afresh on a change.
 
-        A new set is compared from the next whole day. A raised signal about
-        the old set is reported as restarted, not silently dropped.
+        A new set or rate is compared from the next whole day. A raised signal
+        about the old one is reported as restarted, not silently dropped. A
+        record written before the rate was watched adopts the current one.
         """
         current = tuple(sorted(set(tanks)))
         if current == self.tanks:
-            return self, None
+            if self.flow_rate_ml_per_sec is None:
+                return replace(self, flow_rate_ml_per_sec=flow_rate_ml_per_sec), None
+            if self.flow_rate_ml_per_sec == flow_rate_ml_per_sec:
+                return self, None
         fresh = TankPumpDisagreement(
             tanks=current,
+            flow_rate_ml_per_sec=flow_rate_ml_per_sec,
             first_day=today + timedelta(days=1) if current else None,
         )
-        return fresh, Transition.RESTARTED if self.raised_on is not None else None
+        if self.raised_on is None:
+            return fresh, None
+        if current != self.tanks:
+            return fresh, Transition.RESTARTED
+        return fresh, Transition.RATE_CHANGED
 
     def tank_unknown_on(self, day: date) -> TankPumpDisagreement:
         """Record that a qualifying tank was at an Unknown Tank Level on ``day``."""
@@ -341,6 +355,11 @@ class TankPumpDisagreement:
                 "Tank–Pump Disagreement cleared: the growspace's measured tanks"
                 " changed, so the comparison starts again."
             )
+        if transition is Transition.RATE_CHANGED:
+            return (
+                "Tank–Pump Disagreement cleared: the pump flow rate changed, so the"
+                " comparison starts again."
+            )
         if transition is Transition.CLEARED:
             return (
                 "Tank–Pump Disagreement cleared: the tank drop and the pump agreed"
@@ -364,6 +383,7 @@ class TankPumpDisagreement:
         """Return the durable form."""
         return {
             "tanks": list(self.tanks),
+            "flow_rate_ml_per_sec": self.flow_rate_ml_per_sec,
             "first_day": _iso(self.first_day),
             "unknown_days": sorted(day.isoformat() for day in self.unknown_days),
             "evaluated_through": _iso(self.evaluated_through),
@@ -382,6 +402,9 @@ class TankPumpDisagreement:
             isinstance(tank, str) and tank for tank in tanks
         ):
             raise ValueError("the Tank–Pump Disagreement has invalid tanks")
+        rate = value.get("flow_rate_ml_per_sec")
+        if rate is not None and not _is_amount(rate):
+            raise ValueError("the Tank–Pump Disagreement has an invalid flow rate")
         streak = value.get("streak")
         if not isinstance(streak, int) or isinstance(streak, bool) or streak < 0:
             raise ValueError("the Tank–Pump Disagreement has an invalid streak")
@@ -391,6 +414,7 @@ class TankPumpDisagreement:
             raise TypeError("the Tank–Pump Disagreement has invalid days")
         return cls(
             tanks=tuple(sorted(set(tanks))),
+            flow_rate_ml_per_sec=float(rate) if rate is not None else None,
             first_day=_optional_day(value.get("first_day")),
             unknown_days=frozenset(_day(day) for day in unknown),
             evaluated_through=_optional_day(value.get("evaluated_through")),

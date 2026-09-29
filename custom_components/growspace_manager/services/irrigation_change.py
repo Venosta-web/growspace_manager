@@ -4,7 +4,7 @@ The interface owns canonical field classification, normalization, validation,
 atomic replacement and the effects that follow a successful change. Home
 Assistant actions and config-flow handlers are transport adapters for it.
 
-Four kinds of operation share the seam (ADR-0046):
+Five kinds of operation share the seam (ADR-0046):
 
 - a **sparse patch** — the settings, strategy, options-flow and steering-phase
   transports each submit the fields a grower edited;
@@ -13,7 +13,9 @@ Four kinds of operation share the seam (ADR-0046):
   optionally carrying the [[Program Progression]] context that makes the entry
   read as an automatic advance rather than a grower's own apply;
 - a **Steering Mode stamp** — a mode name the seam expands into ordinary
-  strategy fields from the server-owned preset table (ADR-0012).
+  strategy fields from the server-owned preset table (ADR-0012);
+- an applied **Calibration Proposal** — the one corrected flow rate a grower
+  confirmed in Repairs (ADR-0064 item 7).
 
 They differ only in how the candidate state is *resolved*. Everything after
 that — post-change validation, the atomic swap, persistence, rollback, the
@@ -27,6 +29,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields as dataclass_fields, replace
 from enum import StrEnum
 import logging
+import math
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -77,6 +80,7 @@ class IrrigationChangeOperation(StrEnum):
     CLEAR = "clear"
     STEERING_MODE = "steering_mode"
     RECIPE = "recipe"
+    CALIBRATION = "calibration"
 
 
 # Fields owned by the grower-facing settings interface. Schedule collections,
@@ -155,6 +159,13 @@ IRRIGATION_PHASE_CHANGE_FIELDS: frozenset[str] = frozenset({"active_steering_pha
 # table and records the mode itself as declared intent, so a transport names a
 # mode and can never hand-write the values that mode is supposed to mean.
 IRRIGATION_STEERING_MODE_CHANGE_FIELDS: frozenset[str] = frozenset({"steering_mode"})
+
+# The one field an applied Calibration Proposal writes (ADR-0064 item 7). It is
+# its own operation, not a settings patch, so the logbook says the rate changed
+# because the grower accepted a proposal, and nothing else can ride along.
+IRRIGATION_CALIBRATION_CHANGE_FIELDS: frozenset[str] = frozenset(
+    {"pump_flow_rate_ml_per_sec"}
+)
 
 # Every field of IrrigationConfig, used to describe what a clear reset.
 _IRRIGATION_CONFIG_FIELD_NAMES: frozenset[str] = frozenset(
@@ -251,6 +262,8 @@ def _accepted_fields(operation: IrrigationChangeOperation) -> frozenset[str]:
         return IRRIGATION_PHASE_CHANGE_FIELDS
     if operation is IrrigationChangeOperation.STEERING_MODE:
         return IRRIGATION_STEERING_MODE_CHANGE_FIELDS
+    if operation is IrrigationChangeOperation.CALIBRATION:
+        return IRRIGATION_CALIBRATION_CHANGE_FIELDS
     if operation is IrrigationChangeOperation.CLEAR:
         # A clear carries no values: it names no setpoint, it restores the
         # model's own defaults. Anything sent with it is a caller confusing a
@@ -515,6 +528,29 @@ def _resolve_candidate(change: IrrigationChange, growspace: Any) -> _Candidate:
             strategy_fields=frozenset(updates),
             logbook_message=(
                 f"Applied {mode.value} steering mode ({media_type.value})"
+            ),
+        )
+
+    if change.operation is IrrigationChangeOperation.CALIBRATION:
+        rate = change.values.get("pump_flow_rate_ml_per_sec")
+        if (
+            not isinstance(rate, int | float)
+            or isinstance(rate, bool)
+            or not math.isfinite(rate)
+            or rate <= 0
+        ):
+            raise IrrigationChangeError(
+                "A Calibration Proposal applies a positive pump flow rate."
+            )
+        return _Candidate(
+            config=replace(prior_config, pump_flow_rate_ml_per_sec=float(rate)),
+            strategy=prior_strategy,
+            config_fields=IRRIGATION_CALIBRATION_CHANGE_FIELDS,
+            strategy_fields=frozenset(),
+            logbook_message=(
+                "Applied a Calibration Proposal: pump flow rate"
+                f" {prior_config.pump_flow_rate_ml_per_sec:g} →"
+                f" {float(rate):g} ml/s"
             ),
         )
 

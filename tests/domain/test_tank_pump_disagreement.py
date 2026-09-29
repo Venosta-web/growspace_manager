@@ -31,6 +31,7 @@ from custom_components.growspace_manager.models import IrrigationTank
 
 TODAY = date(2026, 9, 29)
 TANK = "sensor.tank"
+RATE = 10.0
 
 
 def _day(offset: int) -> date:
@@ -43,7 +44,9 @@ def _judged(day: date, verdict: DayVerdict) -> DayComparison:
 
 
 def _watching() -> TankPumpDisagreement:
-    record, _ = TankPumpDisagreement().watching([TANK], _day(10))
+    record, _ = TankPumpDisagreement().watching(
+        [TANK], _day(10), flow_rate_ml_per_sec=RATE
+    )
     return record
 
 
@@ -230,7 +233,9 @@ def test_only_the_last_days_are_kept() -> None:
 
 def test_no_measured_tank_means_nothing_to_compare() -> None:
     """A growspace without a tank in litres has no Tank–Pump Disagreement."""
-    record, transition = TankPumpDisagreement().watching([], TODAY)
+    record, transition = TankPumpDisagreement().watching(
+        [], TODAY, flow_rate_ml_per_sec=RATE
+    )
 
     assert transition is None
     assert record.state is DisagreementState.NO_TANK
@@ -240,7 +245,9 @@ def test_no_measured_tank_means_nothing_to_compare() -> None:
 
 def test_a_new_tank_is_compared_from_the_next_whole_day() -> None:
     """The day it was added holds only part of that day's drop."""
-    record, transition = TankPumpDisagreement().watching([TANK], TODAY)
+    record, transition = TankPumpDisagreement().watching(
+        [TANK], TODAY, flow_rate_ml_per_sec=RATE
+    )
 
     assert transition is None
     assert record.state is DisagreementState.CLEAR
@@ -252,9 +259,13 @@ def test_a_new_tank_is_compared_from_the_next_whole_day() -> None:
 
 def test_the_same_tanks_in_any_order_keep_the_evidence() -> None:
     """Watching the set already watched changes nothing."""
-    record, _ = TankPumpDisagreement().watching(["sensor.b", "sensor.a"], TODAY)
+    record, _ = TankPumpDisagreement().watching(
+        ["sensor.b", "sensor.a"], TODAY, flow_rate_ml_per_sec=RATE
+    )
 
-    again, transition = record.watching(["sensor.a", "sensor.b", "sensor.a"], TODAY)
+    again, transition = record.watching(
+        ["sensor.a", "sensor.b", "sensor.a"], TODAY, flow_rate_ml_per_sec=RATE
+    )
 
     assert again is record
     assert transition is None
@@ -264,7 +275,9 @@ def test_changed_tanks_start_the_comparison_again() -> None:
     """A raised signal about the old tanks is reported restarted, not dropped."""
     raised, _ = _run(_watching(), DISAGREES, DISAGREES)
 
-    record, transition = raised.watching([TANK, "sensor.second"], TODAY)
+    record, transition = raised.watching(
+        [TANK, "sensor.second"], TODAY, flow_rate_ml_per_sec=RATE
+    )
 
     assert transition is Transition.RESTARTED
     assert record.state is DisagreementState.CLEAR
@@ -274,9 +287,43 @@ def test_changed_tanks_start_the_comparison_again() -> None:
 
 def test_changed_tanks_under_a_clear_signal_restart_quietly() -> None:
     """Nothing was raised, so there is nothing to report."""
-    _, transition = _watching().watching([], TODAY)
+    _, transition = _watching().watching([], TODAY, flow_rate_ml_per_sec=RATE)
 
     assert transition is None
+
+
+def test_a_changed_flow_rate_starts_the_comparison_again() -> None:
+    """Days judged at the old rate say nothing about the new one."""
+    raised, _ = _run(_watching(), DISAGREES, DISAGREES)
+
+    record, transition = raised.watching([TANK], TODAY, flow_rate_ml_per_sec=12.5)
+
+    assert transition is Transition.RATE_CHANGED
+    assert record.state is DisagreementState.CLEAR
+    assert record.flow_rate_ml_per_sec == 12.5
+    assert record.days == ()
+    assert record.first_day == TODAY + timedelta(days=1)
+
+
+def test_a_changed_flow_rate_under_a_clear_signal_restarts_quietly() -> None:
+    """The evidence starts again, and there was nothing raised to report."""
+    record, _ = _run(_watching(), DISAGREES)
+
+    again, transition = record.watching([TANK], TODAY, flow_rate_ml_per_sec=12.5)
+
+    assert transition is None
+    assert again.days == ()
+
+
+def test_a_record_from_before_the_rate_was_watched_adopts_it() -> None:
+    """A raised signal written without a rate keeps its evidence."""
+    raised, _ = _run(_watching(), DISAGREES, DISAGREES)
+    unrated = replace(raised, flow_rate_ml_per_sec=None)
+
+    record, transition = unrated.watching([TANK], TODAY, flow_rate_ml_per_sec=RATE)
+
+    assert transition is None
+    assert record == raised
 
 
 def test_yesterday_is_due_once() -> None:
@@ -487,6 +534,7 @@ def test_the_logbook_lines() -> None:
         " days in a row."
     )
     assert "tanks changed" in raised.message(Transition.RESTARTED, TODAY)
+    assert "flow rate changed" in raised.message(Transition.RATE_CHANGED, TODAY)
     assert _watching().message(Transition.RAISED, TODAY) == (
         "Tank–Pump Disagreement raised."
     )
@@ -539,6 +587,14 @@ def test_the_record_survives_its_durable_form() -> None:
     assert TankPumpDisagreement.from_dict(record.as_dict()) == record
 
 
+def test_a_record_without_a_rate_is_read() -> None:
+    """One written before the rate was watched reads as not yet rated."""
+    value = _watching().as_dict()
+    del value["flow_rate_ml_per_sec"]
+
+    assert TankPumpDisagreement.from_dict(value).flow_rate_ml_per_sec is None
+
+
 def _durable(**overrides: Any) -> dict[str, Any]:
     value = _watching().as_dict()
     value["days"] = [_judged(_day(1), AGREES).as_dict()]
@@ -559,6 +615,7 @@ def _day_with(**overrides: Any) -> dict[str, Any]:
         pytest.param(_durable(tanks="sensor.tank"), id="tanks not a list"),
         pytest.param(_durable(tanks=[""]), id="an empty tank"),
         pytest.param(_durable(streak=-1), id="a negative streak"),
+        pytest.param(_durable(flow_rate_ml_per_sec="10"), id="a rate not a number"),
         pytest.param(_durable(streak=True), id="a boolean streak"),
         pytest.param(_durable(unknown_days="2026-09-28"), id="unknown days not a list"),
         pytest.param(_durable(days={}), id="days not a list"),
