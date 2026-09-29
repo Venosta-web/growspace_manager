@@ -126,6 +126,7 @@ def coordinator() -> IrrigationCoordinator:
         )
     }
     main.async_commit = AsyncMock()
+    main.async_project_water = AsyncMock()
     safety = IrrigationSafetyStore.__new__(IrrigationSafetyStore)
     safety.overrides = {}
     safety._override_timers = {}

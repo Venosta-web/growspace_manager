@@ -19,6 +19,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     FrozenMetric,
     GrowRun,
     HarvestOutcome,
+    MetricCoverage,
     OpeningBaseline,
     ParticipantIdentity,
     PlantMovementFact,
@@ -32,6 +33,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     RunParticipation,
     RunRevisionConflict,
     RunStatus,
+    WaterApplication,
     compare_runs,
     finalized_runs,
     preview_completion,
@@ -515,7 +517,7 @@ def _wire_forms() -> dict[str, Any]:
     # Comparing (#675): two later Runs of the same tent, finalized with every
     # dry weight in, so the rows carry a direction.
     later_runs = [edited]
-    for step, total in ((1, 150.0), (2, 180.0)):
+    for step, total, water_l in ((1, 150.0, 5.0), (2, 180.0, 4.0)):
         sequence = edited.sequence_number + step
         earlier = later_runs[-1]
         started = earlier.started_at + timedelta(days=90)
@@ -526,6 +528,15 @@ def _wire_forms() -> dict[str, Any]:
                 sequence_number=sequence,
                 started_at=started,
                 completed_at=started + timedelta(days=70),
+                water_coverage_started_at=started,
+                water_applications=(
+                    WaterApplication(
+                        f"watering-{sequence}",
+                        started + timedelta(days=1),
+                        "manual",
+                        water_l,
+                    ),
+                ),
                 snapshot=replace(
                     finalized.snapshot,
                     run_id=f"run-{sequence}",
@@ -538,6 +549,20 @@ def _wire_forms() -> dict[str, Any]:
                         FrozenMetric(
                             "yield_per_harvest_source_plant", "g", 1, total / 2
                         ),
+                        FrozenMetric("water_applied", "L", 1, water_l),
+                        FrozenMetric("water_productivity", "g/L", 1, total / water_l),
+                    ),
+                    water_applications=(
+                        WaterApplication(
+                            f"watering-{sequence}",
+                            started + timedelta(days=1),
+                            "manual",
+                            water_l,
+                        ),
+                    ),
+                    coverage=(
+                        MetricCoverage("water_applied", 100.0),
+                        MetricCoverage("water_productivity", 100.0),
                     ),
                     missing=(),
                 ),

@@ -188,6 +188,8 @@ def test_a_complete_run_freezes_every_fact_without_asking() -> None:
     assert {row.metric: row.definition_version for row in snapshot.metrics} == {
         "yield": 1,
         "yield_per_harvest_source_plant": 1,
+        "water_applied": 1,
+        "water_productivity": 1,
     }
 
 
@@ -297,7 +299,10 @@ def test_a_backdated_runs_uncovered_gaps_are_frozen_as_coverage() -> None:
     )
     snapshot = build_snapshot(run, finalized_at=FINALIZED, growspace_name="Tent")
     assert snapshot.uncovered_gaps == (gap,)
-    assert snapshot.coverage == ()
+    assert {row.metric: row.coverage_percent for row in snapshot.coverage} == {
+        "water_applied": 0.0,
+        "water_productivity": 0.0,
+    }
 
 
 def test_only_a_completed_run_has_a_snapshot() -> None:

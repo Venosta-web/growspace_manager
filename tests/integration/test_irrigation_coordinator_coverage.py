@@ -51,6 +51,7 @@ def mock_main_coordinator() -> MagicMock:
     coordinator.async_save = AsyncMock()
     coordinator.async_refresh_growspace_data = AsyncMock()
     coordinator.async_commit = AsyncMock()
+    coordinator.async_project_water = AsyncMock()
     coordinator.async_set_updated_data = MagicMock()
     coordinator.add_event = MagicMock()
     return coordinator

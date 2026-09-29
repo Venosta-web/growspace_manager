@@ -41,6 +41,7 @@ from .domain.grow_run import (
     RunCommand,
     RunLedger,
     RunStoreUnreadable,
+    WaterApplication,
 )
 from .domain.unattributed_activity import DEFAULT_RETENTION_DAYS, UnattributedActivity
 from .models.plant import Plant
@@ -238,6 +239,24 @@ class GrowRunStore:
                         updated if updated != ledger else None,
                         activities=(recorded,) if recorded != activity else (),
                     )
+
+    async def async_project_water(
+        self, growspace_id: str, application: WaterApplication
+    ) -> None:
+        """Copy an irrigation fact into its Run once, before source retention."""
+        async with self.lock:
+            ledger = self.ledger(growspace_id)
+            updated = ledger.project_water(application)
+            if updated is not ledger:
+                await self.async_commit(updated)
+
+    async def async_mark_water_incomplete(self, growspace_id: str) -> None:
+        """Persist loss of delivery coverage when its source cannot be read."""
+        async with self.lock:
+            ledger = self.ledger(growspace_id)
+            updated = ledger.mark_water_incomplete()
+            if updated is not ledger:
+                await self.async_commit(updated)
 
     async def async_observe(
         self, now: datetime, occupancy: dict[str, list[str]]

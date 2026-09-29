@@ -23,7 +23,16 @@
         "participants": 3,
         "recorded": 1
       },
-      "coverage": [],
+      "coverage": [
+        {
+          "coverage_percent": 100.0,
+          "metric": "water_applied"
+        },
+        {
+          "coverage_percent": 0.0,
+          "metric": "water_productivity"
+        }
+      ],
       "duration_days": 70,
       "finalized_at": "2026-10-23T20:30:00+00:00",
       "format": 1,
@@ -55,6 +64,31 @@
             }
           ],
           "unit": "g",
+          "value": null
+        },
+        {
+          "complete": true,
+          "definition_version": 1,
+          "metric": "water_applied",
+          "missing": [],
+          "unit": "L",
+          "value": 0
+        },
+        {
+          "complete": false,
+          "definition_version": 1,
+          "metric": "water_productivity",
+          "missing": [
+            {
+              "kind": "yield",
+              "plant_id": null
+            },
+            {
+              "kind": "positive_water_applied",
+              "plant_id": null
+            }
+          ],
+          "unit": "g/L",
           "value": null
         }
       ],
@@ -116,7 +150,8 @@
         }
       ],
       "timezone": "Europe/Berlin",
-      "uncovered_gaps": []
+      "uncovered_gaps": [],
+      "water_applications": []
     },
     "warnings": ["incomplete_snapshot"]
   }

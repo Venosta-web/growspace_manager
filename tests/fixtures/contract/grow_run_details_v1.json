@@ -14,6 +14,16 @@
       }
     ],
     "completed_at": null,
+    "coverage": [
+      {
+        "coverage_percent": 100.0,
+        "metric": "water_applied"
+      },
+      {
+        "coverage_percent": 0.0,
+        "metric": "water_productivity"
+      }
+    ],
     "goals": "Beat #3",
     "harvest_outcomes": [
       {
@@ -57,6 +67,31 @@
         ],
         "unit": "g",
         "value": null
+      },
+      {
+        "complete": true,
+        "definition_version": 1,
+        "metric": "water_applied",
+        "missing": [],
+        "unit": "L",
+        "value": 0
+      },
+      {
+        "complete": false,
+        "definition_version": 1,
+        "metric": "water_productivity",
+        "missing": [
+          {
+            "kind": "yield",
+            "plant_id": null
+          },
+          {
+            "kind": "positive_water_applied",
+            "plant_id": null
+          }
+        ],
+        "unit": "g/L",
+        "value": null
       }
     ],
     "metrics_state": "live",
@@ -96,6 +131,7 @@
     "status": "active",
     "superseded_snapshots": [],
     "tags": ["organic"],
-    "timezone": "Europe/Berlin"
+    "timezone": "Europe/Berlin",
+    "water_applications": []
   }
 }

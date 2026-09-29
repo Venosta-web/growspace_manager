@@ -77,6 +77,7 @@ def make_coordinator(mock_hass: MagicMock, mock_config_entry: MagicMock):
         main.growspaces = {GROWSPACE_ID: growspace}
         main.add_event = MagicMock()
         main.async_commit = AsyncMock()
+        main.async_project_water = AsyncMock()
         mock_config_entry.runtime_data = main
         coordinator = IrrigationCoordinator(
             mock_hass, mock_config_entry, GROWSPACE_ID, main
@@ -264,6 +265,7 @@ async def test_vwc_fired_shot_records_pump_estimate(
     main.growspaces = {GROWSPACE_ID: growspace}
     main.add_event = MagicMock()
     main.async_commit = AsyncMock()
+    main.async_project_water = AsyncMock()
     main.services.growspaces.get_substrate_tracker.return_value = None
     mock_config_entry.runtime_data = main
     coordinator = VWCIrrigationCoordinator(

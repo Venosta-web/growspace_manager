@@ -135,7 +135,10 @@ def test_a_clean_empty_run_previews_without_warnings() -> None:
     assert wire["completed_at"] == ENDED.isoformat()
     assert wire["duration_days"] == 70
     assert wire["closing_participations"] == []
-    assert wire["coverage"] == []
+    assert wire["coverage"] == [
+        {"metric": "water_applied", "coverage_percent": 100.0},
+        {"metric": "water_productivity", "coverage_percent": 0.0},
+    ]
     assert wire["retrospective_note"] == "Good run"
     assert wire["run"] == run_summary(run, 1)
 

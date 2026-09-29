@@ -109,6 +109,7 @@ async def _start(
     main = MagicMock()
     main.growspaces = {GROWSPACE_ID: growspace or _growspace(max_cycles_per_day=3)}
     main.async_commit = AsyncMock()
+    main.async_project_water = AsyncMock()
     main.deliveries = DeliveryAttemptStore(hass, ENTRY_ID)
     entry = MagicMock()
     entry.entry_id = ENTRY_ID
