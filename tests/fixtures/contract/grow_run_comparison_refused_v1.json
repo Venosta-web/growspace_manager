@@ -1,0 +1,10 @@
+{
+  "outcome": "refused",
+  "refusal": {
+    "active_run": null,
+    "code": "grow_run.insufficient_history",
+    "current_revision": 7,
+    "message": "A Run Comparison needs two Finalized Runs; this growspace has 1",
+    "reasons": []
+  }
+}

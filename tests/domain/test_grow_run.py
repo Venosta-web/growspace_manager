@@ -16,6 +16,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     WARNING_INCOMPLETE_SNAPSHOT,
     WARNING_PLANTS_PRESENT,
     BaselineState,
+    FrozenMetric,
     GrowRun,
     HarvestOutcome,
     OpeningBaseline,
@@ -25,11 +26,14 @@ from custom_components.growspace_manager.domain.grow_run import (
     RunAcknowledgementRequired,
     RunAlreadyActive,
     RunCommand,
+    RunInsufficientHistory,
     RunLedger,
     RunMetadata,
     RunParticipation,
     RunRevisionConflict,
     RunStatus,
+    compare_runs,
+    finalized_runs,
     preview_completion,
     preview_finalization,
     run_details,
@@ -504,6 +508,47 @@ def _wire_forms() -> dict[str, Any]:
         now=finalized_at + timedelta(hours=1),
     )
     assert finalized.snapshot is not None
+    try:
+        compare_runs(edited_ledger)
+    except RunInsufficientHistory as refused:
+        comparison_refused = refusal_result(refused)
+    # Comparing (#675): two later Runs of the same tent, finalized with every
+    # dry weight in, so the rows carry a direction.
+    later_runs = [edited]
+    for step, total in ((1, 150.0), (2, 180.0)):
+        sequence = edited.sequence_number + step
+        earlier = later_runs[-1]
+        started = earlier.started_at + timedelta(days=90)
+        later_runs.append(
+            replace(
+                edited,
+                run_id=f"run-{sequence}",
+                sequence_number=sequence,
+                started_at=started,
+                completed_at=started + timedelta(days=70),
+                snapshot=replace(
+                    finalized.snapshot,
+                    run_id=f"run-{sequence}",
+                    sequence_number=sequence,
+                    started_at=started,
+                    completed_at=started + timedelta(days=70),
+                    finalized_at=started + timedelta(days=84),
+                    metrics=(
+                        FrozenMetric("yield", "g", 1, total),
+                        FrozenMetric(
+                            "yield_per_harvest_source_plant", "g", 1, total / 2
+                        ),
+                    ),
+                    missing=(),
+                ),
+            )
+        )
+    history = replace(
+        edited_ledger,
+        next_sequence=edited.sequence_number + 3,
+        runs=tuple(later_runs),
+        revision=12,
+    )
     return {
         "active_run_sensor_v1": {
             # As Home Assistant publishes them: the state is always a string.
@@ -547,6 +592,15 @@ def _wire_forms() -> dict[str, Any]:
             "run_revision": edited_ledger.revision,
             "runs": [run_summary(edited, edited_ledger.revision)],
         },
+        "grow_run_comparison_v1": {
+            "outcome": "compared",
+            "run_revision": history.revision,
+            "finalized": [
+                run_summary(run, history.revision) for run in finalized_runs(history)
+            ],
+            "comparison": compare_runs(history).as_dict(),
+        },
+        "grow_run_comparison_refused_v1": comparison_refused,
         "grow_run_metadata_updated_v1": {
             "outcome": "updated",
             "run_revision": edited_ledger.revision,

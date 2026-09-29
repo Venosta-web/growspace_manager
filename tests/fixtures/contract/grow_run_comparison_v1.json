@@ -1,0 +1,286 @@
+{
+  "comparison": {
+    "earlier": {
+      "run": {
+        "completed_at": "2026-12-31T20:30:00+00:00",
+        "label": "Autumn 2026",
+        "metrics_state": "frozen",
+        "participant_count": 3,
+        "run_id": "run-5",
+        "run_revision": 12,
+        "sequence_number": 5,
+        "started_at": "2026-10-22T20:30:00+00:00",
+        "status": "finalized",
+        "timezone": "Europe/Berlin"
+      },
+      "snapshot": {
+        "complete": true,
+        "completed_at": "2026-12-31T20:30:00+00:00",
+        "counts": {
+          "harvest_source_plants": 2,
+          "missing_outcomes": 1,
+          "no_usable_yield": 0,
+          "participants": 3,
+          "recorded": 1
+        },
+        "coverage": [],
+        "duration_days": 70,
+        "finalized_at": "2027-01-14T20:30:00+00:00",
+        "format": 1,
+        "growspace_id": "tent",
+        "growspace_name": "Tent",
+        "harvest_window": null,
+        "metrics": [
+          {
+            "complete": true,
+            "definition_version": 1,
+            "metric": "yield",
+            "missing": [],
+            "unit": "g",
+            "value": 150.0
+          },
+          {
+            "complete": true,
+            "definition_version": 1,
+            "metric": "yield_per_harvest_source_plant",
+            "missing": [],
+            "unit": "g",
+            "value": 75.0
+          }
+        ],
+        "missing": [],
+        "participants": [
+          {
+            "phenotype_id": 11,
+            "phenotype_name": "A",
+            "plant_id": "p1",
+            "plant_name": "OG Kush (1,1)",
+            "strain_id": 7,
+            "strain_name": "OG Kush"
+          },
+          {
+            "phenotype_id": 12,
+            "phenotype_name": "Pheno #1",
+            "plant_id": "p2",
+            "plant_name": "OG Kush (1,2)",
+            "strain_id": 7,
+            "strain_name": "OG Kush"
+          },
+          {
+            "phenotype_id": null,
+            "phenotype_name": "",
+            "plant_id": "p3",
+            "plant_name": "",
+            "strain_id": null,
+            "strain_name": ""
+          }
+        ],
+        "run_id": "run-5",
+        "sequence_number": 5,
+        "started_at": "2026-10-22T20:30:00+00:00",
+        "strains": [
+          {
+            "harvest_source_plants": 0,
+            "participants": 1,
+            "strain_id": null,
+            "strain_name": ""
+          },
+          {
+            "harvest_source_plants": 2,
+            "participants": 2,
+            "strain_id": 7,
+            "strain_name": "OG Kush"
+          }
+        ],
+        "timezone": "Europe/Berlin",
+        "uncovered_gaps": []
+      }
+    },
+    "later": {
+      "run": {
+        "completed_at": "2027-03-31T20:30:00+00:00",
+        "label": "Autumn 2026",
+        "metrics_state": "frozen",
+        "participant_count": 3,
+        "run_id": "run-6",
+        "run_revision": 12,
+        "sequence_number": 6,
+        "started_at": "2027-01-20T20:30:00+00:00",
+        "status": "finalized",
+        "timezone": "Europe/Berlin"
+      },
+      "snapshot": {
+        "complete": true,
+        "completed_at": "2027-03-31T20:30:00+00:00",
+        "counts": {
+          "harvest_source_plants": 2,
+          "missing_outcomes": 1,
+          "no_usable_yield": 0,
+          "participants": 3,
+          "recorded": 1
+        },
+        "coverage": [],
+        "duration_days": 70,
+        "finalized_at": "2027-04-14T20:30:00+00:00",
+        "format": 1,
+        "growspace_id": "tent",
+        "growspace_name": "Tent",
+        "harvest_window": null,
+        "metrics": [
+          {
+            "complete": true,
+            "definition_version": 1,
+            "metric": "yield",
+            "missing": [],
+            "unit": "g",
+            "value": 180.0
+          },
+          {
+            "complete": true,
+            "definition_version": 1,
+            "metric": "yield_per_harvest_source_plant",
+            "missing": [],
+            "unit": "g",
+            "value": 90.0
+          }
+        ],
+        "missing": [],
+        "participants": [
+          {
+            "phenotype_id": 11,
+            "phenotype_name": "A",
+            "plant_id": "p1",
+            "plant_name": "OG Kush (1,1)",
+            "strain_id": 7,
+            "strain_name": "OG Kush"
+          },
+          {
+            "phenotype_id": 12,
+            "phenotype_name": "Pheno #1",
+            "plant_id": "p2",
+            "plant_name": "OG Kush (1,2)",
+            "strain_id": 7,
+            "strain_name": "OG Kush"
+          },
+          {
+            "phenotype_id": null,
+            "phenotype_name": "",
+            "plant_id": "p3",
+            "plant_name": "",
+            "strain_id": null,
+            "strain_name": ""
+          }
+        ],
+        "run_id": "run-6",
+        "sequence_number": 6,
+        "started_at": "2027-01-20T20:30:00+00:00",
+        "strains": [
+          {
+            "harvest_source_plants": 0,
+            "participants": 1,
+            "strain_id": null,
+            "strain_name": ""
+          },
+          {
+            "harvest_source_plants": 2,
+            "participants": 2,
+            "strain_id": 7,
+            "strain_name": "OG Kush"
+          }
+        ],
+        "timezone": "Europe/Berlin",
+        "uncovered_gaps": []
+      }
+    },
+    "metrics": [
+      {
+        "delta": 30.0,
+        "direction": "increase",
+        "earlier": {
+          "complete": true,
+          "definition_version": 1,
+          "metric": "yield",
+          "missing": [],
+          "unit": "g",
+          "value": 150.0
+        },
+        "goal": "neutral",
+        "judgment": null,
+        "later": {
+          "complete": true,
+          "definition_version": 1,
+          "metric": "yield",
+          "missing": [],
+          "unit": "g",
+          "value": 180.0
+        },
+        "metric": "yield",
+        "state": "comparable"
+      },
+      {
+        "delta": 15.0,
+        "direction": "increase",
+        "earlier": {
+          "complete": true,
+          "definition_version": 1,
+          "metric": "yield_per_harvest_source_plant",
+          "missing": [],
+          "unit": "g",
+          "value": 75.0
+        },
+        "goal": "neutral",
+        "judgment": null,
+        "later": {
+          "complete": true,
+          "definition_version": 1,
+          "metric": "yield_per_harvest_source_plant",
+          "missing": [],
+          "unit": "g",
+          "value": 90.0
+        },
+        "metric": "yield_per_harvest_source_plant",
+        "state": "comparable"
+      }
+    ]
+  },
+  "finalized": [
+    {
+      "completed_at": "2027-03-31T20:30:00+00:00",
+      "label": "Autumn 2026",
+      "metrics_state": "frozen",
+      "participant_count": 3,
+      "run_id": "run-6",
+      "run_revision": 12,
+      "sequence_number": 6,
+      "started_at": "2027-01-20T20:30:00+00:00",
+      "status": "finalized",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "completed_at": "2026-12-31T20:30:00+00:00",
+      "label": "Autumn 2026",
+      "metrics_state": "frozen",
+      "participant_count": 3,
+      "run_id": "run-5",
+      "run_revision": 12,
+      "sequence_number": 5,
+      "started_at": "2026-10-22T20:30:00+00:00",
+      "status": "finalized",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "completed_at": "2026-10-02T20:30:00+00:00",
+      "label": "Autumn 2026",
+      "metrics_state": "frozen",
+      "participant_count": 3,
+      "run_id": "run-1",
+      "run_revision": 12,
+      "sequence_number": 4,
+      "started_at": "2026-07-24T20:30:00+00:00",
+      "status": "finalized",
+      "timezone": "Europe/Berlin"
+    }
+  ],
+  "outcome": "compared",
+  "run_revision": 12
+}

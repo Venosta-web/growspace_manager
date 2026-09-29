@@ -54,6 +54,38 @@
       }
     ],
     "label": "Autumn",
+    "metrics": [
+      {
+        "complete": false,
+        "definition_version": 1,
+        "metric": "yield",
+        "missing": [
+          {
+            "kind": "dry_weight",
+            "plant_id": "p1"
+          },
+          {
+            "kind": "dry_weight",
+            "plant_id": "p2"
+          }
+        ],
+        "unit": "g",
+        "value": null
+      },
+      {
+        "complete": false,
+        "definition_version": 1,
+        "metric": "yield_per_harvest_source_plant",
+        "missing": [
+          {
+            "kind": "yield",
+            "plant_id": null
+          }
+        ],
+        "unit": "g",
+        "value": null
+      }
+    ],
     "metrics_state": "pending",
     "movement_history": [
       {
@@ -92,6 +124,7 @@
     ],
     "notes": "Dense buds, slow dry",
     "participant_count": 3,
+    "participant_identities": [],
     "participations": [
       {
         "closed_at": "2026-07-31T20:30:00+00:00",
