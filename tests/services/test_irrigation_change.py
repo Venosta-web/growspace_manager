@@ -825,6 +825,79 @@ async def test_steering_mode_leaves_no_stamp_or_entry_when_persistence_fails() -
 
 
 @pytest.mark.asyncio
+async def test_calibration_writes_only_the_flow_rate_and_says_why() -> None:
+    """An applied Calibration Proposal is narrated as one, after the commit."""
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.irrigation_config.pump_flow_rate_ml_per_sec = 10.0
+    prior_strategy = growspace.irrigation_strategy
+    coordinator = _coordinator(growspace)
+    ordering: list[str] = []
+    coordinator.async_commit.side_effect = lambda: ordering.append("commit")
+    coordinator.hass.bus.async_fire.side_effect = lambda *_: ordering.append("logbook")
+    coordinator.async_request_refresh.side_effect = lambda: ordering.append("refresh")
+
+    result = await async_apply_irrigation_change(
+        coordinator,
+        "tent",
+        IrrigationChange(
+            operation=IrrigationChangeOperation.CALIBRATION,
+            values={"pump_flow_rate_ml_per_sec": 15.25},
+        ),
+    )
+
+    assert growspace.irrigation_config.pump_flow_rate_ml_per_sec == 15.25
+    assert growspace.irrigation_strategy is prior_strategy
+    assert result.changed_config_fields == {"pump_flow_rate_ml_per_sec"}
+    assert result.changed_strategy_fields == frozenset()
+    assert ordering == ["commit", "logbook", "refresh"]
+    _event, data = coordinator.hass.bus.async_fire.call_args.args
+    assert data["message"] == (
+        "Applied a Calibration Proposal: pump flow rate 10 → 15.25 ml/s"
+    )
+    assert data["category"] == "irrigation"
+
+
+@pytest.mark.parametrize("field", ["irrigation_duration", "daily_volume_cap_liters"])
+@pytest.mark.asyncio
+async def test_calibration_writes_nothing_but_the_flow_rate(field: str) -> None:
+    """No other setting can ride along on an applied proposal."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+
+    with pytest.raises(IrrigationChangeError, match=field):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.CALIBRATION,
+                values={"pump_flow_rate_ml_per_sec": 12.0, field: 60},
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.parametrize("rate", [None, 0.0, -1.0, float("nan"), True, "12"])
+@pytest.mark.asyncio
+async def test_calibration_needs_a_positive_flow_rate(rate: object) -> None:
+    """A proposal never applies a rate that could not size a shot."""
+    growspace = Growspace(id="tent", name="Tent")
+    coordinator = _coordinator(growspace)
+    values = {} if rate is None else {"pump_flow_rate_ml_per_sec": rate}
+
+    with pytest.raises(IrrigationChangeError, match="positive pump flow rate"):
+        await async_apply_irrigation_change(
+            coordinator,
+            "tent",
+            IrrigationChange(
+                operation=IrrigationChangeOperation.CALIBRATION, values=values
+            ),
+        )
+
+    coordinator.async_commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_steering_mode_needs_a_mode() -> None:
     """A stamp that names no mode is refused rather than stamping a default."""
     growspace = Growspace(id="tent", name="Tent")

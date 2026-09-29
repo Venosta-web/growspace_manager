@@ -42,6 +42,7 @@ from .delivery_attempt_store import (
     DeliveryRecordUnreadable,
     GrowspaceDeliveries,
 )
+from .domain.calibration_proposal import tank_sourced_proposal
 from .domain.delivery_attempt import (
     DELIVERY_RECORD_UNREADABLE,
     DeliveryAttempt,
@@ -125,6 +126,7 @@ from .reliability_store import (
     inhibited,
     skipped,
 )
+from .repairs import async_file_calibration_proposal
 from .tank_monitor import (
     TankLevelMonitor,
     TankWatchBook,
@@ -1521,9 +1523,12 @@ class BaseIrrigationCoordinator:
         self, today: date
     ) -> tuple[list[IrrigationTank], TankPumpDisagreement, Transition | None]:
         """Return the measured tanks and the Tank–Pump Disagreement about them."""
-        tanks = qualifying_tanks(self.growspace.environment_config.irrigation_tanks)
+        growspace = self.growspace
+        tanks = qualifying_tanks(growspace.environment_config.irrigation_tanks)
         record, transition = self._deliveries.calibration.watching(
-            (tank.sensor_entity for tank in tanks), today
+            (tank.sensor_entity for tank in tanks),
+            today,
+            flow_rate_ml_per_sec=growspace.irrigation_config.pump_flow_rate_ml_per_sec,
         )
         return tanks, record, transition
 
@@ -1534,6 +1539,8 @@ class BaseIrrigationCoordinator:
         Every minute, a qualifying tank at an Unknown Tank Level marks today as
         one that cannot be judged. On the first tick after local midnight, the
         day just ended is judged, with any a stopped process slept through.
+        Then the tank-sourced Calibration Proposal is filed while one stands,
+        and withdrawn when none does (item 7).
         """
         now = utcnow()
         today = as_local(now).date()
@@ -1566,6 +1573,20 @@ class BaseIrrigationCoordinator:
             _LOGGER.info("Growspace %s: %s", self._growspace_id, message)
             self._fire_logbook_event(message, CATEGORY_CALIBRATION)
         self._deliveries.set_calibration(record)
+        async_file_calibration_proposal(
+            self.hass,
+            growspace,
+            tank_sourced_proposal(
+                record,
+                configured_ml_per_sec=(
+                    growspace.irrigation_config.pump_flow_rate_ml_per_sec
+                ),
+                # Until zones (ADR-0057) a growspace is its own one zone, and
+                # until metering (ADR-0064 item 12) no zone has a meter.
+                zones=1,
+                zone_metered=False,
+            ),
+        )
 
     def calibration_payload(self) -> dict[str, Any]:
         """Return the view model's ``calibration`` block."""

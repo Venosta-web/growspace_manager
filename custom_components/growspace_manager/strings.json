@@ -714,6 +714,25 @@
     "print_label_deprecated": {
       "title": "The Classic label print service is removed in Growspace Manager {removal_version}",
       "description": "Something on this Home Assistant printed a label through `growspace_manager.print_label`, the Classic label service. It still prints exactly as before on every 1.x release, but it is removed in Growspace Manager {removal_version}, and anything that still calls it will stop printing then.\n\nWhat to change depends on what printed:\n\n- **The Growspace Manager card's print button**: upgrade the card. Card releases up to v1.3.x print through the Classic service; newer releases print through Label Templates and need no further change. Upgrade the card before upgrading the integration to {removal_version}.\n- **An automation, script or dashboard button**: switch the action to `growspace_manager.print_label_template`, which prints a strain or plants through a published Label Template.\n\nThe [migration guide]({migration_url}) has before-and-after examples for each. This notice goes away by itself after a Home Assistant run in which nothing printed through the Classic service."
+    },
+    "calibration_proposal": {
+      "title": "The pump flow rate for {growspace} looks wrong",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Correct the pump flow rate for {growspace}",
+            "description": "On {evidence_count} days when the tank and the pump disagreed, the tank {entity} dropped a median {median_ratio} times what the pump delivered at its configured flow rate. If the flow rate is the cause, the pump really delivers about **{proposed} ml/s**, not the configured **{configured} ml/s**.\n\nA leak, or water drawn from the tank some other way, looks exactly the same. Rule both out before applying: the flow rate decides how long every volume-sized shot runs and how much water the daily cap counts.\n\nSubmit to set the pump flow rate to {proposed} ml/s. To keep the current rate, choose Ignore instead; it stays ignored until the tank and the pump agree again."
+          }
+        },
+        "abort": {
+          "proposal_stale": "The pump flow rate has changed since this was proposed, so the proposal no longer applies. If the tank and the pump still disagree at the new rate, a new proposal follows.",
+          "growspace_missing": "This growspace no longer exists, so there is nothing to correct."
+        }
+      }
+    },
+    "calibration_unit_suspect": {
+      "title": "A declared unit for {growspace} looks wrong",
+      "description": "On {evidence_count} days when the tank and the pump disagreed, the tank {entity} dropped a median {median_ratio} times what the pump delivered at its configured flow rate of {configured} ml/s. That is within 5% of {factor}, the factor between {units}, so a unit is declared wrong somewhere; the flow rate is not the likely cause, and no corrected rate is offered, because applying one would rescale every shot by that factor.\n\nCheck the unit {entity} reports in, that the tank volume entered for it is in litres, and that the pump flow rate is in millilitres per second. This goes away once the tank and the pump agree again."
     }
   },
   "entity": {

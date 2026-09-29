@@ -56,8 +56,21 @@ def _literals_matching(pattern: str) -> set[str]:
     }
 
 
+def _fix_flow_keys(strings: dict[str, Any], kind: str) -> set[str]:
+    """Collect the ``step`` or ``abort`` keys of every Repairs fix flow.
+
+    A fix flow is translated under its issue, ``issues.<key>.fix_flow``, not
+    under ``config`` or ``options``.
+    """
+    return {
+        key
+        for issue in strings.get("issues", {}).values()
+        for key in issue.get("fix_flow", {}).get(kind, {})
+    }
+
+
 def _step_ids_shown_by_flows() -> set[str]:
-    """Collect every literal ``step_id`` the config and options flows show."""
+    """Collect every literal ``step_id`` the config, options and fix flows show."""
     return _literals_matching(r'step_id\s*=\s*["\']([A-Za-z0-9_]+)["\']')
 
 
@@ -123,7 +136,11 @@ def test_strings_and_en_translations_have_the_same_keys() -> None:
 def test_every_shown_step_has_a_translation() -> None:
     """No flow step renders as a raw translation key."""
     strings = _load(STRINGS_PATH)
-    translated = set(strings["config"]["step"]) | set(strings["options"]["step"])
+    translated = (
+        set(strings["config"]["step"])
+        | set(strings["options"]["step"])
+        | _fix_flow_keys(strings, "step")
+    )
     untranslated = sorted(_step_ids_shown_by_flows() - translated)
 
     assert not untranslated, (
@@ -191,8 +208,9 @@ def test_every_error_and_abort_the_flows_raise_has_a_translation() -> None:
     """No form error or abort dialog renders as a raw translation key.
 
     Errors are checked against both sections' keys because the two flows share
-    ``config_flow.py``; aborts only against ``options``, since every
-    ``config_handlers/`` abort is reached from ``OptionsFlowHandler``.
+    ``config_flow.py``; aborts against ``options``, since every
+    ``config_handlers/`` abort is reached from ``OptionsFlowHandler``, and
+    against the Repairs fix flows' own.
     """
     strings = _load(STRINGS_PATH)
     options = strings["options"]
@@ -200,7 +218,9 @@ def test_every_error_and_abort_the_flows_raise_has_a_translation() -> None:
 
     untranslated_errors = sorted(_error_keys_set_by_flows() - error_keys)
     untranslated_aborts = sorted(
-        _abort_reasons_raised_by_flows() - set(options["abort"])
+        _abort_reasons_raised_by_flows()
+        - set(options["abort"])
+        - _fix_flow_keys(strings, "abort")
     )
 
     assert not untranslated_errors, (

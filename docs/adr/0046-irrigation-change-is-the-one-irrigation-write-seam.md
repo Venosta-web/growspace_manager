@@ -177,6 +177,16 @@ Every existing hold, precedence rule and ADR-0045 semantic is preserved: a
 successful advance does not overwrite later hand tweaks, and deleting the
 applied recipe still means unknown drift rather than a new hold.
 
+### An applied Calibration Proposal is a fifth operation (#890)
+
+ADR-0064 item 7 has the grower apply a corrected `pump_flow_rate_ml_per_sec`
+from a Repairs issue. That write is its own operation, `calibration`, rather
+than a settings patch: it accepts that one field and nothing else, refuses a
+rate that is not a positive number, and its logbook entry says the rate changed
+because a Calibration Proposal was applied, naming the old and the new rate.
+Resolution is all that differs; validation, the swap, the commit, the rollback
+and the narration after the commit are the shared tail.
+
 ## Consequences
 
 - Adding an irrigation configuration field means adding it to the model and to

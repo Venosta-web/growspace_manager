@@ -1024,6 +1024,7 @@ async def test_an_admin_acknowledgement_starts_the_record_again(
         "attempts": [],
         "calibration": {
             "tanks": [],
+            "flow_rate_ml_per_sec": None,
             "first_day": None,
             "unknown_days": [],
             "evaluated_through": None,

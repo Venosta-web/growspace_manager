@@ -33,7 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rate, a leak, or water drawn from the tank. Days with no pump cycle, or on
   which the tank level was unknown, count neither way. The growspace payload
   carries it as `calibration.tank_pump_disagreement` with its last six days.
-  It never blocks irrigation.
+  It never blocks irrigation. The comparison also starts again when the pump
+  flow rate is changed.
+- The **Calibration Proposal**, from the tank: while a Tank–Pump Disagreement
+  is raised, a growspace with a pump flow rate gets a fixable Repairs issue
+  showing the configured rate, a corrected one (the configured rate × the
+  median tank drop ÷ pump figure over the disagreeing days), how many days
+  that rests on, and the median ratio. It names a leak and water drawn from the
+  tank as the other explanations. **Apply** writes the corrected rate and
+  closes it; nothing is ever applied automatically. **Ignore** lasts until the
+  tank and the pump agree again. A ratio within 5% of a gallons/litres or
+  litres/m³/mL mix-up offers no Apply and names the tank sensor whose unit to
+  check instead.
 
 ## [1.3.0] - 2026-09-29
 
