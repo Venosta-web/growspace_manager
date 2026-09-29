@@ -52,8 +52,8 @@ a VPD verdict and the crop-steering phase the integration computed from them._
 
 Growspace Manager can switch pumps, humidifiers, dehumidifiers, fans and lights.
 This section says what it does when something goes wrong, and what it cannot
-do. The irrigation and climate safety behaviour below ships in **1.2.4**, and
-is in the `v1.2.4b` betas now. **1.2.3 and earlier have none of it.** The
+do. The irrigation and climate safety behaviour below ships in **1.3.0**.
+**1.2.3 and earlier have none of it.** The
 [feature matrix](docs/FEATURE_MATRIX.md) gives the release each part arrived in
 and how it has been verified.
 
@@ -70,7 +70,7 @@ Each growspace has:
 - an **Automation** switch (on by default). While it is off, Growspace
   Manager sends that growspace no automatic commands;
 - an **Irrigation armed** switch. It is off on a new growspace. A growspace
-  that already had pumps before 1.2.4 stays armed, and Home Assistant raises a
+  that already had pumps before 1.3.0 stays armed, and Home Assistant raises a
   Repairs issue asking you to review it;
 - an **Emergency stop** button (also the `emergency_stop` service). It latches,
   commands every managed output to its safe state, and survives a restart. An

@@ -12,7 +12,7 @@ a tank running dry halfway through a shot. The
 [hardware guide](HARDWARE.md) covers those, and cases 2, 5 and 6 depend on it.
 
 The expected behaviour below is that of `prerelease` at `98157a6`
-(`v1.2.4b500`). The safety behaviour ships in **1.2.4**. **1.2.3 and earlier
+(`v1.2.4b500`). The safety behaviour ships in **1.3.0**. **1.2.3 and earlier
 have none of it**, so this guide does not apply to them. The README's
 [Safety and limitations](../README.md#safety-and-limitations) is the short
 version of the same model, and

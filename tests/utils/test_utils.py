@@ -10,6 +10,7 @@ from datetime import date, datetime
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.domain.sensor_validity import PlausibleRange
 from custom_components.growspace_manager.domain.stage import (
     BayesianStage,
     StageDays,
@@ -37,6 +38,7 @@ from custom_components.growspace_manager.utils import (
     parse_date_field_v2,
     read_aggregated_sensor_value,
     read_environment_vpd,
+    read_plausible_value,
     read_sensor_value,
     strip_markdown_fence,
 )
@@ -435,6 +437,36 @@ def test_read_sensor_value(hass: HomeAssistant) -> None:
     # 5. Invalid float states
     hass.states.async_set("sensor.invalid_test", "not-a-float")
     assert read_sensor_value(hass, "sensor.invalid_test") is None
+
+
+def test_read_plausible_value(hass: HomeAssistant) -> None:
+    """Missing, absent, unavailable and implausible readings are None, never 0."""
+    percent = PlausibleRange(0.0, 100.0)
+    assert read_plausible_value(hass, None, percent) is None
+    assert read_plausible_value(hass, "sensor.absent", percent) is None
+
+    hass.states.async_set("sensor.rh", STATE_UNAVAILABLE)
+    assert read_plausible_value(hass, "sensor.rh", percent) is None
+    hass.states.async_set("sensor.rh", "140")
+    assert read_plausible_value(hass, "sensor.rh", percent) is None
+    hass.states.async_set("sensor.rh", "55.5")
+    assert read_plausible_value(hass, "sensor.rh", percent) == 55.5
+
+
+def test_read_plausible_value_takes_the_band_from_the_unit(hass: HomeAssistant) -> None:
+    """A range that depends on the unit is chosen from the state's own unit."""
+
+    def by_unit(unit: str | None) -> PlausibleRange:
+        return (
+            PlausibleRange(-40.0, 60.0)
+            if unit == "°C"
+            else PlausibleRange(-40.0, 140.0)
+        )
+
+    hass.states.async_set("sensor.air", "90", {"unit_of_measurement": "°C"})
+    assert read_plausible_value(hass, "sensor.air", by_unit) is None
+    hass.states.async_set("sensor.air", "90", {"unit_of_measurement": "°F"})
+    assert read_plausible_value(hass, "sensor.air", by_unit) == 90.0
 
 
 def test_is_light_sensor_on_numeric_sensor(hass: HomeAssistant) -> None:
