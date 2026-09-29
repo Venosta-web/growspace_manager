@@ -76,6 +76,7 @@ _Avoid_: estimated final metric, partial efficiency
 
 **Comparison Direction**
 The increase, decrease, or equality of one Run metric relative to another. Direction is neutral for totals and receives an improvement judgment only for metrics with an agreed monotonic goal.
+A row has a direction only when both values were frozen under the same Metric Definition Version and unit (`incompatible` otherwise) and both exist (`missing` otherwise); a metric only one snapshot holds is `unavailable`. `METRIC_GOALS` in `domain/grow_run.py` is the agreed-goal table: `yield` and `yield_per_harvest_source_plant` are `neutral`, so they move but are never judged; a `higher` or `lower` goal adds `better`, `worse` or `same` (#675).
 _Avoid_: improvement arrow, score
 
 **Mold-Risk Episode**
@@ -120,6 +121,7 @@ _Avoid_: reconstructed run, inferred run
 
 **Run Comparison**
 A two-column comparison of exactly two Finalized Grow Runs belonging to the same Growspace. It defaults to the newest Run and its predecessor; cross-growspace and multi-Run comparison are outside the initial model.
+`growspace_manager/compare_grow_runs` takes a `growspace_id` and optionally two `run_ids`, orders the pair by Run Sequence Number so direction is always the later Run relative to the earlier, and answers with both Runs' summaries and frozen snapshots — the Participant, Strain, Harvest Source Plant, duration, coverage and loss context — one row per metric, and every Finalized Run for choosing another pair. It refuses `grow_run.insufficient_history` below two Finalized Runs, `grow_run.not_finalized` for any other status, `grow_run.same_run`, and `grow_run.not_found` for a Run another Growspace holds (`compare_runs`, #675).
 _Avoid_: growspace comparison, live comparison
 
 **Active Run Sensor**
@@ -132,6 +134,7 @@ _Avoid_: planned run, resumed run
 
 **Grow Run View**
 The dedicated product surface for a selected Grow Run's overview, participants, performance, history, and comparison. It replaces the unversioned aggregate Grow Report as the canonical reporting surface.
+It reads `get_grow_run`, whose details carry `participant_identities` and `metrics` — the Run's Live, Pending or frozen values as its `metrics_state` says (`provisional_metrics`) — `list_grow_runs` for History, and `compare_grow_runs` for Compare (#675).
 _Avoid_: grow report, logbook report
 
 **Harvest Attribution Correction**

@@ -17,6 +17,11 @@ lacks, and ``finalize_grow_run`` freezes it, acknowledging an incomplete one.
 ``list_grow_runs`` names every Run a Growspace's ledger holds, and
 ``update_grow_run_metadata`` edits a Run's description in any status. None of
 the four asks whether the Growspace still exists: its history outlives it.
+
+**Comparing** (#675) is ``compare_grow_runs``: exactly two Finalized Runs of
+one Growspace, the newest and its predecessor unless the grower names two. It
+answers with every Finalized Run as well, so the Grow Run View fills both of
+its pickers from the one read.
 """
 
 from __future__ import annotations
@@ -37,6 +42,8 @@ from custom_components.growspace_manager.domain.grow_run import (
     WARNING_PLANTS_PRESENT,
     GrowRunRefused,
     RunMetadata,
+    compare_runs,
+    finalized_runs,
     run_details,
     run_summary,
 )
@@ -67,6 +74,7 @@ WS_TYPE_PREVIEW_GROW_RUN_FINALIZATION = (
 )
 WS_TYPE_FINALIZE_GROW_RUN = "growspace_manager/finalize_grow_run"
 WS_TYPE_UPDATE_GROW_RUN_METADATA = "growspace_manager/update_grow_run_metadata"
+WS_TYPE_COMPARE_GROW_RUNS = "growspace_manager/compare_grow_runs"
 
 OUTCOME_STARTED = "started"
 OUTCOME_REFUSED = "refused"
@@ -75,6 +83,7 @@ OUTCOME_COMPLETED = "completed"
 OUTCOME_LISTED = "listed"
 OUTCOME_FINALIZED = "finalized"
 OUTCOME_UPDATED = "updated"
+OUTCOME_COMPARED = "compared"
 
 _NOTE = vol.Any(None, vol.All(str, vol.Length(max=MAX_TEXT_LENGTH)))
 
@@ -184,6 +193,16 @@ SCHEMA_WS_UPDATE_GROW_RUN_METADATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.e
         ),
         vol.Optional("goals"): _NOTE,
         vol.Optional("notes"): _NOTE,
+    }
+)
+
+SCHEMA_WS_COMPARE_GROW_RUNS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_COMPARE_GROW_RUNS,
+        vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+        vol.Optional("run_ids"): vol.All(
+            [vol.All(str, vol.Length(min=1))], vol.Length(min=2, max=2)
+        ),
     }
 )
 
@@ -397,6 +416,30 @@ async def websocket_update_grow_run_metadata(
     }
 
 
+async def websocket_compare_grow_runs(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Set two Finalized Runs side by side, or say why they cannot be."""
+    try:
+        ledger = coordinator.grow_runs.ledger(msg["growspace_id"])
+        run_ids = msg.get("run_ids")
+        comparison = compare_runs(
+            ledger, None if run_ids is None else (run_ids[0], run_ids[1])
+        )
+    except GrowRunRefused as refused:
+        return refusal_result(refused)
+    return {
+        "outcome": OUTCOME_COMPARED,
+        "run_revision": ledger.revision,
+        "finalized": [
+            run_summary(run, ledger.revision) for run in finalized_runs(ledger)
+        ],
+        "comparison": comparison.as_dict(),
+    }
+
+
 COMMANDS: list[WSCommand] = [
     WSCommand(
         WS_TYPE_GET_GROW_RUN,
@@ -446,5 +489,10 @@ COMMANDS: list[WSCommand] = [
         websocket_update_grow_run_metadata,
         SCHEMA_WS_UPDATE_GROW_RUN_METADATA,
         actor=True,
+    ),
+    WSCommand(
+        WS_TYPE_COMPARE_GROW_RUNS,
+        websocket_compare_grow_runs,
+        SCHEMA_WS_COMPARE_GROW_RUNS,
     ),
 ]

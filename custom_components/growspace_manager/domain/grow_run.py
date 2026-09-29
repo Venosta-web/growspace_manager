@@ -13,6 +13,11 @@ Window and versioned metrics it will be compared and exported on, copied out
 of everything they were derived from so that no later change to a Plant, a
 Strain or the Growspace can reach them. A missing fact stays missing in it.
 
+Two Finalized Runs of one Growspace are set side by side in a **Run
+Comparison** (#675). Only their frozen metrics are compared, and a row gets a
+Comparison Direction only when both values exist under the same Metric
+Definition Version; an improvement judgment needs an agreed goal besides.
+
 This module is pure. It decides and records; persistence, Home Assistant state
 and authorization belong to the shells around it.
 """
@@ -44,6 +49,9 @@ CODE_IRRIGATION_DELIVERING = "grow_run.irrigation_delivering"
 CODE_ACKNOWLEDGEMENT_REQUIRED = "grow_run.acknowledgement_required"
 CODE_NOT_FOUND = "grow_run.not_found"
 CODE_NOT_COMPLETED = "grow_run.not_completed"
+CODE_NOT_FINALIZED = "grow_run.not_finalized"
+CODE_INSUFFICIENT_HISTORY = "grow_run.insufficient_history"
+CODE_SAME_RUN = "grow_run.same_run"
 
 # Run Completion Preview warnings. Each one names a Plant or outcome at risk; a
 # completion must acknowledge every warning the preview holds when it commits.
@@ -60,6 +68,15 @@ SNAPSHOT_FORMAT = 1
 #: Metric Definition Versions. A change to how a metric is calculated takes a
 #: new version, so values frozen under different rules are never compared.
 METRIC_DEFINITIONS = {"yield": 1, "yield_per_harvest_source_plant": 1}
+
+#: The goal a Run Comparison judges each metric against. A Comparison
+#: Direction receives an improvement judgment only for an agreed monotonic
+#: goal; ``neutral`` metrics -- totals, and a per-plant Yield no goal has been
+#: agreed for -- say only which way they moved. A metric not listed is neutral.
+METRIC_GOALS: dict[str, str] = {
+    "yield": "neutral",
+    "yield_per_harvest_source_plant": "neutral",
+}
 
 
 class RunStatus(StrEnum):
@@ -171,6 +188,24 @@ class RunNotCompleted(GrowRunRefused):
     """Only a Completed Run can be finalized."""
 
     code = CODE_NOT_COMPLETED
+
+
+class RunNotFinalized(GrowRunRefused):
+    """Only Finalized Runs are compared: nothing else has frozen facts."""
+
+    code = CODE_NOT_FINALIZED
+
+
+class RunInsufficientHistory(GrowRunRefused):
+    """A Run Comparison needs two Finalized Runs and the Growspace has fewer."""
+
+    code = CODE_INSUFFICIENT_HISTORY
+
+
+class RunSameRun(GrowRunRefused):
+    """A Run Comparison names one Run twice."""
+
+    code = CODE_SAME_RUN
 
 
 # ---------------------------------------------------------------------------
@@ -1022,6 +1057,55 @@ def _yield_gap(outcome: HarvestOutcome) -> str | None:
     return None
 
 
+def _yield_metrics(
+    outcomes: tuple[HarvestOutcome, ...],
+) -> tuple[FrozenMetric, FrozenMetric]:
+    """Yield and Yield per Harvest Source Plant from a Run's outcomes.
+
+    The one definition both a frozen snapshot and the provisional metrics of an
+    Active or Completed Run are drawn from, so Live, Pending and Final values
+    of the same Run differ only in the facts that have arrived.
+    """
+    yield_missing = [
+        MissingFact(gap, row.plant_id)
+        for row in outcomes
+        if (gap := _yield_gap(row)) is not None
+    ]
+    if not outcomes:
+        yield_missing.append(MissingFact("harvest_source_plants"))
+    total = (
+        None
+        if yield_missing
+        else round(sum(float(row.metrics["dry_weight"]) for row in outcomes), 3)
+    )
+    return (
+        FrozenMetric(
+            "yield", "g", METRIC_DEFINITIONS["yield"], total, tuple(yield_missing)
+        ),
+        FrozenMetric(
+            "yield_per_harvest_source_plant",
+            "g",
+            METRIC_DEFINITIONS["yield_per_harvest_source_plant"],
+            None if total is None else round(total / len(outcomes), 3),
+            () if total is not None else (MissingFact("yield"),),
+        ),
+    )
+
+
+def provisional_metrics(run: GrowRun) -> tuple[FrozenMetric, ...]:
+    """The metrics a Run's status gives it, as its records stand now.
+
+    Live Run Metrics while Active and Pending Run Metrics once Completed are
+    drawn from the harvest outcomes that have arrived; a Finalized Run's are
+    its frozen ones; a Voided Run has none. Only the frozen ones are compared.
+    """
+    if run.status is RunStatus.FINALIZED and run.snapshot is not None:
+        return run.snapshot.metrics
+    if run.status is RunStatus.VOIDED:
+        return ()
+    return _yield_metrics(tuple(sorted(run.harvest_outcomes, key=lambda r: r.plant_id)))
+
+
 def build_snapshot(
     run: GrowRun, *, finalized_at: datetime, growspace_name: str
 ) -> RunSnapshot:
@@ -1067,31 +1151,8 @@ def build_snapshot(
     missing.extend(MissingFact("entered_dry_at", plant_id) for plant_id in undated)
     window = (min(days), max(days)) if days and not undated else None
 
-    yield_missing = [
-        MissingFact(gap, row.plant_id)
-        for row in outcomes
-        if (gap := _yield_gap(row)) is not None
-    ]
-    if not outcomes:
-        yield_missing.append(MissingFact("harvest_source_plants"))
-    missing.extend(yield_missing)
-    total = (
-        None
-        if yield_missing
-        else round(sum(float(row.metrics["dry_weight"]) for row in outcomes), 3)
-    )
-    metrics = (
-        FrozenMetric(
-            "yield", "g", METRIC_DEFINITIONS["yield"], total, tuple(yield_missing)
-        ),
-        FrozenMetric(
-            "yield_per_harvest_source_plant",
-            "g",
-            METRIC_DEFINITIONS["yield_per_harvest_source_plant"],
-            None if total is None else round(total / len(outcomes), 3),
-            () if total is not None else (MissingFact("yield"),),
-        ),
-    )
+    metrics = _yield_metrics(outcomes)
+    missing.extend(metrics[0].missing)
 
     strains: dict[tuple[int | None, str], list[int]] = {}
     for identity in participants:
@@ -2013,6 +2074,12 @@ def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
             "goals": run.metadata.goals,
             "audit": [row.as_dict() for row in run.audit],
             "snapshot": run.snapshot.as_dict() if run.snapshot else None,
+            # The Grow Run View's Participants and Performance (#675): who
+            # took part as named now, and the metrics ``metrics_state`` marks.
+            "participant_identities": [
+                row.as_dict() for row in run.participant_identities
+            ],
+            "metrics": [row.as_dict() for row in provisional_metrics(run)],
         },
     }
 
@@ -2042,3 +2109,192 @@ def sensor_state(ledger: RunLedger, now: datetime) -> tuple[int | str, dict[str,
         "participant_count": run.participant_count,
         "run_revision": ledger.revision,
     }
+
+
+# ---------------------------------------------------------------------------
+# The Run Comparison (#675)
+# ---------------------------------------------------------------------------
+
+#: Why a metric row does or does not receive a Comparison Direction.
+COMPARISON_COMPARABLE = "comparable"
+COMPARISON_MISSING = "missing"
+COMPARISON_INCOMPATIBLE = "incompatible"
+COMPARISON_UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class MetricComparison:
+    """One metric of two Finalized Runs, side by side.
+
+    A direction exists only between two values frozen under the same Metric
+    Definition Version and unit: a missing value is never zero, and values
+    calculated by different rules are never set against each other. ``earlier``
+    or ``later`` is None when that Run's snapshot does not hold the metric at
+    all, which is what a metric introduced after one of them was finalized is.
+    """
+
+    metric: str
+    goal: str
+    earlier: FrozenMetric | None
+    later: FrozenMetric | None
+
+    @property
+    def state(self) -> str:
+        """``comparable``, or why this row has no direction."""
+        if self.earlier is None or self.later is None:
+            return COMPARISON_UNAVAILABLE
+        if (
+            self.earlier.definition_version != self.later.definition_version
+            or self.earlier.unit != self.later.unit
+        ):
+            return COMPARISON_INCOMPATIBLE
+        if self.earlier.value is None or self.later.value is None:
+            return COMPARISON_MISSING
+        return COMPARISON_COMPARABLE
+
+    @property
+    def delta(self) -> float | None:
+        """The later value less the earlier one, when the two are comparable."""
+        if self.state != COMPARISON_COMPARABLE:
+            return None
+        assert self.earlier is not None and self.later is not None
+        assert self.earlier.value is not None and self.later.value is not None
+        return round(self.later.value - self.earlier.value, 3)
+
+    @property
+    def direction(self) -> str | None:
+        """How the later Run moved relative to the earlier: the neutral fact."""
+        delta = self.delta
+        if delta is None:
+            return None
+        if delta == 0:
+            return "equal"
+        return "increase" if delta > 0 else "decrease"
+
+    @property
+    def judgment(self) -> str | None:
+        """Better, worse or the same -- only against an agreed monotonic goal."""
+        direction = self.direction
+        if direction is None or self.goal not in ("higher", "lower"):
+            return None
+        if direction == "equal":
+            return "same"
+        return (
+            "better"
+            if (direction == "increase") == (self.goal == "higher")
+            else "worse"
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the wire form of one comparison row."""
+        return {
+            "metric": self.metric,
+            "goal": self.goal,
+            "state": self.state,
+            "earlier": self.earlier.as_dict() if self.earlier else None,
+            "later": self.later.as_dict() if self.later else None,
+            "delta": self.delta,
+            "direction": self.direction,
+            "judgment": self.judgment,
+        }
+
+
+def _frozen(run: GrowRun) -> RunSnapshot:
+    """A Finalized Run's snapshot, which the Run's own reader guarantees."""
+    assert run.snapshot is not None
+    return run.snapshot
+
+
+@dataclass(frozen=True, slots=True)
+class RunComparison:
+    """Two Finalized Runs of one Growspace, earlier and later by sequence.
+
+    Direction is always the later Run relative to the earlier one, whichever
+    order the grower picked them in. Everything beyond the metric rows --
+    Participants, Strains, Harvest Source Plants, duration, coverage and loss
+    -- is context, and travels as each Run's own frozen snapshot.
+    """
+
+    earlier: GrowRun
+    later: GrowRun
+    revision: int
+
+    @property
+    def metrics(self) -> tuple[MetricComparison, ...]:
+        """One row per metric either snapshot froze, the later Run's first."""
+        earlier = {row.metric: row for row in _frozen(self.earlier).metrics}
+        later = {row.metric: row for row in _frozen(self.later).metrics}
+        names = dict.fromkeys([*later, *earlier])
+        return tuple(
+            MetricComparison(
+                name,
+                METRIC_GOALS.get(name, "neutral"),
+                earlier.get(name),
+                later.get(name),
+            )
+            for name in names
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the two-column wire form the Grow Run View draws."""
+        return {
+            "earlier": {
+                "run": run_summary(self.earlier, self.revision),
+                "snapshot": _frozen(self.earlier).as_dict(),
+            },
+            "later": {
+                "run": run_summary(self.later, self.revision),
+                "snapshot": _frozen(self.later).as_dict(),
+            },
+            "metrics": [row.as_dict() for row in self.metrics],
+        }
+
+
+def finalized_runs(ledger: RunLedger) -> tuple[GrowRun, ...]:
+    """The Growspace's Finalized Runs, newest first by Run Sequence Number."""
+    return tuple(
+        sorted(
+            (run for run in ledger.runs if run.status is RunStatus.FINALIZED),
+            key=lambda run: -run.sequence_number,
+        )
+    )
+
+
+def compare_runs(
+    ledger: RunLedger, run_ids: tuple[str, str] | None = None
+) -> RunComparison:
+    """Compare two Finalized Runs of this ledger's Growspace.
+
+    Without ``run_ids`` it is the newest Finalized Run and its predecessor.
+    A ledger holds one Growspace's Runs, so a Run of another Growspace is
+    simply not found here: cross-growspace comparison cannot be asked for.
+    """
+    if run_ids is None:
+        finalized = finalized_runs(ledger)
+        if len(finalized) < 2:
+            raise RunInsufficientHistory(
+                "A Run Comparison needs two Finalized Runs; this growspace has "
+                f"{len(finalized)}",
+                current_revision=ledger.revision,
+                active_run=ledger.active_run,
+            )
+        return RunComparison(finalized[1], finalized[0], ledger.revision)
+    first, second = run_ids
+    if first == second:
+        raise RunSameRun(
+            "A Run Comparison needs two different Runs",
+            current_revision=ledger.revision,
+            active_run=ledger.active_run,
+        )
+    runs = sorted(
+        (ledger.find(first), ledger.find(second)), key=lambda run: run.sequence_number
+    )
+    for run in runs:
+        if run.status is not RunStatus.FINALIZED:
+            raise RunNotFinalized(
+                f"Run #{run.sequence_number} is {run.status.value}; only Finalized "
+                "Runs are compared",
+                current_revision=ledger.revision,
+                active_run=ledger.active_run,
+            )
+    return RunComparison(runs[0], runs[1], ledger.revision)

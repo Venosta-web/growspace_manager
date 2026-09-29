@@ -70,6 +70,34 @@
       }
     ],
     "label": "Autumn 2026",
+    "metrics": [
+      {
+        "complete": false,
+        "definition_version": 1,
+        "metric": "yield",
+        "missing": [
+          {
+            "kind": "dry_weight",
+            "plant_id": "p1"
+          }
+        ],
+        "unit": "g",
+        "value": null
+      },
+      {
+        "complete": false,
+        "definition_version": 1,
+        "metric": "yield_per_harvest_source_plant",
+        "missing": [
+          {
+            "kind": "yield",
+            "plant_id": null
+          }
+        ],
+        "unit": "g",
+        "value": null
+      }
+    ],
     "metrics_state": "frozen",
     "movement_history": [
       {
@@ -108,6 +136,24 @@
     ],
     "notes": "Dense buds, slow dry",
     "participant_count": 3,
+    "participant_identities": [
+      {
+        "phenotype_id": 11,
+        "phenotype_name": "A",
+        "plant_id": "p1",
+        "plant_name": "OG Kush (1,1)",
+        "strain_id": 7,
+        "strain_name": "OG Kush"
+      },
+      {
+        "phenotype_id": 12,
+        "phenotype_name": "Pheno #1",
+        "plant_id": "p2",
+        "plant_name": "OG Kush (1,2)",
+        "strain_id": 7,
+        "strain_name": "OG Kush"
+      }
+    ],
     "participations": [
       {
         "closed_at": "2026-07-31T20:30:00+00:00",
