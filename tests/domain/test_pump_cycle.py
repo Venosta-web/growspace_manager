@@ -278,6 +278,28 @@ def test_decide_a_latched_fault_outranks_the_startup_inhibit() -> None:
     assert verdict.reason is SkipReason.FAULT
 
 
+@pytest.mark.parametrize(
+    ("event_type", "is_manual"), [("irrigation", True), ("drain", False)]
+)
+def test_decide_an_emergency_stop_outranks_every_other_gate(
+    event_type: str, is_manual: bool
+) -> None:
+    """A latched stop refuses manual runs and drains too, ahead of a fault."""
+    verdict = _decide(
+        _config(),
+        event_type=event_type,
+        is_manual=is_manual,
+        emergency_stop=True,
+        fault=True,
+        startup_inhibit="starting up",
+    )
+    assert verdict == CycleVerdict(
+        False,
+        SkipReason.EMERGENCY_STOP,
+        f"{event_type.capitalize()} skipped — emergency stop latched",
+    )
+
+
 # --- Unknown Tank Level (#790) ---------------------------------------------------
 
 

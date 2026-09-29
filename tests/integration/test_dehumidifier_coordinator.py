@@ -866,3 +866,51 @@ async def test_get_ac_infinity_devices_no_growspace(
     )
     assert coord._get_ac_infinity_devices() == []
     assert coord._get_all_controlled_entities() == []
+
+
+async def test_control_devices_sends_nothing_while_commands_are_withheld(
+    mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
+) -> None:
+    """Automation off, an emergency stop or a Manual Override: no command at all."""
+    mock_growspace.environment_config.dehumidifier_entities = ["switch.dry"]
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coordinator = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coordinator.async_setup()
+    mock_hass.services.async_call.reset_mock()
+    mock_main_coordinator.irrigation_safety.commands_allowed.return_value = False
+
+    await coordinator._control_devices(True)
+
+    mock_hass.services.async_call.assert_not_awaited()
+
+
+async def test_control_devices_stops_when_commands_are_withdrawn_mid_loop(
+    mock_hass, mock_main_coordinator, mock_growspace, mock_track_state_change_event
+) -> None:
+    """A stop that lands between two actuators reaches the second one untouched."""
+    mock_growspace.environment_config.dehumidifier_entities = [
+        "switch.dry_a",
+        "switch.dry_b",
+    ]
+    mock_main_coordinator.growspaces = {"gs1": mock_growspace}
+    coordinator = DehumidifierCoordinator(
+        mock_hass, mock_track_state_change_event, "gs1", mock_main_coordinator
+    )
+    await coordinator.async_setup()
+    mock_hass.services.async_call.reset_mock()
+    # Allowed on entry and for the first actuator, withdrawn before the second.
+    mock_main_coordinator.irrigation_safety.commands_allowed.side_effect = [
+        True,
+        True,
+        False,
+    ]
+
+    await coordinator._control_devices(True)
+
+    commanded = [
+        call.args[2][ATTR_ENTITY_ID]
+        for call in mock_hass.services.async_call.await_args_list
+    ]
+    assert commanded == ["switch.dry_a"]
