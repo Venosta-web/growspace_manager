@@ -5,7 +5,7 @@ what has not been checked. A feature listed here can still have bugs. The
 matrix shows what the evidence covers.
 
 Last reviewed **2026-09-25** against `prerelease` at `adfb338`
-(`v1.2.4b499`). The latest stable release is **1.2.3**.
+(`v1.2.4b499`), in the beta line that was released as **1.3.0**.
 
 ## Evidence levels
 
@@ -27,7 +27,7 @@ A row shows the strongest level that covers the feature as it is now.
 
 ## Irrigation and climate safety
 
-All of this arrived after 1.2.3. **1.2.3 and earlier have none of it.** The
+All of this ships in 1.3.0. **1.2.3 and earlier have none of it.** The
 "Since" column gives the first beta that contained each item. The README's
 [Safety and limitations](../README.md#safety-and-limitations) describes the
 behaviour itself.

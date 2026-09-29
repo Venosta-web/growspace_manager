@@ -59,7 +59,7 @@ def test_stable_publishing_contract() -> None:
     """A main push must publish and verify the next stable patch release."""
     version_module = runpy.run_path(VERSION_SCRIPT)
     assert version_module["next_stable_version"]("1.2.1") == "1.2.2"
-    assert json.loads(MANIFEST_PATH.read_text())["version"] == "1.2.3"
+    assert json.loads(MANIFEST_PATH.read_text())["version"] == "1.3.0"
 
     workflow = yaml.safe_load(STABLE_WORKFLOW_PATH.read_text())
     assert workflow["on"] == {
@@ -77,6 +77,15 @@ def test_stable_publishing_contract() -> None:
     assert release["with"]["target_commitish"] == "${{ github.sha }}"
     assert release["with"]["fail_on_unmatched_files"] is True
     assert not any(step.get("name") == "Commit stable version" for step in steps)
+
+    assert release["with"]["body"] == "${{ steps.release_notes.outputs.header }}"
+    assert release["with"]["generate_release_notes"] is True
+    notes = next(
+        step for step in steps if step.get("name") == "Link the changelog section"
+    )
+    assert notes["id"] == "release_notes"
+    assert "release_notes_header.py" in notes["run"]
+    assert steps.index(notes) < steps.index(release)
 
     verification = next(
         step for step in steps if step.get("name") == "Verify release tag"
