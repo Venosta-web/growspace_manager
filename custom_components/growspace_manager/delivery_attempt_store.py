@@ -41,6 +41,7 @@ from homeassistant.util import dt as dt_util
 from .domain.delivery_attempt import (
     DeliveryAttempt,
     DispensedVolume,
+    attempts_between,
     dispensed_volume,
     retained,
     with_suppression,
@@ -145,6 +146,18 @@ class GrowspaceDeliveries:
     def dispensed(self) -> DispensedVolume:
         """Return today's Dispensed Volume, today being Home Assistant's local day."""
         return dispensed_volume(self.attempts, dt_util.now().date())
+
+    def between(self, starts_at: datetime, ends_at: datetime) -> list[DeliveryAttempt]:
+        """Return the attempts that touch ``[starts_at, ends_at)``, oldest first.
+
+        A record that could not be read raises rather than answering with an
+        empty day: nothing recorded and nothing known are different answers.
+        """
+        if self.unreadable:
+            raise DeliveryRecordUnreadable(
+                f"Delivery Attempts of growspace {self.growspace_id} are unreadable"
+            )
+        return attempts_between(self.attempts, starts_at, ends_at)
 
     def _document(self) -> dict[str, Any]:
         return {
