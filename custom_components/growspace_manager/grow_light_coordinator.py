@@ -195,7 +195,7 @@ class GrowLightCoordinator:
         photoperiod_hours = self._photoperiod_hours(env)
         return desired_grow_light_power(
             dt_util.now(),
-            gs.irrigation_strategy.lights_on_time,
+            gs.light_cycle.lights_on_time,
             photoperiod_hours,
             env.growlight_config.power,
         )
@@ -222,7 +222,7 @@ class GrowLightCoordinator:
         gs = self._growspace
         assert gs is not None  # guarded by callers via _env_config
         cfg = env.growlight_config
-        on_time = gs.irrigation_strategy.lights_on_time
+        on_time = gs.light_cycle.lights_on_time
         off_time = resolve_cycle_end_time(on_time, self._photoperiod_hours(env))
         for device in env.growlight_ac_infinity_devices:
             if not self.main_coordinator.irrigation_safety.commands_allowed(
@@ -332,7 +332,7 @@ class GrowLightCoordinator:
             return
         cfg = env.light_leak_config
         now = dt_util.now()
-        lights_on_time = gs.irrigation_strategy.lights_on_time
+        lights_on_time = gs.light_cycle.lights_on_time
 
         if self._leak_restore_schedules and not is_dark_period(
             now, lights_on_time, self._photoperiod_hours(env)
@@ -389,7 +389,7 @@ class GrowLightCoordinator:
         gs = self._growspace
         assert gs is not None  # guarded by _async_check_light_leak
         cfg = env.light_leak_config
-        on_time = gs.irrigation_strategy.lights_on_time
+        on_time = gs.light_cycle.lights_on_time
         off_time = resolve_cycle_end_time(on_time, self._photoperiod_hours(env))
 
         evidence: list[str] = []

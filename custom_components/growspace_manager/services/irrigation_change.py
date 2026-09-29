@@ -44,6 +44,11 @@ from custom_components.growspace_manager.domain.irrigation_recipe import (
     RecipeApplication,
     resolve_recipe_application,
 )
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    apply_effective_irrigation,
+    effective_config,
+    effective_strategy,
+)
 from custom_components.growspace_manager.domain.plant_metrics import count_live_plants
 from custom_components.growspace_manager.domain.shot_sizing import (
     dripper_flow_rate_ml_per_sec,
@@ -418,15 +423,17 @@ def resolve_validated_recipe_application(
     Program applicability and its temporary automatic writer use this same
     validation as explicit application. No live model or provenance is changed.
     """
+    config = effective_config(growspace)
+    strategy = effective_strategy(growspace)
     application = resolve_recipe_application(
         recipe,
-        strategy=growspace.irrigation_strategy,
-        config=growspace.irrigation_config,
+        strategy=strategy,
+        config=config,
         live_plant_count=live_plant_count,
     )
     _validate_candidate(
-        replace(growspace.irrigation_config, **application.config_values),
-        replace(growspace.irrigation_strategy, **application.values),
+        replace(config, **application.config_values),
+        replace(strategy, **application.values),
     )
     return application
 
@@ -459,8 +466,10 @@ def _resolve_recipe_candidate(
         "applied_recipe_id": recipe.id,
         "recipe_applied_at": utcnow().isoformat(),
     }
+    prior_config = effective_config(growspace)
+    prior_strategy = effective_strategy(growspace)
     authored_media = recipe.provenance.media_type.value
-    target_media = growspace.irrigation_strategy.substrate_profile.media_type.value
+    target_media = prior_strategy.substrate_profile.media_type.value
     # The entry says who asked. An advance names the program and the week it
     # moved to, because that is the whole of what the grower did not do; an
     # explicit apply names both media, because choosing across them is theirs.
@@ -474,8 +483,8 @@ def _resolve_recipe_candidate(
         )
     )
     return _Candidate(
-        config=replace(growspace.irrigation_config, **application.config_values),
-        strategy=replace(growspace.irrigation_strategy, **updates),
+        config=replace(prior_config, **application.config_values),
+        strategy=replace(prior_strategy, **updates),
         config_fields=frozenset(application.config_values),
         strategy_fields=frozenset(updates),
         logbook_message=logbook_message,
@@ -506,10 +515,10 @@ def _resolve_steering_mode(
     return mode, media_type, updates
 
 
-def _resolve_candidate(change: IrrigationChange, growspace: Any) -> _Candidate:
+def _resolve_candidate(change: IrrigationChange, growspace: Growspace) -> _Candidate:
     """Build the post-change config and strategy one operation asks for."""
-    prior_config = growspace.irrigation_config
-    prior_strategy = growspace.irrigation_strategy
+    prior_config = effective_config(growspace)
+    prior_strategy = effective_strategy(growspace)
 
     if change.operation is IrrigationChangeOperation.CLEAR:
         return _Candidate(
@@ -598,8 +607,8 @@ async def async_apply_irrigation_change(
     if growspace is None:
         raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
-    prior_config = growspace.irrigation_config
-    prior_strategy = growspace.irrigation_strategy
+    prior_config = effective_config(growspace)
+    prior_strategy = effective_strategy(growspace)
     candidate = (
         _resolve_recipe_candidate(change, growspace, coordinator)
         if change.operation is IrrigationChangeOperation.RECIPE
@@ -617,14 +626,12 @@ async def async_apply_irrigation_change(
         if getattr(prior_strategy, field) != getattr(candidate.strategy, field)
     )
 
-    growspace.irrigation_config = candidate.config
-    growspace.irrigation_strategy = candidate.strategy
+    apply_effective_irrigation(growspace, candidate.config, candidate.strategy)
     coordinator.cache.invalidate(growspace_id)
     try:
         await coordinator.async_commit()
     except Exception:
-        growspace.irrigation_config = prior_config
-        growspace.irrigation_strategy = prior_strategy
+        apply_effective_irrigation(growspace, prior_config, prior_strategy)
         raise
 
     if candidate.logbook_message and candidate.config.log_to_logbook:

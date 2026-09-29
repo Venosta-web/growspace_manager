@@ -21,6 +21,7 @@ from custom_components.growspace_manager.humidifier_coordinator import (
 )
 from custom_components.growspace_manager.managers.subsystem import SubsystemManager
 from custom_components.growspace_manager.models import Growspace, IrrigationStrategy
+from tests.zones import zoned
 
 
 @pytest.fixture
@@ -61,15 +62,19 @@ async def test_async_initialize_sub_coordinators(
     subsystem_manager: SubsystemManager,
 ) -> None:
     """Test initializing sub-coordinators for growspaces."""
-    gs1 = Growspace(
-        id="gs1",
-        name="Growspace 1",
-        irrigation_strategy=IrrigationStrategy(enabled=False),
+    gs1 = zoned(
+        Growspace(
+            id="gs1",
+            name="Growspace 1",
+        ),
+        strategy=IrrigationStrategy(enabled=False),
     )
-    gs2 = Growspace(
-        id="gs2",
-        name="Growspace 2",
-        irrigation_strategy=IrrigationStrategy(enabled=True),
+    gs2 = zoned(
+        Growspace(
+            id="gs2",
+            name="Growspace 2",
+        ),
+        strategy=IrrigationStrategy(enabled=True),
     )
     growspaces = {"gs1": gs1, "gs2": gs2}
 

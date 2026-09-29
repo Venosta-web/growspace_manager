@@ -29,6 +29,7 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.util import dt as dt_util
 from tests.common import async_mock_service
+from tests.zones import zoned
 
 VWC = "sensor.vwc"
 # Inside P1 for the strategy below: lights on 08:00, P0 over at 09:00.
@@ -36,14 +37,17 @@ STEERING_NOW = datetime(2023, 1, 1, 9, 30, tzinfo=dt_util.UTC)
 
 
 def _growspace(**config: Any) -> Growspace:
-    return Growspace(
-        id="tent",
-        name="Tent",
-        environment_config=EnvironmentConfig(soil_moisture_sensor=VWC),
-        irrigation_config=IrrigationConfig(
-            irrigation_pump_entity="switch.pump", **config
+    return zoned(
+        Growspace(
+            id="tent",
+            name="Tent",
+            environment_config=EnvironmentConfig(),
+            irrigation_config=IrrigationConfig(
+                irrigation_pump_entity="switch.pump", **config
+            ),
         ),
-        irrigation_strategy=IrrigationStrategy(
+        soil_moisture_sensor=VWC,
+        strategy=IrrigationStrategy(
             enabled=True,
             lights_on_time="08:00:00",
             p0_duration_minutes=60,
@@ -285,7 +289,7 @@ async def test_turning_steering_off_clears_an_alert(
     await coord._async_sensor_tick()
     assert coord._sensor_watches[VWC].alerted
 
-    growspace.irrigation_strategy.enabled = False
+    growspace.default_zone.strategy.enabled = False
     await coord._async_sensor_tick()
 
     assert not coord._sensor_watches[VWC].alerted
@@ -320,7 +324,7 @@ async def test_pore_ec_is_validated_per_sensor(
     average: float | None,
 ) -> None:
     growspace = _growspace()
-    growspace.environment_config.pore_ec_sensors = list(states)
+    growspace.default_zone.pore_ec_sensors = list(states)
     coord = _coordinator(hass, growspace)
     for entity_id, (value, unit) in states.items():
         hass.states.async_set(
@@ -334,7 +338,7 @@ async def test_a_stale_pore_ec_sensor_is_left_out(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     growspace = _growspace()
-    growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     coord = _coordinator(hass, growspace)
     hass.states.async_set("sensor.ec_a", "2.5")
     assert coord._average_pore_ec(growspace) == 2.5

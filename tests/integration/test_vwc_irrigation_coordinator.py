@@ -14,6 +14,9 @@ from custom_components.growspace_manager.domain.delivery_attempt import (
 from custom_components.growspace_manager.domain.ec_state import (
     ec_modulation_factor_for_reading,
 )
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_strategy,
+)
 from custom_components.growspace_manager.domain.steering_phase import (
     INFILTRATION_HELD_MESSAGE,
     INFILTRATION_RELEASED_MESSAGE,
@@ -35,6 +38,7 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 from tests.delivery_helpers import charge_today
+from tests.zones import set_probes, set_strategy, zoned
 
 # This suite shares one `hass.states` mock across every sensor, so it
 # cannot model the pump's own state; its OFF readback is answered for them.
@@ -95,23 +99,29 @@ def mock_hass():
 
 @pytest.fixture
 def mock_growspace():
-    growspace = Growspace(
-        id="gs1",
-        name="Test Growspace",
-        environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.moisture"),
-        irrigation_config=IrrigationConfig(irrigation_pump_entity="switch.pump"),
+    growspace = zoned(
+        Growspace(
+            id="gs1",
+            name="Test Growspace",
+            environment_config=EnvironmentConfig(),
+            irrigation_config=IrrigationConfig(irrigation_pump_entity="switch.pump"),
+        ),
+        soil_moisture_sensor="sensor.moisture",
     )
-    growspace.irrigation_strategy = IrrigationStrategy(
-        enabled=True,
-        lights_on_time="08:00:00",
-        p0_duration_minutes=60,  # Ends 09:00
-        target_vwc_percent=50.0,
-        maintenance_dryback_percent=2.0,
-        p1_shot_duration_seconds=10,
-        p1_shot_interval_minutes=15,
-        p2_shot_duration_seconds=10,
-        p2_shot_interval_minutes=15,
-        p2_stop_before_lights_off_minutes=120,  # Lights off 20:00 (12h default) -> Stop 18:00
+    set_strategy(
+        growspace,
+        IrrigationStrategy(
+            enabled=True,
+            lights_on_time="08:00:00",
+            p0_duration_minutes=60,  # Ends 09:00
+            target_vwc_percent=50.0,
+            maintenance_dryback_percent=2.0,
+            p1_shot_duration_seconds=10,
+            p1_shot_interval_minutes=15,
+            p2_shot_duration_seconds=10,
+            p2_shot_interval_minutes=15,
+            p2_stop_before_lights_off_minutes=120,  # Lights off 20:00 (12h default) -> Stop 18:00
+        ),
     )
     return growspace
 
@@ -344,7 +354,7 @@ async def test_p3_dryback(vwc_coordinator, mock_hass, mock_growspace) -> None:
 
 async def test_missing_sensor(vwc_coordinator, mock_hass, mock_growspace) -> None:
     """Test handling of missing sensor."""
-    mock_growspace.environment_config = EnvironmentConfig()  # No sensor
+    mock_growspace.default_zone.soil_moisture_sensor = None  # No sensor
 
     now = datetime(2023, 1, 1, 10, 0, 0, tzinfo=dt_util.UTC)
 
@@ -359,9 +369,9 @@ async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> N
     # Config: 10 hours day (Lights On 08:00 -> Off 18:00)
     # P2 Stop = 120 min before off -> 16:00
     mock_growspace.environment_config = EnvironmentConfig(
-        soil_moisture_sensor="sensor.moisture",
         flower_day_hours=10,
     )
+    set_probes(mock_growspace, soil_moisture_sensor="sensor.moisture")
     mock_growspace.irrigation_config.auto_advance_p2_to_p3 = True
 
     # Case A: 15:00 -> Should be P2 (15 < 16)
@@ -431,7 +441,7 @@ async def test_cancel_listeners(vwc_coordinator, mock_hass) -> None:
 
 async def test_strategy_disabled(vwc_coordinator, mock_growspace, mock_hass) -> None:
     """Test when irrigation strategy is disabled."""
-    mock_growspace.irrigation_strategy.enabled = False
+    mock_growspace.default_zone.strategy.enabled = False
 
     await vwc_coordinator._update_loop(dt_util.utcnow())
 
@@ -485,7 +495,7 @@ async def test_before_lights_on(vwc_coordinator, mock_hass) -> None:
 
 async def test_shot_interval_logic(vwc_coordinator, mock_hass) -> None:
     """Test that shots are throttled by interval."""
-    strategy = vwc_coordinator._main_coordinator.growspaces["gs1"].irrigation_strategy
+    strategy = vwc_coordinator._main_coordinator.growspaces["gs1"].default_zone.strategy
     strategy.p1_shot_interval_minutes = 15
 
     # 1. Fire first shot
@@ -521,7 +531,7 @@ async def test_missing_pump_entity(vwc_coordinator, mock_growspace, mock_hass) -
     # Remove pump entity
     mock_growspace.irrigation_config.irrigation_pump_entity = None
 
-    strategy = mock_growspace.irrigation_strategy
+    strategy = effective_strategy(mock_growspace)
 
     # Attempt watering
     with patch(
@@ -579,9 +589,9 @@ async def test_vwc_skips_watering_when_tank_is_low(
         warning_level=30.0,
     )
     mock_growspace.environment_config = EnvironmentConfig(
-        soil_moisture_sensor="sensor.moisture",
         irrigation_tanks=[tank],
     )
+    set_probes(mock_growspace, soil_moisture_sensor="sensor.moisture")
     mock_growspace.irrigation_config.pause_on_low_tank = True
 
     def states_side_effect(entity_id: str) -> MagicMock | None:
@@ -636,9 +646,9 @@ async def test_vwc_skips_watering_when_dark_and_skip_enabled(
     """When skip_during_dark=True and all light sensors report off, VWC does not water."""
     mock_growspace.irrigation_config.skip_during_dark = True
     mock_growspace.environment_config = EnvironmentConfig(
-        soil_moisture_sensor="sensor.moisture",
         light_sensors=["binary_sensor.light"],
     )
+    set_probes(mock_growspace, soil_moisture_sensor="sensor.moisture")
 
     def states_side_effect(entity_id: str) -> MagicMock | None:
         if entity_id == "binary_sensor.light":
@@ -673,9 +683,9 @@ async def test_vwc_waters_when_numeric_light_sensor_reports_on(
     """
     mock_growspace.irrigation_config.skip_during_dark = True
     mock_growspace.environment_config = EnvironmentConfig(
-        soil_moisture_sensor="sensor.moisture",
         light_sensors=["sensor.grow_light_power"],
     )
+    set_probes(mock_growspace, soil_moisture_sensor="sensor.moisture")
 
     def states_side_effect(entity_id: str) -> MagicMock | None:
         if entity_id == "sensor.grow_light_power":
@@ -741,7 +751,7 @@ async def test_vwc_soil_trigger_percent_overrides_p2_maintenance_threshold(
     = 50.0 - 2.0 = 48.0%.  With soil_trigger_percent=45.0 the threshold
     drops to 45.0%, so VWC=47% should NOT trigger watering (47 > 45).
     """
-    mock_growspace.irrigation_config.soil_trigger_percent = 45.0
+    mock_growspace.default_zone.soil_trigger_percent = 45.0
     vwc_coordinator._machine._target_reached_today = True
     vwc_coordinator._machine._last_reset_date = "2023-01-01"
 
@@ -766,7 +776,7 @@ async def test_vwc_soil_trigger_percent_fires_watering_when_below(
     mock_growspace: Growspace,
 ) -> None:
     """When VWC drops below soil_trigger_percent, P2 maintenance waters."""
-    mock_growspace.irrigation_config.soil_trigger_percent = 45.0
+    mock_growspace.default_zone.soil_trigger_percent = 45.0
     mock_growspace.irrigation_config.log_to_logbook = False  # Keep utcnow simple
     vwc_coordinator._machine._target_reached_today = True
     vwc_coordinator._machine._last_reset_date = "2023-01-01"
@@ -1023,8 +1033,8 @@ async def test_vwc_uses_detected_lights_on_time_when_set(
     vwc_coordinator, mock_hass, mock_growspace
 ) -> None:
     """When detected_lights_on_time is set, VWC uses it for phase window calculation."""
-    mock_growspace.irrigation_strategy.lights_on_time = "08:00:00"
-    mock_growspace.irrigation_strategy.detected_lights_on_time = "09:00:00"
+    mock_growspace.light_cycle.lights_on_time = "08:00:00"
+    mock_growspace.light_cycle.detected_lights_on_time = "09:00:00"
 
     # At 09:20 it should be in P0 (within 60-min activation window after detected 09:00)
     now = datetime(2023, 1, 1, 9, 20, 0, tzinfo=dt_util.UTC)
@@ -1042,8 +1052,8 @@ async def test_vwc_falls_back_to_lights_on_time_when_detected_is_none(
     vwc_coordinator, mock_hass, mock_growspace
 ) -> None:
     """When detected_lights_on_time is None, VWC uses lights_on_time as anchor."""
-    mock_growspace.irrigation_strategy.lights_on_time = "08:00:00"
-    mock_growspace.irrigation_strategy.detected_lights_on_time = None
+    mock_growspace.light_cycle.lights_on_time = "08:00:00"
+    mock_growspace.light_cycle.detected_lights_on_time = None
 
     # At 08:20 it should be in P0 (within 60-min activation window after 08:00)
     now = datetime(2023, 1, 1, 8, 20, 0, tzinfo=dt_util.UTC)
@@ -1063,7 +1073,7 @@ async def test_handle_watering_cancels_lingering_task(
     mock_growspace: Growspace,
 ) -> None:
     """Test that _handle_watering cancels an existing lingering irrigation task."""
-    strategy = mock_growspace.irrigation_strategy
+    strategy = effective_strategy(mock_growspace)
 
     # Place a mock lingering task in the coordinator's running tasks
     mock_task = MagicMock()
@@ -1272,7 +1282,7 @@ async def test_projected_shot_window_none_when_steering_disabled(
     vwc_coordinator: VWCIrrigationCoordinator, mock_growspace: Growspace
 ) -> None:
     """Returns None when crop steering is not enabled, mirroring next_scheduled_cycle."""
-    mock_growspace.irrigation_strategy.enabled = False
+    mock_growspace.default_zone.strategy.enabled = False
     now_dt = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
 
     with patch(
@@ -1310,7 +1320,7 @@ async def test_phase_transition_resets_composer_factors(
         fire=None,
         volume_change_note=None,
     )
-    vwc_coordinator._apply_verdict(verdict, mock_growspace.irrigation_strategy)
+    vwc_coordinator._apply_verdict(verdict, effective_strategy(mock_growspace))
 
     assert vwc_coordinator._composer.size_factor == 1.0
     assert vwc_coordinator._composer.interval_factor == 1.0
@@ -1442,7 +1452,7 @@ def test_manual_run_never_trains_adaptive_shot_control(
 ) -> None:
     """A settled manual pump cycle cannot change either feedback factor."""
     end = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
-    vwc_coordinator.growspace.irrigation_strategy.dynamic_shot_enabled = True
+    vwc_coordinator.growspace.default_zone.strategy.dynamic_shot_enabled = True
 
     # A person starts a run while feedback from a steering shot is pending.
     vwc_coordinator._irrigation_cycle_ended(
@@ -1504,7 +1514,7 @@ async def test_dynamic_shot_scaled_duration_applied(
     expected_scaled_duration: int,
 ) -> None:
     """The VWC feedback scale factor applies to whichever phase's shot is firing."""
-    strategy = mock_growspace.irrigation_strategy
+    strategy = mock_growspace.default_zone.strategy
     strategy.p1_shot_duration_seconds = 10
     strategy.p2_shot_duration_seconds = 20
     vwc_coordinator._composer.size_factor = 0.6
@@ -1538,7 +1548,7 @@ async def test_per_phase_shot_duration_used(
     expected_duration: int,
 ) -> None:
     """P1 shots use the P1 duration and P2 shots use the P2 duration."""
-    strategy = mock_growspace.irrigation_strategy
+    strategy = mock_growspace.default_zone.strategy
     strategy.p1_shot_duration_seconds = 7
     strategy.p2_shot_duration_seconds = 13
     vwc_coordinator._last_cycle_timestamp = None
@@ -1566,7 +1576,7 @@ async def test_per_phase_shot_cooldown(
     With 10 minutes elapsed since the last shot, a P1 shot (15 min interval)
     is throttled while a P2 shot (5 min interval) fires.
     """
-    strategy = mock_growspace.irrigation_strategy
+    strategy = mock_growspace.default_zone.strategy
     strategy.p1_shot_interval_minutes = 15
     strategy.p2_shot_interval_minutes = 5
 
@@ -1598,7 +1608,7 @@ async def test_projected_shot_window_uses_active_phase_interval(
     expected_start: datetime,
 ) -> None:
     """The cooldown anchor uses the active phase's interval (P1 15 min, P2 25 min)."""
-    strategy = mock_growspace.irrigation_strategy
+    strategy = mock_growspace.default_zone.strategy
     strategy.p1_shot_interval_minutes = 15
     strategy.p2_shot_interval_minutes = 25
 
@@ -1639,7 +1649,7 @@ def test_average_pore_ec_no_sensors_returns_none(
     vwc_coordinator, mock_growspace
 ) -> None:
     """With no pore-EC sensors configured the average is None (unavailable)."""
-    mock_growspace.environment_config.pore_ec_sensors = []
+    mock_growspace.default_zone.pore_ec_sensors = []
     assert vwc_coordinator._average_pore_ec(mock_growspace) is None
 
 
@@ -1647,7 +1657,7 @@ def test_average_pore_ec_averages_valid_sensors(
     vwc_coordinator, mock_hass, mock_growspace
 ) -> None:
     """Pore-EC sensors are averaged across their valid numeric states."""
-    mock_growspace.environment_config.pore_ec_sensors = [
+    mock_growspace.default_zone.pore_ec_sensors = [
         "sensor.ec_a",
         "sensor.ec_b",
     ]
@@ -1662,7 +1672,7 @@ def test_average_pore_ec_skips_unusable_states(
     vwc_coordinator, mock_hass, mock_growspace
 ) -> None:
     """Unavailable/unknown/non-numeric sensors are skipped before averaging."""
-    mock_growspace.environment_config.pore_ec_sensors = [
+    mock_growspace.default_zone.pore_ec_sensors = [
         "sensor.ec_a",
         "sensor.ec_b",
         "sensor.ec_c",
@@ -1682,7 +1692,7 @@ def test_average_pore_ec_all_unusable_returns_none(
     vwc_coordinator, mock_hass, mock_growspace
 ) -> None:
     """A full sensor dropout yields None (unavailable), not a stale value."""
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("unavailable")
     assert vwc_coordinator._average_pore_ec(mock_growspace) is None
 
@@ -1720,9 +1730,9 @@ def test_ec_modulation_factor_for_reading(
 
 def _set_band(growspace: Growspace, enabled: bool) -> None:
     """Configure a 2.0–3.0 pore-EC band with the given opt-in flag."""
-    growspace.irrigation_strategy.pore_ec_target_min = 2.0
-    growspace.irrigation_strategy.pore_ec_target_max = 3.0
-    growspace.irrigation_strategy.ec_modulation_enabled = enabled
+    growspace.default_zone.strategy.pore_ec_target_min = 2.0
+    growspace.default_zone.strategy.pore_ec_target_max = 3.0
+    growspace.default_zone.strategy.ec_modulation_enabled = enabled
 
 
 def test_ec_modulation_disabled_factor_one_unavailable(
@@ -1730,11 +1740,11 @@ def test_ec_modulation_disabled_factor_one_unavailable(
 ) -> None:
     """Opt-in off → factor exactly 1.0 and capability False, even with sensors."""
     _set_band(mock_growspace, enabled=False)
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("5.0")  # well above band
 
     factor, available = vwc_coordinator._compute_ec_modulation(
-        mock_growspace.irrigation_strategy, mock_growspace
+        effective_strategy(mock_growspace), mock_growspace
     )
     assert factor == 1.0
     assert available is False
@@ -1745,10 +1755,10 @@ def test_ec_modulation_no_sensors_factor_one_unavailable(
 ) -> None:
     """Enabled but no pore-EC sensors → factor 1.0, capability False (gated)."""
     _set_band(mock_growspace, enabled=True)
-    mock_growspace.environment_config.pore_ec_sensors = []
+    mock_growspace.default_zone.pore_ec_sensors = []
 
     factor, available = vwc_coordinator._compute_ec_modulation(
-        mock_growspace.irrigation_strategy, mock_growspace
+        effective_strategy(mock_growspace), mock_growspace
     )
     assert factor == 1.0
     assert available is False
@@ -1758,14 +1768,14 @@ def test_ec_modulation_no_band_factor_one_unavailable(
     vwc_coordinator, mock_hass, mock_growspace
 ) -> None:
     """Enabled with sensors but no band configured → factor 1.0, capability False."""
-    mock_growspace.irrigation_strategy.ec_modulation_enabled = True
-    mock_growspace.irrigation_strategy.pore_ec_target_min = None
-    mock_growspace.irrigation_strategy.pore_ec_target_max = None
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.strategy.ec_modulation_enabled = True
+    mock_growspace.default_zone.strategy.pore_ec_target_min = None
+    mock_growspace.default_zone.strategy.pore_ec_target_max = None
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("5.0")
 
     factor, available = vwc_coordinator._compute_ec_modulation(
-        mock_growspace.irrigation_strategy, mock_growspace
+        effective_strategy(mock_growspace), mock_growspace
     )
     assert factor == 1.0
     assert available is False
@@ -1784,11 +1794,11 @@ def test_ec_modulation_available_within_above_below(
     above where 1.0 comes with available False.
     """
     _set_band(mock_growspace, enabled=True)
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state(measured)
 
     factor, available = vwc_coordinator._compute_ec_modulation(
-        mock_growspace.irrigation_strategy, mock_growspace
+        effective_strategy(mock_growspace), mock_growspace
     )
     assert factor == pytest.approx(expected_factor)
     assert available is True
@@ -1807,7 +1817,7 @@ def test_ec_modulation_runoff_flush_actuates_from_runoff_ec(
     from custom_components.growspace_manager.models import DrainReading
 
     _set_band(mock_growspace, enabled=True)
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("2.5")  # within band → HOLD
     mock_growspace.drain_config.max_ec_delta = 0.5
     mock_growspace.drain_config.readings = [
@@ -1816,7 +1826,7 @@ def test_ec_modulation_runoff_flush_actuates_from_runoff_ec(
     ]
 
     factor, available = vwc_coordinator._compute_ec_modulation(
-        mock_growspace.irrigation_strategy, mock_growspace
+        effective_strategy(mock_growspace), mock_growspace
     )
     assert available is True
     assert factor == pytest.approx(1.25)  # driven by runoff EC 4.0 vs band max 3.0
@@ -1829,7 +1839,7 @@ def test_ec_modulation_single_high_runoff_does_not_actuate(
     from custom_components.growspace_manager.models import DrainReading
 
     _set_band(mock_growspace, enabled=True)
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("2.5")
     mock_growspace.drain_config.max_ec_delta = 0.5
     mock_growspace.drain_config.readings = [
@@ -1837,7 +1847,7 @@ def test_ec_modulation_single_high_runoff_does_not_actuate(
     ]
 
     factor, _ = vwc_coordinator._compute_ec_modulation(
-        mock_growspace.irrigation_strategy, mock_growspace
+        effective_strategy(mock_growspace), mock_growspace
     )
     assert factor == pytest.approx(1.0)
 
@@ -1850,9 +1860,9 @@ async def test_ec_modulation_only_applies_to_p2(
 ) -> None:
     """EC modulation applies to P2 shots only; P1 keeps a neutral EC factor."""
     _set_band(mock_growspace, enabled=True)
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("4.0")  # above band → EC 1.25
-    strategy = mock_growspace.irrigation_strategy
+    strategy = mock_growspace.default_zone.strategy
     strategy.p1_shot_duration_seconds = 20
     vwc_coordinator._last_cycle_timestamp = None
 
@@ -1870,9 +1880,9 @@ async def test_shot_composition_multiplies_vwc_and_ec(
 ) -> None:
     """P2 effective duration = base × VWC factor × EC factor (partial cancel)."""
     _set_band(mock_growspace, enabled=True)
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("4.0")  # above band → EC 1.25
-    strategy = mock_growspace.irrigation_strategy
+    strategy = mock_growspace.default_zone.strategy
     strategy.p2_shot_duration_seconds = 100
     # VWC feedback factor pulls down while EC pulls up: 100 × 0.85 × 1.25 = 106.
     vwc_coordinator._composer.size_factor = 0.85
@@ -1896,9 +1906,9 @@ async def test_shot_composition_below_band_stacks_down(
 ) -> None:
     """Below-band pore EC scales the P2 shot DOWN (stacking)."""
     _set_band(mock_growspace, enabled=True)
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("1.0")  # below band → EC 0.75
-    strategy = mock_growspace.irrigation_strategy
+    strategy = mock_growspace.default_zone.strategy
     strategy.p2_shot_duration_seconds = 100
     vwc_coordinator._last_cycle_timestamp = None
 
@@ -1919,12 +1929,12 @@ async def test_composed_shot_blocked_by_volume_cap_never_exceeds(
     composition records capped=True with effective_seconds 0.
     """
     _set_band(mock_growspace, enabled=True)
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("4.0")  # above band → EC 1.25
-    strategy = mock_growspace.irrigation_strategy
+    strategy = mock_growspace.default_zone.strategy
     strategy.p2_shot_duration_seconds = 100
     # Flow rate so the composed 125 s shot pushes past a tiny daily cap.
-    mock_growspace.irrigation_config.pump_flow_rate_ml_per_sec = 10.0  # 1.25 L
+    mock_growspace.default_zone.pump_flow_rate_ml_per_sec = 10.0  # 1.25 L
     mock_growspace.irrigation_config.daily_volume_cap_liters = 0.5
     vwc_coordinator._last_cycle_timestamp = None
 
@@ -1961,7 +1971,7 @@ def test_shot_composition_payload_capability_and_band(
 ) -> None:
     """The payload carries the band, opt-in, and live capability flag."""
     _set_band(mock_growspace, enabled=True)
-    mock_growspace.environment_config.pore_ec_sensors = ["sensor.ec_a"]
+    mock_growspace.default_zone.pore_ec_sensors = ["sensor.ec_a"]
     mock_hass.states.get.return_value = _state("2.5")
 
     payload = vwc_coordinator.shot_composition_payload()
@@ -2092,7 +2102,7 @@ async def test_no_sensor_configured_discards_the_infiltration_measurement(
         ):
             await vwc_coordinator._update_loop(tick)
 
-    mock_growspace.environment_config.soil_moisture_sensor = None
+    mock_growspace.default_zone.soil_moisture_sensor = None
     with patch(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=tick_two,
@@ -2106,7 +2116,7 @@ def test_shot_composition_payload_surfaces_suppression_reason(
     vwc_coordinator, mock_growspace
 ) -> None:
     """Applying a verdict publishes its suppression reason, and clears it again."""
-    strategy = mock_growspace.irrigation_strategy
+    strategy = effective_strategy(mock_growspace)
 
     vwc_coordinator._apply_verdict(
         _suppressed_verdict(SUPPRESSED_BY_COOLDOWN), strategy

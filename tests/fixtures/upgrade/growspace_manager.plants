@@ -1,0 +1,187 @@
+{
+  "data": {
+    "plants": {
+      "plant_a1": {
+        "clone_start": null,
+        "col": 1,
+        "created_at": "2026-06-01T08:00:00+00:00",
+        "cure_start": null,
+        "device_id": null,
+        "dry_start": null,
+        "drying_data": {
+          "moisture_log": [],
+          "visual_tag": null,
+          "weight_log": []
+        },
+        "flower_start": "2026-08-24",
+        "genetics": {
+          "generation": "",
+          "phenotype_id": null,
+          "phenotype_name": "",
+          "strain_id": null,
+          "strain_name": ""
+        },
+        "growspace_id": "tent_steered",
+        "harvest_metrics": {
+          "cbd_percentage": null,
+          "dry_weight": null,
+          "terpene_profile": null,
+          "thc_percentage": null,
+          "trim_weight": null,
+          "wet_weight": null
+        },
+        "last_ipm": null,
+        "last_ipm_type": null,
+        "last_trained": null,
+        "last_training_technique": null,
+        "last_watered": null,
+        "mother_start": null,
+        "phenotype_score": {
+          "internodal_spacing": null,
+          "keeper": false,
+          "mold_resistance": null,
+          "notes": "",
+          "resin": null,
+          "terpene_intensity": null,
+          "updated_at": null,
+          "vigor": null,
+          "yield_potential": null
+        },
+        "phi_clearance_date": null,
+        "plant_id": "plant_a1",
+        "row": 1,
+        "seed_batch_id": null,
+        "seedling_start": null,
+        "sex": null,
+        "source_mother": null,
+        "stage": "flower",
+        "stage_history": [],
+        "type": "normal",
+        "updated_at": null,
+        "veg_start": "2026-07-20"
+      },
+      "plant_a2": {
+        "clone_start": null,
+        "col": 2,
+        "created_at": "2026-06-01T08:00:00+00:00",
+        "cure_start": null,
+        "device_id": null,
+        "dry_start": null,
+        "drying_data": {
+          "moisture_log": [],
+          "visual_tag": null,
+          "weight_log": []
+        },
+        "flower_start": "2026-08-24",
+        "genetics": {
+          "generation": "",
+          "phenotype_id": null,
+          "phenotype_name": "",
+          "strain_id": null,
+          "strain_name": ""
+        },
+        "growspace_id": "tent_steered",
+        "harvest_metrics": {
+          "cbd_percentage": null,
+          "dry_weight": null,
+          "terpene_profile": null,
+          "thc_percentage": null,
+          "trim_weight": null,
+          "wet_weight": null
+        },
+        "last_ipm": null,
+        "last_ipm_type": null,
+        "last_trained": null,
+        "last_training_technique": null,
+        "last_watered": null,
+        "mother_start": null,
+        "phenotype_score": {
+          "internodal_spacing": null,
+          "keeper": false,
+          "mold_resistance": null,
+          "notes": "",
+          "resin": null,
+          "terpene_intensity": null,
+          "updated_at": null,
+          "vigor": null,
+          "yield_potential": null
+        },
+        "phi_clearance_date": null,
+        "plant_id": "plant_a2",
+        "row": 1,
+        "seed_batch_id": null,
+        "seedling_start": null,
+        "sex": null,
+        "source_mother": null,
+        "stage": "flower",
+        "stage_history": [],
+        "type": "normal",
+        "updated_at": null,
+        "veg_start": "2026-07-20"
+      },
+      "plant_b1": {
+        "clone_start": null,
+        "col": 1,
+        "created_at": "2026-06-01T08:00:00+00:00",
+        "cure_start": null,
+        "device_id": null,
+        "dry_start": null,
+        "drying_data": {
+          "moisture_log": [],
+          "visual_tag": null,
+          "weight_log": []
+        },
+        "flower_start": null,
+        "genetics": {
+          "generation": "",
+          "phenotype_id": null,
+          "phenotype_name": "",
+          "strain_id": null,
+          "strain_name": ""
+        },
+        "growspace_id": "tent_scheduled",
+        "harvest_metrics": {
+          "cbd_percentage": null,
+          "dry_weight": null,
+          "terpene_profile": null,
+          "thc_percentage": null,
+          "trim_weight": null,
+          "wet_weight": null
+        },
+        "last_ipm": null,
+        "last_ipm_type": null,
+        "last_trained": null,
+        "last_training_technique": null,
+        "last_watered": null,
+        "mother_start": null,
+        "phenotype_score": {
+          "internodal_spacing": null,
+          "keeper": false,
+          "mold_resistance": null,
+          "notes": "",
+          "resin": null,
+          "terpene_intensity": null,
+          "updated_at": null,
+          "vigor": null,
+          "yield_potential": null
+        },
+        "phi_clearance_date": null,
+        "plant_id": "plant_b1",
+        "row": 2,
+        "seed_batch_id": null,
+        "seedling_start": null,
+        "sex": null,
+        "source_mother": null,
+        "stage": "veg",
+        "stage_history": [],
+        "type": "normal",
+        "updated_at": null,
+        "veg_start": "2026-09-01"
+      }
+    },
+    "quarantined_plants": {}
+  },
+  "key": "growspace_manager.plants",
+  "minor_version": 1,
+  "version": 1
+}

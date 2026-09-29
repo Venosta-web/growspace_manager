@@ -17,6 +17,7 @@ from custom_components.growspace_manager.strategies.stress import (
     StressEvaluatorStrategy,
 )
 from homeassistant.core import HomeAssistant
+from tests.zones import set_probes
 
 MOCK_CONFIG_ENTRY_ID = "test_entry"
 
@@ -61,7 +62,6 @@ def mock_growspace():
         co2_sensor="sensor.co2",
         circulation_fan_entities=["switch.fan"],
         light_sensors=["light.grow_light"],
-        soil_moisture_sensor="sensor.soil_moisture",
         bayesian_options={
             "threshold_stress": 0.8,
             "threshold_mold": 0.8,
@@ -75,6 +75,7 @@ def mock_growspace():
             "prior_curing": 0.50,
         },
     )
+    set_probes(growspace, soil_moisture_sensor="sensor.soil_moisture")
     return growspace
 
 

@@ -98,6 +98,9 @@ from custom_components.growspace_manager.dehumidifier_coordinator import (
 from custom_components.growspace_manager.domain.environment_patch import (
     patch_from_flow_options,
 )
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_environment_probes,
+)
 from custom_components.growspace_manager.humidifier_coordinator import (
     DEFAULT_THRESHOLDS as HUMIDIFIER_DEFAULT_THRESHOLDS,
 )
@@ -169,7 +172,12 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
 
         # Prepare defaults using dataclass
         if growspace.environment_config:
-            growspace_options = asdict(growspace.environment_config)
+            # The substrate probes are the zone's now; the form still edits
+            # them beside the rest of the environment (ADR-0057).
+            growspace_options = {
+                **asdict(growspace.environment_config),
+                **effective_environment_probes(growspace),
+            }
 
             # Convert irrigation_tanks from list of dicts back to list of sensor entities for the form
             if growspace_options.get("irrigation_tanks"):

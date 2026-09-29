@@ -43,6 +43,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.setup import async_setup_component
 from homeassistant.util.dt import utcnow
+from tests.zones import zoned
 
 NOW = datetime(2026, 9, 24, 12, tzinfo=UTC)
 
@@ -312,11 +313,14 @@ async def test_control_sensor_probe_counts_unavailable_and_implausible_edges(
     """Each missing minute counts, and one bad value is one implausible edge."""
     irrigation = _probe(
         hass,
-        Growspace(
-            id="tent",
-            name="Tent",
-            environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.vwc"),
-            irrigation_strategy=IrrigationStrategy(enabled=True),
+        zoned(
+            Growspace(
+                id="tent",
+                name="Tent",
+                environment_config=EnvironmentConfig(),
+            ),
+            soil_moisture_sensor="sensor.vwc",
+            strategy=IrrigationStrategy(enabled=True),
         ),
     )
     irrigation._async_probe_control_sensors()
@@ -409,14 +413,17 @@ async def test_moisture_sensor_goes_stale_past_its_window(
     """A quiet moisture sensor is stale past its cap (#789), never when that is off."""
     irrigation = _probe(
         hass,
-        Growspace(
-            id="tent",
-            name="Tent",
-            environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.vwc"),
-            irrigation_config=IrrigationConfig(
-                sensor_stale_after_minutes=stale_after_minutes
+        zoned(
+            Growspace(
+                id="tent",
+                name="Tent",
+                environment_config=EnvironmentConfig(),
+                irrigation_config=IrrigationConfig(
+                    sensor_stale_after_minutes=stale_after_minutes
+                ),
             ),
-            irrigation_strategy=IrrigationStrategy(enabled=True),
+            soil_moisture_sensor="sensor.vwc",
+            strategy=IrrigationStrategy(enabled=True),
         ),
     )
     quiet = _quiet_state("50", minutes=quiet_minutes)
@@ -467,17 +474,19 @@ async def test_a_tank_is_probed_once_and_only_with_a_sensor(
     """A tank without a sensor, or on the moisture sensor, adds no second reading."""
     irrigation = _probe(
         hass,
-        Growspace(
-            id="tent",
-            name="Tent",
-            environment_config=EnvironmentConfig(
-                soil_moisture_sensor="sensor.vwc",
-                irrigation_tanks=[
-                    IrrigationTank(name="Unwired", sensor_entity=""),
-                    IrrigationTank(name="Same probe", sensor_entity="sensor.vwc"),
-                ],
+        zoned(
+            Growspace(
+                id="tent",
+                name="Tent",
+                environment_config=EnvironmentConfig(
+                    irrigation_tanks=[
+                        IrrigationTank(name="Unwired", sensor_entity=""),
+                        IrrigationTank(name="Same probe", sensor_entity="sensor.vwc"),
+                    ],
+                ),
             ),
-            irrigation_strategy=IrrigationStrategy(enabled=True),
+            soil_moisture_sensor="sensor.vwc",
+            strategy=IrrigationStrategy(enabled=True),
         ),
     )
     hass.states.async_set("sensor.vwc", "40")

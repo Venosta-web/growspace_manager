@@ -61,7 +61,7 @@ def _make_growspace(
     gs.id = growspace_id
     gs.name = name
     gs.notification_target = notification_target
-    gs.irrigation_strategy.auto_light_tracking = auto_light_tracking
+    gs.light_cycle.auto_light_tracking = auto_light_tracking
     gs.environment_config.growlight_config.enabled = growlight_active
     gs.environment_config.growlight_entities = (
         ["switch.grow"] if growlight_active else []

@@ -14,6 +14,7 @@ from custom_components.growspace_manager.domain.vision_explainer_prompt import (
 from custom_components.growspace_manager.models import EnvironmentConfig, Growspace
 from custom_components.growspace_manager.models.vision_evidence import LightWindow
 from custom_components.growspace_manager.services.ai_assistant import GrowAssistant
+from tests.zones import zoned
 
 
 def _assistant(
@@ -23,16 +24,18 @@ def _assistant(
     maximum: float | None = None,
 ) -> tuple[GrowAssistant, MagicMock, Growspace]:
     """Build an assistant with one configured soil-moisture sensor."""
-    growspace = Growspace(
-        id="tent1",
-        name="Tent 1",
-        rows=2,
-        plants_per_row=2,
-        environment_config=EnvironmentConfig(
-            soil_moisture_sensor="sensor.soil",
-            soil_moisture_min=minimum,
-            soil_moisture_max=maximum,
+    growspace = zoned(
+        Growspace(
+            id="tent1",
+            name="Tent 1",
+            rows=2,
+            plants_per_row=2,
+            environment_config=EnvironmentConfig(
+                soil_moisture_min=minimum,
+                soil_moisture_max=maximum,
+            ),
         ),
+        soil_moisture_sensor="sensor.soil",
     )
     coordinator = MagicMock()
     coordinator.options = {

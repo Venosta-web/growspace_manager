@@ -16,6 +16,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.growspace_manager.const import PlantStage, ShotSizingMode
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_strategy,
+)
 from custom_components.growspace_manager.domain.steering_phase import (
     ShotRequest,
     SteeringTickInputs,
@@ -33,6 +36,7 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
 )
 from homeassistant.util import dt as dt_util
+from tests.zones import set_strategy, zoned
 
 
 @pytest.fixture(autouse=True)
@@ -91,7 +95,7 @@ def _tick_inputs(
     coord: VWCIrrigationCoordinator, growspace: Growspace
 ) -> SteeringTickInputs:
     """Assemble tick inputs through the coordinator's real wiring."""
-    return coord._tick_inputs(40.0, growspace.irrigation_strategy, growspace)
+    return coord._tick_inputs(40.0, effective_strategy(growspace), growspace)
 
 
 def _base_duration(
@@ -111,36 +115,42 @@ def _drive_watering(
         _tick_inputs(coord, growspace), phase, reset_pending=False
     )
     if fire is not None:
-        coord._fire_shot(growspace.irrigation_strategy, fire)
+        coord._fire_shot(effective_strategy(growspace), fire)
 
 
 @pytest.fixture
 def volume_growspace():
     """Growspace configured for Volume Mode: profile + pump flow rate present."""
-    growspace = Growspace(
-        id="gs1",
-        name="Volume Tent",
-        environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.moisture"),
-        irrigation_config=IrrigationConfig(
-            irrigation_pump_entity="switch.pump",
-            pump_flow_rate_ml_per_sec=20.0,
+    growspace = zoned(
+        Growspace(
+            id="gs1",
+            name="Volume Tent",
+            environment_config=EnvironmentConfig(),
+            irrigation_config=IrrigationConfig(
+                irrigation_pump_entity="switch.pump",
+                pump_flow_rate_ml_per_sec=20.0,
+            ),
         ),
+        soil_moisture_sensor="sensor.moisture",
     )
-    growspace.irrigation_strategy = IrrigationStrategy(
-        enabled=True,
-        lights_on_time="08:00:00",
-        p0_duration_minutes=60,
-        target_vwc_percent=50.0,
-        maintenance_dryback_percent=2.0,
-        p1_shot_duration_seconds=10,
-        p1_shot_interval_minutes=15,
-        p2_shot_duration_seconds=10,
-        p2_shot_interval_minutes=15,
-        p2_stop_before_lights_off_minutes=120,
-        shot_sizing_mode=ShotSizingMode.VOLUME,
-        substrate_profile=SubstrateProfile(liters_per_pot=6.0),
-        p1_shot_volume_percent=4.0,
-        p2_shot_volume_percent=4.0,
+    set_strategy(
+        growspace,
+        IrrigationStrategy(
+            enabled=True,
+            lights_on_time="08:00:00",
+            p0_duration_minutes=60,
+            target_vwc_percent=50.0,
+            maintenance_dryback_percent=2.0,
+            p1_shot_duration_seconds=10,
+            p1_shot_interval_minutes=15,
+            p2_shot_duration_seconds=10,
+            p2_shot_interval_minutes=15,
+            p2_stop_before_lights_off_minutes=120,
+            shot_sizing_mode=ShotSizingMode.VOLUME,
+            substrate_profile=SubstrateProfile(liters_per_pot=6.0),
+            p1_shot_volume_percent=4.0,
+            p2_shot_volume_percent=4.0,
+        ),
     )
     return growspace
 
@@ -196,9 +206,9 @@ def test_volume_conversion_scales_with_live_count(
     expected_seconds,
 ) -> None:
     """Percent->seconds conversion is correct and scales linearly with plants."""
-    volume_growspace.irrigation_strategy.substrate_profile.liters_per_pot = liters
-    volume_growspace.irrigation_strategy.p1_shot_volume_percent = percent
-    volume_growspace.irrigation_config.pump_flow_rate_ml_per_sec = flow_rate
+    volume_growspace.default_zone.strategy.substrate_profile.liters_per_pot = liters
+    volume_growspace.default_zone.strategy.p1_shot_volume_percent = percent
+    volume_growspace.default_zone.pump_flow_rate_ml_per_sec = flow_rate
     plants = _make_plants([PlantStage.FLOWER_MID.value] * live_count)
     coord = make_coordinator(volume_growspace, plants)
 
@@ -209,8 +219,8 @@ def test_volume_conversion_scales_with_live_count(
 
 def test_volume_uses_per_phase_percent(make_coordinator, volume_growspace) -> None:
     """P1 and P2 use their own percent fields."""
-    volume_growspace.irrigation_strategy.p1_shot_volume_percent = 4.0
-    volume_growspace.irrigation_strategy.p2_shot_volume_percent = 2.0
+    volume_growspace.default_zone.strategy.p1_shot_volume_percent = 4.0
+    volume_growspace.default_zone.strategy.p2_shot_volume_percent = 2.0
     plants = _make_plants([PlantStage.FLOWER_MID.value] * 10)
     coord = make_coordinator(volume_growspace, plants)
 
@@ -311,7 +321,7 @@ def test_live_count_change_emits_logbook_entry(
         _make_plants([PlantStage.FLOWER_MID.value] * 12),
         _make_plants([PlantStage.FLOWER_MID.value] * 6),
     ]
-    strategy = volume_growspace.irrigation_strategy
+    strategy = effective_strategy(volume_growspace)
 
     # First tick establishes the baseline (no note on first observation).
     first, first_note = _base_duration(coord, volume_growspace, "P1")
@@ -335,7 +345,7 @@ def test_unchanged_count_no_logbook_entry(
     """An unchanged live count never produces a note or a logbook entry."""
     plants = _make_plants([PlantStage.FLOWER_MID.value] * 8)
     coord = make_coordinator(volume_growspace, plants)
-    strategy = volume_growspace.irrigation_strategy
+    strategy = effective_strategy(volume_growspace)
 
     _, note_a = _base_duration(coord, volume_growspace, "P1")
     _, note_b = _base_duration(coord, volume_growspace, "P1")
@@ -355,7 +365,7 @@ def test_logbook_suppressed_when_disabled(
         _make_plants([PlantStage.FLOWER_MID.value] * 12),
         _make_plants([PlantStage.FLOWER_MID.value] * 6),
     ]
-    strategy = volume_growspace.irrigation_strategy
+    strategy = effective_strategy(volume_growspace)
 
     _, note_a = _base_duration(coord, volume_growspace, "P1")
     _, note_b = _base_duration(coord, volume_growspace, "P1")
@@ -403,8 +413,8 @@ async def test_seconds_mode_duration_unchanged(
     make_coordinator, volume_growspace, mock_hass
 ) -> None:
     """Seconds Mode passes the configured seconds straight through (byte-for-byte)."""
-    volume_growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.SECONDS
-    volume_growspace.irrigation_strategy.p1_shot_duration_seconds = 10
+    volume_growspace.default_zone.strategy.shot_sizing_mode = ShotSizingMode.SECONDS
+    volume_growspace.default_zone.strategy.p1_shot_duration_seconds = 10
     plants = _make_plants([PlantStage.FLOWER_MID.value] * 10)
     coord = make_coordinator(volume_growspace, plants)
     captured: dict[str, int] = {}
@@ -455,7 +465,7 @@ async def test_fire_shot_uses_request_base_seconds(
         patch.object(coord, "_record_substrate_shot"),
     ):
         coord._fire_shot(
-            volume_growspace.irrigation_strategy,
+            effective_strategy(volume_growspace),
             ShotRequest(phase="P1", base_seconds=77),
         )
         await _drain_tasks()

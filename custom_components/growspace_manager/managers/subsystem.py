@@ -104,7 +104,7 @@ class SubsystemManager:
     ) -> None:
         """Setup sub-coordinators for a single growspace."""
         irrigation_coordinator: IrrigationCoordinator | VWCIrrigationCoordinator
-        if gs.irrigation_strategy.enabled:
+        if gs.default_zone.strategy.enabled:
             _LOGGER.info(
                 "Initializing VWC Irrigation Coordinator for growspace %s",
                 growspace_id,

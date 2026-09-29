@@ -19,6 +19,7 @@ from custom_components.growspace_manager.models import (
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
+from tests.zones import zoned
 
 
 @pytest.fixture
@@ -67,11 +68,13 @@ async def test_async_get_history_anchor_prefers_detected_lights_on_time(
     mock_get_recorder.return_value = mock_recorder_instance
     mock_recorder_instance.async_add_executor_job = AsyncMock(return_value={})
 
-    growspace = Growspace(
-        id="tent1",
-        name="Tent 1",
-        environment_config=EnvironmentConfig(),
-        irrigation_strategy=IrrigationStrategy(
+    growspace = zoned(
+        Growspace(
+            id="tent1",
+            name="Tent 1",
+            environment_config=EnvironmentConfig(),
+        ),
+        strategy=IrrigationStrategy(
             lights_on_time="06:00:00",
             detected_lights_on_time="07:00:00",
         ),
@@ -95,11 +98,13 @@ async def test_async_get_history_parses_lights_on_time_without_seconds(
     mock_get_recorder.return_value = mock_recorder_instance
     mock_recorder_instance.async_add_executor_job = AsyncMock(return_value={})
 
-    growspace = Growspace(
-        id="tent1",
-        name="Tent 1",
-        environment_config=EnvironmentConfig(),
-        irrigation_strategy=IrrigationStrategy(lights_on_time="06:30"),
+    growspace = zoned(
+        Growspace(
+            id="tent1",
+            name="Tent 1",
+            environment_config=EnvironmentConfig(),
+        ),
+        strategy=IrrigationStrategy(lights_on_time="06:30"),
     )
 
     result = await analyzer.async_get_history(growspace)
@@ -129,11 +134,14 @@ async def test_async_get_history_buckets_soil_moisture_as_simple_mean(
     )
     mock_recorder_instance.async_add_executor_job = AsyncMock(return_value=history)
 
-    growspace = Growspace(
-        id="tent1",
-        name="Tent 1",
-        environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.soil1"),
-        irrigation_strategy=IrrigationStrategy(lights_on_time="06:00:00"),
+    growspace = zoned(
+        Growspace(
+            id="tent1",
+            name="Tent 1",
+            environment_config=EnvironmentConfig(),
+        ),
+        soil_moisture_sensor="sensor.soil1",
+        strategy=IrrigationStrategy(lights_on_time="06:00:00"),
     )
 
     result = await analyzer.async_get_history(growspace)
@@ -167,13 +175,14 @@ async def test_async_get_history_averages_pore_ec_across_sensors_skipping_missin
     )
     mock_recorder_instance.async_add_executor_job = AsyncMock(return_value=history)
 
-    growspace = Growspace(
-        id="tent1",
-        name="Tent 1",
-        environment_config=EnvironmentConfig(
-            pore_ec_sensors=["sensor.pore1", "sensor.pore2"]
+    growspace = zoned(
+        Growspace(
+            id="tent1",
+            name="Tent 1",
+            environment_config=EnvironmentConfig(),
         ),
-        irrigation_strategy=IrrigationStrategy(lights_on_time="06:00:00"),
+        pore_ec_sensors=["sensor.pore1", "sensor.pore2"],
+        strategy=IrrigationStrategy(lights_on_time="06:00:00"),
     )
 
     result = await analyzer.async_get_history(growspace)
@@ -209,11 +218,14 @@ async def test_async_get_history_includes_bulk_ec_when_sensors_configured(
     )
     mock_recorder_instance.async_add_executor_job = AsyncMock(return_value=history)
 
-    growspace = Growspace(
-        id="tent1",
-        name="Tent 1",
-        environment_config=EnvironmentConfig(bulk_ec_sensors=["sensor.bulk1"]),
-        irrigation_strategy=IrrigationStrategy(lights_on_time="06:00:00"),
+    growspace = zoned(
+        Growspace(
+            id="tent1",
+            name="Tent 1",
+            environment_config=EnvironmentConfig(),
+        ),
+        bulk_ec_sensors=["sensor.bulk1"],
+        strategy=IrrigationStrategy(lights_on_time="06:00:00"),
     )
 
     result = await analyzer.async_get_history(growspace)
@@ -237,11 +249,14 @@ async def test_async_get_history_clips_buckets_at_now_and_omits_unconfigured_key
     mock_get_recorder.return_value = mock_recorder_instance
     mock_recorder_instance.async_add_executor_job = AsyncMock(return_value={})
 
-    growspace = Growspace(
-        id="tent1",
-        name="Tent 1",
-        environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.soil1"),
-        irrigation_strategy=IrrigationStrategy(lights_on_time="06:00:00"),
+    growspace = zoned(
+        Growspace(
+            id="tent1",
+            name="Tent 1",
+            environment_config=EnvironmentConfig(),
+        ),
+        soil_moisture_sensor="sensor.soil1",
+        strategy=IrrigationStrategy(lights_on_time="06:00:00"),
     )
 
     result = await analyzer.async_get_history(growspace)
@@ -278,11 +293,14 @@ async def test_async_get_history_ignores_non_numeric_readings_in_bucket_average(
     )
     mock_recorder_instance.async_add_executor_job = AsyncMock(return_value=history)
 
-    growspace = Growspace(
-        id="tent1",
-        name="Tent 1",
-        environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.soil1"),
-        irrigation_strategy=IrrigationStrategy(lights_on_time="06:00:00"),
+    growspace = zoned(
+        Growspace(
+            id="tent1",
+            name="Tent 1",
+            environment_config=EnvironmentConfig(),
+        ),
+        soil_moisture_sensor="sensor.soil1",
+        strategy=IrrigationStrategy(lights_on_time="06:00:00"),
     )
 
     result = await analyzer.async_get_history(growspace)

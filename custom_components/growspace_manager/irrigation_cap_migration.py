@@ -12,7 +12,7 @@ from homeassistant.helpers.issue_registry import (
 )
 
 from .const import DOMAIN
-from .models import IrrigationConfig
+from .models import GrowspaceIrrigationConfig
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
@@ -25,13 +25,14 @@ def evaluate_irrigation_cap_issues(
     """Leave legacy cap values alone and show a repair until both are set."""
     for growspace_id, growspace in coordinator.growspaces.items():
         config = growspace.irrigation_config
-        if type(config) is not IrrigationConfig:
+        if type(config) is not GrowspaceIrrigationConfig:
             continue
+        zone = growspace.default_zone
         issue_id = f"irrigation_cap_review_{growspace_id}"
-        if (config.irrigation_pump_entity or config.irrigation_times) and (
+        if (config.irrigation_pump_entity or zone.irrigation_times) and (
             config.max_cycles_per_day is None
             or config.daily_volume_cap_liters is None
-            or config.pump_flow_rate_ml_per_sec <= 0
+            or zone.pump_flow_rate_ml_per_sec <= 0
         ):
             async_create_issue(
                 hass,

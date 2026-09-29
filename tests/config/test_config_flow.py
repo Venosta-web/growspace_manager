@@ -36,7 +36,8 @@ from custom_components.growspace_manager.const import (
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     IrrigationConfig,
-    IrrigationStrategy,
+    IrrigationZone,
+    LightCycle,
 )
 from homeassistant.config_entries import HANDLERS
 from homeassistant.core import HomeAssistant
@@ -609,6 +610,7 @@ async def test_options_flow_manage_growspaces_update(
         "gs1": Mock(
             name="Growspace 1",
             environment_config=EnvironmentConfig(),
+            default_zone=IrrigationZone(id="default"),
             irrigation_config=IrrigationConfig(),
         )
     }
@@ -1804,6 +1806,7 @@ async def test_options_flow_select_growspace_for_env_submit(
         "gs1": Mock(
             name="Growspace 1",
             environment_config=EnvironmentConfig(),
+            default_zone=IrrigationZone(id="default"),
             irrigation_config=IrrigationConfig(),
         )
     }
@@ -1842,6 +1845,7 @@ async def test_options_flow_configure_environment_show_form(
         "gs1": Mock(
             name="Growspace 1",
             environment_config=EnvironmentConfig(),
+            default_zone=IrrigationZone(id="default"),
             irrigation_config=IrrigationConfig(),
         )
     }
@@ -1873,6 +1877,7 @@ async def test_options_flow_configure_environment_submit(
     mock_growspace = Mock(
         name="Growspace 1",
         environment_config=EnvironmentConfig(),
+        default_zone=IrrigationZone(id="default"),
         dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -1921,6 +1926,7 @@ async def test_options_flow_configure_environment_remove_vpd_sensor(
             temperature_sensor="sensor.temp",
             humidity_sensor="sensor.humidity",
         ),
+        default_zone=IrrigationZone(id="default"),
         dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -2003,6 +2009,7 @@ async def test_options_flow_configure_advanced_bayesian_show_form(
         "gs1": Mock(
             name="Growspace 1",
             environment_config=EnvironmentConfig(),
+            default_zone=IrrigationZone(id="default"),
             irrigation_config=IrrigationConfig(),
         )
     }
@@ -2035,6 +2042,7 @@ async def test_options_flow_configure_advanced_bayesian_submit(
     mock_growspace = Mock(
         name="Growspace 1",
         environment_config=EnvironmentConfig(),
+        default_zone=IrrigationZone(id="default"),
         dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -2083,6 +2091,7 @@ async def test_options_flow_configure_advanced_bayesian_invalid_tuple(
     mock_growspace = Mock(
         name="Growspace 1",
         environment_config=EnvironmentConfig(),
+        default_zone=IrrigationZone(id="default"),
         dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -2237,6 +2246,7 @@ async def test_options_flow_configure_advanced_bayesian_non_string_value(
     mock_growspace = Mock(
         name="Growspace 1",
         environment_config=EnvironmentConfig(),
+        default_zone=IrrigationZone(id="default"),
         dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -2304,6 +2314,7 @@ async def test_options_flow_configure_dehumidifier_submit(
     mock_growspace = Mock(
         name="Growspace 1",
         environment_config=EnvironmentConfig(),
+        default_zone=IrrigationZone(id="default"),
         dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -2424,8 +2435,9 @@ async def test_options_flow_select_growspace_for_irrigation_submit(
     mock_gs = Mock(
         name="Growspace 1",
         environment_config=EnvironmentConfig(),
+        default_zone=IrrigationZone(id="default"),
         irrigation_config=IrrigationConfig(),
-        irrigation_strategy=IrrigationStrategy(),
+        light_cycle=LightCycle(),
     )
     # mock_gs.irrigation_config = {} # REMOVED: Must use dataclass
     mock_coordinator.growspaces = {"gs1": mock_gs}
@@ -2457,7 +2469,8 @@ async def test_options_flow_configure_irrigation_show_form(
     mock_growspace = Mock(
         name="Growspace 1",
         irrigation_config=IrrigationConfig(),
-        irrigation_strategy=IrrigationStrategy(),
+        light_cycle=LightCycle(),
+        default_zone=IrrigationZone(id="default"),
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
@@ -2483,7 +2496,8 @@ async def test_options_flow_configure_irrigation_submit(
     mock_growspace = Mock(
         name="Growspace 1",
         irrigation_config=IrrigationConfig(),
-        irrigation_strategy=IrrigationStrategy(),
+        light_cycle=LightCycle(),
+        default_zone=IrrigationZone(id="default"),
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
     config_entry.runtime_data = mock_coordinator
@@ -2523,7 +2537,8 @@ async def test_options_flow_presents_irrigation_change_validation_failure(
         "gs1": Mock(
             name="Growspace 1",
             irrigation_config=IrrigationConfig(),
-            irrigation_strategy=IrrigationStrategy(),
+            light_cycle=LightCycle(),
+            default_zone=IrrigationZone(id="default"),
         )
     }
     mock_coordinator.services.growspaces.update_irrigation_config = AsyncMock(
@@ -2972,6 +2987,7 @@ async def test_options_flow_configure_environment_jump_to_advanced(
     mock_gs = Mock(
         name="GS1",
         environment_config=EnvironmentConfig(),
+        default_zone=IrrigationZone(id="default"),
         dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_gs}
@@ -3173,7 +3189,8 @@ async def test_options_flow_irrigation_save_clears_pumps(
     mock_gs = Mock(
         name="GS1",
         irrigation_config=mock_irrigation_config,
-        irrigation_strategy=IrrigationStrategy(),
+        light_cycle=LightCycle(),
+        default_zone=IrrigationZone(id="default"),
         environment_config=EnvironmentConfig(),
     )
     mock_coordinator.growspaces = {"gs1": mock_gs}

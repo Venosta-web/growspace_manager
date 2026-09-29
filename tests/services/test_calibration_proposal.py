@@ -134,7 +134,7 @@ def _water_day(
 ) -> None:
     """Record one day: a shot delivering ``pump_l`` and the tank dropping ``tank_l``."""
     on = _at(day, "08:00:00")
-    rate = coordinator.growspace.irrigation_config.pump_flow_rate_ml_per_sec
+    rate = coordinator.growspace.default_zone.pump_flow_rate_ml_per_sec
     coordinator._deliveries.attempts.append(
         DeliveryAttempt.requested(
             attempt_id=f"shot-{day}",
@@ -250,7 +250,7 @@ async def test_nothing_is_ever_applied_without_the_grower(
         _water_day(irrigation, day, tank_l=12.0, pump_l=8.0)
         await _tick(hass, freezer, irrigation, _at(day + 1))
 
-    assert irrigation.growspace.irrigation_config.pump_flow_rate_ml_per_sec == RATE
+    assert irrigation.growspace.default_zone.pump_flow_rate_ml_per_sec == RATE
     issue = _issue(hass)
     assert issue is not None
     assert issue.translation_placeholders["evidence_count"] == "5"
@@ -296,7 +296,7 @@ async def test_apply_writes_the_rate_and_closes_the_issue_for_good(
     done = await _submit(hass, shown["flow_id"])
 
     assert done["type"] is FlowResultType.CREATE_ENTRY
-    assert irrigation.growspace.irrigation_config.pump_flow_rate_ml_per_sec == 15.0
+    assert irrigation.growspace.default_zone.pump_flow_rate_ml_per_sec == 15.0
     main.async_commit.assert_awaited()
     assert _issue(hass) is None
     assert logbook[-1]["message"] == (
@@ -322,13 +322,13 @@ async def test_a_rate_changed_since_the_proposal_is_not_applied(
     """The grower changed it by hand: the stale proposal is refused, then withdrawn."""
     await _raise(hass, freezer, irrigation)
     shown = await _start_fix(hass)
-    irrigation.growspace.irrigation_config.pump_flow_rate_ml_per_sec = 12.0
+    irrigation.growspace.default_zone.pump_flow_rate_ml_per_sec = 12.0
 
     done = await _submit(hass, shown["flow_id"])
 
     assert done["type"] is FlowResultType.ABORT
     assert done["reason"] == "proposal_stale"
-    assert irrigation.growspace.irrigation_config.pump_flow_rate_ml_per_sec == 12.0
+    assert irrigation.growspace.default_zone.pump_flow_rate_ml_per_sec == 12.0
     assert _issue(hass) is not None
 
     await _tick(hass, freezer, irrigation, _at(27, "00:01:30"))

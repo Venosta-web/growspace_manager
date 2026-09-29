@@ -32,9 +32,13 @@ def _growspace(env: EnvironmentConfig) -> Growspace:
     )
 
 
-def _environment(hass: HomeAssistant, env: EnvironmentConfig) -> dict:
+def _environment(
+    hass: HomeAssistant, env: EnvironmentConfig, moisture_sensor: str | None = None
+) -> dict:
     """Return the environment attribute block the card receives."""
-    return GrowspaceViewModelBuilder(hass)._get_environment_attributes(_growspace(env))
+    growspace = _growspace(env)
+    growspace.default_zone.soil_moisture_sensor = moisture_sensor
+    return GrowspaceViewModelBuilder(hass)._get_environment_attributes(growspace)
 
 
 async def test_inherited_band_is_reported_as_effective_but_not_custom(
@@ -102,9 +106,7 @@ async def test_sensor_unit_compatibility_reaches_the_card(
         {} if unit is None else {"unit_of_measurement": unit},
     )
 
-    attributes = _environment(
-        hass, EnvironmentConfig(soil_moisture_sensor=MOISTURE_SENSOR)
-    )
+    attributes = _environment(hass, EnvironmentConfig(), MOISTURE_SENSOR)
 
     assert attributes["soil_moisture_sensor"] == MOISTURE_SENSOR
     assert attributes["soil_moisture_value"] == "42.0"
@@ -121,11 +123,11 @@ async def test_band_does_not_depend_on_pump_or_tank_hardware(
     attributes = _environment(
         hass,
         EnvironmentConfig(
-            soil_moisture_sensor=MOISTURE_SENSOR,
             soil_moisture_min=32.5,
             soil_moisture_max=54.0,
             irrigation_tanks=[],
         ),
+        MOISTURE_SENSOR,
     )
 
     assert attributes["soil_moisture_band_compatible"] is True

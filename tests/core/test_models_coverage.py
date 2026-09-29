@@ -8,6 +8,8 @@ import pytest
 
 from custom_components.growspace_manager.models import (
     Growspace,
+    IrrigationZone,
+    SteeringStrategy,
     _sanitize_numeric_fields,
 )
 
@@ -91,32 +93,27 @@ def test_sanitize_optional_field_none():
 
 
 def test_growspace_pre_deserialize_sanitization_failures():
-    """Test Growspace.__pre_deserialize__ failure paths for coverage."""
+    """Test the legacy-value sanitization on the models that now own each field."""
 
-    # Test invalid duration in irrigation_config (Lines 644-645)
-    data = {
-        "id": "gs1",
-        "name": "GS1",
-        "irrigation_config": {
-            "irrigation_times": [{"time": "08:00", "duration": "invalid"}]
-        },
-    }
-    sanitized = Growspace.__pre_deserialize__(data)
-    assert sanitized["irrigation_config"]["irrigation_times"][0]["duration"] == 60
+    # Invalid schedule duration, on the zone that owns the schedule.
+    sanitized = IrrigationZone.__pre_deserialize__(
+        {
+            "id": "default",
+            "irrigation_times": [{"time": "08:00", "duration": "invalid"}],
+        }
+    )
+    assert sanitized["irrigation_times"][0]["duration"] == 60
 
-    # Test invalid values in irrigation_strategy (Lines 667-670)
-    data = {
-        "id": "gs1",
-        "name": "GS1",
-        "irrigation_strategy": {
+    # Invalid integers in the strategy the zone owns are dropped to their defaults.
+    sanitized = SteeringStrategy.__pre_deserialize__(
+        {
             "p0_duration_minutes": "not_an_int",
-            "shot_duration_seconds": "invalid",  # Added another one for coverage
-        },
-    }
-    sanitized = Growspace.__pre_deserialize__(data)
-    # The invalid field should be deleted from the dict
-    assert "p0_duration_minutes" not in sanitized["irrigation_strategy"]
-    assert "shot_duration_seconds" not in sanitized["irrigation_strategy"]
+            "shot_duration_seconds": "invalid",
+        }
+    )
+    assert "p0_duration_minutes" not in sanitized
+    assert "shot_duration_seconds" not in sanitized
+    assert "p1_shot_duration_seconds" not in sanitized
 
     # Test invalid rows/plants_per_row (Line 598)
     data = {"id": "gs1", "name": "GS1", "rows": "invalid"}

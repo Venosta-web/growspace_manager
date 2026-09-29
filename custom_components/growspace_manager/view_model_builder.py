@@ -13,6 +13,7 @@ from homeassistant.util import dt as dt_util
 
 from .crop_steering import get_crop_steering_state
 from .domain.irrigation_recipe import recipe_has_drifted
+from .domain.irrigation_zone import effective_config, effective_strategy
 from .domain.plant_metrics import count_live_plants
 from .domain.stage import StageDays
 from .domain.tank_pump_disagreement import TankPumpDisagreement
@@ -309,7 +310,7 @@ class ViewModelBuilder:
         applied, or the applied recipe has since been deleted from the global
         library (deleting leaves references dangling rather than cascading).
         """
-        recipe_id = growspace.irrigation_strategy.applied_recipe_id
+        recipe_id = growspace.default_zone.strategy.applied_recipe_id
         if recipe_id is None:
             return None
         recipe = self.coordinator.services.config.find_irrigation_recipe(recipe_id)
@@ -317,8 +318,8 @@ class ViewModelBuilder:
             return None
         return recipe_has_drifted(
             recipe,
-            strategy=growspace.irrigation_strategy,
-            config=growspace.irrigation_config,
+            strategy=effective_strategy(growspace),
+            config=effective_config(growspace),
             live_plant_count=count_live_plants(plants),
         )
 

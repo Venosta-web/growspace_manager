@@ -10,6 +10,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.growspace_manager.const import ShotSizingMode, SteeringMode
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_strategy,
+)
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import Growspace
 from custom_components.growspace_manager.services.growspace_facade import (
@@ -38,7 +41,7 @@ async def test_apply_steering_mode_stamps_through_the_seam() -> None:
 
     result = await facade.apply_steering_mode("tent1", SteeringMode.GENERATIVE)
 
-    strategy = growspace.irrigation_strategy
+    strategy = effective_strategy(growspace)
     assert strategy.declared_steering_mode is SteeringMode.GENERATIVE
     assert strategy.maintenance_dryback_percent == 5.0
     assert result.operation is IrrigationChangeOperation.STEERING_MODE
@@ -61,14 +64,14 @@ async def test_clear_irrigation_resets_through_the_seam() -> None:
     """The clear adapter resets the config and switches steering off."""
     growspace = Growspace(id="tent1", name="Test Tent")
     growspace.irrigation_config.irrigation_pump_entity = "switch.pump"
-    growspace.irrigation_strategy.enabled = True
-    growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.VOLUME
+    growspace.default_zone.strategy.enabled = True
+    growspace.default_zone.strategy.shot_sizing_mode = ShotSizingMode.VOLUME
     facade, _coordinator = _facade(growspace)
 
     result = await facade.clear_irrigation("tent1")
 
     assert growspace.irrigation_config.irrigation_pump_entity is None
-    assert growspace.irrigation_strategy.enabled is False
+    assert growspace.default_zone.strategy.enabled is False
     assert result.operation is IrrigationChangeOperation.CLEAR
     assert "irrigation_pump_entity" in result.changed_config_fields
 

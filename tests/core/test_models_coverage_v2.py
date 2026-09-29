@@ -2,6 +2,9 @@
 
 from unittest.mock import patch
 
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    migrate_growspace_document,
+)
 from custom_components.growspace_manager.models import Growspace, NutrientPreset, Plant
 
 
@@ -14,12 +17,12 @@ def test_growspace_irrigation_config_invalid_duration_seconds() -> None:
             "irrigation_times": [{"start_time": "08:00", "duration_seconds": "invalid"}]
         },
     }
-    gs = Growspace.from_dict(data)
+    gs = Growspace.from_dict(migrate_growspace_document(data))
     # start_time normalized to time, duration_seconds (invalid) normalized to duration=60
-    assert gs.irrigation_config.irrigation_times[0]["time"] == "08:00"
-    assert gs.irrigation_config.irrigation_times[0]["duration"] == 60
-    assert "start_time" not in gs.irrigation_config.irrigation_times[0]
-    assert "duration_seconds" not in gs.irrigation_config.irrigation_times[0]
+    assert gs.default_zone.irrigation_times[0]["time"] == "08:00"
+    assert gs.default_zone.irrigation_times[0]["duration"] == 60
+    assert "start_time" not in gs.default_zone.irrigation_times[0]
+    assert "duration_seconds" not in gs.default_zone.irrigation_times[0]
 
 
 def test_plant_get_days_since_watering_with_value() -> None:

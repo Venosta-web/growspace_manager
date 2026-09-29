@@ -31,6 +31,7 @@ from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
 from .delivery_attempt_store import DeliveryAttemptStore
 from .domain.grow_run import ParticipantIdentity, RunStatus, WaterApplication
+from .domain.irrigation_zone import migrate_growspace_document
 from .domain.unattributed_activity import (
     DEFAULT_RETENTION_DAYS as DEFAULT_UNATTRIBUTED_RETENTION_DAYS,
 )
@@ -429,7 +430,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 growspaces[gid] = gdata
             elif isinstance(gdata, dict):
                 try:
-                    growspaces[gid] = Growspace.from_dict(gdata)
+                    growspaces[gid] = Growspace.from_dict(
+                        migrate_growspace_document(gdata)
+                    )
                 except ValueError, KeyError, TypeError, Exception:
                     # Catch mashumaro or other deserialization errors as "structure mismatch"
                     # We use Exception here to be safe but log specifically

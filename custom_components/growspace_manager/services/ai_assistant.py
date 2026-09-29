@@ -110,11 +110,7 @@ class GrowAssistant:
                             "attributes": dict(state.attributes),
                         }
 
-            moisture_entity_id = (
-                env_config.get("soil_moisture_sensor")
-                if isinstance(env_config, dict)
-                else getattr(env_config, "soil_moisture_sensor", None)
-            )
+            moisture_entity_id = growspace.default_zone.soil_moisture_sensor
             if moisture_entity_id:
                 moisture_state = self.hass.states.get(moisture_entity_id)
                 if moisture_state and moisture_state.state not in (

@@ -854,7 +854,6 @@
           "min_probability": 0.75,
           "observations": 4
         },
-        "bulk_ec_sensors": ["sensor.subarea_bulk_ec"],
         "camera_entities": ["camera.subarea"],
         "circulation_fan_ac_infinity_devices": [
           {
@@ -1038,7 +1037,6 @@
         "minimum_source_air_temperature": 17.5,
         "mold_threshold": 0.8,
         "ph_sensors": ["sensor.subarea_ph"],
-        "pore_ec_sensors": ["sensor.subarea_pore_ec"],
         "power_sensors": ["sensor.subarea_power"],
         "runoff_ec_sensors": ["sensor.subarea_runoff_ec"],
         "sensor_coordinates": {
@@ -1068,7 +1066,6 @@
         "snapshot_interval_hours": 6,
         "soil_moisture_max": 54.0,
         "soil_moisture_min": 32.5,
-        "soil_moisture_sensor": "sensor.subarea_soil_moisture",
         "stress_threshold": 0.65,
         "substrate_temperature_sensors": [
           "sensor.subarea_substrate_temperature"

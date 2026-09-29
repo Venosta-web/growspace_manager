@@ -24,6 +24,10 @@ from custom_components.growspace_manager.domain.irrigation_program import (
     ProgramHold,
     ProgramProgressionState,
 )
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_config,
+    effective_strategy,
+)
 from custom_components.growspace_manager.models import (
     Growspace,
     Plant,
@@ -41,14 +45,14 @@ CURRENT_STAGE, CURRENT_WEEK = "flower", 3
 def _growspace(growspace_id: str) -> Growspace:
     """Return a Volume Mode growspace with usable plumbing."""
     growspace = Growspace(id=growspace_id, name=growspace_id.title())
-    growspace.irrigation_strategy.enabled = True
-    growspace.irrigation_strategy.substrate_profile = SubstrateProfile(
+    growspace.default_zone.strategy.enabled = True
+    growspace.default_zone.strategy.substrate_profile = SubstrateProfile(
         media_type=SubstrateMediaType.COCO, liters_per_pot=6.0
     )
-    growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.VOLUME
-    growspace.irrigation_strategy.p1_shot_volume_percent = 3.0
-    growspace.irrigation_strategy.target_vwc_percent = 55.0
-    growspace.irrigation_config.pump_flow_rate_ml_per_sec = 50.0
+    growspace.default_zone.strategy.shot_sizing_mode = ShotSizingMode.VOLUME
+    growspace.default_zone.strategy.p1_shot_volume_percent = 3.0
+    growspace.default_zone.strategy.target_vwc_percent = 55.0
+    growspace.default_zone.pump_flow_rate_ml_per_sec = 50.0
     return growspace
 
 
@@ -99,7 +103,7 @@ async def _recipe(
     difference a stamp makes to tent_a is the one the test is watching.
     """
     tent_b = coordinator.growspaces["tent_b"]
-    tent_b.irrigation_strategy.target_vwc_percent = target_vwc
+    tent_b.default_zone.strategy.target_vwc_percent = target_vwc
     recipe = await coordinator.services.config.save_irrigation_recipe(
         "tent_b", name, IrrigationRecipeKind.CROP_STEERING
     )
@@ -179,7 +183,7 @@ async def test_crossing_into_a_week_with_a_slot_stamps_it_once(
     """The load-bearing happy path, and the "exactly once" that guards it."""
     recipe_id = await _recipe(coordinator, "Flower wk3", target_vwc=61.0)
     await _bind(coordinator, ("veg", 1, recipe_id), auto_advance=True)
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = effective_strategy(coordinator.growspaces["tent_a"])
     assert strategy.target_vwc_percent == 55.0  # veg week 1 is not where tent_a is
 
     events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
@@ -191,7 +195,7 @@ async def test_crossing_into_a_week_with_a_slot_stamps_it_once(
 
     assert await coordinator.program_progression.async_evaluate("tent_a") is not None
     # Re-read: the stamp replaces both models rather than mutating them.
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = effective_strategy(coordinator.growspaces["tent_a"])
     assert strategy.target_vwc_percent == 61.0
     assert strategy.applied_recipe_id == recipe_id
     await hass.async_block_till_done()
@@ -215,7 +219,7 @@ async def test_a_hand_tweak_after_the_stamp_is_never_written_back_over(
         coordinator, (CURRENT_STAGE, CURRENT_WEEK, recipe_id), auto_advance=True
     )
 
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = coordinator.growspaces["tent_a"].default_zone.strategy
     assert strategy.target_vwc_percent == 61.0
     strategy.target_vwc_percent = 58.0
 
@@ -235,7 +239,7 @@ async def test_a_drifted_growspace_is_held_and_the_grower_is_told(
 
     # Applied at week 2, then hand-tuned; week 3 now calls for a different one.
     await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", week_two)
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = coordinator.growspaces["tent_a"].default_zone.strategy
     strategy.target_vwc_percent = 57.0
     await coordinator.services.config.save_irrigation_program(
         "Full run",
@@ -291,9 +295,9 @@ async def test_a_deleted_recipe_behaves_as_a_gap_and_never_actuates(
     progression = await coordinator.program_progression.async_evaluate("tent_a")
 
     assert progression.hold is ProgramHold.RECIPE_MISSING
-    assert coordinator.growspaces["tent_a"].irrigation_strategy.target_vwc_percent == (
-        55.0
-    )
+    assert coordinator.growspaces[
+        "tent_a"
+    ].default_zone.strategy.target_vwc_percent == (55.0)
     assert _reported(coordinator)["progression"]["hold"] == "recipe_missing"
 
 
@@ -304,7 +308,7 @@ async def test_a_recipe_the_growspace_cannot_run_holds_rather_than_raising(
     """A refusal inside the tick must become a hold, never an exception."""
     recipe_id = await _recipe(coordinator, "Flower wk3", target_vwc=61.0)
     # tent_a switches to the time-schedule half, which the recipe does not hold.
-    coordinator.growspaces["tent_a"].irrigation_strategy.enabled = False
+    coordinator.growspaces["tent_a"].default_zone.strategy.enabled = False
     await _bind(
         coordinator, (CURRENT_STAGE, CURRENT_WEEK, recipe_id), auto_advance=True
     )
@@ -312,7 +316,7 @@ async def test_a_recipe_the_growspace_cannot_run_holds_rather_than_raising(
     progression = await coordinator.program_progression.async_evaluate("tent_a")
 
     assert progression.hold is ProgramHold.NOT_APPLICABLE
-    assert coordinator.growspaces["tent_a"].irrigation_strategy.applied_recipe_id is (
+    assert coordinator.growspaces["tent_a"].default_zone.strategy.applied_recipe_id is (
         None
     )
     notified.assert_awaited_once()
@@ -335,7 +339,7 @@ async def test_a_deleted_applied_recipe_leaves_nothing_to_call_drift(
         _slots((CURRENT_STAGE, CURRENT_WEEK, week_three)),
         program_id=coordinator.growspaces[
             "tent_a"
-        ].irrigation_strategy.irrigation_program_id,
+        ].default_zone.strategy.irrigation_program_id,
     )
     await coordinator.services.growspaces.set_irrigation_settings(
         "tent_a", {"program_auto_advance": True}
@@ -344,7 +348,7 @@ async def test_a_deleted_applied_recipe_leaves_nothing_to_call_drift(
     await coordinator.program_progression.async_evaluate("tent_a")
 
     # Re-read: the settings seam replaces the strategy rather than mutating it.
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = effective_strategy(coordinator.growspaces["tent_a"])
     assert strategy.target_vwc_percent == 61.0
     assert strategy.applied_recipe_id == week_three
 
@@ -377,9 +381,9 @@ async def test_a_week_with_no_slot_changes_nothing(
     progression = await coordinator.program_progression.async_evaluate("tent_a")
 
     assert progression.hold is ProgramHold.NO_SLOT
-    assert coordinator.growspaces["tent_a"].irrigation_strategy.target_vwc_percent == (
-        55.0
-    )
+    assert coordinator.growspaces[
+        "tent_a"
+    ].default_zone.strategy.target_vwc_percent == (55.0)
     reported = _reported(coordinator)
     assert reported["progression"]["state"] == "held"
     assert reported["progression"]["hold"] == "no_slot"
@@ -398,9 +402,9 @@ async def test_passing_the_last_week_reports_the_program_complete(
     progression = await coordinator.program_progression.async_evaluate("tent_a")
 
     assert progression.hold is ProgramHold.PROGRAM_COMPLETE
-    assert coordinator.growspaces["tent_a"].irrigation_strategy.target_vwc_percent == (
-        55.0
-    )
+    assert coordinator.growspaces[
+        "tent_a"
+    ].default_zone.strategy.target_vwc_percent == (55.0)
     assert _reported(coordinator)["progression"]["hold"] == "program_complete"
 
 
@@ -440,7 +444,7 @@ async def test_with_auto_advance_off_the_payload_recommends_and_nothing_moves(
     progression = await coordinator.program_progression.async_evaluate("tent_a")
 
     assert progression.state is ProgramProgressionState.AVAILABLE
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = effective_strategy(coordinator.growspaces["tent_a"])
     assert strategy.target_vwc_percent == 55.0
     assert strategy.applied_recipe_id is None
     assert events == []
@@ -453,7 +457,8 @@ async def test_with_auto_advance_off_the_payload_recommends_and_nothing_moves(
     # Until the grower applies it explicitly.
     await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe_id)
     assert (
-        coordinator.growspaces["tent_a"].irrigation_strategy.target_vwc_percent == 61.0
+        coordinator.growspaces["tent_a"].default_zone.strategy.target_vwc_percent
+        == 61.0
     )
     assert _reported(coordinator)["progression"]["state"] == "up_to_date"
 
@@ -473,7 +478,7 @@ async def test_assigning_with_auto_advance_on_applies_the_current_slot(
         coordinator, (CURRENT_STAGE, CURRENT_WEEK, recipe_id), auto_advance=True
     )
 
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = effective_strategy(coordinator.growspaces["tent_a"])
     assert strategy.target_vwc_percent == 61.0
     assert strategy.applied_recipe_id == recipe_id
 
@@ -486,7 +491,7 @@ async def test_assigning_with_auto_advance_off_applies_nothing(
     recipe_id = await _recipe(coordinator, "Flower wk3", target_vwc=61.0)
     await _bind(coordinator, (CURRENT_STAGE, CURRENT_WEEK, recipe_id))
 
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = effective_strategy(coordinator.growspaces["tent_a"])
     assert strategy.target_vwc_percent == 55.0
     assert strategy.applied_recipe_id is None
     assert strategy.irrigation_program_id is not None
@@ -537,7 +542,7 @@ async def test_a_failed_advance_changes_nothing_and_is_retried(
     _arm(coordinator)
 
     target = coordinator.growspaces["tent_a"]
-    prior_config, prior_strategy = target.irrigation_config, target.irrigation_strategy
+    prior_config, prior_strategy = effective_config(target), effective_strategy(target)
     before = target.to_dict()
     events = async_capture_events(hass, EVENT_GROWSPACE_LOG_ENTRY)
     coordinator.async_request_refresh = AsyncMock()
@@ -545,7 +550,7 @@ async def test_a_failed_advance_changes_nothing_and_is_retried(
     async def fail_save() -> None:
         # Mid-stamp: both models already carry the recipe that is about to be
         # taken back off them.
-        assert target.irrigation_strategy.applied_recipe_id == recipe_id
+        assert target.default_zone.strategy.applied_recipe_id == recipe_id
         raise RuntimeError("store failed")
 
     coordinator.storage_manager.async_force_save.side_effect = fail_save
@@ -553,8 +558,8 @@ async def test_a_failed_advance_changes_nothing_and_is_retried(
         await coordinator.program_progression.async_evaluate("tent_a")
     await hass.async_block_till_done()
 
-    assert target.irrigation_config is prior_config
-    assert target.irrigation_strategy is prior_strategy
+    assert effective_config(target) == prior_config
+    assert effective_strategy(target) == prior_strategy
     assert target.to_dict() == before
     assert events == []
     coordinator.async_request_refresh.assert_not_awaited()
@@ -565,7 +570,7 @@ async def test_a_failed_advance_changes_nothing_and_is_retried(
     await hass.async_block_till_done()
 
     assert progression.state is ProgramProgressionState.DUE
-    strategy = coordinator.growspaces["tent_a"].irrigation_strategy
+    strategy = effective_strategy(coordinator.growspaces["tent_a"])
     assert strategy.target_vwc_percent == 61.0
     assert strategy.applied_recipe_id == recipe_id
     assert len(events) == 1
@@ -607,7 +612,7 @@ async def test_one_failing_growspace_does_not_stop_the_refresh(
         # tent_a is the only growspace whose stamp is in flight when its own
         # provenance already names the recipe.
         if (
-            coordinator.growspaces["tent_a"].irrigation_strategy.applied_recipe_id
+            coordinator.growspaces["tent_a"].default_zone.strategy.applied_recipe_id
             == recipe_id
         ):
             raise RuntimeError("store failed")
@@ -617,13 +622,13 @@ async def test_one_failing_growspace_does_not_stop_the_refresh(
     await coordinator.program_progression.async_evaluate_all()
     await hass.async_block_till_done()
 
-    assert coordinator.growspaces["tent_a"].irrigation_strategy.applied_recipe_id is (
+    assert coordinator.growspaces["tent_a"].default_zone.strategy.applied_recipe_id is (
         None
     )
-    assert coordinator.growspaces["tent_a"].irrigation_strategy.target_vwc_percent == (
-        55.0
-    )
-    tent_b = coordinator.growspaces["tent_b"].irrigation_strategy
+    assert coordinator.growspaces[
+        "tent_a"
+    ].default_zone.strategy.target_vwc_percent == (55.0)
+    tent_b = effective_strategy(coordinator.growspaces["tent_b"])
     assert tent_b.applied_recipe_id == recipe_id
     assert tent_b.target_vwc_percent == 61.0
 
@@ -636,11 +641,13 @@ async def test_a_schedule_slot_advances_the_config_half(hass, coordinator) -> No
     program is bound, so the binding itself performs this stamp.
     """
     for growspace_id in ("tent_a", "tent_b"):
-        coordinator.growspaces[growspace_id].irrigation_strategy.enabled = False
+        coordinator.growspaces[growspace_id].default_zone.strategy.enabled = False
     source = coordinator.growspaces["tent_b"].irrigation_config
     source.max_cycles_per_day = 8
     source.skip_during_dark = True
-    source.irrigation_times = [{"time": "07:30:00", "duration": 45}]
+    coordinator.growspaces["tent_b"].default_zone.irrigation_times = [
+        {"time": "07:30:00", "duration": 45}
+    ]
     recipe = await coordinator.services.config.save_irrigation_recipe(
         "tent_b", "Flower timer", IrrigationRecipeKind.SCHEDULE
     )
@@ -651,21 +658,24 @@ async def test_a_schedule_slot_advances_the_config_half(hass, coordinator) -> No
     )
     await hass.async_block_till_done()
 
-    config = coordinator.growspaces["tent_a"].irrigation_config
+    config = effective_config(coordinator.growspaces["tent_a"])
     assert config.max_cycles_per_day == 8
     assert config.skip_during_dark is True
     assert config.irrigation_times == [{"time": "07:30:00", "duration": 45}]
     assert (
-        coordinator.growspaces["tent_a"].irrigation_strategy.applied_recipe_id
+        coordinator.growspaces["tent_a"].default_zone.strategy.applied_recipe_id
         == recipe.id
     )
     assert len(events) == 1
     assert "advanced to flower week 3" in events[0].data["message"]
 
     # Detached from the library's copy, exactly as an explicit stamp is.
-    config.irrigation_times[0]["duration"] = 99
+    coordinator.growspaces["tent_a"].default_zone.irrigation_times[0]["duration"] = 99
     assert recipe.schedule.irrigation_times[0]["duration"] == 45
-    assert source.irrigation_times[0]["duration"] == 45
+    assert (
+        coordinator.growspaces["tent_b"].default_zone.irrigation_times[0]["duration"]
+        == 45
+    )
 
 
 @pytest.mark.asyncio
@@ -684,7 +694,7 @@ async def test_an_automatic_advance_respects_the_logbook_opt_out(
 
     assert events == []
     assert (
-        coordinator.growspaces["tent_a"].irrigation_strategy.applied_recipe_id
+        coordinator.growspaces["tent_a"].default_zone.strategy.applied_recipe_id
         == recipe_id
     )
 
@@ -706,9 +716,9 @@ async def test_program_and_explicit_apply_share_complete_validation(
             crop_steering={"pore_ec_target_min": 5.0, "pore_ec_target_max": 2.0},
         )
     elif failure == "flow":
-        target.irrigation_config.pump_flow_rate_ml_per_sec = 0.0
+        target.default_zone.pump_flow_rate_ml_per_sec = 0.0
     else:
-        target.irrigation_strategy.substrate_profile.liters_per_pot = 0.0
+        target.default_zone.strategy.substrate_profile.liters_per_pot = 0.0
     before = target.to_dict()
     coordinator.storage_manager.async_force_save.reset_mock()
     with pytest.raises(ValueError) as refused:
@@ -728,7 +738,7 @@ async def test_program_and_explicit_apply_share_complete_validation(
     else:
         notified.assert_not_awaited()
     # Already carrying the slot still wins over applicability, as before.
-    target.irrigation_strategy.applied_recipe_id = recipe_id
+    target.default_zone.strategy.applied_recipe_id = recipe_id
     result = await coordinator.program_progression.async_evaluate("tent_a")
     assert result.state is ProgramProgressionState.UP_TO_DATE
     coordinator.storage_manager.async_force_save.assert_not_awaited()

@@ -16,6 +16,7 @@ from custom_components.growspace_manager.irrigation_coordinator import (
 )
 from custom_components.growspace_manager.models import (
     Growspace,
+    GrowspaceIrrigationConfig,
     IrrigationConfig,
     IrrigationTank,
 )
@@ -411,7 +412,7 @@ async def test_async_set_settings(
         await coordinator.async_set_settings(new_settings)
 
         growspace = coordinator._main_coordinator.growspaces[GROWSPACE_ID]
-        assert growspace.irrigation_config.irrigation_duration == 45
+        assert growspace.default_zone.irrigation_duration == 45
         assert growspace.irrigation_config.drain_pump_entity == "switch.new_drain_pump"
 
         mock_main_coordinator.async_commit.assert_awaited_once()
@@ -433,7 +434,7 @@ async def test_async_add_schedule_item(
         await coordinator.async_add_schedule_item("irrigation_times", "08:00", 20)
 
         growspace = coordinator._main_coordinator.growspaces[GROWSPACE_ID]
-        items = growspace.irrigation_config.irrigation_times
+        items = growspace.default_zone.irrigation_times
         new_item = next((i for i in items if i["time"] == "08:00:00"), None)
         assert new_item is not None
         assert new_item["duration"] == 20
@@ -441,7 +442,7 @@ async def test_async_add_schedule_item(
         # Test updating existing item
         await coordinator.async_add_schedule_item("irrigation_times", "08:00", 30)
 
-        items = growspace.irrigation_config.irrigation_times
+        items = growspace.default_zone.irrigation_times
         new_item = next((i for i in items if i["time"] == "08:00:00"), None)
         assert new_item is not None
         assert new_item["duration"] == 30
@@ -465,7 +466,7 @@ async def test_async_remove_schedule_item(
         await coordinator.async_remove_schedule_item("irrigation_times", "10:00:00")
 
         growspace = coordinator._main_coordinator.growspaces[GROWSPACE_ID]
-        items = growspace.irrigation_config.irrigation_times
+        items = growspace.default_zone.irrigation_times
         removed_item = next((i for i in items if i["time"] == "10:00:00"), None)
         assert removed_item is None
 
@@ -479,7 +480,7 @@ async def test_async_remove_schedule_item(
 
         await coordinator.async_remove_schedule_item("irrigation_times", "20:00")
 
-        items = growspace.irrigation_config.irrigation_times
+        items = growspace.default_zone.irrigation_times
         assert not any(i["time"] == "20:00:00" for i in items)
         mock_main_coordinator.async_commit.assert_awaited_once()
 
@@ -542,9 +543,9 @@ async def test_schedule_event_invalid_time(
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    config = mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
-    config.irrigation_times = [{"time": 123}, {"time": "invalid"}]
-    config.drain_times = []
+    growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    growspace.default_zone.irrigation_times = [{"time": 123}, {"time": "invalid"}]
+    growspace.irrigation_config.drain_times = []
 
     await coordinator.async_update_listeners()
 
@@ -559,8 +560,10 @@ async def test_handle_event_missing_config(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
 
-    # Clear config
-    mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config = {}
+    # Clear config: no pump, and no duration to fall back on.
+    growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    growspace.irrigation_config = GrowspaceIrrigationConfig()
+    growspace.default_zone.irrigation_duration = None
 
     with patch.object(
         coordinator, "_run_pump_cycle", new_callable=AsyncMock
@@ -695,9 +698,9 @@ async def test_schedule_event_short_time_format(
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    config = mock_main_coordinator.growspaces[GROWSPACE_ID].irrigation_config
-    config.irrigation_times = [{"time": "12:00"}]
-    config.drain_times = []
+    growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    growspace.default_zone.irrigation_times = [{"time": "12:00"}]
+    growspace.irrigation_config.drain_times = []
 
     await coordinator.async_update_listeners()
 
@@ -812,7 +815,7 @@ async def test_run_pump_cycle_with_moisture_logging(
     mock_main_coordinator.growspaces[GROWSPACE_ID].environment_config = MagicMock()
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
-    ].environment_config.soil_moisture_sensor = "sensor.moisture"
+    ].default_zone.soil_moisture_sensor = "sensor.moisture"
 
     # Mock states
     mock_hass.states = MagicMock()
@@ -861,7 +864,7 @@ async def test_run_pump_cycle_moisture_after_only(
     mock_main_coordinator.growspaces[GROWSPACE_ID].environment_config = MagicMock()
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
-    ].environment_config.soil_moisture_sensor = "sensor.moisture"
+    ].default_zone.soil_moisture_sensor = "sensor.moisture"
 
     # Mock states
     mock_hass.states = MagicMock()
@@ -911,7 +914,7 @@ async def test_run_pump_cycle_defers_completion_report_until_sensor_settles(
     mock_main_coordinator.growspaces[GROWSPACE_ID].environment_config = MagicMock()
     mock_main_coordinator.growspaces[
         GROWSPACE_ID
-    ].environment_config.soil_moisture_sensor = "sensor.moisture"
+    ].default_zone.soil_moisture_sensor = "sensor.moisture"
 
     mock_before_state = _moisture_state("40.0")
     mock_after_state = _moisture_state("60.0")
@@ -1183,7 +1186,9 @@ async def test_last_cycle_timestamp_set_after_run_pump_cycle(
     assert coordinator.last_cycle_timestamp is not None
     # The anchor is the persisted one, and it is saved as soon as the pump
     # confirms, so a restart mid-cycle still knows the shot happened (#786).
-    history = mock_main_coordinator.growspaces[GROWSPACE_ID].substrate_history
+    history = mock_main_coordinator.growspaces[
+        GROWSPACE_ID
+    ].default_zone.substrate_history
     assert history.last_confirmed_shot_at == coordinator.last_cycle_timestamp
     mock_main_coordinator.async_schedule_save.assert_called()
 

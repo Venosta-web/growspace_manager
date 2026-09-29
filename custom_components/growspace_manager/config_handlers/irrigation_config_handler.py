@@ -13,6 +13,10 @@ from custom_components.growspace_manager.const import ShotSizingMode, SubstrateM
 from custom_components.growspace_manager.domain.irrigation_safety import (
     DEFAULT_STARTUP_GRACE_MINUTES,
 )
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_config,
+    effective_strategy,
+)
 from custom_components.growspace_manager.domain.manual_override import (
     UnexpectedOnPolicy,
 )
@@ -111,10 +115,11 @@ class IrrigationConfigHandler(BaseConfigHandler[dict[str, Any]]):
         # config carry disjoint field names, so a flat merge seeds every form
         # field from its stored value (config wins on the impossible collision).
         # ``use_vwc_steering`` is the form's name for the strategy ``enabled`` flag.
+        strategy = effective_strategy(growspace)
         irrigation_options = {
-            **asdict(growspace.irrigation_strategy),
-            **asdict(growspace.irrigation_config),
-            "use_vwc_steering": growspace.irrigation_strategy.enabled,
+            **asdict(strategy),
+            **asdict(effective_config(growspace)),
+            "use_vwc_steering": strategy.enabled,
         }
 
         errors: dict[str, str] = {}

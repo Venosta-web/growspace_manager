@@ -373,7 +373,8 @@ async def test_async_setup_subscribes_to_state_changes():
         result = await t.async_setup(hass, on_change)
 
     mock_track.assert_called_once()
-    assert result is mock_unsub
+    result()
+    mock_unsub.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -392,6 +393,24 @@ async def test_async_unsubscribe_calls_unsub():
     await t.async_unsubscribe()
     mock_unsub.assert_called_once()
     assert t._unsub is None
+
+
+@pytest.mark.asyncio
+async def test_listener_is_removed_once_whoever_asks_first():
+    """The entity and the shutdown both unsubscribe; HA may see only one removal."""
+    t = _tracker()
+    mock_unsub = MagicMock()
+
+    with patch(
+        "custom_components.growspace_manager.tank_water_tracker.async_track_state_change_event",
+        return_value=mock_unsub,
+    ):
+        entity_unsub = await t.async_setup(MagicMock(), MagicMock())
+
+    entity_unsub()
+    await t.async_unsubscribe()
+    entity_unsub()
+    mock_unsub.assert_called_once()
 
 
 @pytest.mark.asyncio

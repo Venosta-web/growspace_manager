@@ -54,7 +54,7 @@ def _growspace(*, enabled: bool = True, cameras: list[str] | None = None):
                 late_check_offset_minutes=60,
             ),
         ),
-        irrigation_strategy=SimpleNamespace(lights_on_time="06:00:00"),
+        light_cycle=SimpleNamespace(lights_on_time="06:00:00"),
     )
 
 
@@ -90,7 +90,7 @@ def test_schedule_registers_three_one_shot_timers() -> None:
 def test_schedule_uses_flower_hours_for_a_stored_flower_start() -> None:
     """A flowering tent's late checkup lands before lights-off, not 18h in."""
     growspace = _growspace()
-    growspace.irrigation_strategy.lights_on_time = "11:00:00"
+    growspace.light_cycle.lights_on_time = "11:00:00"
     coordinator = _coordinator(growspace)
     coordinator.services.growspaces.get_growspace_plants.return_value = [
         SimpleNamespace(flower_start="2026-09-04T00:00:00+02:00")
@@ -113,7 +113,7 @@ def test_schedule_uses_flower_hours_for_a_stored_flower_start() -> None:
 
 def test_schedule_replaces_timers_handles_short_time_and_stops() -> None:
     growspace = _growspace()
-    growspace.irrigation_strategy.lights_on_time = "06:00"
+    growspace.light_cycle.lights_on_time = "06:00"
     scheduler = VisionCheckupScheduler(MagicMock(), _coordinator(growspace))
     old_unsubscribe = MagicMock()
     scheduler._unsub_timers["tent1"] = [old_unsubscribe]

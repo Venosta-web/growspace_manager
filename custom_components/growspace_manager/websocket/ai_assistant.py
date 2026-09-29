@@ -176,7 +176,7 @@ def _build_context_message(
         ),
         ("VPD", env.vpd_sensors or ([env.vpd_sensor] if env.vpd_sensor else [])),
         ("CO2", [env.co2_sensor] if env.co2_sensor else []),
-        ("Substrate temp", env.substrate_temperature_sensors),
+        ("Substrate temp", growspace.default_zone.substrate_temperature_sensors),
         ("pH", env.ph_sensors),
         ("Feed EC", env.feed_ec_sensors),
         ("Runoff EC", env.runoff_ec_sensors),

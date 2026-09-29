@@ -401,12 +401,13 @@ class BayesianEnvironmentSensor(
         )
 
         c = self.env_config
+        growspace = coordinator.services.growspaces.get_growspace(growspace_id)
         sensors = [
             c.temperature_sensor,
             c.humidity_sensor,
             c.vpd_sensor,
             c.co2_sensor,
-            c.soil_moisture_sensor,
+            growspace.default_zone.soil_moisture_sensor if growspace else None,
         ]
 
         # Extend with multi-device lists

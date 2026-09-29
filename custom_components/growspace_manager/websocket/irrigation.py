@@ -345,7 +345,7 @@ async def websocket_apply_irrigation_recipe(
     warning = await coordinator.services.growspaces.apply_irrigation_recipe(
         growspace_id, msg["recipe_id"]
     )
-    strategy = coordinator.growspaces[growspace_id].irrigation_strategy
+    strategy = coordinator.growspaces[growspace_id].default_zone.strategy
     return {
         "growspace_id": growspace_id,
         "applied_recipe_id": strategy.applied_recipe_id,
@@ -402,7 +402,7 @@ async def websocket_assign_irrigation_program(
     await coordinator.services.growspaces.assign_irrigation_program(
         growspace_id, program_id
     )
-    strategy = coordinator.growspaces[growspace_id].irrigation_strategy
+    strategy = coordinator.growspaces[growspace_id].default_zone.strategy
     return {
         "growspace_id": growspace_id,
         "irrigation_program_id": strategy.irrigation_program_id,

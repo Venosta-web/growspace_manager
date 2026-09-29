@@ -38,6 +38,7 @@ from .services.seedfinder_scraper import SeedfinderScraper
 from .strain_library import StrainLibrary
 from .views import StrainLibraryImageView, StrainLibraryUploadView
 from .websocket import async_register_websocket_api
+from .zone_migration import evaluate_zone_migration_issues
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -213,6 +214,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GrowspaceConfigEntry) ->
     # Raise/clear the exhaust-fan sole-ownership migration repair (ADR-0019)
     evaluate_exhaust_migration_issues(hass, coordinator)
     evaluate_irrigation_cap_issues(hass, coordinator)
+    evaluate_zone_migration_issues(hass, coordinator)
     if isinstance(coordinator.irrigation_safety, IrrigationSafetyStore):
         for growspace_id in coordinator.growspaces:
             if not coordinator.irrigation_safety.irrigation_review_pending(

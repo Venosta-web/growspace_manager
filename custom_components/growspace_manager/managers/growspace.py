@@ -18,6 +18,13 @@ from custom_components.growspace_manager.const import (
     PlantStage,
 )
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    ZONE_ENVIRONMENT_FIELDS,
+    apply_effective_irrigation,
+    effective_strategy,
+    migrate_growspace_document,
+    sync_implicit_zone_cells,
+)
 from custom_components.growspace_manager.domain.setup_preset import (
     inferred_modules,
     patch_modules,
@@ -157,7 +164,11 @@ class GrowspaceManager(BaseService):
                 **(irrigation_config or {}),
             }
 
-            growspace = Growspace.from_dict(growspace_kwargs)
+            # The caller names settings by their pre-zones homes; the zone-owned
+            # ones go to the new growspace's implicit zone (ADR-0057).
+            growspace = Growspace.from_dict(
+                migrate_growspace_document(growspace_kwargs)
+            )
             self.repository.add_growspace(growspace)
 
             # Enable notifications by default for new growspace
@@ -320,7 +331,17 @@ class GrowspaceManager(BaseService):
             subarea = next((s for s in growspace.subareas if s.id == subarea_id), None)
             if not subarea:
                 raise ServiceValidationError(f"Subarea {subarea_id} not found")
-            subarea.environment_config = EnvironmentConfig.from_dict(environment_config)
+            environment = dict(environment_config)
+            # Substrate probes are not environment settings (ADR-0057); the
+            # subarea keeps its temperature ones itself, and the others have
+            # no meaning for a region with no plants.
+            if "substrate_temperature_sensors" in environment:
+                subarea.substrate_temperature_sensors = list(
+                    environment.pop("substrate_temperature_sensors") or []
+                )
+            for name in ZONE_ENVIRONMENT_FIELDS:
+                environment.pop(name, None)
+            subarea.environment_config = EnvironmentConfig.from_dict(environment)
             await self._save()
             return subarea
 
@@ -360,6 +381,8 @@ class GrowspaceManager(BaseService):
                 changes.append(f"plants_per_row: {growspace.plants_per_row} -> {ppr}")
                 growspace.plants_per_row = ppr
                 updated = True
+        if updated:
+            sync_implicit_zone_cells(growspace)
         return updated
 
     def _update_growspace_config(
@@ -408,7 +431,14 @@ class GrowspaceManager(BaseService):
             updated = True
 
         if "irrigation_config" in kwargs:
-            growspace.irrigation_config = kwargs["irrigation_config"]
+            config = kwargs["irrigation_config"]
+            if isinstance(config, IrrigationConfig):
+                # A whole pre-zones config: the zone's half goes to the zone.
+                apply_effective_irrigation(
+                    growspace, config, effective_strategy(growspace)
+                )
+            else:
+                growspace.irrigation_config = config
             changes.append("irrigation_config updated")
             updated = True
 

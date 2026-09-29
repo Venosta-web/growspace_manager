@@ -12,6 +12,7 @@ from custom_components.growspace_manager.models import (
 )
 from homeassistant.core import HomeAssistant
 from tests.common import MockConfigEntry
+from tests.zones import set_strategy
 
 
 @pytest.fixture
@@ -49,7 +50,7 @@ async def test_irrigation_config_optional_drain_pump(
         irrigation_pump_entity="switch.irrigation",
         drain_pump_entity="switch.drain_pump",
     )
-    mock_growspace.irrigation_strategy = IrrigationStrategy()
+    set_strategy(mock_growspace, IrrigationStrategy())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     # Initialize Options Flow
@@ -103,7 +104,7 @@ async def test_irrigation_config_omitted_drain_pump(
     mock_growspace.irrigation_config = IrrigationConfig(
         irrigation_pump_entity="switch.irrigation", drain_pump_entity=None
     )
-    mock_growspace.irrigation_strategy = IrrigationStrategy()
+    set_strategy(mock_growspace, IrrigationStrategy())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     # Initialize Options Flow
@@ -174,7 +175,7 @@ async def test_irrigation_config_empty_string_drain_pump(
     mock_growspace.irrigation_config = IrrigationConfig(
         irrigation_pump_entity="switch.irrigation", drain_pump_entity="switch.old_drain"
     )
-    mock_growspace.irrigation_strategy = IrrigationStrategy()
+    set_strategy(mock_growspace, IrrigationStrategy())
     mock_coordinator.growspaces = {"gs1": mock_growspace}
 
     # Initialize Options Flow

@@ -8,6 +8,9 @@ from .domain.stage import PLANT_STAGES, PlantStage  # noqa: F401
 DOMAIN: Final = "growspace_manager"
 STORAGE_VERSION: Final = 1
 STORAGE_VERSION_PLANTS: Final = 2
+# The config document holding every growspace. Version 2 moved each growspace's
+# zone-owned irrigation settings into its implicit Irrigation Zone (ADR-0063).
+STORAGE_VERSION_CONFIG: Final = 2
 #: How long a Run-free Growspace keeps Unattributed Activity for backdating.
 CONF_UNATTRIBUTED_RETENTION_DAYS: Final = "unattributed_activity_retention_days"
 VERSION: Final = "0.3.5"

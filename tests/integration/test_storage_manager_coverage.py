@@ -8,6 +8,9 @@ from custom_components.growspace_manager.const import IrrigationRecipeKind
 from custom_components.growspace_manager.data_access.notification_state import (
     NotificationState,
 )
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    migrate_growspace_document,
+)
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     Growspace,
@@ -428,7 +431,7 @@ def test_storage_load_plants_exception(storage, repository_mock) -> None:
 
 def test_storage_load_growspaces(storage, repository_mock) -> None:
     """Test _load_growspaces success, instance, and invalid type."""
-    gs_dict = {"id": "gs1", "name": "GS1"}
+    gs_dict = migrate_growspace_document({"id": "gs1", "name": "GS1"})
     gs_obj = Growspace(id="gs2", name="GS2")
     data = {"growspaces": {"gs1": gs_dict, "gs2": gs_obj, "gs3": "invalid"}}
 
@@ -448,6 +451,7 @@ def test_storage_load_growspaces(storage, repository_mock) -> None:
         assert "gs1" in loaded
         assert "gs2" in loaded
         mock_log_error.assert_called_once()
+        assert storage.zone_problems == {}
 
 
 def test_storage_load_growspaces_inner_exception(storage, repository_mock) -> None:

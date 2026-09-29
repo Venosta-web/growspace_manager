@@ -445,7 +445,7 @@ class GrowspaceFacade:
             # there would report as unbound and look like the write was lost.
             self._coordinator._program_library.get_program(program_id)
 
-        growspace.irrigation_strategy.irrigation_program_id = program_id
+        growspace.default_zone.strategy.irrigation_program_id = program_id
         self._coordinator.cache.invalidate(growspace_id)
         await self._coordinator.async_commit()
         await self._coordinator.async_request_refresh()
@@ -711,7 +711,7 @@ class GrowspaceFacade:
     def get_substrate_tracker(self, growspace_id: str) -> SubstrateTracker | None:
         """Return the SubstrateTracker for a growspace, or None if absent.
 
-        The tracker reads and writes ``growspace.substrate_history`` directly, so
+        The tracker reads and writes the implicit zone's substrate history, so
         a single cached instance per growspace shares the persisted state with
         the steering loop and the sensor.
         """

@@ -2,7 +2,7 @@
 
 Fed reading-by-reading by the VWC steering minute loop, this tracker detects
 two kinds of measured drybacks and persists them as a rolling event history on
-the growspace model, so the metrics survive an HA restart without ever querying
+the growspace's implicit zone, so the metrics survive an HA restart without ever querying
 the recorder (see ADR-0010).
 
 * **Overnight Dryback** — shot-to-shot: the settled VWC peak after the day's
@@ -16,7 +16,7 @@ the recorder (see ADR-0010).
 All dryback values are absolute VWC percentage points (peak - trough); a 55% ->
 45% drop is ``10.0`` (see CONTEXT.md "Dryback").
 
-The tracker reads and writes directly to ``growspace.substrate_history`` so its
+The tracker reads and writes ``growspace.default_zone.substrate_history`` so its
 pending state (a peak awaiting its trough) persists and resumes correctly after
 a mid-window restart.
 """
@@ -83,8 +83,8 @@ class SubstrateTracker:
 
     @property
     def _history(self) -> SubstrateHistory:
-        """Return the persisted substrate history for this growspace."""
-        return self.growspace.substrate_history
+        """Return the persisted substrate history of the growspace's zone."""
+        return self.growspace.default_zone.substrate_history
 
     # ── feeding ────────────────────────────────────────────────────────────────
 

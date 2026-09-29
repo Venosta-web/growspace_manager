@@ -1,6 +1,6 @@
 """Tests for the Irrigation Config Handler."""
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,6 +9,7 @@ from custom_components.growspace_manager.config_handlers.irrigation_config_handl
     IrrigationConfigHandler,
 )
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.models import Growspace
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -37,33 +38,6 @@ class MockIrrigationConfig:
     skip_during_dark: bool = False
     pause_on_low_tank: bool = True
     log_to_logbook: bool = True
-
-
-@dataclass
-class MockSubstrateProfile:
-    media_type: str = "coco"
-    liters_per_pot: float = 0.0
-
-
-@dataclass
-class MockIrrigationStrategy:
-    enabled: bool = False
-    shot_sizing_mode: str = "seconds"
-    substrate_profile: MockSubstrateProfile = field(
-        default_factory=MockSubstrateProfile
-    )
-    p1_shot_volume_percent: float = 4.0
-    p2_shot_volume_percent: float = 4.0
-
-
-@dataclass
-class MockGrowspace:
-    id: str
-    name: str
-    irrigation_config: MockIrrigationConfig
-    irrigation_strategy: MockIrrigationStrategy = field(
-        default_factory=MockIrrigationStrategy
-    )
 
 
 @pytest.fixture
@@ -177,9 +151,7 @@ async def test_async_step_irrigation_overview_success(
     handler: IrrigationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    growspace = MockGrowspace(
-        id="gs1", name="GS1", irrigation_config=MockIrrigationConfig()
-    )
+    growspace = Growspace(id="gs1", name="GS1")
     coordinator.services.growspaces.get_growspace.return_value = growspace
     handler.flow.async_show_form = MagicMock(return_value={"type": "form"})
 
@@ -191,9 +163,7 @@ async def test_async_step_irrigation_overview_post(
     handler: IrrigationConfigHandler,
 ) -> None:
     coordinator = handler.config_entry.runtime_data
-    growspace = MockGrowspace(
-        id="gs1", name="GS1", irrigation_config=MockIrrigationConfig()
-    )
+    growspace = Growspace(id="gs1", name="GS1")
     coordinator.services.growspaces.get_growspace.return_value = growspace
     coordinator.services.growspaces.update_irrigation_config = AsyncMock()
     handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
@@ -265,9 +235,7 @@ async def test_async_step_irrigation_overview_post_new_fields(
 ) -> None:
     """Test updating the new irrigation config parameters via the config flow."""
     coordinator = handler.config_entry.runtime_data
-    growspace = MockGrowspace(
-        id="gs1", name="GS1", irrigation_config=MockIrrigationConfig()
-    )
+    growspace = Growspace(id="gs1", name="GS1")
     coordinator.services.growspaces.get_growspace.return_value = growspace
     coordinator.services.growspaces.update_irrigation_config = AsyncMock()
     handler.flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})

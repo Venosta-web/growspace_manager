@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields
 from enum import StrEnum
 from typing import Any
 
@@ -33,12 +33,14 @@ import homeassistant.util.dt as dt_util
 
 from .base import BaseModel, _sanitize_numeric_fields
 from .irrigation import (
+    ZONE_CONFIG_FIELDS,
     DrainConfig,
+    GrowspaceIrrigationConfig,
     IrrigationConfig,
-    IrrigationStrategy,
     IrrigationTank,
-    SubstrateHistory,
+    LightCycle,
 )
+from .irrigation_zone import IMPLICIT_ZONE_ID, IrrigationZone
 
 __all__ = [
     "ENVIRONMENT_FIELD_OWNERSHIP",
@@ -271,7 +273,6 @@ class EnvironmentConfig(BaseModel):
     humidity_sensor: str | None = None
     vpd_sensor: str | None = None
     co2_sensor: str | None = None
-    soil_moisture_sensor: str | None = None
     # Acceptable Moisture Band override — an atomic pair. Both None means the
     # growspace inherits the default band; a complete pair overrides it. The
     # pair is validated (and kept atomic) by the Environment Patch builder.
@@ -310,14 +311,11 @@ class EnvironmentConfig(BaseModel):
     sensor_coordinates: dict[str, dict[str, float]] = field(default_factory=dict)
     sensor_groups: list[SensorGroup] = field(default_factory=list)
 
-    substrate_temperature_sensors: list[str] = field(default_factory=list)
     camera_entities: list[str] = field(default_factory=list)
     lung_room_temp_sensors: list[str] = field(default_factory=list)
     snapshot_interval_hours: int = 24
     ph_sensors: list[str] = field(default_factory=list)
     feed_ec_sensors: list[str] = field(default_factory=list)
-    bulk_ec_sensors: list[str] = field(default_factory=list)
-    pore_ec_sensors: list[str] = field(default_factory=list)
     runoff_ec_sensors: list[str] = field(default_factory=list)
     drain_volume_sensors: list[str] = field(default_factory=list)
     irrigation_flow_sensors: list[str] = field(default_factory=list)
@@ -420,13 +418,10 @@ class EnvironmentConfig(BaseModel):
             "dehumidifier_ac_infinity_devices",
             "growlight_ac_infinity_devices",
             "sensor_groups",
-            "substrate_temperature_sensors",
             "camera_entities",
             "lung_room_temp_sensors",
             "ph_sensors",
             "feed_ec_sensors",
-            "bulk_ec_sensors",
-            "pore_ec_sensors",
             "runoff_ec_sensors",
             "drain_volume_sensors",
             "irrigation_flow_sensors",
@@ -465,8 +460,6 @@ class EnvironmentConfig(BaseModel):
             "vpd_sensor": "vpd_sensors",
             "ph_sensor": "ph_sensors",
             "feed_ec_sensor": "feed_ec_sensors",
-            "substrate_ec_sensor": "bulk_ec_sensors",
-            "substrate_ec_sensors": "bulk_ec_sensors",
             "runoff_ec_sensor": "runoff_ec_sensors",
             "drain_volume_sensor": "drain_volume_sensors",
             "irrigation_flow_sensor": "irrigation_flow_sensors",
@@ -571,7 +564,6 @@ ENVIRONMENT_FIELD_OWNERSHIP: dict[str, FieldOwnership] = {
     "humidity_sensor": FieldOwnership(canonical="humidity_sensors"),
     "vpd_sensor": FieldOwnership(canonical="vpd_sensors"),
     "co2_sensor": _GROWER,
-    "soil_moisture_sensor": _GROWER,
     "soil_moisture_min": _GROWER,
     "soil_moisture_max": _GROWER,
     "veg_day_hours": _GROWER,
@@ -592,14 +584,11 @@ ENVIRONMENT_FIELD_OWNERSHIP: dict[str, FieldOwnership] = {
     "growlight_ac_infinity_devices": _GROWER,
     "sensor_coordinates": _GROWER,
     "sensor_groups": _GROWER,
-    "substrate_temperature_sensors": _GROWER,
     "camera_entities": _GROWER,
     "lung_room_temp_sensors": _GROWER,
     "snapshot_interval_hours": _GROWER,
     "ph_sensors": _GROWER,
     "feed_ec_sensors": _GROWER,
-    "bulk_ec_sensors": _GROWER,
-    "pore_ec_sensors": _GROWER,
     "runoff_ec_sensors": _GROWER,
     "drain_volume_sensors": _GROWER,
     "irrigation_flow_sensors": _GROWER,
@@ -660,6 +649,23 @@ class Subarea(BaseModel):
     id: str
     name: str
     environment_config: EnvironmentConfig = field(default_factory=EnvironmentConfig)
+    # Substrate temperature probes a grower filed under this region. Nothing
+    # steers on them; they are kept because the subarea editor round-trips
+    # them, and they left EnvironmentConfig with the other substrate probes
+    # when those moved to the Irrigation Zone (ADR-0057).
+    substrate_temperature_sensors: list[str] = field(default_factory=list)
+
+    def wire_dict(self) -> dict[str, Any]:
+        """Return the subarea in the shape the card has always read.
+
+        The substrate temperature probes are reported inside
+        ``environment_config``, where they sat before they left it.
+        """
+        data = asdict(self)
+        data["environment_config"]["substrate_temperature_sensors"] = data.pop(
+            "substrate_temperature_sensors"
+        )
+        return data
 
 
 @dataclass(slots=True)
@@ -745,10 +751,12 @@ class Growspace(BaseModel):
     created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
     device_id: str | None = None
     environment_config: EnvironmentConfig = field(default_factory=EnvironmentConfig)
-    irrigation_config: IrrigationConfig = field(default_factory=IrrigationConfig)
+    irrigation_config: GrowspaceIrrigationConfig = field(
+        default_factory=GrowspaceIrrigationConfig
+    )
     dehumidifier_config: dict[str, Any] = field(default_factory=dict)
     humidifier_config: dict[str, Any] = field(default_factory=dict)
-    irrigation_strategy: IrrigationStrategy = field(default_factory=IrrigationStrategy)
+    light_cycle: LightCycle = field(default_factory=LightCycle)
     growspace_type: GrowspaceType = field(default=GrowspaceType.FLOWER)
     setup_preset: str | None = None
     # Offered Setup Modules, stamped by a Setup Preset (domain/setup_preset.py).
@@ -759,7 +767,40 @@ class Growspace(BaseModel):
     water_usage: WaterUsageData = field(default_factory=lambda: WaterUsageData())
     vision_checkup_history: list[VisionCheckupResult] = field(default_factory=list)
     subareas: list[Subarea] = field(default_factory=list)
-    substrate_history: SubstrateHistory = field(default_factory=SubstrateHistory)
+    # Every growspace has at least the implicit zone ``default`` (ADR-0057).
+    # Left empty, one is made owning the whole grid.
+    irrigation_zones: list[IrrigationZone] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Give a growspace made without zones its implicit one.
+
+        Handed a whole :class:`IrrigationConfig` — the pre-zones shape, which
+        is also the effective view — the zone's half goes to the implicit zone
+        rather than riding along on the growspace where nothing reads it.
+        """
+        if not self.irrigation_zones:
+            self.irrigation_zones = [
+                IrrigationZone.implicit(self.rows, self.plants_per_row)
+            ]
+        if isinstance(self.irrigation_config, IrrigationConfig):
+            view = self.irrigation_config
+            zone = self.default_zone
+            for name in ZONE_CONFIG_FIELDS:
+                setattr(zone, name, getattr(view, name))
+            self.irrigation_config = GrowspaceIrrigationConfig(
+                **{
+                    f.name: getattr(view, f.name)
+                    for f in fields(GrowspaceIrrigationConfig)
+                }
+            )
+
+    @property
+    def default_zone(self) -> IrrigationZone:
+        """Return the implicit zone, which every growspace keeps (ADR-0057)."""
+        for zone in self.irrigation_zones:
+            if zone.id == IMPLICIT_ZONE_ID:
+                return zone
+        return self.irrigation_zones[0]
 
     @classmethod
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -778,91 +819,19 @@ class Growspace(BaseModel):
         if data.get("environment_config") is None:
             data["environment_config"] = {}
 
-        # Migration: Fix legacy irrigation schedule format
+        # Old installations had no daily caps. Preserve that choice on load;
+        # the dataclass defaults apply only to newly created spaces.
         if data.get("irrigation_config") is None:
-            data["irrigation_config"] = {
-                "daily_volume_cap_liters": None,
-                "max_cycles_per_day": None,
-            }
+            data["irrigation_config"] = {}
         if isinstance(data["irrigation_config"], dict):
             irr_config = data["irrigation_config"].copy()
-            # Old installations had no daily caps. Preserve that choice on load;
-            # the dataclass defaults above apply only to newly created spaces.
             irr_config.setdefault("daily_volume_cap_liters", None)
             irr_config.setdefault("max_cycles_per_day", None)
-
-            # Sanitize veg_day_hours
-            if "veg_day_hours" in irr_config:
-                try:
-                    irr_config["veg_day_hours"] = int(
-                        float(irr_config["veg_day_hours"])
-                    )
-                except ValueError, TypeError:
-                    irr_config["veg_day_hours"] = 18
-
-            # Migrate irrigation_times and drain_times
-            for list_key in ["irrigation_times", "drain_times"]:
-                if list_key in irr_config and isinstance(irr_config[list_key], list):
-                    new_list = []
-                    for item in irr_config[list_key]:
-                        if isinstance(item, dict):
-                            item = item.copy()
-                            # Normalize to time/duration format (coordinator reads these keys).
-                            # Migrate 'start_time' -> 'time'
-                            if "start_time" in item and "time" not in item:
-                                item["time"] = item.pop("start_time")
-                            # Remove stale start_time if both keys exist
-                            elif "start_time" in item and "time" in item:
-                                del item["start_time"]
-
-                            # Migrate 'duration_seconds' -> 'duration'
-                            if "duration_seconds" in item and "duration" not in item:
-                                try:
-                                    item["duration"] = int(
-                                        float(item.pop("duration_seconds"))
-                                    )
-                                except ValueError, TypeError:
-                                    item["duration"] = 60
-                            # Remove stale duration_seconds if both keys exist
-                            elif "duration_seconds" in item and "duration" in item:
-                                del item["duration_seconds"]
-
-                            # Ensure duration is int
-                            if "duration" in item:
-                                try:
-                                    item["duration"] = int(float(item["duration"]))
-                                except ValueError, TypeError:
-                                    item["duration"] = 60
-
-                        new_list.append(item)
-                    irr_config[list_key] = new_list
-
             data["irrigation_config"] = irr_config
 
-        # Sanitize irrigation_strategy integers
-        if "irrigation_strategy" in data and isinstance(
-            data["irrigation_strategy"], dict
-        ):
-            strategy_data = data["irrigation_strategy"].copy()
-            int_fields = [
-                "p0_duration_minutes",
-                "p2_stop_before_lights_off_minutes",
-                # Legacy shared shot fields (migrated to per-phase on deserialize)
-                "shot_duration_seconds",
-                "shot_interval_minutes",
-                "p1_shot_duration_seconds",
-                "p1_shot_interval_minutes",
-                "p2_shot_duration_seconds",
-                "p2_shot_interval_minutes",
-            ]
-            for f in int_fields:
-                if f in strategy_data:
-                    try:
-                        strategy_data[f] = int(float(strategy_data[f]))
-                    except ValueError, TypeError:
-                        # Remove invalid value to let dataclass default take over
-                        if f in strategy_data:
-                            del strategy_data[f]
-            data["irrigation_strategy"] = strategy_data
+        if data.get("irrigation_zones") is None:
+            data["irrigation_zones"] = []
+        if data.get("light_cycle") is None:
+            data["light_cycle"] = {}
 
         return data

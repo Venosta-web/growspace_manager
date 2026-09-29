@@ -26,6 +26,7 @@ from custom_components.growspace_manager.presentation.growspace_view_model impor
 from custom_components.growspace_manager.view_model_builder import ViewModelBuilder
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+from tests.zones import set_strategy
 
 
 @pytest.fixture
@@ -108,8 +109,11 @@ def test_volume_mode_capable_flag(
         environment_config=EnvironmentConfig(),
         irrigation_config=IrrigationConfig(pump_flow_rate_ml_per_sec=flow_rate),
     )
-    growspace.irrigation_strategy = IrrigationStrategy(
-        substrate_profile=SubstrateProfile(liters_per_pot=liters_per_pot)
+    set_strategy(
+        growspace,
+        IrrigationStrategy(
+            substrate_profile=SubstrateProfile(liters_per_pot=liters_per_pot)
+        ),
     )
 
     builder.entity_queries = MagicMock()
@@ -129,7 +133,6 @@ def test_get_sensor_types(builder):
         vpd_sensor="sensor.v1",
         light_sensors=["sensor.l1"],
         co2_sensor="sensor.co2",
-        soil_moisture_sensor="sensor.soil",
         exhaust_fan_entities=["switch.exhaust"],
         circulation_fan_entities=["switch.circ"],
         humidifier_entities=["switch.hum"],
@@ -145,6 +148,7 @@ def test_get_sensor_types(builder):
         environment_config=env_config,
         irrigation_config=irr_config,
     )
+    growspace.default_zone.soil_moisture_sensor = "sensor.soil"
 
     types = builder._get_sensor_types(growspace)
 
@@ -170,7 +174,6 @@ def test_get_environment_attributes(hass: HomeAssistant, builder):
         dehumidifier_entities=["humidifier.dehum"],
         exhaust_fan_entities=["fan.exhaust"],
         vpd_sensor="sensor.vpd",
-        soil_moisture_sensor="sensor.soil",
         temperature_sensor="sensor.temp",
         irrigation_tanks=[
             IrrigationTank(
@@ -185,6 +188,7 @@ def test_get_environment_attributes(hass: HomeAssistant, builder):
         environment_config=env_config,
         irrigation_config=IrrigationConfig(irrigation_pump_entity="switch.pump"),
     )
+    growspace.default_zone.soil_moisture_sensor = "sensor.soil"
 
     # Mock states
     hass.states.async_set(
@@ -394,7 +398,6 @@ def test_get_sensor_types_fallback(builder: GrowspaceViewModelBuilder) -> None:
         vpd_sensor="sensor.vpd2",
         light_sensors=["sensor.light1", "sensor.light2"],
         co2_sensor="sensor.co2",
-        soil_moisture_sensor="sensor.soil",
         exhaust_fan_entities=["fan.exhaust"],
         circulation_fan_entities=["fan.circ"],
         humidifier_entities=["humidifier.main"],
@@ -409,6 +412,7 @@ def test_get_sensor_types_fallback(builder: GrowspaceViewModelBuilder) -> None:
         IrrigationTank(name="Tank1", sensor_entity="sensor.tank1")
     ]
 
+    gs.default_zone.soil_moisture_sensor = "sensor.soil"
     sensor_types = builder._get_sensor_types(gs)
 
     assert sensor_types["sensor.temp1"] == "temperature"

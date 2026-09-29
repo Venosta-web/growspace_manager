@@ -45,8 +45,8 @@ class CropSteeringHistoryAnalyzer:
 
     async def async_get_history(self, growspace: Growspace) -> dict[str, Any]:
         """Build the crop steering history response for a growspace."""
-        strategy = growspace.irrigation_strategy
-        lights_on_source = strategy.detected_lights_on_time or strategy.lights_on_time
+        lights = growspace.light_cycle
+        lights_on_source = lights.detected_lights_on_time or lights.lights_on_time
         lights_on_local = datetime.combine(
             now().date(), _parse_lights_on_time(lights_on_source), tzinfo=now().tzinfo
         )
@@ -54,7 +54,7 @@ class CropSteeringHistoryAnalyzer:
         anchor = lights_on - _ANCHOR_LEAD
         end_time = utcnow()
 
-        env = growspace.environment_config
+        env = growspace.default_zone
         soil_sensor_ids = [env.soil_moisture_sensor] if env.soil_moisture_sensor else []
 
         sensor_ids = [*soil_sensor_ids, *env.pore_ec_sensors, *env.bulk_ec_sensors]

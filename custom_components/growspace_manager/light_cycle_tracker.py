@@ -36,12 +36,13 @@ class LightCycleTracker:
         growspace = self.main_coordinator.growspaces.get(self.growspace_id)
         if not growspace:
             return False
-        strategy = getattr(growspace, "irrigation_strategy", None)
-        if not strategy:
-            return False
         env = getattr(growspace, "environment_config", None)
         light_sensors = getattr(env, "light_sensors", []) if env else []
-        return strategy.enabled and strategy.auto_light_tracking and bool(light_sensors)
+        return (
+            growspace.default_zone.strategy.enabled
+            and growspace.light_cycle.auto_light_tracking
+            and bool(light_sensors)
+        )
 
     def _light_sensors(self) -> list[str]:
         growspace = self.main_coordinator.growspaces.get(self.growspace_id)
@@ -97,11 +98,8 @@ class LightCycleTracker:
         growspace = self.main_coordinator.growspaces.get(self.growspace_id)
         if not growspace:
             return
-        strategy = getattr(growspace, "irrigation_strategy", None)
-        if not strategy:
-            return
         detected = dt_util.now().time().strftime("%H:%M:%S")
-        strategy.detected_lights_on_time = detected
+        growspace.light_cycle.detected_lights_on_time = detected
         _LOGGER.debug(
             "Light Cycle Tracker: detected lights-on at %s for growspace %s",
             detected,

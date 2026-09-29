@@ -467,9 +467,9 @@ async def test_growspace_overview_sensor_added_to_hass_tracking(setup_sensor_for
         temperature_sensor="sensor.temp",
         humidity_sensor="sensor.hum",
         vpd_sensor="sensor.vpd",
-        soil_moisture_sensor="sensor.soil",
     )
     gs = Growspace(id="gs1", name="GS1", environment_config=env_config)
+    gs.default_zone.soil_moisture_sensor = "sensor.soil"
     coordinator.growspaces = {"gs1": gs}
 
     sensor = GrowspaceOverviewSensor(coordinator, "gs1", gs)

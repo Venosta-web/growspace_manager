@@ -138,7 +138,7 @@ class PhotoperiodFlipChecker:
 
         if _growlight_controls(growspace):
             message = _CONTROLLER_MESSAGE
-        elif growspace.irrigation_strategy.auto_light_tracking:
+        elif growspace.light_cycle.auto_light_tracking:
             message = _AUTO_TRACKING_MESSAGE
         else:
             message = _MANUAL_MESSAGE

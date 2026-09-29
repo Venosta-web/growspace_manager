@@ -147,8 +147,8 @@ def test_restart_resumes_pending_overnight_window() -> None:
     # Serialize as the storage layer would, then deserialize (simulated restart).
     serialized = growspace.to_dict()
     restored = Growspace.from_dict(serialized)
-    assert restored.substrate_history.pending_overnight_peak == 60.0
-    assert restored.substrate_history.pending_overnight_trough == 54.0
+    assert restored.default_zone.substrate_history.pending_overnight_peak == 60.0
+    assert restored.default_zone.substrate_history.pending_overnight_trough == 54.0
 
     # A fresh tracker resumes from the restored history.
     t2 = SubstrateTracker(restored)
@@ -220,7 +220,7 @@ def test_measured_peak_trough_none_when_no_data() -> None:
 def test_event_history_is_bounded() -> None:
     """The rolling event history never exceeds SUBSTRATE_MAX_EVENTS."""
     growspace = Growspace(id="tent1", name="Tent 1")
-    history: SubstrateHistory = growspace.substrate_history
+    history: SubstrateHistory = growspace.default_zone.substrate_history
     history.events = [
         {
             "event_type": "in_cycle",

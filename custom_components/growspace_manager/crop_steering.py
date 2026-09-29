@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from .const import SteeringMode
 from .domain.ec_state import runoff_score_component
+from .domain.irrigation_zone import effective_strategy
 from .models import CropSteeringState
 
 if TYPE_CHECKING:
@@ -130,7 +131,7 @@ def get_crop_steering_state(
         CropSteeringState or None if VWC strategy is not active.
     """
     growspace = coordinator.growspaces.get(growspace_id)
-    if not growspace or not growspace.irrigation_strategy.enabled:
+    if not growspace or not growspace.default_zone.strategy.enabled:
         return None
 
     # Try to get VWC data from irrigation coordinator
@@ -139,7 +140,7 @@ def get_crop_steering_state(
         return CropSteeringState()
 
     # Get VWC readings from the coordinator's soil moisture sensor
-    soil_moisture_sensor = growspace.environment_config.soil_moisture_sensor
+    soil_moisture_sensor = growspace.default_zone.soil_moisture_sensor
     if not soil_moisture_sensor:
         return CropSteeringState()
 
@@ -152,7 +153,7 @@ def get_crop_steering_state(
     if current_vwc is None:
         return CropSteeringState()
 
-    strategy = growspace.irrigation_strategy
+    strategy = effective_strategy(growspace)
 
     # Prefer the SubstrateTracker's measured peak/trough/dryback over a synthetic
     # target-derived value, so the steering score is honest (see ADR-0010). The

@@ -178,9 +178,9 @@ class TestHandleSetIrrigationSettings:
         await handle_set_irrigation_settings(mock_hass, mock_coordinator, call)
 
         assert growspace.irrigation_config.irrigation_pump_entity == "switch.pump"
-        assert growspace.irrigation_config.pump_flow_rate_ml_per_sec == 12.5
+        assert growspace.default_zone.pump_flow_rate_ml_per_sec == 12.5
         assert growspace.irrigation_config.drain_pump_entity == "switch.drain"
-        assert growspace.irrigation_config.irrigation_duration == 600
+        assert growspace.default_zone.irrigation_duration == 600
         assert growspace.irrigation_config.drain_duration == 300
 
     @pytest.mark.asyncio
@@ -271,8 +271,8 @@ class TestHandleSetSteeringPhase:
 
         await handle_set_steering_phase(mock_hass, mock_coordinator, call)
 
-        assert growspace.irrigation_config.active_steering_phase == "p3"
-        assert growspace.irrigation_config.phase_changed_at is not None
+        assert growspace.default_zone.active_steering_phase == "p3"
+        assert growspace.default_zone.phase_changed_at is not None
 
     @pytest.mark.asyncio
     async def test_set_steering_phase_presents_change_validation_error(
@@ -291,14 +291,14 @@ class TestHandleSetSteeringPhase:
         growspace = _install_real_irrigation_action_stack(
             mock_coordinator, mock_irrigation_coordinator
         )
-        growspace.irrigation_strategy.shot_sizing_mode = ShotSizingMode.VOLUME
+        growspace.default_zone.strategy.shot_sizing_mode = ShotSizingMode.VOLUME
         call = MagicMock(spec=ServiceCall)
         call.data = {"growspace_id": "gs1", "steering_phase": "p3"}
 
         with pytest.raises(ServiceValidationError, match="Volume Mode requires"):
             await handle_set_steering_phase(mock_hass, mock_coordinator, call)
 
-        assert growspace.irrigation_config.active_steering_phase == "p2"
+        assert growspace.default_zone.active_steering_phase == "p2"
 
     @pytest.mark.asyncio
     async def test_set_steering_phase_growspace_not_found(
@@ -510,16 +510,16 @@ class TestHandleSetIrrigationStrategy:
 
         await handle_set_irrigation_strategy(mock_hass, mock_coordinator, call)
 
-        assert growspace.irrigation_strategy.enabled is True
-        assert growspace.irrigation_strategy.lights_on_time == "06:00:00"
-        assert growspace.irrigation_strategy.p0_duration_minutes == 60
-        assert growspace.irrigation_strategy.p2_stop_before_lights_off_minutes == 120
-        assert growspace.irrigation_strategy.target_vwc_percent == 55.0
-        assert growspace.irrigation_strategy.maintenance_dryback_percent == 2.0
-        assert growspace.irrigation_strategy.p1_shot_duration_seconds == 10
-        assert growspace.irrigation_strategy.p2_shot_duration_seconds == 10
-        assert growspace.irrigation_strategy.p1_shot_interval_minutes == 15
-        assert growspace.irrigation_strategy.p2_shot_interval_minutes == 15
+        assert growspace.default_zone.strategy.enabled is True
+        assert growspace.light_cycle.lights_on_time == "06:00:00"
+        assert growspace.default_zone.strategy.p0_duration_minutes == 60
+        assert growspace.default_zone.strategy.p2_stop_before_lights_off_minutes == 120
+        assert growspace.default_zone.strategy.target_vwc_percent == 55.0
+        assert growspace.default_zone.strategy.maintenance_dryback_percent == 2.0
+        assert growspace.default_zone.strategy.p1_shot_duration_seconds == 10
+        assert growspace.default_zone.strategy.p2_shot_duration_seconds == 10
+        assert growspace.default_zone.strategy.p1_shot_interval_minutes == 15
+        assert growspace.default_zone.strategy.p2_shot_interval_minutes == 15
 
     @pytest.mark.asyncio
     async def test_set_irrigation_strategy_growspace_not_found(

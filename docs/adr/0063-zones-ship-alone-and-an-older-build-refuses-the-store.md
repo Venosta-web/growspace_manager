@@ -17,12 +17,12 @@ Four facts about how this reaches a user shape the answer.
    - **The cut-off:** `prerelease` is promoted to 1.3.0 **before any ADR-0057 migration PR merges**, because a merge to `prerelease` is itself a beta. The implementation ticket for the migration is blocked by a "release 1.3.0" ticket when it is filed.
    - **2.0.0 stays reserved for removing `print_label`**, so the zone release and that removal never share a version, and a regression in either is attributable. Semver describes the API, and every existing call and entity keeps working through 1.4.0; the one-way door is in the store, and the store's own version records it.
 2. **An older build refuses the store rather than rewriting it.** The growspace store moves to **major version 2**, and the zone migration runs in the `Store`'s own migrate function instead of in `Growspace.from_dict`. An older build then fails setup with `UnsupportedStorageVersionError`: loud, toward no water, and with nothing lost. Re-upgrading restores every zone. This is [[Store Containment]]'s rule, that a newer store is never rewritten by an older reader, achieved with the only tool an already-released build has.
-3. **Every major migration keeps a [[Pre-Migration Copy]].** Before its first save at a new major version, a Growspace Manager store writes the untouched old document as `<key>.v<old major>`, here `growspace_manager.v1`.
+3. **Every major migration keeps a [[Pre-Migration Copy]].** Before its first save at a new major version, a Growspace Manager store writes the untouched old document as `<key>.v<old major>`, here `growspace_manager.config.v1`, since the growspace store's key is `growspace_manager.config`.
    - It is written once, never updated, and never read by the integration.
    - It is kept indefinitely. It is a few kilobytes, and a rollback only works while it exists.
    - A later major migration writes its own copy beside it.
 
-   A rollback is: stop Home Assistant, copy `growspace_manager.v1` over `growspace_manager`, install the older version, start. That needs no whole Home Assistant backup, which would also roll back every other integration's history.
+   A rollback is: stop Home Assistant, copy `growspace_manager.config.v1` over `growspace_manager.config`, install the older version, start. That needs no whole Home Assistant backup, which would also roll back every other integration's history.
 
 4. **No opt-ins, and no Repairs issue just to announce.** Every change in both releases applies to existing installs.
    - The caps surviving a restart, the crash switch-off, Manual Runs not training, and the queue not cancelling a running shot are safety or accuracy fixes, and an opt-out would be an opt-out of the fix.

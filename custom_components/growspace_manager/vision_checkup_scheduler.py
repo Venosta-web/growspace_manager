@@ -183,7 +183,7 @@ class VisionCheckupScheduler:
         )
 
     def _get_lights_on_time(self, growspace: Growspace) -> time:
-        raw = growspace.irrigation_strategy.lights_on_time
+        raw = growspace.light_cycle.lights_on_time
         try:
             return datetime.strptime(raw, "%H:%M:%S").time()
         except ValueError:

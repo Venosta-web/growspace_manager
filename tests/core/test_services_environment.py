@@ -633,7 +633,7 @@ async def test_configure_environment_accepts_bulk_and_pore_ec_sensors(
     mock_coordinator: MagicMock,
     mock_call: MagicMock,
 ) -> None:
-    """configure_environment service writes bulk_ec_sensors and pore_ec_sensors to EnvironmentConfig."""
+    """configure_environment writes bulk and pore EC probes to the growspace's zone."""
     growspace_id = "gs1"
     mock_gs = MagicMock()
     mock_coordinator.growspaces = {growspace_id: mock_gs}
@@ -646,9 +646,9 @@ async def test_configure_environment_accepts_bulk_and_pore_ec_sensors(
 
     await handle_configure_environment(mock_hass, mock_coordinator, mock_call)
 
-    env: EnvironmentConfig = mock_gs.environment_config
-    assert env.bulk_ec_sensors == ["sensor.bulk_ec_1"]
-    assert env.pore_ec_sensors == ["sensor.pore_ec_1"]
+    zone = mock_gs.default_zone
+    assert zone.bulk_ec_sensors == ["sensor.bulk_ec_1"]
+    assert zone.pore_ec_sensors == ["sensor.pore_ec_1"]
 
 
 @pytest.mark.asyncio

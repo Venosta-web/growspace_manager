@@ -80,7 +80,6 @@ async def test_handle_configure_environment_success(
         circulation_fan_entities=["switch.fan"],
         stress_threshold=0.8,
         mold_threshold=0.85,
-        substrate_temperature_sensors=[],
         camera_entities=[],
         energy_sensors=[],
     )

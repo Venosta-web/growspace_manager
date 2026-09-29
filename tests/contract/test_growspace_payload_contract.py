@@ -70,6 +70,7 @@ from custom_components.growspace_manager.models import (
 from custom_components.growspace_manager.websocket import websocket_get_growspace_data
 from homeassistant.core import HomeAssistant
 from tests.common import MockConfigEntry
+from tests.zones import zoned
 
 FIXTURE_PATH = (
     Path(__file__).parents[1] / "fixtures" / "contract" / "growspace_payload.json"
@@ -93,7 +94,6 @@ def _maximal_environment_config(prefix: str) -> EnvironmentConfig:
         humidity_sensor=humidity,
         vpd_sensor=vpd,
         co2_sensor=f"sensor.{prefix}_co2",
-        soil_moisture_sensor=f"sensor.{prefix}_soil_moisture",
         # Deliberately decimal and different from the inherited 20–60 default,
         # so the encoded band proves a custom override serializes as custom.
         soil_moisture_min=32.5,
@@ -163,14 +163,11 @@ def _maximal_environment_config(prefix: str) -> EnvironmentConfig:
                 vpd_sensors=[vpd],
             )
         ],
-        substrate_temperature_sensors=[f"sensor.{prefix}_substrate_temperature"],
         camera_entities=[f"camera.{prefix}"],
         lung_room_temp_sensors=[f"sensor.{prefix}_lung_temperature"],
         snapshot_interval_hours=6,
         ph_sensors=[f"sensor.{prefix}_ph"],
         feed_ec_sensors=[f"sensor.{prefix}_feed_ec"],
-        bulk_ec_sensors=[f"sensor.{prefix}_bulk_ec"],
-        pore_ec_sensors=[f"sensor.{prefix}_pore_ec"],
         runoff_ec_sensors=[f"sensor.{prefix}_runoff_ec"],
         drain_volume_sensors=[f"sensor.{prefix}_drain_volume"],
         irrigation_flow_sensors=[f"sensor.{prefix}_irrigation_flow"],
@@ -288,52 +285,114 @@ def _maximal_growspace() -> Growspace:
     # Non-default so the fixture proves the server-resolved crop-steering
     # photoperiod, rather than merely recording the default.
     environment_config.flower_day_hours = 11
-    return Growspace(
-        id=GROWSPACE_ID,
-        name="Contract Growspace",
-        dimensions={"width": 240.0, "depth": 120.0, "height": 220.0, "unit": "cm"},
-        rows=2,
-        plants_per_row=2,
-        notification_target="notify.mobile_app_grower",
-        setup_preset="coco_crop_steering",
-        # Stamped, then hand-edited: the wire carries the edit, not the table.
-        setup_modules={**stamp_modules("coco_crop_steering"), "substrate": False},
-        created_at="2026-01-01T00:00:00+00:00",
-        device_id="contract-growspace-device",
-        environment_config=environment_config,
-        irrigation_config=IrrigationConfig(
-            irrigation_pump_entity="switch.contract_irrigation_pump",
-            drain_pump_entity="switch.contract_drain_pump",
-            irrigation_duration=45,
-            drain_duration=30,
-            irrigation_times=[{"time": "06:30", "duration": 45}],
-            drain_times=[{"time": "07:00", "duration": 30}],
-            veg_day_hours=18,
-            pump_flow_rate_ml_per_sec=25.0,
-            soil_trigger_percent=42.0,
-            daily_volume_cap_liters=18.0,
-            max_cycles_per_day=12,
-            skip_during_dark=True,
-            pause_on_low_tank=True,
-            log_to_logbook=True,
-            ec_target_ranges=[
-                ECTargetRange(stage="flower", feed_ec_min=1.8, feed_ec_max=2.2)
+    return zoned(
+        Growspace(
+            id=GROWSPACE_ID,
+            name="Contract Growspace",
+            dimensions={"width": 240.0, "depth": 120.0, "height": 220.0, "unit": "cm"},
+            rows=2,
+            plants_per_row=2,
+            notification_target="notify.mobile_app_grower",
+            setup_preset="coco_crop_steering",
+            # Stamped, then hand-edited: the wire carries the edit, not the table.
+            setup_modules={**stamp_modules("coco_crop_steering"), "substrate": False},
+            created_at="2026-01-01T00:00:00+00:00",
+            device_id="contract-growspace-device",
+            environment_config=environment_config,
+            irrigation_config=IrrigationConfig(
+                irrigation_pump_entity="switch.contract_irrigation_pump",
+                drain_pump_entity="switch.contract_drain_pump",
+                irrigation_duration=45,
+                drain_duration=30,
+                irrigation_times=[{"time": "06:30", "duration": 45}],
+                drain_times=[{"time": "07:00", "duration": 30}],
+                veg_day_hours=18,
+                pump_flow_rate_ml_per_sec=25.0,
+                soil_trigger_percent=42.0,
+                daily_volume_cap_liters=18.0,
+                max_cycles_per_day=12,
+                skip_during_dark=True,
+                pause_on_low_tank=True,
+                log_to_logbook=True,
+                ec_target_ranges=[
+                    ECTargetRange(stage="flower", feed_ec_min=1.8, feed_ec_max=2.2)
+                ],
+                auto_advance_p1_to_p2=True,
+                auto_advance_p2_to_p3=True,
+                # [[Program Hold]] consent, on rather than at its default so a drop
+                # on the way to the card fails here (ADR-0030). The growspace
+                # already holds its flower-week-3 slot's recipe, so the payload's
+                # progression is a real ``up_to_date`` answer and the fixture never
+                # depends on a stamp having fired.
+                program_auto_advance=True,
+                halt_on_runoff_ec_threshold=2.8,
+                active_steering_phase="p2",
+                phase_changed_at="2026-08-11T06:00:00+00:00",
+            ),
+            dehumidifier_config={"mode": "vpd", "minimum_runtime_minutes": 5},
+            humidifier_config={"mode": "humidity", "minimum_runtime_minutes": 3},
+            growspace_type=GrowspaceType.FLOWER,
+            drain_config=DrainConfig(
+                enabled=True,
+                max_ec_delta=0.6,
+                target_runoff_percent=18.0,
+                readings=[
+                    DrainReading(
+                        timestamp="2026-08-11T10:00:00+00:00",
+                        feed_ec=2.0,
+                        drain_ec=2.4,
+                        drain_volume_ml=450.0,
+                        feed_volume_ml=2500.0,
+                    )
+                ],
+                max_readings=150,
+            ),
+            energy_tracking=EnergyTracking(
+                cycle_start_kwh=1024.5,
+                cycle_start_date="2026-08-01",
+                last_kwh_reading=1108.75,
+            ),
+            water_usage=WaterUsageData(
+                total_liters=88.5,
+                cycle_start_date="2026-08-01",
+                daily_readings=[
+                    {
+                        "date": "2026-08-11",
+                        "liters": 6.25,
+                        "source": "manual",
+                        "watering_id": "contract-watering",
+                        "user_id": "contract-user",
+                        "plant_id": "contract-plant",
+                        "watered_at": "2026-08-11T08:30:00+00:00",
+                        "from_monitored_tank": False,
+                    }
+                ],
+                max_daily_readings=400,
+            ),
+            vision_checkup_history=[
+                VisionCheckupResult(
+                    timestamp="2026-08-11T07:00:00+00:00",
+                    growspace_id=GROWSPACE_ID,
+                    check_type="early",
+                    snapshot_paths=["vision/contract-early.jpg"],
+                    analysis="Healthy canopy with even growth.",
+                    issues_detected=["minor_leaf_curl"],
+                    severity="low",
+                    recommendations=["Monitor source-air temperature."],
+                )
             ],
-            auto_advance_p1_to_p2=True,
-            auto_advance_p2_to_p3=True,
-            # [[Program Hold]] consent, on rather than at its default so a drop
-            # on the way to the card fails here (ADR-0030). The growspace
-            # already holds its flower-week-3 slot's recipe, so the payload's
-            # progression is a real ``up_to_date`` answer and the fixture never
-            # depends on a stamp having fired.
-            program_auto_advance=True,
-            halt_on_runoff_ec_threshold=2.8,
-            active_steering_phase="p2",
-            phase_changed_at="2026-08-11T06:00:00+00:00",
+            subareas=[
+                Subarea(
+                    id="contract-subarea",
+                    name="Propagation Shelf",
+                    environment_config=_maximal_environment_config("subarea"),
+                    substrate_temperature_sensors=[
+                        "sensor.subarea_substrate_temperature"
+                    ],
+                )
+            ],
         ),
-        dehumidifier_config={"mode": "vpd", "minimum_runtime_minutes": 5},
-        humidifier_config={"mode": "humidity", "minimum_runtime_minutes": 3},
-        irrigation_strategy=IrrigationStrategy(
+        strategy=IrrigationStrategy(
             enabled=True,
             lights_on_time="06:00:00",
             p0_duration_minutes=90,
@@ -382,63 +441,6 @@ def _maximal_growspace() -> Growspace:
             # rather than a placeholder.
             irrigation_program_id="contract-program",
         ),
-        growspace_type=GrowspaceType.FLOWER,
-        drain_config=DrainConfig(
-            enabled=True,
-            max_ec_delta=0.6,
-            target_runoff_percent=18.0,
-            readings=[
-                DrainReading(
-                    timestamp="2026-08-11T10:00:00+00:00",
-                    feed_ec=2.0,
-                    drain_ec=2.4,
-                    drain_volume_ml=450.0,
-                    feed_volume_ml=2500.0,
-                )
-            ],
-            max_readings=150,
-        ),
-        energy_tracking=EnergyTracking(
-            cycle_start_kwh=1024.5,
-            cycle_start_date="2026-08-01",
-            last_kwh_reading=1108.75,
-        ),
-        water_usage=WaterUsageData(
-            total_liters=88.5,
-            cycle_start_date="2026-08-01",
-            daily_readings=[
-                {
-                    "date": "2026-08-11",
-                    "liters": 6.25,
-                    "source": "manual",
-                    "watering_id": "contract-watering",
-                    "user_id": "contract-user",
-                    "plant_id": "contract-plant",
-                    "watered_at": "2026-08-11T08:30:00+00:00",
-                    "from_monitored_tank": False,
-                }
-            ],
-            max_daily_readings=400,
-        ),
-        vision_checkup_history=[
-            VisionCheckupResult(
-                timestamp="2026-08-11T07:00:00+00:00",
-                growspace_id=GROWSPACE_ID,
-                check_type="early",
-                snapshot_paths=["vision/contract-early.jpg"],
-                analysis="Healthy canopy with even growth.",
-                issues_detected=["minor_leaf_curl"],
-                severity="low",
-                recommendations=["Monitor source-air temperature."],
-            )
-        ],
-        subareas=[
-            Subarea(
-                id="contract-subarea",
-                name="Propagation Shelf",
-                environment_config=_maximal_environment_config("subarea"),
-            )
-        ],
         substrate_history=SubstrateHistory(
             events=[
                 {
@@ -476,6 +478,10 @@ def _maximal_growspace() -> Growspace:
             ec_latest_value=2.5,
             ec_latest_ts="2026-08-11T11:00:00+00:00",
         ),
+        soil_moisture_sensor="sensor.contract_soil_moisture",
+        substrate_temperature_sensors=["sensor.contract_substrate_temperature"],
+        bulk_ec_sensors=["sensor.contract_bulk_ec"],
+        pore_ec_sensors=["sensor.contract_pore_ec"],
     )
 
 

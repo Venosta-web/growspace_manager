@@ -13,6 +13,7 @@ from custom_components.growspace_manager.models import (
 )
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from tests.zones import set_strategy
 
 
 @pytest.fixture
@@ -56,10 +57,13 @@ def make_growspace(
             else ["sensor.light1"],
         ),
     )
-    growspace.irrigation_strategy = IrrigationStrategy(
-        enabled=enabled,
-        auto_light_tracking=auto_light_tracking,
-        lights_on_time="08:00:00",
+    set_strategy(
+        growspace,
+        IrrigationStrategy(
+            enabled=enabled,
+            auto_light_tracking=auto_light_tracking,
+            lights_on_time="08:00:00",
+        ),
     )
     return growspace
 
@@ -106,7 +110,7 @@ async def test_lights_on_transition_writes_detected_lights_on_time(
     ):
         await fire_state_change(tracker, "sensor.light1", "off", "on")
 
-    assert growspace.irrigation_strategy.detected_lights_on_time == "09:15:30"
+    assert growspace.light_cycle.detected_lights_on_time == "09:15:30"
     mock_main_coordinator.async_commit.assert_awaited_once()
 
 
@@ -123,7 +127,7 @@ async def test_no_write_when_auto_light_tracking_disabled(
 
     await fire_state_change(tracker, "sensor.light1", "off", "on")
 
-    assert gs.irrigation_strategy.detected_lights_on_time is None
+    assert gs.light_cycle.detected_lights_on_time is None
     mock_main_coordinator.async_commit.assert_not_awaited()
 
 
@@ -141,7 +145,7 @@ async def test_no_write_when_light_sensors_empty(
     mock_track_state_change_event.assert_not_called()
     await fire_state_change(tracker, "sensor.light1", "off", "on")
 
-    assert gs.irrigation_strategy.detected_lights_on_time is None
+    assert gs.light_cycle.detected_lights_on_time is None
     mock_main_coordinator.async_commit.assert_not_awaited()
 
 
@@ -170,7 +174,7 @@ async def test_numeric_sensor_above_zero_is_on(
     ):
         await tracker._on_sensor_change(event)
 
-    assert gs.irrigation_strategy.detected_lights_on_time == "07:00:00"
+    assert gs.light_cycle.detected_lights_on_time == "07:00:00"
 
 
 async def test_numeric_sensor_zero_is_off_no_write(
@@ -192,7 +196,7 @@ async def test_numeric_sensor_zero_is_off_no_write(
     }
     await tracker._on_sensor_change(event)
 
-    assert gs.irrigation_strategy.detected_lights_on_time is None
+    assert gs.light_cycle.detected_lights_on_time is None
     mock_main_coordinator.async_commit.assert_not_awaited()
 
 
@@ -214,7 +218,7 @@ async def test_binary_sensor_state_on_is_on(
     ):
         await fire_state_change(tracker, "binary_sensor.growlight", "off", "on")
 
-    assert gs.irrigation_strategy.detected_lights_on_time == "06:00:00"
+    assert gs.light_cycle.detected_lights_on_time == "06:00:00"
 
 
 async def test_listeners_removed_on_unload(
@@ -250,7 +254,7 @@ async def test_no_write_when_irrigation_disabled(
 
     await fire_state_change(tracker, "sensor.light1", "off", "on")
 
-    assert gs.irrigation_strategy.detected_lights_on_time is None
+    assert gs.light_cycle.detected_lights_on_time is None
     mock_main_coordinator.async_commit.assert_not_awaited()
 
 
@@ -264,13 +268,15 @@ async def test_is_active_no_growspace(
     assert tracker._is_active() is False
 
 
-async def test_is_active_no_irrigation_strategy(
+async def test_is_active_steering_disabled(
     mock_hass: MagicMock,
     mock_main_coordinator: MagicMock,
 ) -> None:
-    """Test _is_active returns False when the growspace has no irrigation strategy."""
+    """Tracking asked for and a sensor present, but the zone is not steering."""
     growspace = Growspace(id="gs1", name="Test Growspace")
-    growspace.irrigation_strategy = None
+    growspace.light_cycle.auto_light_tracking = True
+    growspace.environment_config.light_sensors = ["sensor.light1"]
+    growspace.default_zone.strategy.enabled = False
     mock_main_coordinator.growspaces = {"gs1": growspace}
     tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
     assert tracker._is_active() is False
@@ -312,19 +318,6 @@ async def test_record_lights_on_no_growspace(
 ) -> None:
     """Test _record_lights_on exits early when the growspace is missing from coordinator."""
     mock_main_coordinator.growspaces = {}
-    tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
-    await tracker._record_lights_on()
-    mock_main_coordinator.async_commit.assert_not_awaited()
-
-
-async def test_record_lights_on_no_irrigation_strategy(
-    mock_hass: MagicMock,
-    mock_main_coordinator: MagicMock,
-) -> None:
-    """Test _record_lights_on exits early when the growspace has no irrigation strategy."""
-    growspace = Growspace(id="gs1", name="Test Growspace")
-    growspace.irrigation_strategy = None
-    mock_main_coordinator.growspaces = {"gs1": growspace}
     tracker = LightCycleTracker(mock_hass, "gs1", mock_main_coordinator)
     await tracker._record_lights_on()
     mock_main_coordinator.async_commit.assert_not_awaited()

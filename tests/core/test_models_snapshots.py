@@ -120,7 +120,7 @@ async def test_diagnostics_snapshot(
         },
     )
     irrigation.growspace = SimpleNamespace(
-        irrigation_strategy=SimpleNamespace(active_steering_phase="P2")
+        default_zone=SimpleNamespace(active_steering_phase="P2")
     )
     irrigation.tank_diagnostics.return_value = [
         {

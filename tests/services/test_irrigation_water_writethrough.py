@@ -14,6 +14,9 @@ from freezegun.api import FrozenDateTimeFactory
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_strategy,
+)
 from custom_components.growspace_manager.domain.water_aggregation import (
     WATER_SOURCE_PUMP_ESTIMATE,
     compute_growspace_water,
@@ -33,6 +36,7 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, State
+from tests.zones import set_strategy
 
 # This suite shares one `hass.states` mock across every sensor, so it
 # cannot model the pump's own state; its OFF readback is answered for them.
@@ -256,10 +260,13 @@ async def test_vwc_fired_shot_records_pump_estimate(
     test that called the inherited method directly would only prove subclassing.
     """
     growspace = _pump_growspace(tank_mode=False)
-    growspace.irrigation_strategy = IrrigationStrategy(
-        enabled=True,
-        p1_shot_duration_seconds=20,
-        p1_shot_interval_minutes=15,
+    set_strategy(
+        growspace,
+        IrrigationStrategy(
+            enabled=True,
+            p1_shot_duration_seconds=20,
+            p1_shot_interval_minutes=15,
+        ),
     )
     main = MagicMock()
     main.growspaces = {GROWSPACE_ID: growspace}
@@ -282,13 +289,13 @@ async def test_vwc_fired_shot_records_pump_estimate(
         ),
     ):
         inputs = coordinator._tick_inputs(
-            40.0, growspace.irrigation_strategy, growspace
+            40.0, effective_strategy(growspace), growspace
         )
         fire, _note, _suppressed = coordinator._machine._evaluate_shot(
             inputs, "P1", reset_pending=False
         )
         assert fire is not None
-        coordinator._fire_shot(growspace.irrigation_strategy, fire)
+        coordinator._fire_shot(effective_strategy(growspace), fire)
         await _drain_tasks()
 
     # 20s × 100 ml/s = 2000 ml = 2.0 L

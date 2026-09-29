@@ -28,6 +28,10 @@ from custom_components.growspace_manager.const import (
     CONF_VPD_SENSORS,
     DOMAIN,
 )
+from custom_components.growspace_manager.domain.irrigation_zone import (
+    effective_config,
+    effective_strategy,
+)
 from custom_components.growspace_manager.domain.moisture_band import (
     effective_moisture_band,
     is_percentage_unit,
@@ -160,7 +164,11 @@ class GrowspaceViewModelBuilder:
         # IrrigationConfig fields can never silently drop from the wire (the
         # hand-copied block this replaces was missing pump_flow_rate_ml_per_sec
         # and phase_changed_at)
-        irrigation_options = growspace.irrigation_config.to_dict()
+        # The zone's settings are mirrored from the implicit zone into the
+        # pre-zones shapes the card reads (ADR-0057 item 7).
+        irrigation_config = effective_config(growspace)
+        irrigation_strategy = effective_strategy(growspace)
+        irrigation_options = irrigation_config.to_dict()
         # Crop-steering boundary math resolves the flower photoperiod first,
         # regardless of the growspace's current stage. Serialize that resolved
         # value so frontend phase layouts cannot drift by reimplementing the rule.
@@ -168,19 +176,14 @@ class GrowspaceViewModelBuilder:
             growspace.environment_config
         )
 
-        irrigation_strategy_dict = (
-            growspace.irrigation_strategy.to_dict()
-            if growspace.irrigation_strategy
-            else None
-        )
+        irrigation_strategy_dict = irrigation_strategy.to_dict()
 
         # Volume Mode prerequisites (ADR-0011): the card uses this to unlock the
         # Volume Mode toggle. True only when a substrate profile (positive liters
         # per pot) and a positive pump flow rate are both configured.
         volume_mode_capable = bool(
-            growspace.irrigation_strategy
-            and growspace.irrigation_strategy.substrate_profile.is_configured
-            and growspace.irrigation_config.pump_flow_rate_ml_per_sec > 0.0
+            irrigation_strategy.substrate_profile.is_configured
+            and irrigation_config.pump_flow_rate_ml_per_sec > 0.0
         )
 
         # Create grid representation with entity data
@@ -268,7 +271,7 @@ class GrowspaceViewModelBuilder:
             },
             "environment": env_attrs,
             "sensors": sensors,
-            "subareas": [asdict(s) for s in growspace.subareas],
+            "subareas": [s.wire_dict() for s in growspace.subareas],
             "irrigation": {
                 "irrigation_config": irrigation_options,
                 "irrigation_strategy": irrigation_strategy_dict,
@@ -398,8 +401,8 @@ class GrowspaceViewModelBuilder:
             sensor_types[env.co2_sensor] = "co2"
 
         # Soil Moisture
-        if env.soil_moisture_sensor:
-            sensor_types[env.soil_moisture_sensor] = "soil_moisture"
+        if soil_moisture_sensor := growspace.default_zone.soil_moisture_sensor:
+            sensor_types[soil_moisture_sensor] = "soil_moisture"
 
         # Actuators
         for eid in env.exhaust_fan_entities:
@@ -458,6 +461,9 @@ class GrowspaceViewModelBuilder:
             return attributes
 
         env_config = growspace.environment_config
+        # The substrate probes are the zone's now; the wire keeps them where the
+        # card has always read them, mirroring the implicit zone (ADR-0057).
+        zone = growspace.default_zone
 
         # AC Infinity actuator bundles, surfaced so the card's config editor can
         # read and round-trip them alongside the plain *_entities lists (ADR-0022).
@@ -567,7 +573,7 @@ class GrowspaceViewModelBuilder:
         attributes["soil_moisture_max"] = env_config.soil_moisture_max
         attributes["soil_moisture_band"] = band.to_dict()
 
-        soil_moisture_entity = env_config.soil_moisture_sensor
+        soil_moisture_entity = zone.soil_moisture_sensor
         if soil_moisture_entity:
             state_obj = self.hass.states.get(soil_moisture_entity)
             attributes["soil_moisture_sensor"] = soil_moisture_entity
@@ -608,9 +614,7 @@ class GrowspaceViewModelBuilder:
         attributes["mold_threshold"] = env_config.mold_threshold
 
         # New sensor arrays and scalars
-        attributes["substrate_temperature_sensors"] = (
-            env_config.substrate_temperature_sensors
-        )
+        attributes["substrate_temperature_sensors"] = zone.substrate_temperature_sensors
         attributes["power_sensors"] = env_config.power_sensors
         attributes["energy_sensors"] = env_config.energy_sensors
         attributes["electricity_cost_per_kwh"] = env_config.electricity_cost_per_kwh
@@ -620,14 +624,14 @@ class GrowspaceViewModelBuilder:
         # EC / pH / flow sensors (used by frontend for capability detection)
         attributes["ph_sensors"] = env_config.ph_sensors
         attributes["feed_ec_sensors"] = env_config.feed_ec_sensors
-        attributes["bulk_ec_sensors"] = env_config.bulk_ec_sensors
-        attributes["pore_ec_sensors"] = env_config.pore_ec_sensors
+        attributes["bulk_ec_sensors"] = zone.bulk_ec_sensors
+        attributes["pore_ec_sensors"] = zone.pore_ec_sensors
         attributes["runoff_ec_sensors"] = env_config.runoff_ec_sensors
         attributes["drain_volume_sensors"] = env_config.drain_volume_sensors
         attributes["irrigation_flow_sensors"] = env_config.irrigation_flow_sensors
 
-        bulk_ec_avg = self._average_sensor_values(env_config.bulk_ec_sensors)
-        pore_ec_avg = self._average_sensor_values(env_config.pore_ec_sensors)
+        bulk_ec_avg = self._average_sensor_values(zone.bulk_ec_sensors)
+        pore_ec_avg = self._average_sensor_values(zone.pore_ec_sensors)
         if bulk_ec_avg is not None and pore_ec_avg is not None:
             attributes["substrate_ec_delta"] = round(pore_ec_avg - bulk_ec_avg, 4)
 

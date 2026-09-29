@@ -34,6 +34,6 @@ def test_legacy_pump_gets_repair_until_caps_and_flow_are_set() -> None:
 
         growspace.irrigation_config.max_cycles_per_day = 10
         growspace.irrigation_config.daily_volume_cap_liters = 5.0
-        growspace.irrigation_config.pump_flow_rate_ml_per_sec = 10.0
+        growspace.default_zone.pump_flow_rate_ml_per_sec = 10.0
         evaluate_irrigation_cap_issues(hass, coordinator)
         delete.assert_called_once()

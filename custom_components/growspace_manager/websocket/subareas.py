@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
 import voluptuous as vol
 
 from custom_components.growspace_manager.const import DOMAIN
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+from custom_components.growspace_manager.models import Subarea
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
@@ -53,27 +53,27 @@ async def websocket_get_subareas(
 ) -> list[dict[str, Any]]:
     """Return all subareas for a growspace."""
     subareas = coordinator.services.growspaces.get_subareas(msg["growspace_id"])
-    return [asdict(s) for s in subareas]
+    return [s.wire_dict() for s in subareas]
 
 
 async def websocket_add_subarea(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> dict[str, Any]:
     """Add a subarea to a growspace."""
-    subarea = await coordinator.services.growspaces.add_subarea(
+    subarea: Subarea = await coordinator.services.growspaces.add_subarea(
         msg["growspace_id"], msg["name"]
     )
-    return asdict(subarea)
+    return subarea.wire_dict()
 
 
 async def websocket_update_subarea(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> dict[str, Any]:
     """Update a subarea's environment config."""
-    subarea = await coordinator.services.growspaces.update_subarea(
+    subarea: Subarea = await coordinator.services.growspaces.update_subarea(
         msg["growspace_id"], msg["subarea_id"], msg["environment_config"]
     )
-    return asdict(subarea)
+    return subarea.wire_dict()
 
 
 async def websocket_remove_subarea(

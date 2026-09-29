@@ -130,7 +130,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         P1 has completed today; without it a restart mid-P2 re-enters the P1
         ramp and re-saturates a substrate that sits below target by design.
         """
-        completed = self.growspace.substrate_history.p1_completed_on
+        completed = self._zone.substrate_history.p1_completed_on
         try:
             p1_completed_on = date.fromisoformat(completed) if completed else None
         except ValueError:
@@ -171,13 +171,13 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """Main update loop triggered every minute."""
         try:
             growspace = self.growspace
-            strategy = growspace.irrigation_strategy
+            strategy = self._strategy()
 
             if not strategy.enabled:
                 # Should not happen if correctly loaded, but safe guard
                 return
 
-            sensor_entity = growspace.environment_config.soil_moisture_sensor
+            sensor_entity = self._zone.soil_moisture_sensor
             if not sensor_entity:
                 if not self._sensor_warning_logged:
                     _LOGGER.warning(
@@ -243,7 +243,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self, current_vwc: float, strategy: IrrigationStrategy, growspace: Growspace
     ) -> SteeringTickInputs:
         """Assemble the plain-value inputs for one steering tick."""
-        config = growspace.irrigation_config
+        config = self._config()
         return SteeringTickInputs(
             now=now(),
             vwc=current_vwc,
@@ -273,20 +273,19 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         canonical phase write, the P1→P2 composer reset (before any shot
         composes), logbook events, and the pump cycle.
         """
-        config = self.growspace.irrigation_config
+        zone = self._zone
+        log_to_logbook = self.growspace.irrigation_config.log_to_logbook
         self._last_suppressed_by = verdict.suppressed_by
 
         if verdict.p1_completed_on is not None:
-            self.growspace.substrate_history.p1_completed_on = (
-                verdict.p1_completed_on.isoformat()
-            )
+            zone.substrate_history.p1_completed_on = verdict.p1_completed_on.isoformat()
             self._main_coordinator.async_schedule_save()
 
         if verdict.phase_changed:
             if verdict.canonical is not None:
-                config.active_steering_phase = verdict.canonical
+                zone.active_steering_phase = verdict.canonical
                 if verdict.canonical == "p3":
-                    config.phase_changed_at = now().isoformat()
+                    zone.phase_changed_at = now().isoformat()
 
             if verdict.reset_composer:
                 _LOGGER.info(
@@ -296,17 +295,17 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 self._composer.reset()
                 self._pending_observation = None
 
-            if config.log_to_logbook and verdict.transition_message:
+            if log_to_logbook and verdict.transition_message:
                 self._fire_logbook_event(
                     verdict.transition_message, category="irrigation"
                 )
 
-        if verdict.volume_change_note and config.log_to_logbook:
+        if verdict.volume_change_note and log_to_logbook:
             self._fire_logbook_event(verdict.volume_change_note, category="irrigation")
 
         # Edge-triggered by the machine's own latch, so a hold sustained across
         # many ticks writes one entry and one release (ADR-0031).
-        if verdict.infiltration_note and config.log_to_logbook:
+        if verdict.infiltration_note and log_to_logbook:
             self._fire_logbook_event(verdict.infiltration_note, category="irrigation")
 
         if verdict.fire is not None:
@@ -341,11 +340,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             lambda: self._compute_ec_modulation(strategy, growspace),
             lambda secs: self._check_safety_guards(secs) is not None,
             now().isoformat(),
-            cycle_runtime_limit(growspace.irrigation_config),
+            cycle_runtime_limit(self._config()),
         )
         scaled_duration = min(
             composition.composed_seconds,
-            cycle_runtime_limit(growspace.irrigation_config),
+            cycle_runtime_limit(self._config()),
         )
 
         _LOGGER.info(
@@ -453,7 +452,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             return
         if moisture_before is None:
             return
-        strategy = self.growspace.irrigation_strategy
+        strategy = self._strategy()
         phase = "P2" if self._machine.canonical_phase == "p2" else "P1"
         _, interval_minutes = shot_params_for_phase(strategy, phase)
         self._pending_observation = _PendingObservation(
@@ -502,7 +501,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             return
         current_dt = now()
         boundaries = phase_boundary_times(
-            growspace.irrigation_strategy,
+            self._strategy(),
             resolve_day_hours(growspace.environment_config),
             current_dt.date(),
             current_dt.tzinfo,
@@ -525,7 +524,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         the remaining sensors and a full dropout yields None (unavailable). It
         never holds irrigation: without pore EC, modulation is simply off.
         """
-        sensors = growspace.environment_config.pore_ec_sensors
+        sensors = self._zone.pore_ec_sensors
         if not sensors:
             return None
         values = [
@@ -556,7 +555,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         never reached the shot decision.
         """
         growspace = self.growspace
-        strategy = growspace.irrigation_strategy
+        strategy = self._strategy()
         _, ec_available = self._compute_ec_modulation(strategy, growspace)
         composition = self._composer.last_composition
         return {
@@ -601,7 +600,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """
         growspace = self.growspace
         return ECStateResolver(
-            growspace.irrigation_strategy,
+            self._strategy(),
             lambda: self._average_pore_ec(growspace),
             lambda: self._resolve_feed_target(growspace),
             lambda: self._runoff_inputs(growspace),
@@ -732,7 +731,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         """
         growspace = self.growspace
         return self._machine.projected_shot_window(
-            growspace.irrigation_strategy,
+            self._strategy(),
             resolve_day_hours(growspace.environment_config),
             self._last_shot_dt(),
             self._composer.interval_factor,

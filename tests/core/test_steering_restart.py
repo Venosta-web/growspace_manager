@@ -42,6 +42,7 @@ from custom_components.growspace_manager.vwc_irrigation_coordinator import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+from tests.zones import set_strategy, zoned
 
 GROWSPACE_ID = "gs1"
 VWC = "sensor.vwc"
@@ -55,19 +56,25 @@ def _at(clock: str) -> datetime:
 
 def _growspace(**config: Any) -> Growspace:
     """Lights on 06:00, target 55 %, P2 trigger 53 %, P1 every 15, P2 every 30."""
-    growspace = Growspace(
-        id=GROWSPACE_ID,
-        name="Tent",
-        environment_config=EnvironmentConfig(soil_moisture_sensor=VWC),
-        irrigation_config=IrrigationConfig(irrigation_pump_entity=PUMP, **config),
+    growspace = zoned(
+        Growspace(
+            id=GROWSPACE_ID,
+            name="Tent",
+            environment_config=EnvironmentConfig(),
+            irrigation_config=IrrigationConfig(irrigation_pump_entity=PUMP, **config),
+        ),
+        soil_moisture_sensor=VWC,
     )
-    growspace.irrigation_strategy = IrrigationStrategy(
-        enabled=True,
-        lights_on_time="06:00:00",
-        target_vwc_percent=55.0,
-        maintenance_dryback_percent=2.0,
-        p1_shot_interval_minutes=15,
-        p2_shot_interval_minutes=30,
+    set_strategy(
+        growspace,
+        IrrigationStrategy(
+            enabled=True,
+            lights_on_time="06:00:00",
+            target_vwc_percent=55.0,
+            maintenance_dryback_percent=2.0,
+            p1_shot_interval_minutes=15,
+            p2_shot_interval_minutes=30,
+        ),
     )
     return growspace
 
@@ -115,8 +122,10 @@ async def test_restart_mid_p2_resumes_p2_behind_the_startup_inhibit(
 ) -> None:
     """P1 completed at 09:30, the last shot fired at 13:45, HA restarts at 14:00."""
     before = _growspace()
-    before.substrate_history.p1_completed_on = DAY
-    before.substrate_history.last_confirmed_shot_at = _at("13:45").isoformat()
+    before.default_zone.substrate_history.p1_completed_on = DAY
+    before.default_zone.substrate_history.last_confirmed_shot_at = _at(
+        "13:45"
+    ).isoformat()
 
     # The reading predates the restart: it has not reported since the start.
     freezer.move_to(_at("13:59"))
@@ -162,7 +171,9 @@ async def test_restart_before_p1_completes_resumes_p1_with_its_cooldown(
 ) -> None:
     """The last P1 shot fired at 09:55 and HA restarts at 10:00, mid-ramp."""
     before = _growspace(startup_grace_minutes=0)
-    before.substrate_history.last_confirmed_shot_at = _at("09:55").isoformat()
+    before.default_zone.substrate_history.last_confirmed_shot_at = _at(
+        "09:55"
+    ).isoformat()
 
     freezer.move_to(_at("10:00"))
     coordinator = _coordinator(hass, _restarted(before))
@@ -189,7 +200,7 @@ async def test_completing_p1_persists_the_date_a_restart_restores(
 
     await _tick(hass, coordinator)
 
-    assert growspace.substrate_history.p1_completed_on == DAY
+    assert growspace.default_zone.substrate_history.p1_completed_on == DAY
     coordinator._main_coordinator.async_schedule_save.assert_called_once()
 
 
@@ -200,7 +211,7 @@ async def test_an_unreadable_completion_date_restores_nothing(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     before = _growspace(startup_grace_minutes=0)
-    before.substrate_history.p1_completed_on = "not-a-date"
+    before.default_zone.substrate_history.p1_completed_on = "not-a-date"
 
     freezer.move_to(_at("14:00"))
     coordinator = _coordinator(hass, _restarted(before))

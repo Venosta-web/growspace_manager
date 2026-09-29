@@ -21,6 +21,7 @@ from custom_components.growspace_manager.strategies.mold import (
 )
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from tests.zones import set_probes
 
 
 def create_test_sensor(
@@ -83,12 +84,12 @@ def mock_growspace():
         co2_sensor="sensor.co2",
         circulation_fan_entities=["switch.fan"],
         light_sensors=["light.grow_light"],
-        soil_moisture_sensor="sensor.soil_moisture",
         bayesian_options={
             "threshold_mold": 0.75,
             "prior_mold_risk": 0.10,
         },
     )
+    set_probes(growspace, soil_moisture_sensor="sensor.soil_moisture")
     return growspace
 
 
