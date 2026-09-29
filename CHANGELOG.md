@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reopening a Finalized Grow Run**: an administrator can return a
+  Finalized Run to Completed with `reopen_grow_run`, giving a reason. The
+  Run's boundaries do not move and it does not resume; its harvest outcomes
+  and Participant names follow the Plants again until it is finalized once
+  more. The earlier snapshot is kept whole beside the new one
+  (`superseded_snapshots` on `get_grow_run`) rather than overwritten.
+- **Discarding an empty Active Run**: `discard_grow_run` removes an Active
+  Run that has recorded nothing, as if it had never started. A Run with a
+  Plant movement, a changed Participant or a harvest outcome is refused, with
+  each kind named in the refusal's `reasons`. Its Run number is not reused,
+  its audit trail is kept, and the growspace's Unattributed Activity coverage
+  resumes from where the start ended it.
+- Every Run Audit Entry, lifecycle event and logbook line now carries the
+  command's reason, when it was given one.
+
 - The **Tank–Pump Disagreement**: after each local midnight, a growspace
   whose tank has `volume_liters` compares the day's tank drop, less Hand
   Watering reported as drawn from that tank, with the water its pump cycles

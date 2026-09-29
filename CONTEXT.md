@@ -108,7 +108,12 @@ _Avoid_: completed run, archived growspace
 
 **Run Reopening**
 The audited return of a Finalized Grow Run to Completed status so a grower can correct its facts before finalizing it again. It requires a grower-supplied reason.
+`growspace_manager/reopen_grow_run` names the Run, the Run Revision and the reason; a blank reason is refused `grow_run.reason_required`, and anything but a Finalized Run `grow_run.not_finalized`. The boundary, the closed participation and the Run Timezone stay as completion left them. The snapshot is not edited: it becomes a **Superseded Snapshot**, kept whole on the Run beside the revision that froze it and the one that reopened it (`superseded_snapshots` on `get_grow_run`), and the next finalization freezes a new one under a new Run Revision. While Completed again, harvest outcomes and Participant identities follow the Plants as before the first finalization (#917).
 _Avoid_: edit finalized run, silent correction
+
+**Activity-free Discard**
+Removing an Active Run that has recorded nothing, as if it had never started — the undo of a start. `growspace_manager/discard_grow_run` refuses anything but the Active Run (`grow_run.not_active`) and any Run holding activity (`grow_run.has_activity`), naming each kind in the refusal's `reasons`: `activity_facts` (a movement fact projected into it, or still in the Plant outbox naming it), `participants_changed` (a Participant who joined after the opening boundary, or one of the opening set who left) and `harvest_outcomes` (an outcome, or a live Plant naming it as Harvest Source Run). It projects committed movements and outcomes first, under the Plant lock, so nothing is orphaned. The Run leaves the ledger but its Run Sequence Number stays spent and its audit trail stays as a `discarded` record ending in the discard. The Growspace's Unattributed Activity coverage resumes from the `covered_since` the start ended (kept on the Run as `prior_coverage`), a backdated start's claimed days come back, and the days the Run was Active remain unobserved rather than invented. The reason is optional (#917).
+_Avoid_: delete run, cancel run, void run
 
 **Voided Grow Run**
 A retained Grow Run declared invalid and excluded from comparisons. Only an empty Run with no attributed activity may instead be discarded entirely.
@@ -200,11 +205,11 @@ A JSON or PDF representation of one selected Grow Run containing its identity, s
 _Avoid_: grow report export, live dashboard dump
 
 **Run Lifecycle Authorization**
-The permission rule that Growspace controllers may start, complete, finalize, and edit descriptive metadata, while only Home Assistant administrators may reopen, void, correct harvest attribution, or purge Run history. A **Growspace controller** is a Home Assistant user with entity _control_ permission on the Growspace's Active Run Sensor: every ordinary user and administrator, never a read-only user. It is asked on every command (`services/grow_runs.require_controller`), never remembered.
+The permission rule that Growspace controllers may start, complete, finalize, discard an activity-free Active Run, and edit descriptive metadata, while only Home Assistant administrators may reopen, void, correct harvest attribution, or purge Run history. A **Growspace controller** is a Home Assistant user with entity _control_ permission on the Growspace's Active Run Sensor: every ordinary user and administrator, never a read-only user. It is asked on every command (`services/grow_runs.require_controller`, and `require_admin` for the administrator's commands), never remembered.
 _Avoid_: card-only permission, unaudited automation
 
 **Run Audit Entry**
-The immutable record of a lifecycle, correction, metadata, or purge command containing its timestamp, stable Home Assistant actor or automation/system origin, command identity, prior and resulting Run Revision, and any required reason.
+The immutable record of a lifecycle, correction, metadata, or purge command containing its timestamp, stable Home Assistant actor or automation/system origin, command identity, prior and resulting Run Revision, and any required reason. Its `command` is one of `start`, `complete`, `finalize`, `edit_metadata`, `reopen` and `discard`, and its `reason` is null for a command that was given none. The lifecycle event and logbook line carry the same reason.
 _Avoid_: display-name history, logbook entry
 
 **Run Timezone**
@@ -234,7 +239,7 @@ A monotonic display number allocated within one Growspace. Allocated numbers are
 _Avoid_: run ID, calendar run number
 
 **Run Revision**
-The monotonic version of one Growspace's Run collection used to reject stale lifecycle commands and atomically preserve the zero-or-one-active-Run rule. Each lifecycle command names the revision it was decided on (`expected_run_revision` on `growspace_manager/start_grow_run`); the Run Ledger checks, mutates, persists and only then publishes under one lock. Every refusal is a result rather than a WebSocket error — `grow_run.revision_conflict`, `grow_run.already_active`, `grow_run.not_authorized`, `grow_run.store_unreadable` — and carries the current revision and Active Run, so a stale command is answered with where the ledger really is.
+The monotonic version of one Growspace's Run collection used to reject stale lifecycle commands and atomically preserve the zero-or-one-active-Run rule. Each lifecycle command names the revision it was decided on (`expected_run_revision` on `growspace_manager/start_grow_run`); the Run Ledger checks, mutates, persists and only then publishes under one lock. Every refusal is a result rather than a WebSocket error — `grow_run.revision_conflict`, `grow_run.already_active`, `grow_run.not_authorized`, `grow_run.store_unreadable` — and carries the current revision and Active Run, so a stale command is answered with where the ledger really is, and `reasons`, the machine-readable causes of a refusal that has several (empty otherwise).
 _Avoid_: updated timestamp, run sequence
 
 **Purge Run History**

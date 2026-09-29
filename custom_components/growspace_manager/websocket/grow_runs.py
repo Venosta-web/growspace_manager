@@ -17,6 +17,11 @@ lacks, and ``finalize_grow_run`` freezes it, acknowledging an incomplete one.
 ``list_grow_runs`` names every Run a Growspace's ledger holds, and
 ``update_grow_run_metadata`` edits a Run's description in any status. None of
 the four asks whether the Growspace still exists: its history outlives it.
+
+**Correcting** (#917): ``reopen_grow_run`` returns a Finalized Run to Completed
+for an administrator who says why, and ``discard_grow_run`` removes an Active
+Run that recorded nothing. A discard refused for the Run's activity names each
+kind in the refusal's ``reasons``.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     WARNING_INCOMPLETE_SNAPSHOT,
     WARNING_MISSING_OUTCOMES,
     WARNING_PLANTS_PRESENT,
+    DiscardedRun,
     GrowRunRefused,
     RunMetadata,
     run_details,
@@ -43,9 +49,11 @@ from custom_components.growspace_manager.domain.grow_run import (
 from custom_components.growspace_manager.services.grow_runs import (
     KEEP_NOTE,
     async_complete_grow_run,
+    async_discard_grow_run,
     async_finalize_grow_run,
     async_preview_grow_run_finalization,
     async_preview_grow_run_start,
+    async_reopen_grow_run,
     async_start_grow_run,
     async_update_grow_run_metadata,
     preview_grow_run_completion,
@@ -67,6 +75,8 @@ WS_TYPE_PREVIEW_GROW_RUN_FINALIZATION = (
 )
 WS_TYPE_FINALIZE_GROW_RUN = "growspace_manager/finalize_grow_run"
 WS_TYPE_UPDATE_GROW_RUN_METADATA = "growspace_manager/update_grow_run_metadata"
+WS_TYPE_REOPEN_GROW_RUN = "growspace_manager/reopen_grow_run"
+WS_TYPE_DISCARD_GROW_RUN = "growspace_manager/discard_grow_run"
 
 OUTCOME_STARTED = "started"
 OUTCOME_REFUSED = "refused"
@@ -75,6 +85,8 @@ OUTCOME_COMPLETED = "completed"
 OUTCOME_LISTED = "listed"
 OUTCOME_FINALIZED = "finalized"
 OUTCOME_UPDATED = "updated"
+OUTCOME_REOPENED = "reopened"
+OUTCOME_DISCARDED = "discarded"
 
 _NOTE = vol.Any(None, vol.All(str, vol.Length(max=MAX_TEXT_LENGTH)))
 
@@ -187,6 +199,28 @@ SCHEMA_WS_UPDATE_GROW_RUN_METADATA = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.e
     }
 )
 
+SCHEMA_WS_REOPEN_GROW_RUN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_REOPEN_GROW_RUN,
+        vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("run_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("expected_run_revision"): vol.All(int, vol.Range(min=0)),
+        # Blank is a refusal with a code, not a schema error, so the card can
+        # say what is missing in the grower's own language.
+        vol.Required("reason"): vol.All(str, vol.Length(max=MAX_TEXT_LENGTH)),
+    }
+)
+
+SCHEMA_WS_DISCARD_GROW_RUN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_DISCARD_GROW_RUN,
+        vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("run_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("expected_run_revision"): vol.All(int, vol.Range(min=0)),
+        vol.Optional("reason"): _NOTE,
+    }
+)
+
 _METADATA_FIELDS = ("label", "tags", "goals", "notes")
 
 
@@ -204,6 +238,7 @@ def refusal_result(refused: GrowRunRefused) -> dict[str, Any]:
                 if active is not None and refused.current_revision is not None
                 else None
             ),
+            "reasons": list(refused.reasons),
         },
     }
 
@@ -397,6 +432,62 @@ async def websocket_update_grow_run_metadata(
     }
 
 
+async def websocket_reopen_grow_run(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Reopen a Finalized Run, or say why not and where the ledger stands."""
+    try:
+        run, revision = await async_reopen_grow_run(
+            hass,
+            coordinator,
+            growspace_id=msg["growspace_id"],
+            run_id=msg["run_id"],
+            expected_revision=msg["expected_run_revision"],
+            reason=msg["reason"],
+            user=msg.get(WS_MSG_USER),
+        )
+    except GrowRunRefused as refused:
+        return refusal_result(refused)
+    return {
+        "outcome": OUTCOME_REOPENED,
+        "run_revision": revision,
+        "run": run_summary(run, revision),
+    }
+
+
+async def websocket_discard_grow_run(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Discard an activity-free Active Run, or say what it recorded."""
+    try:
+        discarded, revision = await async_discard_grow_run(
+            hass,
+            coordinator,
+            growspace_id=msg["growspace_id"],
+            run_id=msg["run_id"],
+            expected_revision=msg["expected_run_revision"],
+            reason=msg.get("reason"),
+            user=msg.get(WS_MSG_USER),
+        )
+    except GrowRunRefused as refused:
+        return refusal_result(refused)
+    return discard_result(discarded, revision)
+
+
+def discard_result(discarded: DiscardedRun, revision: int) -> dict[str, Any]:
+    """The wire form of a committed discard: which Run left, at which revision."""
+    return {
+        "outcome": OUTCOME_DISCARDED,
+        "run_revision": revision,
+        "run_id": discarded.run_id,
+        "sequence_number": discarded.sequence_number,
+    }
+
+
 COMMANDS: list[WSCommand] = [
     WSCommand(
         WS_TYPE_GET_GROW_RUN,
@@ -445,6 +536,18 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_UPDATE_GROW_RUN_METADATA,
         websocket_update_grow_run_metadata,
         SCHEMA_WS_UPDATE_GROW_RUN_METADATA,
+        actor=True,
+    ),
+    WSCommand(
+        WS_TYPE_REOPEN_GROW_RUN,
+        websocket_reopen_grow_run,
+        SCHEMA_WS_REOPEN_GROW_RUN,
+        actor=True,
+    ),
+    WSCommand(
+        WS_TYPE_DISCARD_GROW_RUN,
+        websocket_discard_grow_run,
+        SCHEMA_WS_DISCARD_GROW_RUN,
         actor=True,
     ),
 ]

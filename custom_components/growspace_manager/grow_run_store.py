@@ -32,10 +32,12 @@ from homeassistant.helpers.storage import Store
 from .const import DOMAIN, EVENT_GROWSPACE_LOG_ENTRY
 from .domain.date_logic import parse_date_field
 from .domain.grow_run import (
+    DiscardedRun,
     GrowRun,
     HarvestOutcome,
     ParticipantIdentity,
     PlantMovementFact,
+    RunAuditEntry,
     RunCommand,
     RunLedger,
     RunStoreUnreadable,
@@ -58,7 +60,12 @@ _PAST_TENSE = {
     RunCommand.COMPLETE: "completed",
     RunCommand.FINALIZE: "finalized",
     RunCommand.EDIT_METADATA: "described",
+    RunCommand.REOPEN: "reopened",
+    RunCommand.DISCARD: "discarded",
 }
+
+#: The status a lifecycle event reports for a Run that has left the ledger.
+STATUS_DISCARDED = "discarded"
 
 
 class GrowRunStore:
@@ -313,32 +320,60 @@ class GrowRunStore:
         """Emit the lifecycle event and logbook line for the Run's last command.
 
         The Run Audit Entry just committed is the whole description: which
-        command, who, when, and the revision it produced.
+        command, who, when, why when it was asked, and the revision it produced.
         """
-        entry = run.audit[-1]
+        self._announce(
+            run.growspace_id,
+            run.run_id,
+            run.sequence_number,
+            run.status.value,
+            run.audit[-1],
+        )
+
+    def announce_discard(self, growspace_id: str, discarded: DiscardedRun) -> None:
+        """Announce a discard: the Run is gone, so its status reads ``discarded``."""
+        self._announce(
+            growspace_id,
+            discarded.run_id,
+            discarded.sequence_number,
+            STATUS_DISCARDED,
+            discarded.audit[-1],
+        )
+
+    def _announce(
+        self,
+        growspace_id: str,
+        run_id: str,
+        sequence_number: int,
+        status: str,
+        entry: RunAuditEntry,
+    ) -> None:
         user_id = entry.actor_user_id
         actor = f"HA user {user_id}" if user_id else "the system"
+        message = f"Run #{sequence_number} {_PAST_TENSE[entry.command]} by {actor}"
+        if entry.reason:
+            message = f"{message}: {entry.reason}"
         self._hass.bus.async_fire(
             EVENT_GROW_RUN_LIFECYCLE,
             {
-                "growspace_id": run.growspace_id,
-                "run_id": run.run_id,
-                "sequence_number": run.sequence_number,
+                "growspace_id": growspace_id,
+                "run_id": run_id,
+                "sequence_number": sequence_number,
                 "command": entry.command.value,
                 "command_id": entry.command_id,
-                "status": run.status.value,
+                "status": status,
                 "at": entry.at.isoformat(),
                 "user_id": user_id,
                 "revision": entry.resulting_revision,
+                "reason": entry.reason,
             },
         )
         self._hass.bus.async_fire(
             EVENT_GROWSPACE_LOG_ENTRY,
             {
-                "growspace_id": run.growspace_id,
+                "growspace_id": growspace_id,
                 "category": CATEGORY_GROW_RUN,
-                "message": f"Run #{run.sequence_number} "
-                f"{_PAST_TENSE[entry.command]} by {actor}",
+                "message": message,
                 "timestamp": entry.at.isoformat(),
                 "user_id": user_id,
             },

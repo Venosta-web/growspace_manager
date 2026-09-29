@@ -13,6 +13,13 @@ Window and versioned metrics it will be compared and exported on, copied out
 of everything they were derived from so that no later change to a Plant, a
 Strain or the Growspace can reach them. A missing fact stays missing in it.
 
+A Finalized Run is corrected by **Run Reopening** (#917): an administrator
+returns it to Completed with a reason, the boundaries stay where they were, and
+the snapshot it held is kept as superseded rather than overwritten, so the
+next finalization lands beside it under a new Run Revision. An Active Run that
+has recorded nothing can instead be **discarded**: it leaves the ledger, its
+Sequence Number is never reused, and its audit trail stays behind.
+
 This module is pure. It decides and records; persistence, Home Assistant state
 and authorization belong to the shells around it.
 """
@@ -44,6 +51,18 @@ CODE_IRRIGATION_DELIVERING = "grow_run.irrigation_delivering"
 CODE_ACKNOWLEDGEMENT_REQUIRED = "grow_run.acknowledgement_required"
 CODE_NOT_FOUND = "grow_run.not_found"
 CODE_NOT_COMPLETED = "grow_run.not_completed"
+CODE_NOT_FINALIZED = "grow_run.not_finalized"
+CODE_REASON_REQUIRED = "grow_run.reason_required"
+CODE_HAS_ACTIVITY = "grow_run.has_activity"
+
+# Why an Active Run is not activity-free, and so cannot be discarded. A
+# refusal lists every one that applies, in this order.
+#: A Plant moved into, out of or within the Growspace under the Run.
+ACTIVITY_FACTS = "activity_facts"
+#: A Participant joined after the start, or one of the opening set left.
+PARTICIPANTS_CHANGED = "participants_changed"
+#: A Plant entered dry with this Run as its Harvest Source Run.
+HARVEST_OUTCOMES = "harvest_outcomes"
 
 # Run Completion Preview warnings. Each one names a Plant or outcome at risk; a
 # completion must acknowledge every warning the preview holds when it commits.
@@ -78,6 +97,8 @@ class RunCommand(StrEnum):
     COMPLETE = "complete"
     FINALIZE = "finalize"
     EDIT_METADATA = "edit_metadata"
+    REOPEN = "reopen"
+    DISCARD = "discard"
 
 
 class GrowRunRefused(Exception):
@@ -92,12 +113,15 @@ class GrowRunRefused(Exception):
         current_revision: int | None,
         active_run: GrowRun | None = None,
         boundary: datetime | None = None,
+        reasons: tuple[str, ...] = (),
     ) -> None:
         """Keep the ledger's position beside the refusal."""
         super().__init__(message)
         self.current_revision = current_revision
         self.active_run = active_run
         self.boundary = boundary
+        #: Machine-readable causes, for a refusal that has more than one.
+        self.reasons = reasons
 
 
 class RunRevisionConflict(GrowRunRefused):
@@ -171,6 +195,27 @@ class RunNotCompleted(GrowRunRefused):
     """Only a Completed Run can be finalized."""
 
     code = CODE_NOT_COMPLETED
+
+
+class RunNotFinalized(GrowRunRefused):
+    """Only a Finalized Run can be reopened."""
+
+    code = CODE_NOT_FINALIZED
+
+
+class RunReasonRequired(GrowRunRefused):
+    """The command must say why, and said nothing."""
+
+    code = CODE_REASON_REQUIRED
+
+
+class RunHasActivity(GrowRunRefused):
+    """The Active Run recorded something, so it cannot be discarded.
+
+    ``reasons`` names each kind of activity it holds.
+    """
+
+    code = CODE_HAS_ACTIVITY
 
 
 # ---------------------------------------------------------------------------
@@ -703,6 +748,8 @@ class RunAuditEntry:
     resulting_revision: int
     #: The Run Metadata fields an ``edit_metadata`` command changed.
     changed_fields: tuple[str, ...] = ()
+    #: Why, for a command that is given one: required to reopen.
+    reason: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return the durable and wire form."""
@@ -714,6 +761,7 @@ class RunAuditEntry:
             "prior_revision": self.prior_revision,
             "resulting_revision": self.resulting_revision,
             "changed_fields": list(self.changed_fields),
+            "reason": self.reason,
         }
 
     @classmethod
@@ -733,6 +781,7 @@ class RunAuditEntry:
                 _str(name, "audit.changed_fields[]")
                 for name in _list(value.get("changed_fields", []), "audit.fields")
             ),
+            reason=_opt_str(value.get("reason"), "audit.reason"),
         )
 
 
@@ -1133,6 +1182,45 @@ def build_snapshot(
 
 
 @dataclass(frozen=True, slots=True)
+class SupersededSnapshot:
+    """A Run Finalization Snapshot that Run Reopening set aside, kept whole.
+
+    ``finalized_revision`` is the Run Revision its finalization produced, and
+    ``superseded_revision`` the one the reopening did; the Run Audit Entry at
+    that revision says who reopened it and why.
+    """
+
+    snapshot: RunSnapshot
+    finalized_revision: int
+    superseded_revision: int
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form."""
+        return {
+            "finalized_revision": self.finalized_revision,
+            "superseded_revision": self.superseded_revision,
+            "snapshot": self.snapshot.as_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> SupersededSnapshot:
+        """Read the durable form back."""
+        value = _dict(value, "superseded snapshot")
+        superseded = cls(
+            snapshot=RunSnapshot.from_dict(value.get("snapshot")),
+            finalized_revision=_int(
+                value.get("finalized_revision"), "superseded.finalized_revision", 1
+            ),
+            superseded_revision=_int(
+                value.get("superseded_revision"), "superseded.superseded_revision", 1
+            ),
+        )
+        if superseded.superseded_revision <= superseded.finalized_revision:
+            raise ValueError("a snapshot is superseded before it was finalized")
+        return superseded
+
+
+@dataclass(frozen=True, slots=True)
 class GrowRun:
     """One Grow Run of one Growspace."""
 
@@ -1156,6 +1244,12 @@ class GrowRun:
     participant_identities: tuple[ParticipantIdentity, ...] = ()
     #: The Run Finalization Snapshot; present exactly when Finalized.
     snapshot: RunSnapshot | None = None
+    #: Every earlier snapshot Run Reopening set aside, oldest first.
+    superseded_snapshots: tuple[SupersededSnapshot, ...] = ()
+    #: When the Growspace's Unattributed Activity coverage began before this
+    #: Run's start ended it; what a discard gives back. Absent when nothing
+    #: covered it then, and on a Run started before #917.
+    prior_coverage: datetime | None = None
 
     @property
     def participant_count(self) -> int:
@@ -1199,6 +1293,12 @@ class GrowRun:
                 row.as_dict() for row in self.participant_identities
             ],
             "snapshot": self.snapshot.as_dict() if self.snapshot else None,
+            "superseded_snapshots": [
+                row.as_dict() for row in self.superseded_snapshots
+            ],
+            "prior_coverage": (
+                self.prior_coverage.isoformat() if self.prior_coverage else None
+            ),
         }
 
     @classmethod
@@ -1255,6 +1355,15 @@ class GrowRun:
                 if value.get("snapshot") is None
                 else RunSnapshot.from_dict(value.get("snapshot"))
             ),
+            superseded_snapshots=tuple(
+                SupersededSnapshot.from_dict(row)
+                for row in _list(
+                    value.get("superseded_snapshots", []), "run.superseded_snapshots"
+                )
+            ),
+            prior_coverage=_opt_moment(
+                value.get("prior_coverage"), "run.prior_coverage"
+            ),
         )
         open_plants = [
             row.plant_id for row in run.participations if row.closed_at is None
@@ -1276,7 +1385,13 @@ class GrowRun:
                 raise ValueError("a Completed Run still has open participation")
         if (run.status is RunStatus.FINALIZED) != (run.snapshot is not None):
             raise ValueError("a snapshot belongs to a Finalized Run, and only there")
-        if run.snapshot is not None and run.snapshot.run_id != run.run_id:
+        if any(
+            row.run_id != run.run_id
+            for row in (
+                *((run.snapshot,) if run.snapshot else ()),
+                *(row.snapshot for row in run.superseded_snapshots),
+            )
+        ):
             raise ValueError("a Run holds another Run's snapshot")
         identity_ids = [row.plant_id for row in run.participant_identities]
         if len(identity_ids) != len(set(identity_ids)):
@@ -1512,6 +1627,76 @@ def preview_finalization(
     )
 
 
+def discard_blockers(
+    run: GrowRun,
+    *,
+    pending_facts: list[PlantMovementFact] | tuple[PlantMovementFact, ...] = (),
+    harvest_source_plant_ids: list[str] | tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    """Every kind of activity that keeps an Active Run from being discarded.
+
+    ``pending_facts`` are the Plant outbox's facts, projected or not: one still
+    naming this Run is activity it has not received yet, and discarding under
+    it would leave a fact pointing at a Run that no longer exists. The same
+    holds for ``harvest_source_plant_ids``, the live Plants that name this Run
+    as their Harvest Source Run.
+    """
+    opening = run.backdate.covered_from if run.backdate else run.started_at
+    blockers: list[str] = []
+    if run.movement_history or any(
+        run.run_id in (fact.source_run_id, fact.target_run_id) for fact in pending_facts
+    ):
+        blockers.append(ACTIVITY_FACTS)
+    if any(
+        row.opened_at != opening or row.closed_at is not None
+        for row in run.participations
+    ):
+        blockers.append(PARTICIPANTS_CHANGED)
+    if run.harvest_outcomes or harvest_source_plant_ids:
+        blockers.append(HARVEST_OUTCOMES)
+    return tuple(blockers)
+
+
+@dataclass(frozen=True, slots=True)
+class DiscardedRun:
+    """What the ledger keeps of a discarded Run: who it was and its audit.
+
+    Its Sequence Number stays allocated, so no later Run is ever given it, and
+    the last audit entry is the discard itself.
+    """
+
+    run_id: str
+    sequence_number: int
+    started_at: datetime
+    audit: tuple[RunAuditEntry, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable form."""
+        return {
+            "run_id": self.run_id,
+            "sequence_number": self.sequence_number,
+            "started_at": self.started_at.isoformat(),
+            "audit": [row.as_dict() for row in self.audit],
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> DiscardedRun:
+        """Read the durable form back; a discard with no audit is refused."""
+        value = _dict(value, "discarded run")
+        discarded = cls(
+            run_id=_str(value.get("run_id"), "discarded.run_id"),
+            sequence_number=_int(value.get("sequence_number"), "discarded.seq", 1),
+            started_at=_moment(value.get("started_at"), "discarded.started_at"),
+            audit=tuple(
+                RunAuditEntry.from_dict(row)
+                for row in _list(value.get("audit"), "discarded.audit")
+            ),
+        )
+        if not discarded.audit or discarded.audit[-1].command is not RunCommand.DISCARD:
+            raise ValueError("a discarded Run's audit does not end in its discard")
+        return discarded
+
+
 @dataclass(frozen=True, slots=True)
 class RunLedger:
     """One Growspace's Runs, its next Sequence Number, and its Run Revision."""
@@ -1520,6 +1705,8 @@ class RunLedger:
     revision: int = 0
     next_sequence: int = 1
     runs: tuple[GrowRun, ...] = ()
+    #: Runs discarded before recording anything, oldest first.
+    discarded: tuple[DiscardedRun, ...] = ()
 
     @property
     def active_run(self) -> GrowRun | None:
@@ -1673,6 +1860,7 @@ class RunLedger:
         plant_ids: list[str] | tuple[str, ...],
         actor_user_id: str | None,
         claim: ClaimedHistory | None = None,
+        prior_coverage: datetime | None = None,
     ) -> tuple[RunLedger, GrowRun]:
         """Start a Run; return the advanced ledger and the Run it holds.
 
@@ -1683,6 +1871,10 @@ class RunLedger:
         Participants and movement history are the claimed Unattributed
         Activity, now attributed to it, and ``plant_ids`` is unused. The
         audit entry still records when the start was committed.
+
+        ``prior_coverage`` is when the Growspace's Unattributed Activity
+        coverage began, which the start ends; it is kept so a discard can
+        give it back.
         """
         self.require_revision(expected_revision)
         if (active := self.active_run) is not None:
@@ -1720,6 +1912,7 @@ class RunLedger:
             ),
             daily_summaries=() if claim is None else claim.days,
             backdate=None if claim is None else claim.backdate,
+            prior_coverage=prior_coverage,
             audit=(
                 RunAuditEntry(
                     at=now,
@@ -1919,6 +2112,139 @@ class RunLedger:
         )
         return ledger, edited
 
+    def reopen(
+        self,
+        *,
+        expected_revision: int,
+        run_id: str,
+        reason: str | None,
+        command_id: str,
+        actor_user_id: str | None,
+        now: datetime,
+    ) -> tuple[RunLedger, GrowRun]:
+        """Return a Finalized Run to Completed so its facts can be corrected.
+
+        The operating interval does not reopen: the boundary, the closed
+        participation and the Run Timezone are exactly as completion left
+        them. The snapshot is set aside whole, beside the revision that froze
+        it, and the next finalization freezes a new one instead of editing it.
+        """
+        self.require_revision(expected_revision)
+        run = self.find(run_id)
+        if run.status is not RunStatus.FINALIZED or run.snapshot is None:
+            raise RunNotFinalized(
+                f"Run #{run.sequence_number} is {run.status.value}; only a "
+                "Finalized Run can be reopened",
+                current_revision=self.revision,
+                active_run=self.active_run,
+            )
+        if (why := _text(reason, MAX_TEXT_LENGTH)) is None:
+            raise RunReasonRequired(
+                f"Say why Run #{run.sequence_number} is being reopened",
+                current_revision=self.revision,
+                active_run=self.active_run,
+            )
+        resulting = self.revision + 1
+        finalized_revision = next(
+            entry.resulting_revision
+            for entry in reversed(run.audit)
+            if entry.command is RunCommand.FINALIZE
+        )
+        reopened = replace(
+            run,
+            status=RunStatus.COMPLETED,
+            snapshot=None,
+            superseded_snapshots=(
+                *run.superseded_snapshots,
+                SupersededSnapshot(run.snapshot, finalized_revision, resulting),
+            ),
+            audit=(
+                *run.audit,
+                RunAuditEntry(
+                    at=now,
+                    command=RunCommand.REOPEN,
+                    command_id=command_id,
+                    actor_user_id=actor_user_id,
+                    prior_revision=self.revision,
+                    resulting_revision=resulting,
+                    reason=why,
+                ),
+            ),
+        )
+        ledger = replace(
+            self,
+            revision=resulting,
+            runs=tuple(reopened if row is run else row for row in self.runs),
+        )
+        return ledger, reopened
+
+    def discard(
+        self,
+        *,
+        expected_revision: int,
+        run_id: str,
+        reason: str | None,
+        command_id: str,
+        actor_user_id: str | None,
+        now: datetime,
+        pending_facts: list[PlantMovementFact] | tuple[PlantMovementFact, ...] = (),
+        harvest_source_plant_ids: list[str] | tuple[str, ...] = (),
+    ) -> tuple[RunLedger, DiscardedRun]:
+        """Remove an activity-free Active Run as though it never started.
+
+        Only the Active Run can go, and only while it holds nothing but the
+        Participants it opened with: a movement fact, a later Participant or a
+        harvest outcome is history, and history is corrected, never erased.
+        The Sequence Number stays allocated and the audit trail stays in the
+        ledger.
+        """
+        self.require_revision(expected_revision)
+        run = self.find(run_id)
+        if run.status is not RunStatus.ACTIVE:
+            raise RunNotActive(
+                f"Run #{run.sequence_number} is {run.status.value}; only an "
+                "Active Run can be discarded",
+                current_revision=self.revision,
+                active_run=self.active_run,
+            )
+        if blockers := discard_blockers(
+            run,
+            pending_facts=pending_facts,
+            harvest_source_plant_ids=harvest_source_plant_ids,
+        ):
+            raise RunHasActivity(
+                f"Run #{run.sequence_number} has recorded activity "
+                f"({', '.join(blockers)}); complete it instead",
+                current_revision=self.revision,
+                active_run=run,
+                reasons=blockers,
+            )
+        resulting = self.revision + 1
+        discarded = DiscardedRun(
+            run_id=run.run_id,
+            sequence_number=run.sequence_number,
+            started_at=run.started_at,
+            audit=(
+                *run.audit,
+                RunAuditEntry(
+                    at=now,
+                    command=RunCommand.DISCARD,
+                    command_id=command_id,
+                    actor_user_id=actor_user_id,
+                    prior_revision=self.revision,
+                    resulting_revision=resulting,
+                    reason=_text(reason, MAX_TEXT_LENGTH),
+                ),
+            ),
+        )
+        ledger = replace(
+            self,
+            revision=resulting,
+            runs=tuple(row for row in self.runs if row is not run),
+            discarded=(*self.discarded, discarded),
+        )
+        return ledger, discarded
+
     def as_dict(self) -> dict[str, Any]:
         """Return the durable form."""
         return {
@@ -1926,6 +2252,7 @@ class RunLedger:
             "revision": self.revision,
             "next_sequence": self.next_sequence,
             "runs": [run.as_dict() for run in self.runs],
+            "discarded": [row.as_dict() for row in self.discarded],
         }
 
     @classmethod
@@ -1940,8 +2267,17 @@ class RunLedger:
                 GrowRun.from_dict(row)
                 for row in _list(value.get("runs"), "ledger.runs")
             ),
+            discarded=tuple(
+                DiscardedRun.from_dict(row)
+                for row in _list(value.get("discarded", []), "ledger.discarded")
+            ),
         )
-        sequences = [run.sequence_number for run in ledger.runs]
+        held = [(run.run_id, run.sequence_number) for run in ledger.runs]
+        held += [(row.run_id, row.sequence_number) for row in ledger.discarded]
+        run_ids = [run_id for run_id, _ in held]
+        sequences = [number for _, number in held]
+        if len(set(run_ids)) != len(run_ids):
+            raise ValueError("a Run ID appears twice in one ledger")
         if len(set(sequences)) != len(sequences) or any(
             number >= ledger.next_sequence for number in sequences
         ):
@@ -2013,6 +2349,7 @@ def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
             "goals": run.metadata.goals,
             "audit": [row.as_dict() for row in run.audit],
             "snapshot": run.snapshot.as_dict() if run.snapshot else None,
+            "superseded_snapshots": [row.as_dict() for row in run.superseded_snapshots],
         },
     }
 

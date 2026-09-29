@@ -9,6 +9,7 @@
         "command": "start",
         "command_id": "cmd-run-1",
         "prior_revision": 3,
+        "reason": null,
         "resulting_revision": 4
       }
     ],
@@ -64,6 +65,7 @@
     "snapshot": null,
     "started_at": "2026-07-24T20:30:00+00:00",
     "status": "active",
+    "superseded_snapshots": [],
     "tags": ["organic"],
     "timezone": "Europe/Berlin"
   }

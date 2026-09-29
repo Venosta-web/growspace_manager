@@ -37,6 +37,7 @@ from .grow_run import (
     CoverageGap,
     DailySummary,
     GapReason,
+    GrowRun,
     GrowRunRefused,
     PlantMovementFact,
     RunAlreadyActive,
@@ -162,8 +163,30 @@ class UnattributedActivity:
         return self if pruned == self else pruned
 
     def close(self) -> UnattributedActivity:
-        """A Run is active: coverage ends until the Growspace is Run-free again."""
+        """A Run is active: coverage ends until the Growspace is Run-free again.
+
+        What it ended is kept on the Run (``prior_coverage``), so a discard can
+        hand it back through :meth:`restore`.
+        """
         return self if self.covered_since is None else replace(self, covered_since=None)
+
+    def restore(self, run: GrowRun) -> UnattributedActivity:
+        """Take back what a discarded Run's start took, as if it never started.
+
+        Coverage resumes from where it stood before the start, and the days a
+        backdated start claimed come back. Nothing is invented for the days the
+        Run was Active: the ledger did not observe them, so they stay days it
+        did not observe. A discarded Run never holds a movement fact, so there
+        are none to return.
+        """
+        days = {row.day: row for row in self.days}
+        for summary in run.daily_summaries:
+            days.setdefault(summary.day, summary)
+        return replace(
+            self,
+            covered_since=self.covered_since or run.prior_coverage,
+            days=tuple(sorted(days.values(), key=lambda row: row.day)),
+        )
 
     def as_dict(self) -> dict[str, Any]:
         """Return the durable form."""

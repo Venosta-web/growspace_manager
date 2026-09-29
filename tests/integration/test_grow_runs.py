@@ -780,6 +780,7 @@ async def test_a_read_only_user_is_refused_with_the_current_revision(
             "this growspace",
             "current_revision": 0,
             "active_run": None,
+            "reasons": [],
         },
     }
     assert coordinator.grow_runs.active_run(growspace_id) is None
