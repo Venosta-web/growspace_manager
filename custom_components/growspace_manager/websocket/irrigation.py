@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -15,16 +16,22 @@ from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.crop_steering_history import (
     CropSteeringHistoryAnalyzer,
 )
+from custom_components.growspace_manager.delivery_attempt_store import (
+    DeliveryRecordUnreadable,
+)
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.schemas import (
     CROP_STEERING_RECIPE_VALUES_SCHEMA,
     PROGRAM_SLOT_SCHEMA,
     SCHEDULE_RECIPE_VALUES_SCHEMA,
 )
+from custom_components.growspace_manager.services.utils import WS_ERR_INTERNAL_ERROR
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
+import homeassistant.helpers.config_validation as cv
+from homeassistant.util import dt as dt_util
 
-from ._common import WSCommand
+from ._common import DEFAULT_WS_ERROR_MAP, WSCommand, WSErrorMap
 
 WS_TYPE_GET_IRRIGATION_ANALYTICS = f"{DOMAIN}/irrigation_analytics"
 SCHEMA_WS_GET_IRRIGATION_ANALYTICS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
@@ -49,6 +56,23 @@ SCHEMA_WS_GET_CROP_STEERING_HISTORY = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.
         vol.Required("type"): WS_TYPE_GET_CROP_STEERING_HISTORY,
         vol.Required("growspace_id"): str,
     }
+)
+
+WS_TYPE_GET_DELIVERY_ATTEMPTS = f"{DOMAIN}/get_delivery_attempts"
+SCHEMA_WS_GET_DELIVERY_ATTEMPTS = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_GET_DELIVERY_ATTEMPTS,
+        vol.Required("growspace_id"): str,
+        # Home Assistant's local day; omitted, today.
+        vol.Optional("date"): cv.date,
+    }
+)
+
+# The store logged why it could not be read when it failed closed, so its
+# refusal is answered without a second traceback.
+_DELIVERY_ATTEMPTS_ERROR_MAP: WSErrorMap = (
+    (DeliveryRecordUnreadable, WS_ERR_INTERNAL_ERROR, False, None),
+    *DEFAULT_WS_ERROR_MAP,
 )
 
 WS_TYPE_APPLY_STEERING_MODE = f"{DOMAIN}/apply_steering_mode"
@@ -216,6 +240,37 @@ async def websocket_get_crop_steering_history(
     return {"growspace_id": growspace_id, **history}
 
 
+async def websocket_get_delivery_attempts(
+    hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Return one growspace's Delivery Attempts for one local day, oldest first.
+
+    The day runs from local midnight to the next, which is 23 or 25 hours
+    across a clock change, and both bounds are returned so the day timeline
+    need not work them out again (ADR-0066). An attempt belongs to every day
+    it touches, from its request to the latest moment it records; a merged run
+    of suppressions carries its count, and its first and last request, whole.
+    An unreadable record is refused rather than answered with an empty day.
+    """
+    growspace_id: str = msg["growspace_id"]
+    if coordinator.growspaces.get(growspace_id) is None:
+        raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
+
+    day = msg.get("date") or dt_util.now().date()
+    starts_at = dt_util.start_of_local_day(day)
+    ends_at = dt_util.start_of_local_day(day + timedelta(days=1))
+    deliveries = await coordinator.deliveries.async_load(growspace_id)
+    attempts = deliveries.between(starts_at, ends_at)
+
+    return {
+        "growspace_id": growspace_id,
+        "date": day.isoformat(),
+        "starts_at": starts_at.isoformat(),
+        "ends_at": ends_at.isoformat(),
+        "attempts": [attempt.as_dict() for attempt in attempts],
+    }
+
+
 async def websocket_apply_steering_mode(
     hass: HomeAssistant, coordinator: GrowspaceCoordinator, msg: dict[str, Any]
 ) -> dict[str, Any]:
@@ -369,6 +424,12 @@ COMMANDS: list[WSCommand] = [
         WS_TYPE_GET_CROP_STEERING_HISTORY,
         websocket_get_crop_steering_history,
         SCHEMA_WS_GET_CROP_STEERING_HISTORY,
+    ),
+    WSCommand(
+        WS_TYPE_GET_DELIVERY_ATTEMPTS,
+        websocket_get_delivery_attempts,
+        SCHEMA_WS_GET_DELIVERY_ATTEMPTS,
+        error_map=_DELIVERY_ATTEMPTS_ERROR_MAP,
     ),
     WSCommand(
         WS_TYPE_APPLY_STEERING_MODE,

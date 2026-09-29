@@ -584,6 +584,26 @@ def dispensed_volume(attempts: Iterable[DeliveryAttempt], day: date) -> Dispense
     return DispensedVolume(cycles=len(charged), liters=sum(charged))
 
 
+def attempts_between(
+    attempts: Iterable[DeliveryAttempt], starts_at: datetime, ends_at: datetime
+) -> list[DeliveryAttempt]:
+    """Return the attempts that touch ``[starts_at, ends_at)``, oldest request first.
+
+    An attempt spans its request to the latest moment it records, so a shot
+    running over midnight, or a run of suppressions that carried on into the
+    next day, belongs to both days. Its charge still belongs to the one day
+    its pump confirmed ON.
+    """
+    return sorted(
+        (
+            attempt
+            for attempt in attempts
+            if attempt.requested_at < ends_at and attempt.last_seen_at >= starts_at
+        ),
+        key=lambda attempt: attempt.requested_at,
+    )
+
+
 def with_suppression(
     attempts: Iterable[DeliveryAttempt], suppressed: DeliveryAttempt
 ) -> list[DeliveryAttempt]:

@@ -17,6 +17,7 @@ from custom_components.growspace_manager.domain.delivery_attempt import (
     DispensedVolume,
     TriggerEvidence,
     attempt_trigger,
+    attempts_between,
     dispensed_volume,
     retained,
     trigger_evidence,
@@ -505,6 +506,60 @@ def test_dispensed_volume_sums_only_the_day_asked_for() -> None:
         cycles=2, liters=pytest.approx(0.9)
     )
     assert dispensed_volume([], TODAY) == DispensedVolume()
+
+
+MIDNIGHT = datetime(2026, 9, 27, tzinfo=UTC)
+
+
+def test_a_day_holds_what_it_touches_and_nothing_either_side() -> None:
+    """The bounds are half-open: local midnight opens a day and closes the last."""
+    before = _suppressed(at=MIDNIGHT - timedelta(microseconds=1))
+    at_midnight = _suppressed("hold", at=MIDNIGHT)
+    last = _suppressed("cap", at=MIDNIGHT + timedelta(days=1, microseconds=-1))
+    after = _suppressed("fault", at=MIDNIGHT + timedelta(days=1))
+
+    day = attempts_between(
+        [after, last, at_midnight, before], MIDNIGHT, MIDNIGHT + timedelta(days=1)
+    )
+
+    assert day == [at_midnight, last]
+
+
+def test_a_day_lists_its_attempts_oldest_request_first() -> None:
+    """Rows are ordered by request, not by where they sit in the store."""
+    late = _attempt(attempt_id="late", on_confirmed_at=MIDNIGHT + timedelta(hours=9))
+    early = _attempt(attempt_id="early", on_confirmed_at=MIDNIGHT + timedelta(hours=8))
+
+    day = attempts_between([late, early], MIDNIGHT, MIDNIGHT + timedelta(days=1))
+
+    assert [attempt.attempt_id for attempt in day] == ["early", "late"]
+
+
+def test_a_run_of_suppressions_over_midnight_belongs_to_both_days() -> None:
+    """A merged row is one row; each day it touches shows it whole."""
+    rows = with_suppression([], _suppressed(at=MIDNIGHT - timedelta(hours=1)))
+    rows = with_suppression(rows, _suppressed(at=MIDNIGHT + timedelta(hours=1)))
+    (run,) = rows
+
+    yesterday = attempts_between(rows, MIDNIGHT - timedelta(days=1), MIDNIGHT)
+    today = attempts_between(rows, MIDNIGHT, MIDNIGHT + timedelta(days=1))
+
+    assert yesterday == today == [run]
+    assert run.suppressed_count == 2
+
+
+def test_a_shot_over_midnight_belongs_to_both_days() -> None:
+    """Requested before midnight and switched off after it."""
+    shot = _attempt(on_confirmed_at=MIDNIGHT - timedelta(seconds=30)).closed(
+        off_commanded_at=MIDNIGHT + timedelta(seconds=30)
+    )
+
+    assert attempts_between([shot], MIDNIGHT, MIDNIGHT + timedelta(days=1)) == [shot]
+    assert attempts_between([shot], MIDNIGHT - timedelta(days=1), MIDNIGHT) == [shot]
+
+
+def test_an_empty_record_is_an_empty_day() -> None:
+    assert attempts_between([], MIDNIGHT, MIDNIGHT + timedelta(days=1)) == []
 
 
 def test_retention_drops_attempts_older_than_a_week() -> None:
