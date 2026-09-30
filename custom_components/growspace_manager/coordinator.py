@@ -702,6 +702,10 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         irrigation = self._subsystem_manager.irrigation_coordinators.get(growspace_id)
         if irrigation is not None:
             irrigation.abandon_pending_observation()
+            for zone in self.growspaces[growspace_id].irrigation_zones:
+                runtime = irrigation.zone_runtime(zone.id)
+                if runtime is not None and runtime is not irrigation:
+                    runtime.abandon_pending_observation()
 
     async def _publish_current_data(self) -> None:
         """Notify projections and dependent coordinators of committed data."""

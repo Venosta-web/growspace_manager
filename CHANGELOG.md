@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Each irrigation zone now steers, schedules and records independently, sharing
+  the pump queue, safety controls and undivided daily caps. Startup probe
+  readiness holds only the affected zone.
+
 - A memory-only Supply Queue decides due requests when the supply is free.
   Manual Runs wait at the front; a single-zone growspace no longer cancels a
   running shot when another scheduled, steering or manual request arrives.
@@ -22,10 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   probes per quantity. Zone payloads include order, probe roles, placement and
   health while the top-level default-zone mirrors remain available.
 - Zone selection for irrigation settings, strategy, phase, schedules, recipes,
-  programs and Steering Modes. Until valve actuation and per-zone runtime land,
-  configured-valve and multi-zone automated delivery is held
-  (`zone_runtime_pending`) and manual delivery is refused; pump-only single-zone
-  and Hand Watering behavior remains.
+  programs and Steering Modes. Pump-only single-zone and Hand Watering
+  behavior remains compatible.
 
 - **Reopening a Finalized Grow Run**: an administrator can return a
   Finalized Run to Completed with `reopen_grow_run`, giving a reason. The

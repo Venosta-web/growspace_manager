@@ -80,10 +80,6 @@ async def test_async_initialize_sub_coordinators(
 
     with (
         patch(
-            "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator",
-            autospec=True,
-        ) as mock_irrigation,
-        patch(
             "custom_components.growspace_manager.managers.subsystem.VWCIrrigationCoordinator",
             autospec=True,
         ) as mock_vwc,
@@ -104,7 +100,6 @@ async def test_async_initialize_sub_coordinators(
             autospec=True,
         ) as mock_growlight,
     ):
-        mock_irrigation.return_value.async_setup = AsyncMock()
         mock_vwc.return_value.async_setup = AsyncMock()
         mock_dehum.return_value.async_setup = AsyncMock()
         mock_hum.return_value.async_setup = AsyncMock()
@@ -113,12 +108,7 @@ async def test_async_initialize_sub_coordinators(
 
         await subsystem_manager.async_initialize_sub_coordinators(growspaces)
 
-        mock_irrigation.assert_called_with(
-            subsystem_manager.hass,
-            subsystem_manager.entry,
-            "gs1",
-            subsystem_manager.coordinator,
-        )
+        assert mock_vwc.call_count == 2
         assert "gs1" in subsystem_manager.irrigation_coordinators
 
         mock_vwc.assert_called_with(
@@ -147,7 +137,7 @@ async def test_async_initialize_sub_coordinators_failure(
     growspaces = {"gs1": gs1}
 
     with patch(
-        "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator",
+        "custom_components.growspace_manager.managers.subsystem.VWCIrrigationCoordinator",
         autospec=True,
     ) as mock_irrigation:
         mock_irrigation.return_value.async_setup = AsyncMock(
@@ -194,7 +184,7 @@ async def test_circulation_fan_coordinators_setup_and_cancel(
 
     with (
         patch(
-            "custom_components.growspace_manager.managers.subsystem.IrrigationCoordinator",
+            "custom_components.growspace_manager.managers.subsystem.VWCIrrigationCoordinator",
             autospec=True,
         ) as mock_irrigation,
         patch(

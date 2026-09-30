@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import pytest
 
 from custom_components.growspace_manager.const import DOMAIN
+from custom_components.growspace_manager.models import IrrigationZone
 from custom_components.growspace_manager.sensor import (
     DryingWeightSensor,
     ECTargetSensor,
@@ -121,6 +122,7 @@ async def test_create_initial_entities_subarea_vpd(
     }
 
     growspace = Mock()
+    growspace.irrigation_zones = [IrrigationZone(id="default")]
     growspace.id = "gs1"
     growspace.name = "GS1"
     growspace.subareas = [subarea]
@@ -180,6 +182,7 @@ async def test_update_growspace_entities_new_subarea_vpd(
     }
 
     growspace = Mock()
+    growspace.irrigation_zones = [IrrigationZone(id="default")]
     growspace.id = "gs1"
     growspace.name = "GS1"
     growspace.subareas = [subarea]

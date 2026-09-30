@@ -618,6 +618,11 @@ split-on-trailing-comma = false
 # private-member access on the coordinator is expected here, not a smell.
 "custom_components/growspace_manager/services/*" = ["SLF001"]
 
+# Zone runtimes and their supply owner are instances of the same effects shell;
+# shared private state stays inside this implementation rather than its interface.
+"custom_components/growspace_manager/irrigation_coordinator.py" = ["SLF001"]
+"custom_components/growspace_manager/vwc_irrigation_coordinator.py" = ["SLF001"]
+
 [tool.ruff.lint.mccabe]
 max-complexity = 25
 

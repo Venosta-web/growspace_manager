@@ -73,6 +73,7 @@ from .domain.irrigation_zone import (
     ZONE_MIGRATION_INVALID,
     effective_config,
     effective_strategy,
+    zone_of,
 )
 from .domain.manual_override import (
     FAULT_UNEXPECTED_ON,
@@ -180,8 +181,14 @@ class BaseIrrigationCoordinator:
         config_entry: ConfigEntry,
         growspace_id: str,
         main_coordinator: GrowspaceCoordinator,
+        *,
+        zone_id: str | None = None,
+        supply: BaseIrrigationCoordinator | None = None,
     ) -> None:
         """Initialize the base irrigation coordinator."""
+        self._supply = supply or self
+        self._zone_id = zone_id
+        self._zone_runtimes: dict[str, BaseIrrigationCoordinator] = {}
         self.hass = hass
         self._config_entry = config_entry
         self._growspace_id = growspace_id
@@ -237,15 +244,28 @@ class BaseIrrigationCoordinator:
         self._cancel_pump_watch: Callable[[], None] | None = None
         self._cancel_override_listener: Callable[[], None] | None = None
 
+    def register_zone_runtime(self, runtime: BaseIrrigationCoordinator) -> None:
+        """Attach a zone to this supply's arbitration and lifecycle."""
+        self._zone_runtimes[runtime._zone.id] = runtime
+
+    def zone_runtime(
+        self, zone_id: str | None = None
+    ) -> BaseIrrigationCoordinator | None:
+        """Read one zone's runtime, retaining the implicit-zone legacy read."""
+        zone_id = zone_id or self.growspace.default_zone.id
+        if zone_id == self._supply._zone.id:
+            return self._supply
+        return self._supply._zone_runtimes.get(zone_id)
+
     def supply_payload(self) -> dict[str, Any]:
         """Expose the open zone and pending claims in service order."""
         return {
-            "open_zone_id": self._serving_claim.zone_id
-            if self._serving_claim
+            "open_zone_id": self._supply._serving_claim.zone_id
+            if self._supply._serving_claim
             else None,
             "claims": [
                 claim.as_dict()
-                for claim in self._supply_queue.ordered(
+                for claim in self._supply._supply_queue.ordered(
                     tuple(zone.id for zone in self.growspace.irrigation_zones)
                 )
             ],
@@ -258,56 +278,60 @@ class BaseIrrigationCoordinator:
         event_data: Mapping[str, Any],
     ) -> None:
         """Enqueue a request and start the effects shell without preemption."""
-        claim = self._supply_queue.claim(self._zone.id, due_at, source)
+        claim = self._supply._supply_queue.claim(self._zone.id, due_at, source)
         if claim is None:
             return
-        self._claim_data[claim.sequence] = dict(event_data)
-        if self._supply_task is None or self._supply_task.done():
-            self._supply_task = self._config_entry.async_create_background_task(
+        self._supply._claim_data[claim.sequence] = dict(event_data)
+        if self._supply._supply_task is None or self._supply._supply_task.done():
+            self._supply._supply_task = self._config_entry.async_create_background_task(
                 self.hass,
-                self._async_serve_supply(),
+                self._supply._async_serve_supply(),
                 f"irrigation_supply_{self._growspace_id}",
             )
         self._main_coordinator.async_update_listeners()
 
     async def _async_serve_supply(self) -> None:
         """Wait for the running shot, then decide each head against current state."""
-        running = self._running_tasks.get("irrigation")
+        running = self._supply._running_tasks.get("irrigation")
         if running is not None and not running.done():
             await asyncio.shield(asyncio.gather(running, return_exceptions=True))
-        while claim := self._supply_queue.release(
+        while claim := self._supply._supply_queue.release(
             tuple(zone.id for zone in self.growspace.irrigation_zones)
         ):
-            self._serving_claim = claim
-            event_data = self._claim_data.pop(claim.sequence)
+            self._supply._serving_claim = claim
+            event_data = self._supply._claim_data.pop(claim.sequence)
             event_data["due_at"] = claim.due_at
+            runtime = self.zone_runtime(claim.zone_id)
+            if runtime is None:
+                self._supply._serving_claim = None
+                continue
             try:
                 if claim.source == "steering":
-                    await self._async_decide_steering_claim()
+                    await runtime._async_decide_steering_claim()
                 else:
-                    options = self._config()
-                    last = self._last_cycle_timestamp
+                    options = runtime._config()
+                    last = runtime._last_cycle_timestamp
                     if (
                         claim.source == "schedule"
                         and last
                         and (
                             utcnow() - datetime.fromisoformat(last)
-                            < timedelta(minutes=self._zone.min_interval_minutes)
+                            < timedelta(minutes=runtime._zone.min_interval_minutes)
                         )
                     ):
                         continue
                     pump = options.irrigation_pump_entity
                     duration = event_data.get("duration") or options.irrigation_duration
                     if pump and duration:
-                        task = self._config_entry.async_create_background_task(
+                        task = runtime._config_entry.async_create_background_task(
                             self.hass,
-                            self._run_pump_cycle(
+                            runtime._run_pump_cycle(
                                 "irrigation", pump, int(duration), event_data
                             ),
                             f"irrigation_pump_{self._growspace_id}_irrigation",
                         )
-                        self._running_tasks["irrigation"] = task
-                running = self._running_tasks.get("irrigation")
+                        self._supply._running_tasks["irrigation"] = task
+                running = self._supply._running_tasks.get("irrigation")
                 if running is not None:
                     await asyncio.shield(
                         asyncio.gather(running, return_exceptions=True)
@@ -315,7 +339,7 @@ class BaseIrrigationCoordinator:
             except Exception:
                 _LOGGER.exception("Failed to decide supply claim for %s", claim.zone_id)
             finally:
-                self._serving_claim = None
+                self._supply._serving_claim = None
                 self._main_coordinator.async_update_listeners()
 
     async def _async_decide_steering_claim(self) -> None:
@@ -342,8 +366,8 @@ class BaseIrrigationCoordinator:
 
     @property
     def _zone(self) -> IrrigationZone:
-        """The zone this coordinator waters: the implicit one, until #895."""
-        return self.growspace.default_zone
+        """The zone this runtime steers and waters."""
+        return zone_of(self.growspace, self._zone_id)
 
     def _config(self) -> IrrigationConfig:
         """Return the growspace's and its zone's settings as one detached view."""
@@ -356,7 +380,7 @@ class BaseIrrigationCoordinator:
     @property
     def active_events(self) -> dict[str, dict[str, Any]]:
         """Return currently active events (start_time, duration)."""
-        return self._active_events
+        return self._supply._active_events
 
     @property
     def next_scheduled_cycle(self) -> str | None:
@@ -375,12 +399,12 @@ class BaseIrrigationCoordinator:
     @property
     def cycles_today(self) -> int:
         """Return the pump starts charged against today's cycle limit."""
-        return self._deliveries.dispensed().cycles
+        return self._supply._deliveries.dispensed().cycles
 
     @property
     def volume_dispensed_today(self) -> float:
         """Return the litres charged against today's volume cap (Dispensed Volume)."""
-        return self._deliveries.dispensed().liters
+        return self._supply._deliveries.dispensed().liters
 
     @property
     def growspace(self) -> Growspace:
@@ -399,9 +423,9 @@ class BaseIrrigationCoordinator:
         monitor = getattr(self._main_coordinator, "tank_monitor", None)
         if isinstance(monitor, TankLevelMonitor):
             return monitor.watches
-        if self._own_tank_watches is None:
-            self._own_tank_watches = TankWatchBook(self.hass)
-        return self._own_tank_watches
+        if self._supply._own_tank_watches is None:
+            self._supply._own_tank_watches = TankWatchBook(self.hass)
+        return self._supply._own_tank_watches
 
     @property
     def _reliability(self) -> ReliabilityStore:
@@ -433,6 +457,39 @@ class BaseIrrigationCoordinator:
         )
 
     def controller_snapshot(self) -> ControllerSnapshot:
+        """One supply is ready when any automated zone is ready.
+
+        Faults, emergency stop and operator holds are shared. A zone's probe
+        inhibit must not hold a healthy neighbour's pump.
+        """
+        supply = self._supply
+        snapshots = [
+            runtime.zone_snapshot()
+            for runtime in (supply, *supply._zone_runtimes.values())
+        ]
+        for snapshot in snapshots:
+            if snapshot.state in (
+                ControllerState.FAULT,
+                ControllerState.EMERGENCY_STOP,
+            ):
+                return snapshot
+        if supply._active_events:
+            return ControllerSnapshot(
+                ControllerState.RUNNING, manual_overrides=snapshots[0].manual_overrides
+            )
+        for snapshot in snapshots:
+            if snapshot.state is ControllerState.READY:
+                return snapshot
+        return next(
+            (
+                snapshot
+                for snapshot in snapshots
+                if snapshot.state is not ControllerState.IDLE
+            ),
+            snapshots[0],
+        )
+
+    def zone_snapshot(self) -> ControllerSnapshot:
         """Resolve the current growspace state for the sensor and cycle gate."""
         config = self._config()
         store = self._safety_store
@@ -446,7 +503,11 @@ class BaseIrrigationCoordinator:
             or self.zone_migration_fault()
         )
         emergency_stop = store.emergency_stop_for(self._growspace_id) if store else None
-        running = bool(self._active_events)
+        running = any(
+            event.get("zone_id", self.growspace.default_zone.id) == self._zone.id
+            for event_type, event in self._supply._active_events.items()
+            if event_type == "irrigation"
+        )
         automation_enabled = bool(
             config.irrigation_times or config.drain_times or self._zone.strategy.enabled
         )
@@ -520,14 +581,14 @@ class BaseIrrigationCoordinator:
         A cap whose history is unknown has to assume it is spent, and it is
         reported the way ``fault_record_unreadable`` is (ADR-0055).
         """
-        if not self._deliveries.unreadable:
+        if not self._supply._deliveries.unreadable:
             return None
         return FaultRecord(
             DELIVERY_RECORD_UNREADABLE,
             SafetyReason(
                 DELIVERY_RECORD_UNREADABLE,
                 "Stored irrigation delivery record could not be read or written",
-                self._deliveries.unreadable_since or utcnow().isoformat(),
+                self._supply._deliveries.unreadable_since or utcnow().isoformat(),
             ),
             self._configured_outputs(),
         )
@@ -543,16 +604,16 @@ class BaseIrrigationCoordinator:
         found = getattr(storage, "zone_problems", None)
         problems = found.get(self._growspace_id) if isinstance(found, dict) else None
         if not problems:
-            self._zone_fault_since = None
+            self._supply._zone_fault_since = None
             return None
-        if self._zone_fault_since is None:
-            self._zone_fault_since = utcnow().isoformat()
+        if self._supply._zone_fault_since is None:
+            self._supply._zone_fault_since = utcnow().isoformat()
         return FaultRecord(
             ZONE_MIGRATION_INVALID,
             SafetyReason(
                 ZONE_MIGRATION_INVALID,
                 "Stored irrigation zones are invalid: " + "; ".join(problems),
-                self._zone_fault_since,
+                self._supply._zone_fault_since,
             ),
             self._configured_outputs(),
         )
@@ -562,13 +623,13 @@ class BaseIrrigationCoordinator:
         store = getattr(self._main_coordinator, "deliveries", None)
         if not isinstance(store, DeliveryAttemptStore):
             return
-        self._deliveries = await store.async_load(self._growspace_id)
-        if self._deliveries.unreadable:
+        self._supply._deliveries = await store.async_load(self._growspace_id)
+        if self._supply._deliveries.unreadable:
             self._raise_delivery_issue()
 
     async def _async_acknowledge_deliveries(self, user_id: str) -> None:
         """Clear an unreadable delivery record and audit who did."""
-        await self._deliveries.async_acknowledge()
+        await self._supply._deliveries.async_acknowledge()
         store = self._safety_store
         if store is not None and not store.unreadable:
             await store.async_record_event(
@@ -602,8 +663,8 @@ class BaseIrrigationCoordinator:
             override := store.override_for(self._growspace_id, Subsystem.IRRIGATION)
         ):
             reasons.append(override.safety_reason())
-        if self._detected_overrides:
-            reasons.append(detected_override_reason(self._detected_overrides))
+        if self._supply._detected_overrides:
+            reasons.append(detected_override_reason(self._supply._detected_overrides))
         return tuple(reasons)
 
     def _person_hold(self) -> str | None:
@@ -614,9 +675,9 @@ class BaseIrrigationCoordinator:
     def _in_flight(self, output: str) -> bool:
         """Whether an ON of ``output`` is ours: commanded, or being stopped."""
         return (
-            output in self._commanded_outputs
-            or output in self._off_retries
-            or output in self._enforcing_off
+            output in self._supply._commanded_outputs
+            or output in self._supply._off_retries
+            or output in self._supply._enforcing_off
         )
 
     def delivering_outputs(self) -> tuple[str, ...]:
@@ -633,7 +694,11 @@ class BaseIrrigationCoordinator:
             and state.state in (STATE_ON, "open")
         }
         return tuple(
-            sorted(self._commanded_outputs | set(self._off_retries) | interrupted)
+            sorted(
+                self._supply._commanded_outputs
+                | set(self._supply._off_retries)
+                | interrupted
+            )
         )
 
     def _interrupted_outputs(self) -> list[str]:
@@ -648,7 +713,7 @@ class BaseIrrigationCoordinator:
         return sorted(
             {
                 output
-                for attempt in self._deliveries.left_open()
+                for attempt in self._supply._deliveries.left_open()
                 for output in (
                     attempt.output,
                     *(
@@ -669,7 +734,7 @@ class BaseIrrigationCoordinator:
         previous one's; an attempt it left open is only ever the previous one's.
         """
         return (
-            output not in self._commanded_outputs
+            output not in self._supply._commanded_outputs
             and output in self._interrupted_outputs()
         )
 
@@ -682,16 +747,16 @@ class BaseIrrigationCoordinator:
         unless a cycle of this process holds the output now. An output being
         switched off here is left to that, which records its own OFF.
         """
-        if output in self._enforcing_off:
+        if output in self._supply._enforcing_off:
             return
         now = utcnow()
-        self._deliveries.record_interrupted_valve(
+        self._supply._deliveries.record_interrupted_valve(
             output, None, now if read_off else None
         )
-        self._deliveries.interrupt(
+        self._supply._deliveries.interrupt(
             output, now, off_confirmed_at=now if read_off else None
         )
-        if output not in self._commanded_outputs:
+        if output not in self._supply._commanded_outputs:
             self._reliability.clear_active(self._growspace_id, output)
 
     def _unexpected_on_policy(self) -> UnexpectedOnPolicy:
@@ -707,22 +772,25 @@ class BaseIrrigationCoordinator:
     def _ensure_pump_watch(self) -> None:
         """Follow every managed pump's state, resubscribing when they change."""
         outputs = self._configured_outputs()
-        if outputs == self._watched_outputs and self._cancel_pump_watch is not None:
+        if (
+            outputs == self._supply._watched_outputs
+            and self._supply._cancel_pump_watch is not None
+        ):
             return
         self._cancel_pump_watch_listener()
-        self._watched_outputs = outputs
-        for output in list(self._detected_overrides):
+        self._supply._watched_outputs = outputs
+        for output in list(self._supply._detected_overrides):
             if output not in outputs:
-                del self._detected_overrides[output]
+                del self._supply._detected_overrides[output]
         if outputs:
-            self._cancel_pump_watch = async_track_state_change_event(
+            self._supply._cancel_pump_watch = async_track_state_change_event(
                 self.hass, list(outputs), self._on_pump_state
             )
 
     def _cancel_pump_watch_listener(self) -> None:
-        if self._cancel_pump_watch is not None:
-            self._cancel_pump_watch()
-            self._cancel_pump_watch = None
+        if self._supply._cancel_pump_watch is not None:
+            self._supply._cancel_pump_watch()
+            self._supply._cancel_pump_watch = None
 
     @callback
     def _on_pump_state(self, event: Event[EventStateChangedData]) -> None:
@@ -740,7 +808,7 @@ class BaseIrrigationCoordinator:
             )
         elif new_state.state in (STATE_OFF, "closed"):
             self._release_interrupted(output)
-            if output in self._detected_overrides:
+            if output in self._supply._detected_overrides:
                 self.hass.async_create_task(
                     self._async_person_finished(output),
                     name=f"growspace_pump_off_{self._growspace_id}_{output}",
@@ -757,7 +825,10 @@ class BaseIrrigationCoordinator:
         ``enforce_off`` it is switched off, read back and latched as a Fault.
         A cycle of ours that a stopped process left running is closed instead.
         """
-        if output in self._detected_overrides or output in self._enforcing_off:
+        if (
+            output in self._supply._detected_overrides
+            or output in self._supply._enforcing_off
+        ):
             return
         store = self._safety_store
         policy = self._unexpected_on_policy()
@@ -785,7 +856,7 @@ class BaseIrrigationCoordinator:
             response,
         )
         if response is UnexpectedOnResponse.ALERT:
-            self._detected_overrides[output] = utcnow().isoformat()
+            self._supply._detected_overrides[output] = utcnow().isoformat()
             await self._async_record_unexpected_on(output, policy, response)
             message = (
                 f"{output} was switched on outside Growspace Manager. It is "
@@ -797,7 +868,7 @@ class BaseIrrigationCoordinator:
             self._fire_logbook_event(message, CATEGORY_IRRIGATION_ERROR)
             await self._async_record_controller_state()
         else:
-            self._enforcing_off.add(output)
+            self._supply._enforcing_off.add(output)
             try:
                 off_confirmed = await self._async_command_off(output)
                 await self._async_record_unexpected_on(
@@ -817,7 +888,7 @@ class BaseIrrigationCoordinator:
                         f"{detail} and did not read back OFF after turn_off",
                     )
             finally:
-                self._enforcing_off.discard(output)
+                self._supply._enforcing_off.discard(output)
             message = (
                 f"{output} was switched on outside Growspace Manager and was "
                 + ("switched off" if off_confirmed else "told to switch off")
@@ -846,7 +917,7 @@ class BaseIrrigationCoordinator:
         its marker is cleared either way: read back OFF, or handed to the OFF
         retries, the pump is no longer that cycle's (#854, ADR-0055 item 9).
         """
-        self._enforcing_off.add(output)
+        self._supply._enforcing_off.add(output)
         commanded_at = utcnow()
         off_confirmed = False
         try:
@@ -872,8 +943,8 @@ class BaseIrrigationCoordinator:
                     f"{detail} and did not read back OFF after turn_off",
                 )
         finally:
-            self._enforcing_off.discard(output)
-            for attempt in self._deliveries.left_open(output):
+            self._supply._enforcing_off.discard(output)
+            for attempt in self._supply._deliveries.left_open(output):
                 for valve in attempt.valves:
                     if valve.off_confirmed_at is None:
                         read_closed = await self._async_command_off(valve.output)
@@ -883,12 +954,12 @@ class BaseIrrigationCoordinator:
                                 f"fault_off_unconfirmed:{valve.output}",
                                 f"{valve.output} did not read back closed after restart",
                             )
-                        self._deliveries.record_interrupted_valve(
+                        self._supply._deliveries.record_interrupted_valve(
                             valve.output,
                             commanded_at,
                             utcnow() if read_closed else None,
                         )
-            self._deliveries.interrupt(
+            self._supply._deliveries.interrupt(
                 output,
                 commanded_at,
                 off_commanded_at=commanded_at,
@@ -925,7 +996,7 @@ class BaseIrrigationCoordinator:
 
     async def _async_person_finished(self, output: str) -> None:
         """Release the hold once the pump a person was running reads OFF."""
-        if self._detected_overrides.pop(output, None) is None:
+        if self._supply._detected_overrides.pop(output, None) is None:
             return
         store = self._safety_store
         if store is not None and not store.unreadable:
@@ -965,9 +1036,9 @@ class BaseIrrigationCoordinator:
         ):
             # A cycle of ours in flight is closed — its own OFF is the last
             # command Growspace Manager sends the pump until the override ends.
-            for task in self._running_tasks.values():
+            for task in self._supply._running_tasks.values():
                 if task and not task.done():
-                    self._override_cancelled_tasks.add(task)
+                    self._supply._override_cancelled_tasks.add(task)
                     task.cancel()
         else:
             # A pump the person left running is now an Unexpected On.
@@ -1122,6 +1193,11 @@ class BaseIrrigationCoordinator:
             now=now,
         )
 
+    @property
+    def current_vwc(self) -> float | None:
+        """The zone's live moisture reading, validated through its sensor watch."""
+        return self._moisture_value()
+
     def _moisture_value(self) -> float | None:
         """Return the moisture sensor's value, or None when it cannot be trusted."""
         moisture = self._zone.soil_moisture_sensor
@@ -1163,9 +1239,9 @@ class BaseIrrigationCoordinator:
         a sensor that drops out later is a stale-sensor problem, not a startup
         one.
         """
-        if self._startup_began_at is None or self._startup_cleared:
+        if self._supply._startup_began_at is None or self._startup_cleared:
             return None
-        started_at = self._startup_began_at
+        started_at = self._supply._startup_began_at
         return startup_inhibit(
             started_at=started_at,
             now=utcnow(),
@@ -1181,7 +1257,8 @@ class BaseIrrigationCoordinator:
 
     async def _async_begin_startup_inhibit(self) -> None:
         """Hold automatic cycles from this start until the inhibit clears (#786)."""
-        self._startup_began_at = utcnow()
+        if self._supply is self:
+            self._startup_began_at = utcnow()
         self._startup_cleared = False
         self._cancel_startup_poll_listener()
         self._cancel_startup_poll = async_track_time_interval(
@@ -1191,9 +1268,11 @@ class BaseIrrigationCoordinator:
             self._cancel_sensor_probe = async_track_time_interval(
                 self.hass, self._async_sensor_tick, timedelta(minutes=1)
             )
+        if self._supply is not self:
+            return
         store = self._safety_store
-        if store is not None and self._cancel_override_listener is None:
-            self._cancel_override_listener = store.add_override_listener(
+        if store is not None and self._supply._cancel_override_listener is None:
+            self._supply._cancel_override_listener = store.add_override_listener(
                 self._on_override_change
             )
         # A pump reading ON before any cycle of this start is an Unexpected On
@@ -1203,7 +1282,7 @@ class BaseIrrigationCoordinator:
         outputs = self._configured_outputs()
         # Recover the whole train in supply-then-valves order even if the
         # supply already reads OFF or has not reported yet after the restart.
-        for attempt in list(self._deliveries.left_open()):
+        for attempt in list(self._supply._deliveries.left_open()):
             if attempt.valves:
                 await self._async_stop_interrupted(attempt.output)
         for output in self._interrupted_outputs():
@@ -1231,6 +1310,8 @@ class BaseIrrigationCoordinator:
         """
         now = utcnow()
         for entity_id, reading in self._control_readings(now).items():
+            if self._supply is not self and entity_id != self._moisture_sensor():
+                continue
             invalidity = reading.invalidity
             if invalidity is Invalidity.UNAVAILABLE:
                 self._record(ReliabilityCounter.SENSOR_UNAVAILABLE_MINUTES)
@@ -1240,6 +1321,8 @@ class BaseIrrigationCoordinator:
                 elif invalidity is Invalidity.IMPLAUSIBLE:
                     self._record(ReliabilityCounter.SENSOR_IMPLAUSIBLE_READINGS)
             self._sensor_probe_states[entity_id] = invalidity
+        if self._supply is not self:
+            return
         self._record(ReliabilityCounter.OBSERVED_MINUTES)
         safety = self._safety_store
         if (
@@ -1253,7 +1336,8 @@ class BaseIrrigationCoordinator:
         """Probe the control sensors, then follow the moisture sensor's episode."""
         self._ensure_pump_watch()
         self._async_probe_control_sensors()
-        self._watch_calibration()
+        if self._supply is self:
+            self._watch_calibration()
         await self._async_watch_moisture_sensor()
 
     async def _async_watch_moisture_sensor(self) -> None:
@@ -1446,33 +1530,35 @@ class BaseIrrigationCoordinator:
         self._listeners = []
 
         if cancel_tasks:
-            self._supply_queue.clear()
-            self._claim_data.clear()
-            if self._supply_task is not None:
-                self._supply_task.cancel()
             if self._cancel_sensor_probe is not None:
                 self._cancel_sensor_probe()
                 self._cancel_sensor_probe = None
-            # Teardown, not a schedule reload: the poll belongs to this
-            # coordinator's start and must not outlive it.
             self._cancel_startup_poll_listener()
+            if self._supply is not self:
+                return
+            for runtime in self._zone_runtimes.values():
+                runtime.async_cancel_listeners(cancel_tasks=True)
+            self._supply._supply_queue.clear()
+            self._supply._claim_data.clear()
+            if self._supply._supply_task is not None:
+                self._supply._supply_task.cancel()
             self._cancel_pump_watch_listener()
-            self._watched_outputs = ()
-            if self._cancel_override_listener is not None:
-                self._cancel_override_listener()
-                self._cancel_override_listener = None
-            for cancel_retry in self._off_retries.values():
+            self._supply._watched_outputs = ()
+            if self._supply._cancel_override_listener is not None:
+                self._supply._cancel_override_listener()
+                self._supply._cancel_override_listener = None
+            for cancel_retry in self._supply._off_retries.values():
                 cancel_retry()
-            self._off_retries.clear()
-            for task in list(self._running_tasks.values()):
+            self._supply._off_retries.clear()
+            for task in list(self._supply._running_tasks.values()):
                 if task and not task.done():
                     task.cancel()
-            self._running_tasks.clear()
+            self._supply._running_tasks.clear()
 
-            for settling_task in list(self._settling_tasks):
+            for settling_task in list(self._supply._settling_tasks):
                 if not settling_task.done():
                     settling_task.cancel()
-            self._settling_tasks.clear()
+            self._supply._settling_tasks.clear()
         _LOGGER.debug(
             "Cancelled all irrigation listeners for growspace %s", self._growspace_id
         )
@@ -1729,7 +1815,7 @@ class BaseIrrigationCoordinator:
         """Return the measured tanks and the Tank–Pump Disagreement about them."""
         growspace = self.growspace
         tanks = qualifying_tanks(growspace.environment_config.irrigation_tanks)
-        record, transition = self._deliveries.calibration.watching(
+        record, transition = self._supply._deliveries.calibration.watching(
             (tank.sensor_entity for tank in tanks),
             today,
             flow_rate_ml_per_sec=self._zone.pump_flow_rate_ml_per_sec,
@@ -1758,7 +1844,7 @@ class BaseIrrigationCoordinator:
             record = record.tank_unknown_on(today)
         events = [event for tank in tanks for event in tank.water_history.events]
         for day in record.due_days(today):
-            pump_l, actuated = pump_delivered_l(self._deliveries.attempts, day)
+            pump_l, actuated = pump_delivered_l(self._supply._deliveries.attempts, day)
             record, transition = record.judged(
                 compare_day(
                     day,
@@ -1776,7 +1862,7 @@ class BaseIrrigationCoordinator:
         for message in messages:
             _LOGGER.info("Growspace %s: %s", self._growspace_id, message)
             self._fire_logbook_event(message, CATEGORY_CALIBRATION)
-        self._deliveries.set_calibration(record)
+        self._supply._deliveries.set_calibration(record)
         async_file_calibration_proposal(
             self.hass,
             growspace,
@@ -1785,7 +1871,7 @@ class BaseIrrigationCoordinator:
                 configured_ml_per_sec=self._zone.pump_flow_rate_ml_per_sec,
                 # Until zones (ADR-0057) a growspace is its own one zone, and
                 # until metering (ADR-0064 item 12) no zone has a meter.
-                zones=1,
+                zones=len(self.growspace.irrigation_zones),
                 zone_metered=False,
             ),
         )
@@ -1964,13 +2050,13 @@ class BaseIrrigationCoordinator:
     @callback
     def _async_start_off_retry(self, pump_entity: str) -> None:
         """Re-send OFF every minute until the pump reads OFF."""
-        if pump_entity in self._off_retries:
+        if pump_entity in self._supply._off_retries:
             return
 
         async def retry(_now: datetime) -> None:
             state = self.hass.states.get(pump_entity)
             if state is not None and state.state in (STATE_OFF, "closed"):
-                self._off_retries.pop(pump_entity)()
+                self._supply._off_retries.pop(pump_entity)()
                 self._fire_logbook_event(
                     f"{pump_entity} reads OFF again — the fault stays latched "
                     "until it is acknowledged",
@@ -1980,7 +2066,7 @@ class BaseIrrigationCoordinator:
             _LOGGER.warning("Re-sending OFF to %s, which is not OFF", pump_entity)
             await self._async_send_off(pump_entity)
 
-        self._off_retries[pump_entity] = async_track_time_interval(
+        self._supply._off_retries[pump_entity] = async_track_time_interval(
             self.hass, retry, OFF_RETRY_INTERVAL
         )
 
@@ -2000,8 +2086,8 @@ class BaseIrrigationCoordinator:
         self, pump_entity: str, reason_code: str, detail: str, *, off_confirmed: bool
     ) -> None:
         """Book a cycle that never opened as not delivered, latching on a run."""
-        consecutive = self._open_failures.get(pump_entity, 0) + 1
-        self._open_failures[pump_entity] = consecutive
+        consecutive = self._supply._open_failures.get(pump_entity, 0) + 1
+        self._supply._open_failures[pump_entity] = consecutive
         _LOGGER.warning(
             "%s cycle not delivered (%s, %d in a row): %s",
             self._growspace_id,
@@ -2042,7 +2128,7 @@ class BaseIrrigationCoordinator:
             CATEGORY_IRRIGATION_ERROR,
         )
         if cycle_task and not cycle_task.done():
-            self._watchdog_cancelled_tasks.add(cycle_task)
+            self._supply._watchdog_cancelled_tasks.add(cycle_task)
             cycle_task.cancel()
         if not await self._async_command_off(pump_entity):
             await self._async_off_unconfirmed(
@@ -2100,6 +2186,7 @@ class BaseIrrigationCoordinator:
             ),
             requested_at=requested_at,
             due_at=event_data.get("due_at"),
+            zone_id=self._zone.id if event_type == "irrigation" else None,
         )
 
     def _suppress(
@@ -2112,15 +2199,11 @@ class BaseIrrigationCoordinator:
         reason: str,
     ) -> None:
         """Record a request the gate or an operator hold refused (ADR-0055)."""
-        self._deliveries.suppress(
+        self._supply._deliveries.suppress(
             self._new_attempt(
                 event_type, pump_entity, duration, event_data, requested_at
             ).refused(reason)
         )
-
-    def _zone_delivery_pending(self) -> bool:
-        """Hold multi-zone scheduling until per-zone runtimes land (#895)."""
-        return len(self.growspace.irrigation_zones) > 1
 
     async def _async_foreign_valve_open(self) -> str | None:
         """Demand closed readbacks from every other zone before delivery."""
@@ -2146,7 +2229,7 @@ class BaseIrrigationCoordinator:
         if event_type != "irrigation":
             await self._run_supply_cycle(event_type, pump_entity, duration, event_data)
             return
-        async with self._supply_lock:
+        async with self._supply._supply_lock:
             await self._run_supply_cycle(event_type, pump_entity, duration, event_data)
 
     async def _run_supply_cycle(  # noqa: C901 - safety effect shell handles every exit
@@ -2159,6 +2242,7 @@ class BaseIrrigationCoordinator:
         """Run the on-off cycle for a pump and send notifications."""
         self._record(ReliabilityCounter.REQUESTED)
         requested_at = utcnow()
+        initial_valves = tuple(self._zone.valves)
         store = self._safety_store
         manual = bool(event_data.get("manual", False))
         if event_type == "irrigation" and await self._async_foreign_valve_open():
@@ -2171,11 +2255,7 @@ class BaseIrrigationCoordinator:
                 "foreign_valve_open",
             )
             return
-        hold = (
-            "zone_runtime_pending"
-            if event_type == "irrigation" and self._zone_delivery_pending()
-            else self._operator_hold(manual=manual)
-        )
+        hold = self._operator_hold(manual=manual)
         if hold is None and not self._in_flight(pump_entity):
             pump_state = self.hass.states.get(pump_entity)
             if pump_state is not None and pump_state.state in (STATE_ON, "open"):
@@ -2249,9 +2329,10 @@ class BaseIrrigationCoordinator:
         await self._record_safety_transition("running")
 
         # Track active event for frontend animation
-        self._active_events[event_type] = {
+        self._supply._active_events[event_type] = {
             "start": utcnow().isoformat(),
             "duration": duration,
+            "zone_id": self._zone.id if event_type == "irrigation" else None,
         }
         self._main_coordinator.async_update_listeners()
 
@@ -2320,11 +2401,11 @@ class BaseIrrigationCoordinator:
                     f"Irrigation started — {duration}s on {pump_entity}",
                 )
 
-            hold = (
-                "zone_runtime_pending"
-                if event_type == "irrigation" and self._zone_delivery_pending()
-                else self._operator_hold(manual=manual)
-            )
+            hold = self._operator_hold(manual=manual)
+            if event_type == "irrigation" and initial_valves != tuple(
+                self._zone.valves
+            ):
+                hold = "zone_changed"
             if hold is not None:
                 abort_cause = AbortCause.OVERRIDE
                 self._suppress(
@@ -2338,7 +2419,7 @@ class BaseIrrigationCoordinator:
                 event_type, pump_entity, duration, event_data, requested_at
             )
             try:
-                await self._deliveries.async_request(attempt)
+                await self._supply._deliveries.async_request(attempt)
             except DeliveryRecordUnreadable:
                 self._raise_delivery_issue()
                 raise
@@ -2354,8 +2435,8 @@ class BaseIrrigationCoordinator:
                         attempt,
                         valves=(*attempt.valves, ValveReadback(valve, utcnow())),
                     )
-                    await self._deliveries.async_request(attempt)
-                    self._commanded_outputs.add(valve)
+                    await self._supply._deliveries.async_request(attempt)
+                    self._supply._commanded_outputs.add(valve)
                     failure_output = valve
                     driver = resolve_actuator_driver(self.hass, valve)
                     if driver is None or not await driver.turn_on():
@@ -2367,7 +2448,7 @@ class BaseIrrigationCoordinator:
                             f"{valve} did not read back open",
                         )
                         break
-                    self._open_failures.pop(valve, None)
+                    self._supply._open_failures.pop(valve, None)
                     attempt = replace(
                         attempt,
                         valves=(
@@ -2375,7 +2456,7 @@ class BaseIrrigationCoordinator:
                             replace(attempt.valves[-1], on_confirmed_at=utcnow()),
                         ),
                     )
-                    await self._deliveries.async_request(attempt)
+                    await self._supply._deliveries.async_request(attempt)
                 if open_failure is not None:
                     return
             if event_type == "irrigation" and attempt.valves:
@@ -2392,7 +2473,6 @@ class BaseIrrigationCoordinator:
                     return
                 if (
                     self._operator_hold(manual=manual)
-                    or self._zone_delivery_pending()
                     or tuple(valve.output for valve in attempt.valves)
                     != tuple(self._zone.valves)
                     or self.controller_snapshot().requires_ack
@@ -2412,7 +2492,7 @@ class BaseIrrigationCoordinator:
             command_dt = utcnow()
             attempt = attempt.commanded(command_dt)
             commanded = True
-            self._commanded_outputs.add(pump_entity)
+            self._supply._commanded_outputs.add(pump_entity)
             try:
                 driver = resolve_actuator_driver(
                     self.hass, pump_entity, raise_errors=True
@@ -2448,7 +2528,7 @@ class BaseIrrigationCoordinator:
             # relay closing, so that is when water started moving.
             start_dt = utcnow()
             self._record(ReliabilityCounter.FIRED)
-            self._open_failures.pop(pump_entity, None)
+            self._supply._open_failures.pop(pump_entity, None)
             self._reliability.mark_active(self._growspace_id, pump_entity)
 
             # Charged against the daily caps now, unless it is a drain, and on
@@ -2456,7 +2536,7 @@ class BaseIrrigationCoordinator:
             # counted.
             attempt = attempt.confirmed_on(start_dt, as_local(start_dt).date())
             try:
-                await self._deliveries.async_charge(attempt)
+                await self._supply._deliveries.async_charge(attempt)
             except DeliveryRecordUnreadable:
                 self._raise_delivery_issue()
                 raise
@@ -2474,12 +2554,12 @@ class BaseIrrigationCoordinator:
 
         except asyncio.CancelledError:
             current_task = asyncio.current_task()
-            if current_task in self._watchdog_cancelled_tasks:
+            if current_task in self._supply._watchdog_cancelled_tasks:
                 abort_cause = AbortCause.WATCHDOG
-                self._watchdog_cancelled_tasks.discard(current_task)
-            elif current_task in self._override_cancelled_tasks:
+                self._supply._watchdog_cancelled_tasks.discard(current_task)
+            elif current_task in self._supply._override_cancelled_tasks:
                 abort_cause = AbortCause.OVERRIDE
-                self._override_cancelled_tasks.discard(current_task)
+                self._supply._override_cancelled_tasks.discard(current_task)
             elif store and store.emergency_stop_for(self._growspace_id):
                 abort_cause = AbortCause.E_STOP
             else:
@@ -2609,12 +2689,12 @@ class BaseIrrigationCoordinator:
                             "Could not record valve fault on %s", readback.output
                         )
                 valve_records.append(readback)
-                self._commanded_outputs.discard(readback.output)
+                self._supply._commanded_outputs.discard(readback.output)
             if closed is not None:
                 closed = replace(closed, valves=tuple(valve_records))
             if closed is not None:
                 # Recorded once OFF is read back, or known not to be.
-                self._deliveries.close(
+                self._supply._deliveries.close(
                     closed.read_back_off(utcnow())
                     if off_confirmed and closed.off_commanded_at is not None
                     else closed
@@ -2652,9 +2732,9 @@ class BaseIrrigationCoordinator:
             finally:
                 cancel_watchdog()
                 # Read back OFF, or handed to the OFF retries: no longer ours.
-                self._commanded_outputs.discard(pump_entity)
+                self._supply._commanded_outputs.discard(pump_entity)
                 self._reliability.clear_active(self._growspace_id, pump_entity)
-                self._active_events.pop(event_type, None)
+                self._supply._active_events.pop(event_type, None)
                 self._main_coordinator.async_update_listeners()
             if off_confirmed:
                 snapshot = self.controller_snapshot()
@@ -2663,8 +2743,8 @@ class BaseIrrigationCoordinator:
                         snapshot.state.value,
                         snapshot.reasons[0].code if snapshot.reasons else None,
                     )
-            if event_type in self._running_tasks:
-                self._running_tasks.pop(event_type)
+            if event_type in self._supply._running_tasks:
+                self._supply._running_tasks.pop(event_type)
 
     def _irrigation_cycle_started(self, *, manual: bool) -> None:
         """Let a steering coordinator invalidate feedback on a confirmed run."""
@@ -2707,8 +2787,8 @@ class BaseIrrigationCoordinator:
             ),
             name=f"irrigation_settling_report_{self._growspace_id}_{event_type}",
         )
-        self._settling_tasks.add(task)
-        task.add_done_callback(self._settling_tasks.discard)
+        self._supply._settling_tasks.add(task)
+        task.add_done_callback(self._supply._settling_tasks.discard)
 
     async def _async_report_cycle_completion(
         self,
@@ -2778,11 +2858,15 @@ class BaseIrrigationCoordinator:
             ServiceValidationError: When no irrigation pump entity is configured or
                 no duration can be determined.
         """
-        resolve_zone(self.growspace, zone_id)
-        if self._zone_delivery_pending():
-            raise ServiceValidationError(
-                "Multi-zone delivery requires valve actuation and per-zone runtime"
-            )
+        zone = resolve_zone(self.growspace, zone_id)
+        if zone.id != self._zone.id:
+            runtime = self.zone_runtime(zone.id)
+            if runtime is None:
+                raise ServiceValidationError(
+                    f"Zone '{zone.id}' has no irrigation runtime"
+                )
+            await runtime.async_manual_run(duration, user_id, zone.id)
+            return
         options = self._config()
         snapshot = self.controller_snapshot()
         if snapshot.requires_ack:
@@ -2827,9 +2911,19 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         config_entry: ConfigEntry,
         growspace_id: str,
         main_coordinator: GrowspaceCoordinator,
+        *,
+        zone_id: str | None = None,
+        supply: BaseIrrigationCoordinator | None = None,
     ) -> None:
         """Initialize the irrigation coordinator."""
-        super().__init__(hass, config_entry, growspace_id, main_coordinator)
+        super().__init__(
+            hass,
+            config_entry,
+            growspace_id,
+            main_coordinator,
+            zone_id=zone_id,
+            supply=supply,
+        )
 
     @override
     async def async_request_refresh(self) -> None:
@@ -2859,9 +2953,8 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
     @override
     async def async_setup(self) -> None:
         """Set up the irrigation schedules."""
-        await self._async_load_deliveries()
-        self._register_daily_reset_listener()
-
+        if self._supply is self:
+            await self._async_load_deliveries()
         # Load schedules without triggering updates
         await self.async_update_listeners()
         self._resume_off_retries()
@@ -2870,13 +2963,16 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
     async def async_update_listeners(self, *args: Any) -> None:
         """Remove old listeners and create new ones based on current config."""
         self.async_cancel_listeners(cancel_tasks=False)
+        self._register_daily_reset_listener()
 
         # Get irrigation options from growspace object
         options = self._config()
 
         # Make defensive copies to avoid reference issues
-        irrigation_times = list(options.irrigation_times)
-        drain_times = list(options.drain_times)
+        irrigation_times = (
+            list(options.irrigation_times) if not self._zone.strategy.enabled else []
+        )
+        drain_times = list(options.drain_times) if self._supply is self else []
 
         _LOGGER.debug(
             "Setting up listeners for growspace %s: %d irrigation times, %d drain times",
@@ -2937,16 +3033,16 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             self._queue_supply_claim("schedule", now, event_data)
             return
         if (
-            event_type in self._running_tasks
-            and self._running_tasks[event_type]
-            and not self._running_tasks[event_type].done()
+            event_type in self._supply._running_tasks
+            and self._supply._running_tasks[event_type]
+            and not self._supply._running_tasks[event_type].done()
         ):
             _LOGGER.warning(
                 "Cancelling previous %s event for growspace %s as a new one is starting",
                 event_type,
                 self._growspace_id,
             )
-            self._running_tasks[event_type].cancel()
+            self._supply._running_tasks[event_type].cancel()
 
         options = self._config()
 
@@ -2969,7 +3065,7 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
             self._run_pump_cycle(event_type, pump_entity, int(duration), event_data),
             f"irrigation_pump_{self._growspace_id}_{event_type}",
         )
-        self._running_tasks[event_type] = task
+        self._supply._running_tasks[event_type] = task
 
     @property
     def next_scheduled_cycle(self) -> str | None:

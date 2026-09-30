@@ -103,26 +103,24 @@ class SubsystemManager:
         self, growspace_id: str, gs: Growspace
     ) -> None:
         """Setup sub-coordinators for a single growspace."""
-        irrigation_coordinator: IrrigationCoordinator | VWCIrrigationCoordinator
-        if gs.default_zone.strategy.enabled:
-            _LOGGER.info(
-                "Initializing VWC Irrigation Coordinator for growspace %s",
-                growspace_id,
-            )
-            irrigation_coordinator = VWCIrrigationCoordinator(
-                self.hass, self.entry, growspace_id, self.coordinator
-            )
-        else:
-            _LOGGER.debug(
-                "Initializing Standard Irrigation Coordinator for growspace %s",
-                growspace_id,
-            )
-            irrigation_coordinator = IrrigationCoordinator(
-                self.hass, self.entry, growspace_id, self.coordinator
-            )
-
+        irrigation_coordinator = VWCIrrigationCoordinator(
+            self.hass, self.entry, growspace_id, self.coordinator
+        )
         await irrigation_coordinator.async_setup()
         self.irrigation_coordinators[growspace_id] = irrigation_coordinator
+        for zone in gs.irrigation_zones:
+            if zone.id == gs.default_zone.id:
+                continue
+            runtime = VWCIrrigationCoordinator(
+                self.hass,
+                self.entry,
+                growspace_id,
+                self.coordinator,
+                zone_id=zone.id,
+                supply=irrigation_coordinator,
+            )
+            irrigation_coordinator.register_zone_runtime(runtime)
+            await runtime.async_setup()
 
         light_cycle_tracker = LightCycleTracker(
             self.hass, growspace_id, self.coordinator

@@ -545,7 +545,8 @@ async def test_schedule_event_invalid_time(
 
     await coordinator.async_update_listeners()
 
-    assert len(coordinator._listeners) == 0
+    assert len(coordinator._listeners) == 1  # midnight reset only
+    coordinator.async_cancel_listeners()
 
 
 async def test_handle_event_missing_config(
@@ -701,7 +702,7 @@ async def test_schedule_event_short_time_format(
 
     await coordinator.async_update_listeners()
 
-    assert len(coordinator._listeners) == 1
+    assert len(coordinator._listeners) == 2  # schedule plus midnight reset
 
     coordinator.async_cancel_listeners()
 
@@ -1834,10 +1835,10 @@ async def test_the_gate_reads_the_tank_monitor_watches(
     assert coordinator._own_tank_watches is None
 
 
-async def test_multizone_delivery_requires_scope_and_holds_pump(
+async def test_multizone_delivery_requires_scope_and_runtime(
     mock_hass, mock_config_entry, mock_main_coordinator
 ):
-    """Zone configuration cannot accidentally deliver through the pump-only loop."""
+    """A multi-zone Manual Run requires its scope and an initialized runtime."""
     from custom_components.growspace_manager.domain.zone_edit import edited_zones
     from custom_components.growspace_manager.exceptions import ZoneRequiredError
 
@@ -1860,11 +1861,8 @@ async def test_multizone_delivery_requires_scope_and_holds_pump(
     )
     with pytest.raises(ZoneRequiredError):
         await coordinator.async_manual_run(30)
-    with pytest.raises(ServiceValidationError, match="per-zone runtime"):
+    with pytest.raises(ServiceValidationError, match="no irrigation runtime"):
         await coordinator.async_manual_run(30, zone_id="blue")
-    await coordinator._run_pump_cycle("irrigation", "switch.irrigation_pump", 30, {})
-    mock_hass.services.async_call.assert_not_called()
-    assert coordinator._deliveries.attempts[-1].reason == "zone_runtime_pending"
 
 
 async def test_multizone_admission_race_is_rechecked_before_on(
@@ -1899,7 +1897,7 @@ async def test_multizone_admission_race_is_rechecked_before_on(
             "irrigation", "switch.irrigation_pump", 30, {"manual": True}
         )
     mock_hass.services.async_call.assert_not_called()
-    assert coordinator._deliveries.attempts[-1].reason == "zone_runtime_pending"
+    assert coordinator._deliveries.attempts[-1].reason == "zone_changed"
 
 
 async def test_lone_zone_with_valves_admits_manual_delivery(
@@ -2078,7 +2076,6 @@ async def test_foreign_valve_rechecked_after_admission(valve_rig):
 
     # #895 will supply the per-zone runtime; exercise its delivery boundary.
     with (
-        patch.object(coordinator, "_zone_delivery_pending", return_value=False),
         patch.object(coordinator, "_record_safety_transition", side_effect=change),
         patch.object(coordinator, "_async_observe_on", new_callable=AsyncMock),
     ):
@@ -2308,7 +2305,6 @@ async def test_supply_start_rechecks_after_valve_opening(valve_rig, change):
                 coordinator._detected_overrides["switch.foreign"] = utcnow().isoformat()
 
     with (
-        patch.object(coordinator, "_zone_delivery_pending", return_value=False),
         patch.object(
             coordinator._deliveries, "async_request", side_effect=change_on_write
         ),

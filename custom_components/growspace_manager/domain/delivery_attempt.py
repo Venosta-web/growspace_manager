@@ -247,6 +247,7 @@ class DeliveryAttempt:
     ended_at: datetime | None = None
     valves: tuple[ValveReadback, ...] = ()
     due_at: datetime | None = None
+    zone_id: str | None = "default"
 
     @classmethod
     def requested(
@@ -261,6 +262,7 @@ class DeliveryAttempt:
         flow_rate_ml_per_sec: float | None,
         requested_at: datetime,
         due_at: datetime | None = None,
+        zone_id: str | None = "default",
     ) -> DeliveryAttempt:
         """Return an attempt the gate has passed, before its ON command."""
         return cls(
@@ -273,6 +275,7 @@ class DeliveryAttempt:
             flow_rate_ml_per_sec=float(flow_rate_ml_per_sec or 0.0),
             requested_at=requested_at,
             due_at=due_at,
+            zone_id=None if trigger is AttemptTrigger.DRAIN else zone_id,
         )
 
     @property
@@ -349,6 +352,7 @@ class DeliveryAttempt:
             self.outcome is AttemptOutcome.SUPPRESSED
             and suppressed.outcome is AttemptOutcome.SUPPRESSED
             and self.output == suppressed.output
+            and self.zone_id == suppressed.zone_id
             and self.reason == suppressed.reason
             and self.trigger is suppressed.trigger
         )
@@ -519,6 +523,7 @@ class DeliveryAttempt:
         return {
             "attempt_id": self.attempt_id,
             "growspace_id": self.growspace_id,
+            "zone_id": self.zone_id,
             "output": self.output,
             "trigger": self.trigger.value,
             "trigger_evidence": self.trigger_evidence.as_dict(),
@@ -558,6 +563,12 @@ class DeliveryAttempt:
         for key in ("attempt_id", "growspace_id", "output"):
             if not isinstance(value.get(key), str) or not value[key]:
                 raise ValueError(f"delivery attempt has no {key}")
+        zone_id = value.get(
+            "zone_id",
+            None if value.get("trigger") == AttemptTrigger.DRAIN.value else "default",
+        )
+        if zone_id is not None and (not isinstance(zone_id, str) or not zone_id):
+            raise ValueError("delivery attempt has an invalid zone_id")
         numbers = ("planned_s", "flow_rate_ml_per_sec", "charged_l")
         if any(not _is_amount(value.get(key)) for key in numbers):
             raise ValueError("delivery attempt has an invalid amount")
@@ -596,6 +607,7 @@ class DeliveryAttempt:
             flow_rate_ml_per_sec=float(value["flow_rate_ml_per_sec"]),
             requested_at=requested_at,
             due_at=_optional_aware(value.get("due_at")),
+            zone_id=zone_id,
             on_commanded_at=on_commanded_at,
             on_confirmed_at=_optional_aware(value.get("on_confirmed_at")),
             charge_date=(
