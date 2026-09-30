@@ -246,6 +246,7 @@ class DeliveryAttempt:
     last_requested_at: datetime | None = None
     ended_at: datetime | None = None
     valves: tuple[ValveReadback, ...] = ()
+    due_at: datetime | None = None
 
     @classmethod
     def requested(
@@ -259,6 +260,7 @@ class DeliveryAttempt:
         planned_s: float,
         flow_rate_ml_per_sec: float | None,
         requested_at: datetime,
+        due_at: datetime | None = None,
     ) -> DeliveryAttempt:
         """Return an attempt the gate has passed, before its ON command."""
         return cls(
@@ -270,6 +272,7 @@ class DeliveryAttempt:
             planned_s=float(planned_s),
             flow_rate_ml_per_sec=float(flow_rate_ml_per_sec or 0.0),
             requested_at=requested_at,
+            due_at=due_at,
         )
 
     @property
@@ -522,6 +525,7 @@ class DeliveryAttempt:
             "planned_s": self.planned_s,
             "flow_rate_ml_per_sec": self.flow_rate_ml_per_sec,
             "requested_at": self.requested_at.isoformat(),
+            "due_at": _iso(self.due_at),
             "on_commanded_at": _iso(self.on_commanded_at),
             "on_confirmed_at": _iso(self.on_confirmed_at),
             "off_commanded_at": _iso(self.off_commanded_at),
@@ -591,6 +595,7 @@ class DeliveryAttempt:
             planned_s=float(value["planned_s"]),
             flow_rate_ml_per_sec=float(value["flow_rate_ml_per_sec"]),
             requested_at=requested_at,
+            due_at=_optional_aware(value.get("due_at")),
             on_commanded_at=on_commanded_at,
             on_confirmed_at=_optional_aware(value.get("on_confirmed_at")),
             charge_date=(

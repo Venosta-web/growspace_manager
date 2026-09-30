@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A memory-only Supply Queue decides due requests when the supply is free.
+  Manual Runs wait at the front; a single-zone growspace no longer cancels a
+  running shot when another scheduled, steering or manual request arrives.
+  Delivery Attempts record `due_at`, and queued steering ticks report `queued`.
+
 - Irrigation Zone actions and WebSocket commands for adding, editing, assigning
   cells, removing and reordering zones, guarded by the growspace layout revision.
   Each cell has one owner; grid growth inherits the adjacent boundary's zone.

@@ -146,13 +146,15 @@ async def await_pump_task():
 
     tasks = asyncio.all_tasks()
     for task in tasks:
-        if "_run_pump_cycle" in str(task.get_coro()):
+        if "_async_serve_supply" in str(task.get_coro()) or "_run_pump_cycle" in str(
+            task.get_coro()
+        ):
             await task
             return
 
 
 @pytest.fixture
-def vwc_coordinator(mock_hass, mock_main_coordinator):
+async def vwc_coordinator(mock_hass, mock_main_coordinator):
     mock_config_entry = MagicMock()
     # Point runtime_data at mock_main_coordinator so _async_send_cycle_notification
     # finds the real mock_growspace (notification_target=None → no extra notify call).
@@ -160,9 +162,15 @@ def vwc_coordinator(mock_hass, mock_main_coordinator):
     mock_config_entry.async_create_background_task.side_effect = (
         lambda hass, target, name: asyncio.create_task(target)
     )
-    return VWCIrrigationCoordinator(
+    coordinator = VWCIrrigationCoordinator(
         mock_hass, mock_config_entry, "gs1", mock_main_coordinator
     )
+    yield coordinator
+    tasks = [*coordinator._running_tasks.values(), *coordinator._settling_tasks]
+    if coordinator._supply_task is not None:
+        tasks.append(coordinator._supply_task)
+    coordinator.async_cancel_listeners()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def test_p0_activation(vwc_coordinator, mock_hass, mock_growspace) -> None:
@@ -204,6 +212,7 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
             side_effect=[
                 t0,  # 1. the loop's validated VWC read
                 t0,  # 2. _set_phase("P1 - Ramp Up") logbook event
+                t0,  # Fresh head decision validates moisture again
                 t0,  # 3. the shot's validated VWC read (substrate tracker)
                 t0,  # 4. requested_at, as the request reaches the gate
                 t0,  # 5. controller_snapshot's moisture check
@@ -291,6 +300,7 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
             "custom_components.growspace_manager.irrigation_coordinator.utcnow",
             # Every validated moisture read (#789) also reads the clock.
             side_effect=[
+                t0,  # Fresh head decision validates moisture again
                 # Case A: phase transition P3→P2 fires a logbook event
                 t0,  # 1. the loop's validated VWC read
                 t0,  # 2. _set_phase("P2 - Maintenance") logbook event
@@ -1067,31 +1077,29 @@ async def test_vwc_falls_back_to_lights_on_time_when_detected_is_none(
     assert vwc_coordinator._machine.current_phase == "P0 - Activation"
 
 
-async def test_handle_watering_cancels_lingering_task(
+async def test_handle_watering_queues_behind_lingering_task(
     vwc_coordinator: VWCIrrigationCoordinator,
     mock_hass: MagicMock,
     mock_growspace: Growspace,
 ) -> None:
-    """Test that _handle_watering cancels an existing lingering irrigation task."""
-    strategy = effective_strategy(mock_growspace)
-
-    # Place a mock lingering task in the coordinator's running tasks
-    mock_task = MagicMock()
-    mock_task.done.return_value = False
-    vwc_coordinator._running_tasks["irrigation"] = mock_task
-
-    # We trigger watering (ensure _last_cycle_timestamp allows it)
-    vwc_coordinator._last_cycle_timestamp = None
-
-    now_dt = datetime(2023, 1, 1, 12, 0, 0, tzinfo=dt_util.UTC)
+    """A steering request leaves a running shot alone and waits without sizing."""
+    release = asyncio.Event()
+    task = asyncio.create_task(release.wait())
+    vwc_coordinator._running_tasks["irrigation"] = task
+    now_dt = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
     with patch(
         "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
         return_value=now_dt,
     ):
-        _drive_watering(vwc_coordinator, strategy, "P1")
-
-    # The existing lingering task should have been cancelled
-    mock_task.cancel.assert_called_once()
+        await vwc_coordinator._update_loop(now_dt)
+        assert not task.cancelled()
+        assert vwc_coordinator.shot_composition_payload()["suppressed_by"] == "queued"
+        assert len(vwc_coordinator.supply_payload()["claims"]) == 1
+        # Target reached before the supply opens: the head makes no attempt.
+        mock_hass.states.get.return_value = _state("55.0")
+        release.set()
+        await vwc_coordinator._supply_task
+        assert not vwc_coordinator._deliveries.attempts
 
 
 async def test_halt_on_runoff_ec_threshold_no_readings(
@@ -2213,3 +2221,91 @@ async def test_the_gate_writes_no_logbook_entries_when_logging_is_off(
     messages = _logbook_messages(mock_hass)
     assert INFILTRATION_HELD_MESSAGE not in messages
     assert INFILTRATION_RELEASED_MESSAGE not in messages
+
+
+@pytest.mark.parametrize("at_front", ["wet", "p2_stop", "cooldown", "compose"])
+async def test_supply_steering_decides_current_moisture_phase_and_cooldown(
+    vwc_coordinator, mock_hass, at_front
+):
+    """The head sizes from current inputs, or withholds without opening an attempt."""
+    finished = asyncio.Event()
+    running = asyncio.create_task(finished.wait())
+    vwc_coordinator._running_tasks["irrigation"] = running
+    due = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    vwc_coordinator._machine._target_reached_today = True
+    vwc_coordinator._machine._last_reset_date = due.date().isoformat()
+    mock_hass.states.get.return_value = _state("40.0")
+    with (
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=due,
+        ) as clock,
+        patch.object(
+            vwc_coordinator, "_run_pump_cycle", new_callable=AsyncMock
+        ) as cycle,
+    ):
+        await vwc_coordinator._update_loop(due)
+        await vwc_coordinator._update_loop(due)
+        assert len(vwc_coordinator.supply_payload()["claims"]) == 1
+        assert vwc_coordinator.shot_composition_payload()["last_shot"] is None
+        if at_front == "wet":
+            mock_hass.states.get.return_value = _state("55.0")
+        elif at_front == "p2_stop":
+            vwc_coordinator.growspace.irrigation_config.auto_advance_p2_to_p3 = True
+            clock.return_value = due.replace(hour=19)
+        elif at_front == "cooldown":
+            vwc_coordinator._last_cycle_timestamp = due.isoformat()
+        else:
+            mock_hass.states.get.return_value = _state("38.0")
+            vwc_coordinator._zone.strategy.p2_shot_duration_seconds = 23
+        finished.set()
+        await vwc_coordinator._supply_task
+        if at_front == "compose":
+            cycle.assert_awaited_once()
+            args = cycle.await_args.args
+            assert args[2] == 23
+            assert args[3]["vwc"] == 38.0
+            assert args[3]["due_at"] == due
+        else:
+            cycle.assert_not_awaited()
+        assert not vwc_coordinator._deliveries.attempts
+
+
+async def test_minute_tick_during_supply_delivery_only_enqueues(
+    vwc_coordinator, mock_hass
+):
+    """A tick concurrent with the worker cannot compose another in-flight shot."""
+    started = asyncio.Event()
+    finished = asyncio.Event()
+    due = datetime(2023, 1, 1, 12, tzinfo=dt_util.UTC)
+    mock_hass.states.get.return_value = _state("40.0", last_updated=due)
+
+    async def cycle(*args):
+        vwc_coordinator._last_cycle_timestamp = due.isoformat()
+        started.set()
+        await finished.wait()
+
+    with (
+        patch(
+            "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+            return_value=due,
+        ) as clock,
+        patch.object(vwc_coordinator, "_run_pump_cycle", side_effect=cycle) as pump,
+    ):
+        await vwc_coordinator._update_loop(due)
+        await started.wait()
+        clock.return_value = due + timedelta(minutes=20)
+        mock_hass.states.get.return_value = _state(
+            "40.0", last_updated=clock.return_value
+        )
+        await vwc_coordinator._update_loop(clock.return_value)
+        pump.assert_awaited_once()
+        assert len(vwc_coordinator.supply_payload()["claims"]) == 1
+        assert vwc_coordinator.shot_composition_payload()["suppressed_by"] == "queued"
+        # The second claim sees water received while it waited, and dies at the head.
+        mock_hass.states.get.return_value = _state(
+            "55.0", last_updated=clock.return_value
+        )
+        finished.set()
+        await vwc_coordinator._supply_task
+        pump.assert_awaited_once()

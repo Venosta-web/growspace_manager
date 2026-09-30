@@ -113,8 +113,11 @@ async def _tick(
 ) -> str | None:
     """Run one minute-loop tick and return why it withheld a shot, if it did."""
     await coordinator._update_loop(dt_util.now())
+    suppressed = coordinator.shot_composition_payload()["suppressed_by"]
     await hass.async_block_till_done()
-    return coordinator.shot_composition_payload()["suppressed_by"]
+    if coordinator._supply_task is not None:
+        await coordinator._supply_task
+    return suppressed
 
 
 async def test_restart_mid_p2_resumes_p2_behind_the_startup_inhibit(
@@ -160,7 +163,7 @@ async def test_restart_mid_p2_resumes_p2_behind_the_startup_inhibit(
     assert pump_cycles.call_count == 0
 
     freezer.move_to(_at("14:15"))
-    assert await _tick(hass, coordinator) is None
+    assert await _tick(hass, coordinator) == "queued"
     assert _phases_fired(pump_cycles) == ["P2"]
 
     await coordinator.async_unload()
@@ -184,7 +187,7 @@ async def test_restart_before_p1_completes_resumes_p1_with_its_cooldown(
     assert coordinator._machine.current_phase == PHASE_P1
 
     freezer.move_to(_at("10:10"))
-    assert await _tick(hass, coordinator) is None
+    assert await _tick(hass, coordinator) == "queued"
     assert _phases_fired(pump_cycles) == ["P1"]
 
     await coordinator.async_unload()

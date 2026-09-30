@@ -738,6 +738,21 @@
       "score": 0.2,
       "shot_composition": null
     },
+    "supply": {
+      "claims": [
+        {
+          "due_at": "2026-08-11T11:58:00+00:00",
+          "source": "manual",
+          "zone_id": "default"
+        },
+        {
+          "due_at": "2026-08-11T11:58:00+00:00",
+          "source": "steering",
+          "zone_id": "north"
+        }
+      ],
+      "open_zone_id": "default"
+    },
     "volume_dispensed_today": 0,
     "volume_mode_capable": true,
     "water_usage": {

@@ -719,6 +719,7 @@ def test_the_wire_form_names_every_field() -> None:
         "planned_s": 60.0,
         "flow_rate_ml_per_sec": 10.0,
         "requested_at": "2026-09-26T14:29:57+00:00",
+        "due_at": None,
         "on_commanded_at": "2026-09-26T14:29:58+00:00",
         "on_confirmed_at": "2026-09-26T14:30:00+00:00",
         "off_commanded_at": "2026-09-26T14:31:00+00:00",
@@ -975,3 +976,21 @@ def test_valve_readbacks_extend_an_attempt_across_midnight():
     assert attempts_between([attempt], midnight, midnight + timedelta(days=1)) == [
         attempt
     ]
+
+
+def test_due_at_round_trips_and_legacy_rows_have_no_queue_time():
+    """Waiting belongs to a claim; pre-queue records and drains remain readable."""
+    due = ON - timedelta(minutes=8)
+    attempt = _requested(due_at=due)
+    assert attempt.as_dict()["due_at"] == due.isoformat()
+    assert DeliveryAttempt.from_dict(attempt.as_dict()) == attempt
+    legacy = attempt.as_dict()
+    legacy.pop("due_at")
+    assert DeliveryAttempt.from_dict(legacy).due_at is None
+
+
+@pytest.mark.parametrize("due", ["2026-09-26T14:00:00", 123, "bad-time"])
+def test_due_at_refuses_invalid_stored_times(due):
+    """Malformed queue evidence must not make a stored attempt readable."""
+    with pytest.raises((ValueError, TypeError)):
+        DeliveryAttempt.from_dict(_wire(due_at=due))
