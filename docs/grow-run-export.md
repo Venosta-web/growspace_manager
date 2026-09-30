@@ -35,6 +35,8 @@ live Plants, the Growspace or today's editable Run Metadata. It includes:
   `value`, `complete`, and `missing` facts. `coverage` carries recorded metric
   coverage percentages; no coverage is inferred for metrics without a row.
 - `water_applications`, `uncovered_gaps`, overall `missing` and `complete`.
+- `reliability`, when captured: frozen safety event counts, coverage start,
+  latest fault and acknowledgement, state and definition version.
 
 Missing facts retain their snapshot representation: nullable facts stay null,
 unrecorded optional harvest metrics stay absent, and unidentified participant
