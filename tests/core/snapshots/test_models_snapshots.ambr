@@ -561,6 +561,8 @@
         ]),
         'probe_cells': dict({
         }),
+        'probe_names': dict({
+        }),
         'probe_roles': dict({
         }),
         'pump_flow_rate_ml_per_sec': 0.0,

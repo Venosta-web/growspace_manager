@@ -811,6 +811,7 @@ async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
                     "quantity": "moisture",
                     "role": "control",
                     "cell": [2, 1],
+                    "name": "North control",
                 }
             ],
         },
@@ -832,6 +833,8 @@ async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
         hass, entry, GROWSPACE_ID, coordinator, zone_id="north", supply=irrigation
     )
     irrigation.register_zone_runtime(north)
+    _ = north.control_measurement
+    north._response_watch.unresponsive_since = datetime(2026, 8, 11, 12, tzinfo=UTC)
     irrigation._deliveries.calibration = _raised_disagreement()
     due = datetime(2026, 8, 11, 11, 58, tzinfo=UTC)
     irrigation._serving_claim = SupplyClaim(
@@ -878,7 +881,16 @@ async def test_growspace_payload_contract(
     for zone in zones:
         assert zone["cells"] and zone["valves"] and zone["probes"]
         assert zone["active_steering_phase"] in {"p1", "p2", "p3"}
-        assert zone["vwc"] is not None
+        assert zone["control_measurement"]["probe"]["role"] == "control"
+        if zone["id"] == "north":
+            assert zone["vwc"] is None
+            assert zone["degraded_control"] == {
+                "cause": "probe_unresponsive",
+                "since": "2026-08-11T12:00:00+00:00",
+            }
+        else:
+            assert zone["vwc"] is not None
+            assert zone["degraded_control"] is None
         assert zone["state"] in {"ready", "running", "inhibited"}
         assert "substrate" in zone and "score" in zone["substrate"]
         assert all(

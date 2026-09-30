@@ -65,6 +65,7 @@ class IrrigationZone(BaseModel):
     # placement and role; they never duplicate the entity inventory.
     probe_cells: dict[str, tuple[int, int]] = field(default_factory=dict)
     probe_roles: dict[str, str] = field(default_factory=dict)
+    probe_names: dict[str, str] = field(default_factory=dict)
 
     # What the pump delivers into this zone's emitters.
     pump_flow_rate_ml_per_sec: float = 0.0
@@ -107,7 +108,13 @@ class IrrigationZone(BaseModel):
             data["irrigation_times"] = normalize_schedule_items(
                 data["irrigation_times"]
             )
-        for key in ("strategy", "substrate_history", "probe_cells", "probe_roles"):
+        for key in (
+            "strategy",
+            "substrate_history",
+            "probe_cells",
+            "probe_roles",
+            "probe_names",
+        ):
             if data.get(key) is None:
                 data[key] = {}
         return data

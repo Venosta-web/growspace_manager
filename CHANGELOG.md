@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Each zone steers on its elected Control Probe with reading provenance.
+  `probe_unresponsive` is enforced from its first release: three confirmed
+  steering shots without a rise withhold automatic shots immediately and alert
+  after the sensor delay. Manual Runs and every safety gate continue; invalid
+  control measurements leave gaps in adaptive feedback and dryback history.
+
 - Each irrigation zone now steers, schedules and records independently, sharing
   the pump queue, safety controls and undivided daily caps. Startup probe
   readiness holds only the affected zone.

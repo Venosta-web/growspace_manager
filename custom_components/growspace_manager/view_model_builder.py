@@ -265,7 +265,19 @@ class ViewModelBuilder:
             )
             zone_payload["active_steering_phase"] = zone.active_steering_phase
             zone_payload["phase_changed_at"] = zone.phase_changed_at
-            zone_payload["vwc"] = runtime.current_vwc if runtime is not None else None
+            measurement = runtime.control_measurement if runtime is not None else None
+            zone_payload["vwc"] = measurement.value if measurement else None
+            zone_payload["control_measurement"] = (
+                measurement.as_dict() if measurement else None
+            )
+            zone_payload["degraded_control"] = (
+                {
+                    "cause": measurement.cause.value,
+                    "since": measurement.invalid_since.isoformat(),
+                }
+                if measurement and measurement.cause and measurement.invalid_since
+                else None
+            )
             snapshot = runtime.zone_snapshot() if runtime is not None else None
             zone_payload["state"] = snapshot.state.value if snapshot else "idle"
             zone_payload["reasons"] = (

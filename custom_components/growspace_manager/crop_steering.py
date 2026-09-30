@@ -7,7 +7,6 @@ to +1.0 (max generative).
 
 from __future__ import annotations
 
-import contextlib
 from typing import TYPE_CHECKING
 
 from .const import SteeringMode
@@ -145,16 +144,7 @@ def get_crop_steering_state(
     if vwc_coord is None:
         return CropSteeringState()
 
-    # Get VWC readings from the coordinator's soil moisture sensor
-    soil_moisture_sensor = zone.soil_moisture_sensor
-    if not soil_moisture_sensor:
-        return CropSteeringState()
-
-    state = coordinator.hass.states.get(soil_moisture_sensor)
-    current_vwc = None
-    if state and state.state not in ("unknown", "unavailable"):
-        with contextlib.suppress(ValueError, TypeError):
-            current_vwc = float(state.state)
+    current_vwc = vwc_coord.current_vwc
 
     if current_vwc is None:
         return CropSteeringState()

@@ -90,6 +90,17 @@ class SubstrateTracker:
 
     # ── feeding ────────────────────────────────────────────────────────────────
 
+    def record_gap(self) -> None:
+        """Discard open dryback bounds; recovery starts a new measured window."""
+        history = self._history
+        for prefix in ("pending_overnight", "pending_incycle"):
+            for bound in ("peak", "trough"):
+                setattr(history, f"{prefix}_{bound}", None)
+                setattr(history, f"{prefix}_{bound}_ts", None)
+        history.lit_period_max = None
+        history.lit_period_max_ts = None
+        self._peak_settling = False
+
     def record_shot(self, phase: str, timestamp: str, vwc: float) -> None:
         """Signal that an irrigation shot fired.
 

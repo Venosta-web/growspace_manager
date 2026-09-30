@@ -44,6 +44,11 @@ from .delivery_attempt_store import (
     GrowspaceDeliveries,
 )
 from .domain.calibration_proposal import tank_sourced_proposal
+from .domain.control_measurement import (
+    ControlMeasurement,
+    ProbeResponseWatch,
+    control_measurement,
+)
 from .domain.delivery_attempt import (
     DELIVERY_RECORD_UNREADABLE,
     DeliveryAttempt,
@@ -107,6 +112,7 @@ from .domain.sensor_validity import (
     recovered_alert_message,
     substrate_moisture_range,
     validate_reading,
+    validity_window,
 )
 from .domain.supply_queue import SupplyClaim, SupplyQueue
 from .domain.tank_pump_disagreement import (
@@ -124,7 +130,7 @@ from .domain.water_aggregation import (
     is_tank_derived_mode,
     record_daily_water,
 )
-from .domain.zone_edit import resolve_zone
+from .domain.zone_edit import probe_documents, resolve_zone
 from .exceptions import GrowspaceError
 from .irrigation_safety_store import IrrigationSafetyStore
 from .models import (
@@ -220,6 +226,11 @@ class BaseIrrigationCoordinator:
         # One watch per validated sensor (#789): its learned report cadence,
         # and for the moisture sensor the invalid episode its alert follows.
         self._sensor_watches: dict[str, SensorWatch] = {}
+        self._sensor_reported_at: dict[str, datetime | None] = {}
+        self._response_watch = ProbeResponseWatch()
+        self._response_probe: str | None = None
+        self._control_watch = SensorWatch(watching_since=utcnow())
+        self._alert_probe: str | None = None
         # The moisture sensor's validity as of the last sensor tick, so an edge
         # is written to the Safety Ledger once rather than every minute.
         self._moisture_invalidity: Invalidity | None = None
@@ -1167,6 +1178,7 @@ class BaseIrrigationCoordinator:
         if watch is None:
             watch = self._sensor_watches[entity_id] = SensorWatch(watching_since=now)
         state = self.hass.states.get(entity_id)
+        self._sensor_reported_at[entity_id] = state.last_reported if state else None
         scale = 1.0
         if state is not None and unit_scale is not None:
             scale = unit_scale(state.attributes.get("unit_of_measurement"))
@@ -1200,8 +1212,46 @@ class BaseIrrigationCoordinator:
 
     def _moisture_value(self) -> float | None:
         """Return the moisture sensor's value, or None when it cannot be trusted."""
+        return self.control_measurement.value
+
+    @property
+    def control_measurement(self) -> ControlMeasurement:
+        """Read the elected baseline with validity, response health and provenance."""
         moisture = self._zone.soil_moisture_sensor
-        return self._read_moisture(moisture).value if moisture else None
+        now = utcnow()
+        if moisture != self._response_probe:
+            self._response_probe = moisture
+            self._response_watch = ProbeResponseWatch()
+        reading = (
+            self._read_moisture(moisture, now)
+            if moisture
+            else SensorReading(None, Invalidity.UNAVAILABLE, None)
+        )
+        watch = self._sensor_watches.get(moisture) if moisture else None
+        measurement = control_measurement(
+            probe_documents(self._zone),
+            reading,
+            observed_at=self._sensor_reported_at.get(moisture) if moisture else None,
+            window=validity_window(
+                watch.cadence.expected_interval if watch else None,
+                self._sensor_stale_cap(),
+            ),
+            unresponsive_since=self._response_watch.unresponsive_since,
+        )
+        self._control_watch.observe(
+            SensorReading(
+                measurement.value, measurement.cause, measurement.invalid_since
+            ),
+            now,
+        )
+        return ControlMeasurement(
+            measurement.value,
+            measurement.observed_at,
+            measurement.cause,
+            self._control_watch.invalid_since,
+            measurement.window,
+            measurement.probe,
+        )
 
     def _control_sensor_inhibit(self) -> SafetyReason | None:
         """Return why automatic shots are withheld on the moisture sensor, if they are.
@@ -1209,13 +1259,13 @@ class BaseIrrigationCoordinator:
         Only the moisture sensor: a tank has its own grace and its own reason,
         ``tank_unknown``, from the Pump Cycle Gate.
         """
-        moisture = self._moisture_sensor()
-        if moisture is None:
+        if not self._zone.strategy.enabled:
             return None
-        cause = self._read_moisture(moisture).invalidity
+        moisture = self._moisture_sensor() or "unconfigured control probe"
+        cause = self.control_measurement.cause
         if cause is None:
             return None
-        since = self._sensor_watches[moisture].invalid_since or utcnow()
+        since = self._control_watch.invalid_since or utcnow()
         return SafetyReason(
             inhibit_code(cause), inhibit_detail(moisture, cause), since.isoformat()
         )
@@ -1349,19 +1399,20 @@ class BaseIrrigationCoordinator:
         """
         now = utcnow()
         moisture = self._moisture_sensor()
-        for entity_id, watch in self._sensor_watches.items():
-            if watch.alerted and entity_id != moisture:
-                # No longer a control input, so no longer withholding anything.
-                watch.alerted = False
-                await self._async_dismiss_sensor_alert(entity_id)
+        if self._alert_probe != moisture:
+            if self._control_watch.alerted and self._alert_probe is not None:
+                await self._async_dismiss_sensor_alert(self._alert_probe)
+            if self._alert_probe is not None:
+                self._control_watch = SensorWatch(watching_since=now)
+            self._alert_probe = moisture
         if moisture is None:
             self._moisture_invalidity = None
             return
-        invalidity = self._read_moisture(moisture, now).invalidity
+        invalidity = self.control_measurement.cause
         if invalidity != self._moisture_invalidity:
             self._moisture_invalidity = invalidity
             await self._async_record_controller_state()
-        watch = self._sensor_watches[moisture]
+        watch = self._control_watch
         delay = timedelta(
             minutes=self.growspace.irrigation_config.sensor_alert_delay_minutes
         )
@@ -1386,6 +1437,13 @@ class BaseIrrigationCoordinator:
             growspace_name=growspace.name,
             since_local=as_local(since).strftime("%H:%M"),
         )
+        if watch.cause is Invalidity.UNRESPONSIVE:
+            message = (
+                f"Control probe {entity_id} in {growspace.name}, zone {self._zone.name or self._zone.id}, "
+                f"did not rise after three confirmed steering shots from emitter "
+                f"{self._zone.valves or [growspace.irrigation_config.irrigation_pump_entity]}. "
+                "Check the probe and emitter. Automatic shots are withheld until a confirmed shot produces a rise."
+            )
         title = f"⚠️ Moisture Sensor Invalid: {growspace.name}"
         _LOGGER.warning("Growspace %s: %s", self._growspace_id, message)
         self._fire_logbook_event(message, CATEGORY_IRRIGATION_ERROR)
