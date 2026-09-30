@@ -32,8 +32,10 @@ from custom_components.growspace_manager.domain.grow_run import (
     RunRevisionConflict,
     RunSnapshot,
     RunStatus,
+    SafetyFact,
     build_snapshot,
     preview_finalization,
+    reliability_summary,
     run_details,
 )
 
@@ -121,6 +123,72 @@ def _finalize(
 
 def _metric(snapshot: RunSnapshot, name: str) -> FrozenMetric:
     return next(row for row in snapshot.metrics if row.metric == name)
+
+
+def test_reliability_freezes_and_older_snapshots_remain_not_recorded() -> None:
+    ledger = _completed(plants=())
+    first = SafetyFact(
+        "event-1", "tent", STARTED + timedelta(days=1), "fault", "fault-1"
+    )
+    acknowledged = SafetyFact(
+        "event-2", "tent", STARTED + timedelta(days=2), "acknowledge", "fault-1"
+    )
+    ledger = (
+        ledger.project_safety(first).project_safety(first).project_safety(acknowledged)
+    )
+    assert len(ledger.runs[0].safety_facts) == 2
+    snapshot = build_snapshot(
+        ledger.runs[0], finalized_at=FINALIZED, growspace_name="Tent"
+    )
+    assert snapshot.reliability["state"] == "final"
+    assert snapshot.reliability["latest_fault"]["acknowledged"] is True
+    assert RunSnapshot.from_dict(snapshot.as_dict()).reliability == snapshot.reliability
+
+    older = snapshot.as_dict()
+    older.pop("reliability")
+    assert RunSnapshot.from_dict(older).reliability is None
+    with pytest.raises(ValueError, match="reliability"):
+        RunSnapshot.from_dict({**snapshot.as_dict(), "reliability": {"state": "live"}})
+
+
+def test_reliability_rejects_malformed_frozen_facts_and_run_attribution() -> None:
+    run = _completed(plants=()).runs[0]
+    assert reliability_summary(
+        replace(run, safety_coverage_started_at=None), "pending"
+    ) == {
+        "state": "not_recorded",
+        "definition_version": None,
+    }
+    fact = SafetyFact("event-1", "tent", STARTED + timedelta(days=1), "fault")
+    stored = replace(run, safety_facts=(fact,)).as_dict()
+    with pytest.raises(ValueError, match="appears twice"):
+        GrowRun.from_dict({**stored, "safety_facts": [fact.as_dict()] * 2})
+    with pytest.raises(ValueError, match="outside its Run"):
+        GrowRun.from_dict(
+            {**stored, "safety_facts": [{**fact.as_dict(), "growspace_id": "other"}]}
+        )
+
+    summary = build_snapshot(
+        run, finalized_at=FINALIZED, growspace_name="Tent"
+    ).as_dict()
+    summary["reliability"] = {"state": "not_recorded", "definition_version": None}
+    assert RunSnapshot.from_dict(summary).reliability["state"] == "not_recorded"
+    final = build_snapshot(
+        replace(run, safety_facts=(fact,)),
+        finalized_at=FINALIZED,
+        growspace_name="Tent",
+    ).as_dict()
+    final["reliability"]["complete"] = "yes"
+    with pytest.raises(TypeError, match="completeness"):
+        RunSnapshot.from_dict(final)
+    final["reliability"]["complete"] = True
+    final["reliability"]["latest_fault"] = {
+        **fact.as_dict(),
+        "kind": "acknowledge",
+        "acknowledged": True,
+    }
+    with pytest.raises(ValueError, match="latest fault"):
+        RunSnapshot.from_dict(final)
 
 
 # ---------------------------------------------------------------------------

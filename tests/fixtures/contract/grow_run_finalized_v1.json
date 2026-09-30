@@ -132,6 +132,33 @@
         "strain_name": ""
       }
     ],
+    "reliability": {
+      "complete": true,
+      "counts": {
+        "acknowledge": 1,
+        "controller_transition": 0,
+        "cycle_not_delivered": 0,
+        "emergency_stop": 0,
+        "fault": 1,
+        "ha_restart": 1,
+        "inhibit": 1,
+        "override_set": 0,
+        "unexpected_on": 0
+      },
+      "coverage_started_at": "2026-07-24T20:30:00+00:00",
+      "definition_version": 1,
+      "latest_fault": {
+        "acknowledged": true,
+        "at": "2026-07-26T20:30:00+00:00",
+        "details": {},
+        "fact_id": "safety-1",
+        "fault_id": "fault-1",
+        "growspace_id": "tent",
+        "kind": "fault",
+        "reason_code": "pump_stuck"
+      },
+      "state": "final"
+    },
     "run_id": "run-1",
     "sequence_number": 4,
     "started_at": "2026-07-24T20:30:00+00:00",

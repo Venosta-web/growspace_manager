@@ -91,7 +91,48 @@ METRIC_DEFINITIONS = {
     "yield_per_harvest_source_plant": 1,
     "water_applied": 1,
     "water_productivity": 1,
+    "reliability": 1,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class SafetyFact:
+    """One identified Safety Ledger event or Home Assistant start."""
+
+    fact_id: str
+    growspace_id: str
+    at: datetime
+    kind: str
+    fault_id: str | None = None
+    reason_code: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable and wire form of the event."""
+        return {
+            "fact_id": self.fact_id,
+            "growspace_id": self.growspace_id,
+            "at": self.at.isoformat(),
+            "kind": self.kind,
+            "fault_id": self.fault_id,
+            "reason_code": self.reason_code,
+            "details": self.details,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> SafetyFact:
+        """Read a stored safety event, refusing missing identity fields."""
+        value = _dict(value, "safety fact")
+        return cls(
+            _str(value.get("fact_id"), "safety.id"),
+            _str(value.get("growspace_id"), "safety.growspace"),
+            _moment(value.get("at"), "safety.at"),
+            _str(value.get("kind"), "safety.kind"),
+            _opt_str(value.get("fault_id"), "safety.fault_id"),
+            _opt_str(value.get("reason_code"), "safety.reason"),
+            _dict(value.get("details", {}), "safety.details"),
+        )
+
 
 #: The goal a Run Comparison judges each metric against. A Comparison
 #: Direction receives an improvement judgment only for an agreed monotonic
@@ -103,6 +144,17 @@ METRIC_GOALS: dict[str, str] = {
     "water_applied": "neutral",
     "water_productivity": "higher",
 }
+
+RELIABILITY_KINDS = (
+    "fault",
+    "inhibit",
+    "emergency_stop",
+    "cycle_not_delivered",
+    "ha_restart",
+    "controller_transition",
+    "override_set",
+    "unexpected_on",
+)
 
 
 class RunStatus(StrEnum):
@@ -770,6 +822,7 @@ class ClaimedHistory:
     participations: tuple[RunParticipation, ...]
     facts: tuple[PlantMovementFact, ...]
     days: tuple[DailySummary, ...]
+    safety_facts: tuple[SafetyFact, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -998,6 +1051,7 @@ class RunSnapshot:
     strains: tuple[StrainCount, ...]
     metrics: tuple[FrozenMetric, ...]
     water_applications: tuple[WaterApplication, ...] = ()
+    reliability: dict[str, Any] | None = None
     coverage: tuple[MetricCoverage, ...] = ()
     uncovered_gaps: tuple[CoverageGap, ...] = ()
     missing: tuple[MissingFact, ...] = ()
@@ -1032,6 +1086,7 @@ class RunSnapshot:
             "strains": [row.as_dict() for row in self.strains],
             "metrics": [row.as_dict() for row in self.metrics],
             "water_applications": [row.as_dict() for row in self.water_applications],
+            "reliability": self.reliability,
             "coverage": [row.as_dict() for row in self.coverage],
             "uncovered_gaps": [row.as_dict() for row in self.uncovered_gaps],
             "missing": [row.as_dict() for row in self.missing],
@@ -1088,6 +1143,7 @@ class RunSnapshot:
                     value.get("water_applications", []), "snapshot.water_applications"
                 )
             ),
+            reliability=_read_reliability(value.get("reliability")),
             coverage=tuple(
                 MetricCoverage.from_dict(row)
                 for row in _list(value.get("coverage"), "snapshot.coverage")
@@ -1326,10 +1382,68 @@ def build_snapshot(
         ),
         metrics=metrics,
         water_applications=run.water_applications,
+        reliability=reliability_summary(run, "final"),
         coverage=water_coverage(run),
         uncovered_gaps=run.backdate.gaps if run.backdate else (),
         missing=tuple(dict.fromkeys(missing)),
     )
+
+
+def reliability_summary(run: GrowRun, state: str) -> dict[str, Any]:
+    """Count identified events and find the latest fault's acknowledgement."""
+    if run.safety_coverage_started_at is None:
+        return {"state": "not_recorded", "definition_version": None}
+    counts: dict[str, int] = dict.fromkeys(RELIABILITY_KINDS, 0)
+    for fact in run.safety_facts:
+        counts[fact.kind] = counts.get(fact.kind, 0) + 1
+    faults = [fact for fact in run.safety_facts if fact.kind == "fault"]
+    latest = max(faults, key=lambda fact: (fact.at, fact.fact_id), default=None)
+    acknowledged = bool(
+        latest
+        and any(
+            fact.kind == "acknowledge"
+            and fact.fault_id == latest.fault_id
+            and fact.at >= latest.at
+            for fact in run.safety_facts
+        )
+    )
+    return {
+        "state": state,
+        "definition_version": METRIC_DEFINITIONS["reliability"],
+        "coverage_started_at": run.safety_coverage_started_at.isoformat(),
+        "complete": run.safety_coverage_started_at <= run.started_at,
+        "counts": dict(sorted(counts.items())),
+        "latest_fault": (
+            None
+            if latest is None
+            else {**latest.as_dict(), "acknowledged": acknowledged}
+        ),
+    }
+
+
+def _read_reliability(value: Any) -> dict[str, Any] | None:
+    """Refuse a malformed frozen summary; older snapshots have none."""
+    if value is None:
+        return None
+    summary = _dict(value, "snapshot.reliability")
+    if summary.get("state") not in {"final", "not_recorded"}:
+        raise ValueError("snapshot reliability has no final state")
+    if summary["state"] == "not_recorded":
+        return summary
+    _int(summary.get("definition_version"), "reliability.version", 1)
+    _moment(summary.get("coverage_started_at"), "reliability.coverage")
+    if type(summary.get("complete")) is not bool:
+        raise TypeError("reliability completeness is invalid")
+    counts = _dict(summary.get("counts"), "reliability.counts")
+    for kind, count in counts.items():
+        _str(kind, "reliability.kind")
+        _int(count, "reliability.count", 0)
+    latest = summary.get("latest_fault")
+    if latest is not None:
+        fault = SafetyFact.from_dict(latest)
+        if fault.kind != "fault" or type(latest.get("acknowledged")) is not bool:
+            raise ValueError("latest fault is invalid")
+    return summary
 
 
 @dataclass(frozen=True, slots=True)
@@ -1443,6 +1557,8 @@ class GrowRun:
     participations: tuple[RunParticipation, ...] = ()
     movement_history: tuple[PlantMovementFact, ...] = ()
     water_applications: tuple[WaterApplication, ...] = ()
+    safety_facts: tuple[SafetyFact, ...] = ()
+    safety_coverage_started_at: datetime | None = None
     water_coverage_started_at: datetime | None = None
     harvest_outcomes: tuple[HarvestOutcome, ...] = ()
     audit: tuple[RunAuditEntry, ...] = ()
@@ -1496,6 +1612,12 @@ class GrowRun:
             "participations": [row.as_dict() for row in self.participations],
             "movement_history": [row.as_dict() for row in self.movement_history],
             "water_applications": [row.as_dict() for row in self.water_applications],
+            "safety_facts": [row.as_dict() for row in self.safety_facts],
+            "safety_coverage_started_at": (
+                self.safety_coverage_started_at.isoformat()
+                if self.safety_coverage_started_at
+                else None
+            ),
             "water_coverage_started_at": (
                 self.water_coverage_started_at.isoformat()
                 if self.water_coverage_started_at
@@ -1546,6 +1668,13 @@ class GrowRun:
                 for row in _list(
                     value.get("water_applications", []), "run.water_applications"
                 )
+            ),
+            safety_facts=tuple(
+                SafetyFact.from_dict(row)
+                for row in _list(value.get("safety_facts", []), "run.safety_facts")
+            ),
+            safety_coverage_started_at=_opt_moment(
+                value.get("safety_coverage_started_at"), "run.safety_coverage"
             ),
             water_coverage_started_at=_opt_moment(
                 value.get("water_coverage_started_at"), "run.water_coverage_started_at"
@@ -1601,6 +1730,16 @@ class GrowRun:
         water_ids = [row.application_id for row in run.water_applications]
         if len(water_ids) != len(set(water_ids)):
             raise ValueError("a water application appears twice in one Run")
+        safety_ids = [row.fact_id for row in run.safety_facts]
+        if len(safety_ids) != len(set(safety_ids)):
+            raise ValueError("a safety fact appears twice in one Run")
+        if any(
+            row.growspace_id != run.growspace_id
+            or row.at < run.started_at
+            or (run.completed_at is not None and row.at > run.completed_at)
+            for row in run.safety_facts
+        ):
+            raise ValueError("a safety fact is outside its Run")
         outcome_ids = [row.plant_id for row in run.harvest_outcomes]
         if len(outcome_ids) != len(set(outcome_ids)):
             raise ValueError("a Plant has more than one harvest outcome in one Run")
@@ -1873,6 +2012,7 @@ def discard_blockers(
     if (
         run.movement_history
         or run.water_applications
+        or run.safety_facts
         or any(
             run.run_id in (fact.source_run_id, fact.target_run_id)
             for fact in pending_facts
@@ -2052,6 +2192,18 @@ class RunLedger:
         )
         return replace(self, runs=runs) if runs != self.runs else self
 
+    def project_safety(self, fact: SafetyFact) -> RunLedger:
+        """Place a safety event into the owning mutable Run exactly once."""
+        runs = tuple(
+            replace(run, safety_facts=(*run.safety_facts, fact))
+            if run.status in (RunStatus.ACTIVE, RunStatus.COMPLETED)
+            and run.covers(fact.at)
+            and not any(row.fact_id == fact.fact_id for row in run.safety_facts)
+            else run
+            for run in self.runs
+        )
+        return replace(self, runs=runs) if runs != self.runs else self
+
     def mark_water_incomplete(self) -> RunLedger:
         """Keep an unreadable delivery interval from becoming a complete total."""
         runs = tuple(
@@ -2159,6 +2311,7 @@ class RunLedger:
             timezone=timezone,
             started_at=started_at,
             water_coverage_started_at=now if claim is None else None,
+            safety_coverage_started_at=now,
             metadata=metadata,
             baseline=baseline,
             participations=participations,
@@ -2169,6 +2322,7 @@ class RunLedger:
                     _attribute(fact, self.growspace_id, run_id) for fact in claim.facts
                 )
             ),
+            safety_facts=() if claim is None else claim.safety_facts,
             daily_summaries=() if claim is None else claim.days,
             backdate=None if claim is None else claim.backdate,
             prior_coverage=prior_coverage,
@@ -2604,6 +2758,14 @@ def run_details(run: GrowRun, revision: int) -> dict[str, Any]:
             "participations": [row.as_dict() for row in run.participations],
             "movement_history": [row.as_dict() for row in run.movement_history],
             "water_applications": [row.as_dict() for row in run.water_applications],
+            "safety_facts": [row.as_dict() for row in run.safety_facts],
+            "reliability": (
+                run.snapshot.reliability
+                if run.snapshot is not None and run.snapshot.reliability is not None
+                else {"state": "not_recorded", "definition_version": None}
+                if run.snapshot is not None
+                else reliability_summary(run, METRICS_STATE[run.status])
+            ),
             "harvest_outcomes": [row.as_dict() for row in run.harvest_outcomes],
             "tags": list(run.metadata.tags),
             "goals": run.metadata.goals,

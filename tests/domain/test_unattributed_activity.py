@@ -24,6 +24,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     RunLedger,
     RunMetadata,
     RunStatus,
+    SafetyFact,
 )
 from custom_components.growspace_manager.domain.unattributed_activity import (
     ClaimPlan,
@@ -122,6 +123,35 @@ def test_an_unattributed_fact_is_kept_once_and_summarised_on_its_local_day() -> 
     assert activity.facts == (replace(fact, projected=True),)
     # 22:30 UTC on the 2nd is 00:30 on the 3rd in Berlin.
     assert activity.days == (DailySummary(date(2026, 8, 3), ("p1",), 1, 0),)
+
+
+def test_safety_fact_is_claimed_once_by_a_backdated_run() -> None:
+    fact = SafetyFact("stop-1", "tent", DAY[3], "emergency_stop")
+    activity = _observed(*range(1, 11)).record_safety(fact)
+    assert activity.record_safety(fact) is activity
+    assert UnattributedActivity.from_dict(activity.as_dict()) == activity
+    plan = _plan(date(2026, 8, 2), activity=activity, plants=())
+    assert plan.history.safety_facts == (fact,)
+    remaining = plan.remaining(activity)
+    assert remaining.safety_facts == ()
+    ledger, run = RunLedger("tent", revision=2, next_sequence=3).start(
+        expected_revision=2,
+        run_id="run-3",
+        command_id="start-3",
+        now=NOW,
+        timezone=ZONE,
+        metadata=RunMetadata(),
+        baseline=OpeningBaseline(),
+        plant_ids=(),
+        actor_user_id="user",
+        claim=plan.history,
+    )
+    assert ledger.find(run.run_id).safety_facts == (fact,)
+    assert activity.prune(NOW, ZONE, 5).safety_facts == ()
+    with pytest.raises(ValueError, match="safety fact appears twice"):
+        UnattributedActivity.from_dict(
+            {**activity.as_dict(), "safety_facts": [fact.as_dict(), fact.as_dict()]}
+        )
 
 
 def test_leaving_counts_an_exit_and_a_move_inside_counts_neither() -> None:

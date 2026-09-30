@@ -357,6 +357,7 @@ async def websocket_get_grow_run(
     msg: dict[str, Any],
 ) -> dict[str, Any]:
     """Read a selected Run's Participants and durable movement history."""
+    await coordinator.async_project_safety()
     ledger = coordinator.grow_runs.ledger(msg["growspace_id"])
     run = next((row for row in ledger.runs if row.run_id == msg["run_id"]), None)
     if run is None:

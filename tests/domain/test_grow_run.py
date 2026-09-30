@@ -33,6 +33,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     RunParticipation,
     RunRevisionConflict,
     RunStatus,
+    SafetyFact,
     WaterApplication,
     compare_runs,
     finalized_runs,
@@ -383,6 +384,33 @@ def _wire_forms() -> dict[str, Any]:
         "p1", "OG Kush", "A", "tent", "pending", None, {"dry_weight": None}, None
     )
     moved = moved.project_harvest_outcome("run-1", outcome)
+    moved = (
+        moved.project_safety(
+            SafetyFact(
+                "safety-1",
+                "tent",
+                STARTED + timedelta(days=2),
+                "fault",
+                "fault-1",
+                "pump_stuck",
+            )
+        )
+        .project_safety(
+            SafetyFact(
+                "safety-2",
+                "tent",
+                STARTED + timedelta(days=3),
+                "acknowledge",
+                "fault-1",
+            )
+        )
+        .project_safety(
+            SafetyFact("safety-3", "tent", STARTED + timedelta(days=4), "inhibit")
+        )
+        .project_safety(
+            SafetyFact("safety-4", "tent", STARTED + timedelta(days=5), "ha_restart")
+        )
+    )
     projected_run = moved.active_run
     assert projected_run is not None
     ended = STARTED + timedelta(days=70)
