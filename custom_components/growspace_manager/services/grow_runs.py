@@ -198,6 +198,7 @@ async def async_preview_grow_run_start(
         raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
     async with coordinator.lock:
         await coordinator.async_project_activity()
+        await coordinator.async_project_safety(strict=True, growspace_id=growspace_id)
         plan = _plan(hass, coordinator, growspace_id, started_on)
     names = {
         plant.plant_id: plant.strain
@@ -238,6 +239,9 @@ async def async_start_grow_run(
         # claimed; a pending one would otherwise miss the reconstruction.
         if started_on is not None:
             await coordinator.async_project_activity()
+            await coordinator.async_project_safety(
+                strict=True, growspace_id=growspace_id
+            )
         async with store.lock:
             ledger = store.ledger(growspace_id)
             activity = store.unattributed(growspace_id)
@@ -345,6 +349,7 @@ async def async_complete_grow_run(
     # and harvest outcomes are copied in so the preview judges the latest ones.
     async with coordinator.lock:
         await coordinator.async_project_activity()
+        await coordinator.async_project_safety(strict=True, growspace_id=growspace_id)
         await coordinator.async_project_harvest_outcomes()
         async with store.lock:
             # A stale command is answered as stale, whatever the preview says.
@@ -411,6 +416,7 @@ async def async_preview_grow_run_finalization(
     """
     async with coordinator.lock:
         await coordinator.async_project_activity()
+        await coordinator.async_project_safety(strict=True, growspace_id=growspace_id)
         await coordinator.async_project_harvest_outcomes()
         await coordinator.async_project_water()
         return preview_finalization(
@@ -439,6 +445,7 @@ async def async_finalize_grow_run(
     user_id = _authorize(hass, store, growspace_id, user, "Finalizing")
     async with coordinator.lock:
         await coordinator.async_project_activity()
+        await coordinator.async_project_safety(strict=True, growspace_id=growspace_id)
         await coordinator.async_project_harvest_outcomes()
         await coordinator.async_project_water()
         async with store.lock:
@@ -564,6 +571,7 @@ async def async_discard_grow_run(
     # Run between its activity being judged and the Run being removed.
     async with coordinator.lock:
         await coordinator.async_project_activity()
+        await coordinator.async_project_safety(strict=True, growspace_id=growspace_id)
         await coordinator.async_project_harvest_outcomes()
         async with store.lock:
             ledger = store.ledger(growspace_id)

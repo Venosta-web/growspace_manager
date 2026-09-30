@@ -144,8 +144,26 @@
         "plant_id": "p2"
       }
     ],
+    "reliability": {
+      "complete": true,
+      "counts": {
+        "controller_transition": 0,
+        "cycle_not_delivered": 0,
+        "emergency_stop": 0,
+        "fault": 0,
+        "ha_restart": 0,
+        "inhibit": 0,
+        "override_set": 0,
+        "unexpected_on": 0
+      },
+      "coverage_started_at": "2026-07-24T20:30:00+00:00",
+      "definition_version": 1,
+      "latest_fault": null,
+      "state": "final"
+    },
     "run_id": "run-1",
     "run_revision": 5,
+    "safety_facts": [],
     "sequence_number": 1,
     "snapshot": {
       "complete": true,
@@ -234,6 +252,23 @@
           "strain_name": "OG Kush"
         }
       ],
+      "reliability": {
+        "complete": true,
+        "counts": {
+          "controller_transition": 0,
+          "cycle_not_delivered": 0,
+          "emergency_stop": 0,
+          "fault": 0,
+          "ha_restart": 0,
+          "inhibit": 0,
+          "override_set": 0,
+          "unexpected_on": 0
+        },
+        "coverage_started_at": "2026-07-24T20:30:00+00:00",
+        "definition_version": 1,
+        "latest_fault": null,
+        "state": "final"
+      },
       "run_id": "run-1",
       "sequence_number": 1,
       "started_at": "2026-07-24T20:30:00+00:00",
@@ -360,6 +395,23 @@
               "strain_name": "OG Kush"
             }
           ],
+          "reliability": {
+            "complete": true,
+            "counts": {
+              "controller_transition": 0,
+              "cycle_not_delivered": 0,
+              "emergency_stop": 0,
+              "fault": 0,
+              "ha_restart": 0,
+              "inhibit": 0,
+              "override_set": 0,
+              "unexpected_on": 0
+            },
+            "coverage_started_at": "2026-07-24T20:30:00+00:00",
+            "definition_version": 1,
+            "latest_fault": null,
+            "state": "final"
+          },
           "run_id": "run-1",
           "sequence_number": 1,
           "started_at": "2026-07-24T20:30:00+00:00",

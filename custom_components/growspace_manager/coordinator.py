@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import logging
 from typing import Any
 
@@ -30,7 +30,13 @@ from .data_access.growspace_repository import GrowspaceRepository
 from .data_access.notification_state import NotificationState
 from .date_time_helper import DateTimeHelper
 from .delivery_attempt_store import DeliveryAttemptStore
-from .domain.grow_run import ParticipantIdentity, RunStatus, WaterApplication
+from .domain.grow_run import (
+    ParticipantIdentity,
+    RunStatus,
+    RunStoreUnreadable,
+    SafetyFact,
+    WaterApplication,
+)
 from .domain.irrigation_zone import migrate_growspace_document
 from .domain.unattributed_activity import (
     DEFAULT_RETENTION_DAYS as DEFAULT_UNATTRIBUTED_RETENTION_DAYS,
@@ -72,6 +78,14 @@ from .vision_checkup_scheduler import VisionCheckupScheduler
 from .vision_connection import VisionConnection
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _safety_timestamp(value: str) -> datetime:
+    """Read an identified ledger row's timestamp before projecting it."""
+    moment = dt_util.parse_datetime(value)
+    if moment is None:
+        raise ValueError("Safety fact has no valid time")
+    return moment
 
 
 class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -390,6 +404,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.vision_connection.async_refresh_if_stale()
         # A day passes without anything moving; this is what notices it.
         await self._async_observe_unattributed_activity()
+        await self.async_project_safety()
 
         return self.data
 
@@ -476,6 +491,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_project_activity()
         await self.async_project_harvest_outcomes()
         await self.async_project_water()
+        await self.async_project_safety()
         self.data = candidate_data
         await self._publish_current_data()
 
@@ -499,6 +515,53 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 )
                 break
         await self._async_observe_unattributed_activity()
+
+    async def async_project_safety(
+        self, *, strict: bool = False, growspace_id: str | None = None
+    ) -> None:
+        """Drain the Safety Ledger outbox into Run or Unattributed Activity."""
+        for row in tuple(self.irrigation_safety.pending_facts):
+            try:
+                at = _safety_timestamp(row["at"])
+                kind = row["action"]
+                if kind == "transition":
+                    kind = (
+                        "inhibit"
+                        if row.get("state") == "inhibited"
+                        else "controller_transition"
+                    )
+                fact = SafetyFact(
+                    row["fact_id"],
+                    row["growspace_id"],
+                    at,
+                    kind,
+                    row.get("fault_id"),
+                    row.get("reason_code") or (row.get("reason") or {}).get("code"),
+                    {
+                        key: value
+                        for key, value in row.items()
+                        if key not in {"fact_id", "growspace_id", "at", "action"}
+                    },
+                )
+                await self.grow_runs.async_project_safety(fact)
+                await self.irrigation_safety.async_mark_fact_projected(fact.fact_id)
+            except Exception:
+                _LOGGER.exception(
+                    "Safety fact %s remains pending for Run projection",
+                    row.get("fact_id"),
+                )
+                break
+        if strict and (
+            self.irrigation_safety.unreadable
+            or any(
+                growspace_id is None or row.get("growspace_id") == growspace_id
+                for row in self.irrigation_safety.pending_facts
+            )
+        ):
+            raise RunStoreUnreadable(
+                "Safety activity is pending projection; retry once its store is readable",
+                current_revision=None,
+            )
 
     async def async_project_water(self) -> None:
         """Retry durable hand reports and delivery attempts into Run history."""
@@ -726,6 +789,9 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.irrigation_safety.async_load()
         await self.reliability.async_load()
         await self.grow_runs.async_load()
+        await self.grow_runs.async_begin_safety_coverage(dt_util.utcnow())
+        self.irrigation_safety.project_pending = self.async_project_safety
+        await self.async_project_safety()
         await self.async_project_activity()
         await self.async_project_harvest_outcomes()
         await self.async_project_water()
@@ -741,6 +807,17 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._growspace_manager.ensure_default_growspaces()
         await self.async_commit()
         self.reliability.record_start(self.growspaces)
+        # A config-entry reload is not a Home Assistant restart. Record each
+        # Growspace once per HA process, after its persisted Runs are loaded.
+        started = self.hass.data.setdefault(DOMAIN, {}).setdefault(
+            "_run_start_recorded", set()
+        )
+        for growspace_id in self.growspaces:
+            if growspace_id not in started:
+                await self.irrigation_safety.async_record_event(
+                    growspace_id, "ha_restart"
+                )
+                started.add(growspace_id)
 
         # Continuity streaks are recovered from durable evidence before any
         # checkup can run, so a scheduled capture never lands on a streak that

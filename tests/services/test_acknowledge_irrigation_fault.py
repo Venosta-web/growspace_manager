@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -56,6 +57,9 @@ def context() -> tuple[HomeAssistant, MagicMock, MagicMock, IrrigationSafetyStor
     store.emergency_stops = {}
     store.controls = {}
     store.ledger = deque(maxlen=500)
+    store.pending_facts = []
+    store.project_pending = None
+    store._write_lock = asyncio.Lock()
     store.unreadable = False
     store._unreadable_since = None
     store._store = MagicMock()
