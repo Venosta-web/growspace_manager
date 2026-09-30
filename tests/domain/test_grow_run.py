@@ -36,6 +36,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     SafetyFact,
     WaterApplication,
     compare_runs,
+    export_run,
     finalized_runs,
     preview_completion,
     preview_finalization,
@@ -638,6 +639,10 @@ def _wire_forms() -> dict[str, Any]:
             "run_revision": final_ledger.revision,
             "run": run_summary(finalized, final_ledger.revision),
             "snapshot": finalized.snapshot.as_dict(),
+        },
+        "grow_run_exported_v1": {
+            "outcome": "exported",
+            "document": export_run(edited_ledger, edited.run_id),
         },
         "grow_run_finalized_details_v1": run_details(edited, edited_ledger.revision),
         "grow_run_list_v1": {

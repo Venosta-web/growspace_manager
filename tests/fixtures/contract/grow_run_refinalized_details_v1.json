@@ -190,9 +190,30 @@
       "format": 1,
       "growspace_id": "tent",
       "growspace_name": "Tent",
+      "harvest_outcomes": [
+        {
+          "entered_dry_at": "2026-09-25T20:30:00+00:00",
+          "metrics": {
+            "dry_weight": 88.0
+          },
+          "phenotype": "A",
+          "plant_id": "p1",
+          "quality_score": null,
+          "reason": null,
+          "source_growspace_id": "tent",
+          "state": "recorded",
+          "strain": "OG Kush"
+        }
+      ],
       "harvest_window": {
         "first": "2026-09-25",
         "last": "2026-09-25"
+      },
+      "metadata": {
+        "goals": null,
+        "label": "Autumn",
+        "notes": null,
+        "tags": []
       },
       "metrics": [
         {
@@ -314,9 +335,30 @@
           "format": 1,
           "growspace_id": "tent",
           "growspace_name": "Tent",
+          "harvest_outcomes": [
+            {
+              "entered_dry_at": "2026-09-25T20:30:00+00:00",
+              "metrics": {
+                "dry_weight": null
+              },
+              "phenotype": "A",
+              "plant_id": "p1",
+              "quality_score": null,
+              "reason": null,
+              "source_growspace_id": "tent",
+              "state": "pending",
+              "strain": "OG Kush"
+            }
+          ],
           "harvest_window": {
             "first": "2026-09-25",
             "last": "2026-09-25"
+          },
+          "metadata": {
+            "goals": null,
+            "label": "Autumn",
+            "notes": null,
+            "tags": []
           },
           "metrics": [
             {
