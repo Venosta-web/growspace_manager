@@ -1002,6 +1002,8 @@ class RunSnapshot:
     uncovered_gaps: tuple[CoverageGap, ...] = ()
     missing: tuple[MissingFact, ...] = ()
     format: int = SNAPSHOT_FORMAT
+    metadata: RunMetadata | None = None
+    harvest_outcomes: tuple[HarvestOutcome, ...] | None = None
 
     @property
     def complete(self) -> bool:
@@ -1012,6 +1014,12 @@ class RunSnapshot:
         """Return the durable and wire form."""
         window = self.harvest_window
         return {
+            "metadata": None if self.metadata is None else self.metadata.as_dict(),
+            "harvest_outcomes": (
+                None
+                if self.harvest_outcomes is None
+                else [row.as_dict() for row in self.harvest_outcomes]
+            ),
             "format": self.format,
             "finalized_at": self.finalized_at.isoformat(),
             "run_id": self.run_id,
@@ -1056,6 +1064,21 @@ class RunSnapshot:
                 raise ValueError("the Harvest Window ends before it begins")
         counts = _dict(value.get("counts"), "snapshot.counts")
         snapshot = cls(
+            metadata=(
+                None
+                if value.get("metadata") is None
+                else RunMetadata.from_dict(value["metadata"])
+            ),
+            harvest_outcomes=(
+                None
+                if value.get("harvest_outcomes") is None
+                else tuple(
+                    HarvestOutcome.from_dict(row)
+                    for row in _list(
+                        value["harvest_outcomes"], "snapshot.harvest_outcomes"
+                    )
+                )
+            ),
             finalized_at=_moment(value.get("finalized_at"), "snapshot.finalized_at"),
             run_id=_str(value.get("run_id"), "snapshot.run_id"),
             growspace_id=_str(value.get("growspace_id"), "snapshot.growspace_id"),
@@ -1298,6 +1321,10 @@ def build_snapshot(
         tally[1] += identity.plant_id in sources
     states = [row.state for row in outcomes]
     return RunSnapshot(
+        metadata=run.metadata,
+        harvest_outcomes=tuple(
+            replace(row, metrics=dict(row.metrics)) for row in outcomes
+        ),
         finalized_at=finalized_at,
         run_id=run.run_id,
         growspace_id=run.growspace_id,
@@ -2835,3 +2862,21 @@ def compare_runs(
                 active_run=ledger.active_run,
             )
     return RunComparison(runs[0], runs[1], ledger.revision)
+
+
+def export_run(ledger: RunLedger, run_id: str) -> dict[str, Any]:
+    """Export only the selected Finalized Run's frozen facts (#683)."""
+    run = ledger.find(run_id)
+    if run.status is not RunStatus.FINALIZED:
+        raise RunNotFinalized(
+            f"Run #{run.sequence_number} is {run.status.value}; only Finalized "
+            "Runs can be exported",
+            current_revision=ledger.revision,
+            active_run=ledger.active_run,
+        )
+    return {
+        "format": "growspace_manager.grow_run",
+        "version": 1,
+        "status": RunStatus.FINALIZED.value,
+        "snapshot": _frozen(run).as_dict(),
+    }

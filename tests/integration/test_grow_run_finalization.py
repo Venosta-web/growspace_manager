@@ -17,6 +17,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     RunMetadata,
     RunRevisionConflict,
     RunStatus,
+    export_run,
 )
 from custom_components.growspace_manager.grow_run_store import (
     EVENT_GROW_RUN_LIFECYCLE,
@@ -28,6 +29,7 @@ from custom_components.growspace_manager.services.grow_runs import (
 )
 from custom_components.growspace_manager.websocket.grow_runs import (
     WS_TYPE_COMPARE_GROW_RUNS,
+    WS_TYPE_EXPORT_GROW_RUN,
     WS_TYPE_FINALIZE_GROW_RUN,
     WS_TYPE_GET_GROW_RUN,
     WS_TYPE_LIST_GROW_RUNS,
@@ -150,6 +152,16 @@ async def test_a_grower_finalizes_a_run_that_then_outlives_its_sources(
     assert result["run_revision"] == 3
     assert result["run"]["status"] == "finalized"
     assert result["run"]["metrics_state"] == "frozen"
+    exported = await _ws(
+        client,
+        {
+            "type": WS_TYPE_EXPORT_GROW_RUN,
+            "growspace_id": growspace_id,
+            "run_id": run.run_id,
+        },
+    )
+    assert exported["outcome"] == "exported"
+    assert exported["document"]["snapshot"] == result["snapshot"]
     frozen = result["snapshot"]
     assert frozen["complete"] is True
     assert frozen["growspace_name"] == "Run Tent"
@@ -182,6 +194,17 @@ async def test_a_grower_finalizes_a_run_that_then_outlives_its_sources(
     await coordinator.services.plants.async_remove_plant(plant_ids[1])
     await coordinator.services.growspaces.remove_growspace(growspace_id)
     assert growspace_id not in coordinator.growspaces
+    assert (
+        await _ws(
+            client,
+            {
+                "type": WS_TYPE_EXPORT_GROW_RUN,
+                "growspace_id": growspace_id,
+                "run_id": run.run_id,
+            },
+        )
+        == exported
+    )
 
     details = await _ws(
         client,
@@ -203,6 +226,7 @@ async def test_a_grower_finalizes_a_run_that_then_outlives_its_sources(
     assert stored.status is RunStatus.FINALIZED
     assert stored.snapshot is not None
     assert stored.snapshot.as_dict() == frozen
+    assert export_run(reloaded.ledger(growspace_id), run.run_id) == exported["document"]
 
 
 async def test_run_metadata_stays_editable_and_audited_after_finalization(
@@ -552,3 +576,32 @@ async def test_an_unreadable_history_compares_nothing_and_says_why(
         client, {"type": WS_TYPE_COMPARE_GROW_RUNS, "growspace_id": growspace_id}
     )
     assert result["refusal"]["code"] == "grow_run.store_unreadable"
+
+
+async def test_export_refuses_unfrozen_missing_and_unreadable_runs(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
+    coordinator, growspace_id, _ = await _tent(init_integration, plants=0)
+    run = await _started(hass, coordinator, growspace_id)
+    client = await hass_ws_client(hass)
+    message = {
+        "type": WS_TYPE_EXPORT_GROW_RUN,
+        "growspace_id": growspace_id,
+        "run_id": run.run_id,
+    }
+    active = await _ws(client, message)
+    assert active["refusal"]["code"] == "grow_run.not_finalized"
+    assert active["refusal"]["active_run"]["run_id"] == run.run_id
+    await _complete_as_admin(hass, coordinator, growspace_id, run.run_id, revision=1)
+    completed = await _ws(client, message)
+    assert completed["refusal"]["code"] == "grow_run.not_finalized"
+    assert completed["refusal"]["current_revision"] == 2
+    unknown = await _ws(client, {**message, "run_id": "missing"})
+    assert unknown["refusal"]["code"] == "grow_run.not_found"
+    coordinator.grow_runs.unreadable = True
+    unreadable = await _ws(client, message)
+    assert unreadable["refusal"]["code"] == "grow_run.store_unreadable"
+    await client.send_json_auto_id({**message, "run_id": ""})
+    assert not (await client.receive_json())["success"]

@@ -1,18 +1,6 @@
 {
-  "outcome": "preview",
-  "preview": {
-    "run": {
-      "completed_at": "2026-10-02T20:30:00+00:00",
-      "label": "Autumn",
-      "metrics_state": "pending",
-      "participant_count": 3,
-      "run_id": "run-1",
-      "run_revision": 5,
-      "sequence_number": 4,
-      "started_at": "2026-07-24T20:30:00+00:00",
-      "status": "completed",
-      "timezone": "Europe/Berlin"
-    },
+  "document": {
+    "format": "growspace_manager.grow_run",
     "snapshot": {
       "complete": false,
       "completed_at": "2026-10-02T20:30:00+00:00",
@@ -187,6 +175,8 @@
       "uncovered_gaps": [],
       "water_applications": []
     },
-    "warnings": ["incomplete_snapshot"]
-  }
+    "status": "finalized",
+    "version": 1
+  },
+  "outcome": "exported"
 }

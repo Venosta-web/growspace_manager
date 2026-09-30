@@ -49,6 +49,7 @@ from custom_components.growspace_manager.domain.grow_run import (
     GrowRunRefused,
     RunMetadata,
     compare_runs,
+    export_run,
     finalized_runs,
     run_details,
     run_summary,
@@ -72,6 +73,7 @@ import homeassistant.helpers.config_validation as cv
 from ._common import WS_MSG_USER, WSCommand
 
 WS_TYPE_START_GROW_RUN = "growspace_manager/start_grow_run"
+WS_TYPE_EXPORT_GROW_RUN = "growspace_manager/export_grow_run"
 WS_TYPE_GET_GROW_RUN = "growspace_manager/get_grow_run"
 WS_TYPE_PREVIEW_GROW_RUN_COMPLETION = "growspace_manager/preview_grow_run_completion"
 WS_TYPE_COMPLETE_GROW_RUN = "growspace_manager/complete_grow_run"
@@ -128,6 +130,15 @@ SCHEMA_WS_PREVIEW_GROW_RUN_START = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.ext
 SCHEMA_WS_GET_GROW_RUN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
     {
         vol.Required("type"): WS_TYPE_GET_GROW_RUN,
+        vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
+        vol.Required("run_id"): vol.All(str, vol.Length(min=1)),
+    }
+)
+
+
+SCHEMA_WS_EXPORT_GROW_RUN = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+    {
+        vol.Required("type"): WS_TYPE_EXPORT_GROW_RUN,
         vol.Required("growspace_id"): vol.All(str, vol.Length(min=1)),
         vol.Required("run_id"): vol.All(str, vol.Length(min=1)),
     }
@@ -364,6 +375,20 @@ async def websocket_get_grow_run(
     return run_details(run, ledger.revision)
 
 
+async def websocket_export_grow_run(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    msg: dict[str, Any],
+) -> dict[str, Any]:
+    """Read a Finalized Run as a portable JSON document, without live sources."""
+    try:
+        ledger = coordinator.grow_runs.ledger(msg["growspace_id"])
+        document = export_run(ledger, msg["run_id"])
+    except GrowRunRefused as refused:
+        return refusal_result(refused)
+    return {"outcome": "exported", "document": document}
+
+
 async def websocket_list_grow_runs(
     hass: HomeAssistant,
     coordinator: GrowspaceCoordinator,
@@ -532,6 +557,11 @@ def discard_result(discarded: DiscardedRun, revision: int) -> dict[str, Any]:
 
 
 COMMANDS: list[WSCommand] = [
+    WSCommand(
+        WS_TYPE_EXPORT_GROW_RUN,
+        websocket_export_grow_run,
+        SCHEMA_WS_EXPORT_GROW_RUN,
+    ),
     WSCommand(
         WS_TYPE_GET_GROW_RUN,
         websocket_get_grow_run,
