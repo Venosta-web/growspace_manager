@@ -14,9 +14,11 @@ from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.exceptions import (
     CoordinatorNotReadyError,
     EntityNotFoundError,
+    EnvelopeExceededError,
     GrowspaceError,
     LayoutConflictError,
     RateLimitedError,
+    ZoneRequiredError,
 )
 from custom_components.growspace_manager.services.utils import (
     WS_ERR_CONFLICT,
@@ -61,8 +63,11 @@ WSErrorMap = tuple[
 
 # The Typed Error Codes vocabulary shared with the card (ADR-0005, completed
 # by ADR-0027). The card's errors.ts types exactly this set and coerces any
-# other code to internal_error, so ad-hoc codes are self-defeating.
+# other code to internal_error. Zone editing adds zone_required and
+# envelope_exceeded; card consumers must extend their vocabulary accordingly.
 DEFAULT_WS_ERROR_MAP: WSErrorMap = (
+    (ZoneRequiredError, "zone_required", False, None),
+    (EnvelopeExceededError, "envelope_exceeded", False, None),
     (LayoutConflictError, WS_ERR_CONFLICT, False, None),
     (EntityNotFoundError, WS_ERR_ENTITY_NOT_FOUND, False, None),
     (CoordinatorNotReadyError, WS_ERR_COORDINATOR_NOT_READY, False, None),

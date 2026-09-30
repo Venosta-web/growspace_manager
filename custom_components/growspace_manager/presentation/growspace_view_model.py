@@ -38,6 +38,7 @@ from custom_components.growspace_manager.domain.moisture_band import (
 )
 from custom_components.growspace_manager.domain.setup_preset import inferred_modules
 from custom_components.growspace_manager.domain.steering_phase import resolve_day_hours
+from custom_components.growspace_manager.domain.zone_edit import probe_documents
 from custom_components.growspace_manager.tank_water_tracker import (
     consumption_buckets_24h,
 )
@@ -273,6 +274,7 @@ class GrowspaceViewModelBuilder:
             "sensors": sensors,
             "subareas": [s.wire_dict() for s in growspace.subareas],
             "irrigation": {
+                "zones": self._build_zones(growspace, plants),
                 "irrigation_config": irrigation_options,
                 "irrigation_strategy": irrigation_strategy_dict,
                 "volume_mode_capable": volume_mode_capable,
@@ -295,6 +297,41 @@ class GrowspaceViewModelBuilder:
                 "energy_tracking": energy_tracking,
             },
         }
+
+    def _build_zones(
+        self, growspace: Growspace, plants: list[Plant]
+    ) -> list[dict[str, Any]]:
+        """Read all zones, retaining default-zone mirrors for older cards."""
+        zones = []
+        for order, zone in enumerate(growspace.irrigation_zones):
+            probes = probe_documents(zone)
+            for probe in probes:
+                state = self.hass.states.get(probe["entity_id"])
+                probe["health"] = (
+                    "available"
+                    if state and state.state not in {"unknown", "unavailable"}
+                    else "unavailable"
+                )
+                if probe["cell"] is not None:
+                    probe["cell"] = list(probe["cell"])
+            zones.append(
+                {
+                    "id": zone.id,
+                    "name": zone.name if len(growspace.irrigation_zones) > 1 else "",
+                    "order": order,
+                    "cells": [list(cell) for cell in zone.cells],
+                    "valves": list(zone.valves),
+                    "probes": probes,
+                    "plant_count": len(
+                        [p for p in plants if (p.row, p.col) in zone.cells]
+                    ),
+                    "irrigation_config": effective_config(growspace, zone).to_dict(),
+                    "irrigation_strategy": effective_strategy(
+                        growspace, zone
+                    ).to_dict(),
+                }
+            )
+        return zones
 
     def _build_substrate_metrics(self, growspace: Growspace) -> dict[str, Any]:
         """Build measured substrate dryback metrics for the frontend payload.

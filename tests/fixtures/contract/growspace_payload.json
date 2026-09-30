@@ -758,7 +758,231 @@
       "max_daily_readings": 400,
       "monitored_tank_liters": 0.0,
       "total_liters": 88.5
-    }
+    },
+    "zones": [
+      {
+        "cells": [
+          [1, 1],
+          [1, 2]
+        ],
+        "id": "default",
+        "irrigation_config": {
+          "active_steering_phase": "p2",
+          "auto_advance_p1_to_p2": true,
+          "auto_advance_p2_to_p3": true,
+          "daily_volume_cap_liters": 18.0,
+          "drain_duration": 30,
+          "drain_pump_entity": "switch.contract_drain_pump",
+          "drain_times": [
+            {
+              "duration": 30,
+              "time": "07:00"
+            }
+          ],
+          "ec_target_ranges": [
+            {
+              "feed_ec_max": 2.2,
+              "feed_ec_min": 1.8,
+              "stage": "flower"
+            }
+          ],
+          "halt_on_runoff_ec_threshold": 2.8,
+          "irrigation_duration": 45,
+          "irrigation_pump_entity": "switch.contract_irrigation_pump",
+          "irrigation_times": [
+            {
+              "duration": 45,
+              "time": "06:30"
+            }
+          ],
+          "log_to_logbook": true,
+          "max_cycle_seconds": 600,
+          "max_cycles_per_day": 12,
+          "min_interval_minutes": 5,
+          "moisture_zero_is_implausible": false,
+          "pause_on_low_tank": true,
+          "phase_changed_at": "2026-08-11T06:00:00+00:00",
+          "program_auto_advance": true,
+          "pump_flow_rate_ml_per_sec": 25.0,
+          "sensor_alert_delay_minutes": 15,
+          "sensor_stale_after_minutes": 30,
+          "skip_during_dark": true,
+          "soil_trigger_percent": 42.0,
+          "startup_grace_minutes": 5,
+          "tank_unknown_grace_minutes": 10,
+          "unexpected_on_policy": "alert",
+          "veg_day_hours": 18
+        },
+        "irrigation_strategy": {
+          "applied_recipe_id": "contract-recipe-steering",
+          "auto_light_tracking": true,
+          "declared_steering_mode": "generative",
+          "detected_lights_on_time": "05:58:00",
+          "dynamic_aggressiveness": 1.2,
+          "dynamic_interval_ceiling": 1.8,
+          "dynamic_recovery": 0.15,
+          "dynamic_shot_enabled": true,
+          "dynamic_shot_size_floor": 0.6,
+          "ec_modulation_enabled": true,
+          "enabled": true,
+          "irrigation_program_id": "contract-program",
+          "lights_on_time": "06:00:00",
+          "maintenance_dryback_percent": 3.5,
+          "p0_duration_minutes": 90,
+          "p1_shot_duration_seconds": 12,
+          "p1_shot_interval_minutes": 20,
+          "p1_shot_volume_percent": 4.5,
+          "p2_shot_duration_seconds": 9,
+          "p2_shot_interval_minutes": 30,
+          "p2_shot_volume_percent": 3.0,
+          "p2_stop_before_lights_off_minutes": 75,
+          "pore_ec_target_max": 2.8,
+          "pore_ec_target_min": 2.1,
+          "recipe_applied_at": "2026-08-10T07:15:00+00:00",
+          "shot_duration_seconds": 12,
+          "shot_interval_minutes": 20,
+          "shot_sizing_mode": "volume",
+          "skip_p2_after_p1": true,
+          "substrate_profile": {
+            "liters_per_pot": 7.5,
+            "media_type": "rockwool"
+          },
+          "target_vwc_percent": 58.0
+        },
+        "name": "Zone 1",
+        "order": 0,
+        "plant_count": 2,
+        "probes": [
+          {
+            "cell": [1, 1],
+            "entity_id": "sensor.contract_soil_moisture",
+            "health": "available",
+            "quantity": "moisture",
+            "role": "control"
+          },
+          {
+            "cell": [1, 1],
+            "entity_id": "sensor.contract_pore_ec",
+            "health": "available",
+            "quantity": "pore_ec",
+            "role": "control"
+          },
+          {
+            "cell": [1, 1],
+            "entity_id": "sensor.contract_bulk_ec",
+            "health": "available",
+            "quantity": "bulk_ec",
+            "role": "control"
+          },
+          {
+            "cell": [1, 1],
+            "entity_id": "sensor.contract_substrate_temperature",
+            "health": "unavailable",
+            "quantity": "temperature",
+            "role": "control"
+          }
+        ],
+        "valves": ["switch.contract_south_valve"]
+      },
+      {
+        "cells": [
+          [2, 1],
+          [2, 2]
+        ],
+        "id": "north",
+        "irrigation_config": {
+          "active_steering_phase": "p2",
+          "auto_advance_p1_to_p2": true,
+          "auto_advance_p2_to_p3": true,
+          "daily_volume_cap_liters": 18.0,
+          "drain_duration": 30,
+          "drain_pump_entity": "switch.contract_drain_pump",
+          "drain_times": [
+            {
+              "duration": 30,
+              "time": "07:00"
+            }
+          ],
+          "ec_target_ranges": [
+            {
+              "feed_ec_max": 2.2,
+              "feed_ec_min": 1.8,
+              "stage": "flower"
+            }
+          ],
+          "halt_on_runoff_ec_threshold": 2.8,
+          "irrigation_duration": null,
+          "irrigation_pump_entity": "switch.contract_irrigation_pump",
+          "irrigation_times": [],
+          "log_to_logbook": true,
+          "max_cycle_seconds": 600,
+          "max_cycles_per_day": 12,
+          "min_interval_minutes": 5,
+          "moisture_zero_is_implausible": false,
+          "pause_on_low_tank": true,
+          "phase_changed_at": null,
+          "program_auto_advance": true,
+          "pump_flow_rate_ml_per_sec": 0.0,
+          "sensor_alert_delay_minutes": 15,
+          "sensor_stale_after_minutes": 30,
+          "skip_during_dark": true,
+          "soil_trigger_percent": null,
+          "startup_grace_minutes": 5,
+          "tank_unknown_grace_minutes": 10,
+          "unexpected_on_policy": "alert",
+          "veg_day_hours": 18
+        },
+        "irrigation_strategy": {
+          "applied_recipe_id": null,
+          "auto_light_tracking": true,
+          "declared_steering_mode": null,
+          "detected_lights_on_time": "05:58:00",
+          "dynamic_aggressiveness": 1.0,
+          "dynamic_interval_ceiling": 1.5,
+          "dynamic_recovery": 0.1,
+          "dynamic_shot_enabled": true,
+          "dynamic_shot_size_floor": 0.5,
+          "ec_modulation_enabled": false,
+          "enabled": false,
+          "irrigation_program_id": null,
+          "lights_on_time": "06:00:00",
+          "maintenance_dryback_percent": 2.0,
+          "p0_duration_minutes": 60,
+          "p1_shot_duration_seconds": 10,
+          "p1_shot_interval_minutes": 15,
+          "p1_shot_volume_percent": 4.0,
+          "p2_shot_duration_seconds": 10,
+          "p2_shot_interval_minutes": 15,
+          "p2_shot_volume_percent": 4.0,
+          "p2_stop_before_lights_off_minutes": 120,
+          "pore_ec_target_max": null,
+          "pore_ec_target_min": null,
+          "recipe_applied_at": null,
+          "shot_duration_seconds": 10,
+          "shot_interval_minutes": 15,
+          "shot_sizing_mode": "seconds",
+          "skip_p2_after_p1": false,
+          "substrate_profile": {
+            "liters_per_pot": 0.0,
+            "media_type": "coco"
+          },
+          "target_vwc_percent": 55.0
+        },
+        "name": "North",
+        "order": 1,
+        "plant_count": 0,
+        "probes": [
+          {
+            "cell": [2, 1],
+            "entity_id": "sensor.contract_north_moisture",
+            "health": "unavailable",
+            "quantity": "moisture",
+            "role": "control"
+          }
+        ],
+        "valves": ["switch.contract_north_valve"]
+      }
+    ]
   },
   "layout_revision": 0,
   "metrics": {

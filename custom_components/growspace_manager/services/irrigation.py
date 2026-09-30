@@ -149,7 +149,10 @@ async def handle_clear_irrigation(
     growspace_id = call.data[ATTR_GROWSPACE_ID]
 
     try:
-        await coordinator.services.growspaces.clear_irrigation(growspace_id)
+        await coordinator.services.growspaces.clear_irrigation(
+            growspace_id,
+            **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
+        )
     except IrrigationChangeError as err:
         raise ServiceValidationError(str(err)) from err
     _LOGGER.info("Cleared irrigation configuration for growspace '%s'", growspace_id)
@@ -172,7 +175,11 @@ async def handle_set_steering_phase(
     await _get_irrigation_coordinator(coordinator, growspace_id)
 
     try:
-        await coordinator.services.growspaces.set_steering_phase(growspace_id, phase)
+        await coordinator.services.growspaces.set_steering_phase(
+            growspace_id,
+            phase,
+            **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
+        )
     except IrrigationChangeError as err:
         raise ServiceValidationError(str(err)) from err
     _LOGGER.info(
@@ -195,7 +202,11 @@ async def handle_apply_steering_mode(
     mode = SteeringMode(call.data[ATTR_STEERING_MODE])
 
     try:
-        await coordinator.services.growspaces.apply_steering_mode(growspace_id, mode)
+        await coordinator.services.growspaces.apply_steering_mode(
+            growspace_id,
+            mode,
+            **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
+        )
     except IrrigationChangeError as err:
         raise ServiceValidationError(str(err)) from err
     _LOGGER.info(
@@ -214,11 +225,15 @@ async def handle_add_irrigation_time(
     irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
 
     duration = call.data.get(ATTR_DURATION)
-    if duration is None:
+    if duration is None and "zone_id" not in call.data:
         duration = irrigation_coord.get_default_duration("irrigation")
 
     await coordinator.services.growspaces.add_irrigation_schedule_item(
-        growspace_id, ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME], duration
+        growspace_id,
+        ATTR_IRRIGATION_TIMES,
+        call.data[ATTR_TIME],
+        duration,
+        **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
     )
 
 
@@ -232,7 +247,10 @@ async def handle_remove_irrigation_time(
     growspace_id = call.data[ATTR_GROWSPACE_ID]
     await _get_irrigation_coordinator(coordinator, growspace_id)
     await coordinator.services.growspaces.remove_irrigation_schedule_item(
-        growspace_id, ATTR_IRRIGATION_TIMES, call.data[ATTR_TIME]
+        growspace_id,
+        ATTR_IRRIGATION_TIMES,
+        call.data[ATTR_TIME],
+        **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
     )
 
 
@@ -280,7 +298,9 @@ async def handle_run_irrigation_cycle(
     duration = call.data.get(ATTR_DURATION)
     irrigation_coord = await _get_irrigation_coordinator(coordinator, growspace_id)
     await irrigation_coord.async_manual_run(
-        duration=duration, user_id=call.context.user_id
+        duration=duration,
+        user_id=call.context.user_id,
+        **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
     )
     _LOGGER.info(
         "Manual irrigation cycle started for growspace '%s' (duration=%s)",

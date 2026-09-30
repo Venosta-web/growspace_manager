@@ -10,6 +10,7 @@ effects.
 
 from __future__ import annotations
 
+import copy
 import logging
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,7 @@ from ..domain.environment_patch import (
     EnvironmentPatchVerdict,
     apply_environment_patch,
 )
+from ..domain.zone_edit import resolve_zone, validate_zones
 from ..exhaust_migration import evaluate_exhaust_migration_issues
 
 if TYPE_CHECKING:
@@ -42,6 +44,7 @@ async def async_commit_environment_patch(
     coordinator: GrowspaceCoordinator,
     growspace: Growspace,
     patch: EnvironmentPatch,
+    zone_id: str | None = None,
 ) -> EnvironmentPatchVerdict:
     """Apply an Environment Patch to the growspace and perform every effect.
 
@@ -56,7 +59,12 @@ async def async_commit_environment_patch(
     refuses never reaches here, so a rejected configuration change cannot
     reset a streak.
     """
-    zone = growspace.default_zone
+    owns_probes = bool(patch.zone_values)
+    zone = (
+        resolve_zone(growspace, zone_id)
+        if owns_probes or zone_id is not None
+        else growspace.default_zone
+    )
     verdict = apply_environment_patch(growspace.environment_config, patch, zone)
     for warning in verdict.warnings:
         _LOGGER.warning(
@@ -66,10 +74,26 @@ async def async_commit_environment_patch(
             warning.message,
         )
 
+    previous_config = growspace.environment_config
+    previous_probes = {
+        name: copy.deepcopy(getattr(zone, name)) for name in verdict.zone_values
+    }
+    if owns_probes:
+        candidate = copy.deepcopy(growspace)
+        candidate_zone = resolve_zone(candidate, zone.id)
+        for name, value in verdict.zone_values.items():
+            setattr(candidate_zone, name, value)
+        validate_zones(candidate)
     growspace.environment_config = verdict.config
     for name, value in verdict.zone_values.items():
         setattr(zone, name, value)
-    await coordinator.services.save()
+    try:
+        await coordinator.services.save()
+    except Exception:
+        growspace.environment_config = previous_config
+        for name, value in previous_probes.items():
+            setattr(zone, name, value)
+        raise
 
     if verdict.changed("camera_entities"):
         await coordinator.capture_continuity.async_apply_camera_assignment(

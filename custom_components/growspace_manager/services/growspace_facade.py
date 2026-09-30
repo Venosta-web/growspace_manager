@@ -26,11 +26,16 @@ from custom_components.growspace_manager.delivery_attempt_store import (
     DeliveryAttemptStore,
 )
 from custom_components.growspace_manager.domain.ec_state import record_drain_reading
+from custom_components.growspace_manager.domain.irrigation_schedule import (
+    remove_items,
+    upsert_item,
+)
 from custom_components.growspace_manager.domain.setup_preset import SETUP_PRESETS
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
     determine_coordinator_stage,
 )
+from custom_components.growspace_manager.domain.zone_edit import resolve_zone
 from custom_components.growspace_manager.exceptions import (
     GrowspaceError,
     GrowspaceNotFoundError,
@@ -320,7 +325,7 @@ class GrowspaceFacade:
         )
 
     async def set_steering_phase(
-        self, growspace_id: str, phase: str
+        self, growspace_id: str, phase: str, zone_id: str | None = None
     ) -> IrrigationChangeResult:
         """Override the active crop-steering phase by hand (ADR-0012).
 
@@ -337,9 +342,12 @@ class GrowspaceFacade:
                 operation=IrrigationChangeOperation.STEERING_PHASE,
                 values={"active_steering_phase": phase},
             ),
+            **({"zone_id": zone_id} if zone_id is not None else {}),
         )
 
-    async def clear_irrigation(self, growspace_id: str) -> IrrigationChangeResult:
+    async def clear_irrigation(
+        self, growspace_id: str, zone_id: str | None = None
+    ) -> IrrigationChangeResult:
         """Apply a clear Irrigation Change: reset the config, stop steering.
 
         The irrigation counterpart of ``remove_environment``, but routed
@@ -355,10 +363,11 @@ class GrowspaceFacade:
             self._coordinator,
             growspace_id,
             IrrigationChange(operation=IrrigationChangeOperation.CLEAR, values={}),
+            **({"zone_id": zone_id} if zone_id is not None else {}),
         )
 
     async def apply_steering_mode(
-        self, growspace_id: str, mode: SteeringMode
+        self, growspace_id: str, mode: SteeringMode, zone_id: str | None = None
     ) -> IrrigationChangeResult:
         """Stamp a Steering Mode's preset values into the strategy (ADR-0012).
 
@@ -378,6 +387,7 @@ class GrowspaceFacade:
                 operation=IrrigationChangeOperation.STEERING_MODE,
                 values={"steering_mode": mode},
             ),
+            **({"zone_id": zone_id} if zone_id is not None else {}),
         )
         _LOGGER.info(
             "Applied %s steering mode for growspace '%s'", mode.value, growspace_id
@@ -385,7 +395,7 @@ class GrowspaceFacade:
         return result
 
     async def apply_irrigation_recipe(
-        self, growspace_id: str, recipe_id: str
+        self, growspace_id: str, recipe_id: str, zone_id: str | None = None
     ) -> str | None:
         """Apply a named Recipe Stamp through Irrigation Change.
 
@@ -399,11 +409,12 @@ class GrowspaceFacade:
                 operation=IrrigationChangeOperation.RECIPE,
                 values={"recipe_id": recipe_id},
             ),
+            **({"zone_id": zone_id} if zone_id is not None else {}),
         )
         return result.media_warning
 
     async def assign_irrigation_program(
-        self, growspace_id: str, program_id: str | None
+        self, growspace_id: str, program_id: str | None, zone_id: str | None = None
     ) -> None:
         """Bind a growspace to an [[Irrigation Program]], or unbind it.
 
@@ -445,9 +456,15 @@ class GrowspaceFacade:
             # there would report as unbound and look like the write was lost.
             self._coordinator._program_library.get_program(program_id)
 
-        growspace.default_zone.strategy.irrigation_program_id = program_id
+        zone = resolve_zone(growspace, zone_id)
+        previous = zone.strategy.irrigation_program_id
+        zone.strategy.irrigation_program_id = program_id
         self._coordinator.cache.invalidate(growspace_id)
-        await self._coordinator.async_commit()
+        try:
+            await self._coordinator.async_commit()
+        except Exception:
+            zone.strategy.irrigation_program_id = previous
+            raise
         await self._coordinator.async_request_refresh()
         _LOGGER.info(
             "Growspace '%s' is now %s",
@@ -457,7 +474,11 @@ class GrowspaceFacade:
             else "bound to no irrigation program",
         )
 
-        if program_id is not None and growspace.irrigation_config.program_auto_advance:
+        if (
+            program_id is not None
+            and len(growspace.irrigation_zones) == 1
+            and growspace.irrigation_config.program_auto_advance
+        ):
             await self._coordinator.program_progression.async_evaluate(growspace_id)
 
     async def set_ec_target_range(
@@ -493,8 +514,25 @@ class GrowspaceFacade:
         schedule_key: str,
         time_str: str,
         duration_minutes: int | None = None,
+        zone_id: str | None = None,
     ) -> None:
         """Add a schedule item to a growspace."""
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        if growspace is None:
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+        if schedule_key == "irrigation_times" and (
+            zone_id is not None or len(growspace.irrigation_zones) > 1
+        ):
+            zone = resolve_zone(self._coordinator.growspaces[growspace_id], zone_id)
+            change = upsert_item(
+                [dict(item) for item in zone.irrigation_times],
+                time_str,
+                duration_minutes
+                if duration_minutes is not None
+                else zone.irrigation_duration,
+            )
+            await self._commit_zone_schedule(growspace_id, zone, change.items)
+            return
         irrigation_coord = await self._get_irrigation_coordinator(growspace_id)
         if duration_minutes is None:
             item_type = (
@@ -506,11 +544,41 @@ class GrowspaceFacade:
         )
 
     async def remove_irrigation_schedule_item(
-        self, growspace_id: str, schedule_key: str, time_str: str
+        self,
+        growspace_id: str,
+        schedule_key: str,
+        time_str: str,
+        zone_id: str | None = None,
     ) -> None:
         """Remove a schedule item from a growspace."""
+        growspace = self._coordinator.growspaces.get(growspace_id)
+        if growspace is None:
+            raise ServiceValidationError(f"Growspace '{growspace_id}' not found")
+        if schedule_key == "irrigation_times" and (
+            zone_id is not None or len(growspace.irrigation_zones) > 1
+        ):
+            zone = resolve_zone(self._coordinator.growspaces[growspace_id], zone_id)
+            change = remove_items(
+                [dict(item) for item in zone.irrigation_times], time_str
+            )
+            await self._commit_zone_schedule(growspace_id, zone, change.items)
+            return
         irrigation_coord = await self._get_irrigation_coordinator(growspace_id)
         await irrigation_coord.async_remove_schedule_item(schedule_key, time_str)
+
+    async def _commit_zone_schedule(
+        self, growspace_id: str, zone: Any, items: list[dict[str, Any]]
+    ) -> None:
+        """Save one zone's schedule without broadening the settings write schema."""
+        previous = zone.irrigation_times
+        zone.irrigation_times = items
+        self._coordinator.cache.invalidate(growspace_id)
+        try:
+            await self._coordinator.async_commit()
+        except Exception:
+            zone.irrigation_times = previous
+            raise
+        await self._coordinator.async_request_refresh()
 
     async def _get_irrigation_coordinator(self, growspace_id: str) -> Any:
         if (

@@ -57,9 +57,14 @@ class IrrigationZone(BaseModel):
 
     # Substrate probes.
     soil_moisture_sensor: str | None = None
+    moisture_witness_sensors: list[str] = field(default_factory=list)
     pore_ec_sensors: list[str] = field(default_factory=list)
     bulk_ec_sensors: list[str] = field(default_factory=list)
     substrate_temperature_sensors: list[str] = field(default_factory=list)
+    # Quantity comes from the probe's owning list. These maps only carry its
+    # placement and role; they never duplicate the entity inventory.
+    probe_cells: dict[str, tuple[int, int]] = field(default_factory=dict)
+    probe_roles: dict[str, str] = field(default_factory=dict)
 
     # What the pump delivers into this zone's emitters.
     pump_flow_rate_ml_per_sec: float = 0.0
@@ -91,6 +96,7 @@ class IrrigationZone(BaseModel):
             "cells",
             "valves",
             "pore_ec_sensors",
+            "moisture_witness_sensors",
             "bulk_ec_sensors",
             "substrate_temperature_sensors",
             "irrigation_times",
@@ -101,7 +107,7 @@ class IrrigationZone(BaseModel):
             data["irrigation_times"] = normalize_schedule_items(
                 data["irrigation_times"]
             )
-        for key in ("strategy", "substrate_history"):
+        for key in ("strategy", "substrate_history", "probe_cells", "probe_roles"):
             if data.get(key) is None:
                 data[key] = {}
         return data

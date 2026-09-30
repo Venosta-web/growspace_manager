@@ -37,6 +37,7 @@ from .domain.irrigation_zone import (
     ZONE_CONFIG_FIELDS,
     ZONE_ENVIRONMENT_FIELDS,
     migrate_growspace_document,
+    sync_implicit_zone_cells,
     zone_integrity_problems,
 )
 from .models import (
@@ -50,7 +51,6 @@ from .models import (
     NutrientPreset,
     PollinationEvent,
     SeedBatch,
-    grid_cells,
 )
 from .plant_record_loader import load_plant_records
 
@@ -361,9 +361,12 @@ class StorageManager:
         growspace_data["layout_revision"] = layout_revision
         growspace_data["rows"] = rows
         growspace_data["plants_per_row"] = plants_per_row
-        zones = growspace_data.get("irrigation_zones") or []
-        if growspace_id not in self.zone_problems and len(zones) == 1:
-            zones[0]["cells"] = grid_cells(rows, plants_per_row)
+        if growspace_id not in self.zone_problems:
+            staged_growspace = Growspace.from_dict(growspace_data)
+            sync_implicit_zone_cells(staged_growspace)
+            growspace_data["irrigation_zones"] = [
+                zone.to_dict() for zone in staged_growspace.irrigation_zones
+            ]
         for placement in placements:
             plant_data = plants_data["plants"][placement["plant_id"]]
             plant_data["row"] = placement["row"]

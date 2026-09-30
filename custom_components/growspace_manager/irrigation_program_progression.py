@@ -260,7 +260,7 @@ class IrrigationProgramProgression:
         slot's recipe, after which the growspace is up to date.
         """
         growspace = self._coordinator.growspaces.get(growspace_id)
-        if growspace is None:
+        if growspace is None or len(growspace.irrigation_zones) > 1:
             self._announced.pop(growspace_id, None)
             return None
 

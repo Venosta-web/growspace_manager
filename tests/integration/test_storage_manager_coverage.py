@@ -106,7 +106,9 @@ async def test_storage_async_force_save(storage) -> None:
 
 async def test_save_plant_layout_snapshot_uses_staged_documents(storage) -> None:
     """Atomic layout persistence writes staged values, not live repository state."""
-    config_data = {"growspaces": {"tent": {"layout_revision": 2}}}
+    config_data = {
+        "growspaces": {"tent": {"id": "tent", "name": "Tent", "layout_revision": 2}}
+    }
     plants_data = {"plants": {"p1": {"row": 1, "col": 1, "updated_at": "before"}}}
     storage.config_store.async_save = AsyncMock()
     storage.plants_store.async_save = AsyncMock()
@@ -128,9 +130,16 @@ async def test_save_plant_layout_snapshot_uses_staged_documents(storage) -> None
         {
             "growspaces": {
                 "tent": {
+                    "id": "tent",
+                    "name": "Tent",
                     "layout_revision": 3,
                     "rows": 2,
                     "plants_per_row": 3,
+                    "irrigation_zones": [
+                        Growspace(
+                            id="tent", name="Tent", rows=2, plants_per_row=3
+                        ).default_zone.to_dict()
+                    ],
                 }
             }
         }
@@ -147,7 +156,9 @@ async def test_save_plant_layout_snapshot_restores_both_stores_on_failure(
     storage,
 ) -> None:
     """A segmented write failure restores the unpublished repository snapshot."""
-    old_config = {"growspaces": {"tent": {"layout_revision": 2}}}
+    old_config = {
+        "growspaces": {"tent": {"id": "tent", "name": "Tent", "layout_revision": 2}}
+    }
     old_plants = {"plants": {"p1": {"row": 1, "col": 1, "updated_at": "before"}}}
     storage.config_store.async_save = AsyncMock()
     storage.plants_store.async_save = AsyncMock(
@@ -159,7 +170,11 @@ async def test_save_plant_layout_snapshot_restores_both_stores_on_failure(
             storage,
             "_get_config_data",
             side_effect=[
-                {"growspaces": {"tent": {"layout_revision": 2}}},
+                {
+                    "growspaces": {
+                        "tent": {"id": "tent", "name": "Tent", "layout_revision": 2}
+                    }
+                },
                 old_config,
             ],
         ),
@@ -187,9 +202,16 @@ async def test_save_plant_layout_snapshot_restores_both_stores_on_failure(
             {
                 "growspaces": {
                     "tent": {
+                        "id": "tent",
+                        "name": "Tent",
                         "layout_revision": 3,
                         "rows": 2,
                         "plants_per_row": 3,
+                        "irrigation_zones": [
+                            Growspace(
+                                id="tent", name="Tent", rows=2, plants_per_row=3
+                            ).default_zone.to_dict()
+                        ],
                     }
                 }
             }

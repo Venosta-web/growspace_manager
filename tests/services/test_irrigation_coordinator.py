@@ -1824,3 +1824,86 @@ async def test_the_gate_reads_the_tank_monitor_watches(
     assert _turn_on_calls(mock_hass) == []
     status.assert_called()
     assert coordinator._own_tank_watches is None
+
+
+async def test_multizone_delivery_requires_scope_and_holds_pump(
+    mock_hass, mock_config_entry, mock_main_coordinator
+):
+    """Zone configuration cannot accidentally deliver through the pump-only loop."""
+    from custom_components.growspace_manager.domain.zone_edit import edited_zones
+    from custom_components.growspace_manager.exceptions import ZoneRequiredError
+
+    growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    candidate = edited_zones(
+        growspace,
+        "add",
+        {
+            "zone_id": "blue",
+            "name": "Blue",
+            "cells": [[1, 2]],
+            "valves": ["switch.blue"],
+            "default_valves": ["switch.red"],
+        },
+    )
+    growspace.irrigation_zones = candidate.irrigation_zones
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    with pytest.raises(ZoneRequiredError):
+        await coordinator.async_manual_run(30)
+    with pytest.raises(ServiceValidationError, match="per-zone runtime"):
+        await coordinator.async_manual_run(30, zone_id="blue")
+    await coordinator._run_pump_cycle("irrigation", "switch.irrigation_pump", 30, {})
+    mock_hass.services.async_call.assert_not_called()
+    assert coordinator._deliveries.attempts[-1].reason == "zone_runtime_pending"
+
+
+async def test_multizone_admission_race_is_rechecked_before_on(
+    mock_hass, mock_config_entry, mock_main_coordinator
+):
+    """A split during an awaited gate cannot reach the pump ON command."""
+    from custom_components.growspace_manager.domain.zone_edit import edited_zones
+
+    growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    candidate = edited_zones(
+        growspace,
+        "add",
+        {
+            "zone_id": "blue",
+            "name": "Blue",
+            "cells": [[1, 2]],
+            "valves": ["switch.blue"],
+            "default_valves": ["switch.red"],
+        },
+    )
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+
+    async def split_at_gate(*args):
+        growspace.irrigation_zones = candidate.irrigation_zones
+
+    with patch.object(
+        coordinator, "_record_safety_transition", side_effect=split_at_gate
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 30, {"manual": True}
+        )
+    mock_hass.services.async_call.assert_not_called()
+    assert coordinator._deliveries.attempts[-1].reason == "zone_runtime_pending"
+
+
+async def test_lone_zone_with_valves_waits_for_valve_actuation(
+    mock_hass, mock_config_entry, mock_main_coordinator
+):
+    """A single configured valve also needs the next ticket's ON/readback order."""
+    growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    growspace.default_zone.valves = ["switch.valve"]
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    with pytest.raises(ServiceValidationError, match="valve actuation"):
+        await coordinator.async_manual_run(30)
+    await coordinator._run_pump_cycle("irrigation", "switch.irrigation_pump", 30, {})
+    mock_hass.services.async_call.assert_not_called()
+    assert coordinator._deliveries.attempts[-1].reason == "zone_runtime_pending"

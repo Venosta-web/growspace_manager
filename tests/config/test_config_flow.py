@@ -35,6 +35,7 @@ from custom_components.growspace_manager.const import (
 )
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
+    Growspace,
     IrrigationConfig,
     IrrigationZone,
     LightCycle,
@@ -1874,10 +1875,10 @@ async def test_options_flow_configure_environment_submit(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(
+    mock_growspace = Growspace(
+        id="gs1",
         name="Growspace 1",
         environment_config=EnvironmentConfig(),
-        default_zone=IrrigationZone(id="default"),
         dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}
@@ -1919,14 +1920,14 @@ async def test_options_flow_configure_environment_remove_vpd_sensor(
     config_entry = MockConfigEntry(domain=DOMAIN, data={"name": "Test"}, options={})
     config_entry.add_to_hass(hass)
     config_entry.runtime_data = mock_coordinator
-    mock_growspace = Mock(
+    mock_growspace = Growspace(
+        id="gs1",
         name="Growspace 1",
         environment_config=EnvironmentConfig(
             vpd_sensor="sensor.vpd",
             temperature_sensor="sensor.temp",
             humidity_sensor="sensor.humidity",
         ),
-        default_zone=IrrigationZone(id="default"),
         dimensions={"width": 100, "length": 100, "height": 200, "unit": "cm"},
     )
     mock_coordinator.growspaces = {"gs1": mock_growspace}

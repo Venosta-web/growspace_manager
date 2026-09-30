@@ -16,10 +16,12 @@ import voluptuous as vol
 
 from custom_components.growspace_manager.exceptions import (
     CoordinatorNotReadyError,
+    EnvelopeExceededError,
     GrowspaceError,
     LayoutConflictError,
     PlantNotFoundError,
     RateLimitedError,
+    ZoneRequiredError,
 )
 from custom_components.growspace_manager.websocket._common import (
     DEFAULT_WS_ERROR_MAP,
@@ -115,6 +117,8 @@ async def test_resolve_modes(
     ("raised", "expected_code"),
     [
         (PlantNotFoundError("Plant 'p9' not found"), "entity_not_found"),
+        (ZoneRequiredError("name the zone"), "zone_required"),
+        (EnvelopeExceededError("zones_per_growspace", 6), "envelope_exceeded"),
         (LayoutConflictError("stale layout"), "conflict"),
         (CoordinatorNotReadyError("no instance loaded"), "coordinator_not_ready"),
         (RateLimitedError("rate_limited"), "rate_limited"),
@@ -203,6 +207,8 @@ def test_default_map_covers_the_full_typed_vocabulary() -> None:
     codes = {row[1] for row in DEFAULT_WS_ERROR_MAP}
     assert codes == {
         "entity_not_found",
+        "zone_required",
+        "envelope_exceeded",
         "conflict",
         "coordinator_not_ready",
         "rate_limited",

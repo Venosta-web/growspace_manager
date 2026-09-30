@@ -391,8 +391,8 @@ def test_a_view_is_detached_until_it_is_applied() -> None:
     )
 
 
-def test_a_lone_zone_follows_the_grid_and_several_are_left_alone() -> None:
-    """Which zone a new cell joins among several is the zone editor's call."""
+def test_grid_growth_inherits_the_boundary_zone() -> None:
+    """New cells inherit the zone at the old grid boundary."""
     growspace = Growspace(id="gs", name="Gs", rows=2, plants_per_row=2)
     growspace.rows = 3
     sync_implicit_zone_cells(growspace)
@@ -401,7 +401,7 @@ def test_a_lone_zone_follows_the_grid_and_several_are_left_alone() -> None:
     growspace.irrigation_zones.append(IrrigationZone(id="b", cells=[]))
     growspace.rows = 4
     sync_implicit_zone_cells(growspace)
-    assert growspace.default_zone.cells == grid_cells(3, 2)
+    assert growspace.default_zone.cells == grid_cells(4, 2)
 
 
 def test_zone_model_reads_nulls_and_legacy_schedule_items() -> None:

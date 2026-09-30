@@ -29,6 +29,7 @@ from . import (
     template_management,
     timeline,
     vision,
+    zones,
 )
 from ._common import (
     _EPOCH_SENTINEL,
@@ -201,6 +202,7 @@ _MODULES = [
     environment,
     subareas,
     vision,
+    zones,
     irrigation,
     labels,
     drafts,

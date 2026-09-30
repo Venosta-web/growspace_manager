@@ -168,10 +168,15 @@ class ConfigFacade:
         name: str,
         kind: IrrigationRecipeKind,
         recipe_id: str | None = None,
+        zone_id: str | None = None,
     ) -> IrrigationRecipe:
         """Save a growspace's current irrigation settings as a named recipe."""
         return await self._coordinator._recipe_library.async_save_from_growspace(
-            growspace_id, name, kind, recipe_id
+            growspace_id,
+            name,
+            kind,
+            recipe_id,
+            **({"zone_id": zone_id} if zone_id is not None else {}),
         )
 
     async def update_irrigation_recipe(

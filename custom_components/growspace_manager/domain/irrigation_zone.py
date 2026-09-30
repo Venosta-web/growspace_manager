@@ -162,15 +162,26 @@ def effective_environment_probes(
 
 
 def sync_implicit_zone_cells(growspace: Growspace) -> None:
-    """Keep a lone zone owning the whole grid after the grid is resized.
-
-    With one zone every cell is its; which zone a new cell joins when there
-    are several is the zone editor's question, not this one's (ADR-0057).
-    """
+    """Clip removed cells and inherit each new cell's adjacent boundary owner."""
+    target = set(grid_cells(growspace.rows, growspace.plants_per_row))
     if len(growspace.irrigation_zones) == 1:
-        growspace.irrigation_zones[0].cells = grid_cells(
-            growspace.rows, growspace.plants_per_row
-        )
+        zone = growspace.irrigation_zones[0]
+        zone.cells = sorted(target)
+        zone.probe_cells = {
+            entity: cell for entity, cell in zone.probe_cells.items() if cell in target
+        }
+        return
+    owners = {cell: zone for zone in growspace.irrigation_zones for cell in zone.cells}
+    old_rows = max((cell[0] for cell in owners), default=1)
+    old_cols = max((cell[1] for cell in owners), default=1)
+    for zone in growspace.irrigation_zones:
+        zone.cells = sorted(set(zone.cells) & target)
+        zone.probe_cells = {
+            entity: cell for entity, cell in zone.probe_cells.items() if cell in target
+        }
+    for cell in sorted(target - owners.keys()):
+        adjacent = (min(cell[0], old_rows), min(cell[1], old_cols))
+        owners[adjacent].cells.append(cell)
 
 
 def _grid_dimension(value: Any) -> int:

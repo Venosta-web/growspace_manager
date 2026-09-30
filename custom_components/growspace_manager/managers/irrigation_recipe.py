@@ -28,6 +28,7 @@ from custom_components.growspace_manager.domain.irrigation_zone import (
     effective_strategy,
 )
 from custom_components.growspace_manager.domain.plant_metrics import count_live_plants
+from custom_components.growspace_manager.domain.zone_edit import resolve_zone
 from custom_components.growspace_manager.exceptions import (
     EntityNotFoundError,
     GrowspaceNotFoundError,
@@ -68,6 +69,7 @@ class IrrigationRecipeLibrary:
         name: str,
         kind: IrrigationRecipeKind,
         recipe_id: str | None = None,
+        zone_id: str | None = None,
     ) -> IrrigationRecipe:
         """Capture one growspace's irrigation settings as a named recipe.
 
@@ -80,8 +82,10 @@ class IrrigationRecipeLibrary:
             raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
         plants = self.repository.get_growspace_plants(growspace_id)
-        strategy = effective_strategy(growspace)
-        config = effective_config(growspace)
+        zone = resolve_zone(growspace, zone_id)
+        plants = [plant for plant in plants if (plant.row, plant.col) in zone.cells]
+        strategy = effective_strategy(growspace, zone)
+        config = effective_config(growspace, zone)
         stage, week = resolve_feed_stage_week(plants)
 
         crop_steering = None

@@ -120,6 +120,7 @@ from .domain.water_aggregation import (
     is_tank_derived_mode,
     record_daily_water,
 )
+from .domain.zone_edit import resolve_zone
 from .exceptions import GrowspaceError
 from .irrigation_safety_store import IrrigationSafetyStore
 from .models import (
@@ -1970,6 +1971,11 @@ class BaseIrrigationCoordinator:
             ).refused(reason)
         )
 
+    def _zone_delivery_pending(self) -> bool:
+        """Hold configured valves until confirmed valve delivery lands (#893)."""
+        zones = self.growspace.irrigation_zones
+        return len(zones) > 1 or any(zone.valves for zone in zones)
+
     async def _run_pump_cycle(  # noqa: C901 - safety effect shell handles every exit
         self,
         event_type: str,
@@ -1982,7 +1988,11 @@ class BaseIrrigationCoordinator:
         requested_at = utcnow()
         store = self._safety_store
         manual = bool(event_data.get("manual", False))
-        hold = self._operator_hold(manual=manual)
+        hold = (
+            "zone_runtime_pending"
+            if event_type == "irrigation" and self._zone_delivery_pending()
+            else self._operator_hold(manual=manual)
+        )
         if hold is None and not self._in_flight(pump_entity):
             pump_state = self.hass.states.get(pump_entity)
             if pump_state is not None and pump_state.state == STATE_ON:
@@ -2114,7 +2124,12 @@ class BaseIrrigationCoordinator:
                     f"Irrigation started — {duration}s on {pump_entity}",
                 )
 
-            if (hold := self._operator_hold(manual=manual)) is not None:
+            hold = (
+                "zone_runtime_pending"
+                if event_type == "irrigation" and self._zone_delivery_pending()
+                else self._operator_hold(manual=manual)
+            )
+            if hold is not None:
                 abort_cause = AbortCause.OVERRIDE
                 self._suppress(
                     event_type, pump_entity, duration, event_data, requested_at, hold
@@ -2453,7 +2468,10 @@ class BaseIrrigationCoordinator:
         self._main_coordinator.add_event(self._growspace_id, event)
 
     async def async_manual_run(
-        self, duration: int | None, user_id: str | None = None
+        self,
+        duration: int | None,
+        user_id: str | None = None,
+        zone_id: str | None = None,
     ) -> None:
         """Trigger a manual irrigation cycle, bypassing the schedule.
 
@@ -2465,6 +2483,11 @@ class BaseIrrigationCoordinator:
             ServiceValidationError: When no irrigation pump entity is configured or
                 no duration can be determined.
         """
+        resolve_zone(self.growspace, zone_id)
+        if self._zone_delivery_pending():
+            raise ServiceValidationError(
+                "Multi-zone delivery requires valve actuation and per-zone runtime"
+            )
         options = self._config()
         snapshot = self.controller_snapshot()
         if snapshot.requires_ack:

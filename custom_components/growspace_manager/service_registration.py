@@ -42,6 +42,7 @@ from .services import (
     tank_config,
     vision_checkup,
     water_analytics,
+    zone_management,
 )
 from .strain_library import StrainLibrary
 
@@ -74,6 +75,7 @@ _SERVICE_MODULES: list[ModuleType] = [
     tank_config,
     vision_checkup,
     water_analytics,
+    zone_management,
 ]
 
 

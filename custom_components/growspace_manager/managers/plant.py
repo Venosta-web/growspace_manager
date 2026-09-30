@@ -1302,6 +1302,7 @@ class PlantManager(BaseService):
                 plant.plant_id: (plant.row, plant.col, plant.updated_at)
                 for plant in plants
             }
+            previous_zones = deepcopy(growspace.irrigation_zones)
             previous_dimensions = (growspace.rows, growspace.plants_per_row)
             previous_revision = growspace.layout_revision
             updated_at = plant_updated_date()
@@ -1338,7 +1339,7 @@ class PlantManager(BaseService):
                             plant.plant_id
                         ]
                     growspace.rows, growspace.plants_per_row = previous_dimensions
-                    sync_implicit_zone_cells(growspace)
+                    growspace.irrigation_zones = previous_zones
                     growspace.layout_revision = previous_revision
                     self._invalidate(growspace_id)
                     raise

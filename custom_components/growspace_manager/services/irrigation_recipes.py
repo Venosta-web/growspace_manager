@@ -42,6 +42,7 @@ async def handle_save_irrigation_recipe(
         name=call.data[ATTR_NAME],
         kind=IrrigationRecipeKind(call.data[ATTR_RECIPE_KIND]),
         recipe_id=call.data.get(ATTR_RECIPE_ID),
+        **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
     )
 
 
@@ -86,7 +87,9 @@ async def handle_apply_irrigation_recipe(
     logged; the WebSocket command returns that warning to the caller.
     """
     await coordinator.services.growspaces.apply_irrigation_recipe(
-        call.data[ATTR_GROWSPACE_ID], call.data[ATTR_RECIPE_ID]
+        call.data[ATTR_GROWSPACE_ID],
+        call.data[ATTR_RECIPE_ID],
+        **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
     )
 
 

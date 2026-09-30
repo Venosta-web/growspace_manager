@@ -26,6 +26,7 @@ function rather than separate writers that drift apart.
 from __future__ import annotations
 
 from collections.abc import Mapping
+import copy
 from dataclasses import dataclass, fields as dataclass_fields, replace
 from enum import StrEnum
 import logging
@@ -45,6 +46,8 @@ from custom_components.growspace_manager.domain.irrigation_recipe import (
     resolve_recipe_application,
 )
 from custom_components.growspace_manager.domain.irrigation_zone import (
+    LIGHT_CYCLE_FIELDS,
+    ZONE_CONFIG_FIELDS,
     apply_effective_irrigation,
     effective_config,
     effective_strategy,
@@ -53,6 +56,7 @@ from custom_components.growspace_manager.domain.plant_metrics import count_live_
 from custom_components.growspace_manager.domain.shot_sizing import (
     dripper_flow_rate_ml_per_sec,
 )
+from custom_components.growspace_manager.domain.zone_edit import resolve_zone
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.models import (
     IrrigationConfig,
@@ -458,7 +462,13 @@ def _resolve_recipe_candidate(
         recipe,
         growspace,
         live_plant_count=count_live_plants(
-            coordinator.services.growspaces.get_growspace_plants(growspace.id)
+            [
+                plant
+                for plant in coordinator.services.growspaces.get_growspace_plants(
+                    growspace.id
+                )
+                if (plant.row, plant.col) in growspace.default_zone.cells
+            ]
         ),
     )
     updates = {
@@ -586,6 +596,8 @@ async def async_apply_irrigation_change(
     coordinator: GrowspaceCoordinator,
     growspace_id: str,
     change: IrrigationChange,
+    *,
+    zone_id: str | None = None,
 ) -> IrrigationChangeResult:
     """Apply one strict, atomic Irrigation Change.
 
@@ -595,6 +607,10 @@ async def async_apply_irrigation_change(
     failure restores the prior models, so a refused write leaves neither
     changed state nor a logbook entry claiming it happened.
     """
+    if "zone_id" in change.values:
+        values = dict(change.values)
+        zone_id = values.pop("zone_id")
+        change = IrrigationChange(change.operation, values)
     accepted = _accepted_fields(change.operation)
     for field in change.values:
         if field not in accepted:
@@ -607,13 +623,44 @@ async def async_apply_irrigation_change(
     if growspace is None:
         raise GrowspaceNotFoundError(f"Growspace {growspace_id} not found")
 
-    prior_config = effective_config(growspace)
-    prior_strategy = effective_strategy(growspace)
-    candidate = (
-        _resolve_recipe_candidate(change, growspace, coordinator)
-        if change.operation is IrrigationChangeOperation.RECIPE
-        else _resolve_candidate(change, growspace)
+    # Sparse growspace-owned settings keep their signature. Zone-scoped
+    # operations must resolve before any candidate, side effect or persistence.
+    zone_scoped = change.operation not in {
+        IrrigationChangeOperation.SETTINGS,
+        IrrigationChangeOperation.STRATEGY,
+        IrrigationChangeOperation.OPTIONS,
+    } or bool(
+        set(change.values)
+        & (
+            set(ZONE_CONFIG_FIELDS)
+            | (IRRIGATION_STRATEGY_CHANGE_FIELDS - set(LIGHT_CYCLE_FIELDS))
+            | _STRATEGY_ALIASES
+            | _CONFIG_ALIASES
+            | _OPTIONS_ALIASES
+        )
     )
+    zone = (
+        resolve_zone(growspace, zone_id)
+        if zone_scoped or zone_id is not None
+        else growspace.default_zone
+    )
+    target = copy.copy(growspace)
+    target.irrigation_zones = [zone]
+    prior_config = effective_config(target)
+    prior_strategy = effective_strategy(target)
+    candidate = (
+        _resolve_recipe_candidate(change, target, coordinator)
+        if change.operation is IrrigationChangeOperation.RECIPE
+        else _resolve_candidate(change, target)
+    )
+    if (
+        change.operation is IrrigationChangeOperation.CLEAR
+        and len(growspace.irrigation_zones) > 1
+    ):
+        # Clearing a zone cannot remove the pump, drain, caps or safety policy
+        # shared with its neighbours.
+        for field in prior_config.to_dict().keys() - set(ZONE_CONFIG_FIELDS):
+            setattr(candidate.config, field, getattr(prior_config, field))
     _validate_candidate(candidate.config, candidate.strategy)
     changed_config_fields = frozenset(
         field
@@ -626,12 +673,12 @@ async def async_apply_irrigation_change(
         if getattr(prior_strategy, field) != getattr(candidate.strategy, field)
     )
 
-    apply_effective_irrigation(growspace, candidate.config, candidate.strategy)
+    apply_effective_irrigation(growspace, candidate.config, candidate.strategy, zone)
     coordinator.cache.invalidate(growspace_id)
     try:
         await coordinator.async_commit()
     except Exception:
-        apply_effective_irrigation(growspace, prior_config, prior_strategy)
+        apply_effective_irrigation(growspace, prior_config, prior_strategy, zone)
         raise
 
     if candidate.logbook_message and candidate.config.log_to_logbook:

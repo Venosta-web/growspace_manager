@@ -798,6 +798,7 @@ SET_IRRIGATION_STRATEGY_SCHEMA = vol.Schema(
 SET_IRRIGATION_SETTINGS_SCHEMA = vol.All(
     vol.Schema(
         {
+            vol.Optional("zone_id"): cv.string,
             vol.Required("growspace_id"): vol.All(str, valid_growspace_id),
             vol.Optional("irrigation_pump_entity"): str,
             vol.Optional("pump_flow_rate_ml_per_sec"): vol.All(
@@ -1524,4 +1525,95 @@ SET_VISUAL_TAG_SCHEMA = vol.Schema(
         vol.Required(ATTR_PLANT_ID): cv.string,
         vol.Optional(ATTR_VISUAL_TAG): vol.Any(cv.string, None),
     }
+)
+
+
+# Zone membership is edited as one layout transaction, never one cell at a time.
+_ZONE_CELL = vol.ExactSequence([cv.positive_int, cv.positive_int])
+_ZONE_PROBE = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("quantity"): vol.In(
+            ["moisture", "pore_ec", "bulk_ec", "temperature"]
+        ),
+        vol.Required("role"): vol.In(["control", "witness"]),
+        vol.Optional("cell"): vol.Any(None, _ZONE_CELL),
+    }
+)
+_ZONE_BASE: dict[Any, Any] = {
+    vol.Required("growspace_id"): cv.string,
+    vol.Required("expected_layout_revision"): vol.All(
+        vol.Coerce(int), vol.Range(min=0)
+    ),
+}
+_ZONE_FIELDS: dict[Any, Any] = {
+    vol.Optional("name"): cv.string,
+    vol.Optional("cells"): [_ZONE_CELL],
+    vol.Optional("valves"): [cv.entity_id],
+    vol.Optional("probes"): [_ZONE_PROBE],
+}
+ZONE_EDIT_SCHEMAS = {
+    "add_irrigation_zone": vol.Schema(
+        {
+            **_ZONE_BASE,
+            **_ZONE_FIELDS,
+            vol.Required("name"): cv.string,
+            vol.Required("cells"): [_ZONE_CELL],
+            vol.Required("valves"): [cv.entity_id],
+            vol.Optional("default_valves"): [cv.entity_id],
+        }
+    ),
+    "update_irrigation_zone": vol.Schema(
+        {**_ZONE_BASE, **_ZONE_FIELDS, vol.Required("zone_id"): cv.string}
+    ),
+    "assign_irrigation_zone": vol.Schema(
+        {
+            **_ZONE_BASE,
+            vol.Required("zone_id"): cv.string,
+            vol.Required("cells"): [_ZONE_CELL],
+        }
+    ),
+    "remove_irrigation_zone": vol.Schema(
+        {**_ZONE_BASE, vol.Required("zone_id"): cv.string}
+    ),
+    "reorder_irrigation_zones": vol.Schema(
+        {**_ZONE_BASE, vol.Required("zone_ids"): [cv.string]}
+    ),
+}
+
+
+# The zone is optional for the legacy single-zone action surface.
+SET_IRRIGATION_STRATEGY_SCHEMA = SET_IRRIGATION_STRATEGY_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+RUN_IRRIGATION_CYCLE_SCHEMA = RUN_IRRIGATION_CYCLE_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+CLEAR_IRRIGATION_SCHEMA = CLEAR_IRRIGATION_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+SET_STEERING_PHASE_SCHEMA = SET_STEERING_PHASE_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+APPLY_STEERING_MODE_SCHEMA = APPLY_STEERING_MODE_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+ADD_IRRIGATION_TIME_SCHEMA = ADD_IRRIGATION_TIME_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+REMOVE_IRRIGATION_TIME_SCHEMA = REMOVE_IRRIGATION_TIME_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+SAVE_IRRIGATION_RECIPE_SCHEMA = SAVE_IRRIGATION_RECIPE_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+APPLY_IRRIGATION_RECIPE_SCHEMA = APPLY_IRRIGATION_RECIPE_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+ASSIGN_IRRIGATION_PROGRAM_SCHEMA = ASSIGN_IRRIGATION_PROGRAM_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
+)
+
+CONFIGURE_ENVIRONMENT_SCHEMA = CONFIGURE_ENVIRONMENT_SCHEMA.extend(
+    {vol.Optional("zone_id"): cv.string}
 )
