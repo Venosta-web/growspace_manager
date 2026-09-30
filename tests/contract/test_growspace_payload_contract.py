@@ -824,7 +824,14 @@ async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     coordinator._recipe_library.load_data(_maximal_recipe_library())
     coordinator._program_library.load_data(_maximal_program_library())
     _set_runtime_states(hass)
+    hass.states.async_set(
+        "sensor.contract_north_moisture", "43", {"unit_of_measurement": "%"}
+    )
     irrigation = IrrigationCoordinator(hass, entry, GROWSPACE_ID, coordinator)
+    north = IrrigationCoordinator(
+        hass, entry, GROWSPACE_ID, coordinator, zone_id="north", supply=irrigation
+    )
+    irrigation.register_zone_runtime(north)
     irrigation._deliveries.calibration = _raised_disagreement()
     due = datetime(2026, 8, 11, 11, 58, tzinfo=UTC)
     irrigation._serving_claim = SupplyClaim(
@@ -870,6 +877,10 @@ async def test_growspace_payload_contract(
     assert len(zones) == 2
     for zone in zones:
         assert zone["cells"] and zone["valves"] and zone["probes"]
+        assert zone["active_steering_phase"] in {"p1", "p2", "p3"}
+        assert zone["vwc"] is not None
+        assert zone["state"] in {"ready", "running", "inhibited"}
+        assert "substrate" in zone and "score" in zone["substrate"]
         assert all(
             probe["cell"] and probe["role"] and probe["health"]
             for probe in zone["probes"]

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from .const import SteeringMode
 from .domain.ec_state import runoff_score_component
-from .domain.irrigation_zone import effective_strategy
+from .domain.irrigation_zone import effective_strategy, zone_of
 from .models import CropSteeringState
 
 if TYPE_CHECKING:
@@ -120,6 +120,7 @@ def calculate_crop_steering_score(
 def get_crop_steering_state(
     coordinator: GrowspaceCoordinator,
     growspace_id: str,
+    zone_id: str | None = None,
 ) -> CropSteeringState | None:
     """Get the current crop steering state for a growspace.
 
@@ -131,16 +132,21 @@ def get_crop_steering_state(
         CropSteeringState or None if VWC strategy is not active.
     """
     growspace = coordinator.growspaces.get(growspace_id)
-    if not growspace or not growspace.default_zone.strategy.enabled:
+    if not growspace:
+        return None
+    zone = zone_of(growspace, zone_id)
+    if not zone.strategy.enabled:
         return None
 
     # Try to get VWC data from irrigation coordinator
-    vwc_coord = coordinator.services.growspaces.get_irrigation_coordinator(growspace_id)
+    vwc_coord = coordinator.services.growspaces.get_irrigation_coordinator(
+        growspace_id, zone_id
+    )
     if vwc_coord is None:
         return CropSteeringState()
 
     # Get VWC readings from the coordinator's soil moisture sensor
-    soil_moisture_sensor = growspace.default_zone.soil_moisture_sensor
+    soil_moisture_sensor = zone.soil_moisture_sensor
     if not soil_moisture_sensor:
         return CropSteeringState()
 
@@ -153,12 +159,14 @@ def get_crop_steering_state(
     if current_vwc is None:
         return CropSteeringState()
 
-    strategy = effective_strategy(growspace)
+    strategy = effective_strategy(growspace, zone)
 
     # Prefer the SubstrateTracker's measured peak/trough/dryback over a synthetic
     # target-derived value, so the steering score is honest (see ADR-0010). The
     # tracker reads only persisted events — never the recorder.
-    tracker = coordinator.services.growspaces.get_substrate_tracker(growspace_id)
+    tracker = coordinator.services.growspaces.get_substrate_tracker(
+        growspace_id, zone_id
+    )
     measured = tracker.get_measured_peak_trough() if tracker is not None else None
     shot_count = tracker.get_shot_count_today() if tracker is not None else None
 

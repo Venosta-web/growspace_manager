@@ -12,6 +12,7 @@ from custom_components.growspace_manager.models import (
     ECRampPoint,
     EnergyTracking,
     EnvironmentConfig,
+    IrrigationZone,
     Plant,
     Subarea,
     WaterUsageData,
@@ -141,6 +142,7 @@ async def test_create_initial_entities_dli_and_energy_sensors_created() -> None:
         irrigation_strategy=Mock(enabled=False),
         subareas=[],
     )
+    growspace.irrigation_zones = [IrrigationZone(id="default")]
     coordinator = _make_coordinator(growspaces={"gs1": growspace})
     coordinator.created_entity_ids = []
     config_entry = Mock()
@@ -193,6 +195,7 @@ async def test_create_initial_entities_dict_env_config_with_tank() -> None:
         irrigation_strategy=Mock(enabled=False),
         subareas=[],
     )
+    growspace.irrigation_zones = [IrrigationZone(id="default")]
     coordinator = _make_coordinator(growspaces={"gs1": growspace})
     coordinator.created_entity_ids = []
     config_entry = Mock()

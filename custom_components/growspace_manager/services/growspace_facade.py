@@ -30,6 +30,7 @@ from custom_components.growspace_manager.domain.irrigation_schedule import (
     remove_items,
     upsert_item,
 )
+from custom_components.growspace_manager.domain.irrigation_zone import zone_of
 from custom_components.growspace_manager.domain.setup_preset import SETUP_PRESETS
 from custom_components.growspace_manager.domain.stage import StageDays
 from custom_components.growspace_manager.domain.stage_calculator import (
@@ -84,7 +85,7 @@ class GrowspaceFacade:
         """Initialise the facade with the coordinator."""
         self._coordinator = coordinator
         self._tank_water_trackers: dict[str, dict[str, TankWaterTracker]] = {}
-        self._substrate_trackers: dict[str, SubstrateTracker] = {}
+        self._substrate_trackers: dict[tuple[str, str | None], SubstrateTracker] = {}
 
     # -------------------------------------------------------------------------
     # CRUD
@@ -776,21 +777,24 @@ class GrowspaceFacade:
         """Return all cached tank water trackers for a growspace."""
         return self._tank_water_trackers.get(growspace_id, {})
 
-    def get_substrate_tracker(self, growspace_id: str) -> SubstrateTracker | None:
+    def get_substrate_tracker(
+        self, growspace_id: str, zone_id: str | None = None
+    ) -> SubstrateTracker | None:
         """Return the SubstrateTracker for a growspace, or None if absent.
 
-        The tracker reads and writes the implicit zone's substrate history, so
-        a single cached instance per growspace shares the persisted state with
-        the steering loop and the sensor.
+        Each zone shares one cached tracker between its loop and entities;
+        an omitted zone_id reads the implicit zone for existing callers.
         """
         growspace = self.get_growspace(growspace_id)
         if growspace is None:
             return None
-        tracker = self._substrate_trackers.get(growspace_id)
+        zone_id = zone_of(growspace, zone_id).id
+        key = (growspace_id, zone_id)
+        tracker = self._substrate_trackers.get(key)
         if tracker is None or tracker.growspace is not growspace:
             # Re-bind if the growspace object was replaced (e.g. reload).
-            tracker = SubstrateTracker(growspace)
-            self._substrate_trackers[growspace_id] = tracker
+            tracker = SubstrateTracker(growspace, zone_id)
+            self._substrate_trackers[key] = tracker
         return tracker
 
     async def async_unsubscribe_all_trackers(self) -> None:
@@ -871,11 +875,16 @@ class GrowspaceFacade:
     # Subsystem coordinator access
     # -------------------------------------------------------------------------
 
-    def get_irrigation_coordinator(self, growspace_id: str) -> Any | None:
+    def get_irrigation_coordinator(
+        self, growspace_id: str, zone_id: str | None = None
+    ) -> Any | None:
         """Return the irrigation coordinator for a growspace, or None."""
-        return self._coordinator._subsystem_manager.irrigation_coordinators.get(
+        supply = self._coordinator._subsystem_manager.irrigation_coordinators.get(
             growspace_id
         )
+        if supply is None or zone_id is None:
+            return supply
+        return supply.zone_runtime(zone_id)
 
     def get_dehumidifier_coordinator(self, growspace_id: str) -> Any | None:
         """Return the dehumidifier coordinator for a growspace, or None."""

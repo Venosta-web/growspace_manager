@@ -280,7 +280,7 @@ class GrowspaceViewModelBuilder:
                 "volume_mode_capable": volume_mode_capable,
                 "drain_config": drain_config,
                 "water_usage": water_usage,
-                "substrate": self._build_substrate_metrics(growspace),
+                "substrate": self.build_substrate_metrics(growspace),
             },
             "metrics": {
                 **(biological_metrics or {}),
@@ -333,7 +333,9 @@ class GrowspaceViewModelBuilder:
             )
         return zones
 
-    def _build_substrate_metrics(self, growspace: Growspace) -> dict[str, Any]:
+    def build_substrate_metrics(
+        self, growspace: Growspace, zone_id: str | None = None
+    ) -> dict[str, Any]:
         """Build measured substrate dryback metrics for the frontend payload.
 
         Reads the persisted ``substrate_history`` directly via a stateless
@@ -343,7 +345,7 @@ class GrowspaceViewModelBuilder:
             SubstrateTracker,
         )
 
-        tracker = SubstrateTracker(growspace)
+        tracker = SubstrateTracker(growspace, zone_id)
         latest_overnight = tracker.get_latest_overnight_dryback()
         avg = tracker.get_average_incycle_dryback_today()
         ec_trend = tracker.get_ec_trend()

@@ -255,6 +255,53 @@ class ViewModelBuilder:
             else None
         )
 
+        for zone_payload in serialized["irrigation"]["zones"]:
+            zone_id = zone_payload["id"]
+            runtime = self.coordinator.services.growspaces.get_irrigation_coordinator(
+                growspace_id, zone_id
+            )
+            zone = next(
+                zone for zone in growspace.irrigation_zones if zone.id == zone_id
+            )
+            zone_payload["active_steering_phase"] = zone.active_steering_phase
+            zone_payload["phase_changed_at"] = zone.phase_changed_at
+            zone_payload["vwc"] = runtime.current_vwc if runtime is not None else None
+            snapshot = runtime.zone_snapshot() if runtime is not None else None
+            zone_payload["state"] = snapshot.state.value if snapshot else "idle"
+            zone_payload["reasons"] = (
+                [reason.as_dict() for reason in snapshot.reasons] if snapshot else []
+            )
+            zone_payload["last_cycle_timestamp"] = (
+                runtime.last_cycle_timestamp if runtime is not None else None
+            )
+            zone_payload["next_scheduled_cycle"] = (
+                runtime.next_scheduled_cycle if runtime is not None else None
+            )
+            zone_payload["projected_shot_window"] = (
+                runtime.projected_shot_window if runtime is not None else None
+            )
+            zone_substrate = self._growspace_builder.build_substrate_metrics(
+                growspace, zone_id
+            )
+            state = get_crop_steering_state(self.coordinator, growspace_id, zone_id)
+            zone_substrate.update(
+                score=round(state.score, 2) if state else None,
+                measured_classification=state.measured_classification
+                if state
+                else None,
+                intent_deviation=state.intent_deviation if state else None,
+                runoff_score=state.runoff_score if state else None,
+                shot_composition=runtime.shot_composition_payload()
+                if runtime is not None and hasattr(runtime, "shot_composition_payload")
+                else None,
+            )
+            zone_payload["substrate"] = zone_substrate
+            zone_payload["ec_state"] = (
+                runtime.ec_state_payload()
+                if runtime is not None and hasattr(runtime, "ec_state_payload")
+                else None
+            )
+
         # The global [[Irrigation Recipe]] library rides every growspace payload
         # for the same reason the notification settings below do: the card's
         # irrigation dialog seeds from the device payload, and the recipe picker

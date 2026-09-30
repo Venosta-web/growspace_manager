@@ -2518,6 +2518,7 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
             "custom_components.growspace_manager.managers.subsystem.HumidifierCoordinator"
         ) as mock_hum,
     ):
+        mock_vwc.return_value.async_setup = AsyncMock()
         # Setup standard
         mock_irr_instance = MagicMock()
         mock_irr_instance.async_setup = AsyncMock()
@@ -2535,9 +2536,9 @@ async def test_setup_sub_coordinators(coordinator: GrowspaceCoordinator) -> None
             "gs1", gs_normal
         )
 
-        mock_irr.assert_called_once()
-        mock_vwc.assert_not_called()
-        mock_irr_instance.async_setup.assert_awaited_once()
+        mock_irr.assert_not_called()
+        mock_vwc.assert_called_once()
+        mock_vwc.return_value.async_setup.assert_awaited_once()
         assert "gs1" in coordinator._subsystem_manager.irrigation_coordinators
 
         mock_dehum.assert_called_once()

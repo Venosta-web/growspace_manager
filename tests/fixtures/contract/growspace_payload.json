@@ -776,10 +776,12 @@
     },
     "zones": [
       {
+        "active_steering_phase": "p2",
         "cells": [
           [1, 1],
           [1, 2]
         ],
+        "ec_state": null,
         "id": "default",
         "irrigation_config": {
           "active_steering_phase": "p2",
@@ -864,8 +866,11 @@
           },
           "target_vwc_percent": 58.0
         },
+        "last_cycle_timestamp": null,
         "name": "Zone 1",
+        "next_scheduled_cycle": "2026-08-12T06:30:00+00:00",
         "order": 0,
+        "phase_changed_at": "2026-08-11T06:00:00+00:00",
         "plant_count": 2,
         "probes": [
           {
@@ -897,13 +902,51 @@
             "role": "control"
           }
         ],
-        "valves": ["switch.contract_south_valve"]
+        "projected_shot_window": null,
+        "reasons": [
+          {
+            "code": "irrigation_disarmed",
+            "detail": "Automatic irrigation is disarmed",
+            "since": "2026-08-11T12:00:00+00:00"
+          }
+        ],
+        "state": "inhibited",
+        "substrate": {
+          "ec_trend": "rising",
+          "ec_trend_available": true,
+          "ec_trend_detail": {
+            "current_ec": 2.5,
+            "day_start_ec": 2.2,
+            "delta": 0.3,
+            "trend": "rising"
+          },
+          "incycle_dryback_avg": 4.0,
+          "incycle_dryback_count": 1,
+          "intent_deviation": "more_vegetative",
+          "latest_overnight_event": {
+            "dryback": 9.0,
+            "event_type": "overnight",
+            "peak_timestamp": "2026-08-10T18:00:00+00:00",
+            "peak_vwc": 61.0,
+            "trough_timestamp": "2026-08-11T05:55:00+00:00",
+            "trough_vwc": 52.0
+          },
+          "measured_classification": "balanced",
+          "overnight_dryback": 9.0,
+          "runoff_score": 0.0,
+          "score": 0.2,
+          "shot_composition": null
+        },
+        "valves": ["switch.contract_south_valve"],
+        "vwc": 56.0
       },
       {
+        "active_steering_phase": "p2",
         "cells": [
           [2, 1],
           [2, 2]
         ],
+        "ec_state": null,
         "id": "north",
         "irrigation_config": {
           "active_steering_phase": "p2",
@@ -983,19 +1026,46 @@
           },
           "target_vwc_percent": 55.0
         },
+        "last_cycle_timestamp": null,
         "name": "North",
+        "next_scheduled_cycle": null,
         "order": 1,
+        "phase_changed_at": null,
         "plant_count": 0,
         "probes": [
           {
             "cell": [2, 1],
             "entity_id": "sensor.contract_north_moisture",
-            "health": "unavailable",
+            "health": "available",
             "quantity": "moisture",
             "role": "control"
           }
         ],
-        "valves": ["switch.contract_north_valve"]
+        "projected_shot_window": null,
+        "reasons": [
+          {
+            "code": "irrigation_disarmed",
+            "detail": "Automatic irrigation is disarmed",
+            "since": "2026-08-11T12:00:00+00:00"
+          }
+        ],
+        "state": "inhibited",
+        "substrate": {
+          "ec_trend": null,
+          "ec_trend_available": false,
+          "ec_trend_detail": null,
+          "incycle_dryback_avg": null,
+          "incycle_dryback_count": 0,
+          "intent_deviation": null,
+          "latest_overnight_event": null,
+          "measured_classification": null,
+          "overnight_dryback": null,
+          "runoff_score": null,
+          "score": null,
+          "shot_composition": null
+        },
+        "valves": ["switch.contract_north_valve"],
+        "vwc": 43.0
       }
     ]
   },

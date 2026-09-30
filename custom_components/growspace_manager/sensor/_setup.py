@@ -143,6 +143,12 @@ async def async_setup_entry(
         initialized_drying_sensor_ids,
     )
 
+    crop_steering_ids = {
+        entity.unique_id
+        for entity in initial_entities
+        if isinstance(entity, CropSteeringSensor)
+    }
+
     if initial_entities:
         async_add_entities(initial_entities)
         _LOGGER.debug(
@@ -199,6 +205,7 @@ async def async_setup_entry(
                 async_add_entities,
                 calculated_vpd_growspace_ids,
                 calculated_subarea_vpd_ids,
+                crop_steering_ids,
             )
             await _update_plant_entities(
                 hass,
@@ -305,10 +312,11 @@ async def _create_initial_entities(
                 DLISensor(coordinator, growspace_id, growspace.name)
             )
 
-        if growspace.default_zone.strategy.enabled:
-            initial_entities.append(
-                CropSteeringSensor(coordinator, growspace_id, growspace.name)
-            )
+        initial_entities.extend(
+            CropSteeringSensor(coordinator, growspace_id, growspace.name, zone.id)
+            for zone in growspace.irrigation_zones
+            if zone.strategy.enabled
+        )
 
         initial_entities.append(
             IrrigationControllerSensor(coordinator, growspace_id, growspace.name)
@@ -375,8 +383,10 @@ async def _update_growspace_entities(
     async_add_entities: AddEntitiesCallback,
     calculated_vpd_growspace_ids: set[str],
     calculated_subarea_vpd_ids: set[str],
+    crop_steering_ids: set[str | None] | None = None,
 ) -> None:
     """Update growspace entities based on coordinator data."""
+    crop_steering_ids = crop_steering_ids if crop_steering_ids is not None else set()
     for growspace_id, growspace in coordinator.growspaces.items():
         if growspace_id not in growspace_entities:
             entity = GrowspaceOverviewSensor(coordinator, growspace_id, growspace)
@@ -393,6 +403,15 @@ async def _update_growspace_entities(
                     ActiveRunSensor(coordinator, growspace_id, growspace.name),
                 ]
             )
+
+        for zone in growspace.irrigation_zones:
+            if zone.strategy.enabled:
+                sensor = CropSteeringSensor(
+                    coordinator, growspace_id, growspace.name, zone.id
+                )
+                if sensor.unique_id not in crop_steering_ids:
+                    async_add_entities([sensor])
+                    crop_steering_ids.add(sensor.unique_id)
 
         await _async_create_derivative_sensors(hass, config_entry, growspace)
 

@@ -707,6 +707,7 @@ def test_the_wire_form_names_every_field() -> None:
     assert wire == {
         "attempt_id": "a1",
         "growspace_id": "gs1",
+        "zone_id": "default",
         "output": "switch.pump",
         "trigger": "steering",
         "trigger_evidence": {
@@ -994,3 +995,35 @@ def test_due_at_refuses_invalid_stored_times(due):
     """Malformed queue evidence must not make a stored attempt readable."""
     with pytest.raises((ValueError, TypeError)):
         DeliveryAttempt.from_dict(_wire(due_at=due))
+
+
+@pytest.mark.parametrize("zone_id", ["default", "north", "south"])
+def test_attempt_zone_round_trip_and_old_record_default(zone_id):
+    attempt = _requested(zone_id=zone_id)
+    assert DeliveryAttempt.from_dict(attempt.as_dict()).zone_id == zone_id
+    wire = attempt.as_dict()
+    wire.pop("zone_id")
+    assert DeliveryAttempt.from_dict(wire).zone_id == "default"
+
+
+@pytest.mark.parametrize("zone_id", ["", 123, False, []])
+def test_attempt_refuses_invalid_stored_zone(zone_id):
+    wire = _requested().as_dict()
+    wire["zone_id"] = zone_id
+    with pytest.raises(ValueError, match="invalid zone_id"):
+        DeliveryAttempt.from_dict(wire)
+
+
+def test_suppression_never_merges_neighbouring_zones():
+    first = _suppressed(zone_id="north")
+    neighbour = _suppressed(zone_id="south")
+    assert not first.merges(neighbour)
+    assert len(with_suppression([first], neighbour)) == 2
+
+
+def test_drain_has_no_zone_and_old_drains_still_read():
+    attempt = _requested(trigger=AttemptTrigger.DRAIN)
+    assert attempt.zone_id is None
+    wire = attempt.as_dict()
+    wire.pop("zone_id")
+    assert DeliveryAttempt.from_dict(wire).zone_id is None

@@ -40,7 +40,8 @@
           "on_confirmed_at": "2026-09-28T06:00:00.100000+00:00",
           "output": "switch.zone_valve"
         }
-      ]
+      ],
+      "zone_id": "default"
     },
     {
       "abort_cause": null,
@@ -70,7 +71,8 @@
       "trigger_evidence": {
         "slot": "10:00:00"
       },
-      "valves": []
+      "valves": [],
+      "zone_id": "default"
     },
     {
       "abort_cause": null,
@@ -103,7 +105,8 @@
       "trigger_evidence": {
         "user_id": "user-abc123"
       },
-      "valves": []
+      "valves": [],
+      "zone_id": "default"
     },
     {
       "abort_cause": "emergency_stop",
@@ -133,7 +136,8 @@
       "trigger_evidence": {
         "slot": "14:00:00"
       },
-      "valves": []
+      "valves": [],
+      "zone_id": "default"
     },
     {
       "abort_cause": null,
@@ -163,7 +167,8 @@
       "trigger_evidence": {
         "slot": "15:00:00"
       },
-      "valves": []
+      "valves": [],
+      "zone_id": "default"
     },
     {
       "abort_cause": null,
@@ -193,7 +198,8 @@
       "trigger_evidence": {
         "slot": "18:00:00"
       },
-      "valves": []
+      "valves": [],
+      "zone_id": null
     }
   ],
   "date": "2026-09-28",

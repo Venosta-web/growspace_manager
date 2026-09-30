@@ -45,7 +45,7 @@ from .domain.steering_phase import (
     resolve_day_hours,
     shot_params_for_phase,
 )
-from .irrigation_coordinator import BaseIrrigationCoordinator
+from .irrigation_coordinator import BaseIrrigationCoordinator, IrrigationCoordinator
 from .models import Growspace, IrrigationStrategy
 
 if TYPE_CHECKING:
@@ -64,7 +64,7 @@ class _PendingObservation:
     tuning: FeedbackTuning
 
 
-class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
+class VWCIrrigationCoordinator(IrrigationCoordinator):
     """Manages VWC-based crop steering irrigation for a growspace."""
 
     def __init__(
@@ -73,9 +73,19 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         config_entry: ConfigEntry,
         growspace_id: str,
         main_coordinator: GrowspaceCoordinator,
+        *,
+        zone_id: str | None = None,
+        supply: BaseIrrigationCoordinator | None = None,
     ) -> None:
         """Initialize the VWC irrigation coordinator."""
-        super().__init__(hass, config_entry, growspace_id, main_coordinator)
+        super().__init__(
+            hass,
+            config_entry,
+            growspace_id,
+            main_coordinator,
+            zone_id=zone_id,
+            supply=supply,
+        )
         self._remove_update_listener: Callable[[], None] | None = None
 
         # Owns the phase state and the per-tick steering decision
@@ -111,15 +121,44 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         _LOGGER.info(
             "Setting up VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
-        await self._async_load_deliveries()
-        self._register_daily_reset_listener()
+        await super().async_setup()
         self._restore_steering_state()
-        self._resume_off_retries()
-        await self._async_begin_startup_inhibit()
         # Check every minute for phase updates and actions
         self._remove_update_listener = async_track_time_interval(
             self.hass, self._update_loop, timedelta(minutes=1)
         )
+
+    @override
+    async def async_request_refresh(self) -> None:
+        """Refresh every zone without stopping the supply's running shot."""
+        await super().async_request_refresh()
+        if self._remove_update_listener is None:
+            self._remove_update_listener = async_track_time_interval(
+                self.hass, self._update_loop, timedelta(minutes=1)
+            )
+        if self._supply is not self:
+            return
+        ids = {zone.id for zone in self.growspace.irrigation_zones}
+        for zone_id in list(self._zone_runtimes):
+            if zone_id not in ids:
+                self._zone_runtimes.pop(zone_id).async_cancel_listeners()
+        for zone in self.growspace.irrigation_zones:
+            if zone.id == self._zone.id:
+                continue
+            runtime = self.zone_runtime(zone.id)
+            if runtime is None:
+                runtime = VWCIrrigationCoordinator(
+                    self.hass,
+                    self._config_entry,
+                    self._growspace_id,
+                    self._main_coordinator,
+                    zone_id=zone.id,
+                    supply=self,
+                )
+                self.register_zone_runtime(runtime)
+                await runtime.async_setup()
+            else:
+                await runtime.async_request_refresh()
 
     def _restore_steering_state(self) -> None:
         """Resume the steering day from the growspace's persisted history (#786).
@@ -372,8 +411,8 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 pump_entity,
                 scaled_duration,
                 {
-                    "due_at": self._serving_claim.due_at
-                    if self._serving_claim
+                    "due_at": self._supply._serving_claim.due_at
+                    if self._supply._serving_claim
                     else None,
                     "phase": request.phase,
                     "vwc": vwc,
@@ -384,7 +423,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             ),
             f"irrigation_pump_{self._growspace_id}_irrigation",
         )
-        self._running_tasks["irrigation"] = task
+        self._supply._running_tasks["irrigation"] = task
 
         # Bound substrate dryback windows on the shot. The pre-shot VWC is the
         # trough for the just-closed in-cycle window; the tracker re-arms the
@@ -415,9 +454,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         irrigation. This is the per-plant dosing basis for Volume Mode (ADR-0011).
         """
         return count_live_plants(
-            self._main_coordinator.services.growspaces.get_growspace_plants(
+            plant
+            for plant in self._main_coordinator.services.growspaces.get_growspace_plants(
                 self._growspace_id
             )
+            if (plant.row, plant.col) in self._zone.cells
         )
 
     def _record_infiltration(self, sensor_entity: str, current_vwc: float) -> None:
@@ -498,7 +539,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         which the tracker uses for the zero-shot-day overnight-peak fallback.
         """
         tracker = self._main_coordinator.services.growspaces.get_substrate_tracker(
-            self._growspace_id
+            self._growspace_id, self._zone.id
         )
         if tracker is None:
             return
@@ -687,7 +728,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
     def _record_substrate_shot(self, phase: str) -> None:
         """Signal a fired shot to the SubstrateTracker for dryback bounding."""
         tracker = self._main_coordinator.services.growspaces.get_substrate_tracker(
-            self._growspace_id
+            self._growspace_id, self._zone.id
         )
         if tracker is None:
             return

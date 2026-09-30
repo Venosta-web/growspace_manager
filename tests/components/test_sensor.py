@@ -53,6 +53,7 @@ def mock_coordinator() -> MagicMock:
         plants_per_row=2,
         notification_target="notify_me",
     )
+    gs1.irrigation_zones = [IrrigationZone(id="default")]
     gs1.name = "Growspace 1"
     coordinator.growspaces = {"gs1": gs1}
     coordinator.plants = {
@@ -139,6 +140,7 @@ async def test_async_setup_entry_adds_entities(mock_coordinator: MagicMock) -> N
             subareas=[],
         )
     }
+    mock_coordinator.growspaces["gs1"].irrigation_zones = [IrrigationZone(id="default")]
     mock_coordinator.get_growspace_plants = Mock(
         return_value=[
             Mock(plant_id="p1", growspace_id="gs1", strain="Strain A", row=1, col=1)
@@ -196,6 +198,7 @@ async def test_async_setup_entry_calculated_vpd(mock_coordinator: MagicMock) -> 
         ),
         subareas=[],
     )
+    gs_mock.irrigation_zones = [IrrigationZone(id="default")]
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
@@ -262,6 +265,7 @@ async def test_async_setup_entry_vision_sensor(mock_coordinator: MagicMock) -> N
         environment_config=EnvironmentConfig(camera_entities=["camera.cam1"]),
         subareas=[],
     )
+    gs_mock.irrigation_zones = [IrrigationZone(id="default")]
     mock_coordinator.growspaces = {"gs_vision": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
     mock_coordinator.async_save = AsyncMock()
@@ -435,6 +439,7 @@ async def test_async_setup_entry_dynamic_updates(mock_coordinator: MagicMock) ->
         irrigation_strategy=Mock(enabled=False),
         subareas=[],
     )
+    new_gs.irrigation_zones = [IrrigationZone(id="default")]
     new_plant = Mock(
         plant_id="p_new", growspace_id="gs_new", strain="New Strain", row=1, col=1
     )
@@ -502,6 +507,7 @@ async def test_async_create_derivative_sensors(mock_coordinator: MagicMock) -> N
     hass = MagicMock()
     config_entry = Mock(entry_id="entry_1")
     growspace = Mock(id="gs1")
+    growspace.irrigation_zones = [IrrigationZone(id="default")]
     growspace.name = "Growspace 1"
     growspace.environment_config = EnvironmentConfig(
         temperature_sensor="sensor.temp",
@@ -941,6 +947,7 @@ async def test_sensor_coverage_gaps(mock_coordinator: MagicMock) -> None:
 
     # 2. Test GrowspaceOverviewSensor with missing coordinator data
     gs_mock = Mock(id="gs_empty", name="Empty GS", environment_config={})
+    gs_mock.irrigation_zones = [IrrigationZone(id="default")]
     sensor = GrowspaceOverviewSensor(mock_coordinator, "gs_empty", gs_mock)
     mock_coordinator.data = None
     assert sensor.extra_state_attributes == {}
@@ -1024,6 +1031,7 @@ async def test_async_create_derivative_sensors_object_config(
         temperature_sensor="sensor.t", humidity_sensor="sensor.h", vpd_sensor="sensor.v"
     )
     growspace = Mock(id="gs_obj", name="GS Obj", environment_config=env_config)
+    growspace.irrigation_zones = [IrrigationZone(id="default")]
 
     with (
         patch(
@@ -1070,6 +1078,7 @@ def test_growspace_list_sensor_plant_counts_per_growspace() -> None:
     """GrowspaceListSensor reports correct plant counts for each growspace in a single pass."""
     coordinator = MagicMock()
     gs1 = MagicMock()
+    gs1.irrigation_zones = [IrrigationZone(id="default")]
     gs1.name = "Tent 1"
     gs2 = MagicMock()
     gs2.name = "Tent 2"
@@ -1194,6 +1203,7 @@ async def test_async_setup_entry_recreates_calculated_vpd(
         ),
         subareas=[],
     )
+    gs_mock.irrigation_zones = [IrrigationZone(id="default")]
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])
@@ -1376,6 +1386,7 @@ async def test_async_setup_entry_dataclass_tank(mock_coordinator: MagicMock) -> 
         environment_config=env_config,
         subareas=[],
     )
+    gs_mock.irrigation_zones = [IrrigationZone(id="default")]
     gs_mock.name = "Growspace 1"
     mock_coordinator.growspaces = {"gs1": gs_mock}
     mock_coordinator.get_growspace_plants = Mock(return_value=[])

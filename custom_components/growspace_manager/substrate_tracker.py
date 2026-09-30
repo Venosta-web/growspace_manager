@@ -2,7 +2,7 @@
 
 Fed reading-by-reading by the VWC steering minute loop, this tracker detects
 two kinds of measured drybacks and persists them as a rolling event history on
-the growspace's implicit zone, so the metrics survive an HA restart without ever querying
+the zone, so the metrics survive an HA restart without ever querying
 the recorder (see ADR-0010).
 
 * **Overnight Dryback** — shot-to-shot: the settled VWC peak after the day's
@@ -16,7 +16,7 @@ the recorder (see ADR-0010).
 All dryback values are absolute VWC percentage points (peak - trough); a 55% ->
 45% drop is ``10.0`` (see CONTEXT.md "Dryback").
 
-The tracker reads and writes ``growspace.default_zone.substrate_history`` so its
+The tracker reads and writes the selected zone's ``substrate_history`` so its
 pending state (a peak awaiting its trough) persists and resumes correctly after
 a mid-window restart.
 """
@@ -34,6 +34,7 @@ from .const import (
     SUBSTRATE_MAX_EVENTS,
     SUBSTRATE_NOISE_FLOOR_PCT,
 )
+from .domain.irrigation_zone import zone_of
 
 if TYPE_CHECKING:
     from .models import Growspace, SubstrateHistory
@@ -73,9 +74,10 @@ class SubstrateTracker:
       the steering score, derived from live pending state with no recorder reads.
     """
 
-    def __init__(self, growspace: Growspace) -> None:
+    def __init__(self, growspace: Growspace, zone_id: str | None = None) -> None:
         """Initialize with a reference to a Growspace instance."""
         self.growspace = growspace
+        self.zone_id = zone_id
         # Tracks whether the last shot's peak is still rising (not yet settled).
         # Rebuilt lazily from persisted pending state, so it survives a restart
         # by simply assuming the persisted pending peak is already settled.
@@ -84,7 +86,7 @@ class SubstrateTracker:
     @property
     def _history(self) -> SubstrateHistory:
         """Return the persisted substrate history of the growspace's zone."""
-        return self.growspace.default_zone.substrate_history
+        return zone_of(self.growspace, self.zone_id).substrate_history
 
     # ── feeding ────────────────────────────────────────────────────────────────
 

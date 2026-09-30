@@ -25,11 +25,22 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         coordinator: GrowspaceCoordinator,
         growspace_id: str,
         growspace_name: str,
+        zone_id: str | None = None,
     ) -> None:
         """Initialize the crop steering sensor."""
         super().__init__(coordinator)
         self._growspace_id = growspace_id
+        self._zone_id = zone_id
         self._attr_unique_id = f"{DOMAIN}_{growspace_id}_crop_steering"
+
+        if zone_id and zone_id != "default":
+            self._attr_unique_id = f"{DOMAIN}_{growspace_id}_{zone_id}_crop_steering"
+            zone = next(
+                z
+                for z in coordinator.growspaces[growspace_id].irrigation_zones
+                if z.id == zone_id
+            )
+            self._attr_name = f"{zone.name} Crop steering"
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, growspace_id)},
@@ -40,16 +51,39 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
 
     @property
     @override
+    def available(self) -> bool:
+        """A removed zone's entity is unavailable until the registry removes it."""
+        if self._zone_id in (None, "default"):
+            return super().available
+        growspace = self.coordinator.growspaces.get(self._growspace_id)
+        return bool(
+            growspace
+            and any(
+                zone.id == (self._zone_id or "default")
+                for zone in growspace.irrigation_zones
+            )
+        )
+
+    @property
+    @override
     def native_value(self) -> float | None:
         """Return the crop steering score (-1.0 to 1.0)."""
-        state = get_crop_steering_state(self.coordinator, self._growspace_id)
+        if self._zone_id not in (None, "default") and not self.available:
+            return None
+        state = get_crop_steering_state(
+            self.coordinator, self._growspace_id, self._zone_id
+        )
         return round(state.score, 2) if state else None
 
     @property
     @override
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return crop steering details."""
-        state = get_crop_steering_state(self.coordinator, self._growspace_id)
+        if self._zone_id not in (None, "default") and not self.available:
+            return {}
+        state = get_crop_steering_state(
+            self.coordinator, self._growspace_id, self._zone_id
+        )
         if not state:
             return {}
 
@@ -76,7 +110,7 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
 
         # Measured substrate metrics from the SubstrateTracker (see ADR-0010).
         tracker = self.coordinator.services.growspaces.get_substrate_tracker(
-            self._growspace_id
+            self._growspace_id, self._zone_id
         )
         if tracker is not None:
             latest_overnight = tracker.get_latest_overnight_dryback()
@@ -98,7 +132,7 @@ class CropSteeringSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEntity):
         # state on the VWC coordinator. Absent on time-based irrigation.
         irrigation_coord = (
             self.coordinator.services.growspaces.get_irrigation_coordinator(
-                self._growspace_id
+                self._growspace_id, self._zone_id
             )
         )
         if irrigation_coord is not None and hasattr(
