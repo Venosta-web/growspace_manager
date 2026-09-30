@@ -174,6 +174,44 @@ def _liters(seconds: float, flow_rate_ml_per_sec: float) -> float:
 
 
 @dataclass(frozen=True, slots=True)
+class ValveReadback:
+    """Commands and confirmed readbacks for one valve on an attempt."""
+
+    output: str
+    on_commanded_at: datetime
+    on_confirmed_at: datetime | None = None
+    off_commanded_at: datetime | None = None
+    off_confirmed_at: datetime | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the durable evidence beside the supply's readbacks."""
+        return {
+            "output": self.output,
+            "on_commanded_at": self.on_commanded_at.isoformat(),
+            "on_confirmed_at": _iso(self.on_confirmed_at),
+            "off_commanded_at": _iso(self.off_commanded_at),
+            "off_confirmed_at": _iso(self.off_confirmed_at),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Any) -> ValveReadback:
+        """Refuse malformed valve evidence rather than lose an open output."""
+        if (
+            not isinstance(value, dict)
+            or not isinstance(value.get("output"), str)
+            or not value["output"]
+        ):
+            raise ValueError("valve readback has no output")
+        return cls(
+            output=value["output"],
+            on_commanded_at=_aware(value.get("on_commanded_at")),
+            on_confirmed_at=_optional_aware(value.get("on_confirmed_at")),
+            off_commanded_at=_optional_aware(value.get("off_commanded_at")),
+            off_confirmed_at=_optional_aware(value.get("off_confirmed_at")),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class DeliveryAttempt:
     """One irrigation request, from reaching the gate to its close.
 
@@ -207,6 +245,7 @@ class DeliveryAttempt:
     suppressed_count: int = 0
     last_requested_at: datetime | None = None
     ended_at: datetime | None = None
+    valves: tuple[ValveReadback, ...] = ()
 
     @classmethod
     def requested(
@@ -261,7 +300,10 @@ class DeliveryAttempt:
         read back, which the OFF-unconfirmed fault answers for. Any other
         attempt has no such window.
         """
-        if self.outcome is not AttemptOutcome.NOT_DELIVERED:
+        if (
+            self.outcome is not AttemptOutcome.NOT_DELIVERED
+            or self.on_commanded_at is None
+        ):
             return None
         return _required(self.on_commanded_at), self.off_confirmed_at
 
@@ -285,6 +327,16 @@ class DeliveryAttempt:
             self.off_commanded_at,
             self.off_confirmed_at,
             self.ended_at,
+            *(
+                moment
+                for valve in self.valves
+                for moment in (
+                    valve.on_commanded_at,
+                    valve.on_confirmed_at,
+                    valve.off_commanded_at,
+                    valve.off_confirmed_at,
+                )
+            ),
         )
         return max(moment for moment in moments if moment is not None)
 
@@ -311,8 +363,10 @@ class DeliveryAttempt:
     def refused(self, reason: str) -> DeliveryAttempt:
         """Close a request the gate or an operator hold refused, as ``suppressed``."""
         self._require(AttemptState.REQUESTED)
-        if self.on_commanded_at is not None:
-            raise ValueError("a request that reached the pump is not suppressed")
+        if self.on_commanded_at is not None or self.valves:
+            raise ValueError(
+                "a request that reached the pump or a valve is not suppressed"
+            )
         return replace(
             self,
             outcome=AttemptOutcome.SUPPRESSED,
@@ -385,14 +439,14 @@ class DeliveryAttempt:
         """Close a requested attempt whose pump never confirmed ON.
 
         Stopped by something, it is ``aborted`` with that cause; otherwise the
-        pump failed to open and it is ``not_delivered`` with the reason, which
-        only a commanded pump can be. Either way nothing is charged: only an
-        actuated attempt charges.
+        supply or a valve failed to open and it is ``not_delivered`` with the
+        reason. A valve failure carries no possible-water window because the
+        supply was never commanded. Nothing is charged until the supply confirms ON.
         """
         self._require(AttemptState.REQUESTED)
         if abort_cause is None and reason is None:
             raise ValueError("an unconfirmed attempt closes with a cause or a reason")
-        if abort_cause is None and self.on_commanded_at is None:
+        if abort_cause is None and self.on_commanded_at is None and not self.valves:
             raise ValueError("a pump never commanded ON is not an undelivered one")
         return replace(
             self,
@@ -484,6 +538,7 @@ class DeliveryAttempt:
             "suppressed_count": self.suppressed_count,
             "last_requested_at": _iso(self.last_requested_at),
             "ended_at": _iso(self.ended_at),
+            "valves": [valve.as_dict() for valve in self.valves],
         }
 
     @classmethod
@@ -519,6 +574,12 @@ class DeliveryAttempt:
         )
         outcome = value.get("outcome")
         charge_date = value.get("charge_date")
+        valve_rows = value.get("valves", [])
+        if not isinstance(valve_rows, list):
+            raise TypeError("delivery attempt valves are not a list")
+        valves = tuple(ValveReadback.from_dict(row) for row in valve_rows)
+        if len({valve.output for valve in valves}) != len(valves):
+            raise ValueError("delivery attempt repeats a valve")
         attempt = cls(
             attempt_id=value["attempt_id"],
             growspace_id=value["growspace_id"],
@@ -545,6 +606,7 @@ class DeliveryAttempt:
             suppressed_count=count,
             last_requested_at=_optional_aware(value.get("last_requested_at")),
             ended_at=_optional_aware(value.get("ended_at")),
+            valves=valves,
         )
         attempt._check_whole(value.get("state"))
         return attempt
@@ -567,11 +629,14 @@ class DeliveryAttempt:
             self.last_requested_at is not None
         ):
             raise ValueError("delivery attempt has a suppression count out of place")
-        if suppressed and (self.reason is None or self.on_commanded_at is not None):
+        if suppressed and (
+            self.reason is None or self.on_commanded_at is not None or self.valves
+        ):
             raise ValueError("a suppressed delivery attempt reached the pump")
         if (
             self.outcome is AttemptOutcome.NOT_DELIVERED
             and self.on_commanded_at is None
+            and not self.valves
         ):
             raise ValueError("an undelivered attempt was never commanded")
         if (self.outcome is AttemptOutcome.INTERRUPTED) != (self.ended_at is not None):

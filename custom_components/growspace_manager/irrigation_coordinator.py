@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from functools import partial
 import logging
@@ -26,7 +27,7 @@ from homeassistant.util.dt import as_local, get_default_time_zone, utcnow
 
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
-from .actuator_driver import async_confirm_state
+from .actuator_driver import async_confirm_state, resolve_actuator_driver
 from .const import (
     ATTR_GROWSPACE_ID,
     CATEGORY_ALERT,
@@ -46,6 +47,7 @@ from .domain.calibration_proposal import tank_sourced_proposal
 from .domain.delivery_attempt import (
     DELIVERY_RECORD_UNREADABLE,
     DeliveryAttempt,
+    ValveReadback,
     attempt_trigger,
     trigger_evidence,
 )
@@ -184,6 +186,7 @@ class BaseIrrigationCoordinator:
         self._growspace_id = growspace_id
         self._main_coordinator = main_coordinator
         self._listeners: list[Callable[[], None]] = []
+        self._supply_lock = asyncio.Lock()
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
         self._watchdog_cancelled_tasks: set[asyncio.Task[Any]] = set()
         self._override_cancelled_tasks: set[asyncio.Task[Any]] = set()
@@ -325,9 +328,19 @@ class BaseIrrigationCoordinator:
         """Return every output that must be confirmed OFF before re-arming."""
         config = self.growspace.irrigation_config
         return tuple(
-            entity
-            for entity in (config.irrigation_pump_entity, config.drain_pump_entity)
-            if entity
+            dict.fromkeys(
+                entity
+                for entity in (
+                    config.irrigation_pump_entity,
+                    config.drain_pump_entity,
+                    *(
+                        valve
+                        for zone in self.growspace.irrigation_zones
+                        for valve in zone.valves
+                    ),
+                )
+                if entity
+            )
         )
 
     def controller_snapshot(self) -> ControllerSnapshot:
@@ -528,7 +541,7 @@ class BaseIrrigationCoordinator:
             output
             for output in self._interrupted_outputs()
             if (state := self.hass.states.get(output)) is not None
-            and state.state == STATE_ON
+            and state.state in (STATE_ON, "open")
         }
         return tuple(
             sorted(self._commanded_outputs | set(self._off_retries) | interrupted)
@@ -544,7 +557,18 @@ class BaseIrrigationCoordinator:
         when the attempts could not be read.
         """
         return sorted(
-            {attempt.output for attempt in self._deliveries.left_open()}
+            {
+                output
+                for attempt in self._deliveries.left_open()
+                for output in (
+                    attempt.output,
+                    *(
+                        valve.output
+                        for valve in attempt.valves
+                        if valve.off_confirmed_at is None
+                    ),
+                )
+            }
             | set(self._reliability.active_outputs(self._growspace_id))
         )
 
@@ -572,6 +596,9 @@ class BaseIrrigationCoordinator:
         if output in self._enforcing_off:
             return
         now = utcnow()
+        self._deliveries.record_interrupted_valve(
+            output, None, now if read_off else None
+        )
         self._deliveries.interrupt(
             output, now, off_confirmed_at=now if read_off else None
         )
@@ -615,14 +642,14 @@ class BaseIrrigationCoordinator:
         new_state, old_state = event.data["new_state"], event.data["old_state"]
         if new_state is None:
             return
-        if new_state.state == STATE_ON and (
-            old_state is None or old_state.state != STATE_ON
+        if new_state.state in (STATE_ON, "open") and (
+            old_state is None or old_state.state not in (STATE_ON, "open")
         ):
             self.hass.async_create_task(
                 self._async_observe_on(output),
                 name=f"growspace_pump_on_{self._growspace_id}_{output}",
             )
-        elif new_state.state == STATE_OFF:
+        elif new_state.state in (STATE_OFF, "closed"):
             self._release_interrupted(output)
             if output in self._detected_overrides:
                 self.hass.async_create_task(
@@ -757,6 +784,21 @@ class BaseIrrigationCoordinator:
                 )
         finally:
             self._enforcing_off.discard(output)
+            for attempt in self._deliveries.left_open(output):
+                for valve in attempt.valves:
+                    if valve.off_confirmed_at is None:
+                        read_closed = await self._async_command_off(valve.output)
+                        if not read_closed:
+                            await self._async_off_unconfirmed(
+                                valve.output,
+                                f"fault_off_unconfirmed:{valve.output}",
+                                f"{valve.output} did not read back closed after restart",
+                            )
+                        self._deliveries.record_interrupted_valve(
+                            valve.output,
+                            commanded_at,
+                            utcnow() if read_closed else None,
+                        )
             self._deliveries.interrupt(
                 output,
                 commanded_at,
@@ -842,7 +884,7 @@ class BaseIrrigationCoordinator:
             # A pump the person left running is now an Unexpected On.
             for output in self._configured_outputs():
                 state = self.hass.states.get(output)
-                if state is not None and state.state == STATE_ON:
+                if state is not None and state.state in (STATE_ON, "open"):
                     await self._async_observe_on(output)
         await self._async_record_controller_state()
 
@@ -1070,18 +1112,23 @@ class BaseIrrigationCoordinator:
         # close still has it. From here on the watch sees each ON as it happens.
         self._ensure_pump_watch()
         outputs = self._configured_outputs()
+        # Recover the whole train in supply-then-valves order even if the
+        # supply already reads OFF or has not reported yet after the restart.
+        for attempt in list(self._deliveries.left_open()):
+            if attempt.valves:
+                await self._async_stop_interrupted(attempt.output)
         for output in self._interrupted_outputs():
             state = self.hass.states.get(output)
             # A pump not reporting yet keeps its cycle open: a smart plug that
             # joins late and restores ON is still that cycle's. One no longer
             # managed is closed on whatever it reads.
-            if state is not None and state.state == STATE_OFF:
+            if state is not None and state.state in (STATE_OFF, "closed"):
                 self._release_interrupted(output)
             elif output not in outputs:
                 self._release_interrupted(output, read_off=False)
         for output in outputs:
             state = self.hass.states.get(output)
-            if state is not None and state.state == STATE_ON:
+            if state is not None and state.state in (STATE_ON, "open"):
                 await self._async_observe_on(output)
         await self._async_record_controller_state()
 
@@ -1467,6 +1514,8 @@ class BaseIrrigationCoordinator:
         Returns:
             True if state was confirmed, False if timed out
         """
+        if entity_id.startswith("valve."):
+            target_state = "open" if target_state == STATE_ON else "closed"
         # Check if already in target state
         current_state = self.hass.states.get(entity_id)
         if current_state and current_state.state == target_state:
@@ -1751,6 +1800,12 @@ class BaseIrrigationCoordinator:
         if verdict.reason is not SkipReason.DARK or config.log_to_logbook:
             self._fire_logbook_event(verdict.message, CATEGORY_IRRIGATION_ERROR)
 
+    async def _async_driver_off(self, output: str) -> None:
+        """Stop any configured output through the shared actuator driver."""
+        driver = resolve_actuator_driver(self.hass, output)
+        if driver is None or not await driver.turn_off():
+            raise GrowspaceError(f"Could not command {output} OFF")
+
     async def _async_send_off(self, pump_entity: str) -> bool:
         """Command OFF once, bounded, logging rather than raising a refusal.
 
@@ -1760,9 +1815,7 @@ class BaseIrrigationCoordinator:
         """
         try:
             await asyncio.wait_for(
-                self.hass.services.async_call(
-                    "switch", "turn_off", {"entity_id": pump_entity}, blocking=True
-                ),
+                self._async_driver_off(pump_entity),
                 timeout=PUMP_WATCHDOG_GRACE_SECONDS,
             )
         except Exception:
@@ -1823,7 +1876,7 @@ class BaseIrrigationCoordinator:
 
         async def retry(_now: datetime) -> None:
             state = self.hass.states.get(pump_entity)
-            if state is not None and state.state == STATE_OFF:
+            if state is not None and state.state in (STATE_OFF, "closed"):
                 self._off_retries.pop(pump_entity)()
                 self._fire_logbook_event(
                     f"{pump_entity} reads OFF again — the fault stays latched "
@@ -1847,7 +1900,7 @@ class BaseIrrigationCoordinator:
             return
         for output in fault.outputs:
             state = self.hass.states.get(output)
-            if state is None or state.state != STATE_OFF:
+            if state is None or state.state not in (STATE_OFF, "closed"):
                 self._async_start_off_retry(output)
 
     async def _async_record_open_failure(
@@ -1972,11 +2025,37 @@ class BaseIrrigationCoordinator:
         )
 
     def _zone_delivery_pending(self) -> bool:
-        """Hold configured valves until confirmed valve delivery lands (#893)."""
-        zones = self.growspace.irrigation_zones
-        return len(zones) > 1 or any(zone.valves for zone in zones)
+        """Hold multi-zone scheduling until per-zone runtimes land (#895)."""
+        return len(self.growspace.irrigation_zones) > 1
 
-    async def _run_pump_cycle(  # noqa: C901 - safety effect shell handles every exit
+    async def _async_foreign_valve_open(self) -> str | None:
+        """Demand closed readbacks from every other zone before delivery."""
+        for zone in self.growspace.irrigation_zones:
+            if zone.id == self._zone.id:
+                continue
+            for valve in zone.valves:
+                state = self.hass.states.get(valve)
+                if state is None or state.state not in (STATE_OFF, "closed"):
+                    if state is not None and state.state in (STATE_ON, "open"):
+                        await self._async_observe_on(valve)
+                    return valve
+        return None
+
+    async def _run_pump_cycle(
+        self,
+        event_type: str,
+        pump_entity: str,
+        duration: int,
+        event_data: Mapping[str, Any],
+    ) -> None:
+        """Serialize irrigation through the supply; the separate drain stays independent."""
+        if event_type != "irrigation":
+            await self._run_supply_cycle(event_type, pump_entity, duration, event_data)
+            return
+        async with self._supply_lock:
+            await self._run_supply_cycle(event_type, pump_entity, duration, event_data)
+
+    async def _run_supply_cycle(  # noqa: C901 - safety effect shell handles every exit
         self,
         event_type: str,
         pump_entity: str,
@@ -1988,6 +2067,16 @@ class BaseIrrigationCoordinator:
         requested_at = utcnow()
         store = self._safety_store
         manual = bool(event_data.get("manual", False))
+        if event_type == "irrigation" and await self._async_foreign_valve_open():
+            self._suppress(
+                event_type,
+                pump_entity,
+                duration,
+                event_data,
+                requested_at,
+                "foreign_valve_open",
+            )
+            return
         hold = (
             "zone_runtime_pending"
             if event_type == "irrigation" and self._zone_delivery_pending()
@@ -1995,11 +2084,21 @@ class BaseIrrigationCoordinator:
         )
         if hold is None and not self._in_flight(pump_entity):
             pump_state = self.hass.states.get(pump_entity)
-            if pump_state is not None and pump_state.state == STATE_ON:
+            if pump_state is not None and pump_state.state in (STATE_ON, "open"):
                 # Already running, and not by us: confirming ON would book a
                 # person's water as ours and then switch it off under them.
                 await self._async_observe_on(pump_entity)
                 hold = self._operator_hold(manual=manual)
+        if hold is None and event_type == "irrigation":
+            for valve in self._zone.valves:
+                state = self.hass.states.get(valve)
+                if (
+                    state is not None
+                    and state.state in (STATE_ON, "open")
+                    and not self._in_flight(valve)
+                ):
+                    await self._async_observe_on(valve)
+                    hold = self._operator_hold(manual=manual)
         if hold is not None:
             self._record(skipped(hold))
             self._suppress(
@@ -2075,6 +2174,7 @@ class BaseIrrigationCoordinator:
         # A cycle that could not be opened: (reason code, detail). Booked as
         # not delivered once the pump has been read back OFF (#785).
         open_failure: tuple[str, str] | None = None
+        failure_output = pump_entity
         # Whether turn_on was sent. A cycle stopped before it sends no OFF
         # either: Growspace Manager stops only what it started (#793).
         commanded = False
@@ -2083,6 +2183,8 @@ class BaseIrrigationCoordinator:
         deadline = (
             monotonic_time.monotonic()
             + ON_CONFIRM_TIMEOUT_SECONDS
+            + len(self._zone.valves)
+            * (ON_CONFIRM_TIMEOUT_SECONDS + PUMP_WATCHDOG_GRACE_SECONDS)
             + duration
             + PUMP_WATCHDOG_GRACE_SECONDS
         )
@@ -2146,14 +2248,83 @@ class BaseIrrigationCoordinator:
             except DeliveryRecordUnreadable:
                 self._raise_delivery_issue()
                 raise
+            # Foreign valves must positively read closed, even when unavailable.
+            if event_type == "irrigation":
+                if await self._async_foreign_valve_open():
+                    closed = attempt.refused("foreign_valve_open")
+                    return
+                for valve in tuple(self._zone.valves):
+                    # Intent is durable before the command, including a crash
+                    # during the driver call. A refusal still needs cleanup.
+                    attempt = replace(
+                        attempt,
+                        valves=(*attempt.valves, ValveReadback(valve, utcnow())),
+                    )
+                    await self._deliveries.async_request(attempt)
+                    self._commanded_outputs.add(valve)
+                    failure_output = valve
+                    driver = resolve_actuator_driver(self.hass, valve)
+                    if driver is None or not await driver.turn_on():
+                        open_failure = (ON_COMMAND_FAILED, f"{valve} refused to open")
+                        break
+                    if not await async_confirm_state(self.hass, valve, STATE_ON):
+                        open_failure = (
+                            ON_UNCONFIRMED,
+                            f"{valve} did not read back open",
+                        )
+                        break
+                    self._open_failures.pop(valve, None)
+                    attempt = replace(
+                        attempt,
+                        valves=(
+                            *attempt.valves[:-1],
+                            replace(attempt.valves[-1], on_confirmed_at=utcnow()),
+                        ),
+                    )
+                    await self._deliveries.async_request(attempt)
+                if open_failure is not None:
+                    return
+            if event_type == "irrigation" and attempt.valves:
+                # Valve readbacks and durable writes await. Recheck the safety
+                # boundary at the supply start, including a fault raised while
+                # a valve was opening, or a layout edited in that interval.
+                foreign = await self._async_foreign_valve_open()
+                if foreign:
+                    failure_output = foreign
+                    open_failure = (
+                        "foreign_valve_open",
+                        f"{foreign} does not read closed",
+                    )
+                    return
+                if (
+                    self._operator_hold(manual=manual)
+                    or self._zone_delivery_pending()
+                    or tuple(valve.output for valve in attempt.valves)
+                    != tuple(self._zone.valves)
+                    or self.controller_snapshot().requires_ack
+                ):
+                    abort_cause = AbortCause.OVERRIDE
+                    return
+                for opened in attempt.valves:
+                    state = self.hass.states.get(opened.output)
+                    if state is None or state.state not in (STATE_ON, "open"):
+                        failure_output = opened.output
+                        open_failure = (
+                            ON_UNCONFIRMED,
+                            f"{opened.output} no longer reads open",
+                        )
+                        return
+            failure_output = pump_entity
             command_dt = utcnow()
             attempt = attempt.commanded(command_dt)
             commanded = True
             self._commanded_outputs.add(pump_entity)
             try:
-                await self.hass.services.async_call(
-                    "switch", "turn_on", {"entity_id": pump_entity}, blocking=True
+                driver = resolve_actuator_driver(
+                    self.hass, pump_entity, raise_errors=True
                 )
+                if driver is None or not await driver.turn_on():
+                    raise GrowspaceError(f"Could not command {pump_entity} ON")  # noqa: TRY301
             except Exception as err:  # noqa: BLE001 — every refusal fails closed
                 self._record(ReliabilityCounter.COMMAND_FAILURE_ON)
                 # The command may still have reached the relay, so the pump is
@@ -2311,7 +2482,7 @@ class BaseIrrigationCoordinator:
                     moisture_before=moisture_before,
                     manual=manual,
                 )
-            if attempt is not None and not attempt.is_actuated:
+            if attempt is not None and not attempt.is_actuated and closed is None:
                 # Requested but never confirmed ON: it charges nothing. Stopped
                 # first, it was aborted; otherwise the pump failed to open, and
                 # its close records the window from the ON command to OFF read
@@ -2323,6 +2494,30 @@ class BaseIrrigationCoordinator:
                     or (None if open_failure else AbortCause.ERROR.value),
                     reason=open_failure[0] if open_failure else None,
                 )
+            # Supply OFF is read first, then every commanded valve is closed.
+            valve_records: list[ValveReadback] = []
+            for readback in attempt.valves if attempt is not None else ():
+                readback = replace(readback, off_commanded_at=utcnow())
+                read_closed = await self._async_command_off(readback.output)
+                if read_closed:
+                    readback = replace(readback, off_confirmed_at=utcnow())
+                else:
+                    # A failed fault write must not strand the other valves.
+                    self._async_start_off_retry(readback.output)
+                    try:
+                        await self._async_off_unconfirmed(
+                            readback.output,
+                            f"fault_off_unconfirmed:{readback.output}",
+                            f"{readback.output} did not read back closed",
+                        )
+                    except Exception:
+                        _LOGGER.exception(
+                            "Could not record valve fault on %s", readback.output
+                        )
+                valve_records.append(readback)
+                self._commanded_outputs.discard(readback.output)
+            if closed is not None:
+                closed = replace(closed, valves=tuple(valve_records))
             if closed is not None:
                 # Recorded once OFF is read back, or known not to be.
                 self._deliveries.close(
@@ -2352,7 +2547,13 @@ class BaseIrrigationCoordinator:
                     )
                 if open_failure is not None:
                     await self._async_record_open_failure(
-                        pump_entity, *open_failure, off_confirmed=off_confirmed
+                        failure_output,
+                        *open_failure,
+                        off_confirmed=off_confirmed
+                        and all(
+                            valve.off_confirmed_at is not None
+                            for valve in valve_records
+                        ),
                     )
             finally:
                 cancel_watchdog()
@@ -2362,11 +2563,11 @@ class BaseIrrigationCoordinator:
                 self._active_events.pop(event_type, None)
                 self._main_coordinator.async_update_listeners()
             if off_confirmed:
-                state = self.controller_snapshot()
-                if not state.requires_ack:
+                snapshot = self.controller_snapshot()
+                if not snapshot.requires_ack:
                     await self._record_safety_transition(
-                        state.state.value,
-                        state.reasons[0].code if state.reasons else None,
+                        snapshot.state.value,
+                        snapshot.reasons[0].code if snapshot.reasons else None,
                     )
             if event_type in self._running_tasks:
                 self._running_tasks.pop(event_type)

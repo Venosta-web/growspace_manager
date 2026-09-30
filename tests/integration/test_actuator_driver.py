@@ -585,3 +585,30 @@ async def test_confirm_state_treats_a_missing_entity_as_unconfirmed(
     assert not await async_confirm_state(
         mock_hass, "switch.pump", STATE_OFF, first_read=0, poll=0, timeout=0
     )
+
+
+async def test_native_valve_driver_and_closed_readback(mock_hass):
+    from custom_components.growspace_manager.actuator_driver import ValveDriver
+
+    driver = resolve_actuator_driver(mock_hass, "valve.zone")
+    assert isinstance(driver, ValveDriver)
+    assert await driver.set_speed(100)
+    mock_hass.services.async_call.assert_awaited_with(
+        "valve", "open_valve", {"entity_id": "valve.zone"}, blocking=True
+    )
+    mock_hass.states.get.return_value = _state("open")
+    assert driver.is_on()
+    assert await async_confirm_state(
+        mock_hass, "valve.zone", "on", first_read=0, poll=0
+    )
+    assert await driver.set_speed(0)
+    mock_hass.services.async_call.assert_awaited_with(
+        "valve", "close_valve", {"entity_id": "valve.zone"}, blocking=True
+    )
+    mock_hass.states.get.return_value = _state("closed")
+    assert not driver.is_on()
+    assert await async_confirm_state(
+        mock_hass, "valve.zone", "off", first_read=0, poll=0
+    )
+    mock_hass.states.get.return_value = None
+    assert not driver.is_on()

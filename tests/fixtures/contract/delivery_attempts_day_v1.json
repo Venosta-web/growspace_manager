@@ -30,7 +30,16 @@
         "phase": "P1",
         "vwc": 48.5,
         "vwc_factor": 1.2
-      }
+      },
+      "valves": [
+        {
+          "off_commanded_at": "2026-09-28T06:00:51+00:00",
+          "off_confirmed_at": "2026-09-28T06:00:52+00:00",
+          "on_commanded_at": "2026-09-28T06:00:00+00:00",
+          "on_confirmed_at": "2026-09-28T06:00:00.100000+00:00",
+          "output": "switch.zone_valve"
+        }
+      ]
     },
     {
       "abort_cause": null,
@@ -58,7 +67,8 @@
       "trigger": "schedule",
       "trigger_evidence": {
         "slot": "10:00:00"
-      }
+      },
+      "valves": []
     },
     {
       "abort_cause": null,
@@ -89,7 +99,8 @@
       "trigger": "manual",
       "trigger_evidence": {
         "user_id": "user-abc123"
-      }
+      },
+      "valves": []
     },
     {
       "abort_cause": "emergency_stop",
@@ -117,7 +128,8 @@
       "trigger": "schedule",
       "trigger_evidence": {
         "slot": "14:00:00"
-      }
+      },
+      "valves": []
     },
     {
       "abort_cause": null,
@@ -145,7 +157,8 @@
       "trigger": "schedule",
       "trigger_evidence": {
         "slot": "15:00:00"
-      }
+      },
+      "valves": []
     },
     {
       "abort_cause": null,
@@ -173,7 +186,8 @@
       "trigger": "drain",
       "trigger_evidence": {
         "slot": "18:00:00"
-      }
+      },
+      "valves": []
     }
   ],
   "date": "2026-09-28",

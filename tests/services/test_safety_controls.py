@@ -399,3 +399,29 @@ async def test_reset_requires_admin_and_skips_unlatched_growspace() -> None:
     ):
         await handle_reset_safety(hass, call)
     coordinator.irrigation_safety.async_reset_emergency_stop.assert_not_called()
+
+
+async def test_native_valves_are_managed_and_stopped(hass):
+    growspace = _growspace()
+    growspace.default_zone.valves = ["valve.zone"]
+    assert "valve.zone" in managed_outputs(growspace)
+    hass.states.async_set("valve.zone", "open")
+    assert not _safe_state(hass, "valve.zone")
+    hass.states.async_set("valve.zone", "closed")
+    assert _safe_state(hass, "valve.zone")
+    coordinator = MagicMock()
+    coordinator.growspaces = {"tent": growspace}
+    coordinator.irrigation_safety = IrrigationSafetyStore(hass, "valve-stop")
+    calls = []
+
+    async def stop(domain, service, data, **kwargs):
+        calls.append((domain, service, data["entity_id"]))
+        hass.states.async_set(
+            data["entity_id"], "closed" if domain == "valve" else "off"
+        )
+
+    # Keep this fixture's other climate actuators out of this irrigation check.
+    growspace.environment_config = EnvironmentConfig()
+    with patch.object(type(hass.services), "async_call", side_effect=stop):
+        await async_emergency_stop_growspace(hass, coordinator, "tent", "grower")
+    assert ("valve", "close_valve", "valve.zone") in calls
