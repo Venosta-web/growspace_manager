@@ -673,6 +673,34 @@ The durable note in [[Reliability Evidence]] that a pump is running a cycle, wri
 **Automation Uptime**
 The share of observed minutes in which automatic irrigation was armed and no [[Fault]] was latched, per window of [[Reliability Evidence]]. It measures whether the controller could act, not whether any cycle was due.
 
+**Observation Coverage**
+The share of elapsed time for which Growspace Manager has reliability observations. Time without observations, including Home Assistant outages, is unknown rather than evidence of availability or failure.
+_Avoid_: uptime (coverage establishes what was observed, not whether automation was available).
+
+**Observed Automation Availability**
+The share of observed time in which automatic irrigation was armed and no fault was latched. It is interpreted alongside [[Observation Coverage]]; unknown time cannot establish that automation was available.
+_Avoid_: automation uptime without qualification (the existing Automation Uptime measure excludes unobserved time).
+
+**Unresolved Operation Outcome**
+An irrigation operation whose physical outcome cannot be established from its retained reliability evidence after an interruption. A recorded intent alone does not prove that the pump ran or that water was delivered.
+_Avoid_: failed cycle (an unknown outcome is not proof of failure), verified delivery (an intent is not physical evidence).
+
+**Unavailable Sensor-Minutes**
+The accumulated observed time for which individual control sensors were unavailable, summed across sensors. Two sensors unavailable for ten minutes contribute twenty sensor-minutes.
+_Avoid_: growspace unavailable minutes (that measures elapsed impact, not accumulated loss).
+
+**Growspace Sensor Unavailability**
+Observed time during which at least one required control sensor in the growspace was unavailable. Overlapping sensor outages count once; unobserved time remains unknown.
+_Avoid_: sensor-minutes (those add the loss of individual sensors).
+
+**Metered Water Coverage**
+The extent to which irrigation delivery has usable metered-water evidence, presented alongside measured litres. An operation without usable measurement is not evidence of zero water delivery.
+_Avoid_: verified cycle (that describes pump readback), estimated water (an estimate is not a measurement).
+
+**Reliability Accounting Gap**
+A break in the continuity of reliability evidence that prevents affected totals from being claimed complete. It is a limit on what is known about controller operation, not proof of a controller failure.
+_Avoid_: controller fault (an accounting gap does not establish an actuation fault), zero activity (missing evidence does not prove nothing happened).
+
 **Control Input**
 A sensor an automatic controller acts on, read only through `domain/sensor_validity.py`: **unavailable** (unknown, unavailable, missing or not a number), **implausible** (NaN, infinite, or outside its quantity's range — substrate moisture 0–100 %, and 0 itself with `moisture_zero_is_implausible`; pore EC 0–20 mS/cm, a µS/cm probe converted first; relative humidity 0–100 %; VPD 0–10 kPa; temperature −10–60 °C or 14–140 °F by the sensor's unit, both when it names none) or **stale** (no report within its [[Observation Validity Window]], capped by `sensor_stale_after_minutes`, default 30, `0` off). An invalid reading is `None` with its cause and never becomes 0. The substrate moisture sensor under crop steering withholds automatic shots from the first invalid minute — the [[Irrigation Controller]] reads `inhibited` with `sensor_unavailable`, `sensor_stale` or `sensor_implausible` — and after `sensor_alert_delay_minutes` (default 15) raises one alert per episode, cleared with a recovery message, at most once an hour for a flapping probe; manual runs are not held. Pore EC sensors are validated the same way and an invalid one is left out of the average, which turns EC modulation off rather than holding irrigation. The humidifier, dehumidifier and exhaust controllers read their control inputs for freshness too, capped by the [[Climate Fail-Safe]]'s own `sensor_stale_after_minutes`, and hold their last command while one is invalid. A tank is a control input with its own window and grace: [[Unknown Tank Level]]. See ADR-0051.
 Whether a substrate probe still _responds_ to water is a separate question about the probe, not the reading — see [[Control Probe]].
