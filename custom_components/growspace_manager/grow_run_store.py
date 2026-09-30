@@ -40,7 +40,9 @@ from .domain.grow_run import (
     RunAuditEntry,
     RunCommand,
     RunLedger,
+    RunStatus,
     RunStoreUnreadable,
+    SafetyFact,
     WaterApplication,
 )
 from .domain.unattributed_activity import DEFAULT_RETENTION_DAYS, UnattributedActivity
@@ -157,6 +159,22 @@ class GrowRunStore:
             return None
         return self.ledger(growspace_id).active_run
 
+    async def async_begin_safety_coverage(self, now: datetime) -> None:
+        """Mark Runs already active at upgrade as having partial coverage."""
+        if self.unreadable:
+            return
+        async with self.lock:
+            for ledger in tuple(self._ledgers.values()):
+                runs = tuple(
+                    replace(run, safety_coverage_started_at=now)
+                    if run.status is RunStatus.ACTIVE
+                    and run.safety_coverage_started_at is None
+                    else run
+                    for run in ledger.runs
+                )
+                if runs != ledger.runs:
+                    await self.async_commit(replace(ledger, runs=runs))
+
     async def async_commit(
         self,
         ledger: RunLedger | None = None,
@@ -249,6 +267,27 @@ class GrowRunStore:
             updated = ledger.project_water(application)
             if updated is not ledger:
                 await self.async_commit(updated)
+
+    async def async_project_safety(self, fact: SafetyFact) -> None:
+        """Attribute one durable safety fact, replaying safely by its ID."""
+        async with self.lock:
+            ledger = self.ledger(fact.growspace_id)
+            activity = self.unattributed(fact.growspace_id)
+            if any(
+                row.fact_id == fact.fact_id
+                for run in ledger.runs
+                for row in run.safety_facts
+            ):
+                return
+            owner = ledger.run_at(fact.at)
+            if owner is not None:
+                updated = ledger.project_safety(fact)
+                if updated != ledger:
+                    await self.async_commit(updated)
+            else:
+                updated_activity = activity.record_safety(fact)
+                if updated_activity != activity:
+                    await self.async_commit(activities=(updated_activity,))
 
     async def async_mark_water_incomplete(self, growspace_id: str) -> None:
         """Persist loss of delivery coverage when its source cannot be read."""

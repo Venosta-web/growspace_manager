@@ -46,6 +46,7 @@ from .grow_run import (
     RunBoundaryConflict,
     RunLedger,
     RunParticipation,
+    SafetyFact,
     _dict,
     _list,
     _opt_moment,
@@ -95,6 +96,7 @@ class UnattributedActivity:
     growspace_id: str
     covered_since: datetime | None = None
     facts: tuple[PlantMovementFact, ...] = ()
+    safety_facts: tuple[SafetyFact, ...] = ()
     days: tuple[DailySummary, ...] = ()
 
     def _day(self, day: date) -> DailySummary:
@@ -146,6 +148,14 @@ class UnattributedActivity:
             days=self._put(replace(summary, plant_ids=plants)),
         )
 
+    def record_safety(self, fact: SafetyFact) -> UnattributedActivity:
+        """Retain an event for a possible backdated Run, once by identity."""
+        if fact.growspace_id != self.growspace_id or any(
+            row.fact_id == fact.fact_id for row in self.safety_facts
+        ):
+            return self
+        return replace(self, safety_facts=(*self.safety_facts, fact))
+
     def prune(
         self, now: datetime, timezone: str, retention_days: int
     ) -> UnattributedActivity:
@@ -158,6 +168,7 @@ class UnattributedActivity:
                 max(self.covered_since, horizon) if self.covered_since else None
             ),
             facts=tuple(row for row in self.facts if row.at >= horizon),
+            safety_facts=tuple(row for row in self.safety_facts if row.at >= horizon),
             days=tuple(row for row in self.days if row.day >= horizon_day),
         )
         return self if pruned == self else pruned
@@ -196,6 +207,7 @@ class UnattributedActivity:
                 self.covered_since.isoformat() if self.covered_since else None
             ),
             "facts": [row.as_dict() for row in self.facts],
+            "safety_facts": [row.as_dict() for row in self.safety_facts],
             "days": [row.as_dict() for row in self.days],
         }
 
@@ -212,6 +224,10 @@ class UnattributedActivity:
                 PlantMovementFact.from_dict(row)
                 for row in _list(value.get("facts"), "unattributed.facts")
             ),
+            safety_facts=tuple(
+                SafetyFact.from_dict(row)
+                for row in _list(value.get("safety_facts", []), "unattributed.safety")
+            ),
             days=tuple(
                 DailySummary.from_dict(row)
                 for row in _list(value.get("days"), "unattributed.days")
@@ -219,6 +235,10 @@ class UnattributedActivity:
         )
         if len({row.fact_id for row in activity.facts}) != len(activity.facts):
             raise ValueError("an unattributed fact appears twice")
+        if len({row.fact_id for row in activity.safety_facts}) != len(
+            activity.safety_facts
+        ):
+            raise ValueError("an unattributed safety fact appears twice")
         if len({row.day for row in activity.days}) != len(activity.days):
             raise ValueError("an unattributed day is summarised twice")
         return activity
@@ -245,10 +265,14 @@ class ClaimPlan:
         """The ledger once the claim commits: claimed facts and days leave it."""
         claimed_facts = {row.fact_id for row in self.history.facts}
         claimed_days = {row.day for row in self.history.days}
+        claimed_safety = {row.fact_id for row in self.history.safety_facts}
         return replace(
             activity,
             covered_since=None,
             facts=tuple(r for r in activity.facts if r.fact_id not in claimed_facts),
+            safety_facts=tuple(
+                r for r in activity.safety_facts if r.fact_id not in claimed_safety
+            ),
             days=tuple(r for r in activity.days if r.day not in claimed_days),
         )
 
@@ -406,6 +430,9 @@ def plan_claim(
                 plant_ids=plant_ids,
             ),
             facts=tuple(facts),
+            safety_facts=tuple(
+                row for row in activity.safety_facts if row.at >= covered_from
+            ),
             days=tuple(row for row in activity.days if row.day >= started_on),
         ),
         conflict=_conflict(ledger, started_at=started_at, now=now, horizon=horizon),
@@ -441,6 +468,7 @@ def claim_preview(
                 for row in history.participations
             ],
             "claimed_facts": [row.as_dict() for row in history.facts],
+            "claimed_safety_facts": [row.as_dict() for row in history.safety_facts],
             "claimed_days": [row.as_dict() for row in history.days],
             "gaps": [gap.as_dict() for gap in history.backdate.gaps],
             "conflict": (

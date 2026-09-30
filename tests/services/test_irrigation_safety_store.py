@@ -41,6 +41,41 @@ async def test_fault_survives_restart_and_ack_is_audited(hass: HomeAssistant) ->
     assert [row["action"] for row in third.ledger] == ["fault", "acknowledge"]
 
 
+async def test_legacy_ledger_rows_get_stable_ids_and_a_durable_outbox(
+    hass: HomeAssistant,
+) -> None:
+    original = IrrigationSafetyStore(hass, "legacy-safety")
+    await original._store.async_save(
+        {
+            "faults": {},
+            "controls": {"tent": {"automation": False, "irrigation_armed": False}},
+            "ledger": [
+                {
+                    "at": "2026-01-01T12:00:00+00:00",
+                    "growspace_id": "tent",
+                    "action": "fault",
+                }
+            ],
+        }
+    )
+    migrated = IrrigationSafetyStore(hass, "legacy-safety")
+    await migrated.async_load()
+    (row,) = migrated.ledger
+    assert row["fact_id"]
+    assert migrated.pending_facts == [row]
+    assert migrated.controls["tent"]["automation"] is False
+
+    restarted = IrrigationSafetyStore(hass, "legacy-safety")
+    await restarted.async_load()
+    assert list(restarted.ledger) == [row]
+    assert restarted.controls == migrated.controls
+    await restarted.async_mark_fact_projected(row["fact_id"])
+    finished = IrrigationSafetyStore(hass, "legacy-safety")
+    await finished.async_load()
+    assert finished.pending_facts == []
+    assert list(finished.ledger) == [row]
+
+
 async def test_restarted_fault_blocks_scheduled_and_manual_cycles(
     hass: HomeAssistant,
 ) -> None:
@@ -197,6 +232,33 @@ def test_decode_refuses_non_string_growspace_key() -> None:
         IrrigationSafetyStore._decode({"faults": {7: {}}, "ledger": []})
 
 
+def test_pending_safety_facts_require_unique_stable_identities() -> None:
+    row = {
+        "fact_id": "event-1",
+        "growspace_id": "tent",
+        "action": "fault",
+        "at": "2026-09-30T00:00:00+00:00",
+    }
+    with pytest.raises(ValueError, match="invalid"):
+        IrrigationSafetyStore._decode_pending([{**row, "fact_id": None}])
+    with pytest.raises(ValueError, match="twice"):
+        IrrigationSafetyStore._decode_pending([row, row])
+
+
+async def test_projection_failure_keeps_the_durable_safety_outbox(
+    hass: HomeAssistant,
+) -> None:
+    store = IrrigationSafetyStore(hass, "projection-failure")
+    store.project_pending = AsyncMock(side_effect=OSError("Run store offline"))
+    await store.async_record_event("tent", "unexpected_on")
+    assert len(store.pending_facts) == 1
+    restarted = IrrigationSafetyStore(hass, "projection-failure")
+    await restarted.async_load()
+    assert restarted.pending_facts == store.pending_facts
+    await restarted.async_mark_fact_projected(store.pending_facts[0]["fact_id"])
+    assert not restarted.pending_facts
+
+
 async def test_unreadable_file_fails_closed(
     hass: HomeAssistant, tmp_path: Path
 ) -> None:
@@ -253,6 +315,7 @@ async def test_not_delivered_cycle_survives_restart(hass: HomeAssistant) -> None
     await restarted.async_load()
     (row,) = restarted.ledger
     assert row == {
+        "fact_id": row["fact_id"],
         "at": row["at"],
         "growspace_id": "tent",
         "action": "cycle_not_delivered",

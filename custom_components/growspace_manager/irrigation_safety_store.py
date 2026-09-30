@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 import logging
 from os.path import exists
@@ -41,6 +42,10 @@ class IrrigationSafetyStore:
         self._override_listeners: list[Callable[[str, Subsystem], None]] = []
         self._legacy_controls = False
         self.ledger: deque[dict[str, Any]] = deque(maxlen=_LEDGER_LIMIT)
+        # Rows awaiting the Run projection live outside the bounded display ring.
+        self.pending_facts: list[dict[str, Any]] = []
+        self.project_pending: Callable[[], Awaitable[None]] | None = None
+        self._write_lock = asyncio.Lock()
         self.unreadable = False
         self._unreadable_since: str | None = None
 
@@ -56,8 +61,22 @@ class IrrigationSafetyStore:
                     self._unreadable_since = utcnow().isoformat()
                 return
             self.faults, self.emergency_stops, self.ledger = self._decode(data)
+            raw_pending = data.get("pending_facts")
+            needs_migration = raw_pending is None
+            if needs_migration:
+                # Existing ledgers have no IDs. Give retained history identities
+                # once, before any attempt to project it.
+                self.ledger = deque(
+                    ({"fact_id": uuid4().hex, **row} for row in self.ledger),
+                    maxlen=_LEDGER_LIMIT,
+                )
+                self.pending_facts = self._decode_pending(list(self.ledger))
+            else:
+                self.pending_facts = self._decode_pending(raw_pending)
             self.controls, self._legacy_controls = self._decode_controls(data)
             self.overrides = self._decode_overrides(data)
+            if needs_migration:
+                await self._save()
         except Exception:
             _LOGGER.exception("Irrigation safety record is unreadable; all cycles held")
             self.unreadable = True
@@ -66,6 +85,24 @@ class IrrigationSafetyStore:
             self.emergency_stops.clear()
             self.controls.clear()
             self.overrides.clear()
+            self.ledger.clear()
+            self.pending_facts.clear()
+
+    @staticmethod
+    def _decode_pending(raw: Any) -> list[dict[str, Any]]:
+        """Refuse an outbox whose identities cannot be replayed safely."""
+        if not isinstance(raw, list) or any(
+            not isinstance(row, dict)
+            or not all(
+                isinstance(row.get(key), str) and row[key]
+                for key in ("fact_id", "growspace_id", "action", "at")
+            )
+            for row in raw
+        ):
+            raise ValueError("pending safety facts are invalid")
+        if len({row["fact_id"] for row in raw}) != len(raw):
+            raise ValueError("pending safety fact appears twice")
+        return raw
 
     @staticmethod
     def _decode_overrides(
@@ -224,7 +261,7 @@ class IrrigationSafetyStore:
         """Write one ledger row through, failing closed if it cannot be saved."""
         if self.unreadable:
             raise RuntimeError("Irrigation safety record is unreadable")
-        self.ledger.append({"at": utcnow().isoformat(), **row})
+        self._append_row({"at": utcnow().isoformat(), **row})
         try:
             await self._save()
         except Exception:
@@ -236,6 +273,20 @@ class IrrigationSafetyStore:
     ) -> None:
         """Write an observed safety event, such as an Unexpected On, to the ledger."""
         await self._append({"growspace_id": growspace_id, "action": action, **fields})
+
+    def _append_row(self, row: dict[str, Any]) -> None:
+        """Give an event its stable identity before the safety write."""
+        fact = {"fact_id": uuid4().hex, **row}
+        self.ledger.append(fact)
+        self.pending_facts.append(fact)
+
+    async def async_mark_fact_projected(self, fact_id: str) -> None:
+        """A Run or Unattributed Activity now durably owns this fact."""
+        async with self._write_lock:
+            remaining = [row for row in self.pending_facts if row["fact_id"] != fact_id]
+            if len(remaining) != len(self.pending_facts):
+                await self._store.async_save(self._document(remaining))
+                self.pending_facts = remaining
 
     @callback
     def add_override_listener(
@@ -399,7 +450,7 @@ class IrrigationSafetyStore:
             }
             if armed:
                 migrated.append(growspace_id)
-                self.ledger.append(
+                self._append_row(
                     {
                         "at": utcnow().isoformat(),
                         "growspace_id": growspace_id,
@@ -432,7 +483,7 @@ class IrrigationSafetyStore:
             "irrigation_armed": previous.get("irrigation_armed", False),
             key: enabled,
         }
-        self.ledger.append(
+        self._append_row(
             {
                 "at": utcnow().isoformat(),
                 "growspace_id": growspace_id,
@@ -468,7 +519,7 @@ class IrrigationSafetyStore:
             uuid4().hex, SafetyReason("emergency_stop", detail, now), outputs
         )
         self.emergency_stops[growspace_id] = record
-        self.ledger.append(
+        self._append_row(
             {
                 "at": now,
                 "growspace_id": growspace_id,
@@ -492,7 +543,7 @@ class IrrigationSafetyStore:
         record = self.emergency_stops.pop(growspace_id, None)
         if record is None:
             raise ValueError("No emergency stop is latched")
-        self.ledger.append(
+        self._append_row(
             {
                 "at": utcnow().isoformat(),
                 "growspace_id": growspace_id,
@@ -518,7 +569,7 @@ class IrrigationSafetyStore:
             if not self.unreadable and new_outputs != existing.outputs:
                 updated = FaultRecord(existing.fault_id, existing.reason, new_outputs)
                 self.faults[growspace_id] = updated
-                self.ledger.append(
+                self._append_row(
                     {
                         "at": utcnow().isoformat(),
                         "growspace_id": growspace_id,
@@ -537,7 +588,7 @@ class IrrigationSafetyStore:
         now = utcnow().isoformat()
         record = FaultRecord(uuid4().hex, SafetyReason(code, detail, now), outputs)
         self.faults[growspace_id] = record
-        self.ledger.append(
+        self._append_row(
             {
                 "at": now,
                 "growspace_id": growspace_id,
@@ -558,7 +609,7 @@ class IrrigationSafetyStore:
         was_unreadable = self.unreadable
         previous_ledger = deque(self.ledger, maxlen=_LEDGER_LIMIT)
         self.unreadable = False
-        self.ledger.append(
+        self._append_row(
             {
                 "at": utcnow().isoformat(),
                 "growspace_id": growspace_id,
@@ -589,7 +640,7 @@ class IrrigationSafetyStore:
         """Record a pump cycle that was failed closed instead of delivered."""
         if self.unreadable:
             raise RuntimeError("Irrigation safety record is unreadable")
-        self.ledger.append(
+        self._append_row(
             {
                 "at": utcnow().isoformat(),
                 "growspace_id": growspace_id,
@@ -621,7 +672,7 @@ class IrrigationSafetyStore:
                 if row.get("state") == state and row.get("reason_code") == reason_code:
                     return False
                 break
-        self.ledger.append(
+        self._append_row(
             {
                 "at": utcnow().isoformat(),
                 "growspace_id": growspace_id,
@@ -639,23 +690,29 @@ class IrrigationSafetyStore:
 
     async def _save(self) -> None:
         """Use HA's atomic storage writer without a debounce window."""
-        await self._store.async_save(
-            {
-                "faults": {
-                    key: record.as_dict() for key, record in self.faults.items()
-                },
-                "emergency_stops": {
-                    key: record.as_dict()
-                    for key, record in self.emergency_stops.items()
-                },
-                "controls": self.controls,
-                "overrides": {
-                    growspace_id: {
-                        subsystem.value: override.as_dict()
-                        for subsystem, override in by_subsystem.items()
-                    }
-                    for growspace_id, by_subsystem in self.overrides.items()
-                },
-                "ledger": list(self.ledger),
-            }
-        )
+        async with self._write_lock:
+            await self._store.async_save(self._document(self.pending_facts))
+        if self.project_pending is not None:
+            try:
+                await self.project_pending()
+            except Exception:
+                _LOGGER.exception("Safety facts remain pending for Run projection")
+
+    def _document(self, pending_facts: list[dict[str, Any]]) -> dict[str, Any]:
+        """Serialize the bounded ledger and durable projection outbox together."""
+        return {
+            "faults": {key: record.as_dict() for key, record in self.faults.items()},
+            "emergency_stops": {
+                key: record.as_dict() for key, record in self.emergency_stops.items()
+            },
+            "controls": self.controls,
+            "overrides": {
+                growspace_id: {
+                    subsystem.value: override.as_dict()
+                    for subsystem, override in by_subsystem.items()
+                }
+                for growspace_id, by_subsystem in self.overrides.items()
+            },
+            "ledger": list(self.ledger),
+            "pending_facts": list(pending_facts),
+        }

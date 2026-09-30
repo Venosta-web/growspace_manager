@@ -135,6 +135,9 @@ def coordinator() -> IrrigationCoordinator:
     safety.emergency_stops = {}
     safety.controls = {GROWSPACE_ID: {"automation": True, "irrigation_armed": True}}
     safety.ledger = deque(maxlen=500)
+    safety.pending_facts = []
+    safety.project_pending = None
+    safety._write_lock = asyncio.Lock()
     safety.unreadable = False
     safety._store = MagicMock()
     safety._store.async_save = AsyncMock()
