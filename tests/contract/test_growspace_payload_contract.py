@@ -828,7 +828,14 @@ async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     hass.states.async_set(
         "sensor.contract_north_moisture", "43", {"unit_of_measurement": "%"}
     )
+    growspace.default_zone.moisture_witness_sensors = ["sensor.contract_witness"]
+    growspace.default_zone.probe_cells["sensor.contract_witness"] = (1, 2)
+    hass.states.async_set("sensor.contract_witness", "50", {"unit_of_measurement": "%"})
     irrigation = IrrigationCoordinator(hass, entry, GROWSPACE_ID, coordinator)
+    _ = irrigation.control_measurement
+    irrigation._response_watch.unresponsive_since = datetime(
+        2026, 8, 11, 12, tzinfo=UTC
+    )
     north = IrrigationCoordinator(
         hass, entry, GROWSPACE_ID, coordinator, zone_id="north", supply=irrigation
     )
@@ -881,15 +888,26 @@ async def test_growspace_payload_contract(
     for zone in zones:
         assert zone["cells"] and zone["valves"] and zone["probes"]
         assert zone["active_steering_phase"] in {"p1", "p2", "p3"}
-        assert zone["control_measurement"]["probe"]["role"] == "control"
         if zone["id"] == "north":
+            assert zone["control_measurement"]["probe"]["role"] == "control"
+            assert zone["witness_substitution"] is None
             assert zone["vwc"] is None
             assert zone["degraded_control"] == {
                 "cause": "probe_unresponsive",
                 "since": "2026-08-11T12:00:00+00:00",
             }
         else:
-            assert zone["vwc"] is not None
+            assert zone["control_measurement"]["probe"]["role"] == "witness"
+            assert (
+                zone["control_measurement"]["substitute_for"]
+                == "sensor.contract_soil_moisture"
+            )
+            assert zone["witness_substitution"] == {
+                "entity_id": "sensor.contract_witness",
+                "offset": 6.0,
+                "since": "2026-08-11T12:00:00+00:00",
+            }
+            assert zone["vwc"] == 56.0
             assert zone["degraded_control"] is None
         assert zone["state"] in {"ready", "running", "inhibited"}
         assert "substrate" in zone and "score" in zone["substrate"]

@@ -1,13 +1,14 @@
 """One elected substrate baseline and its response to confirmed shots (ADR-0059).
 
-Pure values in; witnesses never enter the control value. Reading validation
+Pure values in; witnesses substitute on the elected baseline only. Reading validation
 remains in sensor_validity; this layer adds provenance and response health.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from statistics import median
 from typing import Any
 
 from ..const import SUBSTRATE_INFILTRATION_DEADBAND_PP_PER_MIN
@@ -24,6 +25,7 @@ class ControlMeasurement:
     invalid_since: datetime | None
     window: timedelta | None
     probe: dict[str, Any] | None
+    substitute_for: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return the wire provenance, including invalid measurements."""
@@ -38,6 +40,7 @@ class ControlMeasurement:
             if self.window
             else None,
             "probe": self.probe,
+            "substitute_for": self.substitute_for,
         }
 
 
@@ -68,6 +71,94 @@ def control_measurement(
         window,
         probe,
     )
+
+
+@dataclass(slots=True)
+class WitnessSubstitution:
+    """Learn paired baselines over 24 hours and elect one healthy substitute.
+
+    Re-reading the same report pair never weights the median again. History is
+    memory-only and scoped to the elected control and current witness roster.
+    The active witness stays elected while eligible; its offset uses only
+    pairs still inside the rolling window, including during substitution.
+    """
+
+    history: dict[str, list[tuple[datetime, float]]] = field(default_factory=dict)
+    pairs: dict[str, tuple[datetime, datetime]] = field(default_factory=dict)
+    active: dict[str, Any] | None = None
+    healthy_witnesses: bool | None = None
+
+    def resolve(
+        self,
+        control: ControlMeasurement,
+        witnesses: list[ControlMeasurement],
+        now: datetime,
+    ) -> ControlMeasurement:
+        """Prefer control immediately; substitute only with fresh paired history."""
+        roster = {w.probe["entity_id"] for w in witnesses if w.probe}
+        self.history = {
+            key: rows for key, rows in self.history.items() if key in roster
+        }
+        self.pairs = {key: pair for key, pair in self.pairs.items() if key in roster}
+        healthy = [w for w in witnesses if w.value is not None and w.probe]
+        self.healthy_witnesses = bool(healthy)
+        cutoff = now - timedelta(hours=24)
+        for witness in witnesses:
+            if witness.probe is None:
+                continue
+            key = witness.probe["entity_id"]
+            rows = self.history.setdefault(key, [])
+            rows[:] = [(at, delta) for at, delta in rows if at > cutoff]
+            if (
+                control.value is not None
+                and witness.value is not None
+                and control.observed_at is not None
+                and witness.observed_at is not None
+            ):
+                pair = (control.observed_at, witness.observed_at)
+                if pair != self.pairs.get(key):
+                    self.pairs[key] = pair
+                    # History ages from the older report, never from a UI read.
+                    at = min(pair)
+                    if cutoff < at <= now:
+                        rows.append((at, control.value - witness.value))
+        if control.value is not None or control.probe is None:
+            self.active = None
+            return control
+        if self.active:
+            active_entity = self.active["entity_id"]
+            healthy.sort(
+                key=lambda w: (w.probe or {}).get("entity_id") != active_entity
+            )
+        for witness in healthy:
+            assert witness.probe is not None
+            key = witness.probe["entity_id"]
+            rows = self.history.get(key, [])
+            if not rows:
+                continue
+            if self.active is None or self.active["entity_id"] != key:
+                self.active = {
+                    "entity_id": key,
+                    "offset": median(delta for _, delta in rows),
+                    "since": now.isoformat(),
+                }
+            self.active["offset"] = median(delta for _, delta in rows)
+            assert witness.value is not None
+            value = witness.value + self.active["offset"]
+            if not 0 <= value <= 100:
+                self.active = None
+                continue
+            return ControlMeasurement(
+                value,
+                witness.observed_at,
+                None,
+                None,
+                witness.window,
+                witness.probe,
+                substitute_for=control.probe["entity_id"],
+            )
+        self.active = None
+        return control
 
 
 @dataclass(slots=True)

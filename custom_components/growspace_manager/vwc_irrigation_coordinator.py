@@ -107,6 +107,9 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         # freshness-aware read below.
         self._infiltration = InfiltrationMonitor()
         self._response_infiltration = InfiltrationMonitor()
+        self._infiltration_probe: str | None = self._zone.soil_moisture_sensor
+        self._cycle_control_before: float | None = None
+        self._cycle_substituted = False
         self._pending_observation: _PendingObservation | None = None
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
@@ -267,7 +270,10 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             # Feed the SubstrateTracker before executing phase logic so the
             # reading reflects the substrate state going into this tick's
             # decision (and any shot it fires is recorded against this VWC).
-            self._feed_substrate_reading(current_vwc, growspace)
+            if reading.substitute_for is None:
+                self._feed_substrate_reading(current_vwc, growspace)
+            else:
+                self._break_substrate_window()
 
             verdict = self._machine.tick(
                 self._tick_inputs(current_vwc, strategy, growspace)
@@ -470,6 +476,12 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
 
     def _record_infiltration(self, measurement: ControlMeasurement) -> None:
         """Offer only the Control Measurement, stamped with its report time."""
+        entity = measurement.probe["entity_id"] if measurement.probe else None
+        if entity != self._infiltration_probe:
+            self._infiltration_probe = entity
+            self._infiltration.reset()
+            self._pending_observation = None
+            self._break_substrate_window()
         if measurement.value is not None and measurement.observed_at is not None:
             self._infiltration.record(measurement.value, measurement.observed_at)
 
@@ -485,23 +497,23 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         """Read raw validated evidence to detect recovery even while degraded."""
         if self._response_watch.before is None:
             return
-        measurement = self.control_measurement
-        if measurement.probe is None:
+        _ = self.control_measurement
+        entity = self._zone.soil_moisture_sensor
+        if entity is None:
             return
-        reading = self._read_moisture(measurement.probe["entity_id"])
-        if reading.value is None or measurement.observed_at is None:
+        reading = self._read_moisture(entity)
+        observed_at = self._sensor_reported_at.get(entity)
+        if reading.value is None or observed_at is None:
             return
         # These samples are response evidence only while degraded; neither
         # adaptive feedback nor substrate history receives a synthetic value.
-        self._response_infiltration.record(reading.value, measurement.observed_at)
+        self._response_infiltration.record(reading.value, observed_at)
         watch = self._response_watch
         settled = (
             watch.ended_at is not None
             and self._response_infiltration.settled_after(watch.ended_at) is not None
         )
-        self._response_watch.observe(
-            reading.value, measurement.observed_at, settled=settled
-        )
+        self._response_watch.observe(reading.value, observed_at, settled=settled)
 
     @override
     def _irrigation_cycle_started(self, *, manual: bool) -> None:
@@ -509,6 +521,12 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         self._pending_observation = None
         self._response_watch.abandon()
         self._response_infiltration.reset()
+        measurement = self.control_measurement
+        self._cycle_substituted = measurement.substitute_for is not None
+        entity = self._zone.soil_moisture_sensor
+        self._cycle_control_before = (
+            self._read_moisture(entity).value if entity and not manual else None
+        )
 
     @override
     def _irrigation_cycle_ended(
@@ -522,7 +540,16 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         if moisture_before is None:
             return
         strategy = self._strategy()
-        _ = self.control_measurement  # Synchronize the elected probe.
+        measurement = self.control_measurement  # Synchronize the elected probe.
+        if measurement.substitute_for is not None or self._cycle_substituted:
+            if self._cycle_control_before is not None:
+                self._response_watch.confirmed_shot(
+                    self._cycle_control_before,
+                    end_dt,
+                    near_saturation=self._cycle_control_before
+                    >= strategy.target_vwc_percent,
+                )
+            return
         self._response_watch.confirmed_shot(
             moisture_before,
             end_dt,
@@ -545,7 +572,8 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
     def _resolve_pending_observation(self) -> None:
         """Use only a post-cycle sensor sample, or abandon the observation."""
         pending = self._pending_observation
-        if self.control_measurement.value is None:
+        measurement = self.control_measurement
+        if measurement.value is None or measurement.substitute_for is not None:
             self._pending_observation = None
             return
         if pending is None:
@@ -768,8 +796,9 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         )
         if tracker is None:
             return
-        vwc = self._moisture_value()
-        if vwc is None:
+        measurement = self.control_measurement
+        vwc = measurement.value
+        if vwc is None or measurement.substitute_for is not None:
             return
         tracker.record_shot(phase, now().isoformat(), vwc)
 

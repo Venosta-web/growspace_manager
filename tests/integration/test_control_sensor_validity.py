@@ -370,7 +370,7 @@ async def test_flat_control_probe_degrades_alerts_and_recovers(
     """Repeated reports are fresh but cannot justify a fourth steering shot."""
     growspace = _growspace(sensor_alert_delay_minutes=3)
     growspace.default_zone.moisture_witness_sensors = ["sensor.witness"]
-    hass.states.async_set("sensor.witness", "75")  # A peer baseline never counts.
+    hass.states.async_set("sensor.witness", "unavailable")  # No healthy substitute.
     hass.states.async_set(VWC, "30")
     coord = _coordinator(hass, growspace, notify)
     tracker = (
@@ -445,3 +445,149 @@ async def test_missing_post_shot_evidence_cannot_train_or_count(hass, removed):
     assert coord._pending_observation is None
     assert coord._response_watch.failures == 0
     assert coord.current_vwc is None
+
+
+async def test_witness_steers_with_provenance_but_never_trains_or_records_dryback(
+    hass, freezer, notify, services
+):
+    growspace = _growspace()
+    growspace.default_zone.moisture_witness_sensors = ["sensor.witness"]
+    coord = _coordinator(hass, growspace, notify)
+    tracker = (
+        coord._main_coordinator.services.growspaces.get_substrate_tracker.return_value
+    )
+    hass.states.async_set(VWC, "30")
+    hass.states.async_set("sensor.witness", "24")
+    assert coord.current_vwc == 30  # Learns +6 without averaging.
+    coord._irrigation_cycle_ended(
+        end_dt=dt_util.utcnow(), moisture_before=30, manual=False
+    )
+    hass.states.async_set(VWC, "unavailable")
+    with patch.object(coord._composer, "observe") as observe:
+        (await _tick(coord)).assert_called_once()
+        coord._resolve_pending_observation()
+        observe.assert_not_called()
+    assert coord.current_vwc == 30
+    assert _reasons(coord) == []
+    measurement = coord.control_measurement
+    assert measurement.substitute_for == VWC
+    assert measurement.probe["entity_id"] == "sensor.witness"
+    assert measurement.observed_at == hass.states.get("sensor.witness").last_reported
+    assert coord.witness_substitution == {
+        "entity_id": "sensor.witness",
+        "offset": 6.0,
+        "since": dt_util.utcnow().isoformat(),
+    }
+    tracker.record_gap.assert_called()
+    tracker.record_reading.assert_not_called()
+    tracker.record_shot.assert_not_called()
+    coord._record_substrate_shot("P2")
+    tracker.record_shot.assert_not_called()
+    coord._irrigation_cycle_started(manual=False)
+    coord._irrigation_cycle_ended(
+        end_dt=dt_util.utcnow(), moisture_before=30, manual=False
+    )
+    assert coord._pending_observation is None
+    await coord._async_sensor_tick()
+    await coord._async_sensor_tick()
+    assert len(notify.call_args_list) == 1
+    assert "steering on witness sensor.witness" in notify.call_args_list[0].args[2]
+    assert not services["create"]
+    hass.states.async_set(VWC, "33")
+    assert coord.control_measurement.substitute_for is None
+    assert coord.current_vwc == 33
+    assert coord.witness_substitution is None
+    await coord._async_sensor_tick()
+    assert len(notify.call_args_list) == 2
+    tracker.record_reading.reset_mock()
+    await _tick(coord)
+    tracker.record_reading.assert_called_with(33.0, STEERING_NOW.isoformat(), lit=True)
+
+
+async def test_witness_loss_pages_only_once_for_the_last_healthy_peer(
+    hass, notify, services
+):
+    growspace = _growspace()
+    growspace.default_zone.moisture_witness_sensors = ["sensor.first", "sensor.second"]
+    coord = _coordinator(hass, growspace, notify)
+    hass.states.async_set(VWC, "30")
+    for entity in growspace.default_zone.moisture_witness_sensors:
+        hass.states.async_set(entity, "24")
+    await coord._async_sensor_tick()
+    hass.states.async_set("sensor.first", "unavailable")
+    await coord._async_sensor_tick()
+    assert not notify.call_args_list
+    assert coord.current_vwc == 30
+    hass.states.async_set("sensor.second", "unavailable")
+    await coord._async_sensor_tick()
+    await coord._async_sensor_tick()
+    assert len(notify.call_args_list) == 1
+    assert notify.call_args_list[0].kwargs["tier"] == NotificationTier.INFO
+    assert "last healthy witness" in notify.call_args_list[0].args[2]
+    assert not services["create"]
+    assert _reasons(coord) == []
+    # Regaining a safety net permits one notice for its next loss.
+    hass.states.async_set("sensor.second", "24")
+    await coord._async_sensor_tick()
+    hass.states.async_set("sensor.second", "unavailable")
+    await coord._async_sensor_tick()
+    assert len(notify.call_args_list) == 2
+
+
+async def test_witness_without_valid_pair_history_cannot_hide_control_failure(hass):
+    growspace = _growspace()
+    growspace.default_zone.moisture_witness_sensors = ["sensor.witness"]
+    coord = _coordinator(hass, growspace)
+    hass.states.async_set(VWC, "unavailable")
+    hass.states.async_set("sensor.witness", "30")
+    assert coord.current_vwc is None
+    assert coord.witness_substitution is None
+    (await _tick(coord)).assert_not_called()
+    assert _reasons(coord) == ["sensor_unavailable"]
+    hass.states.async_set(VWC, "40")
+    assert coord.current_vwc == 40
+    # Changing the elected probe discards the old baseline's offset.
+    growspace.default_zone.soil_moisture_sensor = "sensor.new_control"
+    assert coord.current_vwc is None
+    assert coord.witness_substitution is None
+
+
+async def test_substituted_shot_can_recover_unresponsive_control_without_training(
+    hass, freezer
+):
+    growspace = _growspace()
+    growspace.default_zone.moisture_witness_sensors = ["sensor.witness"]
+    coord = _coordinator(hass, growspace)
+    hass.states.async_set(VWC, "30")
+    hass.states.async_set("sensor.witness", "24")
+    _ = coord.control_measurement
+    coord._response_watch.unresponsive_since = dt_util.utcnow()
+    assert coord.control_measurement.substitute_for == VWC
+    coord._irrigation_cycle_started(manual=False)
+    coord._irrigation_cycle_ended(
+        end_dt=dt_util.utcnow(), moisture_before=30, manual=False
+    )
+    assert coord._pending_observation is None
+    freezer.tick(timedelta(minutes=1))
+    hass.states.async_set(VWC, "34")
+    coord._sample_control_response()
+    assert coord._response_watch.unresponsive_since is None
+    assert coord.current_vwc == 34
+    assert coord.control_measurement.substitute_for is None
+
+
+async def test_last_witness_loss_while_control_failed_uses_degraded_alert_only(
+    hass, notify, services
+):
+    growspace = _growspace(sensor_alert_delay_minutes=0)
+    growspace.default_zone.moisture_witness_sensors = ["sensor.witness"]
+    coord = _coordinator(hass, growspace, notify)
+    hass.states.async_set(VWC, "30")
+    hass.states.async_set("sensor.witness", "24")
+    await coord._async_sensor_tick()
+    hass.states.async_set(VWC, "unavailable")
+    hass.states.async_set("sensor.witness", "unavailable")
+    await coord._async_sensor_tick()
+    assert len(notify.call_args_list) == 1
+    assert notify.call_args_list[0].kwargs["tier"] == NotificationTier.SENSOR_INVALID
+    assert len(services["create"]) == 1

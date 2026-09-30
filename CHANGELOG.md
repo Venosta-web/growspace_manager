@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A healthy witness with a learned 24-hour median offset can keep a zone
+  steering when its Control Probe fails. Substitution is reported per zone;
+  adaptive feedback and dryback recording pause until control recovers. Losing
+  the last healthy witness sends one informational notice.
+
 - Each zone steers on its elected Control Probe with reading provenance.
   `probe_unresponsive` is enforced from its first release: three confirmed
   steering shots without a rise withhold automatic shots immediately and alert

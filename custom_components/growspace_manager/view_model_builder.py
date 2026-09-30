@@ -270,6 +270,9 @@ class ViewModelBuilder:
             zone_payload["control_measurement"] = (
                 measurement.as_dict() if measurement else None
             )
+            zone_payload["witness_substitution"] = (
+                runtime.witness_substitution if runtime is not None else None
+            )
             zone_payload["degraded_control"] = (
                 {
                     "cause": measurement.cause.value,
