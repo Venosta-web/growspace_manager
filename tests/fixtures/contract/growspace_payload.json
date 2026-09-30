@@ -786,12 +786,13 @@
           "invalid_since": null,
           "observed_at": "2026-08-11T12:00:00+00:00",
           "probe": {
-            "cell": [1, 1],
-            "entity_id": "sensor.contract_soil_moisture",
+            "cell": [1, 2],
+            "entity_id": "sensor.contract_witness",
             "name": null,
             "quantity": "moisture",
-            "role": "control"
+            "role": "witness"
           },
+          "substitute_for": "sensor.contract_soil_moisture",
           "validity_window_seconds": 1800.0,
           "value": 56.0
         },
@@ -897,6 +898,14 @@
             "role": "control"
           },
           {
+            "cell": [1, 2],
+            "entity_id": "sensor.contract_witness",
+            "health": "available",
+            "name": null,
+            "quantity": "moisture",
+            "role": "witness"
+          },
+          {
             "cell": [1, 1],
             "entity_id": "sensor.contract_pore_ec",
             "health": "available",
@@ -957,7 +966,12 @@
           "shot_composition": null
         },
         "valves": ["switch.contract_south_valve"],
-        "vwc": 56.0
+        "vwc": 56.0,
+        "witness_substitution": {
+          "entity_id": "sensor.contract_witness",
+          "offset": 6.0,
+          "since": "2026-08-11T12:00:00+00:00"
+        }
       },
       {
         "active_steering_phase": "p2",
@@ -976,6 +990,7 @@
             "quantity": "moisture",
             "role": "control"
           },
+          "substitute_for": null,
           "validity_window_seconds": 1800.0,
           "value": null
         },
@@ -1103,7 +1118,8 @@
           "shot_composition": null
         },
         "valves": ["switch.contract_north_valve"],
-        "vwc": null
+        "vwc": null,
+        "witness_substitution": null
       }
     ]
   },

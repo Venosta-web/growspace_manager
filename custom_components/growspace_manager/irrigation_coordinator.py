@@ -47,6 +47,7 @@ from .domain.calibration_proposal import tank_sourced_proposal
 from .domain.control_measurement import (
     ControlMeasurement,
     ProbeResponseWatch,
+    WitnessSubstitution,
     control_measurement,
 )
 from .domain.delivery_attempt import (
@@ -229,6 +230,9 @@ class BaseIrrigationCoordinator:
         self._sensor_reported_at: dict[str, datetime | None] = {}
         self._response_watch = ProbeResponseWatch()
         self._response_probe: str | None = None
+        self._witnesses = WitnessSubstitution()
+        self._notice_witness: str | None = None
+        self._had_healthy_witness: bool | None = None
         self._control_watch = SensorWatch(watching_since=utcnow())
         self._alert_probe: str | None = None
         # The moisture sensor's validity as of the last sensor tick, so an edge
@@ -1222,6 +1226,7 @@ class BaseIrrigationCoordinator:
         if moisture != self._response_probe:
             self._response_probe = moisture
             self._response_watch = ProbeResponseWatch()
+            self._witnesses = WitnessSubstitution()
         reading = (
             self._read_moisture(moisture, now)
             if moisture
@@ -1238,6 +1243,26 @@ class BaseIrrigationCoordinator:
             ),
             unresponsive_since=self._response_watch.unresponsive_since,
         )
+        witnesses = []
+        for probe in probe_documents(self._zone):
+            if probe["quantity"] != "moisture" or probe["role"] != "witness":
+                continue
+            entity = probe["entity_id"]
+            peer = self._read_moisture(entity, now)
+            peer_watch = self._sensor_watches[entity]
+            witnesses.append(
+                ControlMeasurement(
+                    peer.value,
+                    self._sensor_reported_at.get(entity),
+                    peer.invalidity,
+                    peer.invalid_since,
+                    validity_window(
+                        peer_watch.cadence.expected_interval, self._sensor_stale_cap()
+                    ),
+                    probe,
+                )
+            )
+        measurement = self._witnesses.resolve(measurement, witnesses, now)
         self._control_watch.observe(
             SensorReading(
                 measurement.value, measurement.cause, measurement.invalid_since
@@ -1251,7 +1276,13 @@ class BaseIrrigationCoordinator:
             self._control_watch.invalid_since,
             measurement.window,
             measurement.probe,
+            measurement.substitute_for,
         )
+
+    @property
+    def witness_substitution(self) -> dict[str, Any] | None:
+        """Return the current substitute, learned offset and handover instant."""
+        return dict(self._witnesses.active) if self._witnesses.active else None
 
     def _control_sensor_inhibit(self) -> SafetyReason | None:
         """Return why automatic shots are withheld on the moisture sensor, if they are.
@@ -1389,6 +1420,7 @@ class BaseIrrigationCoordinator:
         if self._supply is self:
             self._watch_calibration()
         await self._async_watch_moisture_sensor()
+        await self._async_witness_notices()
 
     async def _async_watch_moisture_sensor(self) -> None:
         """Write the moisture sensor's validity edges and send its alert (#789).
@@ -1421,6 +1453,36 @@ class BaseIrrigationCoordinator:
             await self._async_alert_sensor_invalid(moisture, watch)
         elif transition is SensorAlert.RECOVERED:
             await self._async_alert_sensor_recovered(moisture, watch)
+
+    async def _async_witness_notices(self) -> None:
+        """Report handovers and safety-net loss once, on the informational tier."""
+        measurement = self.control_measurement
+        active = self._witnesses.active
+        entity = active["entity_id"] if active else None
+        if entity != self._notice_witness:
+            self._notice_witness = entity
+            message = (
+                f"Zone {self._zone.name or self._zone.id}: steering on witness {entity}"
+                if entity
+                else f"Zone {self._zone.name or self._zone.id}: witness substitution ended"
+            )
+            self._fire_logbook_event(message, CATEGORY_ALERT)
+            await self._async_notify(
+                "Witness substitution", message, NotificationTier.INFO
+            )
+        healthy = self._witnesses.healthy_witnesses
+        if (
+            self._had_healthy_witness is True
+            and healthy is False
+            and self._zone.moisture_witness_sensors
+            and measurement.cause is None
+        ):
+            message = f"Zone {self._zone.name or self._zone.id}: the last healthy witness is unavailable"
+            self._fire_logbook_event(message, CATEGORY_ALERT)
+            await self._async_notify(
+                "Witness safety net lost", message, NotificationTier.INFO
+            )
+        self._had_healthy_witness = healthy
 
     def _sensor_alert_notification_id(self, entity_id: str) -> str:
         return f"growspace_sensor_invalid_{self._growspace_id}_{entity_id}"
