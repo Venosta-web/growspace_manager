@@ -26,6 +26,10 @@ from custom_components.growspace_manager.domain.tank_pump_disagreement import (
     DayVerdict,
     TankPumpDisagreement,
 )
+from custom_components.growspace_manager.domain.zone_edit import (
+    edited_zones,
+    probe_documents,
+)
 from custom_components.growspace_manager.irrigation_coordinator import (
     IrrigationCoordinator,
 )
@@ -790,6 +794,30 @@ async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     entry.add_to_hass(hass)
     coordinator = GrowspaceCoordinator.build(hass, entry, data={})
     coordinator._data_repository.add_growspace(_maximal_growspace())
+    growspace = coordinator.growspaces[GROWSPACE_ID]
+    candidate = edited_zones(
+        growspace,
+        "add",
+        {
+            "zone_id": "north",
+            "name": "North",
+            "cells": [[2, 1], [2, 2]],
+            "valves": ["switch.contract_north_valve"],
+            "default_valves": ["switch.contract_south_valve"],
+            "probes": [
+                {
+                    "entity_id": "sensor.contract_north_moisture",
+                    "quantity": "moisture",
+                    "role": "control",
+                    "cell": [2, 1],
+                }
+            ],
+        },
+    )
+    growspace.irrigation_zones = candidate.irrigation_zones
+    growspace.default_zone.probe_cells = {
+        probe["entity_id"]: (1, 1) for probe in probe_documents(growspace.default_zone)
+    }
     coordinator._data_repository.add_plant(_maximal_plant())
     coordinator._data_repository.add_plant(_live_plant())
     coordinator._recipe_library.load_data(_maximal_recipe_library())
@@ -824,6 +852,15 @@ async def test_growspace_payload_contract(
 ) -> None:
     """Keep the real ``get_data`` payload in sync with the golden fixture."""
     payload = json.loads(json.dumps(await _build_contract_payload(hass)))
+
+    zones = payload["irrigation"]["zones"]
+    assert len(zones) == 2
+    for zone in zones:
+        assert zone["cells"] and zone["valves"] and zone["probes"]
+        assert all(
+            probe["cell"] and probe["role"] and probe["health"]
+            for probe in zone["probes"]
+        )
 
     if pytestconfig.getoption("regenerate_contract_fixture"):
         FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)

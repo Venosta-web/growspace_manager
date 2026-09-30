@@ -56,10 +56,17 @@ async def _commit_or_raise(
     coordinator: GrowspaceCoordinator,
     growspace: Growspace,
     patch: EnvironmentPatch,
+    zone_id: str | None = None,
 ) -> None:
     """Commit a built patch, mapping seam errors to ServiceValidationError."""
     try:
-        await async_commit_environment_patch(hass, coordinator, growspace, patch)
+        await async_commit_environment_patch(
+            hass,
+            coordinator,
+            growspace,
+            patch,
+            **({"zone_id": zone_id} if zone_id is not None else {}),
+        )
     except EnvironmentPatchError as err:
         raise ServiceValidationError(str(err)) from err
 
@@ -72,10 +79,18 @@ async def handle_configure_environment(
     """Handle the configure_environment service call (patch semantics)."""
     growspace = _get_growspace(coordinator, call)
     try:
-        patch = patch_from_service_call(call.data)
+        patch = patch_from_service_call(
+            {key: value for key, value in call.data.items() if key != "zone_id"}
+        )
     except EnvironmentPatchError as err:
         raise ServiceValidationError(str(err)) from err
-    await _commit_or_raise(hass, coordinator, growspace, patch)
+    await _commit_or_raise(
+        hass,
+        coordinator,
+        growspace,
+        patch,
+        **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
+    )
 
 
 async def handle_remove_environment(

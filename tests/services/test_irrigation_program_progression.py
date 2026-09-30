@@ -742,3 +742,24 @@ async def test_program_and_explicit_apply_share_complete_validation(
     result = await coordinator.program_progression.async_evaluate("tent_a")
     assert result.state is ProgramProgressionState.UP_TO_DATE
     coordinator.storage_manager.async_force_save.assert_not_awaited()
+
+
+async def test_program_progression_waits_for_per_zone_runtime(coordinator):
+    """A bound default zone cannot auto-stamp while other zones await runtime."""
+    from custom_components.growspace_manager.domain.zone_edit import edited_zones
+
+    growspace = coordinator.growspaces["tent_a"]
+    candidate = edited_zones(
+        growspace,
+        "add",
+        {
+            "zone_id": "blue",
+            "name": "Blue",
+            "cells": [[1, 2]],
+            "valves": ["switch.blue"],
+            "default_valves": ["switch.red"],
+        },
+    )
+    growspace.irrigation_zones = candidate.irrigation_zones
+    assert await coordinator.program_progression.async_evaluate("tent_a") is None
+    coordinator.storage_manager.async_force_save.assert_not_called()

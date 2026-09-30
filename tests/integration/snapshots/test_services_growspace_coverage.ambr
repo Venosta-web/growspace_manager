@@ -281,10 +281,16 @@
         'irrigation_times': list([
         ]),
         'min_interval_minutes': 5,
+        'moisture_witness_sensors': list([
+        ]),
         'name': '',
         'phase_changed_at': None,
         'pore_ec_sensors': list([
         ]),
+        'probe_cells': dict({
+        }),
+        'probe_roles': dict({
+        }),
         'pump_flow_rate_ml_per_sec': 0.0,
         'soil_moisture_sensor': None,
         'soil_trigger_percent': None,

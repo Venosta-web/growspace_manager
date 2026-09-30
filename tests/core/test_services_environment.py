@@ -23,6 +23,7 @@ from custom_components.growspace_manager.models import (
     EnvironmentConfig,
     ExhaustFanConfig,
     GrowLightConfig,
+    Growspace,
     IrrigationTank,
     SensorGroup,
 )
@@ -635,7 +636,7 @@ async def test_configure_environment_accepts_bulk_and_pore_ec_sensors(
 ) -> None:
     """configure_environment writes bulk and pore EC probes to the growspace's zone."""
     growspace_id = "gs1"
-    mock_gs = MagicMock()
+    mock_gs = Growspace(id=growspace_id, name="Tent")
     mock_coordinator.growspaces = {growspace_id: mock_gs}
 
     mock_call.data = {

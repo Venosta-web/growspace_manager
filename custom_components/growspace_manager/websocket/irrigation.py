@@ -19,6 +19,7 @@ from custom_components.growspace_manager.crop_steering_history import (
 from custom_components.growspace_manager.delivery_attempt_store import (
     DeliveryRecordUnreadable,
 )
+from custom_components.growspace_manager.domain.zone_edit import resolve_zone
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.schemas import (
     CROP_STEERING_RECIPE_VALUES_SCHEMA,
@@ -83,6 +84,9 @@ SCHEMA_WS_APPLY_STEERING_MODE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend
         vol.Required("steering_mode"): vol.In([m.value for m in SteeringMode]),
     }
 )
+SCHEMA_WS_APPLY_STEERING_MODE = SCHEMA_WS_APPLY_STEERING_MODE.extend(
+    {vol.Optional("zone_id"): str}
+)
 
 WS_TYPE_GET_IRRIGATION_RECIPES = f"{DOMAIN}/get_irrigation_recipes"
 SCHEMA_WS_GET_IRRIGATION_RECIPES = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
@@ -100,6 +104,9 @@ SCHEMA_WS_SAVE_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.ext
         vol.Required("kind"): vol.In([k.value for k in IrrigationRecipeKind]),
         vol.Optional("recipe_id"): str,
     }
+)
+SCHEMA_WS_SAVE_IRRIGATION_RECIPE = SCHEMA_WS_SAVE_IRRIGATION_RECIPE.extend(
+    {vol.Optional("zone_id"): str}
 )
 
 WS_TYPE_UPDATE_IRRIGATION_RECIPE = f"{DOMAIN}/update_irrigation_recipe"
@@ -128,6 +135,9 @@ SCHEMA_WS_APPLY_IRRIGATION_RECIPE = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.ex
         vol.Required("growspace_id"): str,
         vol.Required("recipe_id"): str,
     }
+)
+SCHEMA_WS_APPLY_IRRIGATION_RECIPE = SCHEMA_WS_APPLY_IRRIGATION_RECIPE.extend(
+    {vol.Optional("zone_id"): str}
 )
 
 WS_TYPE_GET_IRRIGATION_PROGRAMS = f"{DOMAIN}/get_irrigation_programs"
@@ -163,6 +173,9 @@ SCHEMA_WS_ASSIGN_IRRIGATION_PROGRAM = websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.
         # Omitted or null unbinds.
         vol.Optional("program_id"): vol.Any(None, str),
     }
+)
+SCHEMA_WS_ASSIGN_IRRIGATION_PROGRAM = SCHEMA_WS_ASSIGN_IRRIGATION_PROGRAM.extend(
+    {vol.Optional("zone_id"): str}
 )
 
 _RANGE_CONFIG: dict[str, tuple[str, int]] = {
@@ -278,7 +291,9 @@ async def websocket_apply_steering_mode(
     growspace_id: str = msg["growspace_id"]
     mode = SteeringMode(msg["steering_mode"])
 
-    await coordinator.services.growspaces.apply_steering_mode(growspace_id, mode)
+    await coordinator.services.growspaces.apply_steering_mode(
+        growspace_id, mode, **({"zone_id": msg["zone_id"]} if "zone_id" in msg else {})
+    )
 
     return {"growspace_id": growspace_id, "declared_steering_mode": mode.value}
 
@@ -303,6 +318,7 @@ async def websocket_save_irrigation_recipe(
         name=msg["name"],
         kind=IrrigationRecipeKind(msg["kind"]),
         recipe_id=msg.get("recipe_id"),
+        **({"zone_id": msg["zone_id"]} if "zone_id" in msg else {}),
     )
     return recipe.to_dict()
 
@@ -343,9 +359,13 @@ async def websocket_apply_irrigation_recipe(
     """
     growspace_id = msg["growspace_id"]
     warning = await coordinator.services.growspaces.apply_irrigation_recipe(
-        growspace_id, msg["recipe_id"]
+        growspace_id,
+        msg["recipe_id"],
+        **({"zone_id": msg["zone_id"]} if "zone_id" in msg else {}),
     )
-    strategy = coordinator.growspaces[growspace_id].default_zone.strategy
+    strategy = resolve_zone(
+        coordinator.growspaces[growspace_id], msg.get("zone_id")
+    ).strategy
     return {
         "growspace_id": growspace_id,
         "applied_recipe_id": strategy.applied_recipe_id,
@@ -400,9 +420,13 @@ async def websocket_assign_irrigation_program(
     growspace_id = msg["growspace_id"]
     program_id = msg.get("program_id")
     await coordinator.services.growspaces.assign_irrigation_program(
-        growspace_id, program_id
+        growspace_id,
+        program_id,
+        **({"zone_id": msg["zone_id"]} if "zone_id" in msg else {}),
     )
-    strategy = coordinator.growspaces[growspace_id].default_zone.strategy
+    strategy = resolve_zone(
+        coordinator.growspaces[growspace_id], msg.get("zone_id")
+    ).strategy
     return {
         "growspace_id": growspace_id,
         "irrigation_program_id": strategy.irrigation_program_id,

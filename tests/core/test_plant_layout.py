@@ -565,3 +565,47 @@ def test_serialized_growspace_advertises_atomic_layout(
 
     assert payload["layout_revision"] == 7
     assert payload["capabilities"] == {"atomic_plant_layout": True}
+
+
+async def test_multizone_resize_save_failure_restores_membership(
+    repository, manager, save_callback
+):
+    """Shrinking loses cells and probe placement; undo restores the exact zones."""
+    from copy import deepcopy
+
+    from custom_components.growspace_manager.domain.zone_edit import edited_zones
+
+    growspace = repository.require_growspace("tent")
+    candidate = edited_zones(
+        growspace,
+        "add",
+        {
+            "zone_id": "blue",
+            "name": "Blue",
+            "cells": [[2, 1], [2, 2]],
+            "valves": ["switch.blue"],
+            "default_valves": ["switch.red"],
+            "probes": [
+                {
+                    "entity_id": "sensor.blue",
+                    "quantity": "moisture",
+                    "role": "control",
+                    "cell": [2, 1],
+                }
+            ],
+        },
+    )
+    growspace.irrigation_zones = candidate.irrigation_zones
+    before = deepcopy(growspace)
+    save_callback.side_effect = OSError("disk full")
+    with pytest.raises(OSError, match="disk full"):
+        await manager.set_plant_layout(
+            "tent",
+            0,
+            [
+                {"plant_id": "p1", "row": 1, "col": 1},
+                {"plant_id": "p2", "row": 1, "col": 2},
+            ],
+            rows=1,
+        )
+    assert growspace == before

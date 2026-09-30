@@ -442,6 +442,10 @@ async def test_register_services(mock_hass, mock_strain_library_for_services) ->
         "unlink_seed_batch": UNLINK_SEED_BATCH_SCHEMA,
     }
 
+    from custom_components.growspace_manager.schemas import ZONE_EDIT_SCHEMAS
+
+    expected_services.update(ZONE_EDIT_SCHEMAS)
+
     # Verify call count
     assert mock_hass.services.async_register.call_count == len(expected_services)
 
@@ -1051,7 +1055,7 @@ async def test_async_register_websocket_api(mock_hass) -> None:
         "homeassistant.components.websocket_api.async_register_command"
     ) as mock_reg:
         async_register_websocket_api(mock_hass)
-        assert mock_reg.call_count == 114
+        assert mock_reg.call_count == 119
 
 
 @pytest.mark.asyncio

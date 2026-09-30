@@ -34,6 +34,18 @@ class LayoutConflictError(GrowspaceError):
     """The supplied Layout Revision is no longer current."""
 
 
+class ZoneRequiredError(ServiceValidationError):
+    """A zone-scoped command must name its zone in a multi-zone growspace."""
+
+
+class EnvelopeExceededError(ServiceValidationError):
+    """New irrigation configuration exceeds a named supported limit."""
+
+    def __init__(self, limit: str, maximum: int) -> None:
+        """Name the envelope boundary in the refusal."""
+        super().__init__(f"{limit} exceeds the supported limit of {maximum}")
+
+
 class PlantNotFoundError(EntityNotFoundError):
     """Raised when a plant is not found."""
 

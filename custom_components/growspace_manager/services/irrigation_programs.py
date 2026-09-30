@@ -60,7 +60,9 @@ async def handle_assign_irrigation_program(
     ``program_id`` — or passing it as null — unbinds.
     """
     await coordinator.services.growspaces.assign_irrigation_program(
-        call.data[ATTR_GROWSPACE_ID], call.data.get(ATTR_PROGRAM_ID)
+        call.data[ATTR_GROWSPACE_ID],
+        call.data.get(ATTR_PROGRAM_ID),
+        **({"zone_id": call.data["zone_id"]} if "zone_id" in call.data else {}),
     )
 
 

@@ -47,10 +47,12 @@ def test_irrigation_action_metadata_matches_change_interface() -> None:
     metadata = yaml.safe_load(SERVICES_YAML.read_text(encoding="utf-8"))
     settings_schema = SET_IRRIGATION_SETTINGS_SCHEMA.validators[0]
     expected_settings = (
-        {"growspace_id"} | set(IRRIGATION_CONFIG_CHANGE_FIELDS) | _SETTINGS_WIRE_FIELDS
+        {"growspace_id", "zone_id"}
+        | set(IRRIGATION_CONFIG_CHANGE_FIELDS)
+        | _SETTINGS_WIRE_FIELDS
     )
     expected_strategy = (
-        {"growspace_id"}
+        {"growspace_id", "zone_id"}
         | (set(IRRIGATION_STRATEGY_CHANGE_FIELDS) - {"substrate_profile"})
         | _STRATEGY_WIRE_FIELDS
     )
@@ -69,7 +71,7 @@ def test_steering_phase_action_owns_the_phase_alone() -> None:
     ``phase_changed_at`` is never on the wire.
     """
     metadata = yaml.safe_load(SERVICES_YAML.read_text(encoding="utf-8"))
-    expected = {"growspace_id", "steering_phase"}
+    expected = {"growspace_id", "zone_id", "steering_phase"}
 
     assert {"active_steering_phase"} == IRRIGATION_PHASE_CHANGE_FIELDS
     assert _fields(SET_STEERING_PHASE_SCHEMA) == expected
@@ -81,9 +83,9 @@ def test_steering_phase_action_owns_the_phase_alone() -> None:
 
 
 def test_clear_action_carries_no_setpoint() -> None:
-    """A clear names the growspace alone — it restores defaults, it sets nothing."""
+    """A clear names its growspace and optional zone — it restores defaults, it sets nothing."""
     metadata = yaml.safe_load(SERVICES_YAML.read_text(encoding="utf-8"))
-    expected = {"growspace_id"}
+    expected = {"growspace_id", "zone_id"}
 
     assert _fields(CLEAR_IRRIGATION_SCHEMA) == expected
     assert set(metadata["clear_irrigation"]["fields"]) == expected
@@ -92,7 +94,7 @@ def test_clear_action_carries_no_setpoint() -> None:
 def test_steering_mode_action_names_a_mode_and_no_preset_values() -> None:
     """The wire carries the mode; the server owns what that mode means."""
     metadata = yaml.safe_load(SERVICES_YAML.read_text(encoding="utf-8"))
-    expected = {"growspace_id", "steering_mode"}
+    expected = {"growspace_id", "zone_id", "steering_mode"}
 
     assert set(IRRIGATION_STEERING_MODE_CHANGE_FIELDS) == {"steering_mode"}
     assert _fields(APPLY_STEERING_MODE_SCHEMA) == expected

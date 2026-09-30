@@ -486,6 +486,7 @@ async def test_add_irrigation_schedule_item_with_duration(mock_coordinator) -> N
     facade = ServiceFacade(mock_coordinator)
     irr_coord = MagicMock()
     irr_coord.async_add_schedule_item = AsyncMock()
+    mock_coordinator.growspaces["gs1"] = Growspace(id="gs1", name="Tent")
     mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
 
     await facade.growspaces.add_irrigation_schedule_item(
@@ -503,6 +504,7 @@ async def test_add_irrigation_schedule_item_default_duration(mock_coordinator) -
     irr_coord = MagicMock()
     irr_coord.get_default_duration = MagicMock(return_value=20)
     irr_coord.async_add_schedule_item = AsyncMock()
+    mock_coordinator.growspaces["gs1"] = Growspace(id="gs1", name="Tent")
     mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
 
     await facade.growspaces.add_irrigation_schedule_item(
@@ -519,6 +521,7 @@ async def test_remove_irrigation_schedule_item(mock_coordinator) -> None:
     facade = ServiceFacade(mock_coordinator)
     irr_coord = MagicMock()
     irr_coord.async_remove_schedule_item = AsyncMock()
+    mock_coordinator.growspaces["gs1"] = Growspace(id="gs1", name="Tent")
     mock_coordinator._subsystem_manager.irrigation_coordinators = {"gs1": irr_coord}
 
     await facade.growspaces.remove_irrigation_schedule_item(

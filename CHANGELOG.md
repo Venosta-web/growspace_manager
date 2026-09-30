@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Irrigation Zone actions and WebSocket commands for adding, editing, assigning
+  cells, removing and reordering zones, guarded by the growspace layout revision.
+  Each cell has one owner; grid growth inherits the adjacent boundary's zone.
+  Multi-zone writes require `zone_id`, each zone needs an exclusive valve, and
+  the supported envelope is six zones, eight valves per zone and four substrate
+  probes per quantity. Zone payloads include order, probe roles, placement and
+  health while the top-level default-zone mirrors remain available.
+- Zone selection for irrigation settings, strategy, phase, schedules, recipes,
+  programs and Steering Modes. Until valve actuation and per-zone runtime land,
+  configured-valve and multi-zone automated delivery is held
+  (`zone_runtime_pending`) and manual delivery is refused; pump-only single-zone
+  and Hand Watering behavior remains.
+
 - **Reopening a Finalized Grow Run**: an administrator can return a
   Finalized Run to Completed with `reopen_grow_run`, giving a reason. The
   Run's boundaries do not move and it does not resume; its harvest outcomes
