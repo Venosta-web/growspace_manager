@@ -29,6 +29,7 @@ closed, and it is saved in the batch like a close.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 import logging
 from os.path import exists
@@ -223,6 +224,32 @@ class GrowspaceDeliveries:
             if attempt.attempt_id in self._left_open
             and (output is None or attempt.output == output)
         ]
+
+    def record_interrupted_valve(
+        self,
+        output: str,
+        commanded_at: datetime | None,
+        confirmed_at: datetime | None,
+    ) -> None:
+        """Keep a recovered valve's readback without prematurely closing its supply."""
+        for attempt in self.left_open():
+            if any(valve.output == output for valve in attempt.valves):
+                self._put(
+                    replace(
+                        attempt,
+                        valves=tuple(
+                            replace(
+                                valve,
+                                off_commanded_at=commanded_at,
+                                off_confirmed_at=confirmed_at,
+                            )
+                            if valve.output == output
+                            else valve
+                            for valve in attempt.valves
+                        ),
+                    )
+                )
+                self._delay_save()
 
     def interrupt(
         self,

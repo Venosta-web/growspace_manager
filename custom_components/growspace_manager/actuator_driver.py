@@ -22,6 +22,7 @@ from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
+    STATE_OFF,
     STATE_ON,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
@@ -54,7 +55,12 @@ COMMAND_TIMEOUT_SECONDS = 10.0
 
 
 async def _safe_service_call(
-    hass: HomeAssistant, domain: str, service: str, data: dict[str, object]
+    hass: HomeAssistant,
+    domain: str,
+    service: str,
+    data: dict[str, object],
+    *,
+    raise_errors: bool = False,
 ) -> bool:
     """Call a Home Assistant service and wait for it; return whether it succeeded.
 
@@ -74,6 +80,8 @@ async def _safe_service_call(
             data.get(ATTR_ENTITY_ID),
             exc_info=True,
         )
+        if raise_errors:
+            raise
         return False
     return True
 
@@ -100,6 +108,8 @@ async def async_confirm_state(
     first disagreement latches a false fault on it. A device that never reports
     ``want`` still answers ``False`` within ``timeout`` seconds.
     """
+    if entity_id.startswith("valve."):
+        want = "open" if want == STATE_ON else "closed" if want == STATE_OFF else want
     if first_read > 0:
         await asyncio.sleep(first_read)
     waited = first_read
@@ -136,6 +146,47 @@ class ActuatorDriver(Protocol):
     def is_on(self) -> bool:
         """Return whether the actuator is currently on."""
         ...
+
+
+class ValveDriver:
+    """Drive a Home Assistant valve through its native open/close services."""
+
+    def __init__(
+        self, hass: HomeAssistant, entity_id: str, *, raise_errors: bool = False
+    ) -> None:
+        """Bind one valve output."""
+        self._hass = hass
+        self._entity_id = entity_id
+        self._raise_errors = raise_errors
+
+    async def set_speed(self, pct: int) -> bool:
+        """Use binary opening for a valve used as an irrigation output."""
+        return await self.turn_on() if pct > 0 else await self.turn_off()
+
+    async def turn_on(self) -> bool:
+        """Open the valve through its driver."""
+        return await _safe_service_call(
+            self._hass,
+            "valve",
+            "open_valve",
+            {ATTR_ENTITY_ID: self._entity_id},
+            raise_errors=self._raise_errors,
+        )
+
+    async def turn_off(self) -> bool:
+        """Close the valve through its driver."""
+        return await _safe_service_call(
+            self._hass,
+            "valve",
+            "close_valve",
+            {ATTR_ENTITY_ID: self._entity_id},
+            raise_errors=self._raise_errors,
+        )
+
+    def is_on(self) -> bool:
+        """Only a confirmed open state counts as ON."""
+        state = self._hass.states.get(self._entity_id)
+        return state is not None and state.state == "open"
 
 
 class FanDriver:
@@ -182,13 +233,19 @@ class SwitchDriver:
     """
 
     def __init__(
-        self, hass: HomeAssistant, entity_id: str, *, off_threshold: int = 0
+        self,
+        hass: HomeAssistant,
+        entity_id: str,
+        *,
+        off_threshold: int = 0,
+        raise_errors: bool = False,
     ) -> None:
         """Initialize the driver for a single on/off entity."""
         self._hass = hass
         self._entity_id = entity_id
         self._domain = entity_id.split(".", 1)[0]
         self._off_threshold = off_threshold
+        self._raise_errors = raise_errors
 
     async def set_speed(self, pct: int) -> bool:
         """Turn on when ``pct`` exceeds the off threshold, otherwise off."""
@@ -203,6 +260,7 @@ class SwitchDriver:
             self._domain,
             SERVICE_TURN_ON,
             {ATTR_ENTITY_ID: self._entity_id},
+            raise_errors=self._raise_errors,
         )
 
     async def turn_off(self) -> bool:
@@ -212,6 +270,7 @@ class SwitchDriver:
             self._domain,
             SERVICE_TURN_OFF,
             {ATTR_ENTITY_ID: self._entity_id},
+            raise_errors=self._raise_errors,
         )
 
     def is_on(self) -> bool:
@@ -306,14 +365,22 @@ class NumberDriver:
 
 
 def resolve_actuator_driver(
-    hass: HomeAssistant, entity_id: str, *, switch_off_threshold: int = 0
+    hass: HomeAssistant,
+    entity_id: str,
+    *,
+    switch_off_threshold: int = 0,
+    raise_errors: bool = False,
 ) -> ActuatorDriver | None:
     """Resolve a driver for ``entity_id`` by domain, or ``None`` if unsupported.
 
     ``switch_off_threshold`` is the demand above which an on/off device engages
     (exhaust passes its ``min_speed``); it is ignored for percentage fans.
+    ``raise_errors`` preserves command diagnostics for binary irrigation outputs;
+    other controllers keep receiving a boolean failure.
     """
     domain = entity_id.split(".", 1)[0]
+    if domain == "valve":
+        return ValveDriver(hass, entity_id, raise_errors=raise_errors)
     if domain == "fan":
         return FanDriver(hass, entity_id)
     if domain == "light":
@@ -321,7 +388,12 @@ def resolve_actuator_driver(
     if domain in _SPEED_NUMBER_DOMAINS:
         return NumberDriver(hass, entity_id)
     if domain in _SWITCH_DOMAINS:
-        return SwitchDriver(hass, entity_id, off_threshold=switch_off_threshold)
+        return SwitchDriver(
+            hass,
+            entity_id,
+            off_threshold=switch_off_threshold,
+            raise_errors=raise_errors,
+        )
     return None
 
 

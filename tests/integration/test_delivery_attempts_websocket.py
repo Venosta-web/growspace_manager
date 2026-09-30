@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 import json
 from pathlib import Path
@@ -22,6 +23,7 @@ from custom_components.growspace_manager.domain.delivery_attempt import (
     AttemptTrigger,
     DeliveryAttempt,
     TriggerEvidence,
+    ValveReadback,
 )
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.websocket.irrigation import (
@@ -112,6 +114,18 @@ def _day(growspace_id: str) -> list[DeliveryAttempt]:
         .confirmed_on(at + timedelta(seconds=1), DAY)
         .closed(off_commanded_at=at + timedelta(seconds=50))
         .read_back_off(at + timedelta(seconds=51))
+    )
+    steering = replace(
+        steering,
+        valves=(
+            ValveReadback(
+                "switch.zone_valve",
+                at,
+                at + timedelta(milliseconds=100),
+                at + timedelta(seconds=51),
+                at + timedelta(seconds=52),
+            ),
+        ),
     )
     at = MIDNIGHT + timedelta(hours=10)
     suppressed = _suppressed(growspace_id, "attempt-suppressed", at)

@@ -1846,6 +1846,7 @@ async def test_multizone_delivery_requires_scope_and_holds_pump(
         },
     )
     growspace.irrigation_zones = candidate.irrigation_zones
+    mock_hass.states.get.return_value = State("switch.blue", "off")
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
@@ -1893,17 +1894,615 @@ async def test_multizone_admission_race_is_rechecked_before_on(
     assert coordinator._deliveries.attempts[-1].reason == "zone_runtime_pending"
 
 
-async def test_lone_zone_with_valves_waits_for_valve_actuation(
+async def test_lone_zone_with_valves_admits_manual_delivery(
     mock_hass, mock_config_entry, mock_main_coordinator
 ):
-    """A single configured valve also needs the next ticket's ON/readback order."""
+    """The implicit zone's optional valve no longer holds pump-only runtime."""
     growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
     growspace.default_zone.valves = ["switch.valve"]
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    with pytest.raises(ServiceValidationError, match="valve actuation"):
+    with patch.object(coordinator, "_run_pump_cycle", new_callable=AsyncMock) as run:
         await coordinator.async_manual_run(30)
-    await coordinator._run_pump_cycle("irrigation", "switch.irrigation_pump", 30, {})
-    mock_hass.services.async_call.assert_not_called()
-    assert coordinator._deliveries.attempts[-1].reason == "zone_runtime_pending"
+        await coordinator._running_tasks["irrigation"]
+    run.assert_awaited_once()
+
+
+@pytest.fixture
+def valve_rig(mock_hass, mock_config_entry, mock_main_coordinator):
+    """A relay train with independent states and observable readbacks."""
+    growspace = mock_main_coordinator.growspaces[GROWSPACE_ID]
+    growspace.default_zone.valves = ["switch.v1", "switch.v2"]
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    coordinator._async_spawn_settling_report = Mock()
+    coordinator._async_notify = AsyncMock()
+    trace = []
+    states = dict.fromkeys(coordinator._configured_outputs(), "off")
+    mock_hass.states.get.side_effect = lambda output: (
+        State(output, states[output]) if output in states else None
+    )
+
+    async def command(domain, service, data, **kwargs):
+        output = data.get("entity_id")
+        if output in states:
+            trace.append((service, output))
+            states[output] = "on" if service == "turn_on" else "off"
+
+    async def confirm(*args, **kwargs):
+        output, want = args[-2:]
+        trace.append(("read_" + want, output))
+        return states.get(output) == want
+
+    mock_hass.services.async_call.side_effect = command
+    with (
+        patch(
+            "custom_components.growspace_manager.irrigation_coordinator.async_confirm_state",
+            side_effect=confirm,
+        ),
+        patch.object(coordinator, "_async_wait_for_switch_state", side_effect=confirm),
+        patch(
+            "custom_components.growspace_manager.irrigation_coordinator.asyncio.sleep",
+            new_callable=AsyncMock,
+        ),
+    ):
+        yield coordinator, mock_hass, growspace, trace, states
+    for cancel in coordinator._off_retries.values():
+        cancel()
+    coordinator._off_retries.clear()
+
+
+async def test_valve_delivery_order_and_durable_evidence(valve_rig):
+    coordinator, hass, growspace, trace, states = valve_rig
+    writes = []
+    original = coordinator._deliveries.async_request
+
+    async def record(attempt):
+        writes.append((attempt, list(trace)))
+        await original(attempt)
+
+    with patch.object(coordinator._deliveries, "async_request", side_effect=record):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    assert trace == [
+        ("turn_on", "switch.v1"),
+        ("read_on", "switch.v1"),
+        ("turn_on", "switch.v2"),
+        ("read_on", "switch.v2"),
+        ("turn_on", "switch.irrigation_pump"),
+        ("read_on", "switch.irrigation_pump"),
+        ("turn_off", "switch.irrigation_pump"),
+        ("read_off", "switch.irrigation_pump"),
+        ("turn_off", "switch.v1"),
+        ("read_off", "switch.v1"),
+        ("turn_off", "switch.v2"),
+        ("read_off", "switch.v2"),
+    ]
+    attempt = coordinator._deliveries.attempts[-1]
+    assert attempt.outcome == "completed"
+    assert coordinator.cycles_today == 1
+    assert all(
+        valve.on_confirmed_at and valve.off_commanded_at and valve.off_confirmed_at
+        for valve in attempt.valves
+    )
+    assert writes[1][0].valves[0].on_commanded_at and writes[1][1] == []
+    assert writes[3][0].valves[-1].output == "switch.v2"
+    assert writes[3][1] == trace[:2]
+    assert not coordinator.delivering_outputs()
+
+
+@pytest.mark.parametrize("failure", ["command", "readback"])
+async def test_valve_failure_never_starts_supply_and_cleans_every_commanded_valve(
+    valve_rig, failure
+):
+    coordinator, hass, growspace, trace, states = valve_rig
+    original = hass.services.async_call.side_effect
+
+    async def fail(domain, service, data, **kwargs):
+        await original(domain, service, data, **kwargs)
+        if data.get("entity_id") == "switch.v2" and service == "turn_on":
+            if failure == "command":
+                raise RuntimeError("relay refused")
+            states["switch.v2"] = "unavailable"
+
+    hass.services.async_call.side_effect = fail
+    await coordinator._run_pump_cycle(
+        "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+    )
+    assert not any(output == "switch.irrigation_pump" for service, output in trace)
+    assert trace[-4:] == [
+        ("turn_off", "switch.v1"),
+        ("read_off", "switch.v1"),
+        ("turn_off", "switch.v2"),
+        ("read_off", "switch.v2"),
+    ]
+    attempt = coordinator._deliveries.attempts[-1]
+    assert attempt.outcome == "not_delivered"
+    assert attempt.not_delivered_window is None
+    assert attempt.reason == (
+        "on_command_failed" if failure == "command" else "on_unconfirmed"
+    )
+    assert coordinator.cycles_today == 0
+    assert attempt.valves[0].on_confirmed_at is not None
+    assert attempt.valves[1].on_confirmed_at is None
+    assert all(valve.off_confirmed_at for valve in attempt.valves)
+
+
+@pytest.mark.parametrize("foreign_state", ["on", "unavailable", "unknown", None])
+async def test_foreign_valve_must_positively_read_closed(valve_rig, foreign_state):
+    from custom_components.growspace_manager.models.irrigation_zone import (
+        IrrigationZone,
+    )
+
+    coordinator, hass, growspace, trace, states = valve_rig
+    growspace.irrigation_zones.append(
+        IrrigationZone(id="other", name="Other", valves=["switch.foreign"])
+    )
+    if foreign_state is not None:
+        states["switch.foreign"] = foreign_state
+    with patch.object(
+        coordinator, "_async_observe_on", new_callable=AsyncMock
+    ) as observe:
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    assert trace == []
+    assert coordinator._deliveries.attempts[-1].reason == "foreign_valve_open"
+    assert observe.await_count == (1 if foreign_state == "on" else 0)
+
+
+async def test_foreign_valve_rechecked_after_admission(valve_rig):
+    from custom_components.growspace_manager.models.irrigation_zone import (
+        IrrigationZone,
+    )
+
+    coordinator, hass, growspace, trace, states = valve_rig
+    growspace.irrigation_zones.append(
+        IrrigationZone(id="other", name="Other", valves=["switch.foreign"])
+    )
+    states["switch.foreign"] = "off"
+
+    async def change(*args):
+        states["switch.foreign"] = "on"
+
+    # #895 will supply the per-zone runtime; exercise its delivery boundary.
+    with (
+        patch.object(coordinator, "_zone_delivery_pending", return_value=False),
+        patch.object(coordinator, "_record_safety_transition", side_effect=change),
+        patch.object(coordinator, "_async_observe_on", new_callable=AsyncMock),
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    assert trace == []
+    assert coordinator._deliveries.attempts[-1].reason == "foreign_valve_open"
+
+
+async def test_valve_off_failure_blocks_entire_growspace(valve_rig):
+    coordinator, hass, growspace, trace, states = valve_rig
+    original = hass.services.async_call.side_effect
+
+    async def command(domain, service, data, **kwargs):
+        await original(domain, service, data, **kwargs)
+        if data.get("entity_id") == "switch.v1" and service == "turn_off":
+            states["switch.v1"] = "on"
+
+    hass.services.async_call.side_effect = command
+    with patch.object(
+        coordinator, "_async_off_unconfirmed", new_callable=AsyncMock
+    ) as fault:
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    fault.assert_awaited_once_with(
+        "switch.v1",
+        "fault_off_unconfirmed:switch.v1",
+        "switch.v1 did not read back closed",
+    )
+    attempt = coordinator._deliveries.attempts[-1]
+    assert attempt.off_confirmed
+    assert attempt.valves[0].off_confirmed_at is None
+    assert attempt.valves[1].off_confirmed_at is not None
+
+
+async def test_cancel_during_valve_confirmation_closes_valves_without_supply(valve_rig):
+    coordinator, hass, growspace, trace, states = valve_rig
+
+    async def cancel(*args, **kwargs):
+        raise asyncio.CancelledError
+
+    with patch(
+        "custom_components.growspace_manager.irrigation_coordinator.async_confirm_state",
+        side_effect=cancel,
+    ):
+        # Cancel only the ON read; cleanup remains a bounded OFF/readback.
+        with patch.object(
+            coordinator, "_async_command_off", new_callable=AsyncMock, return_value=True
+        ) as off:
+            await coordinator._run_pump_cycle(
+                "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+            )
+    off.assert_awaited_once_with("switch.v1")
+    assert trace == [("turn_on", "switch.v1")]
+    assert coordinator._deliveries.attempts[-1].outcome == "aborted"
+    assert not coordinator._commanded_outputs
+
+
+async def test_supply_refusal_closes_supply_before_valves(valve_rig):
+    coordinator, hass, growspace, trace, states = valve_rig
+    with patch.object(
+        coordinator,
+        "_async_wait_for_switch_state",
+        new_callable=AsyncMock,
+        return_value=False,
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    assert trace[-6:] == [
+        ("turn_off", "switch.irrigation_pump"),
+        ("read_off", "switch.irrigation_pump"),
+        ("turn_off", "switch.v1"),
+        ("read_off", "switch.v1"),
+        ("turn_off", "switch.v2"),
+        ("read_off", "switch.v2"),
+    ]
+    assert coordinator._deliveries.attempts[-1].outcome == "not_delivered"
+    assert coordinator.cycles_today == 0
+
+
+async def test_restart_recovers_valves_in_supply_first_order(valve_rig):
+    from dataclasses import replace
+
+    from custom_components.growspace_manager.domain.delivery_attempt import (
+        ValveReadback,
+    )
+
+    coordinator, hass, growspace, trace, states = valve_rig
+    attempt = coordinator._new_attempt(
+        "irrigation", "switch.irrigation_pump", 30, {}, utcnow()
+    )
+    attempt = replace(
+        attempt,
+        valves=(
+            ValveReadback("switch.v1", utcnow()),
+            ValveReadback("switch.v2", utcnow()),
+        ),
+    )
+    coordinator._deliveries.attempts = [attempt]
+    coordinator._deliveries._left_open = {attempt.attempt_id}
+    states["switch.v1"] = states["switch.v2"] = "on"
+    assert set(coordinator._interrupted_outputs()) == {
+        "switch.irrigation_pump",
+        "switch.v1",
+        "switch.v2",
+    }
+    await coordinator._async_stop_interrupted("switch.irrigation_pump")
+    assert trace == [
+        ("turn_off", "switch.irrigation_pump"),
+        ("read_off", "switch.irrigation_pump"),
+        ("turn_off", "switch.v1"),
+        ("read_off", "switch.v1"),
+        ("turn_off", "switch.v2"),
+        ("read_off", "switch.v2"),
+    ]
+    closed = coordinator._deliveries.attempts[-1]
+    assert closed.outcome == "interrupted"
+    assert all(valve.off_confirmed_at for valve in closed.valves)
+
+
+async def test_real_valve_fault_prevents_every_output_and_retries(valve_rig, hass):
+    from custom_components.growspace_manager.irrigation_safety_store import (
+        IrrigationSafetyStore,
+    )
+
+    coordinator, mock_hass, growspace, trace, states = valve_rig
+    store = IrrigationSafetyStore(hass, "valve-fault")
+    await store.async_initialize_controls({GROWSPACE_ID: growspace})
+    coordinator._main_coordinator.irrigation_safety = store
+    original = mock_hass.services.async_call.side_effect
+
+    async def fail_off(domain, service, data, **kwargs):
+        await original(domain, service, data, **kwargs)
+        if service == "turn_off" and data.get("entity_id") == "switch.v1":
+            states["switch.v1"] = "on"
+
+    mock_hass.services.async_call.side_effect = fail_off
+    with patch(
+        "custom_components.growspace_manager.irrigation_coordinator.ir.async_create_issue"
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    assert coordinator.controller_snapshot().state.value == "fault"
+    assert "switch.v1" in coordinator._off_retries
+    trace.clear()
+    await coordinator._run_pump_cycle("drain", "switch.drain_pump", 1, {"manual": True})
+    assert trace == []
+    assert coordinator._deliveries.attempts[-1].reason == "fault"
+    for cancel in coordinator._off_retries.values():
+        cancel()
+    coordinator._off_retries.clear()
+
+
+async def test_valve_unexpected_on_watch_and_growspace_latch(valve_rig, hass):
+    from custom_components.growspace_manager.irrigation_safety_store import (
+        IrrigationSafetyStore,
+    )
+    from homeassistant.core import Event
+
+    coordinator, mock_hass, growspace, trace, states = valve_rig
+    store = IrrigationSafetyStore(hass, "valve-unexpected")
+    await store.async_initialize_controls({GROWSPACE_ID: growspace})
+    coordinator._main_coordinator.irrigation_safety = store
+    growspace.irrigation_config.unexpected_on_policy = "enforce_off"
+    with patch(
+        "custom_components.growspace_manager.irrigation_coordinator.async_track_state_change_event",
+        return_value=Mock(),
+    ) as watch:
+        coordinator._ensure_pump_watch()
+    assert "switch.v1" in watch.call_args.args[1]
+    states["switch.v1"] = "on"
+    event = Event(
+        "state_changed",
+        {
+            "entity_id": "switch.v1",
+            "old_state": State("switch.v1", "off"),
+            "new_state": State("switch.v1", "on"),
+        },
+    )
+    tasks = []
+    mock_hass.async_create_task = lambda coro, **kwargs: tasks.append(
+        asyncio.create_task(coro)
+    )
+    with patch(
+        "custom_components.growspace_manager.irrigation_coordinator.ir.async_create_issue"
+    ):
+        coordinator._on_pump_state(event)
+        await tasks[0]
+    assert trace == [("turn_off", "switch.v1"), ("read_off", "switch.v1")]
+    assert coordinator.controller_snapshot().state.value == "fault"
+    trace.clear()
+    await coordinator._run_pump_cycle(
+        "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+    )
+    assert trace == []
+    coordinator._cancel_pump_watch_listener()
+
+
+@pytest.mark.parametrize("change", ["foreign", "own", "operator", "layout"])
+async def test_supply_start_rechecks_after_valve_opening(valve_rig, change):
+    from custom_components.growspace_manager.models.irrigation_zone import (
+        IrrigationZone,
+    )
+
+    coordinator, hass, growspace, trace, states = valve_rig
+    if change == "foreign":
+        growspace.irrigation_zones.append(
+            IrrigationZone(id="other", valves=["switch.foreign"])
+        )
+        states["switch.foreign"] = "off"
+    original = coordinator._deliveries.async_request
+
+    async def change_on_write(attempt):
+        await original(attempt)
+        if len(attempt.valves) == 2 and attempt.valves[-1].on_confirmed_at:
+            if change == "foreign":
+                states["switch.foreign"] = "on"
+            elif change == "own":
+                states["switch.v1"] = "off"
+            elif change == "layout":
+                growspace.default_zone.valves = ["switch.changed"]
+            else:
+                coordinator._detected_overrides["switch.foreign"] = utcnow().isoformat()
+
+    with (
+        patch.object(coordinator, "_zone_delivery_pending", return_value=False),
+        patch.object(
+            coordinator._deliveries, "async_request", side_effect=change_on_write
+        ),
+        patch.object(coordinator, "_async_observe_on", new_callable=AsyncMock),
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    assert not any(output == "switch.irrigation_pump" for service, output in trace)
+    assert all(
+        valve.off_confirmed_at for valve in coordinator._deliveries.attempts[-1].valves
+    )
+    assert coordinator.cycles_today == 0
+
+
+async def test_same_supply_never_opens_two_valve_trains(valve_rig):
+    coordinator, hass, growspace, trace, states = valve_rig
+    watering = asyncio.Event()
+    finish = asyncio.Event()
+    sleeps = 0
+
+    async def hold_first_shot(seconds):
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps == 1:
+            watering.set()
+            await finish.wait()
+
+    with patch(
+        "custom_components.growspace_manager.irrigation_coordinator.asyncio.sleep",
+        side_effect=hold_first_shot,
+    ):
+        first = asyncio.create_task(
+            coordinator._run_pump_cycle(
+                "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+            )
+        )
+        await watering.wait()
+        second = asyncio.create_task(
+            coordinator._run_pump_cycle(
+                "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+            )
+        )
+        await _REAL_ASYNCIO_SLEEP(0)
+        assert len(trace) == 6
+        finish.set()
+        await asyncio.gather(first, second)
+    assert len(trace) == 24
+    assert trace[:12] == trace[12:]
+    assert coordinator.cycles_today == 2
+
+
+async def test_own_valve_on_without_an_attempt_is_observed_before_admission(valve_rig):
+    coordinator, hass, growspace, trace, states = valve_rig
+    states["switch.v1"] = "on"
+    with patch.object(
+        coordinator, "_async_observe_on", new_callable=AsyncMock
+    ) as observe:
+
+        async def alert(output):
+            coordinator._detected_overrides[output] = utcnow().isoformat()
+
+        observe.side_effect = alert
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    observe.assert_awaited_once_with("switch.v1")
+    assert trace == []
+    assert coordinator._deliveries.attempts[-1].outcome == "suppressed"
+
+
+async def test_native_supply_wait_uses_open_and_closed_states(valve_rig):
+    coordinator, hass, growspace, trace, states = valve_rig
+    # Call the real method; this relay rig replaces it to trace readbacks.
+    states["valve.supply"] = "open"
+    assert await BaseIrrigationCoordinator._async_wait_for_switch_state(
+        coordinator, "valve.supply", "on"
+    )
+    states["valve.supply"] = "closed"
+    assert await BaseIrrigationCoordinator._async_wait_for_switch_state(
+        coordinator, "valve.supply", "off"
+    )
+
+
+async def test_restart_valve_refusal_retains_missing_readback(valve_rig):
+    from dataclasses import replace
+
+    from custom_components.growspace_manager.domain.delivery_attempt import (
+        ValveReadback,
+    )
+
+    coordinator, hass, growspace, trace, states = valve_rig
+    attempt = replace(
+        coordinator._new_attempt(
+            "irrigation", "switch.irrigation_pump", 30, {}, utcnow()
+        ),
+        valves=(ValveReadback("switch.v1", utcnow()),),
+    )
+    coordinator._deliveries.attempts = [attempt]
+    coordinator._deliveries._left_open = {attempt.attempt_id}
+    original = hass.services.async_call.side_effect
+
+    async def stuck(domain, service, data, **kwargs):
+        await original(domain, service, data, **kwargs)
+        if data.get("entity_id") == "switch.v1":
+            states["switch.v1"] = "on"
+
+    hass.services.async_call.side_effect = stuck
+    with patch.object(
+        coordinator, "_async_off_unconfirmed", new_callable=AsyncMock
+    ) as fault:
+        await coordinator._async_stop_interrupted("switch.irrigation_pump")
+    fault.assert_awaited_once()
+    assert coordinator._deliveries.attempts[-1].valves[0].off_confirmed_at is None
+    assert coordinator._deliveries.attempts[-1].outcome == "interrupted"
+
+
+async def test_startup_recovers_a_train_even_when_supply_is_already_off(valve_rig):
+    from dataclasses import replace
+
+    from custom_components.growspace_manager.domain.delivery_attempt import (
+        ValveReadback,
+    )
+
+    coordinator, hass, growspace, trace, states = valve_rig
+    attempt = replace(
+        coordinator._new_attempt(
+            "irrigation", "switch.irrigation_pump", 30, {}, utcnow()
+        ),
+        valves=(ValveReadback("switch.v1", utcnow()),),
+    )
+    coordinator._deliveries.attempts = [attempt]
+    coordinator._deliveries._left_open = {attempt.attempt_id}
+    states["switch.v1"] = "on"
+    with (
+        patch(
+            "custom_components.growspace_manager.irrigation_coordinator.async_track_time_interval",
+            return_value=Mock(),
+        ),
+        patch.object(coordinator, "_ensure_pump_watch"),
+    ):
+        await coordinator._async_begin_startup_inhibit()
+    assert trace[:4] == [
+        ("turn_off", "switch.irrigation_pump"),
+        ("read_off", "switch.irrigation_pump"),
+        ("turn_off", "switch.v1"),
+        ("read_off", "switch.v1"),
+    ]
+    assert coordinator._deliveries.attempts[-1].outcome == "interrupted"
+    coordinator._cancel_startup_poll_listener()
+    coordinator._cancel_sensor_probe()
+
+
+async def test_supply_driver_false_is_not_delivered(valve_rig):
+    from custom_components.growspace_manager.actuator_driver import (
+        resolve_actuator_driver,
+    )
+
+    coordinator, hass, growspace, trace, states = valve_rig
+    refused = Mock(
+        turn_on=AsyncMock(return_value=False), turn_off=AsyncMock(return_value=True)
+    )
+
+    def resolve(home_assistant, output, **kwargs):
+        if output == "switch.irrigation_pump":
+            return refused
+        return resolve_actuator_driver(home_assistant, output, **kwargs)
+
+    with patch(
+        "custom_components.growspace_manager.irrigation_coordinator.resolve_actuator_driver",
+        side_effect=resolve,
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    assert coordinator._deliveries.attempts[-1].reason == "on_command_failed"
+    assert all(
+        valve.off_confirmed_at for valve in coordinator._deliveries.attempts[-1].valves
+    )
+    assert coordinator.cycles_today == 0
+
+
+async def test_fault_write_failure_does_not_strand_remaining_valves(valve_rig):
+    coordinator, hass, growspace, trace, states = valve_rig
+    original = hass.services.async_call.side_effect
+
+    async def stuck(domain, service, data, **kwargs):
+        await original(domain, service, data, **kwargs)
+        if data.get("entity_id") == "switch.v1" and service == "turn_off":
+            states["switch.v1"] = "on"
+
+    hass.services.async_call.side_effect = stuck
+    with patch.object(
+        coordinator,
+        "_async_off_unconfirmed",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("disk full"),
+    ):
+        await coordinator._run_pump_cycle(
+            "irrigation", "switch.irrigation_pump", 1, {"manual": True}
+        )
+    assert ("turn_off", "switch.v2") in trace
+    assert "switch.v1" in coordinator._off_retries
+    assert not coordinator._commanded_outputs
+    assert coordinator._deliveries.attempts[-1].valves[-1].off_confirmed_at is not None

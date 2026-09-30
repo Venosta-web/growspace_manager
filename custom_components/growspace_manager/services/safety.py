@@ -79,6 +79,7 @@ def managed_outputs(growspace: Growspace) -> tuple[str, ...]:
     plain = (
         growspace.irrigation_config.irrigation_pump_entity,
         growspace.irrigation_config.drain_pump_entity,
+        *(valve for zone in growspace.irrigation_zones for valve in zone.valves),
         *env.exhaust_fan_entities,
         *env.circulation_fan_entities,
         *env.humidifier_entities,
@@ -105,6 +106,8 @@ def _safe_state(hass: HomeAssistant, entity_id: str) -> bool:
             return float(state.state) == 0
         except ValueError:
             return False
+    if domain == "valve":
+        return state.state == "closed"
     if domain == "select":
         return state.state == "Off"
     return state.state == "off"
@@ -142,6 +145,12 @@ async def async_emergency_stop_growspace(
                 "select",
                 "select_option",
                 {"entity_id": entity_id, "option": "Off"},
+            )
+        elif domain == "valve":
+            service_domain, service, data = (
+                "valve",
+                "close_valve",
+                {"entity_id": entity_id},
             )
         elif domain in ("number", "input_number"):
             service_domain, service, data = (

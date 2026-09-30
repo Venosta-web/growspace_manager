@@ -735,6 +735,7 @@ def test_the_wire_form_names_every_field() -> None:
         "suppressed_count": 0,
         "last_requested_at": None,
         "ended_at": None,
+        "valves": [],
     }
 
 
@@ -884,3 +885,93 @@ def test_a_malformed_record_is_refused_whole(
     """A record that is not whole fails closed rather than under-counting."""
     with pytest.raises(error):
         DeliveryAttempt.from_dict(value)
+
+
+def test_valve_evidence_round_trip_and_legacy_rows():
+    from dataclasses import replace
+
+    from custom_components.growspace_manager.domain.delivery_attempt import (
+        ValveReadback,
+    )
+
+    valve = ValveReadback(
+        "switch.valve",
+        ON,
+        ON + timedelta(seconds=1),
+        ON + timedelta(seconds=2),
+        ON + timedelta(seconds=3),
+    )
+    attempt = replace(_requested(), valves=(valve,)).unconfirmed(
+        off_commanded_at=None, reason="on_unconfirmed"
+    )
+    wire = attempt.as_dict()
+    assert wire["valves"] == [
+        {
+            "output": "switch.valve",
+            "on_commanded_at": ON.isoformat(),
+            "on_confirmed_at": (ON + timedelta(seconds=1)).isoformat(),
+            "off_commanded_at": (ON + timedelta(seconds=2)).isoformat(),
+            "off_confirmed_at": (ON + timedelta(seconds=3)).isoformat(),
+        }
+    ]
+    assert DeliveryAttempt.from_dict(wire) == attempt
+    legacy = _requested().as_dict()
+    del legacy["valves"]
+    assert DeliveryAttempt.from_dict(legacy).valves == ()
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        None,
+        {},
+        [None],
+        [{}],
+        [{"output": "", "on_commanded_at": ON.isoformat()}],
+        [{"output": "switch.valve", "on_commanded_at": "invalid"}],
+        [{"output": "switch.valve", "on_commanded_at": ON.isoformat()}] * 2,
+    ],
+)
+def test_malformed_valve_records_fail_closed(rows):
+    wire = _requested().as_dict()
+    wire["valves"] = rows
+    with pytest.raises((TypeError, ValueError)):
+        DeliveryAttempt.from_dict(wire)
+
+
+def test_a_valve_commanded_request_cannot_be_suppressed():
+    from dataclasses import replace
+
+    from custom_components.growspace_manager.domain.delivery_attempt import (
+        ValveReadback,
+    )
+
+    attempt = replace(_requested(), valves=(ValveReadback("switch.valve", ON),))
+    with pytest.raises(ValueError, match="reached"):
+        attempt.refused("foreign_valve_open")
+    wire = _suppressed().as_dict()
+    wire["valves"] = [attempt.valves[0].as_dict()]
+    with pytest.raises(ValueError, match="suppressed"):
+        DeliveryAttempt.from_dict(wire)
+
+
+def test_valve_readbacks_extend_an_attempt_across_midnight():
+    from dataclasses import replace
+
+    from custom_components.growspace_manager.domain.delivery_attempt import (
+        ValveReadback,
+    )
+
+    midnight = ON.replace(hour=0, minute=0) + timedelta(days=1)
+    attempt = replace(
+        _requested(),
+        valves=(
+            ValveReadback(
+                "switch.valve", ON, off_confirmed_at=midnight + timedelta(seconds=1)
+            ),
+        ),
+    ).unconfirmed(off_commanded_at=None, reason="on_unconfirmed")
+    assert attempt.last_seen_at == midnight + timedelta(seconds=1)
+    assert attempts_between([attempt], midnight, midnight + timedelta(days=1)) == [
+        attempt
+    ]
