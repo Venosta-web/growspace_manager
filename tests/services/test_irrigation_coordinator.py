@@ -344,40 +344,36 @@ async def test_handle_event_with_custom_duration(
         await coordinator._handle_event(
             datetime.now(), event_type="irrigation", event_data=event_data
         )
-        await asyncio.sleep(0)  # Allow the created task to run
+        await coordinator._supply_task  # Decide the queued request and finish its cycle
         mock_run_cycle.assert_awaited_once_with(
-            "irrigation", "switch.irrigation_pump", 45, event_data
+            "irrigation",
+            "switch.irrigation_pump",
+            45,
+            {**event_data, "due_at": datetime.now().replace(second=0, microsecond=0)},
         )
 
 
 async def test_overlapping_events(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
-    """Test that a new event cancels a running event of the same type."""
+    """A second scheduled request waits for a running shot without cancelling it."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-    event_data = {"time": "10:00:00"}
-
-    # Create a task that will stay pending
-    pending_task = asyncio.create_task(asyncio.sleep(5))
+    release = asyncio.Event()
+    pending_task = asyncio.create_task(release.wait())
     coordinator._running_tasks["irrigation"] = pending_task
-
-    with patch.object(
-        coordinator, "_run_pump_cycle", new_callable=AsyncMock
-    ) as mock_run_cycle:
+    with patch.object(coordinator, "_run_pump_cycle", new_callable=AsyncMock) as run:
         await coordinator._handle_event(
-            datetime.now(), event_type="irrigation", event_data=event_data
+            utcnow(), event_type="irrigation", event_data={"time": "10:00:00"}
         )
-        await asyncio.sleep(0)  # allow task creation and cancellation to run
-
-        # Assert the old task was cancelled and a new one was started
-        assert pending_task.cancelled()
-        mock_run_cycle.assert_awaited()
-
-    # cleanup lingering task
-    with contextlib.suppress(asyncio.CancelledError):
-        await pending_task
+        await _REAL_ASYNCIO_SLEEP(0)
+        assert not pending_task.cancelled()
+        run.assert_not_awaited()
+        assert len(coordinator.supply_payload()["claims"]) == 1
+        release.set()
+        await coordinator._supply_task
+        run.assert_awaited_once()
 
 
 async def test_get_default_duration(
@@ -571,6 +567,7 @@ async def test_handle_event_missing_config(
         await coordinator._handle_event(
             datetime.now(), event_type="irrigation", event_data={"time": "10:00:00"}
         )
+        await coordinator._supply_task
         mock_run.assert_not_awaited()
 
 
@@ -755,6 +752,7 @@ async def test_handle_event_cleanup_running_task(
         await coordinator._handle_event(
             datetime.now(), event_type="irrigation", event_data={"time": "10:00:00"}
         )
+        await coordinator._supply_task
 
     # The finished task should be replaced (or at least not cancelled since it's done)
     # The logic checks if task exists and is NOT done before cancelling.
@@ -1101,13 +1099,18 @@ async def test_async_manual_run_triggers_pump_cycle(
         coordinator, "_run_pump_cycle", new_callable=AsyncMock
     ) as mock_run_cycle:
         await coordinator.async_manual_run(duration=45, user_id="user-1")
-        await asyncio.sleep(0)
+        await coordinator._supply_task
 
         mock_run_cycle.assert_awaited_once_with(
             "irrigation",
             "switch.irrigation_pump",
             45,
-            {"manual": True, "user_id": "user-1"},
+            {
+                "manual": True,
+                "user_id": "user-1",
+                "duration": 45,
+                "due_at": utcnow().replace(second=0, microsecond=0),
+            },
         )
 
 
@@ -1123,13 +1126,18 @@ async def test_async_manual_run_uses_default_duration_when_none(
         coordinator, "_run_pump_cycle", new_callable=AsyncMock
     ) as mock_run_cycle:
         await coordinator.async_manual_run(duration=None)
-        await asyncio.sleep(0)
+        await coordinator._supply_task
 
         mock_run_cycle.assert_awaited_once_with(
             "irrigation",
             "switch.irrigation_pump",
             30,  # default from fixture: irrigation_duration=30
-            {"manual": True, "user_id": None},
+            {
+                "manual": True,
+                "user_id": None,
+                "duration": None,
+                "due_at": utcnow().replace(second=0, microsecond=0),
+            },
         )
 
 
@@ -1569,7 +1577,7 @@ async def test_startup_inhibit_lets_a_manual_run_through(
         ),
     ):
         await coordinator.async_manual_run(duration=30)
-        await coordinator._running_tasks["irrigation"]
+        await coordinator._supply_task
 
     assert len(_turn_on_calls(mock_hass)) == 1
     coordinator.async_cancel_listeners()
@@ -1905,7 +1913,7 @@ async def test_lone_zone_with_valves_admits_manual_delivery(
     )
     with patch.object(coordinator, "_run_pump_cycle", new_callable=AsyncMock) as run:
         await coordinator.async_manual_run(30)
-        await coordinator._running_tasks["irrigation"]
+        await coordinator._supply_task
     run.assert_awaited_once()
 
 
@@ -2506,3 +2514,150 @@ async def test_fault_write_failure_does_not_strand_remaining_valves(valve_rig):
     assert "switch.v1" in coordinator._off_retries
     assert not coordinator._commanded_outputs
     assert coordinator._deliveries.attempts[-1].valves[-1].off_confirmed_at is not None
+
+
+async def test_supply_manual_priority_duplicate_claims_and_live_defaults(
+    mock_hass, mock_config_entry, mock_main_coordinator
+):
+    """A busy supply keeps one due claim and serves people's runs first in FIFO."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    finished = asyncio.Event()
+    running = asyncio.create_task(finished.wait())
+    coordinator._running_tasks["irrigation"] = running
+    due = utcnow().replace(second=0, microsecond=0)
+    observed = []
+
+    async def cycle(event_type, pump, duration, data):
+        observed.append((duration, data.get("user_id"), data["due_at"]))
+        assert coordinator.supply_payload()["open_zone_id"] == "default"
+
+    with patch.object(coordinator, "_run_pump_cycle", side_effect=cycle):
+        await coordinator._handle_event(due, event_type="irrigation", event_data={})
+        await coordinator._handle_event(due, event_type="irrigation", event_data={})
+        await coordinator.async_manual_run(12, "first")
+        await coordinator.async_manual_run(None, "second")
+        assert [c["source"] for c in coordinator.supply_payload()["claims"]] == [
+            "manual",
+            "manual",
+            "schedule",
+        ]
+        assert not coordinator._deliveries.attempts
+        coordinator._zone.irrigation_duration = 40
+        finished.set()
+        await coordinator._supply_task
+    assert observed == [(12, "first", due), (40, "second", due), (40, None, due)]
+    assert not running.cancelled()
+    assert coordinator.supply_payload() == {"open_zone_id": None, "claims": []}
+
+
+async def test_supply_schedule_interval_is_checked_after_confirmed_water(
+    mock_hass, mock_config_entry, mock_main_coordinator
+):
+    """Waiting creates no cooldown; confirmed ON while waiting withholds the head."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    finished = asyncio.Event()
+    running = asyncio.create_task(finished.wait())
+    coordinator._running_tasks["irrigation"] = running
+    coordinator._zone.min_interval_minutes = 15
+    with patch.object(coordinator, "_run_pump_cycle", new_callable=AsyncMock) as cycle:
+        await coordinator._handle_event(
+            utcnow(), event_type="irrigation", event_data={}
+        )
+        coordinator._last_cycle_timestamp = utcnow().isoformat()
+        finished.set()
+        await coordinator._supply_task
+        cycle.assert_not_awaited()
+    assert not coordinator._deliveries.attempts
+
+
+async def test_supply_survives_running_task_cancellation_and_head_failure(
+    mock_hass, mock_config_entry, mock_main_coordinator
+):
+    """A watchdog or a failed head decision cannot strand the remaining requests."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    running = asyncio.create_task(asyncio.Event().wait())
+    coordinator._running_tasks["irrigation"] = running
+    with (
+        patch.object(
+            coordinator, "_async_decide_steering_claim", side_effect=ValueError
+        ),
+        patch.object(coordinator, "_run_pump_cycle", new_callable=AsyncMock) as cycle,
+    ):
+        coordinator._queue_supply_claim("steering", utcnow(), {})
+        await _REAL_ASYNCIO_SLEEP(0)
+        running.cancel()
+        await coordinator._supply_task
+        await coordinator.async_manual_run(10)
+        await coordinator._supply_task
+        cycle.assert_awaited_once()
+    assert coordinator.supply_payload() == {"open_zone_id": None, "claims": []}
+
+
+async def test_unload_drops_supply_claims_without_attempts(
+    mock_hass, mock_config_entry, mock_main_coordinator
+):
+    """A claim that has never reached the gate has nothing to recover on restart."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    running = asyncio.create_task(asyncio.Event().wait())
+    coordinator._running_tasks["irrigation"] = running
+    await coordinator.async_manual_run(10)
+    await _REAL_ASYNCIO_SLEEP(0)
+    await coordinator.async_unload()
+    await asyncio.gather(running, coordinator._supply_task, return_exceptions=True)
+    assert not coordinator._deliveries.attempts
+    assert not coordinator._claim_data
+    assert coordinator.supply_payload() == {"open_zone_id": None, "claims": []}
+
+
+async def test_drain_does_not_wait_for_the_supply_queue(
+    mock_hass, mock_config_entry, mock_main_coordinator
+):
+    """A separate drain output runs while an irrigation claim still waits."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    finished = asyncio.Event()
+    running = asyncio.create_task(finished.wait())
+    coordinator._running_tasks["irrigation"] = running
+    with patch.object(coordinator, "_run_pump_cycle", new_callable=AsyncMock) as cycle:
+        await coordinator._handle_event(
+            utcnow(), event_type="irrigation", event_data={}
+        )
+        await coordinator._handle_event(utcnow(), event_type="drain", event_data={})
+        await coordinator._running_tasks["drain"]
+        assert cycle.await_args.args[0] == "drain"
+        assert len(coordinator.supply_payload()["claims"]) == 1
+        finished.set()
+        await coordinator._supply_task
+        assert [call.args[0] for call in cycle.await_args_list] == [
+            "drain",
+            "irrigation",
+        ]
+
+
+async def test_supply_late_dark_claim_records_due_time_at_the_gate(
+    mock_hass, mock_config_entry, mock_main_coordinator
+):
+    """There is no queue deadline: the current dark gate refuses the released head."""
+    coordinator = IrrigationCoordinator(
+        mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
+    )
+    coordinator.growspace.irrigation_config.skip_during_dark = True
+    mock_hass.states.get.return_value = Mock(state="off")
+    due = utcnow() - timedelta(minutes=20)
+    with patch.object(coordinator, "_is_lights_dark", return_value=True):
+        await coordinator._handle_event(due, event_type="irrigation", event_data={})
+        await coordinator._supply_task
+    (attempt,) = coordinator._deliveries.attempts
+    assert attempt.reason == "dark"
+    assert attempt.due_at == due.replace(second=0, microsecond=0)
+    assert attempt.requested_at > attempt.due_at
+    assert attempt.on_commanded_at is None

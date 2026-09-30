@@ -10,7 +10,7 @@ reset, and the pump cycle.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timedelta
 import logging
 from typing import TYPE_CHECKING, Any, override
@@ -167,7 +167,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         self._composer.reset()
         self._pending_observation = None
 
-    async def _update_loop(self, _now: datetime) -> None:
+    async def _update_loop(self, _now: datetime, *, at_front: bool = False) -> None:
         """Main update loop triggered every minute."""
         try:
             growspace = self.growspace
@@ -226,7 +226,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             verdict = self._machine.tick(
                 self._tick_inputs(current_vwc, strategy, growspace)
             )
-            self._apply_verdict(verdict, strategy, vwc=current_vwc)
+            self._apply_verdict(verdict, strategy, vwc=current_vwc, at_front=at_front)
 
             if verdict.phase_changed:
                 self._main_coordinator.async_set_updated_data(
@@ -266,6 +266,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         strategy: IrrigationStrategy,
         *,
         vwc: float | None = None,
+        at_front: bool = False,
     ) -> None:
         """Execute the effects a Steering Tick Verdict names.
 
@@ -273,6 +274,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         canonical phase write, the P1→P2 composer reset (before any shot
         composes), logbook events, and the pump cycle.
         """
+        if not at_front and verdict.fire is not None:
+            self._queue_supply_claim("steering", now(), {})
+            verdict = replace(verdict, fire=None, suppressed_by="queued")
         zone = self._zone
         log_to_logbook = self.growspace.irrigation_config.log_to_logbook
         self._last_suppressed_by = verdict.suppressed_by
@@ -358,15 +362,6 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             composition.ec_factor,
         )
 
-        existing_task = self._running_tasks.get("irrigation")
-        if existing_task and not existing_task.done():
-            _LOGGER.warning(
-                "Cancelling lingering irrigation task for %s before firing new %s shot",
-                self._growspace_id,
-                request.phase,
-            )
-            existing_task.cancel()
-
         # Delegate to base _run_pump_cycle — inherits all safety guards:
         # pause_on_low_tank, max_cycles_per_day, daily_volume_cap_liters,
         # skip_during_dark, and log_to_logbook.
@@ -377,6 +372,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 pump_entity,
                 scaled_duration,
                 {
+                    "due_at": self._serving_claim.due_at
+                    if self._serving_claim
+                    else None,
                     "phase": request.phase,
                     "vwc": vwc,
                     "base_seconds": request.base_seconds,
@@ -392,6 +390,11 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         # trough for the just-closed in-cycle window; the tracker re-arms the
         # post-shot peak from the readings that follow.
         self._record_substrate_shot(request.phase)
+
+    @override
+    async def _async_decide_steering_claim(self) -> None:
+        """Re-run the phase and infiltration gates using a fresh moisture reading."""
+        await self._update_loop(now(), at_front=True)
 
     def _last_shot_dt(self) -> datetime | None:
         """Return the last confirmed pump-cycle start time, or None.

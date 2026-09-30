@@ -81,9 +81,11 @@ def _coordinator(
     runtime.services.notifications.manager.async_send_notification = (
         notify or AsyncMock()
     )
-    return VWCIrrigationCoordinator(
-        hass, MagicMock(runtime_data=runtime), growspace.id, runtime
+    entry = MagicMock(runtime_data=runtime)
+    entry.async_create_background_task.side_effect = lambda hass_, target, name: (
+        hass.async_create_task(target)
     )
+    return VWCIrrigationCoordinator(hass, entry, growspace.id, runtime)
 
 
 async def _tick(coord: VWCIrrigationCoordinator) -> MagicMock:
@@ -96,6 +98,8 @@ async def _tick(coord: VWCIrrigationCoordinator) -> MagicMock:
         patch.object(coord, "_fire_shot") as fire,
     ):
         await coord._update_loop(STEERING_NOW)
+        if coord._supply_task is not None:
+            await coord._supply_task
     return fire
 
 

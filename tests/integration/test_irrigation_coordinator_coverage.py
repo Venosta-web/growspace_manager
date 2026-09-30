@@ -1,7 +1,6 @@
 """Additional tests for irrigation_coordinator coverage."""
 
 import asyncio
-import contextlib
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -431,7 +430,9 @@ async def test_base_schedule_respects_minimum_interval(
     await coordinator._handle_event(
         utcnow(), event_type="irrigation", event_data={"duration": 10}
     )
-    mock_config_entry.async_create_background_task.assert_not_called()
+    await coordinator._supply_task
+    assert not coordinator._deliveries.attempts
+    mock_hass.services.async_call.assert_not_called()
 
 
 async def test_base_coordinator_properties(
@@ -635,43 +636,21 @@ async def test_async_manual_run_no_duration(
     assert "No valid irrigation duration provided or configured" in str(excinfo.value)
 
 
-async def test_async_manual_run_cancels_running_irrigation(
+async def test_async_manual_run_waits_for_running_irrigation(
     mock_hass: MagicMock, mock_config_entry: MagicMock, mock_main_coordinator: MagicMock
 ) -> None:
-    """Test async_manual_run cancels any active currently running irrigation task."""
+    """Manual admission preserves the active task and returns with its claim queued."""
     coordinator = IrrigationCoordinator(
         mock_hass, mock_config_entry, GROWSPACE_ID, mock_main_coordinator
     )
-
-    class CancelableAwaitable:
-        def done(self) -> bool:
-            return False
-
-        def cancel(self) -> None:
-            pass
-
-        def __await__(self) -> Any:
-            async def _inner() -> None:
-                raise asyncio.CancelledError
-
-            return _inner().__await__()
-
-    mock_running_task = CancelableAwaitable()
-    coordinator._running_tasks["irrigation"] = mock_running_task
-
-    # Provide configured pump switch entity and standard duration
-    mock_main_coordinator.growspaces[
-        GROWSPACE_ID
-    ].irrigation_config.irrigation_pump_entity = "switch.pump"
-    mock_main_coordinator.growspaces[GROWSPACE_ID].default_zone.irrigation_duration = 30
-
-    with patch("asyncio.sleep", new_callable=AsyncMock):
+    finished = asyncio.Event()
+    running = asyncio.create_task(finished.wait())
+    coordinator._running_tasks["irrigation"] = running
+    with patch.object(coordinator, "_run_pump_cycle", new_callable=AsyncMock) as cycle:
         await coordinator.async_manual_run(15)
-
-        # Verify that the old running task was replaced
-        new_task = coordinator._running_tasks["irrigation"]
-        assert new_task is not mock_running_task
-
-        # Allow the background task to complete so the coroutine is not leaked
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await new_task
+        assert coordinator._running_tasks["irrigation"] is running
+        assert len(coordinator.supply_payload()["claims"]) == 1
+        assert not running.cancelled()
+        finished.set()
+        await coordinator._supply_task
+        cycle.assert_awaited_once()

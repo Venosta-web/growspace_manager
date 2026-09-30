@@ -76,6 +76,9 @@ def _requested(
         planned_s=planned_s,
         flow_rate_ml_per_sec=12.5,
         requested_at=at,
+        due_at=at - timedelta(minutes=5)
+        if trigger is not AttemptTrigger.DRAIN
+        else None,
     )
 
 

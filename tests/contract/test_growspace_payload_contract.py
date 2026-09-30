@@ -21,6 +21,7 @@ from custom_components.growspace_manager.const import (
 )
 from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
 from custom_components.growspace_manager.domain.setup_preset import stamp_modules
+from custom_components.growspace_manager.domain.supply_queue import SupplyClaim
 from custom_components.growspace_manager.domain.tank_pump_disagreement import (
     DayComparison,
     DayVerdict,
@@ -825,6 +826,12 @@ async def _build_contract_payload(hass: HomeAssistant) -> dict[str, object]:
     _set_runtime_states(hass)
     irrigation = IrrigationCoordinator(hass, entry, GROWSPACE_ID, coordinator)
     irrigation._deliveries.calibration = _raised_disagreement()
+    due = datetime(2026, 8, 11, 11, 58, tzinfo=UTC)
+    irrigation._serving_claim = SupplyClaim(
+        growspace.default_zone.id, due, "steering", 0
+    )
+    irrigation._supply_queue.claim("north", due, "steering")
+    irrigation._supply_queue.claim(growspace.default_zone.id, due, "manual")
     coordinator._subsystem_manager.irrigation_coordinators[GROWSPACE_ID] = irrigation
 
     frozen_now = datetime(2026, 8, 11, 12, tzinfo=UTC)
@@ -853,6 +860,12 @@ async def test_growspace_payload_contract(
     """Keep the real ``get_data`` payload in sync with the golden fixture."""
     payload = json.loads(json.dumps(await _build_contract_payload(hass)))
 
+    supply = payload["irrigation"]["supply"]
+    assert supply["open_zone_id"] == "default"
+    assert [claim["source"] for claim in supply["claims"]] == ["manual", "steering"]
+    assert all(
+        claim["due_at"] == "2026-08-11T11:58:00+00:00" for claim in supply["claims"]
+    )
     zones = payload["irrigation"]["zones"]
     assert len(zones) == 2
     for zone in zones:

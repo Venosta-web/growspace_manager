@@ -9,7 +9,7 @@ from datetime import date, datetime, time, timedelta
 from functools import partial
 import logging
 import time as monotonic_time
-from typing import TYPE_CHECKING, Any, override
+from typing import TYPE_CHECKING, Any, Literal, override
 from uuid import uuid4
 
 from homeassistant.config_entries import ConfigEntry
@@ -107,6 +107,7 @@ from .domain.sensor_validity import (
     substrate_moisture_range,
     validate_reading,
 )
+from .domain.supply_queue import SupplyClaim, SupplyQueue
 from .domain.tank_pump_disagreement import (
     TankPumpDisagreement,
     Transition,
@@ -187,6 +188,10 @@ class BaseIrrigationCoordinator:
         self._main_coordinator = main_coordinator
         self._listeners: list[Callable[[], None]] = []
         self._supply_lock = asyncio.Lock()
+        self._supply_queue = SupplyQueue()
+        self._claim_data: dict[int, dict[str, Any]] = {}
+        self._supply_task: asyncio.Task[Any] | None = None
+        self._serving_claim: SupplyClaim | None = None
         self._running_tasks: dict[str, asyncio.Task[Any]] = {}
         self._watchdog_cancelled_tasks: set[asyncio.Task[Any]] = set()
         self._override_cancelled_tasks: set[asyncio.Task[Any]] = set()
@@ -231,6 +236,90 @@ class BaseIrrigationCoordinator:
         self._watched_outputs: tuple[str, ...] = ()
         self._cancel_pump_watch: Callable[[], None] | None = None
         self._cancel_override_listener: Callable[[], None] | None = None
+
+    def supply_payload(self) -> dict[str, Any]:
+        """Expose the open zone and pending claims in service order."""
+        return {
+            "open_zone_id": self._serving_claim.zone_id
+            if self._serving_claim
+            else None,
+            "claims": [
+                claim.as_dict()
+                for claim in self._supply_queue.ordered(
+                    tuple(zone.id for zone in self.growspace.irrigation_zones)
+                )
+            ],
+        }
+
+    def _queue_supply_claim(
+        self,
+        source: Literal["schedule", "steering", "manual"],
+        due_at: datetime,
+        event_data: Mapping[str, Any],
+    ) -> None:
+        """Enqueue a request and start the effects shell without preemption."""
+        claim = self._supply_queue.claim(self._zone.id, due_at, source)
+        if claim is None:
+            return
+        self._claim_data[claim.sequence] = dict(event_data)
+        if self._supply_task is None or self._supply_task.done():
+            self._supply_task = self._config_entry.async_create_background_task(
+                self.hass,
+                self._async_serve_supply(),
+                f"irrigation_supply_{self._growspace_id}",
+            )
+        self._main_coordinator.async_update_listeners()
+
+    async def _async_serve_supply(self) -> None:
+        """Wait for the running shot, then decide each head against current state."""
+        running = self._running_tasks.get("irrigation")
+        if running is not None and not running.done():
+            await asyncio.shield(asyncio.gather(running, return_exceptions=True))
+        while claim := self._supply_queue.release(
+            tuple(zone.id for zone in self.growspace.irrigation_zones)
+        ):
+            self._serving_claim = claim
+            event_data = self._claim_data.pop(claim.sequence)
+            event_data["due_at"] = claim.due_at
+            try:
+                if claim.source == "steering":
+                    await self._async_decide_steering_claim()
+                else:
+                    options = self._config()
+                    last = self._last_cycle_timestamp
+                    if (
+                        claim.source == "schedule"
+                        and last
+                        and (
+                            utcnow() - datetime.fromisoformat(last)
+                            < timedelta(minutes=self._zone.min_interval_minutes)
+                        )
+                    ):
+                        continue
+                    pump = options.irrigation_pump_entity
+                    duration = event_data.get("duration") or options.irrigation_duration
+                    if pump and duration:
+                        task = self._config_entry.async_create_background_task(
+                            self.hass,
+                            self._run_pump_cycle(
+                                "irrigation", pump, int(duration), event_data
+                            ),
+                            f"irrigation_pump_{self._growspace_id}_irrigation",
+                        )
+                        self._running_tasks["irrigation"] = task
+                running = self._running_tasks.get("irrigation")
+                if running is not None:
+                    await asyncio.shield(
+                        asyncio.gather(running, return_exceptions=True)
+                    )
+            except Exception:
+                _LOGGER.exception("Failed to decide supply claim for %s", claim.zone_id)
+            finally:
+                self._serving_claim = None
+                self._main_coordinator.async_update_listeners()
+
+    async def _async_decide_steering_claim(self) -> None:
+        """A scheduled controller has no steering decision to make."""
 
     @property
     def last_cycle_timestamp(self) -> str | None:
@@ -1357,6 +1446,10 @@ class BaseIrrigationCoordinator:
         self._listeners = []
 
         if cancel_tasks:
+            self._supply_queue.clear()
+            self._claim_data.clear()
+            if self._supply_task is not None:
+                self._supply_task.cancel()
             if self._cancel_sensor_probe is not None:
                 self._cancel_sensor_probe()
                 self._cancel_sensor_probe = None
@@ -2006,6 +2099,7 @@ class BaseIrrigationCoordinator:
                 else None
             ),
             requested_at=requested_at,
+            due_at=event_data.get("due_at"),
         )
 
     def _suppress(
@@ -2717,29 +2811,11 @@ class BaseIrrigationCoordinator:
                 f"Irrigation duration exceeds max_cycle_seconds ({limit}s)"
             )
 
-        if (
-            "irrigation" in self._running_tasks
-            and self._running_tasks["irrigation"]
-            and not self._running_tasks["irrigation"].done()
-        ):
-            _LOGGER.warning(
-                "Cancelling running irrigation cycle for %s to start manual run",
-                self._growspace_id,
-            )
-            self._override_cancelled_tasks.add(self._running_tasks["irrigation"])
-            self._running_tasks["irrigation"].cancel()
-
-        task = self._config_entry.async_create_background_task(
-            self.hass,
-            self._run_pump_cycle(
-                "irrigation",
-                pump_entity,
-                int(effective_duration),
-                {"manual": True, "user_id": user_id},
-            ),
-            f"irrigation_manual_run_{self._growspace_id}",
+        self._queue_supply_claim(
+            "manual",
+            utcnow(),
+            {"manual": True, "user_id": user_id, "duration": duration},
         )
-        self._running_tasks["irrigation"] = task
 
 
 class IrrigationCoordinator(BaseIrrigationCoordinator):
@@ -2857,16 +2933,9 @@ class IrrigationCoordinator(BaseIrrigationCoordinator):
         self, now: datetime, *, event_type: str, event_data: Mapping[str, Any]
     ) -> None:
         """Handle a scheduled event."""
-        if event_type == "irrigation" and self._last_cycle_timestamp:
-            last = datetime.fromisoformat(self._last_cycle_timestamp)
-            minimum = timedelta(minutes=self._zone.min_interval_minutes)
-            if now - last < minimum:
-                _LOGGER.info(
-                    "Skipping irrigation event for %s: minimum interval is %s minutes",
-                    self._growspace_id,
-                    self._zone.min_interval_minutes,
-                )
-                return
+        if event_type == "irrigation":
+            self._queue_supply_claim("schedule", now, event_data)
+            return
         if (
             event_type in self._running_tasks
             and self._running_tasks[event_type]

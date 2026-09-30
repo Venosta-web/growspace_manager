@@ -196,6 +196,12 @@ class ViewModelBuilder:
         serialized["irrigation"]["cycles_today"] = cycles_today
         serialized["irrigation"]["volume_dispensed_today"] = volume_dispensed_today
 
+        serialized["irrigation"]["supply"] = (
+            irr_coord.supply_payload()
+            if irr_coord is not None
+            else {"open_zone_id": None, "claims": []}
+        )
+
         # Calibration evidence (ADR-0064 item 13): today the Tank–Pump
         # Disagreement. A growspace without an irrigation coordinator has no
         # attempts, so nothing to compare.

@@ -1,6 +1,6 @@
 # Zones Due at Once Wait in a Supply Queue, and Are Decided at the Front
 
-**Status:** Accepted — not yet implemented
+**Status:** Accepted — implemented in #894
 
 ADR-0058 put one [[Irrigation Supply]] on each growspace and opens strictly one [[Irrigation Zone]] on it at a time. ADR-0060 bounded a growspace at 6 zones and warns, at configuration time, when a growspace's own settings cannot fit its pump. Neither says what happens when two zones want water in the same minute (#859).
 
