@@ -9,7 +9,7 @@ reset, and the pump cycle.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timedelta
 import logging
@@ -21,6 +21,7 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util.dt import now, parse_datetime
 
 from .domain.control_measurement import ControlMeasurement
+from .domain.delivery_attempt import AttemptTrigger
 from .domain.ec_state import (
     ECRecommendation,
     ECState,
@@ -34,11 +35,18 @@ from .domain.ec_state import (
 from .domain.infiltration import InfiltrationMonitor
 from .domain.plant_metrics import count_live_plants
 from .domain.pump_cycle import cycle_runtime_limit
-from .domain.sensor_validity import PORE_EC_RANGE, ec_scale
+from .domain.replay_fallback import (
+    choose_reference_day,
+    layout_replay,
+    reference_shots,
+    watch_reference_window,
+)
+from .domain.sensor_validity import PORE_EC_RANGE, ec_scale, inhibit_code
 from .domain.shot_composer import FeedbackTuning, ShotComposer
 from .domain.steering_phase import (
     INFILTRATION_BACKSTOP_INTERVALS,
     ShotRequest,
+    SteeringPhaseBoundaries,
     SteeringPhaseMachine,
     SteeringTickInputs,
     SteeringTickVerdict,
@@ -119,6 +127,12 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         # shot-composition payload (ADR-0031). Diagnostic only — nothing in the
         # irrigation path reads it.
         self._last_suppressed_by: str | None = None
+        self._fallback_reference: dict[str, Any] | None = None
+        self._fallback_started: datetime | None = None
+        self._fallback_day: date | None = None
+        self._fallback_used: set[str] = set()
+        self._fallback_expired = False
+        self._fallback_episode: datetime | None = None
 
     @override
     async def async_setup(self) -> None:
@@ -126,6 +140,18 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         _LOGGER.info(
             "Setting up VWC Irrigation Coordinator for growspace %s", self._growspace_id
         )
+        # A restart is genuinely unwatched, including a sub-minute restart
+        # when the grower has selected an immediate sensor alert.
+        window = self._zone.substrate_history.reference_window
+        if window:
+            boundaries = self._boundaries(
+                datetime.fromisoformat(window["lights_on"]).date()
+            )
+            last = datetime.fromisoformat(window["last_seen"])
+            gap = min(now(), boundaries.lights_off) - max(last, boundaries.lights_on)
+            if gap > timedelta(minutes=self._config().sensor_alert_delay_minutes):
+                window["clean"] = False
+                self._main_coordinator.async_schedule_save()
         await super().async_setup()
         self._restore_steering_state()
         # Check every minute for phase updates and actions
@@ -218,11 +244,19 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             strategy = self._strategy()
 
             if not strategy.enabled:
+                if self._zone.substrate_history.reference_window:
+                    self._zone.substrate_history.reference_window["clean"] = False
+                    self._main_coordinator.async_schedule_save()
+                self._fallback_reference = None
+                self._fallback_started = None
                 # Should not happen if correctly loaded, but safe guard
                 return
 
             self._sample_control_response()
             reading = self.control_measurement
+            if not at_front:
+                self._watch_reference_day(reading)
+            await self._update_fallback(reading)
             sensor_entity = reading.probe["entity_id"] if reading.probe else None
             if not sensor_entity:
                 if not self._sensor_warning_logged:
@@ -290,6 +324,262 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
                 "Error in VWC Irrigation loop for growspace %s",
                 self._growspace_id,
             )
+
+    def _boundaries(self, day: date | None = None) -> SteeringPhaseBoundaries:
+        """Resolve this zone’s current light window."""
+        return phase_boundary_times(
+            self._strategy(),
+            resolve_day_hours(self.growspace.environment_config),
+            day or now().date(),
+            now().tzinfo,
+        )
+
+    @override
+    async def _async_watch_moisture_sensor(self) -> None:
+        """Sensor edges also invalidate a clean window between steering ticks."""
+        await super()._async_watch_moisture_sensor()
+        self._watch_reference_day(self.control_measurement)
+
+    def _watch_reference_day(self, reading: ControlMeasurement) -> None:
+        """Close only days observed cleanly on the zone’s own probe."""
+        history = self._zone.substrate_history
+        current = now()
+        window = history.reference_window
+        window_day = (
+            datetime.fromisoformat(window["lights_on"]).date()
+            if window
+            else current.date()
+        )
+        boundaries = self._boundaries(window_day)
+        window, qualifies = watch_reference_window(
+            window,
+            at=current,
+            boundaries=boundaries,
+            own_control_valid=reading.value is not None
+            and reading.substitute_for is None,
+            enabled=self._strategy().enabled,
+            delay=timedelta(minutes=self._config().sensor_alert_delay_minutes),
+        )
+        attempts = self._supply._deliveries.attempts
+        shots = reference_shots(attempts, self._zone.id, window_day)
+        replayed = any(
+            a.zone_id == self._zone.id
+            and a.charge_date == window_day
+            and a.trigger is AttemptTrigger.FALLBACK
+            for a in attempts
+        )
+        if (
+            qualifies
+            and shots
+            and not replayed
+            and window.get("probe", self._zone.soil_moisture_sensor)
+            == self._zone.soil_moisture_sensor
+            and window.get(
+                "day_hours", resolve_day_hours(self.growspace.environment_config)
+            )
+            == resolve_day_hours(self.growspace.environment_config)
+        ):
+            history.reference_days = [
+                d for d in history.reference_days if d["day"] != window_day.isoformat()
+            ] + [
+                {
+                    "attempt_ids": [shot.attempt_id for shot in shots],
+                    "day": window_day.isoformat(),
+                    "lights_on": boundaries.lights_on.isoformat(),
+                    "day_hours": resolve_day_hours(self.growspace.environment_config),
+                }
+            ]
+        history.reference_days = [
+            d
+            for d in history.reference_days
+            if 0 <= (current.date() - date.fromisoformat(d["day"])).days < 7
+        ][-7:]
+        identity = {
+            "probe": self._zone.soil_moisture_sensor,
+            "day_hours": resolve_day_hours(self.growspace.environment_config),
+        }
+        if any(
+            key in window and window[key] != value for key, value in identity.items()
+        ):
+            window["clean"] = False
+        window.update(identity)
+        history.reference_window = window
+        if window_day != current.date():
+            history.reference_window = {}
+            self._watch_reference_day(reading)
+        self._main_coordinator.async_schedule_save()
+
+    def reference_day(self) -> dict[str, Any] | None:
+        """Return the most recent compatible retained recipe, even on hold."""
+        return choose_reference_day(
+            self._zone.substrate_history.reference_days,
+            self._supply._deliveries.attempts,
+            zone_id=self._zone.id,
+            today=now().date(),
+            day_hours=resolve_day_hours(self.growspace.environment_config),
+        )
+
+    @override
+    def _fallback_alert_message(self) -> str:
+        reference = self.reference_day()
+        if reference is None:
+            return " No compatible Reference Day is available to replay."
+        if self._zone.degraded_fallback == "hold" or not self._strategy().enabled:
+            return (
+                f" Reference Day {reference['day']} is available; set this zone’s "
+                "degraded_fallback to replay to use it at 80%."
+            )
+        self._fallback_episode = self._control_watch.invalid_since
+        self._fallback_reference = reference
+        self._fallback_started = now()
+        self._fallback_day = now().date()
+        self._fallback_used.clear()
+        self._fallback_expired = False
+        return f" Replaying {reference['day']} shots at 80% until control recovers."
+
+    def fallback_payload(self) -> dict[str, Any] | None:
+        """Report the active recipe and shots still waiting for service."""
+        measurement = self.control_measurement
+        if (
+            self._fallback_reference is None
+            or self._fallback_started is None
+            or self._zone.degraded_fallback != "replay"
+            or not self._strategy().enabled
+            or measurement.value is not None
+            or measurement.invalid_since is None
+            or measurement.invalid_since != self._fallback_episode
+            or not self._control_watch.alerted
+            or now() - measurement.invalid_since
+            < timedelta(minutes=self._config().sensor_alert_delay_minutes)
+            or self.reference_day() != self._fallback_reference
+        ):
+            return None
+        reference = self._fallback_reference
+        shots = layout_replay(
+            reference,
+            reference_shots(
+                self._supply._deliveries.attempts,
+                self._zone.id,
+                date.fromisoformat(reference["day"]),
+            ),
+            boundaries=self._boundaries(),
+            started_at=self._fallback_started,
+            max_cycle_seconds=cycle_runtime_limit(self._config()),
+        )
+        return {
+            "reference_day": reference["day"],
+            "cause": inhibit_code(measurement.cause) if measurement.cause else None,
+            "shots_left": [
+                s.as_dict()
+                for s in shots
+                if s.reference_attempt_id not in self._fallback_used
+            ],
+        }
+
+    async def _update_fallback(self, reading: ControlMeasurement) -> None:
+        """Recover at once, expire once, and queue due replay water."""
+        if (
+            reading.value is not None
+            or not self._strategy().enabled
+            or self._zone.degraded_fallback != "replay"
+        ):
+            self._fallback_reference = None
+            self._fallback_started = None
+            self._fallback_expired = False
+            return
+        if reading.invalid_since != self._fallback_episode:
+            self._fallback_episode = reading.invalid_since
+            self._fallback_reference = None
+            self._fallback_started = None
+            self._fallback_expired = False
+        if (
+            not self._control_watch.alerted
+            or reading.invalid_since is None
+            or now() - reading.invalid_since
+            < timedelta(minutes=self._config().sensor_alert_delay_minutes)
+        ):
+            return
+        reference = self.reference_day()
+        if self._fallback_reference is not None and (
+            reference is None or reference != self._fallback_reference
+        ):
+            self._fallback_reference = None
+            self._fallback_expired = True
+            await self._async_notify(
+                "Replay fallback ended",
+                f"Zone {self._zone.name or self._zone.id}: Reference Day aged out; holding irrigation.",
+            )
+        if (
+            self._fallback_reference is None
+            and reference is not None
+            and not self._fallback_expired
+        ):
+            self._fallback_reference = reference
+            self._fallback_started = now()
+            self._fallback_day = now().date()
+            self._fallback_used.clear()
+        if self._fallback_day != now().date():
+            self._fallback_day = now().date()
+            self._fallback_started = self._boundaries().lights_on - timedelta(
+                microseconds=1
+            )
+            self._fallback_used.clear()
+        payload = self.fallback_payload()
+        if payload:
+            for shot in payload["shots_left"]:
+                if datetime.fromisoformat(shot["at"]) <= now():
+                    self._queue_supply_claim(
+                        "fallback", datetime.fromisoformat(shot["at"]), shot
+                    )
+                    break
+
+    @override
+    async def _async_decide_fallback_claim(self, event_data: Mapping[str, Any]) -> None:
+        """Recheck control, phase, plants and cooldown at the queue front."""
+        payload = self.fallback_payload()
+        if payload is None:
+            return
+        shot = next(
+            (
+                s
+                for s in payload["shots_left"]
+                if s["reference_attempt_id"] == event_data["reference_attempt_id"]
+            ),
+            None,
+        )
+        if shot is None or datetime.fromisoformat(shot["at"]) > now():
+            return
+        boundaries = self._boundaries()
+        if (
+            not boundaries.p0_end <= now() < boundaries.p2_stop
+            or self._live_plant_count() == 0
+        ):
+            self._fallback_used.add(shot["reference_attempt_id"])
+            return
+        strategy = self._strategy()
+        interval = min(
+            shot_params_for_phase(strategy, "P1")[1],
+            shot_params_for_phase(strategy, "P2")[1],
+        )
+        last = self._last_shot_dt()
+        if last is not None and now() - last < timedelta(minutes=interval):
+            return
+        if self._is_halted_by_runoff_ec(self.growspace):
+            return
+        pump = self._get_pump_entity()
+        if pump:
+            self._fallback_used.add(shot["reference_attempt_id"])
+            task = self._config_entry.async_create_background_task(
+                self.hass,
+                self._run_pump_cycle(
+                    "irrigation",
+                    pump,
+                    shot["planned_s"],
+                    {**event_data, "fallback": True},
+                ),
+                f"irrigation_fallback_{self._growspace_id}_{self._zone.id}",
+            )
+            self._supply._running_tasks["irrigation"] = task
 
     def _tick_inputs(
         self, current_vwc: float, strategy: IrrigationStrategy, growspace: Growspace
@@ -589,6 +879,11 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             return
         self._pending_observation = None
         self._composer.observe(pending.moisture_before, moisture_after, pending.tuning)
+
+    @override
+    def _fallback_cycle_started(self) -> None:
+        """A replay must never look like a late rise from the last steering shot."""
+        self.abandon_pending_observation()
 
     def abandon_pending_observation(self) -> None:
         """A hand watering reported now invalidates the pump-only delta."""

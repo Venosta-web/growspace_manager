@@ -1,6 +1,6 @@
 # A Degraded Zone Holds, or Replays Its Last Clean Day If Asked
 
-**Status:** Accepted — not yet implemented
+**Status:** Accepted — implemented
 
 ADR-0059 defined [[Degraded Control]]: a zone with no trustworthy [[Control Measurement]] and no Witness Probe able to substitute. Its VWC-triggered shots, Adaptive Shot Control and substrate event recording stop. It is reported through ADR-0051's pipeline, withheld at once and alerted after `sensor_alert_delay_minutes`. What the zone does instead was left to the map's fallback item (#860), and until then the answer was hold.
 

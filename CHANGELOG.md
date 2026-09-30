@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Irrigation zones can opt into `degraded_fallback: replay`. After the sensor
+  alert delay, replay repeats the latest compatible clean day’s future shots
+  at 80%, through the supply queue and safety gates. Hold remains the default;
+  alerts name the available Reference Day, and replay attempts retain their
+  source shot without training feedback or filling substrate-history gaps.
+
 - A healthy witness with a learned 24-hour median offset can keep a zone
   steering when its Control Probe fails. Substitution is reported per zone;
   adaptive feedback and dryback recording pause until control recovers. Losing

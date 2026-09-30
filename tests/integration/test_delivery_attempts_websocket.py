@@ -188,7 +188,24 @@ def _day(growspace_id: str) -> list[DeliveryAttempt]:
         .closed(off_commanded_at=at + timedelta(seconds=31))
         .read_back_off(at + timedelta(seconds=32))
     )
-    return [drain, interrupted, aborted, not_delivered, suppressed, steering]
+    at = MIDNIGHT + timedelta(hours=9)
+    fallback = (
+        _requested(
+            growspace_id,
+            "attempt-fallback",
+            at,
+            trigger=AttemptTrigger.FALLBACK,
+            evidence=TriggerEvidence(
+                reference_day="2026-09-27", reference_attempt_id="reference-shot"
+            ),
+            planned_s=38.4,
+        )
+        .commanded(at)
+        .confirmed_on(at, DAY)
+        .closed(off_commanded_at=at + timedelta(seconds=38.4))
+        .read_back_off(at + timedelta(seconds=39))
+    )
+    return [drain, interrupted, aborted, not_delivered, suppressed, fallback, steering]
 
 
 def _coordinator(hass: HomeAssistant, growspace_id: str) -> MagicMock:
@@ -255,6 +272,7 @@ async def test_the_day_is_read_oldest_first_with_its_local_bounds(
     assert wire["ends_at"] == "2026-09-29T00:00:00+02:00"
     assert [row["attempt_id"] for row in wire["attempts"]] == [
         "attempt-steering",
+        "attempt-fallback",
         "attempt-suppressed",
         "attempt-manual",
         "attempt-aborted",

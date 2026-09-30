@@ -90,6 +90,7 @@ async def async_edit_zones(
                     "cells": [list(cell) for cell in zone.cells],
                     "valves": zone.valves,
                     "probes": probe_documents(zone),
+                    "degraded_fallback": zone.degraded_fallback,
                 }
                 for index, zone in enumerate(growspace.irrigation_zones)
             ],

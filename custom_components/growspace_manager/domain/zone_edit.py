@@ -190,6 +190,10 @@ def edited_zones(
         if not values["name"].strip():
             raise ValidationChangeError("Zone name cannot be blank")
         zone.name = values["name"].strip()
+    if "degraded_fallback" in values:
+        if values["degraded_fallback"] not in {"hold", "replay"}:
+            raise ValidationChangeError("degraded_fallback must be hold or replay")
+        zone.degraded_fallback = values["degraded_fallback"]
     if "valves" in values:
         zone.valves = list(values["valves"])
     if "cells" in values:

@@ -276,6 +276,7 @@
             4,
           ]),
         ]),
+        'degraded_fallback': 'hold',
         'id': 'default',
         'irrigation_duration': None,
         'irrigation_times': list([
@@ -350,6 +351,10 @@
           'pending_overnight_peak_ts': None,
           'pending_overnight_trough': None,
           'pending_overnight_trough_ts': None,
+          'reference_days': list([
+          ]),
+          'reference_window': dict({
+          }),
           'shots_today': 0,
         }),
         'substrate_temperature_sensors': list([

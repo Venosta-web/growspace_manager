@@ -288,7 +288,7 @@ class BaseIrrigationCoordinator:
 
     def _queue_supply_claim(
         self,
-        source: Literal["schedule", "steering", "manual"],
+        source: Literal["schedule", "steering", "manual", "fallback"],
         due_at: datetime,
         event_data: Mapping[str, Any],
     ) -> None:
@@ -321,7 +321,9 @@ class BaseIrrigationCoordinator:
                 self._supply._serving_claim = None
                 continue
             try:
-                if claim.source == "steering":
+                if claim.source == "fallback":
+                    await runtime._async_decide_fallback_claim(event_data)
+                elif claim.source == "steering":
                     await runtime._async_decide_steering_claim()
                 else:
                     options = runtime._config()
@@ -356,6 +358,13 @@ class BaseIrrigationCoordinator:
             finally:
                 self._supply._serving_claim = None
                 self._main_coordinator.async_update_listeners()
+
+    async def _async_decide_fallback_claim(self, event_data: Mapping[str, Any]) -> None:
+        """Scheduled controllers cannot replay steering days."""
+
+    def _fallback_alert_message(self) -> str:
+        """Describe a steering fallback, if this runtime supports one."""
+        return ""
 
     async def _async_decide_steering_claim(self) -> None:
         """A scheduled controller has no steering decision to make."""
@@ -1506,6 +1515,7 @@ class BaseIrrigationCoordinator:
                 f"{self._zone.valves or [growspace.irrigation_config.irrigation_pump_entity]}. "
                 "Check the probe and emitter. Automatic shots are withheld until a confirmed shot produces a rise."
             )
+        message += self._fallback_alert_message()
         title = f"⚠️ Moisture Sensor Invalid: {growspace.name}"
         _LOGGER.warning("Growspace %s: %s", self._growspace_id, message)
         self._fire_logbook_event(message, CATEGORY_IRRIGATION_ERROR)
@@ -2662,7 +2672,10 @@ class BaseIrrigationCoordinator:
                 raise
             if event_type == "irrigation":
                 self._last_cycle_timestamp = start_dt.isoformat()
-                self._irrigation_cycle_started(manual=manual)
+                if event_data.get("fallback"):
+                    self._fallback_cycle_started()
+                else:
+                    self._irrigation_cycle_started(manual=manual)
                 # Written the moment the pump confirms, not at the end of the
                 # cycle, so a restart mid-shot still knows this shot happened.
                 self._main_coordinator.async_schedule_save()
@@ -2744,14 +2757,15 @@ class BaseIrrigationCoordinator:
                             )
                             await self._async_record_pump_water(estimated_l)
 
-                    self._async_spawn_settling_report(
-                        event_type=event_type,
-                        start_dt=start_dt,
-                        end_dt=end_dt,
-                        duration_sec=duration_sec,
-                        moisture_before=moisture_before,
-                        volume_dispensed_today=self.volume_dispensed_today,
-                    )
+                    if not event_data.get("fallback"):
+                        self._async_spawn_settling_report(
+                            event_type=event_type,
+                            start_dt=start_dt,
+                            end_dt=end_dt,
+                            duration_sec=duration_sec,
+                            moisture_before=moisture_before,
+                            volume_dispensed_today=self.volume_dispensed_today,
+                        )
             except Exception as e:  # noqa: BLE001
                 _LOGGER.error("Failed to log %s event: %s", event_type, e)
 
@@ -2770,6 +2784,7 @@ class BaseIrrigationCoordinator:
                 and start_dt is not None
                 and cycle_finished
                 and off_confirmed
+                and not event_data.get("fallback")
             ):
                 self._irrigation_cycle_ended(
                     end_dt=end_dt,
@@ -2865,6 +2880,9 @@ class BaseIrrigationCoordinator:
                     )
             if event_type in self._supply._running_tasks:
                 self._supply._running_tasks.pop(event_type)
+
+    def _fallback_cycle_started(self) -> None:
+        """Let steering discard observations contaminated by blind watering."""
 
     def _irrigation_cycle_started(self, *, manual: bool) -> None:
         """Let a steering coordinator invalidate feedback on a confirmed run."""

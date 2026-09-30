@@ -51,6 +51,7 @@ class AttemptTrigger(StrEnum):
 
     SCHEDULE = "schedule"
     STEERING = "steering"
+    FALLBACK = "fallback"
     MANUAL = "manual"
     DRAIN = "drain"
 
@@ -81,7 +82,7 @@ class DispensedVolume:
     liters: float = 0.0
 
 
-_EVIDENCE_TEXT = ("slot", "phase", "user_id")
+_EVIDENCE_TEXT = ("slot", "phase", "user_id", "reference_day", "reference_attempt_id")
 _EVIDENCE_NUMBERS = ("vwc", "base_s", "vwc_factor", "ec_factor")
 
 
@@ -96,6 +97,8 @@ class TriggerEvidence:
     on purpose (ADR-0055).
     """
 
+    reference_day: str | None = None
+    reference_attempt_id: str | None = None
     slot: str | None = None
     phase: str | None = None
     vwc: float | None = None
@@ -128,6 +131,8 @@ class TriggerEvidence:
         ):
             raise ValueError("trigger evidence has an invalid number")
         return cls(
+            reference_day=value.get("reference_day"),
+            reference_attempt_id=value.get("reference_attempt_id"),
             slot=value.get("slot"),
             phase=value.get("phase"),
             vwc=_optional_number(value.get("vwc")),
@@ -146,6 +151,8 @@ def attempt_trigger(
         return AttemptTrigger.DRAIN
     if event_data.get("manual"):
         return AttemptTrigger.MANUAL
+    if event_data.get("fallback"):
+        return AttemptTrigger.FALLBACK
     if "phase" in event_data:
         return AttemptTrigger.STEERING
     return AttemptTrigger.SCHEDULE
@@ -156,6 +163,11 @@ def trigger_evidence(
 ) -> TriggerEvidence:
     """Read the evidence its trigger kind records from a pump request."""
     trigger = attempt_trigger(event_data, event_type=event_type)
+    if trigger is AttemptTrigger.FALLBACK:
+        return TriggerEvidence(
+            reference_day=_optional_text(event_data.get("reference_day")),
+            reference_attempt_id=_optional_text(event_data.get("reference_attempt_id")),
+        )
     if trigger is AttemptTrigger.MANUAL:
         return TriggerEvidence(user_id=_optional_text(event_data.get("user_id")))
     if trigger is AttemptTrigger.STEERING:

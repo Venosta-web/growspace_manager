@@ -204,7 +204,8 @@ async def test_completing_p1_persists_the_date_a_restart_restores(
     await _tick(hass, coordinator)
 
     assert growspace.default_zone.substrate_history.p1_completed_on == DAY
-    coordinator._main_coordinator.async_schedule_save.assert_called_once()
+    # Reference-window coverage and P1 completion share the debounced save.
+    coordinator._main_coordinator.async_schedule_save.assert_called()
 
 
 async def test_an_unreadable_completion_date_restores_nothing(

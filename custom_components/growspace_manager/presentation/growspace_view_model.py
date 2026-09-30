@@ -322,6 +322,7 @@ class GrowspaceViewModelBuilder:
                     "cells": [list(cell) for cell in zone.cells],
                     "valves": list(zone.valves),
                     "probes": probes,
+                    "degraded_fallback": zone.degraded_fallback,
                     "plant_count": len(
                         [p for p in plants if (p.row, p.col) in zone.cells]
                     ),

@@ -1548,6 +1548,7 @@ _ZONE_BASE: dict[Any, Any] = {
     ),
 }
 _ZONE_FIELDS: dict[Any, Any] = {
+    vol.Optional("degraded_fallback"): vol.In(["hold", "replay"]),
     vol.Optional("name"): cv.string,
     vol.Optional("cells"): [_ZONE_CELL],
     vol.Optional("valves"): [cv.entity_id],
