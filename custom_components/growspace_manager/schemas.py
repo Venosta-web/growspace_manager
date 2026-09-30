@@ -1538,6 +1538,7 @@ _ZONE_PROBE = vol.Schema(
         ),
         vol.Required("role"): vol.In(["control", "witness"]),
         vol.Optional("cell"): vol.Any(None, _ZONE_CELL),
+        vol.Optional("name"): vol.Any(None, cv.string),
     }
 )
 _ZONE_BASE: dict[Any, Any] = {

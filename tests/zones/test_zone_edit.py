@@ -630,6 +630,7 @@ def test_edit_replaces_selected_zone_probe_inventory(growspace):
             "quantity": "moisture",
             "role": "control",
             "cell": (1, 2),
+            "name": None,
         }
     ]
     assert probe_documents(growspace.default_zone) == []
@@ -648,3 +649,30 @@ async def test_remove_schedule_from_unknown_growspace_is_refused(growspace):
         await facade.remove_irrigation_schedule_item(
             "absent", "irrigation_times", "08:00"
         )
+
+
+def test_probe_name_survives_store_roundtrip(growspace):
+    zone = growspace.default_zone
+    from custom_components.growspace_manager.domain.zone_edit import set_probes
+    from custom_components.growspace_manager.models.irrigation_zone import (
+        IrrigationZone,
+    )
+
+    set_probes(
+        zone,
+        [
+            {
+                "entity_id": "sensor.blue",
+                "quantity": "moisture",
+                "role": "control",
+                "cell": [1, 1],
+                "name": "Representative plant",
+            }
+        ],
+    )
+    assert (
+        probe_documents(IrrigationZone.from_dict(zone.to_dict()))[0]["name"]
+        == "Representative plant"
+    )
+    set_probes(zone, [])
+    assert not zone.probe_names

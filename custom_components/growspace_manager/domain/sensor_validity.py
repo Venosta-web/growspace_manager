@@ -38,6 +38,7 @@ class Invalidity(StrEnum):
     UNAVAILABLE = "unavailable"
     STALE = "stale"
     IMPLAUSIBLE = "implausible"
+    UNRESPONSIVE = "probe_unresponsive"
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,10 +305,11 @@ class SensorWatch:
 
 def inhibit_code(cause: Invalidity) -> str:
     """Return the controller's inhibit reason code for an invalid control input."""
-    return f"sensor_{cause.value}"
+    return cause.value if cause is Invalidity.UNRESPONSIVE else f"sensor_{cause.value}"
 
 
 _CAUSE_TEXT = {
+    Invalidity.UNRESPONSIVE: "it did not respond to three confirmed steering shots",
     Invalidity.UNAVAILABLE: "it is unavailable",
     Invalidity.STALE: "it has stopped reporting",
     Invalidity.IMPLAUSIBLE: "its reading is outside the plausible range",

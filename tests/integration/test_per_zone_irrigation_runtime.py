@@ -488,3 +488,29 @@ async def test_a_new_drain_replaces_the_previous_drain(hass, zone_rig):
     assert running.cancelled()
     assert trace == []
     assert runtimes[0]._deliveries.attempts[-1].zone_id is None
+
+
+async def test_degraded_zone_holds_only_its_shots_and_manual_keeps_the_caps(
+    hass, freezer, zone_rig
+):
+    growspace, runtimes, trace, _plants = zone_rig
+    north = runtimes[1]
+    _ = north.control_measurement
+    north._response_watch.failures = 3
+    north._response_watch.unresponsive_since = dt_util.utcnow()
+    freezer.move_to(at("06:01"))
+    await tick(hass, runtimes)
+    assert trace == ["default", "south"]
+    assert north.zone_snapshot().state is ControllerState.INHIBITED
+    assert [r.code for r in north.zone_snapshot().reasons] == ["probe_unresponsive"]
+    assert north.current_vwc is None
+    await runtimes[0].async_manual_run(2, "grower", "north")
+    await runtimes[0]._supply_task
+    assert trace == ["default", "south", "north"]
+    assert north._pending_observation is None
+    assert north._response_watch.failures == 3
+    growspace.irrigation_config.max_cycles_per_day = 3
+    await runtimes[0].async_manual_run(2, "grower", "north")
+    await runtimes[0]._supply_task
+    assert trace == ["default", "south", "north"]
+    assert runtimes[0]._deliveries.attempts[-1].reason == "cycle_limit"

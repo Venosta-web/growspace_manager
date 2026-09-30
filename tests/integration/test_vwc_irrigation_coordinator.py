@@ -104,7 +104,9 @@ def mock_growspace():
             id="gs1",
             name="Test Growspace",
             environment_config=EnvironmentConfig(),
-            irrigation_config=IrrigationConfig(irrigation_pump_entity="switch.pump"),
+            irrigation_config=IrrigationConfig(
+                irrigation_pump_entity="switch.pump", sensor_stale_after_minutes=0
+            ),
         ),
         soil_moisture_sensor="sensor.moisture",
     )
@@ -191,7 +193,7 @@ async def test_p0_activation(vwc_coordinator, mock_hass, mock_growspace) -> None
         mock_hass.services.async_call.assert_not_called()
 
 
-async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
+async def test_p1_ramp_up(vwc_coordinator, mock_hass, mock_sleep) -> None:
     """Test P1 phase (Ramp Up) - Watering until target."""
     # Time: 09:30 (Inside P1)
     now = datetime(2023, 1, 1, 9, 30, 0, tzinfo=dt_util.UTC)
@@ -209,24 +211,11 @@ async def test_p1_ramp_up(vwc_coordinator, mock_hass) -> None:
             # the phase changes, adding one utcnow() call before the pump cycle.
             "custom_components.growspace_manager.irrigation_coordinator.utcnow",
             # Every validated moisture read (#789) also reads the clock.
-            side_effect=[
-                t0,  # 1. the loop's validated VWC read
-                t0,  # 2. _set_phase("P1 - Ramp Up") logbook event
-                t0,  # Fresh head decision validates moisture again
-                t0,  # 3. the shot's validated VWC read (substrate tracker)
-                t0,  # 4. requested_at, as the request reaches the gate
-                t0,  # 5. controller_snapshot's moisture check
-                t0,  # 6. _active_events["start"]
-                t0,  # 7. moisture_before
-                t0,  # 8. _fire_logbook_event("Irrigation started…")
-                t0,  # 9. command_dt = utcnow() (before switch.turn_on)
-                t0,  # 10. start_dt = utcnow() (switch confirmed 'on')
-                t10,  # 11. end_dt = utcnow()
-                t10,  # 12. controller_snapshot's moisture check
-                t10,  # 13. the composer's moisture_after
-                t10,  # 14. _fire_logbook_event("Irrigation completed…")
-                t10,  # 15. the completion report's moisture_after
-            ],
+            side_effect=lambda: (
+                t10
+                if any(call.args[0] == 10 for call in mock_sleep.await_args_list)
+                else t0
+            ),
         ),
     ):
         # Sensor value: 40% (Target 50%) -> Should Water
@@ -281,7 +270,7 @@ async def test_p1_target_reached(vwc_coordinator, mock_hass) -> None:
         mock_hass.services.async_call.assert_not_called()
 
 
-async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
+async def test_p2_maintenance(vwc_coordinator, mock_hass, mock_sleep) -> None:
     """Test P2 phase - Water only on dryback."""
     # Set internal state to target reached (also set last_reset_date to prevent re-reset)
     vwc_coordinator._machine._target_reached_today = True
@@ -299,27 +288,11 @@ async def test_p2_maintenance(vwc_coordinator, mock_hass) -> None:
         patch(
             "custom_components.growspace_manager.irrigation_coordinator.utcnow",
             # Every validated moisture read (#789) also reads the clock.
-            side_effect=[
-                t0,  # Fresh head decision validates moisture again
-                # Case A: phase transition P3→P2 fires a logbook event
-                t0,  # 1. the loop's validated VWC read
-                t0,  # 2. _set_phase("P2 - Maintenance") logbook event
-                # Case B: pump fires (phase stays P2, no extra logbook from _set_phase)
-                t0,  # 3. the loop's validated VWC read
-                t0,  # 4. the shot's validated VWC read (substrate tracker)
-                t0,  # 5. requested_at, as the request reaches the gate
-                t0,  # 6. controller_snapshot's moisture check
-                t0,  # 7. _active_events["start"]
-                t0,  # 8. moisture_before
-                t0,  # 9. _fire_logbook_event("Irrigation started…")
-                t0,  # 10. command_dt = utcnow() (before switch.turn_on)
-                t0,  # 11. start_dt = utcnow() (switch confirmed 'on')
-                t10,  # 12. end_dt = utcnow()
-                t10,  # 13. controller_snapshot's moisture check
-                t10,  # 14. the composer's moisture_after
-                t10,  # 15. _fire_logbook_event("Irrigation completed…")
-                t10,  # 16. the completion report's moisture_after
-            ],
+            side_effect=lambda: (
+                t10
+                if any(call.args[0] == 10 for call in mock_sleep.await_args_list)
+                else t0
+            ),
         ),
     ):
         # Case A: VWC 49% (Target 50%, Dryback 2% -> Trigger at 48%)
@@ -781,6 +754,7 @@ async def test_vwc_soil_trigger_percent_overrides_p2_maintenance_threshold(
 
 
 async def test_vwc_soil_trigger_percent_fires_watering_when_below(
+    mock_sleep,
     vwc_coordinator: VWCIrrigationCoordinator,
     mock_hass: MagicMock,
     mock_growspace: Growspace,
@@ -802,20 +776,11 @@ async def test_vwc_soil_trigger_percent_fires_watering_when_below(
         patch(
             "custom_components.growspace_manager.irrigation_coordinator.utcnow",
             # Every validated moisture read (#789) also reads the clock.
-            side_effect=[
-                t0,  # the loop's validated VWC read
-                t0,  # the shot's validated VWC read (substrate tracker)
-                t0,  # controller_snapshot's moisture check
-                t0,  # _set_phase P3→P2 (no logbook since log_to_logbook=False but
-                # _active_events still calls utcnow)
-                t0,  # moisture_before
-                t0,  # command_dt (before switch.turn_on)
-                t0,  # start_dt (switch confirmed 'on')
-                t10,  # end_dt
-                t10,  # controller_snapshot's moisture check
-                t10,  # the composer's moisture_after
-                t10,  # the completion report's moisture_after
-            ],
+            side_effect=lambda: (
+                t10
+                if any(call.args[0] == 10 for call in mock_sleep.await_args_list)
+                else t0
+            ),
         ),
     ):
         # VWC 44%: below soil_trigger_percent=45% → should water
@@ -1649,7 +1614,7 @@ def _state(value: str, last_updated: datetime | None = None) -> MagicMock:
     state.state = value
     state.last_updated = last_updated
     # A tank reading is validated for freshness (ADR-0050): reported just now.
-    state.last_changed = state.last_reported = dt_util.utcnow()
+    state.last_changed = state.last_reported = last_updated or dt_util.utcnow()
     return state
 
 

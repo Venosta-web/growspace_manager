@@ -343,3 +343,23 @@ def test_ec_trend_resumes_after_restart() -> None:
     assert trend["day_start_ec"] == 2.0
     assert trend["current_ec"] == 3.1
     assert trend["trend"] == "rising"
+
+
+def test_control_gap_never_completes_a_dryback_across_missing_readings():
+    """Both pending dryback windows are discarded, including after a restart."""
+    tracker = _tracker()
+    tracker.record_shot("P2", _ts(DAY1, 12), 40)
+    tracker.record_reading(60, _ts(DAY1, 13), lit=True)
+    tracker.record_reading(50, _ts(DAY1, 14), lit=True)
+    tracker.record_gap()
+    assert tracker.get_measured_peak_trough() is None
+    restarted = _tracker(tracker.growspace)
+    restarted.record_reading(30, _ts(DAY2, 7), lit=False)
+    restarted.record_shot("P2", _ts(DAY2, 8), 30)
+    assert restarted.get_latest_overnight_dryback() is None
+    assert restarted.get_incycle_drybacks_today(_ts(DAY2, 11)) == []
+    # A fresh complete window still records an honest dryback.
+    restarted.record_reading(50, _ts(DAY2, 9), lit=True)
+    restarted.record_reading(40, _ts(DAY2, 10), lit=True)
+    restarted.record_shot("P2", _ts(DAY2, 11), 40)
+    assert restarted.get_incycle_drybacks_today(_ts(DAY2, 11))[0]["dryback"] == 10

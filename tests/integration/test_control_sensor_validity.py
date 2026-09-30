@@ -291,12 +291,12 @@ async def test_turning_steering_off_clears_an_alert(
     coord = _coordinator(hass, growspace, notify)
     hass.states.async_set(VWC, "unavailable")
     await coord._async_sensor_tick()
-    assert coord._sensor_watches[VWC].alerted
+    assert coord._control_watch.alerted
 
     growspace.default_zone.strategy.enabled = False
     await coord._async_sensor_tick()
 
-    assert not coord._sensor_watches[VWC].alerted
+    assert not coord._control_watch.alerted
     assert len(services["dismiss"]) == 1
     assert coord._moisture_invalidity is None
 
@@ -349,3 +349,99 @@ async def test_a_stale_pore_ec_sensor_is_left_out(
 
     freezer.tick(timedelta(minutes=31))
     assert coord._average_pore_ec(growspace) is None
+
+
+async def _flat_confirmed_shot(coord, hass, freezer, *, manual=False, before=30):
+    """Exercise the pump-completion hook and two distinct post-shot reports."""
+    _ = coord.control_measurement
+    coord._irrigation_cycle_started(manual=manual)
+    coord._irrigation_cycle_ended(
+        end_dt=dt_util.utcnow(), moisture_before=before, manual=manual
+    )
+    for _ in range(2):
+        freezer.tick(timedelta(minutes=1))
+        hass.states.async_set(VWC, str(before))
+        await _tick(coord)
+
+
+async def test_flat_control_probe_degrades_alerts_and_recovers(
+    hass, freezer, notify, services
+):
+    """Repeated reports are fresh but cannot justify a fourth steering shot."""
+    growspace = _growspace(sensor_alert_delay_minutes=3)
+    growspace.default_zone.moisture_witness_sensors = ["sensor.witness"]
+    hass.states.async_set("sensor.witness", "75")  # A peer baseline never counts.
+    hass.states.async_set(VWC, "30")
+    coord = _coordinator(hass, growspace, notify)
+    tracker = (
+        coord._main_coordinator.services.growspaces.get_substrate_tracker.return_value
+    )
+    for count in range(1, 4):
+        await _flat_confirmed_shot(coord, hass, freezer)
+        assert coord._response_watch.failures == count
+    assert coord.current_vwc is None
+    assert _reasons(coord) == ["probe_unresponsive"]
+    (await _tick(coord)).assert_not_called()
+    assert coord._pending_observation is None
+    tracker.record_gap.assert_called()
+    tracker.record_reading.reset_mock()
+    await _tick(coord)
+    tracker.record_reading.assert_not_called()
+    # A Manual Run still reaches the shared safety gates.
+    assert coord._operator_hold(manual=True) is None
+    await coord._async_sensor_tick()
+    assert not services["create"]
+    freezer.tick(timedelta(minutes=3))
+    hass.states.async_set(VWC, "30")
+    await coord._async_sensor_tick()
+    assert len(services["create"]) == 1
+    assert VWC in services["create"][0].data["message"]
+    assert "switch.pump" in services["create"][0].data["message"]
+    await coord._async_sensor_tick()
+    assert len(services["create"]) == 1
+    # A late rise attributable to the last confirmed shot releases the hold.
+    hass.states.async_set(VWC, "40")
+    await _tick(coord)
+    assert coord.current_vwc == 40
+    assert _reasons(coord) == []
+    await coord._async_sensor_tick()
+    assert len(services["dismiss"]) == 1
+    assert len(_pushes(notify)) == 2
+
+
+async def test_manual_and_saturated_shots_never_count(hass, freezer):
+    coord = _coordinator(hass, _growspace())
+    hass.states.async_set(VWC, "30")
+    for _ in range(4):
+        await _flat_confirmed_shot(coord, hass, freezer, manual=True)
+        await _flat_confirmed_shot(coord, hass, freezer, before=50)
+    assert coord._response_watch.failures == 0
+    assert coord._control_sensor_inhibit() is None
+
+
+async def test_probe_change_replaces_response_evidence(hass, freezer):
+    coord = _coordinator(hass, _growspace())
+    hass.states.async_set(VWC, "30")
+    await _flat_confirmed_shot(coord, hass, freezer)
+    coord.growspace.default_zone.soil_moisture_sensor = "sensor.replacement"
+    hass.states.async_set("sensor.replacement", "45")
+    assert coord.control_measurement.value == 45
+    assert coord._response_watch.failures == 0
+
+
+@pytest.mark.parametrize("removed", [False, True])
+async def test_missing_post_shot_evidence_cannot_train_or_count(hass, removed):
+    coord = _coordinator(hass, _growspace())
+    hass.states.async_set(VWC, "30")
+    coord._irrigation_cycle_ended(
+        end_dt=dt_util.utcnow(), moisture_before=30, manual=False
+    )
+    if removed:
+        coord.growspace.default_zone.soil_moisture_sensor = None
+    else:
+        hass.states.async_set(VWC, "unavailable")
+    coord._sample_control_response()
+    coord._resolve_pending_observation()
+    assert coord._pending_observation is None
+    assert coord._response_watch.failures == 0
+    assert coord.current_vwc is None

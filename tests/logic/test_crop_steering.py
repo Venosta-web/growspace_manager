@@ -236,6 +236,13 @@ def _make_coordinator(
     else:
         coordinator.services.growspaces.get_irrigation_coordinator.return_value = None
 
+    if has_vwc_coord:
+        try:
+            value = float(sensor_state) if soil_moisture_sensor else None
+        except ValueError:
+            value = None
+        coordinator.services.growspaces.get_irrigation_coordinator.return_value.current_vwc = value
+
     # HA state
     state_mock = MagicMock()
     state_mock.state = sensor_state
@@ -296,7 +303,7 @@ class TestGetCropSteeringState:
     def test_returns_empty_state_when_sensor_state_missing(self) -> None:
         """Returns default CropSteeringState when hass.states.get returns None."""
         coordinator = _make_coordinator()
-        coordinator.hass.states.get.return_value = None
+        coordinator.services.growspaces.get_irrigation_coordinator.return_value.current_vwc = None
         result = get_crop_steering_state(coordinator, "tent1")
         assert isinstance(result, CropSteeringState)
         assert result.score == 0.0

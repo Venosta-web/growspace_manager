@@ -60,6 +60,7 @@ def probe_documents(zone: IrrigationZone) -> list[dict[str, Any]]:
                         entity_id, "control" if index == 0 else "witness"
                     ),
                     "cell": zone.probe_cells.get(entity_id),
+                    "name": zone.probe_names.get(entity_id),
                 }
             )
     return result
@@ -87,6 +88,7 @@ def set_probes(zone: IrrigationZone, probes: list[dict[str, Any]]) -> None:
     zone.soil_moisture_sensor = None
     zone.probe_cells = {}
     zone.probe_roles = {}
+    zone.probe_names = {}
     for field in PROBE_FIELDS.values():
         setattr(zone, field, [])
     for probe in probes:
@@ -96,6 +98,8 @@ def set_probes(zone: IrrigationZone, probes: list[dict[str, Any]]) -> None:
         else:
             getattr(zone, PROBE_FIELDS[probe["quantity"]]).append(entity)
         zone.probe_roles[entity] = probe["role"]
+        if probe.get("name") is not None:
+            zone.probe_names[entity] = probe["name"]
         if probe.get("cell") is not None:
             zone.probe_cells[entity] = tuple(probe["cell"])
 

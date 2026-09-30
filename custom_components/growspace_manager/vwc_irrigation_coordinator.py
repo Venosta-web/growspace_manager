@@ -20,6 +20,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util.dt import now, parse_datetime
 
+from .domain.control_measurement import ControlMeasurement
 from .domain.ec_state import (
     ECRecommendation,
     ECState,
@@ -105,6 +106,7 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         # distinct *sensor* updates rather than on loop ticks, so it needs the
         # freshness-aware read below.
         self._infiltration = InfiltrationMonitor()
+        self._response_infiltration = InfiltrationMonitor()
         self._pending_observation: _PendingObservation | None = None
 
         # We track if we have logged a "sensor missing" warning recently to avoid spam
@@ -216,7 +218,9 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
                 # Should not happen if correctly loaded, but safe guard
                 return
 
-            sensor_entity = self._zone.soil_moisture_sensor
+            self._sample_control_response()
+            reading = self.control_measurement
+            sensor_entity = reading.probe["entity_id"] if reading.probe else None
             if not sensor_entity:
                 if not self._sensor_warning_logged:
                     _LOGGER.warning(
@@ -226,6 +230,8 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
                     )
                     self._sensor_warning_logged = True
                 self._infiltration.reset()
+                self._pending_observation = None
+                self._break_substrate_window()
                 self._apply_verdict(self._machine.mark_no_sensor(), strategy)
                 return
 
@@ -235,23 +241,24 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             # The current VWC reading, only if it can be trusted: an
             # unavailable, stale or implausible one is never read as a value
             # (#789), and the controller state names why shots are withheld.
-            reading = self._read_moisture(sensor_entity)
             current_vwc = reading.value
             if current_vwc is None:
                 _LOGGER.debug(
                     "VWC Sensor %s is %s for growspace %s",
                     sensor_entity,
-                    reading.invalidity,
+                    reading.cause,
                     self._growspace_id,
                 )
                 self._infiltration.reset()
+                self._pending_observation = None
+                self._break_substrate_window()
                 self._apply_verdict(self._machine.mark_sensor_unavailable(), strategy)
                 return
 
             # Feed the Infiltration Monitor before the EC halt check: the
             # substrate keeps absorbing whether or not steering is halted, and a
             # gap in the samples would be indistinguishable from a dropout.
-            self._record_infiltration(sensor_entity, current_vwc)
+            self._record_infiltration(reading)
             self._resolve_pending_observation()
 
             if self._is_halted_by_runoff_ec(growspace):
@@ -461,29 +468,47 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             if (plant.row, plant.col) in self._zone.cells
         )
 
-    def _record_infiltration(self, sensor_entity: str, current_vwc: float) -> None:
-        """Offer the reading to the Infiltration Monitor with the sensor's own time.
+    def _record_infiltration(self, measurement: ControlMeasurement) -> None:
+        """Offer only the Control Measurement, stamped with its report time."""
+        if measurement.value is not None and measurement.observed_at is not None:
+            self._infiltration.record(measurement.value, measurement.observed_at)
 
-        The existing reading path is freshness-blind — ``_get_sensor_value``
-        discards ``last_updated`` and the substrate tracker stamps readings with
-        the loop's ``now()``, timestamps that are load-bearing for dryback
-        bounding. Rather than retrofit those readers, this reads the state again
-        purely for its timestamp; the monitor dedupes the repeats itself. No
-        ``await`` separates that read from the one that produced ``current_vwc``,
-        so the two cannot straddle a state change. A state carrying no update
-        time yields no distinct-update signal, so it is not a measurement and is
-        skipped.
-        """
-        state = self.hass.states.get(sensor_entity)
-        last_updated = state.last_updated if state else None
-        if last_updated is None:
+    def _break_substrate_window(self) -> None:
+        """A missing baseline cannot bound a dryback across the gap."""
+        tracker = self._main_coordinator.services.growspaces.get_substrate_tracker(
+            self._growspace_id, self._zone.id
+        )
+        if tracker is not None:
+            tracker.record_gap()
+
+    def _sample_control_response(self) -> None:
+        """Read raw validated evidence to detect recovery even while degraded."""
+        if self._response_watch.before is None:
             return
-        self._infiltration.record(current_vwc, last_updated)
+        measurement = self.control_measurement
+        if measurement.probe is None:
+            return
+        reading = self._read_moisture(measurement.probe["entity_id"])
+        if reading.value is None or measurement.observed_at is None:
+            return
+        # These samples are response evidence only while degraded; neither
+        # adaptive feedback nor substrate history receives a synthetic value.
+        self._response_infiltration.record(reading.value, measurement.observed_at)
+        watch = self._response_watch
+        settled = (
+            watch.ended_at is not None
+            and self._response_infiltration.settled_after(watch.ended_at) is not None
+        )
+        self._response_watch.observe(
+            reading.value, measurement.observed_at, settled=settled
+        )
 
     @override
     def _irrigation_cycle_started(self, *, manual: bool) -> None:
         """A confirmed follow-up invalidates the previous cycle's feedback."""
         self._pending_observation = None
+        self._response_watch.abandon()
+        self._response_infiltration.reset()
 
     @override
     def _irrigation_cycle_ended(
@@ -497,6 +522,12 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         if moisture_before is None:
             return
         strategy = self._strategy()
+        _ = self.control_measurement  # Synchronize the elected probe.
+        self._response_watch.confirmed_shot(
+            moisture_before,
+            end_dt,
+            near_saturation=moisture_before >= strategy.target_vwc_percent,
+        )
         phase = "P2" if self._machine.canonical_phase == "p2" else "P1"
         _, interval_minutes = shot_params_for_phase(strategy, phase)
         self._pending_observation = _PendingObservation(
@@ -514,6 +545,9 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
     def _resolve_pending_observation(self) -> None:
         """Use only a post-cycle sensor sample, or abandon the observation."""
         pending = self._pending_observation
+        if self.control_measurement.value is None:
+            self._pending_observation = None
+            return
         if pending is None:
             return
         last_start = self._last_shot_dt()
@@ -531,6 +565,8 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
     def abandon_pending_observation(self) -> None:
         """A hand watering reported now invalidates the pump-only delta."""
         self._pending_observation = None
+        self._response_watch.abandon()
+        self._response_infiltration.reset()
 
     def _feed_substrate_reading(self, current_vwc: float, growspace: Growspace) -> None:
         """Feed the current VWC reading to the growspace's SubstrateTracker.
