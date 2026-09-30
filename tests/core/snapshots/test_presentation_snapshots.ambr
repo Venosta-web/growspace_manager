@@ -370,6 +370,7 @@
               2,
             ]),
           ]),
+          'degraded_fallback': 'hold',
           'id': 'default',
           'irrigation_config': dict({
             'active_steering_phase': 'p2',

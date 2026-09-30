@@ -364,6 +364,8 @@ class SubstrateHistory(BaseModel):
     # The local ISO date P1 reached its target. A restart on that date resumes
     # in P2 instead of re-entering the ramp; on any other date it means nothing.
     p1_completed_on: str | None = None
+    reference_days: list[dict[str, Any]] = field(default_factory=list)
+    reference_window: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

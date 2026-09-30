@@ -76,6 +76,8 @@ class IrrigationZone(BaseModel):
     soil_trigger_percent: float | None = None
     min_interval_minutes: int = 5
 
+    degraded_fallback: str = "hold"
+
     # Steering.
     strategy: SteeringStrategy = field(default_factory=SteeringStrategy)
     active_steering_phase: str = "p2"

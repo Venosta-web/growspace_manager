@@ -282,7 +282,28 @@ class ViewModelBuilder:
                 else None
             )
             snapshot = runtime.zone_snapshot() if runtime is not None else None
-            zone_payload["state"] = snapshot.state.value if snapshot else "idle"
+            fallback = (
+                runtime.fallback_payload()
+                if runtime is not None and hasattr(runtime, "fallback_payload")
+                else None
+            )
+            zone_payload["fallback"] = fallback
+            reference = (
+                runtime.reference_day()
+                if runtime is not None and hasattr(runtime, "reference_day")
+                else None
+            )
+            zone_payload["reference_day"] = reference["day"] if reference else None
+            zone_payload["replay_shots_left"] = (
+                fallback["shots_left"] if fallback else []
+            )
+            zone_payload["state"] = (
+                "fallback"
+                if fallback and snapshot and snapshot.state.value == "inhibited"
+                else snapshot.state.value
+                if snapshot
+                else "idle"
+            )
             zone_payload["reasons"] = (
                 [reason.as_dict() for reason in snapshot.reasons] if snapshot else []
             )

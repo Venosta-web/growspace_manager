@@ -11,7 +11,7 @@ class SupplyClaim:
 
     zone_id: str
     due_at: datetime
-    source: Literal["schedule", "steering", "manual"]
+    source: Literal["schedule", "steering", "manual", "fallback"]
     sequence: int
 
     def as_dict(self) -> dict[str, str]:
@@ -40,7 +40,7 @@ class SupplyQueue:
         self,
         zone_id: str,
         due_at: datetime,
-        source: Literal["schedule", "steering", "manual"],
+        source: Literal["schedule", "steering", "manual", "fallback"],
     ) -> SupplyClaim | None:
         """Admit one automatic claim per zone, or an independent manual run."""
         if source != "manual" and self.contains(zone_id):
