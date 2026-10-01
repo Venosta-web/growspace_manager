@@ -260,9 +260,20 @@ async def envelope_rig(hass, freezer):
     await hass.async_block_till_done()
 
 
+@pytest.fixture
+def production_event_loop(hass):
+    """Benchmark production work without asyncio's task-stack instrumentation."""
+    debug = hass.loop.get_debug()
+    hass.loop.set_debug(False)
+    try:
+        yield
+    finally:
+        hass.loop.set_debug(debug)
+
+
 @pytest.mark.no_cover
 async def test_seven_days_at_full_envelope(
-    hass, freezer, envelope_rig, record_property
+    hass, freezer, envelope_rig, record_property, production_event_loop
 ):
     start, runtimes, supplies, stores, commands, _main = envelope_rig
     samples = []

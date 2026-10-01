@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from collections import Counter
 import copy
-from dataclasses import fields
+from dataclasses import fields, replace
 from typing import TYPE_CHECKING, Any
 
 from custom_components.growspace_manager.models.irrigation import (
@@ -39,6 +39,7 @@ from custom_components.growspace_manager.models.irrigation import (
     IrrigationStrategy,
     LightCycle,
     SteeringStrategy,
+    SubstrateProfile,
 )
 from custom_components.growspace_manager.models.irrigation_zone import (
     IMPLICIT_ZONE_ID,
@@ -94,6 +95,15 @@ def zone_of(growspace: Growspace, zone_id: str | None = None) -> IrrigationZone:
     raise KeyError(zone_id)
 
 
+def _copy_setting(value: Any) -> Any:
+    """Detach mutable settings without recursing through primitive values."""
+    if type(value) in (str, int, float, bool, type(None)):
+        return value
+    if type(value) is SubstrateProfile:
+        return replace(value)
+    return copy.deepcopy(value)
+
+
 def effective_config(
     growspace: Growspace, zone: IrrigationZone | None = None
 ) -> IrrigationConfig:
@@ -104,11 +114,11 @@ def effective_config(
     """
     zone = zone or growspace.default_zone
     values = {
-        name: copy.deepcopy(getattr(growspace.irrigation_config, name))
+        name: _copy_setting(getattr(growspace.irrigation_config, name))
         for name in _GROWSPACE_CONFIG_FIELDS
     }
     values.update(
-        {name: copy.deepcopy(getattr(zone, name)) for name in ZONE_CONFIG_FIELDS}
+        {name: _copy_setting(getattr(zone, name)) for name in ZONE_CONFIG_FIELDS}
     )
     return IrrigationConfig(**values)
 
@@ -122,7 +132,7 @@ def effective_strategy(
     """
     zone = zone or growspace.default_zone
     values = {
-        name: copy.deepcopy(getattr(zone.strategy, name)) for name in _STEERING_FIELDS
+        name: _copy_setting(getattr(zone.strategy, name)) for name in _STEERING_FIELDS
     }
     values.update(
         {name: getattr(growspace.light_cycle, name) for name in LIGHT_CYCLE_FIELDS}
@@ -157,7 +167,7 @@ def effective_environment_probes(
     """Return one zone's substrate probes under their pre-zones environment keys."""
     zone = zone or growspace.default_zone
     return {
-        name: copy.deepcopy(getattr(zone, name)) for name in ZONE_ENVIRONMENT_FIELDS
+        name: _copy_setting(getattr(zone, name)) for name in ZONE_ENVIRONMENT_FIELDS
     }
 
 

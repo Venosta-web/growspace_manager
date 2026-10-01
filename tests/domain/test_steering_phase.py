@@ -1147,3 +1147,17 @@ def test_the_startup_inhibit_is_reported_ahead_of_the_cooldown() -> None:
     )
 
     assert verdict.suppressed_by == SUPPRESSED_BY_STARTUP
+
+
+def test_boundaries_follow_light_edits_and_date_rollover() -> None:
+    """Reusing a parsed clock must not freeze the schedule or its local date."""
+    strategy = _strategy(lights_on_time="06:00:00")
+    assert phase_boundary_times(strategy, 12, _at(12).date(), UTC).lights_on == _at(6)
+    strategy.lights_on_time = "08:30"
+    assert phase_boundary_times(strategy, 12, _at(12).date(), UTC).lights_on == _at(
+        8, 30
+    )
+    strategy.detected_lights_on_time = "05:00:00"
+    assert phase_boundary_times(
+        strategy, 12, _at(12, day=16).date(), UTC
+    ).lights_on == _at(5, day=16)

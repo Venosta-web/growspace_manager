@@ -422,3 +422,22 @@ def test_zone_model_reads_nulls_and_legacy_schedule_items() -> None:
     assert zone.pore_ec_sensors == []
     assert zone.irrigation_times == [{"time": "08:00:00", "duration": 30}]
     assert zone.strategy == SteeringStrategy()
+
+
+def test_effective_strategy_detaches_nested_settings() -> None:
+    """Fast effective reads must still isolate mutable profile and recipe data."""
+    from custom_components.growspace_manager.models.irrigation_recipe import (
+        AppliedRecipe,
+    )
+
+    growspace = Growspace(id="gs", name="Gs")
+    original = growspace.default_zone.strategy
+    original.substrate_profile.liters_per_pot = 5.0
+    original.applied_recipe = AppliedRecipe("recipe", 1, {"nested": {"dose": 4}})
+
+    view = effective_strategy(growspace)
+    view.substrate_profile.liters_per_pot = 10.0
+    view.applied_recipe.values["nested"]["dose"] = 8
+
+    assert original.substrate_profile.liters_per_pot == 5.0
+    assert original.applied_recipe.values == {"nested": {"dose": 4}}
