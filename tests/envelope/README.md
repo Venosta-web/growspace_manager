@@ -14,8 +14,10 @@ tracking and witness notices; steering uses its own fresh sample. Unchanged
 immutable attempt histories also reuse their daily-cap aggregate.
 
 The p99 budget is 100 ms for the sensor/control and steering callbacks across
-the entire instance. The supply effects run in their background tasks after
-the callbacks, as in production. Device waits and disk latency are excluded;
+the entire instance. Eager supply tasks start within the callbacks, including
+their first request's encoding and serialization. The stub then suspends where
+Home Assistant awaits its executor's disk write; remaining supply effects drain
+after the callbacks. Device waits and disk latency are excluded;
 the real store's encoding and retention execute, and **every** synchronous and
 delayed write is serialized using Home Assistant's JSON encoder. Each payload,
 including the storage wrapper, must be at most 150,000 bytes. Every write also

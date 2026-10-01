@@ -76,6 +76,10 @@ class MeasuredStore:
 
     async def async_save(self, document):
         self.measure(document)
+        # HA serializes before awaiting its executor's disk write. Preserve
+        # that suspension: an eager Supply Queue task must not run several
+        # durable writes and device commands inside one minute callback.
+        await REAL_SLEEP(0)
 
     def async_delay_save(self, document, delay):
         # The most conservative batching: check even intermediate close writes.
