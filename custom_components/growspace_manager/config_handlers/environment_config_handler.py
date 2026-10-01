@@ -29,6 +29,7 @@ from custom_components.growspace_manager.const import (
     CONF_ENERGY_SENSORS,
     CONF_EXHAUST_FAN_ENTITIES,
     CONF_FEED_EC_SENSORS,
+    CONF_FLOW_METERS,
     CONF_FLOWER_EARLY_DAY_HOURS,
     CONF_FLOWER_LATE_DAY_HOURS,
     CONF_FLOWER_MID_DAY_HOURS,
@@ -36,7 +37,6 @@ from custom_components.growspace_manager.const import (
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDITY_SENSOR,
     CONF_HUMIDITY_SENSORS,
-    CONF_IRRIGATION_FLOW_SENSORS,
     CONF_IRRIGATION_TANK_SENSORS,
     CONF_IRRIGATION_TANK_VOLUME,
     CONF_IRRIGATION_TANK_WARNING_LEVEL,
@@ -110,6 +110,12 @@ from custom_components.growspace_manager.services.environment_patch_commit impor
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.helpers import selector
 
+from ..domain.flow_meter import (
+    FlowMeterError,
+    classify_flow_meter,
+    parse_flow_meters,
+    validate_meter_placements,
+)
 from . import AbortFlow, BaseConfigHandler
 from .stage_thresholds import build_stage_threshold_schema, parse_stage_thresholds
 
@@ -209,6 +215,36 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         )
 
         if user_input is not None:
+            try:
+                meters = parse_flow_meters(
+                    user_input.get(
+                        CONF_FLOW_METERS, growspace_options.get(CONF_FLOW_METERS, [])
+                    )
+                )
+                validate_meter_placements(
+                    meters,
+                    {zone.id for zone in growspace.irrigation_zones}
+                    if meters
+                    else set(),
+                )
+                for meter in meters:
+                    state = self.hass.states.get(meter.entity_id)
+                    classify_flow_meter(
+                        meter.entity_id, state.attributes if state else {}
+                    )
+            except FlowMeterError as err:
+                return self.flow.async_show_form(
+                    step_id="configure_environment",
+                    data_schema=self.get_environment_schema_step1(
+                        {**growspace_options, **user_input},
+                        stage=growspace.growspace_type,
+                    ),
+                    errors={CONF_FLOW_METERS: "invalid_flow_meter"},
+                    description_placeholders={
+                        "growspace_name": growspace.name,
+                        "flow_meter_error": str(err),
+                    },
+                )
             env_config = self._clean_and_merge_input(user_input, growspace_options)
             env_config = self._process_irrigation_tanks(env_config)
             self.flow.env_config_step1 = env_config
@@ -551,7 +587,6 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             CONF_PORE_EC_SENSORS,
             CONF_RUNOFF_EC_SENSORS,
             CONF_DRAIN_VOLUME_SENSORS,
-            CONF_IRRIGATION_FLOW_SENSORS,
             CONF_POWER_SENSORS,
             CONF_ENERGY_SENSORS,
             CONF_CAMERA_ENTITIES,
@@ -727,7 +762,6 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             CONF_PORE_EC_SENSORS,
             CONF_RUNOFF_EC_SENSORS,
             CONF_DRAIN_VOLUME_SENSORS,
-            CONF_IRRIGATION_FLOW_SENSORS,
             CONF_CAMERA_ENTITIES,
             CONF_POWER_SENSORS,
             CONF_ENERGY_SENSORS,
@@ -1307,6 +1341,34 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
         self, schema_dict: dict[Any, Any], growspace_options: dict[str, Any]
     ) -> None:
         """Add advanced sensors to the schema."""
+        schema_dict[
+            vol.Optional(
+                CONF_FLOW_METERS,
+                description={
+                    "suggested_value": growspace_options.get(CONF_FLOW_METERS, [])
+                },
+            )
+        ] = selector.ObjectSelector(
+            selector.ObjectSelectorConfig(
+                multiple=True,
+                label_field="entity_id",
+                description_field="placement",
+                fields={
+                    "entity_id": {
+                        "label": "Meter sensor",
+                        "required": True,
+                        "selector": selector.EntitySelector(
+                            selector.EntitySelectorConfig(domain="sensor")
+                        ),
+                    },
+                    "placement": {
+                        "label": "Placement: supply or zone ID",
+                        "required": True,
+                        "selector": selector.TextSelector(),
+                    },
+                },
+            )
+        )
         for key, device_class in [
             (CONF_PH_SENSORS, "ph"),
             (CONF_FEED_EC_SENSORS, None),
@@ -1314,7 +1376,6 @@ class EnvironmentConfigHandler(BaseConfigHandler[dict[str, Any]]):
             (CONF_PORE_EC_SENSORS, None),
             (CONF_RUNOFF_EC_SENSORS, None),
             (CONF_DRAIN_VOLUME_SENSORS, "water"),
-            (CONF_IRRIGATION_FLOW_SENSORS, "water"),
             (CONF_POWER_SENSORS, "power"),
             (CONF_ENERGY_SENSORS, "energy"),
         ]:

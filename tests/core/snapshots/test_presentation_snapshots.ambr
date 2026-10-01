@@ -81,6 +81,8 @@
       ]),
       'feed_ec_sensors': list([
       ]),
+      'flow_meters': list([
+      ]),
       'growlight_ac_infinity_devices': list([
       ]),
       'growlight_config': dict({
@@ -102,8 +104,6 @@
       'humidity_sensor': 'sensor.hum',
       'humidity_sensors': list([
         'sensor.hum',
-      ]),
-      'irrigation_flow_sensors': list([
       ]),
       'irrigation_pump_state': None,
       'irrigation_tanks': list([

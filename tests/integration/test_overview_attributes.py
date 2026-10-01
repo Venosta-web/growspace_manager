@@ -53,7 +53,7 @@ async def test_growspace_view_model_includes_temp_hum(hass) -> None:
     mock_env.substrate_ec_sensors = []
     mock_env.runoff_ec_sensors = []
     mock_env.drain_volume_sensors = []
-    mock_env.irrigation_flow_sensors = []
+    mock_env.flow_meters = []
     mock_env.control_dehumidifier = False
     mock_env.control_humidifier = False
     mock_env.humidifier_thresholds = {}
@@ -191,7 +191,7 @@ async def test_environment_attributes_includes_circulation_fan_config(hass) -> N
     mock_env.substrate_ec_sensors = []
     mock_env.runoff_ec_sensors = []
     mock_env.drain_volume_sensors = []
-    mock_env.irrigation_flow_sensors = []
+    mock_env.flow_meters = []
     mock_env.control_dehumidifier = False
     mock_env.control_humidifier = False
     mock_env.humidifier_thresholds = {}
@@ -253,7 +253,7 @@ def _make_mock_env() -> MagicMock:
     mock_env.pore_ec_sensors = []
     mock_env.runoff_ec_sensors = []
     mock_env.drain_volume_sensors = []
-    mock_env.irrigation_flow_sensors = []
+    mock_env.flow_meters = []
     mock_env.control_dehumidifier = False
     mock_env.control_humidifier = False
     mock_env.humidifier_thresholds = {}

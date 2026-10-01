@@ -89,7 +89,7 @@
           "substrate_ec_sensors": "Substrate EC Sensors",
           "runoff_ec_sensors": "Runoff EC Sensors",
           "drain_volume_sensors": "Drain Volume Sensors",
-          "irrigation_flow_sensors": "Irrigation Flow Sensors",
+          "flow_meters": "Flow Meters",
           "camera_entities": "Camera Entities",
           "snapshot_interval_hours": "Snapshot Interval (Hours)",
           "power_sensors": "Power Sensors",
@@ -99,7 +99,8 @@
           "irrigation_tank_volume": "Tank volume (litres)"
         },
         "data_description": {
-          "irrigation_tank_volume": "Total capacity of the tank in litres. Used for tank-based water consumption tracking. Leave empty to disable."
+          "irrigation_tank_volume": "Total capacity of the tank in litres. Used for tank-based water consumption tracking. Leave empty to disable.",
+          "flow_meters": "Place each meter on the supply or an existing irrigation zone ID, with at most one meter per placement. Kind and unit come from the sensor’s Home Assistant metadata."
         }
       },
       "manage_growspaces": {
@@ -533,7 +534,8 @@
       "vision_invalid_auth": "Growspace Vision rejected that access token.",
       "vision_cannot_connect": "Growspace Vision could not be reached at that endpoint.",
       "vision_incompatible": "That Growspace Vision service supports no analysis schema version this version of Growspace Manager understands. Update one of them.",
-      "vision_model_unavailable": "Growspace Vision is running but has no usable model loaded. Check the App log."
+      "vision_model_unavailable": "Growspace Vision is running but has no usable model loaded. Check the App log.",
+      "invalid_flow_meter": "{flow_meter_error}"
     },
     "abort": {
       "setup_error": "The integration is not set up yet. Try again once it has finished loading.",

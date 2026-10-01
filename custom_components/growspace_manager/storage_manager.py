@@ -23,6 +23,7 @@ from .const import (
     STORAGE_KEY_CONFIG,
     STORAGE_KEY_GENETICS,
     STORAGE_KEY_PLANTS,
+    STORAGE_MINOR_VERSION_CONFIG,
     STORAGE_VERSION,
     STORAGE_VERSION_CONFIG,
     STORAGE_VERSION_PLANTS,
@@ -137,6 +138,45 @@ def _migrate_growspaces(data: dict[str, Any]) -> dict[str, Any]:
     return migrated
 
 
+def _retire_flow_sensors(environment: dict[str, Any]) -> dict[str, Any]:
+    """Drop unverified legacy declarations, logging their entries once."""
+    environment = copy.deepcopy(environment)
+    entries = []
+    for document in (environment, environment.get("bayesian_options", {})):
+        if not isinstance(document, dict):
+            continue
+        for key in ("irrigation_flow_sensors", "irrigation_flow_sensor"):
+            value = document.pop(key, None)
+            if value:
+                entries.extend(value if isinstance(value, list) else [value])
+    if entries:
+        _LOGGER.warning(
+            "Retired irrigation_flow_sensors: %s. Add these again as flow_meters; they were not promoted.",
+            entries,
+        )
+    return environment
+
+
+def _migrate_flow_meters(data: dict[str, Any]) -> dict[str, Any]:
+    """Add meter placements in v2's minor step, including subarea environments."""
+    data = copy.deepcopy(data)
+
+    def migrate(document: dict[str, Any]) -> None:
+        if isinstance(environment := document.get("environment_config"), dict):
+            document["environment_config"] = _retire_flow_sensors(environment)
+            document["environment_config"].setdefault("flow_meters", [])
+        subareas = document.get("subareas")
+        if isinstance(subareas, list):
+            for subarea in subareas:
+                if isinstance(subarea, dict):
+                    migrate(subarea)
+
+    for document in data.get("growspaces", {}).values():
+        if isinstance(document, dict):
+            migrate(document)
+    return data
+
+
 class GrowspaceConfigStore(Store[dict[str, Any]]):
     """Version the growspace document, whose v2 put irrigation into zones.
 
@@ -151,13 +191,17 @@ class GrowspaceConfigStore(Store[dict[str, Any]]):
         """Move every growspace into its implicit zone, keeping the v1 document."""
         if old_major_version == STORAGE_VERSION_CONFIG:
             # A newer minor version of the same major is read as it is.
-            return old_data
+            return (
+                _migrate_flow_meters(old_data)
+                if old_minor_version < STORAGE_MINOR_VERSION_CONFIG
+                else old_data
+            )
         if old_major_version != 1:
             raise ValueError(f"Unsupported config store version: {old_major_version}")
         await self._async_write_pre_migration_copy(
             old_major_version, old_minor_version, old_data
         )
-        return _migrate_growspaces(old_data)
+        return _migrate_flow_meters(_migrate_growspaces(old_data))
 
     async def _async_write_pre_migration_copy(
         self, old_major_version: int, old_minor_version: int, old_data: dict[str, Any]
@@ -250,7 +294,10 @@ class StorageManager:
 
         # Segmented stores
         self.config_store: Store[dict[str, Any]] = GrowspaceConfigStore(
-            hass, STORAGE_VERSION_CONFIG, STORAGE_KEY_CONFIG
+            hass,
+            STORAGE_VERSION_CONFIG,
+            STORAGE_KEY_CONFIG,
+            minor_version=STORAGE_MINOR_VERSION_CONFIG,
         )
         self.plants_store: Store[dict[str, Any]] = PlantActivityStore(
             hass, STORAGE_VERSION_PLANTS, STORAGE_KEY_PLANTS
@@ -633,7 +680,7 @@ class StorageManager:
         migrations (rows/plants_per_row sanitization, irrigation_config migrations).
         """
         try:
-            raw_growspaces = data.get("growspaces", {})
+            raw_growspaces = _migrate_flow_meters(data).get("growspaces", {})
             growspaces: dict[str, Growspace] = {}
 
             self.zone_problems = {
@@ -716,7 +763,9 @@ class StorageManager:
             if growspace.environment_config != default_config:
                 continue
             try:
-                verdict = apply_environment_patch(None, patch_from_flow_options(opts))
+                verdict = apply_environment_patch(
+                    None, patch_from_flow_options(_retire_flow_sensors(opts))
+                )
             except EnvironmentPatchError as err:
                 # A malformed legacy blob must not brick startup.
                 _LOGGER.warning(

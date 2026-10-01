@@ -26,6 +26,7 @@ from custom_components.growspace_manager.irrigation_coordinator import (
 )
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
+    FlowMeter,
     Growspace,
     IrrigationConfig,
     IrrigationStrategy,
@@ -204,7 +205,7 @@ async def test_flow_sensor_does_not_reopen_the_pump_estimate_in_tank_mode(
     a pump estimate and the figure would quietly become the less accurate one.
     """
     growspace = _pump_growspace(tank_mode=True)
-    growspace.environment_config.irrigation_flow_sensors = ["sensor.flow"]
+    growspace.environment_config.flow_meters = [FlowMeter("sensor.flow", "supply")]
     growspace.environment_config.drain_volume_sensors = ["sensor.drain"]
     coordinator = make_coordinator(growspace)
     tank = State("sensor.tank", "80")

@@ -51,6 +51,7 @@ from custom_components.growspace_manager.models import (
 )
 
 from .fan_control import FAN_VPD_STAGE_DEFAULTS
+from .flow_meter import FlowMeterError, parse_flow_meters
 from .irrigation_zone import ZONE_ENVIRONMENT_FIELDS
 from .moisture_band import MOISTURE_BAND_CEILING, MOISTURE_BAND_FLOOR, is_valid_band
 
@@ -76,7 +77,6 @@ _WIRE_ALIASES: dict[str, str] = {
     "substrate_ec_sensors": "bulk_ec_sensors",
     "runoff_ec_sensor": "runoff_ec_sensors",
     "drain_volume_sensor": "drain_volume_sensors",
-    "irrigation_flow_sensor": "irrigation_flow_sensors",
 }
 _SHADOW_ALIASES: dict[str, str] = {
     name: ownership.canonical
@@ -504,6 +504,16 @@ def _build_patch(
             data[canonical] = [val]
 
     for key, val in data.items():
+        if key in {"irrigation_flow_sensors", "irrigation_flow_sensor"}:
+            raise EnvironmentPatchError(
+                "irrigation_flow_sensors is retired; add verified instruments again as flow_meters"
+            )
+        if key == "flow_meters":
+            try:
+                values[key] = parse_flow_meters(val)
+            except FlowMeterError as err:
+                raise EnvironmentPatchError(str(err)) from err
+            continue
         if key in ZONE_ENVIRONMENT_FIELDS:
             _parse_zone_field(key, val, zone_values)
             continue

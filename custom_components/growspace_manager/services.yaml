@@ -870,6 +870,16 @@ configure_environment:
           max: 168
           step: 1
           unit_of_measurement: h
+    flow_meters:
+      name: Flow Meters
+      description: >-
+        Instruments as {entity_id, placement}, with placement supply or an existing
+        irrigation zone ID. At most one per placement. Kind and unit come from
+        Home Assistant metadata; use template, utility_meter or customize to fix it.
+        Send [] to clear all meters.
+      required: false
+      selector:
+        object:
 
 remove_environment:
   description: Remove environment configuration for a growspace

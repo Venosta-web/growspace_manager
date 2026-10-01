@@ -676,3 +676,15 @@ def test_probe_name_survives_store_roundtrip(growspace):
     )
     set_probes(zone, [])
     assert not zone.probe_names
+
+
+def test_zone_cannot_leave_a_meter_with_a_missing_placement():
+    """Remove/reassign its meter before deleting a metered zone."""
+    from custom_components.growspace_manager.domain.zone_edit import validate_zones
+    from custom_components.growspace_manager.exceptions import ValidationChangeError
+    from custom_components.growspace_manager.models import FlowMeter, Growspace
+
+    growspace = Growspace(id="tent", name="Tent")
+    growspace.environment_config.flow_meters = [FlowMeter("sensor.flow", "removed")]
+    with pytest.raises(ValidationChangeError, match="unknown irrigation zone"):
+        validate_zones(growspace)

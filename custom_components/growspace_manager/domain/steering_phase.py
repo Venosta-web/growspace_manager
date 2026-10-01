@@ -23,7 +23,8 @@ See ADR-0023.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, tzinfo
+from datetime import date, datetime, time, timedelta, tzinfo
+from functools import lru_cache
 import logging
 from typing import Any
 
@@ -189,6 +190,15 @@ def resolve_day_hours(environment_config: Any) -> int:
     )
 
 
+@lru_cache(maxsize=128)
+def _parse_lights_on(source: str) -> time:
+    """Parse a configured wall-clock value once, preserving accepted formats."""
+    try:
+        return datetime.strptime(source, "%H:%M:%S").time()
+    except ValueError:
+        return datetime.strptime(source, "%H:%M").time()
+
+
 def phase_boundary_times(
     strategy: IrrigationStrategy,
     day_hours: int,
@@ -197,10 +207,7 @@ def phase_boundary_times(
 ) -> SteeringPhaseBoundaries:
     """Return the crop-steering phase boundary datetimes anchored on reference_date."""
     lights_on_source = strategy.detected_lights_on_time or strategy.lights_on_time
-    try:
-        lights_on = datetime.strptime(lights_on_source, "%H:%M:%S").time()
-    except ValueError:
-        lights_on = datetime.strptime(lights_on_source, "%H:%M").time()
+    lights_on = _parse_lights_on(lights_on_source)
 
     lights_on_dt = datetime.combine(reference_date, lights_on, tzinfo=tz)
     p0_end_dt = lights_on_dt + timedelta(minutes=strategy.p0_duration_minutes)

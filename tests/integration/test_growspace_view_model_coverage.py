@@ -10,6 +10,7 @@ from custom_components.growspace_manager.models import (
     ACInfinityGrowLight,
     EnvironmentConfig,
     ExhaustFanConfig,
+    FlowMeter,
     GrowLightConfig,
     Growspace,
     IrrigationConfig,
@@ -838,7 +839,7 @@ def test_view_model_builder_liters_today_measured_with_flow_sensors(
 ) -> None:
     """With no tank tracker yet, liters_today is the measured figure, flow sensor or not."""
     env = EnvironmentConfig(
-        irrigation_flow_sensors=["sensor.flow1"],
+        flow_meters=[FlowMeter("sensor.flow1", "supply")],
         irrigation_tanks=[
             IrrigationTank(
                 sensor_entity="sensor.tank1", name="Tank 1", volume_liters=100.0

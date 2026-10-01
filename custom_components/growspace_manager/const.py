@@ -11,6 +11,7 @@ STORAGE_VERSION_PLANTS: Final = 2
 # The config document holding every growspace. Version 2 moved each growspace's
 # zone-owned irrigation settings into its implicit Irrigation Zone (ADR-0063).
 STORAGE_VERSION_CONFIG: Final = 2
+STORAGE_MINOR_VERSION_CONFIG: Final = 2
 #: How long a Run-free Growspace keeps Unattributed Activity for backdating.
 CONF_UNATTRIBUTED_RETENTION_DAYS: Final = "unattributed_activity_retention_days"
 VERSION: Final = "0.3.5"
@@ -326,7 +327,7 @@ CONF_BULK_EC_SENSORS = "bulk_ec_sensors"
 CONF_PORE_EC_SENSORS = "pore_ec_sensors"
 CONF_RUNOFF_EC_SENSORS = "runoff_ec_sensors"
 CONF_DRAIN_VOLUME_SENSORS = "drain_volume_sensors"
-CONF_IRRIGATION_FLOW_SENSORS = "irrigation_flow_sensors"
+CONF_FLOW_METERS = "flow_meters"
 
 # Metric Names
 METRIC_STRESS = "stress"

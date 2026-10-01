@@ -32,6 +32,7 @@ from custom_components.growspace_manager.integration_types import (
 import homeassistant.util.dt as dt_util
 
 from .base import BaseModel, _sanitize_numeric_fields
+from .flow_meter import FlowMeter
 from .irrigation import (
     ZONE_CONFIG_FIELDS,
     DrainConfig,
@@ -318,7 +319,7 @@ class EnvironmentConfig(BaseModel):
     feed_ec_sensors: list[str] = field(default_factory=list)
     runoff_ec_sensors: list[str] = field(default_factory=list)
     drain_volume_sensors: list[str] = field(default_factory=list)
-    irrigation_flow_sensors: list[str] = field(default_factory=list)
+    flow_meters: list[FlowMeter] = field(default_factory=list)
     power_sensors: list[str] = field(default_factory=list)
     energy_sensors: list[str] = field(default_factory=list)
     electricity_cost_per_kwh: float = 0.0
@@ -400,6 +401,12 @@ class EnvironmentConfig(BaseModel):
     def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Mashumaro hook: transform data before deserialization."""
         data = _sanitize_numeric_fields(cls, data)
+        for key in ("irrigation_flow_sensors", "irrigation_flow_sensor"):
+            data.pop(key, None)
+        if isinstance(data.get("bayesian_options"), dict):
+            data["bayesian_options"] = data["bayesian_options"].copy()
+            for key in ("irrigation_flow_sensors", "irrigation_flow_sensor"):
+                data["bayesian_options"].pop(key, None)
 
         # Coerce null list fields to [] so mashumaro doesn't reject them.
         _LIST_FIELDS = (
@@ -424,7 +431,7 @@ class EnvironmentConfig(BaseModel):
             "feed_ec_sensors",
             "runoff_ec_sensors",
             "drain_volume_sensors",
-            "irrigation_flow_sensors",
+            "flow_meters",
             "power_sensors",
             "energy_sensors",
             "irrigation_tanks",
@@ -462,7 +469,6 @@ class EnvironmentConfig(BaseModel):
             "feed_ec_sensor": "feed_ec_sensors",
             "runoff_ec_sensor": "runoff_ec_sensors",
             "drain_volume_sensor": "drain_volume_sensors",
-            "irrigation_flow_sensor": "irrigation_flow_sensors",
         }
         for old_key, new_key in migrations.items():
             # If we have the old key but NOT the new key, migrate
@@ -591,7 +597,7 @@ ENVIRONMENT_FIELD_OWNERSHIP: dict[str, FieldOwnership] = {
     "feed_ec_sensors": _GROWER,
     "runoff_ec_sensors": _GROWER,
     "drain_volume_sensors": _GROWER,
-    "irrigation_flow_sensors": _GROWER,
+    "flow_meters": _GROWER,
     "power_sensors": _GROWER,
     "energy_sensors": _GROWER,
     "electricity_cost_per_kwh": _GROWER,

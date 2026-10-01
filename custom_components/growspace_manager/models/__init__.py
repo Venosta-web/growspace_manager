@@ -8,6 +8,7 @@ from custom_components.growspace_manager.const import PlantStage
 
 from .base import BaseModel, BasePreset, _sanitize_numeric_fields
 from .contract import GrowspaceCoordinatorData
+from .flow_meter import FlowMeter
 from .genetics import PollinationEvent, SeedBatch
 from .growspace import (
     ENVIRONMENT_FIELD_OWNERSHIP,
@@ -148,6 +149,7 @@ __all__ = [
     "FieldClass",
     "FieldOwnership",
     "FileDeletionReason",
+    "FlowMeter",
     "FramingEpoch",
     "FramingEpochReason",
     "GrowLightConfig",

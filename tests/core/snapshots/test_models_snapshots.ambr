@@ -229,6 +229,8 @@
     ]),
     'feed_ec_sensors': list([
     ]),
+    'flow_meters': list([
+    ]),
     'flower_day_hours': 12,
     'growlight_ac_infinity_devices': list([
     ]),
@@ -249,8 +251,6 @@
     'humidity_sensor': 'sensor.hum',
     'humidity_sensors': list([
       'sensor.hum',
-    ]),
-    'irrigation_flow_sensors': list([
     ]),
     'irrigation_tanks': list([
     ]),
@@ -409,6 +409,8 @@
       ]),
       'feed_ec_sensors': list([
       ]),
+      'flow_meters': list([
+      ]),
       'flower_day_hours': 12,
       'growlight_ac_infinity_devices': list([
       ]),
@@ -428,8 +430,6 @@
       }),
       'humidity_sensor': None,
       'humidity_sensors': list([
-      ]),
-      'irrigation_flow_sensors': list([
       ]),
       'irrigation_tanks': list([
       ]),

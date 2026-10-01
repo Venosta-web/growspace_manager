@@ -18,6 +18,8 @@ from custom_components.growspace_manager.models.irrigation_zone import (
     grid_cells,
 )
 
+from .flow_meter import FlowMeterError, validate_meter_placements
+
 MAX_ZONES_PER_GROWSPACE = 6
 MAX_PROBES_PER_QUANTITY = 4
 MAX_VALVES_PER_ZONE = 8
@@ -107,6 +109,12 @@ def set_probes(zone: IrrigationZone, probes: list[dict[str, Any]]) -> None:
 def validate_zones(growspace: Growspace) -> None:
     """Refuse edits outside the envelope or violating exclusive ownership."""
     zones = growspace.irrigation_zones
+    try:
+        validate_meter_placements(
+            growspace.environment_config.flow_meters, {z.id for z in zones}
+        )
+    except FlowMeterError as err:
+        raise ValidationChangeError(str(err)) from err
     if len(zones) > MAX_ZONES_PER_GROWSPACE:
         raise EnvelopeExceededError("zones_per_growspace", MAX_ZONES_PER_GROWSPACE)
     if not zones or sum(zone.id == "default" for zone in zones) != 1:
