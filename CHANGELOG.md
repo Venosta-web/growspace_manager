@@ -24,8 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shots cannot fit their shortest interval. These warnings never stop irrigation.
   Larger Delivery Attempt histories are compacted losslessly to meet the write
   budget while keeping existing stores readable and today’s charges intact.
-  Witness history expiration and Reference Day scans avoid repeated whole-history
-  work on minute ticks. A seven-day CI load test verifies the full scale envelope.
+  Sensor callbacks share one control sample, and witness expiration, daily-cap
+  reads and Reference Day scans avoid repeated whole-history work on minute ticks. A seven-day CI load test verifies the full scale envelope.
 
 - Irrigation zones can opt into `degraded_fallback: replay`. After the sensor
   alert delay, replay repeats the latest compatible clean day’s future shots

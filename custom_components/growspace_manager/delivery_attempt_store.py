@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime
 import json
 import logging
 from os.path import exists
@@ -85,6 +85,9 @@ class GrowspaceDeliveries:
         self._compression_prefix: list[DeliveryAttempt] = []
         self._compressor = zlib.compressobj()
         self._compressed_prefix = self._compressor.compress(b"[")
+        self._dispensed_cache: (
+            tuple[date, tuple[DeliveryAttempt, ...], DispensedVolume] | None
+        ) = None
         self.calibration = TankPumpDisagreement()
         self.unreadable = False
         self.unreadable_since: str | None = None
@@ -160,7 +163,16 @@ class GrowspaceDeliveries:
 
     def dispensed(self) -> DispensedVolume:
         """Return today's Dispensed Volume, today being Home Assistant's local day."""
-        return dispensed_volume(self.attempts, dt_util.now().date())
+        today = dt_util.now().date()
+        rows = tuple(self.attempts)
+        cached = self._dispensed_cache
+        # Attempts are immutable. Tuple equality catches replacements anywhere
+        # in the public list, as well as appends, pruning and direct test seeds.
+        if cached is None or cached[0] != today or cached[1] != rows:
+            result = dispensed_volume(rows, today)
+            self._dispensed_cache = (today, rows, result)
+            return result
+        return cached[2]
 
     def between(self, starts_at: datetime, ends_at: datetime) -> list[DeliveryAttempt]:
         """Return the attempts that touch ``[starts_at, ends_at)``, oldest first.

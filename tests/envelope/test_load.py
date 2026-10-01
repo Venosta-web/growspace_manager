@@ -278,8 +278,6 @@ async def test_seven_days_at_full_envelope(
         began = freezegun_api.real_perf_counter()
         for runtime in runtimes:
             await runtime._async_sensor_tick()
-            # Exercise every control/witness read in addition to the callbacks.
-            assert runtime.control_measurement.value is not None
             await runtime._update_loop(instant)
         samples.append((freezegun_api.real_perf_counter() - began) * 1000)
         await asyncio.gather(

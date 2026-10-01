@@ -9,6 +9,10 @@ Control and witness probes report every minute; the moisture response rises
 after each shot so the response guard is exercised without intentionally
 turning this performance test into a degraded-control test.
 
+Each sensor callback shares its control sample across alerting, reference-day
+tracking and witness notices; steering uses its own fresh sample. Unchanged
+immutable attempt histories also reuse their daily-cap aggregate.
+
 The p99 budget is 100 ms for the sensor/control and steering callbacks across
 the entire instance. The supply effects run in their background tasks after
 the callbacks, as in production. Device waits and disk latency are excluded;

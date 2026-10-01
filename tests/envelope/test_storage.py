@@ -119,3 +119,32 @@ def test_row_pressure_preserves_every_charge_of_the_local_day(freezer):
     assert {a.attempt_id for a in today} <= {a.attempt_id for a in deliveries.attempts}
     assert deliveries.dispensed().cycles == 240
     assert deliveries._decode(deliveries._document()) == deliveries.attempts
+
+
+def test_dispensed_cache_tracks_every_public_list_edit_and_midnight(freezer):
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    freezer.move_to("2026-06-15T12:00:00+00:00")
+    deliveries = history()
+    assert deliveries.dispensed().cycles == 200
+    first = deliveries.dispensed()
+    assert deliveries.dispensed() is first
+    # Replacement of an old row must invalidate even with the same list length.
+    deliveries.attempts[0] = replace(deliveries.attempts[0], charged_l=1)
+    assert deliveries.dispensed().liters == pytest.approx(20.9)
+    deliveries.attempts.append(
+        charged_attempt("tent", attempt_id="appended", liters=0.1)
+    )
+    assert deliveries.dispensed().cycles == 201
+    deliveries.attempts.pop()
+    assert deliveries.dispensed().cycles == 200
+    freezer.tick(timedelta(days=1))
+    assert deliveries.dispensed().cycles == 0
+    deliveries.attempts = [charged_attempt("tent", attempt_id="tomorrow", liters=0.5)]
+    assert deliveries.dispensed().cycles == 1
+    assert deliveries.dispensed().liters == 0.5
+    deliveries.attempts.clear()
+    assert deliveries.dispensed().cycles == 0
+    assert dt_util.now().date().isoformat() == "2026-06-16"
