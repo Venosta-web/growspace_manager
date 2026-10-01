@@ -29,11 +29,14 @@ closed, and it is saved in the batch like a close.
 
 from __future__ import annotations
 
+import base64
 from dataclasses import replace
-from datetime import datetime
+from datetime import date, datetime
+import json
 import logging
 from os.path import exists
 from typing import Any
+import zlib
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
@@ -52,6 +55,9 @@ from .domain.tank_pump_disagreement import TankPumpDisagreement
 _LOGGER = logging.getLogger(__name__)
 
 STORAGE_VERSION = 1
+# Keep small histories human-readable; large ones preserve every field losslessly.
+COMPACT_AFTER_BYTES = 64_000
+MAX_EXPANDED_BYTES = 16_000_000
 
 # Coalesces a close or a suppression into the next write, as Reliability
 # Evidence does.
@@ -75,6 +81,13 @@ class GrowspaceDeliveries:
         """Persist under the entry and growspace, or keep memory only without hass."""
         self.growspace_id = growspace_id
         self.attempts: list[DeliveryAttempt] = []
+        self._encoded_rows: dict[str, tuple[DeliveryAttempt, bytes]] = {}
+        self._compression_prefix: list[DeliveryAttempt] = []
+        self._compressor = zlib.compressobj()
+        self._compressed_prefix = self._compressor.compress(b"[")
+        self._dispensed_cache: (
+            tuple[date, tuple[DeliveryAttempt, ...], DispensedVolume] | None
+        ) = None
         self.calibration = TankPumpDisagreement()
         self.unreadable = False
         self.unreadable_since: str | None = None
@@ -84,7 +97,9 @@ class GrowspaceDeliveries:
         self._hass = hass
         self._key = f"growspace_manager.deliveries_{entry_id}_{growspace_id}"
         self._store: Store[dict[str, Any]] | None = (
-            Store(hass, STORAGE_VERSION, self._key) if hass is not None else None
+            Store(hass, STORAGE_VERSION, self._key, serialize_in_event_loop=True)
+            if hass is not None
+            else None
         )
 
     async def async_load(self) -> None:
@@ -114,6 +129,8 @@ class GrowspaceDeliveries:
 
     def _decode(self, data: Any) -> list[DeliveryAttempt]:
         """Validate the whole document before accepting any attempt in it."""
+        if isinstance(data, dict) and "attempts_zlib" in data:
+            data = {**data, "attempts": self._expand_attempts(data["attempts_zlib"])}
         if (
             not isinstance(data, dict)
             or data.get("growspace_id") != self.growspace_id
@@ -146,7 +163,16 @@ class GrowspaceDeliveries:
 
     def dispensed(self) -> DispensedVolume:
         """Return today's Dispensed Volume, today being Home Assistant's local day."""
-        return dispensed_volume(self.attempts, dt_util.now().date())
+        today = dt_util.now().date()
+        rows = tuple(self.attempts)
+        cached = self._dispensed_cache
+        # Attempts are immutable. Tuple equality catches replacements anywhere
+        # in the public list, as well as appends, pruning and direct test seeds.
+        if cached is None or cached[0] != today or cached[1] != rows:
+            result = dispensed_volume(rows, today)
+            self._dispensed_cache = (today, rows, result)
+            return result
+        return cached[2]
 
     def between(self, starts_at: datetime, ends_at: datetime) -> list[DeliveryAttempt]:
         """Return the attempts that touch ``[starts_at, ends_at)``, oldest first.
@@ -160,12 +186,77 @@ class GrowspaceDeliveries:
             )
         return attempts_between(self.attempts, starts_at, ends_at)
 
+    @staticmethod
+    def _expand_attempts(encoded: Any) -> Any:
+        """Bound decompression before the ordinary whole-record validation."""
+        if not isinstance(encoded, str):
+            raise TypeError("compressed attempts are not text")
+        packed = base64.b64decode(encoded, validate=True)
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(packed, MAX_EXPANDED_BYTES + 1)
+        if len(raw) > MAX_EXPANDED_BYTES or not decoder.eof or decoder.unused_data:
+            raise ValueError("compressed attempts are oversized or incomplete")
+        return json.loads(raw)
+
     def _document(self) -> dict[str, Any]:
-        return {
+        """Write the same lossless rows, compacting a larger week's history.
+
+        Immutable attempts let unchanged rows reuse their encoding. Old v1
+        documents remain readable; the compressed payload has its own explicit
+        key and is validated by the same decoder after expansion.
+        """
+        cache = {}
+        rows = []
+        for attempt in self.attempts:
+            previous = self._encoded_rows.get(attempt.attempt_id)
+            encoded = (
+                previous[1]
+                if previous is not None and previous[0] is attempt
+                else json.dumps(attempt.as_dict(), separators=(",", ":")).encode()
+            )
+            cache[attempt.attempt_id] = (attempt, encoded)
+            rows.append(encoded)
+        self._encoded_rows = cache
+        raw = b"[" + b",".join(rows) + b"]"
+        document = {
             "growspace_id": self.growspace_id,
-            "attempts": [attempt.as_dict() for attempt in self.attempts],
             "calibration": self.calibration.as_dict(),
         }
+        if len(raw) > COMPACT_AFTER_BYTES:
+            document["attempts_zlib"] = base64.b64encode(
+                self._compact_rows(rows)
+            ).decode("ascii")
+        else:
+            document["attempts"] = json.loads(raw)
+        return document
+
+    def _compact_rows(self, rows: list[bytes]) -> bytes:
+        """Reuse a closed prefix; requests and charges change only its tail.
+
+        A changed or pruned prefix resets the compressor. Copies finalize the
+        document without mutating the reusable stream. This keeps repeated
+        write-before-ON saves from recompressing the entire week on the loop.
+        """
+        length = len(self._compression_prefix)
+        if self.attempts[:length] != self._compression_prefix:
+            self._compression_prefix = []
+            self._compressor = zlib.compressobj()
+            self._compressed_prefix = self._compressor.compress(b"[")
+            length = 0
+        while length < len(self.attempts) and not self.attempts[length].is_open:
+            part = (b"," if length else b"") + rows[length]
+            self._compressed_prefix += self._compressor.compress(part)
+            self._compression_prefix.append(self.attempts[length])
+            length += 1
+        compressor = self._compressor.copy()
+        tail = b",".join(rows[length:])
+        if tail and length:
+            tail = b"," + tail
+        return (
+            self._compressed_prefix
+            + compressor.compress(tail + b"]")
+            + compressor.flush()
+        )
 
     def _prune(self) -> None:
         self.attempts = retained(

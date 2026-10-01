@@ -6,6 +6,7 @@ remains in sensor_validity; this layer adds provenance and response health.
 
 from __future__ import annotations
 
+from bisect import bisect_right, insort
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from statistics import median
@@ -108,7 +109,8 @@ class WitnessSubstitution:
                 continue
             key = witness.probe["entity_id"]
             rows = self.history.setdefault(key, [])
-            rows[:] = [(at, delta) for at, delta in rows if at > cutoff]
+            if rows and rows[0][0] <= cutoff:
+                del rows[: bisect_right(rows, cutoff, key=lambda row: row[0])]
             if (
                 control.value is not None
                 and witness.value is not None
@@ -121,7 +123,11 @@ class WitnessSubstitution:
                     # History ages from the older report, never from a UI read.
                     at = min(pair)
                     if cutoff < at <= now:
-                        rows.append((at, control.value - witness.value))
+                        sample = (at, control.value - witness.value)
+                        if not rows or at >= rows[-1][0]:
+                            rows.append(sample)
+                        else:
+                            insort(rows, sample)
         if control.value is not None or control.probe is None:
             self.active = None
             return control

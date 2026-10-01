@@ -1428,10 +1428,13 @@ class BaseIrrigationCoordinator:
         self._async_probe_control_sensors()
         if self._supply is self:
             self._watch_calibration()
-        await self._async_watch_moisture_sensor()
-        await self._async_witness_notices()
+        measurement = self.control_measurement
+        await self._async_watch_moisture_sensor(measurement)
+        await self._async_witness_notices(measurement)
 
-    async def _async_watch_moisture_sensor(self) -> None:
+    async def _async_watch_moisture_sensor(
+        self, measurement: ControlMeasurement | None = None
+    ) -> None:
         """Write the moisture sensor's validity edges and send its alert (#789).
 
         Shots are withheld from the first invalid minute — the steering loop
@@ -1445,11 +1448,13 @@ class BaseIrrigationCoordinator:
                 await self._async_dismiss_sensor_alert(self._alert_probe)
             if self._alert_probe is not None:
                 self._control_watch = SensorWatch(watching_since=now)
+                measurement = None
             self._alert_probe = moisture
         if moisture is None:
             self._moisture_invalidity = None
             return
-        invalidity = self.control_measurement.cause
+        measurement = measurement or self.control_measurement
+        invalidity = measurement.cause
         if invalidity != self._moisture_invalidity:
             self._moisture_invalidity = invalidity
             await self._async_record_controller_state()
@@ -1463,9 +1468,11 @@ class BaseIrrigationCoordinator:
         elif transition is SensorAlert.RECOVERED:
             await self._async_alert_sensor_recovered(moisture, watch)
 
-    async def _async_witness_notices(self) -> None:
+    async def _async_witness_notices(
+        self, measurement: ControlMeasurement | None = None
+    ) -> None:
         """Report handovers and safety-net loss once, on the informational tier."""
-        measurement = self.control_measurement
+        measurement = measurement or self.control_measurement
         active = self._witnesses.active
         entity = active["entity_id"] if active else None
         if entity != self._notice_witness:
@@ -2572,7 +2579,9 @@ class BaseIrrigationCoordinator:
                     if driver is None or not await driver.turn_on():
                         open_failure = (ON_COMMAND_FAILED, f"{valve} refused to open")
                         break
-                    if not await async_confirm_state(self.hass, valve, STATE_ON):
+                    if not await async_confirm_state(
+                        self.hass, valve, STATE_ON, timeout=ON_CONFIRM_TIMEOUT_SECONDS
+                    ):
                         open_failure = (
                             ON_UNCONFIRMED,
                             f"{valve} did not read back open",

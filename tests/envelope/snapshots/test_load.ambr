@@ -1,0 +1,23 @@
+# serializer version: 1
+# name: test_envelope_zone_entities
+  typing.Any
+# ---
+# name: test_envelope_zone_entities.1
+  list([
+    'growspace_manager_growspaces_list',
+    'growspace_manager_seed_inventory',
+    'growspace_manager_strain_library',
+    'growspace_manager_tent_0',
+    'growspace_manager_tent_0_active_run',
+    'growspace_manager_tent_0_crop_steering',
+    'growspace_manager_tent_0_ec_target',
+    'growspace_manager_tent_0_irrigation_controller',
+    'growspace_manager_tent_0_reliability',
+    'growspace_manager_tent_0_water_usage',
+    'growspace_manager_tent_0_zone_1_crop_steering',
+    'growspace_manager_tent_0_zone_2_crop_steering',
+    'growspace_manager_tent_0_zone_3_crop_steering',
+    'growspace_manager_tent_0_zone_4_crop_steering',
+    'growspace_manager_tent_0_zone_5_crop_steering',
+  ])
+# ---

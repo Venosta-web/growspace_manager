@@ -737,6 +737,14 @@
     "calibration_unit_suspect": {
       "title": "A declared unit for {growspace} looks wrong",
       "description": "On {evidence_count} days when the tank and the pump disagreed, the tank {entity} dropped a median {median_ratio} times what the pump delivered at its configured flow rate of {configured} ml/s. That is within 5% of {factor}, the factor between {units}, so a unit is declared wrong somewhere; the flow rate is not the likely cause, and no corrected rate is offered, because applying one would rescale every shot by that factor.\n\nCheck the unit {entity} reports in, that the tank volume entered for it is in litres, and that the pump flow rate is in millilitres per second. This goes away once the tank and the pump agree again."
+    },
+    "irrigated_growspaces_envelope": {
+      "title": "Irrigation is outside the tested scale envelope",
+      "description": "This instance irrigates {count} growspaces. The tested envelope is {limit}. Irrigation continues, but event-loop and storage performance beyond this limit have not been tested."
+    },
+    "pump_time_envelope": {
+      "title": "The configured shots cannot fit the interval",
+      "description": "In {growspace}, zones {zones} need {shortfall} seconds more than the shortest configured interval, including valve and pump confirmation time. Increase the interval or shorten the shots. Irrigation continues through the Supply Queue; this warning does not refuse configuration."
     }
   },
   "entity": {

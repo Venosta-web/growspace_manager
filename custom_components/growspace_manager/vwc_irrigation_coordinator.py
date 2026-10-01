@@ -296,7 +296,7 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             # substrate keeps absorbing whether or not steering is halted, and a
             # gap in the samples would be indistinguishable from a dropout.
             self._record_infiltration(reading)
-            self._resolve_pending_observation()
+            self._resolve_pending_observation(reading)
 
             if self._is_halted_by_runoff_ec(growspace):
                 return
@@ -335,10 +335,13 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         )
 
     @override
-    async def _async_watch_moisture_sensor(self) -> None:
+    async def _async_watch_moisture_sensor(
+        self, measurement: ControlMeasurement | None = None
+    ) -> None:
         """Sensor edges also invalidate a clean window between steering ticks."""
-        await super()._async_watch_moisture_sensor()
-        self._watch_reference_day(self.control_measurement)
+        measurement = measurement or self.control_measurement
+        await super()._async_watch_moisture_sensor(measurement)
+        self._watch_reference_day(measurement)
 
     def _watch_reference_day(self, reading: ControlMeasurement) -> None:
         """Close only days observed cleanly on the zone’s own probe."""
@@ -361,8 +364,10 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             delay=timedelta(minutes=self._config().sensor_alert_delay_minutes),
         )
         attempts = self._supply._deliveries.attempts
-        shots = reference_shots(attempts, self._zone.id, window_day)
-        replayed = any(
+        shots = (
+            reference_shots(attempts, self._zone.id, window_day) if qualifies else []
+        )
+        replayed = qualifies and any(
             a.zone_id == self._zone.id
             and a.charge_date == window_day
             and a.trigger is AttemptTrigger.FALLBACK
@@ -859,10 +864,12 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             tuning=FeedbackTuning.from_strategy(strategy),
         )
 
-    def _resolve_pending_observation(self) -> None:
+    def _resolve_pending_observation(
+        self, measurement: ControlMeasurement | None = None
+    ) -> None:
         """Use only a post-cycle sensor sample, or abandon the observation."""
         pending = self._pending_observation
-        measurement = self.control_measurement
+        measurement = measurement or self.control_measurement
         if measurement.value is None or measurement.substitute_for is not None:
             self._pending_observation = None
             return

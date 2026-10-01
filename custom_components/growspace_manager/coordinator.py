@@ -394,6 +394,7 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # has in fact just written. With auto-advance off this writes nothing
         # and only decides what the payload will say ([[Program Hold]]).
         await self.program_progression.async_evaluate_all()
+        self._refresh_envelope_issues()
 
         self.data = self.view_model_builder.build_data_property()
         await self._notification_manager.async_check_timed_notifications()
@@ -707,8 +708,33 @@ class GrowspaceCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if runtime is not None and runtime is not irrigation:
                     runtime.abandon_pending_observation()
 
+    @callback
+    def _refresh_envelope_issues(self) -> None:
+        """Count irrigation across entries, including this committed projection."""
+        from .envelope import async_refresh_envelope_issues  # noqa: PLC0415
+
+        coordinators = [self]
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            other = getattr(entry, "runtime_data", None)
+            if isinstance(other, GrowspaceCoordinator) and other is not self:
+                coordinators.append(other)
+        async_refresh_envelope_issues(
+            self.hass,
+            (
+                gs
+                for coordinator in coordinators
+                for gs in coordinator.growspaces.values()
+            ),
+            (
+                plant
+                for coordinator in coordinators
+                for plant in coordinator.plants.values()
+            ),
+        )
+
     async def _publish_current_data(self) -> None:
         """Notify projections and dependent coordinators of committed data."""
+        self._refresh_envelope_issues()
         self.async_set_updated_data(self.data)
         self._event_bus.fire_growspace_updated()
 
