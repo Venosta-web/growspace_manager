@@ -101,6 +101,16 @@ class IrrigationRecipeLibrary:
         recipe = IrrigationRecipe(
             id=recipe_id or str(uuid.uuid4()),
             name=name,
+            revision=(
+                existing.revision
+                + int(
+                    existing.kind != kind
+                    or existing.crop_steering != crop_steering
+                    or existing.schedule != schedule
+                )
+            )
+            if existing
+            else 1,
             kind=kind,
             provenance=capture_provenance(strategy, config, stage=stage, week=week),
             crop_steering=crop_steering,
@@ -158,10 +168,8 @@ class IrrigationRecipeLibrary:
 
         Editing changes no growspace. Applying a recipe is a by-value stamp
         (ADR-0045), so a growspace holds the numbers rather than a live link —
-        which is exactly what makes a recipe safe to edit. What a grower does
-        see afterwards is drift, because ``recipe_has_drifted`` re-resolves the
-        recipe against the live fields and the growspace no longer holds what
-        the recipe now says.
+        which is exactly what makes a recipe safe to edit. The saved revision reports an update separately from drift,
+        which remains a comparison against the zone’s Applied Recipe.
 
         Raises:
             EntityNotFoundError: when no recipe carries that id.
@@ -171,6 +179,7 @@ class IrrigationRecipeLibrary:
         edited = edit_recipe(
             recipe, name=name, crop_steering=crop_steering, schedule=schedule
         )
+        recipe.revision = edited.revision
         recipe.name = edited.name
         recipe.crop_steering = edited.crop_steering
         recipe.schedule = edited.schedule

@@ -1096,7 +1096,6 @@ _RECIPE_SCHEDULE_ITEM_SCHEMA = vol.Schema(
 
 CROP_STEERING_RECIPE_VALUES_SCHEMA = vol.Schema(
     {
-        vol.Optional("lights_on_time"): str,
         vol.Optional("p0_duration_minutes"): vol.All(vol.Coerce(int), vol.Range(min=0)),
         vol.Optional("p2_stop_before_lights_off_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=0)
@@ -1121,7 +1120,6 @@ CROP_STEERING_RECIPE_VALUES_SCHEMA = vol.Schema(
         vol.Optional("p2_shot_interval_minutes"): vol.All(
             vol.Coerce(int), vol.Range(min=1)
         ),
-        vol.Optional("auto_light_tracking"): bool,
         vol.Optional("dynamic_shot_enabled"): bool,
         vol.Optional("dynamic_aggressiveness"): vol.All(
             vol.Coerce(float), vol.Range(min=0.0)
@@ -1144,16 +1142,9 @@ CROP_STEERING_RECIPE_VALUES_SCHEMA = vol.Schema(
 SCHEDULE_RECIPE_VALUES_SCHEMA = vol.Schema(
     {
         vol.Optional("irrigation_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
-        vol.Optional("drain_times"): [_RECIPE_SCHEDULE_ITEM_SCHEMA],
         vol.Optional("irrigation_duration"): vol.Any(
             None, vol.All(vol.Coerce(int), vol.Range(min=1, max=3600))
         ),
-        vol.Optional("drain_duration"): vol.Any(
-            None, vol.All(vol.Coerce(int), vol.Range(min=1, max=3600))
-        ),
-        vol.Optional("daily_volume_cap_liters"): vol.Any(None, vol.Coerce(float)),
-        vol.Optional("max_cycles_per_day"): vol.Any(None, vol.Coerce(int)),
-        vol.Optional("skip_during_dark"): bool,
     }
 )
 

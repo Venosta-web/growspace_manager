@@ -173,6 +173,7 @@ def _progression(
         slot=resolve_program_slot(program, stage=stage, week=week),
         slot_recipe_name=slot_recipe_name,
         applied_recipe_id=applied_recipe_id,
+        applied_recipe_revision=1 if applied_recipe_id else None,
         applied_recipe_drifted=applied_recipe_drifted,
         apply_error=apply_error,
         auto_advance=auto_advance,

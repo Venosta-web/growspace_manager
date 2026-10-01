@@ -35,6 +35,7 @@ from custom_components.growspace_manager.models import (
     Plant,
     SubstrateProfile,
 )
+from custom_components.growspace_manager.models.irrigation_recipe import AppliedRecipe
 from custom_components.growspace_manager.services.irrigation_change import (
     IrrigationChangeError,
 )
@@ -278,7 +279,7 @@ async def test_a_growspace_starts_with_no_recipe_applied(coordinator) -> None:
     """Unset is a real third state, not an implicit default recipe."""
     strategy = effective_strategy(coordinator.growspaces["tent_a"])
 
-    assert strategy.applied_recipe_id is None
+    assert strategy.applied_recipe is None
     assert strategy.recipe_applied_at is None
 
 
@@ -296,7 +297,7 @@ async def test_apply_service_stamps_and_records(hass, coordinator) -> None:
 
     strategy = effective_strategy(coordinator.growspaces["tent_b"])
     assert strategy.p1_shot_volume_percent == 3.0
-    assert strategy.applied_recipe_id == recipe_id
+    assert strategy.applied_recipe.id == recipe_id
     assert strategy.recipe_applied_at is not None
 
 
@@ -371,7 +372,7 @@ async def test_wrong_kind_is_refused_and_changes_nothing(hass, coordinator) -> N
         )
 
     assert tent_b.irrigation_config.max_cycles_per_day == 4
-    assert tent_b.default_zone.strategy.applied_recipe_id is None
+    assert tent_b.default_zone.strategy.applied_recipe is None
 
 
 @pytest.mark.asyncio
@@ -386,7 +387,7 @@ async def test_wrong_kind_the_other_way_round_is_refused(hass, coordinator) -> N
             "tent_b", recipe_id
         )
 
-    assert tent_b.default_zone.strategy.applied_recipe_id is None
+    assert tent_b.default_zone.strategy.applied_recipe is None
 
 
 @pytest.mark.asyncio
@@ -405,7 +406,7 @@ async def test_a_schedule_recipe_stamps_the_irrigation_config(
 
     config_b = effective_config(coordinator.growspaces["tent_b"])
     assert config_b.irrigation_times == [{"time": "07:30:00", "duration": 45}]
-    assert config_b.max_cycles_per_day == 8
+    assert config_b.max_cycles_per_day == 24
 
 
 @pytest.mark.asyncio
@@ -429,7 +430,7 @@ async def test_cross_media_apply_succeeds_unscaled_and_warns(hass, coordinator) 
         },
     )
 
-    assert result["applied_recipe_id"] == recipe_id
+    assert result["applied_recipe"]["id"] == recipe_id
     assert "coco" in result["warning"]
     assert "rockwool" in result["warning"]
     assert tent_b.default_zone.strategy.p1_shot_volume_percent == 3.0
@@ -494,7 +495,7 @@ async def test_drift_is_derived_on_the_growspace_payload(hass, coordinator) -> N
 
 
 @pytest.mark.asyncio
-async def test_drift_reads_none_once_the_applied_recipe_is_deleted(
+async def test_drift_keeps_copy_once_the_applied_recipe_is_deleted(
     hass, coordinator
 ) -> None:
     """Deleting leaves references dangling by design; the read degrades, not fails."""
@@ -506,8 +507,8 @@ async def test_drift_reads_none_once_the_applied_recipe_is_deleted(
     coordinator.cache.invalidate("tent_a")
     payload = ViewModelBuilder(coordinator).build_serialized_growspace("tent_a")
 
-    assert payload["irrigation"]["applied_recipe_drifted"] is None
-    assert payload["irrigation"]["irrigation_strategy"]["applied_recipe_id"] == (
+    assert payload["irrigation"]["applied_recipe_drifted"] is False
+    assert payload["irrigation"]["irrigation_strategy"]["applied_recipe"]["id"] == (
         recipe_id
     )
 
@@ -610,9 +611,7 @@ async def test_editing_a_recipe_changes_no_growspace(hass, coordinator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_editing_a_recipe_makes_its_carriers_read_as_drifted(
-    hass, coordinator
-) -> None:
+async def test_editing_a_recipe_reports_update_without_drift(hass, coordinator) -> None:
     """The consequence a grower does see: the tent no longer holds what it says."""
     _steer(coordinator, "tent_a", "tent_b")
     recipe_id = await _saved_steering_recipe(coordinator)
@@ -631,7 +630,9 @@ async def test_editing_a_recipe_makes_its_carriers_read_as_drifted(
 
     payload_a = view_model.build_serialized_growspace("tent_a")
     payload_b = view_model.build_serialized_growspace("tent_b")
-    assert payload_a["irrigation"]["applied_recipe_drifted"] is True
+    assert payload_a["irrigation"]["applied_recipe_drifted"] is False
+    assert payload_a["irrigation"]["recipe_updated"] is True
+    assert payload_b["irrigation"]["recipe_updated"] is False
     assert payload_b["irrigation"]["applied_recipe_drifted"] is False
 
 
@@ -682,7 +683,7 @@ async def test_recipe_commit_failure_restores_models_and_provenance(
         "tent_a", "Restore me", kind
     )
     target = coordinator.growspaces["tent_b"]
-    target.default_zone.strategy.applied_recipe_id = "previous"
+    target.default_zone.strategy.applied_recipe = AppliedRecipe("previous", 1, {})
     target.default_zone.strategy.recipe_applied_at = "2026-01-01T00:00:00+00:00"
     prior_config, prior_strategy = effective_config(target), effective_strategy(target)
     before = target.to_dict()
@@ -691,7 +692,7 @@ async def test_recipe_commit_failure_restores_models_and_provenance(
     coordinator.async_request_refresh = AsyncMock()
 
     async def fail_save():
-        assert target.default_zone.strategy.applied_recipe_id == recipe.id
+        assert target.default_zone.strategy.applied_recipe.id == recipe.id
         raise RuntimeError("store failed")
 
     coordinator.storage_manager.async_force_save.side_effect = fail_save
@@ -847,7 +848,7 @@ async def test_identical_recipe_reapply_commits_and_renews_provenance(
     coordinator.storage_manager.async_force_save.reset_mock()
     await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe.id)
     assert target.default_zone.strategy.recipe_applied_at != prior.recipe_applied_at
-    assert target.default_zone.strategy.applied_recipe_id == recipe.id
+    assert target.default_zone.strategy.applied_recipe.id == recipe.id
     coordinator.storage_manager.async_force_save.assert_awaited_once()
 
 
@@ -869,9 +870,9 @@ async def test_schedule_stamp_detaches_items_and_keeps_unrelated_settings(
     await coordinator.services.growspaces.apply_irrigation_recipe("tent_b", recipe.id)
     config = target.irrigation_config
     target.default_zone.irrigation_times[0]["duration"] = 99
-    config.drain_times[0]["duration"] = 88
+    source.irrigation_config.drain_times[0]["duration"] = 88
     assert recipe.schedule.irrigation_times[0]["duration"] == 45
-    assert recipe.schedule.drain_times[0]["duration"] == 15
+    assert recipe.provenance.drain_times[0]["duration"] == 15
     assert source.default_zone.irrigation_times[0]["duration"] == 45
     assert config.pause_on_low_tank is False
     assert config.irrigation_pump_entity == "switch.target"
@@ -931,7 +932,7 @@ async def test_registered_recipe_websocket_keeps_wire_contract(
         connection.send_error.assert_not_called()
         result = connection.send_result.call_args.args[1]
         assert result["growspace_id"] == "tent_b"
-        assert result["applied_recipe_id"] == recipe_id
+        assert result["applied_recipe"]["id"] == recipe_id
         assert "coco" in result["warning"] and "rockwool" in result["warning"]
     else:
         connection.send_result.assert_not_called()
@@ -947,4 +948,31 @@ async def test_registered_recipe_websocket_keeps_wire_contract(
             if outcome == "band"
             else "running schedule"
         ) in error[2]
-        assert target.default_zone.strategy.applied_recipe_id is None
+        assert target.default_zone.strategy.applied_recipe is None
+
+
+async def test_updated_and_drifted_are_independent_even_after_deletion(
+    hass, coordinator
+):
+    """A genuine hand tweak and a library edit can both be reported."""
+    _steer(coordinator, "tent_a")
+    recipe_id = await _saved_steering_recipe(coordinator)
+    await coordinator.services.growspaces.apply_irrigation_recipe("tent_a", recipe_id)
+    coordinator.growspaces["tent_a"].default_zone.strategy.target_vwc_percent += 1
+    await coordinator.services.config.update_irrigation_recipe(
+        recipe_id, crop_steering={"target_vwc_percent": 61}
+    )
+    coordinator.cache.invalidate("tent_a")
+    payload = ViewModelBuilder(coordinator).build_serialized_growspace("tent_a")[
+        "irrigation"
+    ]
+    assert payload["recipe_updated"] is True
+    assert payload["applied_recipe_drifted"] is True
+    assert payload["zones"][0]["applied_recipe_drifted"] is True
+    await coordinator.services.config.remove_irrigation_recipe(recipe_id)
+    coordinator.cache.invalidate("tent_a")
+    payload = ViewModelBuilder(coordinator).build_serialized_growspace("tent_a")[
+        "irrigation"
+    ]
+    assert payload["recipe_updated"] is False
+    assert payload["applied_recipe_drifted"] is True

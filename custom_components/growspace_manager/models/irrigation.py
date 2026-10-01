@@ -13,6 +13,7 @@ from custom_components.growspace_manager.const import (
 import homeassistant.util.dt as dt_util
 
 from .base import BaseModel, _sanitize_numeric_fields
+from .irrigation_recipe import AppliedRecipe
 from .types import IrrigationScheduleItem
 
 __all__ = [
@@ -158,16 +159,9 @@ class SteeringStrategy(BaseModel):
     # fields above. Existing stored configs deserialize with None unchanged.
     declared_steering_mode: SteeringMode | None = None
 
-    # ── Recipe Stamp (ADR-0045) ─────────────────────────────────────────────
-    # Which grower-authored [[Irrigation Recipe]] was last stamped into the
-    # fields above, and when. Both None means "never applied" — a real third
-    # state, exactly as ``declared_steering_mode`` is undeclared until its
-    # first stamp. The coordinator never reads either: applying writes the
-    # recipe's values into the explicit fields and these only record what did
-    # it. No drift hash sits beside them, because recipes are held by
-    # reference and "has the grower tweaked since?" is a live comparison
-    # (``domain/irrigation_recipe.recipe_has_drifted``).
-    applied_recipe_id: str | None = None
+    # The detached portable values and revision last stamped into this zone.
+    # Drift is resolved against this copy; library edits only report an update.
+    applied_recipe: AppliedRecipe | None = None
     recipe_applied_at: str | None = None
 
     # ── Irrigation Program binding (ADR-0045) ───────────────────────────────

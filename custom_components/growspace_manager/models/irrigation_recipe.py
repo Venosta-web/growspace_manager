@@ -26,7 +26,9 @@ seconds — see [[Substrate-Relative Shot Storage]] and
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
+from typing import Any
 
 from custom_components.growspace_manager.const import (
     IrrigationRecipeKind,
@@ -38,6 +40,7 @@ from .base import BaseModel
 from .types import IrrigationScheduleItem
 
 __all__ = [
+    "AppliedRecipe",
     "CropSteeringRecipe",
     "IrrigationRecipe",
     "RecipeProvenance",
@@ -65,6 +68,13 @@ class RecipeProvenance(BaseModel):
     pump_flow_rate_ml_per_sec: float = 0.0
     stage: str | None = None
     week: int = 0
+    lights_on_time: str | None = None
+    auto_light_tracking: bool | None = None
+    drain_times: list[IrrigationScheduleItem] | None = None
+    drain_duration: int | None = None
+    daily_volume_cap_liters: float | None = None
+    max_cycles_per_day: int | None = None
+    skip_during_dark: bool | None = None
 
 
 @dataclass(slots=True)
@@ -76,7 +86,6 @@ class CropSteeringRecipe(BaseModel):
     the values survive a move to plumbing with a different flow rate.
     """
 
-    lights_on_time: str = "06:00:00"
     p0_duration_minutes: int = 60
     p2_stop_before_lights_off_minutes: int = 120
     target_vwc_percent: float = 55.0
@@ -85,7 +94,6 @@ class CropSteeringRecipe(BaseModel):
     p1_shot_interval_minutes: int = 15
     p2_shot_volume_percent: float = 4.0
     p2_shot_interval_minutes: int = 15
-    auto_light_tracking: bool = False
     dynamic_shot_enabled: bool = True
     dynamic_aggressiveness: float = 1.0
     dynamic_recovery: float = 0.1
@@ -100,18 +108,12 @@ class CropSteeringRecipe(BaseModel):
 class ScheduleRecipe(BaseModel):
     """The time-schedule half: when the pumps fire and how much they may move.
 
-    The schedule times and their durations, plus the daily volume cap, the
-    per-day cycle ceiling and the dark-period skip. The pump entities that
-    execute them are the target growspace's hardware and stay behind.
+    The zone schedule and duration. Shared drains, caps and dark gating are
+    captured in RecipeProvenance and never written by a zone stamp.
     """
 
     irrigation_times: list[IrrigationScheduleItem] = field(default_factory=list)
-    drain_times: list[IrrigationScheduleItem] = field(default_factory=list)
     irrigation_duration: int | None = None
-    drain_duration: int | None = None
-    daily_volume_cap_liters: float | None = None
-    max_cycles_per_day: int | None = None
-    skip_during_dark: bool = False
 
 
 @dataclass(slots=True, kw_only=True)
@@ -124,8 +126,69 @@ class IrrigationRecipe(BaseModel):
 
     id: str
     name: str
+    revision: int = 1
     kind: IrrigationRecipeKind
     provenance: RecipeProvenance = field(default_factory=RecipeProvenance)
     crop_steering: CropSteeringRecipe | None = None
     schedule: ScheduleRecipe | None = None
     created_at: str = field(default_factory=lambda: dt_util.utcnow().isoformat())
+
+    @classmethod
+    def __pre_deserialize__(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Move legacy growspace-owned values into descriptive provenance."""
+        data = copy.deepcopy(data)
+        provenance = data.setdefault("provenance", {})
+        for label, names in (
+            ("crop_steering", ("lights_on_time", "auto_light_tracking")),
+            (
+                "schedule",
+                (
+                    "drain_times",
+                    "drain_duration",
+                    "daily_volume_cap_liters",
+                    "max_cycles_per_day",
+                    "skip_during_dark",
+                ),
+            ),
+        ):
+            half = data.get(label) or {}
+            for name in names:
+                if name in half:
+                    provenance[name] = half.pop(name)
+        return data
+
+
+@dataclass(slots=True)
+class AppliedRecipe(BaseModel):
+    """The zone-owned recipe values that a stamp actually applied (ADR-0065)."""
+
+    id: str
+    revision: int
+    values: dict[str, Any]
+
+    @classmethod
+    def from_recipe(cls, recipe: IrrigationRecipe) -> AppliedRecipe:
+        """Keep a detached copy in the recipe's portable units."""
+        half = (
+            recipe.crop_steering
+            if recipe.crop_steering is not None
+            else recipe.schedule
+        )
+        assert half is not None
+        return cls(recipe.id, recipe.revision, copy.deepcopy(half.to_dict()))
+
+    def as_recipe(self) -> IrrigationRecipe:
+        """Reconstitute the stored half for the shared stamp resolver."""
+        schedule = "irrigation_times" in self.values
+        return IrrigationRecipe(
+            id=self.id,
+            name=self.id,
+            revision=self.revision,
+            kind=IrrigationRecipeKind.SCHEDULE
+            if schedule
+            else IrrigationRecipeKind.CROP_STEERING,
+            schedule=ScheduleRecipe.from_dict(self.values) if schedule else None,
+            crop_steering=None
+            if schedule
+            else CropSteeringRecipe.from_dict(self.values),
+        )

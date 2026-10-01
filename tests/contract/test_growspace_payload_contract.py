@@ -72,6 +72,7 @@ from custom_components.growspace_manager.models import (
     WaterUsageData,
     WeightEntry,
 )
+from custom_components.growspace_manager.models.irrigation_recipe import AppliedRecipe
 from custom_components.growspace_manager.websocket import websocket_get_growspace_data
 from homeassistant.core import HomeAssistant
 from tests.common import MockConfigEntry
@@ -436,7 +437,9 @@ def _maximal_growspace() -> Growspace:
             # crop-steering recipe below, whose values equal the setpoints
             # above — so the derived ``applied_recipe_drifted`` in the payload
             # is a real computed answer rather than a placeholder.
-            applied_recipe_id="contract-recipe-steering",
+            applied_recipe=AppliedRecipe.from_recipe(
+                _maximal_recipe_library()["contract-recipe-steering"]
+            ),
             recipe_applied_at="2026-08-10T07:15:00+00:00",
             # The [[Irrigation Program]] binding, likewise non-null: it is
             # optional, and a sparse fixture would not catch it being dropped
@@ -648,9 +651,10 @@ def _maximal_recipe_library() -> dict[str, IrrigationRecipe]:
                 pump_flow_rate_ml_per_sec=13.5,
                 stage=PlantStage.FLOWER.value,
                 week=3,
+                lights_on_time="06:00:00",
+                auto_light_tracking=True,
             ),
             crop_steering=CropSteeringRecipe(
-                lights_on_time="06:00:00",
                 p0_duration_minutes=90,
                 p2_stop_before_lights_off_minutes=75,
                 target_vwc_percent=58.0,
@@ -659,7 +663,6 @@ def _maximal_recipe_library() -> dict[str, IrrigationRecipe]:
                 p1_shot_interval_minutes=20,
                 p2_shot_volume_percent=3.0,
                 p2_shot_interval_minutes=30,
-                auto_light_tracking=True,
                 dynamic_shot_enabled=True,
                 dynamic_aggressiveness=1.2,
                 dynamic_recovery=0.15,
@@ -681,15 +684,15 @@ def _maximal_recipe_library() -> dict[str, IrrigationRecipe]:
                 pump_flow_rate_ml_per_sec=11.0,
                 stage=PlantStage.VEG.value,
                 week=2,
-            ),
-            schedule=ScheduleRecipe(
-                irrigation_times=[{"time": "07:30:00", "duration": 45}],
                 drain_times=[{"time": "19:30:00", "duration": 20}],
-                irrigation_duration=45,
                 drain_duration=20,
                 daily_volume_cap_liters=14.0,
                 max_cycles_per_day=8,
                 skip_during_dark=True,
+            ),
+            schedule=ScheduleRecipe(
+                irrigation_times=[{"time": "07:30:00", "duration": 45}],
+                irrigation_duration=45,
             ),
             created_at="2026-08-05T09:00:00+00:00",
         ),

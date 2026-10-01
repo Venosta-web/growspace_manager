@@ -46,12 +46,12 @@ from .models import (
     Growspace,
     IPMPreset,
     IrrigationProgram,
-    IrrigationRecipe,
     NutrientInventory,
     NutrientPreset,
     PollinationEvent,
     SeedBatch,
 )
+from .models.irrigation_recipe import AppliedRecipe, IrrigationRecipe
 from .plant_record_loader import load_plant_records
 
 if TYPE_CHECKING:
@@ -106,7 +106,7 @@ def _migrate_growspaces(data: dict[str, Any]) -> dict[str, Any]:
     growspaces = data.get("growspaces")
     if not isinstance(growspaces, dict):
         return data
-    return {
+    migrated = {
         **data,
         "growspaces": {
             growspace_id: migrate_growspace_document(document)
@@ -115,6 +115,26 @@ def _migrate_growspaces(data: dict[str, Any]) -> dict[str, Any]:
             for growspace_id, document in growspaces.items()
         },
     }
+
+    recipes = {
+        rid: IrrigationRecipe.from_dict(raw)
+        for rid, raw in data.get("irrigation_recipes", {}).items()
+    }
+    migrated["irrigation_recipes"] = {
+        rid: recipe.to_dict() for rid, recipe in recipes.items()
+    }
+    for document in migrated["growspaces"].values():
+        if not isinstance(document, dict):
+            continue
+        for zone in document.get("irrigation_zones", []):
+            strategy = zone.setdefault("strategy", {})
+            recipe_id = strategy.pop("applied_recipe_id", None)
+            if recipe_id is not None:
+                recipe = recipes.get(recipe_id)
+                strategy["applied_recipe"] = (
+                    AppliedRecipe.from_recipe(recipe).to_dict() if recipe else None
+                )
+    return migrated
 
 
 class GrowspaceConfigStore(Store[dict[str, Any]]):

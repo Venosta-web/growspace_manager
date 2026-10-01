@@ -24,7 +24,7 @@ growspace ([[Recipe Stamp]]) — because both directions share the one rule
 about what a stored percent means, and splitting them would let the two halves
 disagree about it. ``resolve_recipe_application`` answers what a stamp would
 write; ``recipe_has_drifted`` asks the same question and compares the answer
-against what is there, which is why no drift hash is ever stored.
+against what is there. Applied Recipe copies retain the stamped revision.
 """
 
 from __future__ import annotations
@@ -114,6 +114,13 @@ def capture_provenance(
         pump_flow_rate_ml_per_sec=config.pump_flow_rate_ml_per_sec,
         stage=stage,
         week=week,
+        lights_on_time=strategy.lights_on_time,
+        auto_light_tracking=strategy.auto_light_tracking,
+        drain_times=[_copy_item(item) for item in config.drain_times],
+        drain_duration=config.drain_duration,
+        daily_volume_cap_liters=config.daily_volume_cap_liters,
+        max_cycles_per_day=config.max_cycles_per_day,
+        skip_during_dark=config.skip_during_dark,
     )
 
 
@@ -153,7 +160,6 @@ def capture_crop_steering(
         )
 
     return CropSteeringRecipe(
-        lights_on_time=strategy.lights_on_time,
         p0_duration_minutes=strategy.p0_duration_minutes,
         p2_stop_before_lights_off_minutes=(strategy.p2_stop_before_lights_off_minutes),
         target_vwc_percent=strategy.target_vwc_percent,
@@ -162,7 +168,6 @@ def capture_crop_steering(
         p1_shot_interval_minutes=strategy.p1_shot_interval_minutes,
         p2_shot_volume_percent=p2_percent,
         p2_shot_interval_minutes=strategy.p2_shot_interval_minutes,
-        auto_light_tracking=strategy.auto_light_tracking,
         dynamic_shot_enabled=strategy.dynamic_shot_enabled,
         dynamic_aggressiveness=strategy.dynamic_aggressiveness,
         dynamic_recovery=strategy.dynamic_recovery,
@@ -182,12 +187,7 @@ def capture_schedule(config: IrrigationConfig) -> ScheduleRecipe:
     """
     return ScheduleRecipe(
         irrigation_times=[_copy_item(item) for item in config.irrigation_times],
-        drain_times=[_copy_item(item) for item in config.drain_times],
         irrigation_duration=config.irrigation_duration,
-        drain_duration=config.drain_duration,
-        daily_volume_cap_liters=config.daily_volume_cap_liters,
-        max_cycles_per_day=config.max_cycles_per_day,
-        skip_during_dark=config.skip_during_dark,
     )
 
 
@@ -277,6 +277,11 @@ def edit_recipe(
         _refuse_unknown_fields(schedule, SCHEDULE_RECIPE_EDIT_FIELDS, "schedule")
         changes["schedule"] = replace(recipe.schedule, **dict(schedule))
 
+    if any(
+        changes.get(label, getattr(recipe, label)) != getattr(recipe, label)
+        for label in ("crop_steering", "schedule")
+    ):
+        changes["revision"] = recipe.revision + 1
     return replace(recipe, **changes)
 
 
@@ -419,7 +424,7 @@ def resolve_recipe_application(
     return RecipeApplication(
         values=values,
         config_values=config_values,
-        media_warning=_media_warning(recipe, strategy=strategy),
+        media_warning=_provenance_warning(recipe, strategy=strategy, config=config),
     )
 
 
@@ -432,10 +437,8 @@ def recipe_has_drifted(
 ) -> bool:
     """Return whether the growspace still holds what ``recipe`` would stamp.
 
-    The whole of "has the grower tweaked since applying?", computed on read
-    from data already loaded. Nothing is stored at stamp time to compare
-    against, because recipes are held by reference: a hash written then would
-    go stale the moment the recipe itself was edited (ADR-0045).
+    Callers pass the half reconstructed from the zone's Applied Recipe, so
+    library edits and deletions cannot rewrite the comparison's reference.
 
     A recipe that cannot be resolved at all — the growspace has since switched
     halves, or a Seconds Mode target lost the flow rate its seconds need — has
@@ -480,7 +483,6 @@ def _crop_steering_values(
         )
 
     values: dict[str, Any] = {
-        "lights_on_time": half.lights_on_time,
         "p0_duration_minutes": half.p0_duration_minutes,
         "p2_stop_before_lights_off_minutes": half.p2_stop_before_lights_off_minutes,
         "target_vwc_percent": half.target_vwc_percent,
@@ -489,7 +491,6 @@ def _crop_steering_values(
         "p1_shot_interval_minutes": half.p1_shot_interval_minutes,
         "p2_shot_volume_percent": half.p2_shot_volume_percent,
         "p2_shot_interval_minutes": half.p2_shot_interval_minutes,
-        "auto_light_tracking": half.auto_light_tracking,
         "dynamic_shot_enabled": half.dynamic_shot_enabled,
         "dynamic_aggressiveness": half.dynamic_aggressiveness,
         "dynamic_recovery": half.dynamic_recovery,
@@ -532,12 +533,7 @@ def _schedule_values(recipe: IrrigationRecipe) -> dict[str, Any]:
         # Detached copies: a later edit to the growspace's schedule must not
         # reach back into the by-reference recipe every program shares.
         "irrigation_times": [_copy_item(item) for item in half.irrigation_times],
-        "drain_times": [_copy_item(item) for item in half.drain_times],
         "irrigation_duration": half.irrigation_duration,
-        "drain_duration": half.drain_duration,
-        "daily_volume_cap_liters": half.daily_volume_cap_liters,
-        "max_cycles_per_day": half.max_cycles_per_day,
-        "skip_during_dark": half.skip_during_dark,
     }
 
 
@@ -587,3 +583,36 @@ def _resolve_seconds(
             "no pump duration."
         )
     return seconds
+
+
+def _provenance_warning(
+    recipe: IrrigationRecipe, *, strategy: IrrigationStrategy, config: IrrigationConfig
+) -> str | None:
+    """Warn about differing shared settings without writing or comparing drift."""
+    warnings = []
+    if warning := _media_warning(recipe, strategy=strategy):
+        warnings.append(warning)
+    names = (
+        ("lights_on_time", "auto_light_tracking")
+        if recipe.crop_steering is not None
+        else (
+            "drain_times",
+            "drain_duration",
+            "daily_volume_cap_liters",
+            "max_cycles_per_day",
+            "skip_during_dark",
+        )
+    )
+    target = strategy if recipe.crop_steering is not None else config
+    mismatches = [
+        name
+        for name in names
+        if getattr(recipe.provenance, name) != getattr(target, name)
+    ]
+    if mismatches:
+        warnings.append(
+            "Recipe provenance differs from the growspace: "
+            + ", ".join(mismatches)
+            + ". Shared settings are left unchanged."
+        )
+    return " ".join(warnings) or None

@@ -62,6 +62,7 @@ from custom_components.growspace_manager.models import (
     IrrigationConfig,
     SubstrateProfile,
 )
+from custom_components.growspace_manager.models.irrigation_recipe import AppliedRecipe
 from custom_components.growspace_manager.steering_presets import resolve_steering_preset
 from homeassistant.util.dt import now, utcnow
 
@@ -473,7 +474,7 @@ def _resolve_recipe_candidate(
     )
     updates = {
         **application.values,
-        "applied_recipe_id": recipe.id,
+        "applied_recipe": AppliedRecipe.from_recipe(recipe),
         "recipe_applied_at": utcnow().isoformat(),
     }
     prior_config = effective_config(growspace)
@@ -485,10 +486,10 @@ def _resolve_recipe_candidate(
     # explicit apply names both media, because choosing across them is theirs.
     logbook_message = (
         f"Irrigation program '{advance.program_name}' advanced to "
-        f"{advance.stage} week {advance.week}: applied recipe '{recipe.name}'"
+        f"{advance.stage} week {advance.week}: applied recipe '{recipe.name}' revision {recipe.revision}"
         if advance is not None
         else (
-            f"Applied irrigation recipe '{recipe.name}' "
+            f"Applied irrigation recipe '{recipe.name}' revision {recipe.revision} "
             f"({authored_media} → {target_media})"
         )
     )
