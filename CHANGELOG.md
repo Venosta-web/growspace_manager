@@ -7,16 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+### Added
 
-- Zone valve-open readback uses the same ten-second confirmation bound as
-  supply ON, matching the tested pump-time envelope.
+- **Reopening a Finalized Grow Run**: an administrator can return a
+  Finalized Run to Completed with `reopen_grow_run`, giving a reason. The
+  Run's boundaries do not move and it does not resume; its harvest outcomes
+  and Participant names follow the Plants again until it is finalized once
+  more. The earlier snapshot is kept whole beside the new one
+  (`superseded_snapshots` on `get_grow_run`) rather than overwritten.
+- **Discarding an empty Active Run**: `discard_grow_run` removes an Active
+  Run that has recorded nothing, as if it had never started. A Run with a
+  Plant movement, a changed Participant or a harvest outcome is refused, with
+  each kind named in the refusal's `reasons`. Its Run number is not reused,
+  its audit trail is kept, and the growspace's Unattributed Activity coverage
+  resumes from where the start ended it.
+- Every Run Audit Entry, lifecycle event and logbook line now carries the
+  command's reason, when it was given one.
 
-- Recipe stamps now keep the applied revision and portable values on each zone,
-  distinguishing a shared recipe update from a hand tweak. Auto-advance follows
-  newer revisions of an untweaked zone’s current recipe. Even a single-zone
-  grower can no longer set drains or daily caps through a schedule-recipe stamp:
-  drains, caps, dark gating and lights remain growspace-owned provenance.
+- The **Tank–Pump Disagreement**: after each local midnight, a growspace
+  whose tank has `volume_liters` compares the day's tank drop, less Hand
+  Watering reported as drawn from that tank, with the water its pump cycles
+  delivered. A day disagrees when the two are more than 25% and more than
+  1 L apart. Two disagreeing days raise the signal and two agreeing ones clear
+  it, each with a logbook line naming the likely causes: a wrong pump flow
+  rate, a leak, or water drawn from the tank. Days with no pump cycle, or on
+  which the tank level was unknown, count neither way. The growspace payload
+  carries it as `calibration.tank_pump_disagreement` with its last six days.
+  It never blocks irrigation. The comparison also starts again when the pump
+  flow rate is changed.
+- The **Calibration Proposal**, from the tank: while a Tank–Pump Disagreement
+  is raised, a growspace with a pump flow rate gets a fixable Repairs issue
+  showing the configured rate, a corrected one (the configured rate × the
+  median tank drop ÷ pump figure over the disagreeing days), how many days
+  that rests on, and the median ratio. It names a leak and water drawn from the
+  tank as the other explanations. **Apply** writes the corrected rate and
+  closes it; nothing is ever applied automatically. **Ignore** lasts until the
+  tank and the pump agree again. A ratio within 5% of a gallons/litres or
+  litres/m³/mL mix-up offers no Apply and names the tank sensor whose unit to
+  check instead.
+
+### Fixed
+
+- Unloading the integration with a monitored tank no longer fails before its
+  final save, and no longer leaves the tank monitor's timer running.
+
+## [1.4.0] - Unreleased
+
+1.4.0 introduces Irrigation Zones (ADR-0057–0062 and ADR-0065), including a
+one-way growspace-store migration. Read the [zone upgrading guide](docs/upgrading/zones.md)
+before updating or downgrading. The Classic `print_label` service remains
+available throughout 1.x; its removal stays reserved for 2.0.0.
 
 ### Added
 
@@ -60,48 +100,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the supported envelope is six zones, eight valves per zone and four substrate
   probes per quantity. Zone payloads include order, probe roles, placement and
   health while the top-level default-zone mirrors remain available.
+- Zone valves follow confirmed actuation order: other zones must read closed,
+  this zone's valves must read open before the supply starts, and the supply
+  must read OFF before valves close. A valve that fails to close latches a
+  growspace-wide fault. A single pump-only zone still needs no valves.
 - Zone selection for irrigation settings, strategy, phase, schedules, recipes,
   programs and Steering Modes. Pump-only single-zone and Hand Watering
   behavior remains compatible.
 
-- **Reopening a Finalized Grow Run**: an administrator can return a
-  Finalized Run to Completed with `reopen_grow_run`, giving a reason. The
-  Run's boundaries do not move and it does not resume; its harvest outcomes
-  and Participant names follow the Plants again until it is finalized once
-  more. The earlier snapshot is kept whole beside the new one
-  (`superseded_snapshots` on `get_grow_run`) rather than overwritten.
-- **Discarding an empty Active Run**: `discard_grow_run` removes an Active
-  Run that has recorded nothing, as if it had never started. A Run with a
-  Plant movement, a changed Participant or a harvest outcome is refused, with
-  each kind named in the refusal's `reasons`. Its Run number is not reused,
-  its audit trail is kept, and the growspace's Unattributed Activity coverage
-  resumes from where the start ended it.
-- Every Run Audit Entry, lifecycle event and logbook line now carries the
-  command's reason, when it was given one.
-
-- The **Tank–Pump Disagreement**: after each local midnight, a growspace
-  whose tank has `volume_liters` compares the day's tank drop, less Hand
-  Watering reported as drawn from that tank, with the water its pump cycles
-  delivered. A day disagrees when the two are more than 25% and more than
-  1 L apart. Two disagreeing days raise the signal and two agreeing ones clear
-  it, each with a logbook line naming the likely causes: a wrong pump flow
-  rate, a leak, or water drawn from the tank. Days with no pump cycle, or on
-  which the tank level was unknown, count neither way. The growspace payload
-  carries it as `calibration.tank_pump_disagreement` with its last six days.
-  It never blocks irrigation. The comparison also starts again when the pump
-  flow rate is changed.
-- The **Calibration Proposal**, from the tank: while a Tank–Pump Disagreement
-  is raised, a growspace with a pump flow rate gets a fixable Repairs issue
-  showing the configured rate, a corrected one (the configured rate × the
-  median tank drop ÷ pump figure over the disagreeing days), how many days
-  that rests on, and the median ratio. It names a leak and water drawn from the
-  tank as the other explanations. **Apply** writes the corrected rate and
-  closes it; nothing is ever applied automatically. **Ignore** lasts until the
-  tank and the pump agree again. A ratio within 5% of a gallons/litres or
-  litres/m³/mL mix-up offers no Apply and names the tank sensor whose unit to
-  check instead.
-
 ### Changed
+
+- Zone valve-open readback uses the same ten-second confirmation bound as
+  supply ON, matching the tested pump-time envelope.
+
+- Recipe stamps now keep the applied revision and portable values on each zone,
+  distinguishing a shared recipe update from a hand tweak. Auto-advance follows
+  newer revisions of an untweaked zone’s current recipe. Even a single-zone
+  grower can no longer set drains or daily caps through a schedule-recipe stamp:
+  drains, caps, dark gating and lights remain growspace-owned provenance.
 
 - **Every growspace moves into an Irrigation Zone.** On first start the
   growspace store (`.storage/growspace_manager.config`) moves to version 2:
@@ -118,11 +134,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under `zone_migration_invalid`, with a Repairs issue naming it and the copy;
   everything else keeps running, and the hold clears itself once the stored
   zones are valid.
-
-### Fixed
-
-- Unloading the integration with a monitored tank no longer fails before its
-  final save, and no longer leaves the tank monitor's timer running.
 
 ## [1.3.0] - 2026-09-29
 

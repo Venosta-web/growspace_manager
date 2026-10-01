@@ -65,3 +65,16 @@ def test_the_real_changelog_has_a_section_for_the_manifest_version() -> None:
     changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
     assert SCRIPT["changelog_heading"](changelog, version).startswith(f"[{version}]")
+
+
+def test_zone_release_links_upgrade_guide_above_generated_notes() -> None:
+    """The one-way migration's recovery guide opens the release body."""
+    header = SCRIPT["release_notes_header"](
+        "## [1.4.0] - Unreleased\n", "1.4.0", "owner/repo"
+    )
+    assert header == (
+        "**What changes for you in 1.4.0:** [CHANGELOG.md § 1.4.0]"
+        "(https://github.com/owner/repo/blob/v1.4.0/CHANGELOG.md#140---unreleased)"
+        " · [Upgrading to zones]"
+        "(https://github.com/owner/repo/blob/v1.4.0/docs/upgrading/zones.md)"
+    )
