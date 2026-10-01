@@ -374,7 +374,7 @@ async def test_an_edited_recipe_round_trips_through_storage(library) -> None:
         "tent_a", "Veg timer", IrrigationRecipeKind.SCHEDULE
     )
     await library.async_update_recipe(
-        saved.id, name="Veg timer v2", schedule={"max_cycles_per_day": 5}
+        saved.id, name="Veg timer v2", schedule={"irrigation_duration": 5}
     )
 
     stored = library.get_serialization_data()["irrigation_recipes"][saved.id]
@@ -382,4 +382,26 @@ async def test_an_edited_recipe_round_trips_through_storage(library) -> None:
 
     assert reloaded.name == "Veg timer v2"
     assert reloaded.schedule is not None
-    assert reloaded.schedule.max_cycles_per_day == 5
+    assert reloaded.schedule.irrigation_duration == 5
+    assert reloaded.revision == 2
+
+
+async def test_recapture_existing_recipe_keeps_monotonic_revision(library, repository):
+    """The capture/overwrite path cannot reset a shared recipe's revision."""
+    repository.add_growspace(_growspace("tent_a"))
+    first = await library.async_save_from_growspace(
+        "tent_a", "First", IrrigationRecipeKind.CROP_STEERING
+    )
+    renamed = await library.async_save_from_growspace(
+        "tent_a", "Renamed", first.kind, recipe_id=first.id
+    )
+    assert renamed.revision == 1
+    repository.get_growspace("tent_a").default_zone.strategy.target_vwc_percent += 1
+    changed = await library.async_save_from_growspace(
+        "tent_a", "Changed", first.kind, recipe_id=first.id
+    )
+    assert changed.revision == 2
+    switched = await library.async_save_from_growspace(
+        "tent_a", "Timer", IrrigationRecipeKind.SCHEDULE, recipe_id=first.id
+    )
+    assert switched.revision == 3

@@ -545,8 +545,8 @@ async def test_recipe_capture_and_application_select_a_zone(growspace):
         await facade.apply_irrigation_recipe("tent", recipe.id)
     await facade.apply_irrigation_recipe("tent", recipe.id, zone_id="second")
     assert zone.irrigation_duration == 15
-    assert zone.strategy.applied_recipe_id == recipe.id
-    assert growspace.default_zone.strategy.applied_recipe_id is None
+    assert zone.strategy.applied_recipe.id == recipe.id
+    assert growspace.default_zone.strategy.applied_recipe is None
     assert growspace.default_zone.irrigation_times == []
 
 

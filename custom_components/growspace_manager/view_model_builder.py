@@ -27,6 +27,7 @@ from .utils import calculate_days_since
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
     from .models import Growspace
+    from .models.irrigation_zone import IrrigationZone
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -263,6 +264,34 @@ class ViewModelBuilder:
             zone = next(
                 zone for zone in growspace.irrigation_zones if zone.id == zone_id
             )
+            zone_payload["program"] = self._program_state(growspace, plants, zone)
+            applied = zone.strategy.applied_recipe
+            current = (
+                self.coordinator.services.config.find_irrigation_recipe(applied.id)
+                if applied
+                else None
+            )
+            zone_payload["applied_recipe"] = applied.to_dict() if applied else None
+            zone_payload["recipe_applied_at"] = zone.strategy.recipe_applied_at
+            zone_payload["recipe_updated"] = bool(
+                applied and current and current.revision > applied.revision
+            )
+            zone_payload["applied_recipe_drifted"] = (
+                recipe_has_drifted(
+                    applied.as_recipe(),
+                    strategy=effective_strategy(growspace, zone),
+                    config=effective_config(growspace, zone),
+                    live_plant_count=count_live_plants(
+                        [
+                            plant
+                            for plant in plants
+                            if (plant.row, plant.col) in zone.cells
+                        ]
+                    ),
+                )
+                if applied
+                else None
+            )
             zone_payload["active_steering_phase"] = zone.active_steering_phase
             zone_payload["phase_changed_at"] = zone.phase_changed_at
             measurement = runtime.control_measurement if runtime is not None else None
@@ -348,14 +377,16 @@ class ViewModelBuilder:
             self.coordinator.services.config.get_irrigation_recipes()
         )
 
-        # [[Recipe Stamp]] drift, computed on read rather than stored: because
-        # recipes are held by reference, a hash written at stamp time would go
-        # stale the moment the recipe itself was edited (ADR-0045). None means
-        # the question does not apply — the growspace has never had a recipe
-        # applied, or the one it names has since been removed from the library.
-        serialized["irrigation"]["applied_recipe_drifted"] = self._applied_recipe_drift(
-            growspace, plants
+        # Keep the legacy default-zone mirror identical to the zone's facts.
+        default_payload = next(
+            zone
+            for zone in serialized["irrigation"]["zones"]
+            if zone["id"] == growspace.default_zone.id
         )
+        serialized["irrigation"]["applied_recipe_drifted"] = default_payload[
+            "applied_recipe_drifted"
+        ]
+        serialized["irrigation"]["recipe_updated"] = default_payload["recipe_updated"]
 
         # The global [[Irrigation Program]] library rides every payload for the
         # same reason the recipe library above does: the card's program editor
@@ -390,30 +421,11 @@ class ViewModelBuilder:
         self.coordinator.cache.set(growspace_id, (current_time, serialized))
         return serialized
 
-    def _applied_recipe_drift(
-        self, growspace: Growspace, plants: list[Plant]
-    ) -> bool | None:
-        """Return whether the growspace still holds what its recipe stamped.
-
-        None when there is nothing to compare against: no recipe was ever
-        applied, or the applied recipe has since been deleted from the global
-        library (deleting leaves references dangling rather than cascading).
-        """
-        recipe_id = growspace.default_zone.strategy.applied_recipe_id
-        if recipe_id is None:
-            return None
-        recipe = self.coordinator.services.config.find_irrigation_recipe(recipe_id)
-        if recipe is None:
-            return None
-        return recipe_has_drifted(
-            recipe,
-            strategy=effective_strategy(growspace),
-            config=effective_config(growspace),
-            live_plant_count=count_live_plants(plants),
-        )
-
     def _program_state(
-        self, growspace: Growspace, plants: list[Plant]
+        self,
+        growspace: Growspace,
+        plants: list[Plant],
+        zone: IrrigationZone | None = None,
     ) -> dict[str, Any] | None:
         """Return the bound [[Irrigation Program]]'s current slot and recipe.
 
@@ -442,7 +454,7 @@ class ViewModelBuilder:
         transient by nature: it means auto-advance owes a stamp that the next
         evaluation will write.
         """
-        position = resolve_program_position(self.coordinator, growspace, plants)
+        position = resolve_program_position(self.coordinator, growspace, plants, zone)
         if position is None:
             return None
 

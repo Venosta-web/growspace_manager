@@ -297,7 +297,7 @@
         'veg_day_hours': 18,
       }),
       'irrigation_strategy': dict({
-        'applied_recipe_id': None,
+        'applied_recipe': None,
         'auto_light_tracking': False,
         'declared_steering_mode': None,
         'detected_lights_on_time': None,
@@ -407,7 +407,7 @@
             'veg_day_hours': 18,
           }),
           'irrigation_strategy': dict({
-            'applied_recipe_id': None,
+            'applied_recipe': None,
             'auto_light_tracking': False,
             'declared_steering_mode': None,
             'detected_lights_on_time': None,

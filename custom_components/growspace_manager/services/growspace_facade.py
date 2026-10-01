@@ -475,12 +475,10 @@ class GrowspaceFacade:
             else "bound to no irrigation program",
         )
 
-        if (
-            program_id is not None
-            and len(growspace.irrigation_zones) == 1
-            and growspace.irrigation_config.program_auto_advance
-        ):
-            await self._coordinator.program_progression.async_evaluate(growspace_id)
+        if program_id is not None and growspace.irrigation_config.program_auto_advance:
+            await self._coordinator.program_progression.async_evaluate(
+                growspace_id, zone.id
+            )
 
     async def set_ec_target_range(
         self,

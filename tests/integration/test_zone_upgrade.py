@@ -111,7 +111,17 @@ async def test_golden_store_upgrades_and_keeps_every_entity(
             if name in before["environment_config"]:
                 assert zone[name] == before["environment_config"][name], name
         for name, value in before["irrigation_strategy"].items():
-            if name in LIGHT_CYCLE_FIELDS:
+            if name == "applied_recipe_id":
+                assert name not in zone["strategy"]
+                applied = zone["strategy"].get("applied_recipe")
+                recipe = stored["data"]["irrigation_recipes"].get(value)
+                if recipe is None:
+                    assert applied is None
+                else:
+                    assert applied["id"] == value
+                    assert applied["revision"] == recipe["revision"] == 1
+                    assert applied["values"] == recipe[recipe["kind"]]
+            elif name in LIGHT_CYCLE_FIELDS:
                 assert after["light_cycle"][name] == value, name
             else:
                 assert zone["strategy"][name] == value, name

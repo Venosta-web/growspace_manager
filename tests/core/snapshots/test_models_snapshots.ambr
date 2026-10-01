@@ -570,7 +570,7 @@
         'soil_moisture_sensor': None,
         'soil_trigger_percent': None,
         'strategy': dict({
-          'applied_recipe_id': None,
+          'applied_recipe': None,
           'declared_steering_mode': None,
           'dynamic_aggressiveness': 1.0,
           'dynamic_interval_ceiling': 1.5,

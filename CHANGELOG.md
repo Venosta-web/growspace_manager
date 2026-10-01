@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Recipe stamps now keep the applied revision and portable values on each zone,
+  distinguishing a shared recipe update from a hand tweak. Auto-advance follows
+  newer revisions of an untweaked zone’s current recipe. Even a single-zone
+  grower can no longer set drains or daily caps through a schedule-recipe stamp:
+  drains, caps, dark gating and lights remain growspace-owned provenance.
+
 ### Added
 
 - Irrigation zones can opt into `degraded_fallback: replay`. After the sensor

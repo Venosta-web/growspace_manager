@@ -372,7 +372,7 @@ async def test_assigning_writes_no_setpoint_and_fires_no_pump(
     before_strategy.pop("irrigation_program_id")
     assert after_strategy == before_strategy
     assert growspace.irrigation_config.to_dict() == before_config
-    assert growspace.default_zone.strategy.applied_recipe_id is None
+    assert growspace.default_zone.strategy.applied_recipe is None
     assert logbook == []
     assert pump_calls == []
 

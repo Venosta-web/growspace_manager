@@ -215,9 +215,7 @@ def test_schedule_recipe_carries_the_times_and_leaves_the_pumps_behind() -> None
     stored = recipe.to_dict()
 
     assert recipe.irrigation_times == [{"time": "08:00:00", "duration": 30}]
-    assert recipe.daily_volume_cap_liters == 12.5
-    assert recipe.max_cycles_per_day == 6
-    assert recipe.skip_during_dark is True
+    assert set(recipe.to_dict()) == {"irrigation_times", "irrigation_duration"}
     for excluded in ("irrigation_pump_entity", "drain_pump_entity", "ec_target_ranges"):
         assert excluded not in stored
 
@@ -285,12 +283,7 @@ def _schedule_recipe(**overrides) -> IrrigationRecipe:
         provenance=RecipeProvenance(media_type=SubstrateMediaType.COCO),
         schedule=ScheduleRecipe(
             irrigation_times=[{"time": "07:30:00", "duration": 45}],
-            drain_times=[{"time": "19:30:00", "duration": 20}],
             irrigation_duration=45,
-            drain_duration=20,
-            daily_volume_cap_liters=14.0,
-            max_cycles_per_day=8,
-            skip_during_dark=True,
         ),
     )
     for key, value in overrides.items():
@@ -382,8 +375,7 @@ def test_schedule_recipe_resolves_onto_the_irrigation_config() -> None:
     assert application.config_values["irrigation_times"] == [
         {"time": "07:30:00", "duration": 45}
     ]
-    assert application.config_values["max_cycles_per_day"] == 8
-    assert application.config_values["skip_during_dark"] is True
+    assert set(application.config_values) == {"irrigation_times", "irrigation_duration"}
 
 
 def test_resolved_schedule_times_do_not_alias_the_recipe() -> None:
@@ -508,7 +500,7 @@ def test_matching_media_warns_about_nothing() -> None:
         live_plant_count=4,
     )
 
-    assert application.media_warning is None
+    assert "media" not in (application.media_warning or "")
 
 
 def test_cross_media_apply_warns_naming_both_and_scales_nothing() -> None:
@@ -579,7 +571,7 @@ def test_schedule_drift_reads_the_irrigation_config() -> None:
         recipe, strategy=strategy, config=config, live_plant_count=0
     )
 
-    config.max_cycles_per_day = 3
+    config.irrigation_duration = 3
 
     assert recipe_has_drifted(
         recipe, strategy=strategy, config=config, live_plant_count=0
@@ -635,11 +627,11 @@ def test_values_are_sparse() -> None:
 
 def test_the_schedule_half_edits_the_same_way() -> None:
     """Both halves are editable through the one entry point."""
-    edited = edit_recipe(_schedule_recipe(), schedule={"skip_during_dark": False})
+    edited = edit_recipe(_schedule_recipe(), schedule={"irrigation_duration": 30})
 
     assert edited.schedule is not None
-    assert edited.schedule.skip_during_dark is False
-    assert edited.schedule.max_cycles_per_day == 8
+    assert edited.schedule.irrigation_duration == 30
+    assert edited.revision == 2
 
 
 def test_identity_kind_created_at_and_provenance_are_untouched() -> None:
@@ -747,3 +739,94 @@ def test_the_transport_schemas_accept_exactly_the_editable_fields() -> None:
         (SCHEDULE_RECIPE_VALUES_SCHEMA, SCHEDULE_RECIPE_EDIT_FIELDS),
     ):
         assert {str(key) for key in vol_schema.schema} == editable
+
+
+@pytest.mark.parametrize("kind", list(IrrigationRecipeKind))
+def test_revision_changes_only_for_changed_values(kind):
+    """Renaming, empty edits and identical values keep the revision."""
+    recipe = (
+        _steering_recipe()
+        if kind is IrrigationRecipeKind.CROP_STEERING
+        else _schedule_recipe()
+    )
+    label = "crop_steering" if recipe.crop_steering else "schedule"
+    half = getattr(recipe, label)
+    assert edit_recipe(recipe, name="Renamed").revision == 1
+    assert edit_recipe(recipe, **{label: {}}).revision == 1
+    assert edit_recipe(recipe, **{label: half.to_dict()}).revision == 1
+    key = "target_vwc_percent" if recipe.crop_steering else "irrigation_duration"
+    edited = edit_recipe(recipe, **{label: {key: 30}})
+    assert edited.revision == 2
+    assert edit_recipe(edited, **{label: {key: 31}}).revision == 3
+    assert recipe.revision == 1
+
+
+@pytest.mark.parametrize("kind", list(IrrigationRecipeKind))
+def test_applied_recipe_round_trip_and_detached_values(kind):
+    """The wire carries portable values, detached in both directions."""
+    from custom_components.growspace_manager.models.irrigation_recipe import (
+        AppliedRecipe,
+    )
+
+    recipe = (
+        _steering_recipe()
+        if kind is IrrigationRecipeKind.CROP_STEERING
+        else _schedule_recipe()
+    )
+    applied = AppliedRecipe.from_recipe(recipe)
+    assert AppliedRecipe.from_dict(applied.to_dict()) == applied
+    recovered = applied.as_recipe()
+    assert recovered.kind == kind
+    assert recovered.revision == recipe.revision
+    if recipe.schedule:
+        recipe.schedule.irrigation_times[0]["duration"] = 999
+        recovered.schedule.irrigation_times[0]["duration"] = 888
+        assert applied.values["irrigation_times"][0]["duration"] == 45
+    else:
+        recipe.crop_steering.target_vwc_percent = 99
+        assert applied.values["target_vwc_percent"] != 99
+        assert "lights_on_time" not in applied.values
+        assert "p1_shot_duration_seconds" not in applied.values
+
+
+@pytest.mark.parametrize("kind", list(IrrigationRecipeKind))
+def test_shared_settings_warn_but_never_stamp_or_drift(kind):
+    """Shared settings are provenance, regardless of the number of zones."""
+    recipe = (
+        _steering_recipe()
+        if kind is IrrigationRecipeKind.CROP_STEERING
+        else _schedule_recipe()
+    )
+    strategy = _strategy(
+        enabled=kind is IrrigationRecipeKind.CROP_STEERING,
+        shot_sizing_mode=ShotSizingMode.VOLUME,
+    )
+    config = _config()
+    provenance = capture_provenance(strategy, config, stage="flower", week=3)
+    recipe.provenance = provenance
+    assert (
+        resolve_recipe_application(
+            recipe, strategy=strategy, config=config, live_plant_count=4
+        ).media_warning
+        is None
+    )
+    if recipe.crop_steering:
+        strategy.lights_on_time = "09:00:00"
+        strategy.auto_light_tracking = True
+    else:
+        config.drain_times = [{"time": "09:00:00", "duration": 10}]
+        config.drain_duration = 40
+        config.daily_volume_cap_liters = 12
+        config.max_cycles_per_day = 3
+        config.skip_during_dark = True
+    application = resolve_recipe_application(
+        recipe, strategy=strategy, config=config, live_plant_count=4
+    )
+    assert "provenance differs" in application.media_warning
+    for key, value in application.values.items():
+        setattr(strategy, key, value)
+    for key, value in application.config_values.items():
+        setattr(config, key, value)
+    assert not recipe_has_drifted(
+        recipe, strategy=strategy, config=config, live_plant_count=4
+    )

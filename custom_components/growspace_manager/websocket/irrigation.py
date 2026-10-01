@@ -368,7 +368,9 @@ async def websocket_apply_irrigation_recipe(
     ).strategy
     return {
         "growspace_id": growspace_id,
-        "applied_recipe_id": strategy.applied_recipe_id,
+        "applied_recipe": strategy.applied_recipe.to_dict()
+        if strategy.applied_recipe
+        else None,
         "recipe_applied_at": strategy.recipe_applied_at,
         "warning": warning,
     }

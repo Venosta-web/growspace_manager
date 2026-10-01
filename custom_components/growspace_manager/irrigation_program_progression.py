@@ -35,6 +35,7 @@ a plan that skips weeks would otherwise notify on every one of them.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING
@@ -68,6 +69,7 @@ if TYPE_CHECKING:
     from .models import Growspace, Plant
     from .models.irrigation_program import IrrigationProgram, ProgramSlot
     from .models.irrigation_recipe import IrrigationRecipe
+    from .models.irrigation_zone import IrrigationZone
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -113,6 +115,7 @@ def resolve_program_position(
     coordinator: GrowspaceCoordinator,
     growspace: Growspace,
     plants: list[Plant],
+    zone: IrrigationZone | None = None,
 ) -> ProgramPosition | None:
     """Resolve a growspace's place in its bound program, or None if unbound.
 
@@ -125,8 +128,12 @@ def resolve_program_position(
     [[Active Feed EC Target]] uses, reused unchanged so one card never shows
     two different weeks for one tent ([[Recipe Week Resolution]]).
     """
-    strategy = effective_strategy(growspace)
-    config = effective_config(growspace)
+    zone = zone or growspace.default_zone
+    plants = [plant for plant in plants if (plant.row, plant.col) in zone.cells]
+    strategy = effective_strategy(growspace, zone)
+    config = effective_config(growspace, zone)
+    target = copy.copy(growspace)
+    target.irrigation_zones = [zone]
 
     program_id = strategy.irrigation_program_id
     if program_id is None:
@@ -150,7 +157,7 @@ def resolve_program_position(
         try:
             application = resolve_validated_recipe_application(
                 recipe,
-                growspace,
+                target,
                 live_plant_count=live_plant_count,
             )
         except (RecipeApplyError, IrrigationChangeError) as err:
@@ -162,9 +169,15 @@ def resolve_program_position(
         week=week,
         slot=slot,
         slot_recipe_name=recipe.name if recipe is not None else None,
-        applied_recipe_id=strategy.applied_recipe_id,
+        applied_recipe_id=strategy.applied_recipe.id
+        if strategy.applied_recipe
+        else None,
+        applied_recipe_revision=strategy.applied_recipe.revision
+        if strategy.applied_recipe
+        else None,
+        slot_recipe_revision=recipe.revision if recipe else 1,
         applied_recipe_drifted=_applied_recipe_drifted(
-            coordinator, growspace, live_plant_count=live_plant_count
+            coordinator, target, live_plant_count=live_plant_count
         ),
         apply_error=apply_error,
         auto_advance=config.program_auto_advance,
@@ -191,18 +204,15 @@ def _applied_recipe_drifted(
     """Return whether the growspace has been tweaked since its last stamp.
 
     ``False`` when there is nothing to compare against — no recipe was ever
-    applied, or the applied recipe has since been deleted from the library.
-    Both are *absence of evidence of a tweak*, not evidence of one, and the
+    applied. A deleted recipe retains its Applied Recipe copy. The
     never-applied case has to read that way: a growspace bound to a program
     with auto-advance on and nothing yet stamped is exactly the case that
     should progress.
     """
-    recipe_id = growspace.default_zone.strategy.applied_recipe_id
-    if recipe_id is None:
+    applied = growspace.default_zone.strategy.applied_recipe
+    if applied is None:
         return False
-    recipe = coordinator.services.config.find_irrigation_recipe(recipe_id)
-    if recipe is None:
-        return False
+    recipe = applied.as_recipe()
     return recipe_has_drifted(
         recipe,
         strategy=effective_strategy(growspace),
@@ -229,7 +239,7 @@ class IrrigationProgramProgression:
     def __init__(self, coordinator: GrowspaceCoordinator) -> None:
         """Bind the seam to its coordinator."""
         self._coordinator = coordinator
-        self._announced: dict[str, tuple[str | None, int, ProgramHold]] = {}
+        self._announced: dict[tuple[str, str], tuple[str | None, int, ProgramHold]] = {}
 
     async def async_evaluate_all(self) -> None:
         """Evaluate every growspace, letting no single one break the refresh.
@@ -242,16 +252,20 @@ class IrrigationProgramProgression:
         growspace caught here is logged and left exactly as it was, so the next
         tick evaluates it again from the state it actually holds.
         """
-        for growspace_id in self._coordinator.growspaces:
-            try:
-                await self.async_evaluate(growspace_id)
-            except Exception:
-                _LOGGER.exception(
-                    "Irrigation program progression failed for growspace '%s'",
-                    growspace_id,
-                )
+        for growspace_id, growspace in list(self._coordinator.growspaces.items()):
+            for zone in list(growspace.irrigation_zones):
+                try:
+                    await self.async_evaluate(growspace_id, zone.id)
+                except Exception:
+                    _LOGGER.exception(
+                        "Irrigation program progression failed for growspace '%s', zone '%s'",
+                        growspace_id,
+                        zone.id,
+                    )
 
-    async def async_evaluate(self, growspace_id: str) -> ProgramProgression | None:
+    async def async_evaluate(
+        self, growspace_id: str, zone_id: str | None = None
+    ) -> ProgramProgression | None:
         """Resolve one growspace's progression and carry it out.
 
         Returns the progression, or ``None`` when the growspace is unbound (or
@@ -260,34 +274,52 @@ class IrrigationProgramProgression:
         slot's recipe, after which the growspace is up to date.
         """
         growspace = self._coordinator.growspaces.get(growspace_id)
-        if growspace is None or len(growspace.irrigation_zones) > 1:
-            self._announced.pop(growspace_id, None)
+        if growspace is None:
+            self._announced = {
+                key: hold
+                for key, hold in self._announced.items()
+                if key[0] != growspace_id
+            }
             return None
+        zone = (
+            next(
+                (zone for zone in growspace.irrigation_zones if zone.id == zone_id),
+                None,
+            )
+            if zone_id
+            else growspace.default_zone
+        )
+        if zone is None:
+            self._announced.pop((growspace_id, zone_id or ""), None)
+            return None
+        key = (growspace_id, zone.id)
 
         plants = self._coordinator.services.growspaces.get_growspace_plants(
             growspace_id
         )
-        position = resolve_program_position(self._coordinator, growspace, plants)
+        position = resolve_program_position(self._coordinator, growspace, plants, zone)
         if position is None:
-            self._announced.pop(growspace_id, None)
+            self._announced.pop(key, None)
             return None
 
         progression = position.progression
         if progression.state is ProgramProgressionState.DUE:
-            self._announced.pop(growspace_id, None)
-            await self._async_stamp(growspace_id, position)
+            self._announced.pop(key, None)
+            await self._async_stamp(growspace_id, position, zone.id)
         elif (
             position.auto_advance
             and progression.state is ProgramProgressionState.HELD
             and progression.hold in _ANNOUNCED_HOLDS
         ):
-            await self._async_announce(growspace_id, position)
+            await self._async_announce(growspace_id, position, zone.id)
         else:
-            self._announced.pop(growspace_id, None)
+            self._announced.pop(key, None)
 
         return progression
 
-    async def _async_stamp(self, growspace_id: str, position: ProgramPosition) -> None:
+    async def _async_stamp(
+        self, growspace_id: str, position: ProgramPosition, zone_id: str
+    ) -> None:
         """Write the slot's recipe into the growspace, once, with one log line.
 
         Literally the same [[Recipe Stamp]] a grower's explicit apply performs
@@ -303,7 +335,7 @@ class IrrigationProgramProgression:
         refresh. It propagates: with the growspace left as it was, the next
         eligible evaluation still reads ``due`` and retries. A successful
         stamp is what makes it happen **once** — the next evaluation sees
-        ``applied_recipe_id`` already naming this slot's recipe and has
+        ``applied_recipe`` already naming this slot's recipe and has
         nothing to do.
         """
         recipe = position.recipe
@@ -324,6 +356,7 @@ class IrrigationProgramProgression:
                     ),
                 },
             ),
+            zone_id=zone_id,
         )
         _LOGGER.info(
             "Irrigation program '%s' advanced growspace '%s' to %s week %s "
@@ -336,7 +369,7 @@ class IrrigationProgramProgression:
         )
 
     async def _async_announce(
-        self, growspace_id: str, position: ProgramPosition
+        self, growspace_id: str, position: ProgramPosition, zone_id: str
     ) -> None:
         """Tell the grower about a hold, once per distinct hold.
 
@@ -349,9 +382,9 @@ class IrrigationProgramProgression:
         if hold is None:  # pragma: no cover - callers filter on hold
             return
         key = (position.stage, position.week, hold)
-        if self._announced.get(growspace_id) == key:
+        if self._announced.get((growspace_id, zone_id)) == key:
             return
-        self._announced[growspace_id] = key
+        self._announced[(growspace_id, zone_id)] = key
 
         _LOGGER.info(
             "Irrigation program hold (%s) for growspace '%s': %s",

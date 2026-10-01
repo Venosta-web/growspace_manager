@@ -195,6 +195,8 @@ def resolve_program_progression(
     applied_recipe_drifted: bool,
     apply_error: str | None,
     auto_advance: bool,
+    applied_recipe_revision: int | None = None,
+    slot_recipe_revision: int = 1,
 ) -> ProgramProgression:
     """Decide what ``program`` does for a growspace at ``(stage, week)``.
 
@@ -254,7 +256,10 @@ def resolve_program_progression(
             ),
         )
 
-    if slot.recipe_id == applied_recipe_id:
+    if (
+        slot.recipe_id == applied_recipe_id
+        and slot_recipe_revision == applied_recipe_revision
+    ):
         return ProgramProgression(
             state=ProgramProgressionState.UP_TO_DATE,
             detail=(
@@ -275,7 +280,7 @@ def resolve_program_progression(
             state=ProgramProgressionState.AVAILABLE,
             detail=(
                 f"{stage.capitalize()} week {week} calls for irrigation recipe "
-                f"'{slot_recipe_name}'. Auto-advance is off, so nothing has "
+                f"'{slot_recipe_name}' revision {slot_recipe_revision}. Auto-advance is off, so nothing has "
                 "been changed."
             ),
         )
@@ -296,7 +301,7 @@ def resolve_program_progression(
         state=ProgramProgressionState.DUE,
         detail=(
             f"{stage.capitalize()} week {week} calls for irrigation recipe "
-            f"'{slot_recipe_name}', and auto-advance is on."
+            f"'{slot_recipe_name}' revision {slot_recipe_revision}, and auto-advance is on."
         ),
     )
 

@@ -343,7 +343,9 @@ async def test_storage_async_load_legacy_migration(storage) -> None:
         patch.object(storage.plants_store, "async_save") as mock_save_plants,
     ):
         await storage.async_load()
-        mock_load_legacy.assert_called_once_with(legacy_data, None)
+        mock_load_legacy.assert_called_once_with(
+            {**legacy_data, "irrigation_recipes": {}}, None
+        )
         mock_save_config.assert_called_once()
         mock_save_plants.assert_called_once()
 
