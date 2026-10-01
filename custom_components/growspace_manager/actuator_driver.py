@@ -52,6 +52,7 @@ _AC_INFINITY_SPEED_MAX = 10
 # How long a command may take before it counts as failed (#792). Long enough
 # for a cloud-polled port, short enough that a 10 s control tick is not held.
 COMMAND_TIMEOUT_SECONDS = 10.0
+STATE_CONFIRM_TIMEOUT_SECONDS = 6.0
 
 
 async def _safe_service_call(
@@ -93,7 +94,7 @@ async def async_confirm_state(
     *,
     first_read: float = 1.0,
     poll: float = 0.5,
-    timeout: float = 6.0,
+    timeout: float = STATE_CONFIRM_TIMEOUT_SECONDS,
 ) -> bool:
     """Read an actuator back after a command until it reports ``want``.
 

@@ -2572,7 +2572,9 @@ class BaseIrrigationCoordinator:
                     if driver is None or not await driver.turn_on():
                         open_failure = (ON_COMMAND_FAILED, f"{valve} refused to open")
                         break
-                    if not await async_confirm_state(self.hass, valve, STATE_ON):
+                    if not await async_confirm_state(
+                        self.hass, valve, STATE_ON, timeout=ON_CONFIRM_TIMEOUT_SECONDS
+                    ):
                         open_failure = (
                             ON_UNCONFIRMED,
                             f"{valve} did not read back open",

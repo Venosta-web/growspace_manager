@@ -231,3 +231,27 @@ def test_substitution_offset_uses_only_pairs_still_inside_the_rolling_window():
     assert state.resolve(failed, [peer], later).value == 43
     assert state.active["offset"] == 23
     assert state.active["since"] == since
+
+
+def test_out_of_order_pairs_keep_the_median_and_expire_at_the_boundary():
+    state = WitnessSubstitution()
+    for minute, delta in [(2, 7), (0, 1), (1, 3)]:
+        at = AT + timedelta(minutes=minute)
+        state.resolve(
+            _measurement(50, at=at),
+            [_measurement(50 - delta, probe=PROBES[0], at=at)],
+            AT + timedelta(minutes=3),
+        )
+    assert [delta for _, delta in state.history["sensor.witness"]] == [1, 3, 7]
+    failed = _measurement(None, cause=Invalidity.UNAVAILABLE)
+    at = AT + timedelta(minutes=3)
+    assert (
+        state.resolve(failed, [_measurement(40, probe=PROBES[0], at=at)], at).value
+        == 43
+    )
+    at = AT + timedelta(hours=24, minutes=1)
+    assert (
+        state.resolve(failed, [_measurement(40, probe=PROBES[0], at=at)], at).value
+        == 47
+    )
+    assert state.history["sensor.witness"] == [(AT + timedelta(minutes=2), 7)]

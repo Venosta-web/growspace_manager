@@ -361,8 +361,10 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             delay=timedelta(minutes=self._config().sensor_alert_delay_minutes),
         )
         attempts = self._supply._deliveries.attempts
-        shots = reference_shots(attempts, self._zone.id, window_day)
-        replayed = any(
+        shots = (
+            reference_shots(attempts, self._zone.id, window_day) if qualifies else []
+        )
+        replayed = qualifies and any(
             a.zone_id == self._zone.id
             and a.charge_date == window_day
             and a.trigger is AttemptTrigger.FALLBACK

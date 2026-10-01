@@ -1,6 +1,10 @@
 # The Scale Envelope Is Derived From Pump Time, and Tested
 
-**Status:** Accepted — not yet implemented
+**Status:** Accepted — implemented. Zone, probe and valve limits are enforced by
+`domain/zone_edit.py`; `envelope.py` reconciles the two Repairs warnings after
+configuration commits and setup. `tests/envelope/` exercises the full envelope
+in CI, including minute-tick timing, lossless Delivery Attempt storage and the
+per-zone entity inventory.
 
 The PRD asserted 128 zones, 8 probes per zone and 32 active delivery groups as acceptance criteria, which charting ruled out as certifying a fiction (#544). "2–6 zones" survived only as inference: the research (#545) found **no source that states a zone count**, only hardware ceilings from 4 (Autogrow) to hundreds, and a floor of "one zone per cultivar". A stated envelope is a product promise, so #551 asked for numbers that a test backs.
 

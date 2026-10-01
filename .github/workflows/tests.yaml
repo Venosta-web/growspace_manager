@@ -68,9 +68,35 @@ jobs:
         run: |
           python tests/utils/prepare_lovelace_fixtures.py
           python tests/utils/prepare_lovelace_fixtures.py --check
+      # Measure the shared event loop without coverage instrumentation. This
+      # seven-day simulation uses the real runtime with fake time and drivers.
+      - name: Verify the irrigation scale envelope
+        run: >-
+          pytest tests/envelope/test_load.py
+          --junitxml=envelope.xml -o junit_family=xunit1
+      - name: Report irrigation envelope measurements
+        if: always()
+        run: |
+          python - <<'PYTHON'
+          import os
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          report = Path("envelope.xml")
+          if report.exists():
+              properties = ElementTree.parse(report).findall(".//property")
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+                  summary.write("## Irrigation scale envelope\n\n")
+                  summary.write("| Measurement | Value |\n|---|---:|\n")
+                  for item in properties:
+                      summary.write(
+                          f"| {item.attrib['name']} | {item.attrib['value']} |\n"
+                      )
+          PYTHON
       - name: Run Unit Tests
         run: >-
           pytest
+          --ignore=tests/envelope/test_load.py
           --cov
           --cov-report=term-missing
           --cov-report=xml:coverage.xml
