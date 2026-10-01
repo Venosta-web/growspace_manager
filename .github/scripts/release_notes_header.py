@@ -1,7 +1,8 @@
 """Print the line a stable release body opens with: a link to its changelog section.
 
 GitHub prepends a release's ``body`` to its generated notes, so this line sits
-above the generated PR list (ADR-0063 decision 5). A version with no
+above the generated PR list (ADR-0063 decision 5). The 1.4.0 header also links
+its zone upgrading guide. A version with no
 ``## [X.Y.Z]`` section in the changelog is refused, which stops a stable release
 from being published before its notes are written.
 """
@@ -42,7 +43,13 @@ def release_notes_header(changelog: str, version: str, repository: str) -> str:
     """Return the Markdown line linking the release to its changelog section."""
     anchor = github_anchor(changelog_heading(changelog, version))
     url = f"https://github.com/{repository}/blob/v{version}/CHANGELOG.md#{anchor}"
-    return f"**What changes for you in {version}:** [CHANGELOG.md § {version}]({url})"
+    header = f"**What changes for you in {version}:** [CHANGELOG.md § {version}]({url})"
+    if version == "1.4.0":
+        guide = (
+            f"https://github.com/{repository}/blob/v{version}/docs/upgrading/zones.md"
+        )
+        header += f" · [Upgrading to zones]({guide})"
+    return header
 
 
 def main(argv: list[str] | None = None) -> int:
