@@ -12,6 +12,7 @@ from custom_components.growspace_manager.models import (
     ECRampPoint,
     EnergyTracking,
     EnvironmentConfig,
+    FlowMeter,
     IrrigationZone,
     Plant,
     Subarea,
@@ -626,7 +627,7 @@ def _make_water_sensor_tank_derived(
         daily_readings=[],
     )
     env = Mock()
-    env.irrigation_flow_sensors = []
+    env.flow_meters = []
     env.drain_volume_sensors = []
     env.irrigation_tanks = [Mock(volume_liters=50.0)]
     growspace.environment_config = env
@@ -706,7 +707,7 @@ def test_water_sensor_stays_tank_derived_when_flow_sensors_configured() -> None:
     sensor, coordinator, growspace, _ = _make_water_sensor_tank_derived(
         tracker_liters_since=99.0
     )
-    growspace.environment_config.irrigation_flow_sensors = ["sensor.flow_1"]
+    growspace.environment_config.flow_meters = [FlowMeter("sensor.flow_1", "supply")]
     growspace.water_usage.total_liters = 25.0
 
     assert sensor.native_value == 99.0 + 25.0

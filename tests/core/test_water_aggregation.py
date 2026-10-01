@@ -13,6 +13,7 @@ from custom_components.growspace_manager.domain.water_aggregation import (
 )
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
+    FlowMeter,
     Growspace,
     IrrigationTank,
     WaterUsageData,
@@ -48,7 +49,7 @@ def _growspace(
     )
     env = EnvironmentConfig(
         irrigation_tanks=tanks,
-        irrigation_flow_sensors=flow_sensors or [],
+        flow_meters=[FlowMeter(entity, "supply") for entity in flow_sensors or []],
         drain_volume_sensors=drain_sensors or [],
     )
     usage = WaterUsageData(

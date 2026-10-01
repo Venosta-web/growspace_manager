@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Flow meters are configured as `flow_meters: [{entity_id, placement}]`, on
+  `supply` or an existing irrigation zone, at most one per placement. Home
+  Assistant declares their kind and unit; unsupported metadata is refused.
+  The growspace store advances from v2.1 to v2.2. The unused
+  `irrigation_flow_sensors` field is retired on load and its entries are logged,
+  **never promoted**: add those instruments again as flow meters.
+
 - **Reopening a Finalized Grow Run**: an administrator can return a
   Finalized Run to Completed with `reopen_grow_run`, giving a reason. The
   Run's boundaries do not move and it does not resume; its harvest outcomes

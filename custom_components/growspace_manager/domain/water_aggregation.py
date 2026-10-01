@@ -142,7 +142,7 @@ def is_tank_derived_mode(growspace: Growspace) -> bool:
     """Return True when reservoir-level inference is the measurement source.
 
     Active when at least one tank has ``volume_liters`` configured.
-    ``irrigation_flow_sensors`` and ``drain_volume_sensors`` play no part: no
+    Configured ``flow_meters`` and ``drain_volume_sensors`` play no part yet: no
     reading of either is converted to litres, so letting them switch this off
     traded the tank figure for the Pump-Cycle Water Estimate (#853).
     """

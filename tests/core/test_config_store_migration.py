@@ -150,3 +150,41 @@ async def test_a_failed_copy_leaves_the_old_document_in_place(
 
     assert hass_storage[STORAGE_KEY_CONFIG]["version"] == 1
     assert COPY_KEY not in hass_storage
+
+
+async def test_metering_is_an_additive_v2_minor_migration(hass, hass_storage, caplog):
+    """Drop unverified declarations once, without another major-version copy."""
+    from custom_components.growspace_manager.const import STORAGE_MINOR_VERSION_CONFIG
+
+    data = {
+        "growspaces": {
+            "tent": {
+                "environment_config": {"irrigation_flow_sensors": ["sensor.old"]},
+                "irrigation_zones": [{"id": "default"}],
+            }
+        }
+    }
+    hass_storage[STORAGE_KEY_CONFIG] = {
+        "version": 2,
+        "minor_version": 1,
+        "key": STORAGE_KEY_CONFIG,
+        "data": data,
+    }
+    store = GrowspaceConfigStore(
+        hass, 2, STORAGE_KEY_CONFIG, minor_version=STORAGE_MINOR_VERSION_CONFIG
+    )
+    loaded = await store.async_load()
+    assert loaded["growspaces"]["tent"]["environment_config"] == {"flow_meters": []}
+    assert loaded["growspaces"]["tent"]["irrigation_zones"] == [{"id": "default"}]
+    assert hass_storage[STORAGE_KEY_CONFIG]["version"] == 2
+    assert hass_storage[STORAGE_KEY_CONFIG]["minor_version"] == 2
+    assert COPY_KEY not in hass_storage
+    assert "sensor.old" in caplog.text
+    caplog.clear()
+    assert (
+        await GrowspaceConfigStore(
+            hass, 2, STORAGE_KEY_CONFIG, minor_version=STORAGE_MINOR_VERSION_CONFIG
+        ).async_load()
+        == loaded
+    )
+    assert "Retired irrigation_flow_sensors" not in caplog.text

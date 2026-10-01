@@ -97,11 +97,11 @@ from .const import (
     CONF_EXHAUST_ENTITY,
     CONF_EXHAUST_FAN_ENTITIES,
     CONF_FEED_EC_SENSORS,
+    CONF_FLOW_METERS,
     CONF_HUMIDIFIER_ENTITIES,
     CONF_HUMIDIFIER_ENTITY,
     CONF_HUMIDIFIER_THRESHOLDS,
     CONF_HUMIDITY_SENSOR,
-    CONF_IRRIGATION_FLOW_SENSORS,
     CONF_LIGHT_SENSOR,
     CONF_LIGHT_SENSORS,
     CONF_LST_OFFSET,
@@ -643,7 +643,14 @@ CONFIGURE_ENVIRONMENT_SCHEMA = vol.Schema(
         vol.Optional(CONF_PORE_EC_SENSORS): cv.ensure_list,
         vol.Optional(CONF_RUNOFF_EC_SENSORS): cv.ensure_list,
         vol.Optional(CONF_DRAIN_VOLUME_SENSORS): cv.ensure_list,
-        vol.Optional(CONF_IRRIGATION_FLOW_SENSORS): cv.ensure_list,
+        vol.Optional(CONF_FLOW_METERS): [
+            vol.Schema(
+                {
+                    vol.Required("entity_id"): cv.entity_id,
+                    vol.Required("placement"): cv.string,
+                }
+            )
+        ],
         vol.Optional(CONF_POWER_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ENERGY_SENSORS): cv.ensure_list,
         vol.Optional(CONF_ELECTRICITY_COST): vol.Coerce(float),

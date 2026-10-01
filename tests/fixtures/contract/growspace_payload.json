@@ -153,6 +153,16 @@
     "exhaust_fan_entities": ["fan.contract_exhaust"],
     "exhaust_state": "on",
     "feed_ec_sensors": ["sensor.contract_feed_ec"],
+    "flow_meters": [
+      {
+        "entity_id": "sensor.contract_irrigation_flow",
+        "placement": "supply"
+      },
+      {
+        "entity_id": "sensor.contract_zone_flow",
+        "placement": "default"
+      }
+    ],
     "growlight_ac_infinity_devices": [
       {
         "mode_entity": "select.contract_growlight_mode",
@@ -193,7 +203,6 @@
       "sensor.contract_humidity",
       "sensor.contract_humidity_2"
     ],
-    "irrigation_flow_sensors": ["sensor.contract_irrigation_flow"],
     "irrigation_pump_state": "off",
     "irrigation_tanks": [
       {
@@ -1465,6 +1474,16 @@
         },
         "exhaust_fan_entities": ["fan.subarea_exhaust"],
         "feed_ec_sensors": ["sensor.subarea_feed_ec"],
+        "flow_meters": [
+          {
+            "entity_id": "sensor.subarea_irrigation_flow",
+            "placement": "supply"
+          },
+          {
+            "entity_id": "sensor.subarea_zone_flow",
+            "placement": "default"
+          }
+        ],
         "flower_day_hours": 12,
         "growlight_ac_infinity_devices": [
           {
@@ -1502,7 +1521,6 @@
           "sensor.subarea_humidity",
           "sensor.subarea_humidity_2"
         ],
-        "irrigation_flow_sensors": ["sensor.subarea_irrigation_flow"],
         "irrigation_tanks": [
           {
             "enable_lights_bias": true,

@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.growspace_manager.models import (
     EnvironmentConfig,
+    FlowMeter,
     Growspace,
     IrrigationTank,
 )
@@ -20,7 +21,7 @@ def _make_coordinator(volume: float = 200.0, flow_sensors=None, drain_sensors=No
     tank = IrrigationTank(sensor_entity="sensor.tank_1", volume_liters=volume)
     env = EnvironmentConfig(
         irrigation_tanks=[tank],
-        irrigation_flow_sensors=flow_sensors or [],
+        flow_meters=[FlowMeter(entity, "supply") for entity in flow_sensors or []],
         drain_volume_sensors=drain_sensors or [],
     )
     growspace = Growspace(id="gs_1", name="Test", environment_config=env)

@@ -16,8 +16,14 @@ from typing import TYPE_CHECKING
 
 from ..domain.environment_patch import (
     EnvironmentPatch,
+    EnvironmentPatchError,
     EnvironmentPatchVerdict,
     apply_environment_patch,
+)
+from ..domain.flow_meter import (
+    FlowMeterError,
+    classify_flow_meter,
+    validate_meter_placements,
 )
 from ..domain.zone_edit import resolve_zone, validate_zones
 from ..exhaust_migration import evaluate_exhaust_migration_issues
@@ -73,6 +79,17 @@ async def async_commit_environment_patch(
             warning.field,
             warning.message,
         )
+
+    try:
+        if "flow_meters" in patch.values:
+            validate_meter_placements(
+                verdict.config.flow_meters, {z.id for z in growspace.irrigation_zones}
+            )
+            for meter in verdict.config.flow_meters:
+                state = hass.states.get(meter.entity_id)
+                classify_flow_meter(meter.entity_id, state.attributes if state else {})
+    except FlowMeterError as err:
+        raise EnvironmentPatchError(str(err)) from err
 
     previous_config = growspace.environment_config
     previous_probes = {

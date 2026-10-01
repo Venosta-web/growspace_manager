@@ -668,7 +668,9 @@ class GrowspaceViewModelBuilder:
         attributes["pore_ec_sensors"] = zone.pore_ec_sensors
         attributes["runoff_ec_sensors"] = env_config.runoff_ec_sensors
         attributes["drain_volume_sensors"] = env_config.drain_volume_sensors
-        attributes["irrigation_flow_sensors"] = env_config.irrigation_flow_sensors
+        attributes["flow_meters"] = [
+            meter.to_dict() for meter in env_config.flow_meters
+        ]
 
         bulk_ec_avg = self._average_sensor_values(zone.bulk_ec_sensors)
         pore_ec_avg = self._average_sensor_values(zone.pore_ec_sensors)

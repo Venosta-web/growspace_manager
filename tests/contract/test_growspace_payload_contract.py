@@ -46,6 +46,7 @@ from custom_components.growspace_manager.models import (
     EnergyTracking,
     EnvironmentConfig,
     ExhaustFanConfig,
+    FlowMeter,
     GrowLightConfig,
     Growspace,
     GrowspaceType,
@@ -176,7 +177,10 @@ def _maximal_environment_config(prefix: str) -> EnvironmentConfig:
         feed_ec_sensors=[f"sensor.{prefix}_feed_ec"],
         runoff_ec_sensors=[f"sensor.{prefix}_runoff_ec"],
         drain_volume_sensors=[f"sensor.{prefix}_drain_volume"],
-        irrigation_flow_sensors=[f"sensor.{prefix}_irrigation_flow"],
+        flow_meters=[
+            FlowMeter(f"sensor.{prefix}_irrigation_flow", "supply"),
+            FlowMeter(f"sensor.{prefix}_zone_flow", "default"),
+        ],
         power_sensors=[f"sensor.{prefix}_power"],
         energy_sensors=[f"sensor.{prefix}_energy"],
         electricity_cost_per_kwh=0.32,
@@ -918,6 +922,12 @@ async def test_growspace_payload_contract(
             probe["cell"] and probe["role"] and probe["health"]
             for probe in zone["probes"]
         )
+
+    assert payload["environment"]["flow_meters"] == [
+        {"entity_id": "sensor.contract_irrigation_flow", "placement": "supply"},
+        {"entity_id": "sensor.contract_zone_flow", "placement": "default"},
+    ]
+    assert "irrigation_flow_sensors" not in payload["environment"]
 
     if pytestconfig.getoption("regenerate_contract_fixture"):
         FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)

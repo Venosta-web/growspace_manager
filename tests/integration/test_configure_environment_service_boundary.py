@@ -109,3 +109,86 @@ async def test_configure_environment_rejects_partial_moisture_band_through_servi
     assert growspace.environment_config.soil_moisture_min is None
     assert growspace.environment_config.soil_moisture_max is None
     coordinator.services.save.assert_not_awaited()
+
+
+async def test_flow_meter_config_through_registered_service(
+    hass, registered_environment_service
+):
+    """Supply and zone meters coexist; omission keeps and [] clears them."""
+    coordinator, growspace = registered_environment_service
+    hass.states.async_set(
+        "sensor.supply",
+        "1",
+        {
+            "device_class": "water",
+            "state_class": "total_increasing",
+            "unit_of_measurement": "L",
+        },
+    )
+    hass.states.async_set(
+        "sensor.zone",
+        "1",
+        {"device_class": "volume_flow_rate", "unit_of_measurement": "gal/min"},
+    )
+    meters = [
+        {"entity_id": "sensor.supply", "placement": "supply"},
+        {"entity_id": "sensor.zone", "placement": "default"},
+    ]
+    await hass.services.async_call(
+        DOMAIN,
+        "configure_environment",
+        {"growspace_id": growspace.id, "flow_meters": meters},
+        blocking=True,
+    )
+    assert [
+        meter.to_dict() for meter in growspace.environment_config.flow_meters
+    ] == meters
+    await hass.services.async_call(
+        DOMAIN,
+        "configure_environment",
+        {"growspace_id": growspace.id, "lst_offset": -1},
+        blocking=True,
+    )
+    assert [
+        meter.to_dict() for meter in growspace.environment_config.flow_meters
+    ] == meters
+    await hass.services.async_call(
+        DOMAIN,
+        "configure_environment",
+        {"growspace_id": growspace.id, "flow_meters": []},
+        blocking=True,
+    )
+    assert growspace.environment_config.flow_meters == []
+    assert coordinator.services.save.await_count == 3
+
+
+@pytest.mark.parametrize(
+    "meters",
+    [
+        [{"entity_id": "sensor.missing", "placement": "supply"}],
+        [{"entity_id": "sensor.supply", "placement": "missing-zone"}],
+        [
+            {"entity_id": "sensor.supply", "placement": "supply"},
+            {"entity_id": "sensor.supply", "placement": "supply"},
+        ],
+    ],
+)
+async def test_invalid_meter_service_is_atomic(
+    hass, registered_environment_service, meters
+):
+    coordinator, growspace = registered_environment_service
+    hass.states.async_set(
+        "sensor.supply",
+        "1",
+        {"device_class": "water", "state_class": "total", "unit_of_measurement": "L"},
+    )
+    original = growspace.to_dict()
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            "configure_environment",
+            {"growspace_id": growspace.id, "flow_meters": meters, "lst_offset": -1},
+            blocking=True,
+        )
+    assert growspace.to_dict() == original
+    coordinator.services.save.assert_not_awaited()

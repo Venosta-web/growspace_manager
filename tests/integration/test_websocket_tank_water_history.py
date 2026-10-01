@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from custom_components.growspace_manager.models import FlowMeter
 from custom_components.growspace_manager.websocket.irrigation import (
     websocket_get_tank_water_history,
 )
@@ -37,7 +38,7 @@ def _make_coordinator(
 ) -> MagicMock:
     coord = MagicMock()
     env = MagicMock()
-    env.irrigation_flow_sensors = flow_sensors or []
+    env.flow_meters = [FlowMeter(entity, "supply") for entity in flow_sensors or []]
     env.drain_volume_sensors = drain_sensors or []
 
     growspace = MagicMock()
