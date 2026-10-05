@@ -55,9 +55,13 @@ def plant_lifecycle_from_plant(
             raw_history = [
                 {"stage": bootstrap_stage.value, "start": started_on, "end": None}
             ]
+    # Reconstructed history is the legacy dates' answer, which the read path
+    # already reports. Plants from before Stage History was written keep the
+    # stage they were added with while later stages exist only as dates, so a
+    # shadow check here would refuse every transition the card offers.
     return PlantLifecycle.from_data(
         raw_history,
         observed_on=observed_on,
         legacy_dates=legacy_dates,
-        current_stage=current_stage,
+        current_stage=None if raw_history is None else current_stage,
     )
