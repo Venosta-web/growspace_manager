@@ -835,3 +835,46 @@ async def test_failed_lifecycle_update_restores_mixed_fields_and_placement(
         growspace_id: repository.require_growspace(growspace_id).layout_revision
         for growspace_id in ("main", "target")
     } == revisions
+
+
+@pytest.mark.asyncio
+async def test_harvest_trusts_legacy_dates_over_a_stale_stored_stage(
+    manager_factory, repository: GrowspaceRepository
+) -> None:
+    """A pre-history Plant harvests from the stage its dates reconstruct.
+
+    Plants created before Stage History was written persist an empty history
+    and the ``stage`` they were added with, while later stages exist only as
+    legacy start dates. The read path reconstructs Flower from those dates, so
+    the card offers Harvest; the write path must reach the same answer instead
+    of refusing on the stale shadow stage.
+    """
+    manager = manager_factory()
+    plant = Plant.from_dict(
+        {
+            "plant_id": "legacy-flower",
+            "growspace_id": "main",
+            "strain": "Jet Puft",
+            "stage": "seedling",
+            "created_at": "2026-04-12T09:48:23.312638",
+            "seedling_start": "2026-04-12T00:00:00+02:00",
+            "veg_start": "2026-06-08T00:00:00+02:00",
+            "flower_start": "2026-08-05T00:00:00+02:00",
+            "stage_history": [],
+        }
+    )
+    repository.add_plant(plant)
+    assert resolve_current_stage(plant, observed_on=date(2026, 10, 5)) == "flower"
+
+    await manager.transition_plant(plant_id="legacy-flower")
+
+    harvested = repository.require_plant("legacy-flower")
+    assert harvested.stage == "dry"
+    assert harvested.growspace_id == "dry"
+    assert [item["stage"] for item in harvested.stage_history] == [
+        "seedling",
+        "veg",
+        "flower",
+        "dry",
+    ]
+    assert resolve_current_stage(harvested) == "dry"
