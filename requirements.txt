@@ -38,7 +38,7 @@ beautifulsoup4==4.15.0
 # Its version comes from HA's package_constraints.txt.
 gazetteer-matcher
 aiodhcpwatcher
-pycares==5.0.1
+pycares==5.1.0
 coverage
 pydantic
 pipdeptree
