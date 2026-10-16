@@ -20,7 +20,7 @@
 # Home Assistant Core (Minimal)
 # Kept in lockstep with pytest-homeassistant-custom-component, which pins this exact
 # homeassistant version; bumping one requires bumping the other.
-homeassistant==2026.9.3
+homeassistant==2026.9.4
 aiosqlite==0.22.1
 Pillow
 python-dateutil==2.9.0.post0
@@ -43,7 +43,7 @@ coverage
 pydantic
 pipdeptree
 pytest-asyncio
-pytest-homeassistant-custom-component==0.13.366
+pytest-homeassistant-custom-component==0.13.368
 pytest-cov
 pytest
 PyTurboJPEG
