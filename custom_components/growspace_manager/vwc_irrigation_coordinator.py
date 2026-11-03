@@ -193,6 +193,15 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
                 self._growspace_id,
             )
 
+    def _day_hours(self) -> int:
+        """Use the growspace's current photoperiod for every irrigation consumer."""
+        plants = self._main_coordinator.services.growspaces.get_growspace_plants(
+            self._growspace_id
+        )
+        return resolve_day_hours(
+            self.growspace.environment_config, plants, now().date()
+        )
+
     def _tick_inputs(
         self, current_vwc: float, strategy: IrrigationStrategy, growspace: Growspace
     ) -> SteeringTickInputs:
@@ -206,7 +215,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
             soil_trigger_percent=config.soil_trigger_percent,
             pump_flow_rate_ml_per_sec=config.pump_flow_rate_ml_per_sec,
             pump_configured=bool(self._get_pump_entity()),
-            day_hours=resolve_day_hours(growspace.environment_config),
+            day_hours=self._day_hours(),
             live_plant_count=self._live_plant_count(),
             last_shot=self._last_shot_dt(),
             interval_factor=self._composer.interval_factor,
@@ -369,7 +378,7 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         current_dt = now()
         boundaries = phase_boundary_times(
             growspace.irrigation_strategy,
-            resolve_day_hours(growspace.environment_config),
+            self._day_hours(),
             current_dt.date(),
             current_dt.tzinfo,
         )
@@ -590,10 +599,9 @@ class VWCIrrigationCoordinator(BaseIrrigationCoordinator):
         reads the same boundaries and phase the tick uses and the two can never
         disagree about windows.
         """
-        growspace = self.growspace
         return self._machine.projected_shot_window(
-            growspace.irrigation_strategy,
-            resolve_day_hours(growspace.environment_config),
+            self.growspace.irrigation_strategy,
+            self._day_hours(),
             self._last_shot_dt(),
             self._composer.interval_factor,
             now(),

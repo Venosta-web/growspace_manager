@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-11-03
+
+### Fixed
+
+- Crop steering now uses the vegetative photoperiod until a plant has entered
+  flower, matching the grow-light controller. An 18-hour day starting at 07:00
+  ends at 01:00; P2 stops the configured number of minutes before that time,
+  rather than using the shorter flower schedule. The displayed phase timeline
+  and next-shot projection use the same day length.
+
+- Remove the redundant Pillow manifest requirement; Home Assistant supplies
+  Pillow and current Hassfest rejects listing it as an integration dependency.
+
+This maintenance release contains the photoperiod fix on the 1.2.3 codebase.
+
 ## [1.2.3] - 2026-09-22
 
 ### Added

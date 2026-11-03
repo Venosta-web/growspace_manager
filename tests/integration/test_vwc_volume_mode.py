@@ -304,10 +304,8 @@ def test_live_count_change_emits_logbook_entry(
 ) -> None:
     """A live-count change that alters shot volume writes a logbook entry."""
     coord = make_coordinator(volume_growspace, [])
-    coord._main_coordinator.services.growspaces.get_growspace_plants.side_effect = [
-        _make_plants([PlantStage.FLOWER_MID.value] * 12),
-        _make_plants([PlantStage.FLOWER_MID.value] * 6),
-    ]
+    plant_query = coord._main_coordinator.services.growspaces.get_growspace_plants
+    plant_query.return_value = _make_plants([PlantStage.FLOWER_MID.value] * 12)
     strategy = volume_growspace.irrigation_strategy
 
     # First tick establishes the baseline (no note on first observation).
@@ -316,6 +314,7 @@ def test_live_count_change_emits_logbook_entry(
     assert first_note is None
 
     # Second tick: count 12 -> 6 halves the volume; the note fires via the shell.
+    plant_query.return_value = _make_plants([PlantStage.FLOWER_MID.value] * 6)
     second, second_note = _base_duration(coord, volume_growspace, "P1")
     assert second == 72
     coord._apply_verdict(_note_verdict(second_note), strategy)
@@ -348,13 +347,12 @@ def test_logbook_suppressed_when_disabled(
     """No logbook entry when log_to_logbook is disabled, even on volume change."""
     volume_growspace.irrigation_config.log_to_logbook = False
     coord = make_coordinator(volume_growspace, [])
-    coord._main_coordinator.services.growspaces.get_growspace_plants.side_effect = [
-        _make_plants([PlantStage.FLOWER_MID.value] * 12),
-        _make_plants([PlantStage.FLOWER_MID.value] * 6),
-    ]
+    plant_query = coord._main_coordinator.services.growspaces.get_growspace_plants
+    plant_query.return_value = _make_plants([PlantStage.FLOWER_MID.value] * 12)
     strategy = volume_growspace.irrigation_strategy
 
     _, note_a = _base_duration(coord, volume_growspace, "P1")
+    plant_query.return_value = _make_plants([PlantStage.FLOWER_MID.value] * 6)
     _, note_b = _base_duration(coord, volume_growspace, "P1")
     assert note_b is not None  # the machine still reports the change
     coord._apply_verdict(_note_verdict(note_a), strategy)

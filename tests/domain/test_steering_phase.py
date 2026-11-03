@@ -11,6 +11,7 @@ through the full VWC-coordinator fixture in
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -120,15 +121,28 @@ def test_boundaries_day_hours_shift_lights_off_and_p2_stop() -> None:
 
 
 def test_resolve_day_hours_defaults_to_12_without_config() -> None:
-    assert resolve_day_hours(None) == 12
+    assert resolve_day_hours(None, [], _at(12).date()) == 12
 
 
-def test_resolve_day_hours_prefers_flower_hours() -> None:
+@pytest.mark.parametrize(
+    ("starts", "expected"),
+    [
+        ([], 18),
+        ([None], 18),
+        (["invalid"], 18),
+        (["2023-06-16"], 18),
+        (["2023-06-15"], 11),
+        (["2023-06-14T07:00:00+00:00"], 11),
+        ([None, "2023-06-15"], 11),
+    ],
+)
+def test_resolve_day_hours_tracks_flower_start(starts, expected) -> None:
     class _Env:
         flower_day_hours = 11
         veg_day_hours = 18
 
-    assert resolve_day_hours(_Env()) == 11
+    plants = [SimpleNamespace(flower_start=start) for start in starts]
+    assert resolve_day_hours(_Env(), plants, _at(12).date()) == expected
 
 
 # ── time-period determination ─────────────────────────────────────────────────
