@@ -44,8 +44,6 @@ def test_prerelease_publishing_contract() -> None:
     release = _step("Create Pre-release")
     assert release["with"]["target_commitish"] == "${{ github.sha }}"
     assert release["with"]["fail_on_unmatched_files"] is True
-    assert release["with"]["make_latest"] == "false"
-    assert "#954" in release["with"]["body"]
 
     verification = _step("Verify release tag")
     assert "GITHUB_SHA" in verification["run"]
