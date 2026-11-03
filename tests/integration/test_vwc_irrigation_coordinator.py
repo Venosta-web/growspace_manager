@@ -15,6 +15,7 @@ from custom_components.growspace_manager.domain.steering_phase import (
     INFILTRATION_RELEASED_MESSAGE,
     SUPPRESSED_BY_COOLDOWN,
     SteeringTickVerdict,
+    phase_boundary_times,
 )
 from custom_components.growspace_manager.irrigation_coordinator import (
     BaseIrrigationCoordinator,
@@ -25,6 +26,7 @@ from custom_components.growspace_manager.models import (
     IrrigationConfig,
     IrrigationStrategy,
     IrrigationTank,
+    Plant,
 )
 from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
@@ -86,7 +88,9 @@ def mock_growspace():
     growspace = Growspace(
         id="gs1",
         name="Test Growspace",
-        environment_config=EnvironmentConfig(soil_moisture_sensor="sensor.moisture"),
+        environment_config=EnvironmentConfig(
+            soil_moisture_sensor="sensor.moisture", veg_day_hours=12
+        ),
         irrigation_config=IrrigationConfig(irrigation_pump_entity="switch.pump"),
     )
     growspace.irrigation_strategy = IrrigationStrategy(
@@ -310,8 +314,13 @@ async def test_missing_sensor(vwc_coordinator, mock_hass, mock_growspace) -> Non
     mock_hass.services.async_call.assert_not_called()
 
 
-async def test_custom_day_hours(vwc_coordinator, mock_hass, mock_growspace) -> None:
+async def test_custom_day_hours(
+    vwc_coordinator, mock_hass, mock_growspace, mock_main_coordinator
+) -> None:
     """Test custom day hours from environment config."""
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        Plant(plant_id="flowering", growspace_id="gs1", flower_start="2022-12-01")
+    ]
     # Config: 10 hours day (Lights On 08:00 -> Off 18:00)
     # P2 Stop = 120 min before off -> 16:00
     mock_growspace.environment_config = EnvironmentConfig(
@@ -2002,3 +2011,56 @@ async def test_the_gate_writes_no_logbook_entries_when_logging_is_off(
     messages = _logbook_messages(mock_hass)
     assert INFILTRATION_HELD_MESSAGE not in messages
     assert INFILTRATION_RELEASED_MESSAGE not in messages
+
+
+@pytest.mark.parametrize(
+    ("flower_start", "hour", "minute", "phase"),
+    [
+        (None, 18, 0, "p2"),
+        (None, 23, 59, "p2"),
+        (None, 0, 0, "p3"),
+        (None, 1, 0, "p3"),
+        ("2023-01-02", 18, 0, "p2"),
+        ("2023-01-01", 18, 0, "p3"),
+        ("2022-12-01", 18, 0, "p3"),
+    ],
+)
+async def test_vegetative_18_hour_day_keeps_p2_at_18(
+    vwc_coordinator,
+    mock_growspace,
+    mock_main_coordinator,
+    flower_start,
+    hour,
+    minute,
+    phase,
+) -> None:
+    """A 07:00 vegetative day ends at 01:00, not at the flower cutoff."""
+    mock_growspace.environment_config.veg_day_hours = 18
+    mock_growspace.environment_config.flower_day_hours = 12
+    mock_growspace.irrigation_config.auto_advance_p2_to_p3 = True
+    strategy = mock_growspace.irrigation_strategy
+    strategy.lights_on_time = "07:00:00"
+    strategy.p2_stop_before_lights_off_minutes = 60
+    mock_main_coordinator.services.growspaces.get_growspace_plants.return_value = [
+        Plant(plant_id="plant", growspace_id="gs1", flower_start=flower_start)
+    ]
+    vwc_coordinator._machine._target_reached_today = True
+    vwc_coordinator._machine._last_reset_date = "2023-01-01"
+    at = datetime(2023, 1, 1, hour, minute, tzinfo=dt_util.UTC)
+    with patch(
+        "custom_components.growspace_manager.vwc_irrigation_coordinator.now",
+        return_value=at,
+    ):
+        inputs = vwc_coordinator._tick_inputs(45.0, strategy, mock_growspace)
+        verdict = vwc_coordinator._machine.tick(inputs)
+        boundaries = phase_boundary_times(
+            strategy, inputs.day_hours, at.date(), at.tzinfo
+        )
+        window = vwc_coordinator.projected_shot_window
+    assert verdict.canonical == phase
+    assert (verdict.fire is not None) == (phase == "p2")
+    if phase == "p2":
+        assert boundaries.lights_off == datetime(2023, 1, 2, 1, tzinfo=dt_util.UTC)
+        assert boundaries.p2_stop == datetime(2023, 1, 2, 0, tzinfo=dt_util.UTC)
+        assert window is not None
+        assert datetime.fromisoformat(window["end"]) <= boundaries.lights_off
