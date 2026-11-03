@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than using the shorter flower schedule. The displayed phase timeline
   and next-shot projection use the same day length.
 
+- Remove the redundant Pillow manifest requirement; Home Assistant supplies
+  Pillow and current Hassfest rejects listing it as an integration dependency.
+
 This maintenance release contains the photoperiod fix on the 1.2.3 codebase.
 
 ## [1.2.3] - 2026-09-22
