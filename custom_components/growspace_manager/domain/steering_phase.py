@@ -22,6 +22,7 @@ See ADR-0023.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, tzinfo
 from functools import lru_cache
@@ -30,6 +31,10 @@ from typing import Any
 
 from custom_components.growspace_manager.const import ShotSizingMode
 from custom_components.growspace_manager.domain.infiltration import InfiltrationState
+from custom_components.growspace_manager.domain.light_schedule import (
+    HasFlowerStart,
+    resolve_photoperiod_hours,
+)
 from custom_components.growspace_manager.domain.shot_sizing import (
     percent_to_seconds,
     shot_volume_ml,
@@ -175,18 +180,23 @@ class SteeringTickVerdict:
     p1_completed_on: date | None = None
 
 
-def resolve_day_hours(environment_config: Any) -> int:
-    """Resolve the growspace's lit-period length in hours for boundary math.
+def resolve_day_hours(
+    environment_config: Any, plants: Iterable[HasFlowerStart], today: date
+) -> int:
+    """Resolve the lit period using the grow-light controller's stage rule.
 
-    Prefers flower hours, as crop steering is typically flower-focused;
-    defaults to 12 when the growspace has no day-length config.
+    Vegetative hours apply until a plant has entered flower. Flower hours
+    apply from the flip day onward. Missing config retains the 12-hour fallback.
     """
     if not environment_config:
         return 12
-    return getattr(
-        environment_config,
-        "flower_day_hours",
-        getattr(environment_config, "veg_day_hours", 12),
+    return int(
+        resolve_photoperiod_hours(
+            plants,
+            getattr(environment_config, "veg_day_hours", 18),
+            getattr(environment_config, "flower_day_hours", 12),
+            today,
+        )
     )
 
 

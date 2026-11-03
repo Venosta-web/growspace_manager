@@ -325,11 +325,20 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
                 self._growspace_id,
             )
 
+    def _day_hours(self) -> int:
+        """Use the growspace's current photoperiod for every irrigation consumer."""
+        plants = self._main_coordinator.services.growspaces.get_growspace_plants(
+            self._growspace_id
+        )
+        return resolve_day_hours(
+            self.growspace.environment_config, plants, now().date()
+        )
+
     def _boundaries(self, day: date | None = None) -> SteeringPhaseBoundaries:
         """Resolve this zone’s current light window."""
         return phase_boundary_times(
             self._strategy(),
-            resolve_day_hours(self.growspace.environment_config),
+            self._day_hours(),
             day or now().date(),
             now().tzinfo,
         )
@@ -379,10 +388,7 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             and not replayed
             and window.get("probe", self._zone.soil_moisture_sensor)
             == self._zone.soil_moisture_sensor
-            and window.get(
-                "day_hours", resolve_day_hours(self.growspace.environment_config)
-            )
-            == resolve_day_hours(self.growspace.environment_config)
+            and window.get("day_hours", self._day_hours()) == self._day_hours()
         ):
             history.reference_days = [
                 d for d in history.reference_days if d["day"] != window_day.isoformat()
@@ -391,7 +397,7 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
                     "attempt_ids": [shot.attempt_id for shot in shots],
                     "day": window_day.isoformat(),
                     "lights_on": boundaries.lights_on.isoformat(),
-                    "day_hours": resolve_day_hours(self.growspace.environment_config),
+                    "day_hours": self._day_hours(),
                 }
             ]
         history.reference_days = [
@@ -401,7 +407,7 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         ][-7:]
         identity = {
             "probe": self._zone.soil_moisture_sensor,
-            "day_hours": resolve_day_hours(self.growspace.environment_config),
+            "day_hours": self._day_hours(),
         }
         if any(
             key in window and window[key] != value for key, value in identity.items()
@@ -421,7 +427,7 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             self._supply._deliveries.attempts,
             zone_id=self._zone.id,
             today=now().date(),
-            day_hours=resolve_day_hours(self.growspace.environment_config),
+            day_hours=self._day_hours(),
         )
 
     @override
@@ -599,7 +605,7 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
             soil_trigger_percent=config.soil_trigger_percent,
             pump_flow_rate_ml_per_sec=config.pump_flow_rate_ml_per_sec,
             pump_configured=bool(self._get_pump_entity()),
-            day_hours=resolve_day_hours(growspace.environment_config),
+            day_hours=self._day_hours(),
             live_plant_count=self._live_plant_count(),
             last_shot=self._last_shot_dt(),
             interval_factor=self._composer.interval_factor,
@@ -912,7 +918,7 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         current_dt = now()
         boundaries = phase_boundary_times(
             self._strategy(),
-            resolve_day_hours(growspace.environment_config),
+            self._day_hours(),
             current_dt.date(),
             current_dt.tzinfo,
         )
@@ -1140,10 +1146,9 @@ class VWCIrrigationCoordinator(IrrigationCoordinator):
         reads the same boundaries and phase the tick uses and the two can never
         disagree about windows.
         """
-        growspace = self.growspace
         return self._machine.projected_shot_window(
             self._strategy(),
-            resolve_day_hours(growspace.environment_config),
+            self._day_hours(),
             self._last_shot_dt(),
             self._composer.interval_factor,
             now(),

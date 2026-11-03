@@ -170,11 +170,10 @@ class GrowspaceViewModelBuilder:
         irrigation_config = effective_config(growspace)
         irrigation_strategy = effective_strategy(growspace)
         irrigation_options = irrigation_config.to_dict()
-        # Crop-steering boundary math resolves the flower photoperiod first,
-        # regardless of the growspace's current stage. Serialize that resolved
-        # value so frontend phase layouts cannot drift by reimplementing the rule.
+        # Share the runtime's stage-aware photoperiod so the card's phase
+        # layout and projected shot window agree with the actual watering loop.
         irrigation_options["resolved_day_hours"] = resolve_day_hours(
-            growspace.environment_config
+            growspace.environment_config, plants, dt_util.now().date()
         )
 
         irrigation_strategy_dict = irrigation_strategy.to_dict()
