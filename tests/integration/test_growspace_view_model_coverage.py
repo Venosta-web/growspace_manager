@@ -81,7 +81,7 @@ def test_growspace_view_model_build_basic(hass: HomeAssistant, builder):
     assert result["metrics"]["metrics"] is True
     assert result["grid"]["grid"]["position_1_1"]["rich"] is True
     assert result["grid"]["grid"]["position_1_2"] is None
-    assert result["irrigation"]["irrigation_config"]["resolved_day_hours"] == 11
+    assert result["irrigation"]["irrigation_config"]["resolved_day_hours"] == 19
 
 
 @pytest.mark.parametrize(

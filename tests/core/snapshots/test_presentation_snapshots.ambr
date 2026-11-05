@@ -286,7 +286,7 @@
         'phase_changed_at': None,
         'program_auto_advance': False,
         'pump_flow_rate_ml_per_sec': 0.0,
-        'resolved_day_hours': 12,
+        'resolved_day_hours': 18,
         'sensor_alert_delay_minutes': 15,
         'sensor_stale_after_minutes': 30,
         'skip_during_dark': False,

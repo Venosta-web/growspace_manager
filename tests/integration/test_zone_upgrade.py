@@ -11,7 +11,7 @@ them, and this module is where each is asserted.
 from __future__ import annotations
 
 import copy
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import json
 from pathlib import Path
 from typing import Any
@@ -157,7 +157,11 @@ def _before(
     return (
         IrrigationConfig.from_dict(document["irrigation_config"]),
         IrrigationStrategy.from_dict(document["irrigation_strategy"]),
-        resolve_day_hours(EnvironmentConfig.from_dict(document["environment_config"])),
+        resolve_day_hours(
+            EnvironmentConfig.from_dict(document["environment_config"]),
+            [],
+            date(2026, 1, 1),
+        ),
     )
 
 
@@ -169,7 +173,7 @@ def _after(
     return (
         effective_config(growspace),
         effective_strategy(growspace),
-        resolve_day_hours(growspace.environment_config),
+        resolve_day_hours(growspace.environment_config, [], date(2026, 1, 1)),
     )
 
 

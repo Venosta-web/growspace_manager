@@ -228,7 +228,8 @@ async def test_three_zones_one_lit_day(hass, freezer, zone_rig):
     # Physical membership follows a moved plant; the next composition sees it.
     plants[0].col = 2
     assert [runtime._live_plant_count() for runtime in runtimes] == [0, 3, 3]
-    freezer.move_to(at("20:00"))
+    # Vegetative plants keep the 06:00–00:00 photoperiod.
+    freezer.move_to(at("00:00") + timedelta(days=1))
     for zone in growspace.irrigation_zones:
         hass.states.async_set(zone.soil_moisture_sensor, "50")
     before = len(trace)
