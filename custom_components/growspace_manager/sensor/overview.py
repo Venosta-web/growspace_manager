@@ -11,7 +11,7 @@ from custom_components.growspace_manager.utils import (
     generate_growspace_overview_unique_id,
 )
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import EntityCategory
+from homeassistant.const import MATCH_ALL, EntityCategory
 from homeassistant.core import Event, EventStateChangedData
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import async_track_state_change_event
@@ -31,14 +31,9 @@ class GrowspaceOverviewSensor(CoordinatorEntity[GrowspaceCoordinator], SensorEnt
     _attr_translation_key = "overview"
     _attr_native_unit_of_measurement = None
 
-    _unrecorded_attributes = frozenset(
-        {
-            "environment_config",
-            "notification_config",
-            "irrigation_config",
-            "drain_config",
-        }
-    )
+    # This unbounded live dashboard payload is not historical sensor data.
+    # Keep the plant-count state and standard metadata in Recorder only.
+    _unrecorded_attributes = frozenset({MATCH_ALL})
 
     TRACKABLE_ENVIRONMENT_ATTRS: tuple[str, ...] = (
         "temperature_sensor",
