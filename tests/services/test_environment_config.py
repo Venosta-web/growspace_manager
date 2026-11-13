@@ -15,6 +15,9 @@ from homeassistant.core import Context, HomeAssistant, ServiceCall
 def mock_hass():
     """Fixture for a mock HomeAssistant instance."""
     hass = MagicMock(spec=HomeAssistant)
+    hass.data = {}
+    hass.config_entries = MagicMock()
+    hass.config_entries.async_entries.return_value = []
     hass.bus = MagicMock()
     return hass
 

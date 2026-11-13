@@ -649,6 +649,8 @@
     'setup_preset': None,
     'subareas': list([
     ]),
+    'supplemental_lights': list([
+    ]),
     'vision_checkup_history': list([
     ]),
     'water_usage': dict({
