@@ -27,6 +27,10 @@ from ..domain.flow_meter import (
 )
 from ..domain.zone_edit import resolve_zone, validate_zones
 from ..exhaust_migration import evaluate_exhaust_migration_issues
+from ..lighting_assignments import (
+    lighting_assignment_lock,
+    validate_main_light_assignments,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -65,6 +69,39 @@ async def async_commit_environment_patch(
     refuses never reaches here, so a rejected configuration change cannot
     reset a streak.
     """
+    async with lighting_assignment_lock(hass):
+        verdict = await _apply_and_save(hass, coordinator, growspace, patch, zone_id)
+
+    if verdict.changed("camera_entities"):
+        await coordinator.capture_continuity.async_apply_camera_assignment(
+            growspace.id, verdict.config.camera_entities
+        )
+
+    await coordinator.services.request_refresh()
+
+    for controller in sorted(verdict.controllers_to_restart):
+        accessor = getattr(
+            coordinator._subsystem_manager,
+            _CONTROLLER_ACCESSORS[controller],
+        )
+        if sub_coordinator := accessor(growspace.id):
+            await sub_coordinator.async_restart()
+
+    if verdict.exhaust_repair_relevant:
+        evaluate_exhaust_migration_issues(hass, coordinator)
+
+    _LOGGER.info("Environment updated for '%s': %s", growspace.name, verdict.summary)
+    return verdict
+
+
+async def _apply_and_save(
+    hass: HomeAssistant,
+    coordinator: GrowspaceCoordinator,
+    growspace: Growspace,
+    patch: EnvironmentPatch,
+    zone_id: str | None,
+) -> EnvironmentPatchVerdict:
+    """Validate and persist a patch with the assignment lock held."""
     owns_probes = bool(patch.zone_values)
     zone = (
         resolve_zone(growspace, zone_id)
@@ -91,6 +128,12 @@ async def async_commit_environment_patch(
     except FlowMeterError as err:
         raise EnvironmentPatchError(str(err)) from err
 
+    if verdict.changed("growlight_entities", "growlight_ac_infinity_devices"):
+        try:
+            validate_main_light_assignments(coordinator, growspace, verdict.config)
+        except ValueError as err:
+            raise EnvironmentPatchError(str(err)) from err
+
     previous_config = growspace.environment_config
     previous_probes = {
         name: copy.deepcopy(getattr(zone, name)) for name in verdict.zone_values
@@ -112,23 +155,4 @@ async def async_commit_environment_patch(
             setattr(zone, name, value)
         raise
 
-    if verdict.changed("camera_entities"):
-        await coordinator.capture_continuity.async_apply_camera_assignment(
-            growspace.id, verdict.config.camera_entities
-        )
-
-    await coordinator.services.request_refresh()
-
-    for controller in sorted(verdict.controllers_to_restart):
-        accessor = getattr(
-            coordinator._subsystem_manager,
-            _CONTROLLER_ACCESSORS[controller],
-        )
-        if sub_coordinator := accessor(growspace.id):
-            await sub_coordinator.async_restart()
-
-    if verdict.exhaust_repair_relevant:
-        evaluate_exhaust_migration_issues(hass, coordinator)
-
-    _LOGGER.info("Environment updated for '%s': %s", growspace.name, verdict.summary)
     return verdict
