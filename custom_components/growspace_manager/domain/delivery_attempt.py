@@ -22,7 +22,7 @@ A drain is an attempt too, but it moves water out of the pots rather than into
 them, so it never charges: an actuated drain has no charge date and no volume.
 
 This module holds the records and the arithmetic, and is free of Home
-Assistant. Metered evidence is the rest of ADR-0055 and is not recorded yet.
+Assistant.
 """
 
 from __future__ import annotations
@@ -33,6 +33,8 @@ from datetime import date, datetime, timedelta
 from enum import StrEnum
 import math
 from typing import Any
+
+from .metering_window import MeterAbsence, MeterKind
 
 #: How long raw attempts are kept (ADR-0055).
 RETENTION = timedelta(days=7)
@@ -223,6 +225,23 @@ class ValveReadback:
         )
 
 
+class MeterStatus(StrEnum):
+    """How a metered delivery compares with measured pump time."""
+
+    SHORT = "short"
+    OVER = "over"
+
+
+@dataclass(frozen=True, slots=True)
+class MeterEvidence:
+    """One meter's normalized result and its original instrument metadata."""
+
+    entity_id: str
+    kind: MeterKind | None
+    unit: str | None
+    result: float | MeterAbsence
+
+
 @dataclass(frozen=True, slots=True)
 class DeliveryAttempt:
     """One irrigation request, from reaching the gate to its close.
@@ -260,6 +279,12 @@ class DeliveryAttempt:
     valves: tuple[ValveReadback, ...] = ()
     due_at: datetime | None = None
     zone_id: str | None = "default"
+    metered_l: float | None = None
+    supply_metered_l: float | None = None
+    meter_entity_id: str | None = None
+    meter_kind: MeterKind | None = None
+    meter_unit: str | None = None
+    meter_status: MeterStatus | MeterAbsence | None = None
 
     @classmethod
     def requested(
@@ -526,6 +551,41 @@ class DeliveryAttempt:
         """Record that the closed attempt's pump was read back OFF."""
         return replace(self, off_confirmed_at=at)
 
+    def with_meter_evidence(
+        self, primary: MeterEvidence, supply_metered_l: float | None = None
+    ) -> DeliveryAttempt:
+        """Attach the selected meter and top up the charge if it delivered more."""
+        self._require(AttemptState.CLOSED)
+        result = primary.result
+        status: MeterAbsence | MeterStatus | None
+        if isinstance(result, MeterAbsence):
+            metered_l = None
+            status = result
+            charged_l = self.charged_l
+        else:
+            assert self.estimated_l is not None
+            metered_l = result
+            tolerance = max(0.1, 0.15 * self.estimated_l)
+            status = None
+            difference = abs(result - self.estimated_l)
+            if difference > tolerance and not math.isclose(
+                difference, tolerance, abs_tol=2 * math.ulp(self.estimated_l)
+            ):
+                status = (
+                    MeterStatus.SHORT if result < self.estimated_l else MeterStatus.OVER
+                )
+            charged_l = max(self.charged_l, result)
+        return replace(
+            self,
+            meter_entity_id=primary.entity_id,
+            meter_kind=primary.kind,
+            meter_unit=primary.unit,
+            meter_status=status,
+            metered_l=metered_l,
+            supply_metered_l=supply_metered_l,
+            charged_l=charged_l,
+        )
+
     def _require(self, state: AttemptState) -> None:
         if self.state is not state:
             raise ValueError(f"attempt is {self.state.value}, not {state.value}")
@@ -554,7 +614,19 @@ class DeliveryAttempt:
             "abort_cause": self.abort_cause,
             "charged_l": self.charged_l,
             "estimated_l": self.estimated_l,
-            "evidence": "estimated" if self.estimated_l is not None else None,
+            "evidence": (
+                "metered"
+                if self.metered_l is not None
+                else "estimated"
+                if self.estimated_l is not None
+                else None
+            ),
+            "metered_l": self.metered_l,
+            "supply_metered_l": self.supply_metered_l,
+            "meter_entity_id": self.meter_entity_id,
+            "meter_kind": self.meter_kind,
+            "meter_unit": self.meter_unit,
+            "meter_status": self.meter_status.value if self.meter_status else None,
             "not_delivered_window": _window(self.not_delivered_window),
             "suppressed_count": self.suppressed_count,
             "last_requested_at": _iso(self.last_requested_at),
@@ -590,6 +662,21 @@ class DeliveryAttempt:
         for key in ("reason", "abort_cause"):
             if value.get(key) is not None and not isinstance(value[key], str):
                 raise ValueError(f"delivery attempt has an invalid {key}")
+        metered = value.get("metered_l")
+        supply_metered = value.get("supply_metered_l")
+        if any(
+            amount is not None and not _is_amount(amount)
+            for amount in (metered, supply_metered)
+        ):
+            raise ValueError("delivery attempt has invalid metered litres")
+        meter_kind = value.get("meter_kind")
+        if meter_kind not in (None, "cumulative_total", "rate"):
+            raise ValueError("delivery attempt has an invalid meter kind")
+        meter_status = value.get("meter_status")
+        if meter_status in (MeterStatus.SHORT, MeterStatus.OVER):
+            meter_status = MeterStatus(meter_status)
+        elif meter_status is not None:
+            meter_status = MeterAbsence(meter_status)
         count = value.get("suppressed_count", 0)
         if not isinstance(count, int) or isinstance(count, bool) or count < 0:
             raise ValueError("delivery attempt has an invalid suppression count")
@@ -632,6 +719,14 @@ class DeliveryAttempt:
             off_commanded_at=_optional_aware(value.get("off_commanded_at")),
             off_confirmed_at=_optional_aware(value.get("off_confirmed_at")),
             estimated_l=float(estimated) if estimated is not None else None,
+            metered_l=float(metered) if metered is not None else None,
+            supply_metered_l=float(supply_metered)
+            if supply_metered is not None
+            else None,
+            meter_entity_id=_optional_text(value.get("meter_entity_id")),
+            meter_kind=meter_kind,
+            meter_unit=_optional_text(value.get("meter_unit")),
+            meter_status=meter_status,
             suppressed_count=count,
             last_requested_at=_optional_aware(value.get("last_requested_at")),
             ended_at=_optional_aware(value.get("ended_at")),
@@ -653,6 +748,28 @@ class DeliveryAttempt:
                 raise ValueError("delivery attempt is charged less than its plan")
         elif self.charged_l:
             raise ValueError("delivery attempt is charged without confirming ON")
+        if self.meter_entity_id is not None and (
+            self.state is not AttemptState.CLOSED or self.estimated_l is None
+        ):
+            raise ValueError("delivery attempt has meter evidence before close")
+        if (isinstance(self.meter_status, MeterStatus) and self.metered_l is None) or (
+            isinstance(self.meter_status, MeterAbsence) and self.metered_l is not None
+        ):
+            raise ValueError("delivery attempt meter status disagrees with its volume")
+        if self.metered_l is not None and (
+            self.charge_date is None
+            or self.estimated_l is None
+            or self.off_confirmed_at is None
+            or self.metered_l > self.charged_l
+            or self.meter_entity_id is None
+            or self.meter_kind is None
+            or self.meter_unit is None
+        ):
+            raise ValueError("delivery attempt has metered litres out of place")
+        if self.supply_metered_l is not None and self.metered_l is None:
+            raise ValueError(
+                "delivery attempt has supply litres without a primary meter"
+            )
         suppressed = self.outcome is AttemptOutcome.SUPPRESSED
         if suppressed != (self.suppressed_count > 0) or suppressed != (
             self.last_requested_at is not None

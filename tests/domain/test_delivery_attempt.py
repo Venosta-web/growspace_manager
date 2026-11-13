@@ -15,6 +15,7 @@ from custom_components.growspace_manager.domain.delivery_attempt import (
     AttemptTrigger,
     DeliveryAttempt,
     DispensedVolume,
+    MeterEvidence,
     TriggerEvidence,
     attempt_trigger,
     attempts_between,
@@ -23,6 +24,7 @@ from custom_components.growspace_manager.domain.delivery_attempt import (
     trigger_evidence,
     with_suppression,
 )
+from custom_components.growspace_manager.domain.metering_window import MeterAbsence
 
 ON = datetime(2026, 9, 26, 14, 30, tzinfo=UTC)
 TODAY = date(2026, 9, 26)
@@ -733,6 +735,12 @@ def test_the_wire_form_names_every_field() -> None:
         "charged_l": pytest.approx(0.6),
         "estimated_l": pytest.approx(0.6),
         "evidence": "estimated",
+        "metered_l": None,
+        "supply_metered_l": None,
+        "meter_entity_id": None,
+        "meter_kind": None,
+        "meter_unit": None,
+        "meter_status": None,
         "not_delivered_window": None,
         "suppressed_count": 0,
         "last_requested_at": None,
@@ -1027,3 +1035,68 @@ def test_drain_has_no_zone_and_old_drains_still_read():
     wire = attempt.as_dict()
     wire.pop("zone_id")
     assert DeliveryAttempt.from_dict(wire).zone_id is None
+
+
+@pytest.mark.parametrize(
+    ("duration", "metered_l", "status", "charge"),
+    [
+        (5, 0.15, None, 0.6),
+        (40, 0.3, None, 0.6),
+        (5, 0.16, "over", 0.6),
+        (100, 0.85, None, 1.0),
+        (100, 1.15, None, 1.15),
+        (100, 0.84, "short", 1.0),
+        (100, 26.0, "over", 26.0),
+    ],
+)
+def test_meter_tolerance_and_cap_charge(duration, metered_l, status, charge):
+    """The meter compares with measured ON time and can only raise the charge."""
+    attempt = (
+        _attempt()
+        .closed(off_commanded_at=ON + timedelta(seconds=duration), abort_cause="cancel")
+        .read_back_off(ON + timedelta(seconds=duration + 1))
+        .with_meter_evidence(MeterEvidence("sensor.zone", "rate", "L/s", metered_l))
+    )
+    row = attempt.as_dict()
+    assert row["meter_status"] == status
+    assert row["evidence"] == "metered"
+    assert dispensed_volume([attempt], TODAY).liters == pytest.approx(charge)
+    assert DeliveryAttempt.from_dict(row) == attempt
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        ("metered_l", -1, "invalid metered litres"),
+        ("meter_kind", "pulse", "invalid meter kind"),
+        ("meter_status", "invalid", "not a valid MeterAbsence"),
+        ("meter_status", "short", "meter status disagrees"),
+        ("metered_l", 20, "metered litres out of place"),
+        ("supply_metered_l", 1, "supply litres without a primary meter"),
+    ],
+)
+def test_inconsistent_stored_meter_fields_are_refused(field, value, error):
+    row = _attempt().closed(off_commanded_at=ON + timedelta(seconds=60)).as_dict()
+    with pytest.raises(ValueError, match=error):
+        DeliveryAttempt.from_dict({**row, field: value})
+
+
+def test_open_attempt_refuses_meter_evidence():
+    with pytest.raises(ValueError, match="meter evidence before close"):
+        DeliveryAttempt.from_dict(
+            {**_attempt().as_dict(), "meter_entity_id": "sensor.zone"}
+        )
+
+
+def test_unavailable_measurement_round_trips_without_a_volume():
+    attempt = (
+        _attempt()
+        .closed(off_commanded_at=ON + timedelta(seconds=60))
+        .with_meter_evidence(
+            MeterEvidence("sensor.zone", None, None, MeterAbsence.UNAVAILABLE)
+        )
+    )
+    assert DeliveryAttempt.from_dict(attempt.as_dict()) == attempt
+    assert attempt.as_dict()["evidence"] == "estimated"
+    assert attempt.as_dict()["metered_l"] is None
+    assert attempt.as_dict()["meter_status"] == "meter_unavailable"

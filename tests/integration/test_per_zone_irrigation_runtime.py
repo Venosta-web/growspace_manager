@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.growspace_manager.const import ShotSizingMode
 from custom_components.growspace_manager.domain.irrigation_safety import ControllerState
@@ -16,6 +17,7 @@ from custom_components.growspace_manager.models import (
     Plant,
     SubstrateProfile,
 )
+from custom_components.growspace_manager.models.flow_meter import FlowMeter
 from custom_components.growspace_manager.substrate_tracker import SubstrateTracker
 from custom_components.growspace_manager.vwc_irrigation_coordinator import (
     VWCIrrigationCoordinator,
@@ -515,3 +517,170 @@ async def test_degraded_zone_holds_only_its_shots_and_manual_keeps_the_caps(
     await runtimes[0]._supply_task
     assert trace == ["default", "south", "north"]
     assert runtimes[0]._deliveries.attempts[-1].reason == "cycle_limit"
+
+
+async def test_late_zone_meter_reading_spends_the_shared_cap(hass, freezer, zone_rig):
+    """A late meter report raises the charge before the next pump command."""
+    growspace, runtimes, trace, _plants = zone_rig
+    growspace.irrigation_config.daily_volume_cap_liters = 1
+    growspace.environment_config.flow_meters = [
+        FlowMeter("sensor.supply_litres", "supply"),
+        FlowMeter("sensor.north_litres", "north"),
+    ]
+    attributes = {
+        "device_class": "water",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "L",
+    }
+    hass.states.async_set("sensor.supply_litres", "40", attributes)
+    hass.states.async_set("sensor.north_litres", "20", attributes)
+    freezer.tick(timedelta(seconds=1))
+
+    await runtimes[0].async_manual_run(2, "grower", "north")
+    await hass.async_block_till_done()
+    assert trace == ["north"]
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set("sensor.supply_litres", "44", attributes)
+    hass.states.async_set("sensor.north_litres", "22", attributes)
+    await hass.async_block_till_done()
+
+    await runtimes[0].async_manual_run(2, "grower", "south")
+    await hass.async_block_till_done()
+    assert trace == ["north"]
+
+    freezer.tick(timedelta(seconds=60))
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    attempts = runtimes[0]._deliveries.attempts
+    expected = {
+        "metered_l": 2,
+        "supply_metered_l": 4,
+        "meter_entity_id": "sensor.north_litres",
+        "meter_kind": "cumulative_total",
+        "meter_unit": "L",
+        "meter_status": "over",
+        "charged_l": 2,
+        "evidence": "metered",
+    }
+    assert {key: attempts[0].as_dict()[key] for key in expected} == expected
+    assert attempts[1].reason == "volume_cap"
+    assert runtimes[0].volume_dispensed_today == 2
+
+
+async def test_next_supply_command_ends_the_previous_tail(hass, freezer, zone_rig):
+    """A repeated total confirms a zero delivery, and the next shot ends its tail."""
+    growspace, runtimes, trace, _plants = zone_rig
+    meter = "sensor.supply_litres"
+    growspace.environment_config.flow_meters = [FlowMeter(meter, "supply")]
+    attributes = {
+        "device_class": "water",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "L",
+    }
+    hass.states.async_set(meter, "40", attributes)
+    freezer.tick(timedelta(seconds=1))
+    await runtimes[0].async_manual_run(2, "grower", "north")
+    await hass.async_block_till_done()
+
+    freezer.tick(timedelta(seconds=1))
+    hass.states.async_set(meter, "40", attributes)
+    freezer.tick(timedelta(seconds=1))
+    await runtimes[0].async_manual_run(2, "grower", "south")
+    await hass.async_block_till_done()
+    assert trace == ["north", "south"]
+
+    freezer.tick(timedelta(seconds=1))
+    hass.states.async_set(meter, "43", attributes)
+    # Unloading closes the second tail without reopening the first.
+    freezer.tick(timedelta(seconds=1))
+    await runtimes[0].async_unload()
+    await hass.async_block_till_done()
+    first, second = runtimes[0]._deliveries.attempts
+    assert first.metered_l == 0
+    assert second.metered_l == 3
+
+
+async def test_meter_tail_starts_on_a_delayed_off_readback(hass, freezer, zone_rig):
+    """An OFF timeout keeps the existing fault and measures a later readback."""
+    growspace, runtimes, trace, _plants = zone_rig
+    for irrigation_zone in growspace.irrigation_zones:
+        irrigation_zone.strategy.enabled = False
+    supply = "sensor.supply_litres"
+    zone = "sensor.north_litres"
+    growspace.environment_config.flow_meters = [
+        FlowMeter(supply, "supply"),
+        FlowMeter(zone, "north"),
+    ]
+    attributes = {
+        "device_class": "water",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "L",
+    }
+    hass.states.async_set(supply, "40", attributes)
+    hass.states.async_set(zone, "20", attributes)
+
+    @callback
+    def off(call):
+        entity_id = call.data["entity_id"]
+        if entity_id != "switch.pump":
+            hass.states.async_set(entity_id, "off")
+
+    hass.services.async_register("switch", "turn_off", off)
+    freezer.tick(timedelta(seconds=1))
+    await runtimes[0].async_manual_run(2, "grower", "north")
+    await hass.async_block_till_done()
+    assert trace == ["north"]
+    assert runtimes[0]._deliveries.attempts[0].off_confirmed_at is None
+
+    hass.states.async_set("switch.pump", "off")
+    freezer.tick(timedelta(seconds=5))
+    hass.states.async_set(zone, "unavailable", attributes)
+    hass.states.async_set(supply, "43", attributes)
+    freezer.tick(timedelta(seconds=60))
+    async_fire_time_changed(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+
+    (attempt,) = runtimes[0]._deliveries.attempts
+    assert attempt.off_confirmed_at is not None
+    assert attempt.meter_entity_id == supply
+    assert attempt.metered_l == 3
+    assert attempt.supply_metered_l is None
+
+
+async def test_meter_report_while_the_next_valve_opens_rechecks_the_cap(
+    hass, freezer, zone_rig
+):
+    """An admitted request still cannot command ON if its predecessor spends the cap."""
+    growspace, runtimes, trace, _plants = zone_rig
+    growspace.irrigation_config.daily_volume_cap_liters = 1
+    meter = "sensor.supply_litres"
+    growspace.environment_config.flow_meters = [FlowMeter(meter, "supply")]
+    attributes = {
+        "device_class": "water",
+        "state_class": "total_increasing",
+        "unit_of_measurement": "L",
+    }
+    hass.states.async_set(meter, "40", attributes)
+    freezer.tick(timedelta(seconds=1))
+    await runtimes[0].async_manual_run(2, "grower", "north")
+    await hass.async_block_till_done()
+
+    @callback
+    def valve_on(call):
+        output = call.data["entity_id"]
+        assert output == "switch.south_valve"
+        hass.states.async_set(meter, "43", attributes)
+        freezer.tick(timedelta(seconds=1))
+        hass.states.async_set(output, "on")
+
+    hass.services.async_register("switch", "turn_on", valve_on)
+    freezer.tick(timedelta(seconds=5))
+    await runtimes[0].async_manual_run(2, "grower", "south")
+    await hass.async_block_till_done()
+
+    assert trace == ["north"]
+    assert hass.states.get("switch.south_valve").state == "off"
+    first, second = runtimes[0]._deliveries.attempts
+    assert first.metered_l is None  # The refused command leaves the tail open.
+    assert second.on_commanded_at is None
+    assert second.reason == "volume_cap"
