@@ -22,9 +22,11 @@ from custom_components.growspace_manager.delivery_attempt_store import (
 from custom_components.growspace_manager.domain.delivery_attempt import (
     AttemptTrigger,
     DeliveryAttempt,
+    MeterEvidence,
     TriggerEvidence,
     ValveReadback,
 )
+from custom_components.growspace_manager.domain.metering_window import MeterAbsence
 from custom_components.growspace_manager.exceptions import GrowspaceNotFoundError
 from custom_components.growspace_manager.websocket.irrigation import (
     WS_TYPE_GET_DELIVERY_ATTEMPTS,
@@ -120,7 +122,10 @@ def _day(growspace_id: str) -> list[DeliveryAttempt]:
         .read_back_off(at + timedelta(seconds=51))
     )
     steering = replace(
-        steering,
+        steering.with_meter_evidence(
+            MeterEvidence("sensor.zone_volume", "cumulative_total", "L", 0.85),
+            supply_metered_l=0.96,
+        ),
         valves=(
             ValveReadback(
                 "switch.zone_valve",
@@ -161,6 +166,11 @@ def _day(growspace_id: str) -> list[DeliveryAttempt]:
             off_commanded_at=at + timedelta(seconds=20), abort_cause="emergency_stop"
         )
         .read_back_off(at + timedelta(seconds=21))
+        .with_meter_evidence(
+            MeterEvidence(
+                "sensor.zone_volume", "cumulative_total", "L", MeterAbsence.STALE
+            )
+        )
     )
     at = MIDNIGHT + timedelta(hours=15)
     interrupted = (

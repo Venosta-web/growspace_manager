@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from homeassistant.const import UnitOfVolume, UnitOfVolumeFlowRate
 from homeassistant.util.unit_conversion import (
@@ -12,6 +12,7 @@ from homeassistant.util.unit_conversion import (
 )
 
 from ..models.flow_meter import FlowMeter
+from .metering_window import MeterKind
 
 
 class FlowMeterError(ValueError):
@@ -64,7 +65,7 @@ def validate_meter_placements(meters: Sequence[FlowMeter], zone_ids: set[str]) -
 class FlowMeterMetadata:
     """A live classification, never an override persisted with the placement."""
 
-    kind: Literal["cumulative_total", "rate"]
+    kind: MeterKind
     unit: str
 
     def convert(self, value: float) -> float:
@@ -80,7 +81,7 @@ def classify_flow_meter(
     entity_id: str, attributes: Mapping[str, Any]
 ) -> FlowMeterMetadata:
     """Refuse unclassifiable instruments and name the HA-side correction."""
-    kind: Literal["cumulative_total", "rate"]
+    kind: MeterKind
     converter: type[BaseUnitConverter]
     device_class = attributes.get("device_class")
     state_class = attributes.get("state_class")

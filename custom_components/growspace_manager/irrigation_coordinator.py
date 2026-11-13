@@ -28,6 +28,7 @@ from homeassistant.util.dt import as_local, get_default_time_zone, utcnow
 if TYPE_CHECKING:
     from .coordinator import GrowspaceCoordinator
 from .actuator_driver import async_confirm_state, resolve_actuator_driver
+from .attempt_metering import AttemptMetering
 from .const import (
     ATTR_GROWSPACE_ID,
     CATEGORY_ALERT,
@@ -215,6 +216,8 @@ class BaseIrrigationCoordinator:
         # Memory only until setup loads the durable ones; legacy isolated
         # fixtures without a DeliveryAttemptStore keep it that way.
         self._deliveries = GrowspaceDeliveries(growspace_id)
+        self._metering_tail: AttemptMetering | None = None
+        self._metering_stopped = False
         self._inhibit_since: dict[str, str] = {}
         self._zone_fault_since: str | None = None
         # The Startup Inhibit (#786): None until setup begins it, so a
@@ -430,6 +433,15 @@ class BaseIrrigationCoordinator:
         """Return the litres charged against today's volume cap (Dispensed Volume)."""
         return self._supply._deliveries.dispensed().liters
 
+    def _volume_for_cap(self) -> float:
+        """Include reports received so far while the previous tail is open."""
+        charged_l = self.volume_dispensed_today
+        tail = self._supply._metering_tail
+        if tail is None:
+            return charged_l
+        now = utcnow()
+        return charged_l + tail.additional_charge(now, as_local(now).date())
+
     @property
     def growspace(self) -> Growspace:
         """Return the growspace object."""
@@ -570,7 +582,7 @@ class BaseIrrigationCoordinator:
                     unknown_tanks=unknown_tanks,
                     lights_dark=self._is_lights_dark(),
                     cycles_today=self.cycles_today,
-                    volume_today=self.volume_dispensed_today,
+                    volume_today=self._volume_for_cap(),
                     cycle_volume_l=self._compute_cycle_volume_liters(
                         config.irrigation_duration or 0
                     ),
@@ -1675,6 +1687,8 @@ class BaseIrrigationCoordinator:
                 return
             for runtime in self._zone_runtimes.values():
                 runtime.async_cancel_listeners(cancel_tasks=True)
+            self._metering_stopped = True
+            self._finish_metering_tail(utcnow())
             self._supply._supply_queue.clear()
             self._supply._claim_data.clear()
             if self._supply._supply_task is not None:
@@ -2080,7 +2094,7 @@ class BaseIrrigationCoordinator:
         return safety_cap_blocks(
             self._config(),
             self.cycles_today,
-            self.volume_dispensed_today,
+            self._volume_for_cap(),
             self._compute_cycle_volume_liters(duration),
         )
 
@@ -2355,6 +2369,29 @@ class BaseIrrigationCoordinator:
                     return valve
         return None
 
+    @callback
+    def _finish_metering_tail(self, cutoff: datetime) -> None:
+        """Close the previous window before another supply command."""
+        tail = self._supply._metering_tail
+        if tail is not None:
+            tail.finish(cutoff)
+
+    def _start_metering(self) -> AttemptMetering | None:
+        meters = self.growspace.environment_config.flow_meters
+        by_placement = {meter.placement: meter for meter in meters}
+        zone = by_placement.get(self._zone.id)
+        supply = by_placement.get("supply")
+        return (
+            AttemptMetering(self.hass, zone=zone, supply=supply)
+            if zone or supply
+            else None
+        )
+
+    @callback
+    def _close_metering(self, attempt: DeliveryAttempt) -> None:
+        self._supply._metering_tail = None
+        self._supply._deliveries.close(attempt)
+
     async def _run_pump_cycle(
         self,
         event_type: str,
@@ -2418,6 +2455,7 @@ class BaseIrrigationCoordinator:
             if hold in (MANUAL_OVERRIDE, OVERRIDE_DETECTED):
                 await self._async_record_controller_state()
             return
+        tail_at_admission = self._supply._metering_tail is not None
         # Ask the Pump Cycle Gate whether this cycle may fire (ADR-0021). The
         # gate is a pure decision; this method owns the resulting effects.
         config = self._config()
@@ -2444,7 +2482,7 @@ class BaseIrrigationCoordinator:
             unknown_tanks=unknown_tanks,
             lights_dark=False if latched else self._is_lights_dark(),
             cycles_today=self.cycles_today,
-            volume_today=self.volume_dispensed_today,
+            volume_today=self._volume_for_cap(),
             cycle_volume_l=cycle_volume_l,
             fault=snapshot.state.value == "fault",
             emergency_stop=snapshot.state.value == "emergency_stop",
@@ -2478,6 +2516,7 @@ class BaseIrrigationCoordinator:
         # the pump confirms ON, which charges an irrigation one, and its close.
         attempt: DeliveryAttempt | None = None
         closed: DeliveryAttempt | None = None
+        metering: AttemptMetering | None = None
         cycle_finished = False
         abort_cause: AbortCause | None = None
         moisture_before = None
@@ -2629,6 +2668,23 @@ class BaseIrrigationCoordinator:
                         return
             failure_output = pump_entity
             command_dt = utcnow()
+            if event_type == "irrigation":
+                # Persistence and valve readbacks awaited after the first gate.
+                # A report received during those awaits can spend the cap.
+                if (
+                    tail_at_admission
+                    and (cap := self._check_safety_guards(duration)) is not None
+                ):
+                    self._record(skipped(cap.value))
+                    closed = replace(
+                        attempt.unconfirmed(
+                            off_commanded_at=None, abort_cause=cap.value
+                        ),
+                        reason=cap.value,
+                    )
+                    return
+                self._finish_metering_tail(command_dt)
+                metering = self._start_metering()
             attempt = attempt.commanded(command_dt)
             commanded = True
             self._supply._commanded_outputs.add(pump_entity)
@@ -2788,6 +2844,7 @@ class BaseIrrigationCoordinator:
             off_confirmed = (
                 await self._async_command_off(pump_entity) if commanded else True
             )
+            off_confirmed_at = utcnow() if off_confirmed and commanded else None
             if (
                 event_type == "irrigation"
                 and start_dt is not None
@@ -2836,13 +2893,18 @@ class BaseIrrigationCoordinator:
                 self._supply._commanded_outputs.discard(readback.output)
             if closed is not None:
                 closed = replace(closed, valves=tuple(valve_records))
+                if off_confirmed_at is not None:
+                    closed = closed.read_back_off(off_confirmed_at)
+                self._supply._deliveries.close(closed)
+            if metering is not None:
+                if closed is not None and closed.estimated_l is not None:
+                    self._supply._metering_tail = metering
+                    metering.close(closed, self._close_metering)
+                    if self._supply._metering_stopped:
+                        self._finish_metering_tail(utcnow())
+                else:
+                    metering.finish()
             if closed is not None:
-                # Recorded once OFF is read back, or known not to be.
-                self._supply._deliveries.close(
-                    closed.read_back_off(utcnow())
-                    if off_confirmed and closed.off_commanded_at is not None
-                    else closed
-                )
                 await self._main_coordinator.async_project_water()
             if start_dt is not None:
                 if cycle_finished:

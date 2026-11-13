@@ -199,7 +199,7 @@ async def test_completed_cycle_skips_write_in_tank_mode(
 async def test_flow_sensor_does_not_reopen_the_pump_estimate_in_tank_mode(
     make_coordinator, mock_hass: MagicMock, freezer: FrozenDateTimeFactory
 ) -> None:
-    """A configured flow meter is never read, so the tank still measures (#853).
+    """Metering a delivery attempt leaves tank-mode water accounting in place.
 
     Were it to switch Tank-Derived Water Mode off, the shot would be booked as
     a pump estimate and the figure would quietly become the less accurate one.
@@ -213,7 +213,10 @@ async def test_flow_sensor_does_not_reopen_the_pump_estimate_in_tank_mode(
         tank if entity_id == "sensor.tank" else MagicMock()
     )
 
-    await _run_cycle(coordinator, 30, freezer)
+    try:
+        await _run_cycle(coordinator, 30, freezer)
+    finally:
+        await coordinator.async_unload()
 
     assert growspace.water_usage.daily_readings == []
     assert growspace.water_usage.total_liters == 0.0
