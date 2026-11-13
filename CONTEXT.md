@@ -353,6 +353,12 @@ _Avoid_: days in stage, stage days
 **Photoperiod Flip**
 The calendar day on which a Plant transitions from vegetative to flower stage — specifically, the day `flower_start == today`. The grower must change the light schedule to 12 hours on this day. When `IrrigationStrategy.auto_light_tracking` is enabled on the growspace, the integration will auto-adapt the light schedule from sensor data; otherwise the grower must update it manually. A notification is sent once per day per growspace when any plant's Photoperiod Flip day arrives.
 
+**Supplemental Light**
+An output assigned to one growspace to provide additional light during its configured [[Supplemental Light Window]]s.
+
+**Supplemental Light Window**
+A recurring interval whose start and end are each a signed number of minutes from planned main lights-on or lights-off in the same cycle. One Supplemental Light can have several windows in a cycle.
+
 **HarvestMetrics**
 Final-outcome snapshot values recorded at the point of harvest: `wet_weight`, `dry_weight`, `trim_weight`, `thc_percentage`, `cbd_percentage`, `terpene_profile`. These are single snapshots, not time-series. Do not add in-progress drying observations here.
 

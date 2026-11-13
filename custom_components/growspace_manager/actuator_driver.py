@@ -287,10 +287,13 @@ class LightDriver:
     so a dimmable grow light holds a set level; a zero demand turns it off.
     """
 
-    def __init__(self, hass: HomeAssistant, entity_id: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entity_id: str, *, raise_errors: bool = False
+    ) -> None:
         """Initialize the driver for a single ``light.*`` entity."""
         self._hass = hass
         self._entity_id = entity_id
+        self._raise_errors = raise_errors
 
     async def set_speed(self, pct: int) -> bool:
         """Set brightness to ``pct`` percent, or turn off at zero demand."""
@@ -301,18 +304,27 @@ class LightDriver:
             "light",
             SERVICE_TURN_ON,
             {ATTR_ENTITY_ID: self._entity_id, "brightness_pct": pct},
+            raise_errors=self._raise_errors,
         )
 
     async def turn_on(self) -> bool:
         """Turn the light on."""
         return await _safe_service_call(
-            self._hass, "light", SERVICE_TURN_ON, {ATTR_ENTITY_ID: self._entity_id}
+            self._hass,
+            "light",
+            SERVICE_TURN_ON,
+            {ATTR_ENTITY_ID: self._entity_id},
+            raise_errors=self._raise_errors,
         )
 
     async def turn_off(self) -> bool:
         """Turn the light off."""
         return await _safe_service_call(
-            self._hass, "light", SERVICE_TURN_OFF, {ATTR_ENTITY_ID: self._entity_id}
+            self._hass,
+            "light",
+            SERVICE_TURN_OFF,
+            {ATTR_ENTITY_ID: self._entity_id},
+            raise_errors=self._raise_errors,
         )
 
     def is_on(self) -> bool:
@@ -385,7 +397,7 @@ def resolve_actuator_driver(
     if domain == "fan":
         return FanDriver(hass, entity_id)
     if domain == "light":
-        return LightDriver(hass, entity_id)
+        return LightDriver(hass, entity_id, raise_errors=raise_errors)
     if domain in _SPEED_NUMBER_DOMAINS:
         return NumberDriver(hass, entity_id)
     if domain in _SWITCH_DOMAINS:

@@ -41,6 +41,9 @@ from custom_components.growspace_manager.exceptions import (
     GrowspaceError,
     GrowspaceNotFoundError,
 )
+from custom_components.growspace_manager.lighting_assignments import (
+    lighting_assignment_lock,
+)
 from custom_components.growspace_manager.models import (
     ECTargetRange,
     Growspace,
@@ -74,6 +77,9 @@ from .utils import handle_service_errors
 
 if TYPE_CHECKING:
     from custom_components.growspace_manager.coordinator import GrowspaceCoordinator
+    from custom_components.growspace_manager.supplemental_light_coordinator import (
+        SupplementalLightCoordinator,
+    )
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -113,6 +119,14 @@ class GrowspaceFacade:
     def get_canonical_special(self, gs_id: str) -> tuple[str, str]:
         """Return the canonical ID and name for a special growspace."""
         return self._coordinator._growspace_manager.get_canonical_special(gs_id)
+
+    def get_supplemental_light_controller(
+        self, growspace_id: str
+    ) -> SupplementalLightCoordinator | None:
+        """Return the live Supplemental Light controller for a growspace."""
+        return self._coordinator._subsystem_manager.get_supplemental_light_controller(
+            growspace_id
+        )
 
     async def add_growspace(self, **kwargs: Any) -> Growspace:
         """Add a new growspace and register its HA device."""
@@ -157,13 +171,23 @@ class GrowspaceFacade:
         self, growspace_id: str, *, delete_plants: bool = True
     ) -> None:
         """Remove a growspace, optionally detaching its plants instead."""
-        await self._coordinator._growspace_manager.remove_growspace(
-            growspace_id, delete_plants=delete_plants
-        )
-        # Mirrors add_growspace, which sets these up.
-        self._coordinator._subsystem_manager.teardown_growspace_sub_coordinators(
-            growspace_id
-        )
+        coordinator = self._coordinator
+        subsystems = coordinator._subsystem_manager
+        async with lighting_assignment_lock(coordinator.hass):
+            growspace = coordinator.growspaces.get(growspace_id)
+            if growspace is not None and any(
+                light.enabled for light in growspace.supplemental_lights
+            ):
+                controller = self.get_supplemental_light_controller(growspace_id)
+                if controller is None:
+                    raise ServiceValidationError(
+                        "Supplemental Lights are still loading."
+                    )
+                await controller.async_release_all()
+            await coordinator._growspace_manager.remove_growspace(
+                growspace_id, delete_plants=delete_plants
+            )
+            subsystems.teardown_growspace_sub_coordinators(growspace_id)
         # Its Delivery Attempts go with it rather than wait, unread, forever.
         if isinstance(self._coordinator.deliveries, DeliveryAttemptStore):
             await self._coordinator.deliveries.async_remove(growspace_id)
