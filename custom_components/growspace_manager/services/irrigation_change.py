@@ -695,6 +695,11 @@ async def async_apply_irrigation_change(
     if candidate.media_warning:
         _LOGGER.warning("%s", candidate.media_warning)
     await coordinator.async_request_refresh()
+    if "lights_on_time" in changed_strategy_fields:
+        if ctrl := coordinator._subsystem_manager.get_growlight_controller(
+            growspace_id
+        ):
+            await ctrl.async_reconcile_supplemental_lights()
 
     return IrrigationChangeResult(
         operation=change.operation,

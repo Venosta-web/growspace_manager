@@ -47,6 +47,7 @@ from custom_components.growspace_manager.models import (
     IrrigationZone,
     LightLeakConfig,
     SensorGroup,
+    SupplementalLight,
     VisionCheckupConfig,
 )
 
@@ -98,6 +99,7 @@ _ITEM_TYPES: dict[str, type[BaseModel]] = {
     "humidifier_ac_infinity_devices": ACInfinityDevice,
     "dehumidifier_ac_infinity_devices": ACInfinityDevice,
     "growlight_ac_infinity_devices": ACInfinityGrowLight,
+    "supplemental_lights": SupplementalLight,
 }
 _SUB_CONFIG_TYPES: dict[str, type[BaseModel]] = {
     "vision_checkup_config": VisionCheckupConfig,
@@ -166,6 +168,7 @@ _CONTROLLER_RELEVANT_FIELDS: dict[str, frozenset[str]] = {
             "growlight_config",
             "growlight_entities",
             "growlight_ac_infinity_devices",
+            "supplemental_lights",
             "veg_day_hours",
             "flower_day_hours",
             # The Light Leak Guard runs inside the grow light controller.

@@ -217,6 +217,34 @@ class GrowLightConfig(BaseModel):
     sunrise_minutes: int = 0
 
 
+class SupplementalAnchor(StrEnum):
+    """Planned main-light cycle endpoint a supplemental window attaches to."""
+
+    LIGHTS_ON = "lights_on"
+    LIGHTS_OFF = "lights_off"
+
+
+@dataclass(slots=True)
+class SupplementalLightWindow(BaseModel):
+    """One scheduled window for a supplemental light output."""
+
+    id: str = ""
+    start_anchor: SupplementalAnchor = SupplementalAnchor.LIGHTS_ON
+    start_offset_minutes: int = 0
+    end_anchor: SupplementalAnchor = SupplementalAnchor.LIGHTS_OFF
+    end_offset_minutes: int = 0
+
+
+@dataclass(slots=True)
+class SupplementalLight(BaseModel):
+    """A Home Assistant light or switch scheduled on Supplemental Light Windows."""
+
+    id: str = ""
+    entity_id: str = ""
+    enabled: bool = True
+    windows: list[SupplementalLightWindow] = field(default_factory=list)
+
+
 @dataclass(slots=True)
 class LightLeakConfig(BaseModel):
     """Configuration for the Light Leak Guard (#794).
@@ -307,6 +335,7 @@ class EnvironmentConfig(BaseModel):
     growlight_ac_infinity_devices: list[ACInfinityGrowLight] = field(
         default_factory=list
     )
+    supplemental_lights: list[SupplementalLight] = field(default_factory=list)
 
     # 3D Sensor Configuration
     sensor_coordinates: dict[str, dict[str, float]] = field(default_factory=dict)
@@ -588,6 +617,7 @@ ENVIRONMENT_FIELD_OWNERSHIP: dict[str, FieldOwnership] = {
     "humidifier_ac_infinity_devices": _GROWER,
     "dehumidifier_ac_infinity_devices": _GROWER,
     "growlight_ac_infinity_devices": _GROWER,
+    "supplemental_lights": _GROWER,
     "sensor_coordinates": _GROWER,
     "sensor_groups": _GROWER,
     "camera_entities": _GROWER,

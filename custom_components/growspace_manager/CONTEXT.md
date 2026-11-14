@@ -81,6 +81,14 @@ The continuous check for light during the dark period (#794), run by the Grow Li
 
 The gradual ramp-up of grow-light intensity at the start of the light cycle, mimicking dawn. A native AC Infinity onboard feature, exposed by `ac_infinity` as a device advanced setting: an enable switch (`onTimeSwitch`) plus a ramp-duration number (`onTime`, minutes). GSM only configures it; the device performs the ramp. Only available on the AC Infinity Grow Light Controller path.
 
+## Supplemental Lights
+
+Auxiliary Home Assistant `light.*` or `switch.*` outputs scheduled on **Supplemental Light Windows** inside the growspace's managed main-light cycle (`lights_on_time` plus the derived veg/flower photoperiod). Stored on `EnvironmentConfig.supplemental_lights` as `SupplementalLight` entries (`id`, `entity_id`, `enabled`, `windows`), each with one or more `SupplementalLightWindow` intervals whose endpoints select planned `lights_on` or `lights_off` plus a signed minute offset.
+
+- **Window validation & merging.** Save-time validation rejects any window outside `[0, cycle_duration]` or with non-positive duration. At runtime, overlapping or adjacent valid windows join into one continuous on period. If a main-schedule change (such as a veg→flower flip) shrinks the photoperiod and makes a previously saved window invalid, that window is skipped with an explanation while remaining valid windows keep running.
+- **Reconciliation & Manual Override.** Driven by `GrowLightCoordinator` independently of `growlight_config.enabled` (so rooms with hardware-timed main lights can still schedule supplemental lights). Reconciles at exact window boundaries, on schedule edits, on startup (resuming only the remaining time in an active window and switching off an output found on outside its windows), on device reconnection (`unavailable`/`unknown` → `on`/`off`), and when the growspace's `Subsystem.LIGHTS` **Manual Override** clears or expires.
+- **Role exclusivity & Safe Release.** Growspace Manager rejects duplicate lighting assignments across growspaces and across main and supplemental roles, identifying the existing assignment. When disabling, deleting, or reassigning an output that automation currently controls, `growspace_manager/save_supplemental_lights` switches the old device off before releasing it; if the device is unreachable, the off command fails, or a Lights Manual Override holds control, it explains the blocker and requires an explicit `release_anyway` confirmation.
+
 ## Bulk EC
 
 Electrical conductivity measured by a TDR or capacitance probe that reads the combined water-and-media mixture at the roots. Stored as `bulk_ec_sensors` on `EnvironmentConfig`. Replaces the former `substrate_ec_sensors` field (silent migration on load).

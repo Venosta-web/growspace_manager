@@ -39,6 +39,9 @@ from custom_components.growspace_manager.domain.moisture_band import (
 from custom_components.growspace_manager.domain.setup_preset import inferred_modules
 from custom_components.growspace_manager.domain.steering_phase import resolve_day_hours
 from custom_components.growspace_manager.domain.zone_edit import probe_documents
+from custom_components.growspace_manager.grow_light_coordinator import (
+    build_supplemental_statuses_for_growspace,
+)
 from custom_components.growspace_manager.tank_water_tracker import (
     consumption_buckets_24h,
 )
@@ -206,7 +209,7 @@ class GrowspaceViewModelBuilder:
 
         # Build environment attributes, then extract sensor lookup data
         env_attrs = self._get_environment_attributes(
-            growspace, active_events=active_events
+            growspace, active_events=active_events, plants=plants
         )
         sensors = {
             "sensor_types": self._get_sensor_types(growspace),
@@ -485,6 +488,7 @@ class GrowspaceViewModelBuilder:
         self,
         growspace: Growspace,
         active_events: dict[str, dict[str, Any]] | None = None,
+        plants: list[Plant] | None = None,
     ) -> dict[str, Any]:
         """Get environment-related attributes with current sensor states.
 
@@ -520,6 +524,14 @@ class GrowspaceViewModelBuilder:
         # and so the grow-light chip can render (parallels the fan handling).
         attributes["growlight_entities"] = env_config.growlight_entities
         attributes["growlight_config"] = env_config.growlight_config.to_dict()
+        attributes["supplemental_lights"] = [
+            s.to_dict() for s in env_config.supplemental_lights
+        ]
+        attributes["supplemental_light_statuses"] = (
+            build_supplemental_statuses_for_growspace(
+                self.hass, growspace, plants or []
+            )
+        )
         # Light Leak Guard settings (#794), surfaced so the card can read and
         # round-trip them; a sibling of growlight_config, never nested in it.
         attributes["light_leak_config"] = env_config.light_leak_config.to_dict()
